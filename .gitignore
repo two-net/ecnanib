@@ -483,3 +483,5 @@ $RECYCLE.BIN/
 
 #
 appsettings.Development.json
+# Ecnanib: local live-test exchange keys (never commit)
+tests/.exchange-keys.json

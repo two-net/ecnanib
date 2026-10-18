@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Ecnanib/Ecnanib.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ecnanib.Tests/Ecnanib.Tests.csproj" />
+  </Folder>
 </Solution>
