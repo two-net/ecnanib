@@ -1,0 +1,1 @@
+{"id":"resp_03","object":"response","status":"incomplete","error":null,"incomplete_details":{"reason":"content_filter"},"model":"model-one-2026-01-01","output":[],"usage":{"input_tokens":20,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":22}}

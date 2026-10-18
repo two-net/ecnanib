@@ -1,3 +1,4 @@
+using Ecnanib.Ai;
 using Ecnanib.Components;
 using Ecnanib.Exchange;
 
@@ -8,6 +9,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddExchange(builder.Configuration);
+builder.Services.AddAiProviders(builder.Configuration);
 
 var app = builder.Build();
 

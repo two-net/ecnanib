@@ -1,0 +1,1 @@
+{"error":{"code":403,"message":"Permission denied on resource project x.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"CONSUMER_INVALID","domain":"googleapis.com"}]}}

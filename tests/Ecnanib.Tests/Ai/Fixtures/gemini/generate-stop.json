@@ -1,0 +1,1 @@
+{"candidates":[{"content":{"parts":[{"text":"hidden reasoning","thought":true},{"text":"{\"answer\":\"4\"}"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":15,"candidatesTokenCount":7,"totalTokenCount":42,"thoughtsTokenCount":20,"cachedContentTokenCount":3},"modelVersion":"model-flash-001","responseId":"abc123"}

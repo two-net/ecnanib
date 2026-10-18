@@ -1,0 +1,1 @@
+{"data":[{"type":"model","id":"model-alpha","display_name":"Model Alpha","created_at":"2026-02-01T00:00:00Z","max_input_tokens":200000,"max_tokens":32000,"capabilities":{"structured_outputs":{"supported":true}}},{"type":"model","id":"model-beta","display_name":"Model Beta","created_at":"2025-11-01T00:00:00Z"}],"has_more":true,"first_id":"model-alpha","last_id":"model-beta"}

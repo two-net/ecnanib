@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Ai/Fixtures/**/*.json;Ai/Fixtures/**/*.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

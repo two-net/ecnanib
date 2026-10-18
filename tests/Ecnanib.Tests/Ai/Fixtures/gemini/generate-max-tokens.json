@@ -1,0 +1,1 @@
+{"candidates":[{"content":{"parts":[{"text":"{\"answer\":\"4"}],"role":"model"},"finishReason":"MAX_TOKENS","index":0}],"usageMetadata":{"promptTokenCount":15,"candidatesTokenCount":3,"totalTokenCount":18},"modelVersion":"model-flash-001","responseId":"r1"}
