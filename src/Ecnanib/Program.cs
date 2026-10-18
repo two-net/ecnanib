@@ -1,5 +1,6 @@
 using Ecnanib.Ai;
 using Ecnanib.Components;
+using Ecnanib.Database;
 using Ecnanib.Exchange;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,8 +11,12 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddExchange(builder.Configuration);
 builder.Services.AddAiProviders(builder.Configuration);
+builder.Services.AddDatabase(builder.Configuration);
 
 var app = builder.Build();
+
+// DB-02, NFR-ARCH-03: bring the schema up to date before anything else runs; a failure exits the process.
+await app.MigrateDatabaseAsync();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

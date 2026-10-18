@@ -487,3 +487,5 @@ appsettings.Development.json
 tests/.exchange-keys.json
 # Ecnanib: local live-test AI provider keys (never commit)
 tests/.ai-keys.json
+# Ecnanib: local live-test PostgreSQL connection (never commit)
+tests/.database.json
