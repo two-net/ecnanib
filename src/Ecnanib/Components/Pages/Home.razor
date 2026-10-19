@@ -1,7 +1,27 @@
-﻿@page "/"
+@page "/"
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Ecnanib</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Ecnanib</h1>
+<p>AI cryptocurrency trading agents for Binance Spot and Futures, run with your own exchange and AI provider keys.</p>
 
-Welcome to your new app.
+@if (Notice == "account-deleted")
+{
+    <p class="notice" role="status">Your account and everything it owned have been deleted.</p>
+}
+
+<AuthorizeView>
+    <Authorized>
+        <p>You are signed in as <strong>@context.User.Identity?.Name</strong>. <a href="/settings">Settings</a></p>
+    </Authorized>
+    <NotAuthorized>
+        <p><a href="/sign-up">Create an account</a> or <a href="/sign-in">sign in</a>.</p>
+    </NotAuthorized>
+</AuthorizeView>
+
+<RiskDisclaimerNotice />
+
+@code {
+    [SupplyParameterFromQuery(Name = "notice")]
+    private string? Notice { get; set; }
+}

@@ -1,0 +1,98 @@
+@page "/sign-up"
+@using Ecnanib.Accounts.Configuration
+@using Microsoft.Extensions.Options
+@inject IAccountService Accounts
+@inject NavigationManager Navigation
+@inject IOptions<AccountsOptions> Options
+
+<PageTitle>Sign up</PageTitle>
+
+<h1>Create an account</h1>
+
+<EditForm Model="Input" FormName="sign-up" OnValidSubmit="RegisterAsync" method="post">
+    <DataAnnotationsValidator />
+    @if (_error is not null)
+    {
+        <p class="error" role="alert">@_error</p>
+    }
+    <ValidationSummary />
+    <label>
+        Email
+        <InputText @bind-Value="Input.Email" type="email" autocomplete="email" maxlength="254" required />
+    </label>
+    <label>
+        Password
+        <InputText @bind-Value="Input.Password" type="password" autocomplete="new-password" minlength="@MinPasswordLength" maxlength="128" required />
+    </label>
+    <label>
+        Confirm password
+        <InputText @bind-Value="Input.ConfirmPassword" type="password" autocomplete="new-password" maxlength="128" required />
+    </label>
+    <p class="hint">@AccountMessages.PasswordRule(MinPasswordLength)</p>
+    <button type="submit">Sign up</button>
+</EditForm>
+
+<p>Already have an account? <a href="/sign-in@ReturnQuery">Sign in</a>.</p>
+
+@code {
+    private string? _error;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private SignUpInput Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "ReturnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    private int MinPasswordLength => Options.Value.MinPasswordLength;
+
+    private string ReturnQuery => ReturnUrl is null ? "" : "?ReturnUrl=" + Uri.EscapeDataString(ReturnUrl);
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        if (HttpContext.User.Identity?.IsAuthenticated == true)
+            Navigation.NavigateTo(LocalReturnUrl.Sanitize(ReturnUrl));
+    }
+
+    private async Task RegisterAsync()
+    {
+        var result = await Accounts.RegisterAsync(Input.Email, Input.Password, HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.RequestAborted);
+        switch (result.Status)
+        {
+            case RegistrationStatus.Succeeded:
+                await AccountSession.SignInAsync(HttpContext, result.User!);
+                Navigation.NavigateTo(LocalReturnUrl.Sanitize(ReturnUrl));
+                return;
+            case RegistrationStatus.InvalidEmail:
+                _error = "Enter a valid email address.";
+                break;
+            case RegistrationStatus.InvalidPassword:
+                _error = AccountMessages.PasswordRule(MinPasswordLength);
+                break;
+            case RegistrationStatus.EmailTaken:
+                _error = "An account with this email already exists.";
+                break;
+            case RegistrationStatus.Throttled:
+                _error = AccountMessages.TooManyAttempts(result.RetryAfter);
+                break;
+        }
+    }
+
+    private sealed class SignUpInput
+    {
+        [Required(ErrorMessage = "Email is required.")]
+        [StringLength(254)]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Password is required.")]
+        [StringLength(128)]
+        public string Password { get; set; } = "";
+
+        [Required(ErrorMessage = "Confirm the password.")]
+        [Compare(nameof(Password), ErrorMessage = "The passwords do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

@@ -1,0 +1,77 @@
+@page "/settings/delete-account"
+@attribute [Authorize]
+@inject IAccountService Accounts
+@inject NavigationManager Navigation
+
+<PageTitle>Delete account</PageTitle>
+
+<h1>Delete account</h1>
+
+<p>
+    This permanently deletes your account together with your exchange and provider keys, agents, decisions, trades and
+    logs. It cannot be undone.
+</p>
+<p>Every agent must be Stopped or Draft first; a Running, Paused or Error agent blocks the deletion.</p>
+
+<EditForm Model="Input" FormName="delete-account" OnValidSubmit="DeleteAsync" method="post">
+    <DataAnnotationsValidator />
+    @if (_error is not null)
+    {
+        <p class="error" role="alert">@_error</p>
+    }
+    <ValidationSummary />
+    <label>
+        Password
+        <InputText @bind-Value="Input.Password" type="password" autocomplete="current-password" maxlength="128" required />
+    </label>
+    <label class="check">
+        <InputCheckbox @bind-Value="Input.Confirm" />
+        I understand that this cannot be undone.
+    </label>
+    <button type="submit" class="danger">Delete my account permanently</button>
+</EditForm>
+
+<p><a href="/settings">Back to settings</a></p>
+
+@code {
+    private string? _error;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private DeleteAccountInput Input { get; set; } = default!;
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task DeleteAsync()
+    {
+        var result = await Accounts.DeleteAccountAsync(HttpContext.User.RequireUserId(), Input.Password, HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.RequestAborted);
+        switch (result.Status)
+        {
+            case AccountDeletionStatus.Succeeded:
+            case AccountDeletionStatus.UserNotFound:
+                await AccountSession.SignOutAsync(HttpContext);
+                Navigation.NavigateTo("/?notice=account-deleted");
+                return;
+            case AccountDeletionStatus.InvalidPassword:
+                _error = "Incorrect password.";
+                break;
+            case AccountDeletionStatus.AgentsNotStopped:
+                _error = $"Stop your agents first: {result.BlockingAgents} agent{(result.BlockingAgents == 1 ? " is" : "s are")} not Stopped or Draft.";
+                break;
+            case AccountDeletionStatus.Throttled:
+                _error = AccountMessages.TooManyAttempts(result.RetryAfter);
+                break;
+        }
+    }
+
+    private sealed class DeleteAccountInput
+    {
+        [Required(ErrorMessage = "Enter your password to confirm.")]
+        public string Password { get; set; } = "";
+
+        [Range(typeof(bool), "true", "true", ErrorMessage = "Tick the box to confirm.")]
+        public bool Confirm { get; set; }
+    }
+}

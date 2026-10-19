@@ -1,3 +1,33 @@
+.site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #d0d0d0;
+}
+
+.site-header .brand {
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.site-header nav {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.site-header .user {
+    opacity: 0.75;
+}
+
+main {
+    max-width: 48rem;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
 #blazor-error-ui {
     color-scheme: light only;
     background: lightyellow;
@@ -12,9 +42,9 @@
     z-index: 1000;
 }
 
-    #blazor-error-ui .dismiss {
-        cursor: pointer;
-        position: absolute;
-        right: 0.75rem;
-        top: 0.5rem;
-    }
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}

@@ -1,6 +1,28 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
-@Body
+<header class="site-header">
+    <a class="brand" href="/">Ecnanib</a>
+    <nav aria-label="Account">
+        <AuthorizeView>
+            <Authorized>
+                <span class="user">@context.User.Identity?.Name</span>
+                <a href="/settings">Settings</a>
+                <form method="post" action="/sign-out" class="inline">
+                    <AntiforgeryToken />
+                    <button type="submit">Sign out</button>
+                </form>
+            </Authorized>
+            <NotAuthorized>
+                <a href="/sign-in">Sign in</a>
+                <a href="/sign-up">Sign up</a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</header>
+
+<main>
+    @Body
+</main>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.

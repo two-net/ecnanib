@@ -1,0 +1,76 @@
+@page "/sign-in"
+@inject IAccountService Accounts
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in</PageTitle>
+
+<h1>Sign in</h1>
+
+<EditForm Model="Input" FormName="sign-in" OnValidSubmit="SignInAsync" method="post">
+    <DataAnnotationsValidator />
+    @if (_error is not null)
+    {
+        <p class="error" role="alert">@_error</p>
+    }
+    <ValidationSummary />
+    <label>
+        Email
+        <InputText @bind-Value="Input.Email" type="email" autocomplete="email" maxlength="254" required />
+    </label>
+    <label>
+        Password
+        <InputText @bind-Value="Input.Password" type="password" autocomplete="current-password" maxlength="128" required />
+    </label>
+    <button type="submit">Sign in</button>
+</EditForm>
+
+<p>No account yet? <a href="/sign-up@ReturnQuery">Sign up</a>.</p>
+
+@code {
+    private string? _error;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private SignInInput Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "ReturnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    private string ReturnQuery => ReturnUrl is null ? "" : "?ReturnUrl=" + Uri.EscapeDataString(ReturnUrl);
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        if (HttpContext.User.Identity?.IsAuthenticated == true)
+            Navigation.NavigateTo(LocalReturnUrl.Sanitize(ReturnUrl));
+    }
+
+    private async Task SignInAsync()
+    {
+        var result = await Accounts.AuthenticateAsync(Input.Email, Input.Password, HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.RequestAborted);
+        switch (result.Status)
+        {
+            case AuthenticationStatus.Succeeded:
+                await AccountSession.SignInAsync(HttpContext, result.User!);
+                Navigation.NavigateTo(LocalReturnUrl.Sanitize(ReturnUrl));
+                return;
+            case AuthenticationStatus.InvalidCredentials:
+                _error = AccountMessages.IncorrectCredentials;
+                break;
+            case AuthenticationStatus.Throttled:
+                _error = AccountMessages.TooManyAttempts(result.RetryAfter);
+                break;
+        }
+    }
+
+    private sealed class SignInInput
+    {
+        [Required(ErrorMessage = "Email is required.")]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Password is required.")]
+        public string Password { get; set; } = "";
+    }
+}

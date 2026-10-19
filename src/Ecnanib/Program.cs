@@ -1,3 +1,4 @@
+using Ecnanib.Accounts;
 using Ecnanib.Ai;
 using Ecnanib.Components;
 using Ecnanib.Database;
@@ -12,6 +13,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddExchange(builder.Configuration);
 builder.Services.AddAiProviders(builder.Configuration);
 builder.Services.AddDatabase(builder.Configuration);
+builder.Services.AddAccounts(builder.Configuration);
 
 var app = builder.Build();
 
@@ -28,10 +30,15 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
+// NFR-SEC-01: antiforgery tokens are bound to the signed-in identity, so authentication runs first. The explicit calls
+// also keep WebApplication from inserting these two ahead of the HTTPS redirect.
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+app.MapAccountEndpoints();
 
 app.Run();

@@ -1,0 +1,164 @@
+@page "/settings"
+@attribute [Authorize]
+@using Ecnanib.Accounts.Configuration
+@using Microsoft.Extensions.Options
+@inject IAccountService Accounts
+@inject NavigationManager Navigation
+@inject IOptions<AccountsOptions> Options
+
+<PageTitle>Settings</PageTitle>
+
+<h1>Settings</h1>
+
+@if (Status == "password-changed")
+{
+    <p class="notice" role="status">Your password has been changed. Any other session has been signed out.</p>
+}
+else if (Status == "disclaimer-accepted")
+{
+    <p class="notice" role="status">Thank you. The risk disclaimer is accepted.</p>
+}
+
+<section aria-labelledby="account-title">
+    <h2 id="account-title">Account</h2>
+    <p>Signed in as <strong>@HttpContext.User.Identity?.Name</strong>.</p>
+    <p>Theme and animation preferences arrive with the user-interface work.</p>
+</section>
+
+<section aria-labelledby="password-title">
+    <h2 id="password-title">Change password</h2>
+    <EditForm Model="Password" FormName="change-password" OnValidSubmit="ChangePasswordAsync" method="post">
+        <DataAnnotationsValidator />
+        @if (_passwordError is not null)
+        {
+            <p class="error" role="alert">@_passwordError</p>
+        }
+        <ValidationSummary />
+        <label>
+            Current password
+            <InputText @bind-Value="Password.CurrentPassword" type="password" autocomplete="current-password" maxlength="128" required />
+        </label>
+        <label>
+            New password
+            <InputText @bind-Value="Password.NewPassword" type="password" autocomplete="new-password" minlength="@MinPasswordLength" maxlength="128" required />
+        </label>
+        <label>
+            Confirm new password
+            <InputText @bind-Value="Password.ConfirmPassword" type="password" autocomplete="new-password" maxlength="128" required />
+        </label>
+        <p class="hint">@AccountMessages.PasswordRule(MinPasswordLength) Changing it signs out every other session.</p>
+        <button type="submit">Change password</button>
+    </EditForm>
+</section>
+
+<section aria-labelledby="disclaimer-title">
+    <h2 id="disclaimer-title">Risk disclaimer</h2>
+    @if (_disclaimer is { IsAccepted: true })
+    {
+        <p>You accepted version @_disclaimer.CurrentVersion on @_disclaimer.CurrentVersionAcceptedAt!.Value.ToString("yyyy-MM-dd HH:mm 'UTC'").</p>
+    }
+    else if (_disclaimer is not null)
+    {
+        @if (_disclaimer.LastAcceptedAt is { } last)
+        {
+            <p>The disclaimer has changed since you accepted it on @last.ToString("yyyy-MM-dd HH:mm 'UTC'"); please read and accept it again.</p>
+        }
+        <p>You must read and accept the risk disclaimer before your first live-mode agent can start.</p>
+        <RiskDisclaimerNotice />
+        <EditForm Model="Disclaimer" FormName="accept-disclaimer" OnValidSubmit="AcceptDisclaimerAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label class="check">
+                <InputCheckbox @bind-Value="Disclaimer.Accepted" />
+                I have read and accept the risk disclaimer (version @RiskDisclaimer.Version).
+            </label>
+            <button type="submit">Accept</button>
+        </EditForm>
+    }
+</section>
+
+<section aria-labelledby="delete-title">
+    <h2 id="delete-title">Delete account</h2>
+    <p>Deleting your account removes your keys, agents, decisions, trades and logs. It cannot be undone.</p>
+    <p><a href="/settings/delete-account">Delete my account…</a></p>
+</section>
+
+@code {
+    private DisclaimerStatus? _disclaimer;
+    private string? _passwordError;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "change-password")]
+    private ChangePasswordInput Password { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "accept-disclaimer")]
+    private AcceptDisclaimerInput Disclaimer { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    private Guid UserId => HttpContext.User.RequireUserId();
+
+    private int MinPasswordLength => Options.Value.MinPasswordLength;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Password ??= new();
+        Disclaimer ??= new();
+        _disclaimer = await Accounts.GetDisclaimerStatusAsync(UserId, HttpContext.RequestAborted);
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        var result = await Accounts.ChangePasswordAsync(UserId, Password.CurrentPassword, Password.NewPassword, HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.RequestAborted);
+        switch (result.Status)
+        {
+            case PasswordChangeStatus.Succeeded:
+                // Re-issue this session's cookie with the rotated security stamp so the current browser stays signed in.
+                await AccountSession.SignInAsync(HttpContext, result.User!);
+                Navigation.NavigateTo("/settings?status=password-changed");
+                return;
+            case PasswordChangeStatus.InvalidCurrentPassword:
+                _passwordError = "The current password is incorrect.";
+                break;
+            case PasswordChangeStatus.InvalidNewPassword:
+                _passwordError = AccountMessages.PasswordRule(MinPasswordLength);
+                break;
+            case PasswordChangeStatus.Throttled:
+                _passwordError = AccountMessages.TooManyAttempts(result.RetryAfter);
+                break;
+            case PasswordChangeStatus.UserNotFound:
+                await AccountSession.SignOutAsync(HttpContext);
+                Navigation.NavigateTo("/");
+                return;
+        }
+    }
+
+    private async Task AcceptDisclaimerAsync()
+    {
+        await Accounts.AcceptDisclaimerAsync(UserId, HttpContext.RequestAborted);
+        Navigation.NavigateTo("/settings?status=disclaimer-accepted");
+    }
+
+    private sealed class ChangePasswordInput
+    {
+        [Required(ErrorMessage = "Enter your current password.")]
+        public string CurrentPassword { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter a new password.")]
+        [StringLength(128)]
+        public string NewPassword { get; set; } = "";
+
+        [Required(ErrorMessage = "Confirm the new password.")]
+        [Compare(nameof(NewPassword), ErrorMessage = "The passwords do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+
+    private sealed class AcceptDisclaimerInput
+    {
+        [Range(typeof(bool), "true", "true", ErrorMessage = "Tick the box to accept the disclaimer.")]
+        public bool Accepted { get; set; }
+    }
+}

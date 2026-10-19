@@ -1,0 +1,9 @@
+@* The risk disclaimer (FR-UI-05, NFR-LEGAL-01/02); text and version live in RiskDisclaimer. *@
+<section class="risk-disclaimer" aria-labelledby="risk-disclaimer-title">
+    <h2 id="risk-disclaimer-title">@RiskDisclaimer.Title</h2>
+    @foreach (var paragraph in RiskDisclaimer.Paragraphs)
+    {
+        <p>@paragraph</p>
+    }
+    <p class="version">Version @RiskDisclaimer.Version</p>
+</section>

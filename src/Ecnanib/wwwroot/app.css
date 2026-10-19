@@ -36,3 +36,90 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+/* Account pages (issue #4); the user-interface work restyles these. */
+body {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    line-height: 1.5;
+}
+
+form.inline {
+    display: inline;
+}
+
+form.inline button {
+    font: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    color: inherit;
+}
+
+main form:not(.inline) {
+    display: grid;
+    gap: 0.75rem;
+    max-width: 24rem;
+}
+
+main form:not(.inline) label {
+    display: grid;
+    gap: 0.25rem;
+}
+
+main form:not(.inline) label.check {
+    grid-template-columns: auto 1fr;
+    align-items: start;
+}
+
+main form:not(.inline) input:not([type=checkbox]) {
+    font: inherit;
+    padding: 0.4rem 0.5rem;
+}
+
+main form:not(.inline) button {
+    font: inherit;
+    padding: 0.5rem 1rem;
+    justify-self: start;
+    cursor: pointer;
+}
+
+main form:not(.inline) button.danger {
+    background: #b32121;
+    color: white;
+    border-color: #b32121;
+}
+
+.hint {
+    opacity: 0.75;
+    margin: 0;
+}
+
+.notice {
+    padding: 0.75rem 1rem;
+    border-left: 4px solid #26b050;
+    background: rgba(38, 176, 80, 0.08);
+}
+
+.error, [role=alert] {
+    color: #b32121;
+}
+
+.risk-disclaimer {
+    margin-top: 2rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid #d0d0d0;
+    border-left: 4px solid #e5a000;
+}
+
+.risk-disclaimer h2 {
+    margin-top: 0;
+    font-size: 1.1rem;
+}
+
+.risk-disclaimer .version {
+    margin-bottom: 0;
+    opacity: 0.75;
+    font-size: 0.9rem;
+}

@@ -1,0 +1,10 @@
+@* Fallback for interactive navigation: a static request to an [Authorize] page is challenged by the middleware first. *@
+@inject NavigationManager Navigation
+
+@code {
+    protected override void OnInitialized()
+    {
+        var path = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        Navigation.NavigateTo("/sign-in?ReturnUrl=" + Uri.EscapeDataString(path));
+    }
+}
