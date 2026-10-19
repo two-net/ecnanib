@@ -64,8 +64,9 @@ public class Argon2idPasswordHasherTests
     public void ATamperedHashFails()
     {
         var encoded = _hasher.HashPassword(Anyone, Password);
-        var last = encoded[^1];
-        var tampered = encoded[..^1] + (last == 'A' ? 'B' : 'A');
+        // The hash is unpadded base64, so the last character's low bits are padding; flip its top bit, which is not.
+        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        var tampered = encoded[..^1] + alphabet[alphabet.IndexOf(encoded[^1]) ^ 0b100000];
 
         Assert.Equal(PasswordVerificationResult.Failed, _hasher.VerifyHashedPassword(Anyone, tampered, Password));
     }
