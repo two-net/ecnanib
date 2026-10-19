@@ -53,8 +53,9 @@ public static class DatabaseServiceCollectionExtensions
 
     /// <summary>
     /// Applies pending migrations before the host starts (DB-02, NFR-ARCH-03). Call it right after building the
-    /// application and before running it; it throws <see cref="DatabaseMigrationException"/> (or
-    /// <see cref="OptionsValidationException"/> for an invalid <c>Database</c> section) so the process exits.
+    /// application and before running it; it throws <see cref="DatabaseMigrationException"/> (or an
+    /// <see cref="AggregateException"/> of <see cref="OptionsValidationException"/> for an invalid section) after
+    /// logging the cause at Critical, and <c>Program</c> exits with code 1 (FR-CFG-06).
     /// </summary>
     public static async Task MigrateDatabaseAsync(this IHost host, CancellationToken cancellationToken = default)
     {

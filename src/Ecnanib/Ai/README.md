@@ -20,7 +20,7 @@ Rules the module enforces:
   provider is rejected before any request (FR-KEY-05).
 - `AiCredentials.ApiKey` is internal and read only by each client's `ApplyAuth`. Logs and exception messages carry the
   key id and the masked key; provider error text is scrubbed of the key value; `HttpClient` logging is capped at
-  Warning in `appsettings.json` and the auth headers are redacted (FR-KEY-04, FR-LOG-05).
+  Warning in `ecnanib.json` and the auth headers are redacted (FR-KEY-04, FR-LOG-05).
 - Requests carry the model, the system and user content, the output-token cap and the optional schema, nothing else:
   no temperature, thinking or provider-specific switches, and no model identifiers in code (FR-SYNC-05).
 - Output tokens are capped by `Providers:MaxOutputTokens`; a request may ask for fewer, never more (NFR-COST-01).

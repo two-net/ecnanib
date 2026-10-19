@@ -15,12 +15,12 @@ Binance Spot and USDⓈ-M Futures gateway (SRS §3.1.2, EX-01..06). Other module
 
 Rules the module enforces:
 
-- Environment is fixed per key (`ExchangeKeyHandle.Environment`); endpoints come from the `Exchange` section of `appsettings.json`.
+- Environment is fixed per key (`ExchangeKeyHandle.Environment`); endpoints come from the `Exchange` section of `ecnanib.json`.
   Testnet maps to the Spot testnet and the USDⓈ-M **demo** environment.
 - Rate limits: Binance.Net's client-side gate waits on the published limits; 429/418 become `ExchangeRateLimitedException`
   with `RetryAfter`. Reads retry with jittered backoff; order placement and cancellation are never retried.
 - Secrets: `ExchangeCredentials.ApiSecret` is internal and only `BinanceClientRegistry` reads it. Logs and exception
-  messages carry the key id and the masked key only. Library log categories are capped at Warning in `appsettings.json`.
+  messages carry the key id and the masked key only. Library log categories are capped at Warning in `ecnanib.json`.
 - Futures orders always use one-way mode (`positionSide=BOTH`).
 
 Tests: `dotnet test` runs offline. Live checks are opt-in through `tests/.exchange-keys.json` (git-ignored):

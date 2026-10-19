@@ -1,17 +1,33 @@
+using System.Net.Sockets;
 using Ecnanib.Accounts;
 using Ecnanib.Ai;
 using Ecnanib.Components;
+using Ecnanib.Configuration;
 using Ecnanib.Database;
+using Ecnanib.Database.Migrations;
 using Ecnanib.Exchange;
 using Ecnanib.Keys;
 using Ecnanib.ModelSync;
+using Microsoft.AspNetCore.Connections;
+using Microsoft.Extensions.Options;
 
-var builder = WebApplication.CreateBuilder(args);
+// FR-CFG-01/02/06: the one configuration file, from --config or ./ecnanib.json, is the only source. A bad file ends
+// here with its reason on the console and exit code 1; no logger exists yet, so the message goes straight to stderr.
+WebApplicationBuilder builder;
+try
+{
+    builder = EcnanibHost.CreateBuilder(ConfigurationFile.ResolvePath(args));
+}
+catch (ConfigurationException ex)
+{
+    await Console.Error.WriteLineAsync(ex.Message);
+    return 1;
+}
 
-// Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+builder.Services.AddServer(builder.Configuration);
 builder.Services.AddExchange(builder.Configuration);
 builder.Services.AddAiProviders(builder.Configuration);
 builder.Services.AddDatabase(builder.Configuration);
@@ -19,23 +35,28 @@ builder.Services.AddAccounts(builder.Configuration);
 builder.Services.AddModelSync(builder.Configuration);
 builder.Services.AddKeys(builder.Configuration);
 
-var app = builder.Build();
+await using var app = builder.Build();
 
-// DB-02, NFR-ARCH-03: bring the schema up to date before anything else runs; a failure exits the process.
-await app.MigrateDatabaseAsync();
-
-// Configure the HTTP request pipeline.
-if (!app.Environment.IsDevelopment())
+try
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-    app.UseHsts();
+    // DB-02, NFR-ARCH-03: bring the schema up to date before anything else runs; every configured section is
+    // validated first (FR-CFG-06). The cause was logged at Critical, so the process exits without a stack trace.
+    await app.MigrateDatabaseAsync();
+    // FR-CFG-05: the key ring that signs sessions exists after the first start, not after the first request.
+    app.EnsureSystemKeys();
 }
+catch (Exception ex) when (ex is OptionsValidationException or DatabaseMigrationException
+                           || ex is AggregateException aggregate && aggregate.InnerExceptions.All(e => e is OptionsValidationException))
+{
+    return 1;
+}
+
+// There is no Development environment: the error page and status-code pages are the same everywhere.
+app.UseExceptionHandler("/Error", createScopeForErrors: true);
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
 
 // NFR-SEC-01: antiforgery tokens are bound to the signed-in identity, so authentication runs first. The explicit calls
-// also keep WebApplication from inserting these two ahead of the HTTPS redirect.
+// fix the order instead of leaving it to WebApplication's automatic insertion.
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
@@ -45,4 +66,17 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapAccountEndpoints();
 
-app.Run();
+// Resolved before RunAsync, which disposes the host on its way out, including when the server fails to start.
+var endPoint = app.Services.GetRequiredService<IOptions<ServerOptions>>().Value.ToEndPoint();
+try
+{
+    await app.RunAsync();
+}
+catch (Exception ex) when (ex is IOException { InnerException: AddressInUseException } or SocketException)
+{
+    // The Server section names an endpoint this host cannot bind; the same clear exit as any other invalid setting.
+    app.Logger.LogCritical("Cannot listen on {EndPoint}; the application will not start: {Reason}", endPoint, ex.Message);
+    return 1;
+}
+
+return 0;

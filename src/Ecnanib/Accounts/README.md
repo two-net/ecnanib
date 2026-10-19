@@ -4,7 +4,7 @@ Registration, sessions, password change, account deletion, fair-use limits and t
 FR-ACC-01..08; NFR-SEC-01/03; NFR-LEGAL-01/02; C-12, A-09). Other modules depend on `Ecnanib.Accounts.Abstractions`,
 `AddAccounts(...)` and `MapAccountEndpoints()`; the hashing, cookie and throttle types never leave this folder. There
 are users and nothing else: no email verification, roles, payments, plans, organizations or tenants (FR-ACC-05/06).
-`AddAccounts` requires `AddDatabase`.
+`AddAccounts` requires `AddDatabase` and `AddServer`.
 
 | Need | Use |
 |---|---|
@@ -20,9 +20,9 @@ Rules the module enforces:
 - Passwords are hashed with Argon2id (64 MiB, 3 iterations, 1 lane, 16-byte salt) in PHC form; a hash made with weaker
   parameters is upgraded at the user's next sign-in. Length is the only password rule: `Accounts:MinPasswordLength` to
   128 characters (NFR-SEC-01). Emails are trimmed and matched case-insensitively through `users.normalized_email`.
-- One persistent, sliding cookie session (`ecnanib.session`: HttpOnly, SameSite=Lax, Secure outside Development, lifetime
-  `Accounts:SessionDays`), protected by the Data Protection key ring the database module persists (FR-CFG-05) under the
-  application name `Ecnanib`. Every sign-in mints a fresh ticket; nothing from before authentication is carried forward,
+- One persistent, sliding cookie session (`ecnanib.session`: HttpOnly, SameSite=Lax, Secure when `Server:PublicUrl` is
+  https, lifetime `Accounts:SessionDays`), protected by the Data Protection key ring the database module persists
+  (FR-CFG-05) under the application name `Ecnanib`. Every sign-in mints a fresh ticket; nothing from before authentication is carried forward,
   and every state-changing POST, sign-out included, carries an antiforgery token (NFR-SEC-01).
 - The ticket carries the user's security stamp. It is compared with the account every `Accounts:SessionRevalidationMinutes`,
   and at once when the user changed their password or deleted the account (an in-process revocation list; after a

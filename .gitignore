@@ -482,7 +482,8 @@ $RECYCLE.BIN/
 *.swp
 
 #
-appsettings.Development.json
+# Ecnanib: local development configuration (never commit)
+src/Ecnanib/ecnanib.local.json
 # Ecnanib: local live-test exchange keys (never commit)
 tests/.exchange-keys.json
 # Ecnanib: local live-test AI provider keys (never commit)

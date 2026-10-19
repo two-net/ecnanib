@@ -36,7 +36,7 @@ Rules the module enforces:
   no foreign keys so the log sink can never fail on a race (FR-LOG-08): account deletion must delete the user's log
   rows explicitly. Deleting an exchange key sets `agents.exchange_key_id` to null (FR-KEY-06).
 - Keys and secrets are stored plain per A-02 and masked everywhere else (FR-KEY-04). EF and Npgsql log categories are
-  capped at Warning in `appsettings.json` and the connection string never appears in a validation message.
+  capped at Warning in the configuration file (`ecnanib.json`) and the connection string never appears in a validation message.
 - `Database:RetryOnFailureCount` enables Npgsql's retrying execution strategy; code that opens its own transaction
   must run it through `Database.CreateExecutionStrategy().ExecuteAsync(...)`.
 - Paper equity (FR-AGT-11, FR-EXE-04) is derived from the configured starting balance and the account's trades;

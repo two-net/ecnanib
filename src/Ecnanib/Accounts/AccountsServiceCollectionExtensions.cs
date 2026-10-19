@@ -2,6 +2,7 @@ using Ecnanib.Accounts.Abstractions;
 using Ecnanib.Accounts.Authentication;
 using Ecnanib.Accounts.Configuration;
 using Ecnanib.Accounts.Services;
+using Ecnanib.Configuration;
 using Ecnanib.Database.Entities;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -18,7 +19,7 @@ public static class AccountsServiceCollectionExtensions
     /// Registers the accounts module: validated <see cref="AccountsOptions"/> and <see cref="AgentLimitsOptions"/>,
     /// Argon2id password hashing, the sign-in throttle, <see cref="IAccountService"/>, <see cref="IFairUseLimits"/>,
     /// cookie authentication with security-stamp revalidation, authorization and the Blazor authentication state.
-    /// Requires <c>AddDatabase</c>. Adds no hosted service and connects to nothing.
+    /// Requires <c>AddDatabase</c> and <c>AddServer</c>. Adds no hosted service and connects to nothing.
     /// </summary>
     public static IServiceCollection AddAccounts(this IServiceCollection services, IConfiguration configuration)
     {
@@ -57,15 +58,15 @@ public static class AccountsServiceCollectionExtensions
         // FR-ACC-02: one persistent, sliding cookie session. EventsType resolves from the request scope.
         services.AddAuthentication(AccountSession.Scheme).AddCookie();
         services.AddOptions<CookieAuthenticationOptions>(AccountSession.Scheme)
-            .Configure<IOptions<AccountsOptions>, IServiceProvider>((cookie, accounts, provider) =>
+            .Configure<IOptions<AccountsOptions>, IOptions<ServerOptions>>((cookie, accounts, server) =>
             {
-                var development = provider.GetService<IHostEnvironment>()?.IsDevelopment() == true;
                 cookie.Cookie.Name = AccountSession.CookieName;
                 cookie.Cookie.HttpOnly = true;
                 cookie.Cookie.SameSite = SameSiteMode.Lax;
                 cookie.Cookie.IsEssential = true;
-                // Secure everywhere except Development, where the http launch profile must keep working (NFR-SEC-02).
-                cookie.Cookie.SecurePolicy = development ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+                // Secure whenever users reach the application over https (Server:PublicUrl, NFR-SEC-02); a plain-http
+                // public URL is a local deployment, where the flag would make sign-in impossible.
+                cookie.Cookie.SecurePolicy = server.Value.IsHttps ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
                 cookie.ExpireTimeSpan = accounts.Value.SessionLifetime;
                 cookie.SlidingExpiration = true;
                 cookie.LoginPath = "/sign-in";

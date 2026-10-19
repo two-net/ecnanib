@@ -1,4 +1,9 @@
 {
+  "Server": {
+    "BindAddress": "127.0.0.1",
+    "Port": 5207,
+    "PublicUrl": "http://localhost:5207"
+  },
   "Logging": {
     "LogLevel": {
       "Default": "Information",
@@ -10,7 +15,18 @@
       "Npgsql": "Warning"
     }
   },
-  "AllowedHosts": "*",
+  "Database": {
+    "ConnectionString": "",
+    "CommandTimeoutSeconds": 30,
+    "RetryOnFailureCount": 3
+  },
+  "Retention": {
+    "LogDays": 30,
+    "CandleDays": 365,
+    "DeliberationTranscriptDays": 90,
+    "SweepIntervalMinutes": 60,
+    "DeleteBatchSize": 5000
+  },
   "Exchange": {
     "RequestTimeoutSeconds": 15,
     "ReceiveWindowMs": 5000,
@@ -73,18 +89,6 @@
       "MaxDelayMs": 10000,
       "MaxRetryAfterWaitSeconds": 30
     }
-  },
-  "Database": {
-    "ConnectionString": "",
-    "CommandTimeoutSeconds": 30,
-    "RetryOnFailureCount": 3
-  },
-  "Retention": {
-    "LogDays": 30,
-    "CandleDays": 365,
-    "DeliberationTranscriptDays": 90,
-    "SweepIntervalMinutes": 60,
-    "DeleteBatchSize": 5000
   },
   "Accounts": {
     "SessionDays": 30,

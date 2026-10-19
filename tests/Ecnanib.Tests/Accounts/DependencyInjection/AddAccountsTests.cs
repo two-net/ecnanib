@@ -2,6 +2,7 @@ using Ecnanib.Accounts;
 using Ecnanib.Accounts.Abstractions;
 using Ecnanib.Accounts.Authentication;
 using Ecnanib.Accounts.Services;
+using Ecnanib.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Tests.Database;
@@ -55,6 +56,7 @@ public class AddAccountsTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString }).Build();
         var services = new ServiceCollection();
         services.AddRazorComponents().AddInteractiveServerComponents();
+        services.AddServer(configuration);
         services.AddDatabase(configuration);
         services.AddAccounts(configuration);
         await using var provider = services.BuildServiceProvider();
@@ -93,12 +95,13 @@ public class AddAccountsTests
     }
 
     [Theory]
-    [InlineData(null, CookieSecurePolicy.Always)]
-    [InlineData("Production", CookieSecurePolicy.Always)]
-    [InlineData("Development", CookieSecurePolicy.SameAsRequest)]
-    public async Task CookiesAreSecureOnlyOutsideDevelopment(string? environment, CookieSecurePolicy expected)
+    [InlineData(null, CookieSecurePolicy.SameAsRequest)]
+    [InlineData("http://localhost:5207", CookieSecurePolicy.SameAsRequest)]
+    [InlineData("https://ecnanib.example.com", CookieSecurePolicy.Always)]
+    public async Task CookiesAreSecureWhenThePublicUrlIsHttps(string? publicUrl, CookieSecurePolicy expected)
     {
-        await using var provider = AccountsTestHost.BuildServices(environment: environment);
+        var config = publicUrl is null ? null : new Dictionary<string, string?> { ["Server:PublicUrl"] = publicUrl };
+        await using var provider = AccountsTestHost.BuildServices(config: config);
 
         var options = provider.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>().Get(CookieAuthenticationDefaults.AuthenticationScheme);
 

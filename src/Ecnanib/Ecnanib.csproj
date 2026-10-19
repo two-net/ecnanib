@@ -24,4 +24,9 @@
     <InternalsVisibleTo Include="Ecnanib.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- FR-CFG: the developer's local configuration file is never built, copied or published. -->
+    <Content Remove="ecnanib.local.json" />
+  </ItemGroup>
+
 </Project>
