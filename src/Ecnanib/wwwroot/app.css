@@ -123,3 +123,78 @@ main form:not(.inline) button.danger {
     opacity: 0.75;
     font-size: 0.9rem;
 }
+
+/* Keys pages (issue #5); the user-interface work restyles these. */
+.table-wrap {
+    overflow-x: auto;
+}
+
+table.keys {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5rem 0 1rem;
+}
+
+table.keys th, table.keys td {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid #d0d0d0;
+    vertical-align: top;
+}
+
+table.keys th {
+    font-weight: 600;
+}
+
+.status {
+    display: inline-block;
+    padding: 0 0.4rem;
+    border-radius: 0.25rem;
+    font-size: 0.9rem;
+}
+
+.status-valid {
+    background: rgba(38, 176, 80, 0.15);
+    color: #1a7a38;
+}
+
+.status-invalid {
+    background: rgba(179, 33, 33, 0.12);
+    color: #b32121;
+}
+
+.status-unvalidated {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.muted {
+    display: block;
+    opacity: 0.75;
+    font-size: 0.9rem;
+}
+
+dl.details {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.25rem 1rem;
+}
+
+dl.details dt {
+    font-weight: 600;
+}
+
+dl.details dd {
+    margin: 0;
+}
+
+main form:not(.inline) select {
+    font: inherit;
+    padding: 0.4rem 0.5rem;
+}
+
+main form:not(.inline) fieldset {
+    display: grid;
+    gap: 0.25rem;
+    border: 1px solid #d0d0d0;
+    padding: 0.5rem 0.75rem;
+}

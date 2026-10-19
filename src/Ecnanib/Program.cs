@@ -3,6 +3,8 @@ using Ecnanib.Ai;
 using Ecnanib.Components;
 using Ecnanib.Database;
 using Ecnanib.Exchange;
+using Ecnanib.Keys;
+using Ecnanib.ModelSync;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +16,8 @@ builder.Services.AddExchange(builder.Configuration);
 builder.Services.AddAiProviders(builder.Configuration);
 builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddAccounts(builder.Configuration);
+builder.Services.AddModelSync(builder.Configuration);
+builder.Services.AddKeys(builder.Configuration);
 
 var app = builder.Build();
 

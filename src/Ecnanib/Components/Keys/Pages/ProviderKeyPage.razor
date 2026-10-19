@@ -1,0 +1,214 @@
+@page "/keys/providers/{ProviderRoute}"
+@attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@using Ecnanib.Ai.Abstractions
+@using Ecnanib.Database.Entities
+@inject IKeyService Keys
+@inject NavigationManager Navigation
+
+<PageTitle>@Name key</PageTitle>
+
+@if (_slot is { } slot)
+{
+    <h1>@Name key</h1>
+
+    @if (_notice is not null)
+    {
+        <p class="@(_noticeIsError ? "error" : "notice")" role="@(_noticeIsError ? "alert" : "status")">@_notice</p>
+    }
+
+    <section aria-labelledby="current-title">
+        <h2 id="current-title">Current key</h2>
+        @if (slot.Key is { } key)
+        {
+            <dl class="details">
+                <dt>Key</dt><dd><code>@key.MaskedApiKey</code></dd>
+                <dt>Status</dt>
+                <dd>
+                    <span class="status @StatusClass(key.Status)">@key.Status</span>
+                    @if (key.Status == KeyStatus.Invalid && key.LastValidationError is not null)
+                    {
+                        <span class="muted">@key.LastValidationError</span>
+                    }
+                </dd>
+                <dt>Last checked</dt><dd>@Stamp(key.LastValidatedAt)</dd>
+                <dt>Added</dt><dd>@Stamp(key.CreatedAt)</dd>
+                <dt>Running or paused agents using it</dt><dd>@slot.ActiveAgents</dd>
+            </dl>
+            <form method="post" @formname="validate-provider-key" @onsubmit="ValidateAsync" class="inline">
+                <AntiforgeryToken />
+                <button type="submit">Validate now</button>
+            </form>
+        }
+        else
+        {
+            <p>@KeyMessages.ProviderUnavailable(slot.Provider)</p>
+        }
+    </section>
+
+    <section aria-labelledby="save-title">
+        <h2 id="save-title">@(slot.Key is null ? "Add" : "Replace") the key</h2>
+        <p>The key is validated by listing @Name's models before it is saved, and the model catalog is refreshed from the answer.</p>
+        <EditForm Model="Save" FormName="save-provider-key" OnValidSubmit="SaveAsync" OnInvalidSubmit="ClearSecrets" method="post">
+            <DataAnnotationsValidator />
+            @if (_saveError is not null)
+            {
+                <p class="error" role="alert">@_saveError</p>
+            }
+            <ValidationSummary />
+            <label>
+                API key
+                <InputText @bind-Value="Save.ApiKey" type="password" autocomplete="off" spellcheck="false" maxlength="512" required />
+            </label>
+            <button type="submit">Validate and save</button>
+        </EditForm>
+    </section>
+
+    @if (slot.Key is not null)
+    {
+        <section aria-labelledby="delete-title">
+            <h2 id="delete-title">Delete key</h2>
+            <p>Council roles on @Name become unavailable. @(slot.ActiveAgents > 0 ? KeyMessages.AgentsInUse(slot.ActiveAgents) : "No running or paused agent uses it.")</p>
+            <EditForm Model="Delete" FormName="delete-provider-key" OnValidSubmit="DeleteAsync" method="post">
+                <DataAnnotationsValidator />
+                @if (_deleteError is not null)
+                {
+                    <p class="error" role="alert">@_deleteError</p>
+                }
+                <ValidationSummary />
+                <label class="check">
+                    <InputCheckbox @bind-Value="Delete.Confirm" />
+                    I understand that agents can no longer use this key.
+                </label>
+                @if (slot.ActiveAgents > 0)
+                {
+                    <label class="check">
+                        <InputCheckbox @bind-Value="Delete.StopAgents" />
+                        Stop the @KeyMessages.Plural(slot.ActiveAgents, "running or paused agent", "running or paused agents") that use it as part of the deletion.
+                    </label>
+                }
+                <button type="submit" class="danger">Delete key</button>
+            </EditForm>
+        </section>
+    }
+
+    <p><a href="/keys">Back to keys</a></p>
+}
+
+@code {
+    private AiProvider _provider;
+    private ProviderKeySlot? _slot;
+    private string? _notice;
+    private bool _noticeIsError;
+    private string? _saveError;
+    private string? _deleteError;
+
+    [Parameter]
+    public string ProviderRoute { get; set; } = "";
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "save-provider-key")]
+    private SaveInput Save { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "delete-provider-key")]
+    private DeleteInput Delete { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    private Guid UserId => HttpContext.User.RequireUserId();
+
+    private string Name => ProviderNames.Display(_provider);
+
+    private string Self => "/keys/providers/" + ProviderNames.Route(_provider);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Save ??= new();
+        Delete ??= new();
+        if (ProviderNames.Parse(ProviderRoute) is not { } provider)
+        {
+            Navigation.NotFound();
+            return;
+        }
+
+        _provider = provider;
+        _slot = await Keys.GetProviderSlotAsync(UserId, provider, HttpContext.RequestAborted);
+        (_notice, _noticeIsError) = Status switch
+        {
+            "valid" => ($"{Name} accepted the key.", false),
+            "invalid" => ($"{Name} rejected the key: {_slot.Key?.LastValidationError ?? "see the status above"}.", true),
+            "failed" => ("The key could not be checked; its status is unchanged. Try again.", true),
+            _ => (null, false),
+        };
+    }
+
+    private async Task ValidateAsync()
+    {
+        var result = await Keys.ValidateProviderKeyAsync(UserId, _provider, HttpContext.RequestAborted);
+        Navigation.NavigateTo(result.Outcome switch
+        {
+            KeyValidationOutcome.Valid => Self + "?status=valid",
+            KeyValidationOutcome.Invalid => Self + "?status=invalid",
+            KeyValidationOutcome.Failed => Self + "?status=failed",
+            _ => "/keys",
+        });
+    }
+
+    private async Task SaveAsync()
+    {
+        var result = await Keys.SetProviderKeyAsync(UserId, _provider, Save.ApiKey, HttpContext.RequestAborted);
+        ClearSecrets();
+        if (result.Status == KeySaveStatus.Succeeded)
+        {
+            Navigation.NavigateTo($"/keys?status=provider-saved&provider={ProviderNames.Route(_provider)}&models={result.ModelCount}");
+            return;
+        }
+
+        _saveError = KeyMessages.ForSave(result, Name);
+    }
+
+    private async Task DeleteAsync()
+    {
+        var result = await Keys.DeleteProviderKeyAsync(UserId, _provider, Delete.StopAgents, HttpContext.RequestAborted);
+        switch (result.Status)
+        {
+            case KeyDeletionStatus.Succeeded:
+            case KeyDeletionStatus.NotFound:
+                Navigation.NavigateTo($"/keys?status=provider-deleted&provider={ProviderNames.Route(_provider)}&agents={result.Agents}");
+                return;
+            case KeyDeletionStatus.AgentsInUse:
+                _deleteError = KeyMessages.AgentsInUse(result.Agents);
+                _slot = await Keys.GetProviderSlotAsync(UserId, _provider, HttpContext.RequestAborted);
+                break;
+        }
+    }
+
+    // FR-KEY-04: a re-rendered form must never echo the key back into the page.
+    private void ClearSecrets() => Save.ApiKey = "";
+
+    private static string StatusClass(KeyStatus status) => status switch
+    {
+        KeyStatus.Valid => "status-valid",
+        KeyStatus.Invalid => "status-invalid",
+        _ => "status-unvalidated",
+    };
+
+    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
+
+    private sealed class SaveInput
+    {
+        [Required(ErrorMessage = "Enter the API key.")]
+        public string ApiKey { get; set; } = "";
+    }
+
+    private sealed class DeleteInput
+    {
+        [Range(typeof(bool), "true", "true", ErrorMessage = "Tick the box to confirm.")]
+        public bool Confirm { get; set; }
+
+        public bool StopAgents { get; set; }
+    }
+}

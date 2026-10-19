@@ -1,0 +1,254 @@
+@page "/keys"
+@attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@using Ecnanib.Ai.Abstractions
+@using Ecnanib.Database.Entities
+@using Ecnanib.Exchange.Abstractions
+@inject IKeyService KeyService
+@inject NavigationManager Navigation
+
+<PageTitle>Keys</PageTitle>
+
+<h1>Keys</h1>
+<p>Ecnanib trades and consults the AI providers with your own keys and holds none of its own. Keys are shown masked and never appear in logs or prompts.</p>
+
+@if (_notice is not null)
+{
+    <p class="notice" role="status">@_notice</p>
+}
+
+<section aria-labelledby="exchange-title">
+    <h2 id="exchange-title">Binance API keys</h2>
+    @if (_overview is null || _overview.ExchangeKeys.Count == 0)
+    {
+        <p>You have no Binance key. @KeyMessages.PaperAgentsNeedNoKey</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="keys">
+                <thead>
+                    <tr><th>Label</th><th>Environment</th><th>Markets</th><th>Key</th><th>Status</th><th>Checked</th><th>Agents</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var key in _overview.ExchangeKeys)
+                    {
+                        <tr>
+                            <td>@key.Label</td>
+                            <td>@key.Environment</td>
+                            <td>@Markets(key)</td>
+                            <td><code>@key.MaskedApiKey</code></td>
+                            <td>
+                                <span class="status @StatusClass(key.Status)">@key.Status</span>
+                                @if (key.Status == KeyStatus.Invalid && key.LastValidationError is not null)
+                                {
+                                    <span class="muted">@key.LastValidationError</span>
+                                }
+                            </td>
+                            <td>@Stamp(key.LastValidatedAt)</td>
+                            <td>@key.ActiveAgents</td>
+                            <td><a href="/keys/exchange/@key.Id">Manage</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="hint">@KeyMessages.PaperAgentsNeedNoKey</p>
+    }
+
+    <h3 id="add-exchange-title">Add a Binance key</h3>
+    <EditForm Model="Input" FormName="add-exchange-key" OnValidSubmit="AddAsync" OnInvalidSubmit="ClearSecrets" method="post">
+        <DataAnnotationsValidator />
+        @if (_error is not null)
+        {
+            <p class="error" role="alert">@_error</p>
+        }
+        <ValidationSummary />
+        <label>
+            Label
+            <InputText @bind-Value="Input.Label" maxlength="100" autocomplete="off" required />
+        </label>
+        <label>
+            Environment
+            <InputSelect @bind-Value="Input.Environment">
+                <option value="@ExchangeEnvironment.Production">Production</option>
+                <option value="@ExchangeEnvironment.Testnet">Testnet</option>
+            </InputSelect>
+        </label>
+        <fieldset>
+            <legend>Markets the key may be used for</legend>
+            <label class="check">
+                <InputCheckbox @bind-Value="Input.AllowSpot" />
+                Spot
+            </label>
+            <label class="check">
+                <InputCheckbox @bind-Value="Input.AllowFutures" />
+                USDⓈ-M Futures
+            </label>
+        </fieldset>
+        <label>
+            API key
+            <InputText @bind-Value="Input.ApiKey" autocomplete="off" spellcheck="false" maxlength="256" required />
+        </label>
+        <label>
+            Secret
+            <InputText @bind-Value="Input.ApiSecret" type="password" autocomplete="off" spellcheck="false" maxlength="256" required />
+        </label>
+        <p class="hint">@KeyMessages.BinanceKeyHint</p>
+        <button type="submit">Validate and save</button>
+    </EditForm>
+</section>
+
+<section aria-labelledby="providers-title">
+    <h2 id="providers-title">AI provider keys</h2>
+    <p>One key per provider. A council role assigned to a provider without a key cannot run.</p>
+    @if (_overview is not null)
+    {
+        <div class="table-wrap">
+            <table class="keys">
+                <thead>
+                    <tr><th>Provider</th><th>Key</th><th>Status</th><th>Checked</th><th>Agents</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var slot in _overview.Providers)
+                    {
+                        <tr>
+                            <td>@ProviderNames.Display(slot.Provider)</td>
+                            @if (slot.Key is { } key)
+                            {
+                                <td><code>@key.MaskedApiKey</code></td>
+                                <td>
+                                    <span class="status @StatusClass(key.Status)">@key.Status</span>
+                                    @if (key.Status == KeyStatus.Invalid && key.LastValidationError is not null)
+                                    {
+                                        <span class="muted">@key.LastValidationError</span>
+                                    }
+                                </td>
+                                <td>@Stamp(key.LastValidatedAt)</td>
+                                <td>@slot.ActiveAgents</td>
+                                <td><a href="/keys/providers/@ProviderNames.Route(slot.Provider)">Manage</a></td>
+                            }
+                            else
+                            {
+                                <td colspan="3"><span class="muted">@KeyMessages.ProviderUnavailable(slot.Provider)</span></td>
+                                <td>@slot.ActiveAgents</td>
+                                <td><a href="/keys/providers/@ProviderNames.Route(slot.Provider)">Add key…</a></td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private KeyOverview? _overview;
+    private string? _error;
+    private string? _notice;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "add-exchange-key")]
+    private AddExchangeKeyInput Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    [SupplyParameterFromQuery(Name = "agents")]
+    private int? Agents { get; set; }
+
+    [SupplyParameterFromQuery(Name = "models")]
+    private int? Models { get; set; }
+
+    [SupplyParameterFromQuery(Name = "provider")]
+    private string? Provider { get; set; }
+
+    private Guid UserId => HttpContext.User.RequireUserId();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        _notice = Notice();
+        _overview = await KeyService.GetOverviewAsync(UserId, HttpContext.RequestAborted);
+    }
+
+    private async Task AddAsync()
+    {
+        var result = await KeyService.AddExchangeKeyAsync(UserId,
+            new ExchangeKeyInput(Input.Label, Input.Environment, Input.AllowSpot, Input.AllowFutures, Input.ApiKey, Input.ApiSecret),
+            HttpContext.RequestAborted);
+        ClearSecrets();
+        if (result.Status == KeySaveStatus.Succeeded)
+        {
+            Navigation.NavigateTo("/keys?status=exchange-added");
+            return;
+        }
+
+        _error = KeyMessages.ForSave(result, "Binance");
+    }
+
+    // FR-KEY-04: a re-rendered form must never echo the key or secret back into the page.
+    private void ClearSecrets()
+    {
+        Input.ApiKey = "";
+        Input.ApiSecret = "";
+    }
+
+    private string? Notice()
+    {
+        var provider = ProviderNames.Parse(Provider) is { } p ? ProviderNames.Display(p) : "The provider";
+        return Status switch
+        {
+            "exchange-added" => "The Binance key was validated and saved.",
+            "exchange-replaced" => "The key's credentials were validated and replaced.",
+            "exchange-deleted" => "The Binance key was deleted." + KeyMessages.AgentsStopped(Agents ?? 0),
+            "provider-saved" => $"The {provider} key was validated and saved.{(Models is > 0 ? $" {KeyMessages.Plural(Models.Value, "model", "models")} listed." : string.Empty)}",
+            "provider-deleted" => $"The {provider} key was deleted." + KeyMessages.AgentsStopped(Agents ?? 0),
+            _ => null,
+        };
+    }
+
+    private static string Markets(ExchangeKeyView key) => (key.AllowSpot, key.AllowFutures) switch
+    {
+        (true, true) => "Spot, Futures",
+        (true, false) => "Spot",
+        (false, true) => "Futures",
+        _ => "None",
+    };
+
+    private static string StatusClass(KeyStatus status) => status switch
+    {
+        KeyStatus.Valid => "status-valid",
+        KeyStatus.Invalid => "status-invalid",
+        _ => "status-unvalidated",
+    };
+
+    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
+
+    private sealed class AddExchangeKeyInput : IValidatableObject
+    {
+        [Required(ErrorMessage = "Enter a label.")]
+        [StringLength(100, ErrorMessage = "The label must be at most 100 characters.")]
+        public string Label { get; set; } = "";
+
+        public ExchangeEnvironment Environment { get; set; } = ExchangeEnvironment.Production;
+
+        public bool AllowSpot { get; set; } = true;
+
+        public bool AllowFutures { get; set; }
+
+        [Required(ErrorMessage = "Enter the API key.")]
+        public string ApiKey { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter the secret.")]
+        public string ApiSecret { get; set; } = "";
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (!AllowSpot && !AllowFutures)
+                yield return new ValidationResult("Select at least one market.", [nameof(AllowSpot)]);
+        }
+    }
+}
