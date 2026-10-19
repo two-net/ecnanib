@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using Ecnanib.Accounts;
+using Ecnanib.Agents;
 using Ecnanib.Ai;
 using Ecnanib.Components;
 using Ecnanib.Configuration;
@@ -33,6 +34,8 @@ builder.Services.AddAiProviders(builder.Configuration);
 builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddAccounts(builder.Configuration);
 builder.Services.AddModelSync(builder.Configuration);
+// Before AddKeys: the runtime's own key handling (stop with orders cancelled, Error halts evaluation) replaces the default.
+builder.Services.AddAgents(builder.Configuration);
 builder.Services.AddKeys(builder.Configuration);
 
 await using var app = builder.Build();

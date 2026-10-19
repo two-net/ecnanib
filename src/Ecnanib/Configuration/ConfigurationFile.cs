@@ -26,7 +26,7 @@ public static class ConfigurationFile
     /// </summary>
     public static readonly IReadOnlyList<string> Sections =
     [
-        ServerOptions.SectionName, "Database", LoggingSection, "Exchange", "Providers", "Agents", "Retention", "Accounts", "Keys",
+        ServerOptions.SectionName, "Database", LoggingSection, "Exchange", "Providers", "Agents", "RiskCaps", "Paper", "Retention", "Accounts", "Keys",
     ];
 
     public static readonly string Usage =

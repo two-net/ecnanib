@@ -51,10 +51,10 @@ Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 | logging | `Logging` | minimum level per category for the console; per-sink levels arrive with logging (#15); log retention is `Retention:LogDays` | logging (#15) |
 | exchange | `Exchange` | endpoints, request timeout, reconciliation interval, streams, retry | exchange (#1) |
 | providers | `Providers` | endpoints per provider, model sync interval, miss threshold, call timeout, max output tokens | AI (#2) |
-| agents | `Agents` | `MaxAgentsPerUser`, `MaxRunningAgentsPerUser`; deadlines, concurrency and entry timeout arrive with agents (#7) and performance (#16) | accounts (#4), agents (#7) |
-| risk caps | — | arrives with execution (#13) | execution (#13) |
+| agents | `Agents` | `MaxAgentsPerUser`, `MaxRunningAgentsPerUser` (accounts); `EvaluationDeadlineSeconds` per timeframe, `MaxConcurrentEvaluations`, `DefaultEntryTimeoutCandles` (agents) | accounts (#4), agents (#7) |
+| risk caps | `RiskCaps` | `MaxRiskPerTradePercent`, `MaxLeverage`, `MaxDailyLossPercent`, `MaxOpenPositions`; agents validate against them, execution (#13) enforces them at order time | agents (#7), execution (#13) |
 | market data | — | backfill arrives with market data (#12); candle retention is `Retention:CandleDays` | market data (#12) |
-| paper | — | fee rates and slippage arrive with agents (#7) | agents (#7) |
+| paper | `Paper` | `StartingBalance`, maker and taker fee percents per market, `SlippagePercent` | agents (#7) |
 | ui | — | default theme and animation defaults arrive with the UI (#14) | UI (#14) |
 | retention | `Retention` | log, candle and deliberation-transcript days, sweep interval, batch size | database (#3) |
 | beyond the appendix | `Accounts`, `Keys` | sessions, throttling, password length; key re-validation | accounts (#4), keys (#5) |

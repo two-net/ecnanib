@@ -1,4 +1,5 @@
 using Ecnanib.Accounts.Configuration;
+using Ecnanib.Agents.Configuration;
 using Ecnanib.Ai.Configuration;
 using Ecnanib.Configuration;
 using Ecnanib.Database.Configuration;
@@ -105,7 +106,7 @@ public class ConfigurationFileTests
         var ex = Assert.Throws<ConfigurationException>(() => Load(path));
 
         Assert.Contains($"Configuration file {path} has unknown top-level section(s): 'AllowedHosts', 'Databse'.", ex.Message);
-        Assert.Contains("Known sections: Accounts, Agents, Database, Exchange, Keys, Logging, Providers, Retention, Server.", ex.Message);
+        Assert.Contains("Known sections: Accounts, Agents, Database, Exchange, Keys, Logging, Paper, Providers, Retention, RiskCaps, Server.", ex.Message);
     }
 
     [Fact]
@@ -162,10 +163,12 @@ public class ConfigurationFileTests
         string[] expected =
         [
             ServerOptions.SectionName, DatabaseOptions.SectionName, ConfigurationFile.LoggingSection, ExchangeOptions.SectionName,
-            AiOptions.SectionName, AgentLimitsOptions.SectionName, RetentionOptions.SectionName, AccountsOptions.SectionName, KeysOptions.SectionName,
+            AiOptions.SectionName, AgentLimitsOptions.SectionName, AgentsOptions.SectionName, RiskCapsOptions.SectionName, PaperOptions.SectionName,
+            RetentionOptions.SectionName, AccountsOptions.SectionName, KeysOptions.SectionName,
         ];
 
-        Assert.Equal(expected.Order(StringComparer.Ordinal), ConfigurationFile.Sections.Order(StringComparer.Ordinal));
+        // Accounts (fair-use limits) and Agents (runtime settings) bind the same section, so the constant appears twice here and once in the file.
+        Assert.Equal(expected.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal), ConfigurationFile.Sections.Order(StringComparer.Ordinal));
     }
 
     private static ConfigurationManager Load(string path)

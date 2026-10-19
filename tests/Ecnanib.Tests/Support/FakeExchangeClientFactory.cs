@@ -29,7 +29,20 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
 
     public IReadOnlyCollection<string> CachedKeyIds => _cached.Keys.ToArray();
 
-    public IPublicMarketData GetPublicData(ExchangeEnvironment environment, MarketType market) => throw new NotSupportedException();
+    /// <summary>Called for exchange-info reads; throw to script an outage. Unset, every public-data call is unsupported, as before the agents work.</summary>
+    public Func<ExchangeEnvironment, MarketType, ExchangeInfo>? OnExchangeInfo { get; set; }
+
+    /// <summary>Called for recent-candle reads (symbol, interval, count); unset, the call is unsupported.</summary>
+    public Func<string, CandleInterval, int, IReadOnlyList<Candle>>? OnRecentCandles { get; set; }
+
+    public List<(ExchangeEnvironment Environment, MarketType Market)> ExchangeInfoReads { get; } = [];
+
+    /// <summary>Exchange information listing the given symbols as trading, with permissive filters.</summary>
+    public static ExchangeInfo Listing(params string[] symbols) => new(DateTimeOffset.UnixEpoch,
+        symbols.Select(s => new SymbolInfo(s, s[..^4], s[^4..], true, "TRADING", 2, 3, true,
+            new SymbolFilters(0.01m, 0.01m, 1_000_000m, 0.001m, 0.001m, 1000m, null, null, null, 5m, null, true))).ToList(), []);
+
+    public IPublicMarketData GetPublicData(ExchangeEnvironment environment, MarketType market) => new FakePublicMarketData(this, environment, market);
 
     public ISpotAccountClient GetSpotClient(ExchangeKeyHandle key) => Client(key, MarketType.Spot);
 
@@ -65,6 +78,31 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
         if (key.Environment != ExchangeEnvironment.Production)
             return ApiKeyPermissions.Unverified;
         return OnPermissions?.Invoke(key) ?? TradingOnly;
+    }
+
+    private sealed class FakePublicMarketData(FakeExchangeClientFactory owner, ExchangeEnvironment environment, MarketType market) : IPublicMarketData
+    {
+        public ExchangeEnvironment Environment => environment;
+
+        public MarketType Market => market;
+
+        public Task<DateTimeOffset> GetServerTimeAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<ExchangeInfo> GetExchangeInfoAsync(CancellationToken ct)
+        {
+            lock (owner.ExchangeInfoReads)
+                owner.ExchangeInfoReads.Add((environment, market));
+            return Task.FromResult(owner.OnExchangeInfo?.Invoke(environment, market) ?? throw new NotSupportedException("No exchange information is scripted."));
+        }
+
+        public Task<IReadOnlyList<Candle>> GetCandlesAsync(string symbol, CandleInterval interval, DateTimeOffset? from, DateTimeOffset? to, int? limit, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<Candle>> GetRecentCandlesAsync(string symbol, CandleInterval interval, int count, bool closedOnly, CancellationToken ct) =>
+            Task.FromResult(owner.OnRecentCandles?.Invoke(symbol, interval, count) ?? throw new NotSupportedException("No candles are scripted."));
+
+        public Task<PriceTick> GetPriceAsync(string symbol, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<MarkPrice> GetMarkPriceAsync(string symbol, CancellationToken ct) => throw new NotSupportedException();
     }
 
     private sealed class FakeExchangeAccountClient(FakeExchangeClientFactory owner, ExchangeKeyHandle key, MarketType market) : ISpotAccountClient, IFuturesAccountClient

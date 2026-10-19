@@ -100,7 +100,29 @@
   },
   "Agents": {
     "MaxAgentsPerUser": 10,
-    "MaxRunningAgentsPerUser": 3
+    "MaxRunningAgentsPerUser": 3,
+    "EvaluationDeadlineSeconds": {
+      "15m": 90,
+      "1H": 180,
+      "4H": 300,
+      "1D": 300
+    },
+    "MaxConcurrentEvaluations": 10,
+    "DefaultEntryTimeoutCandles": 1
+  },
+  "RiskCaps": {
+    "MaxRiskPerTradePercent": 2,
+    "MaxLeverage": 20,
+    "MaxDailyLossPercent": 10,
+    "MaxOpenPositions": 5
+  },
+  "Paper": {
+    "StartingBalance": 10000,
+    "SpotMakerFeePercent": 0.1,
+    "SpotTakerFeePercent": 0.1,
+    "FuturesMakerFeePercent": 0.02,
+    "FuturesTakerFeePercent": 0.05,
+    "SlippagePercent": 0.05
   },
   "Keys": {
     "RevalidationIntervalMinutes": 60,

@@ -1,0 +1,91 @@
+using System.Text.Json;
+using Ecnanib.Ai.Abstractions;
+using Ecnanib.Database.Entities;
+using Ecnanib.Exchange.Abstractions;
+
+namespace Ecnanib.Agents.Abstractions;
+
+// Everything the pages show. Views never carry a key value.
+
+public sealed record AgentSummary(
+    Guid Id,
+    string Name,
+    MarketType MarketType,
+    string Symbol,
+    CandleInterval Timeframe,
+    string StrategyId,
+    string StrategyName,
+    AgentMode Mode,
+    AgentState State,
+    string? StateReason,
+    DateTimeOffset? LastEvaluatedAt,
+    EvaluationOutcome? LastOutcome,
+    int OpenPositions,
+    DateTimeOffset UpdatedAt);
+
+public sealed record CouncilAssignmentView(CouncilRole Role, AiProvider Provider, string Model, bool Enabled);
+
+/// <summary><see cref="IsClosing"/> means a close-at-market order is waiting for its fill; <see cref="IsUnmanaged"/> marks a position left open on Stop (FR-AGT-06).</summary>
+public sealed record OpenPositionView(
+    Guid TradeId,
+    PositionSide Side,
+    decimal Size,
+    decimal EntryPrice,
+    decimal? CurrentStop,
+    bool IsUnmanaged,
+    bool IsClosing,
+    bool IsPaper,
+    DateTimeOffset OpenedAt);
+
+public sealed record OpenOrderView(
+    Guid OrderId,
+    OrderPurpose Purpose,
+    OrderType Type,
+    OrderSide Side,
+    decimal? Price,
+    decimal? StopPrice,
+    decimal Quantity,
+    OrderStatus Status,
+    bool IsPaper,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset CreatedAt);
+
+public sealed record EvaluationView(
+    Guid Id,
+    DateTimeOffset CandleOpenTime,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? FinishedAt,
+    EvaluationOutcome Outcome,
+    string? OutcomeDetail,
+    bool CouncilConsulted,
+    DecisionAction? FinalAction);
+
+/// <summary>Old and new values are the stored JSON as text (FR-AGT-07).</summary>
+public sealed record AgentChangeView(DateTimeOffset Timestamp, string Field, string? OldValue, string? NewValue);
+
+public sealed record AgentDetail(
+    Guid Id,
+    string Name,
+    MarketType MarketType,
+    string Symbol,
+    CandleInterval Timeframe,
+    string StrategyId,
+    int StrategyVersion,
+    IReadOnlyDictionary<string, JsonElement> Parameters,
+    AgentMode Mode,
+    Guid? ExchangeKeyId,
+    int? Leverage,
+    MarginType? MarginType,
+    RiskLimits RiskLimits,
+    bool Discretionary,
+    AgentState State,
+    PauseCause? PauseCause,
+    DateTimeOffset? AutoResumeAt,
+    string? StateReason,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<CouncilAssignmentView> Council,
+    IReadOnlyList<OpenPositionView> OpenPositions,
+    IReadOnlyList<OpenOrderView> OpenOrders,
+    IReadOnlyList<EvaluationView> RecentEvaluations,
+    IReadOnlyList<AgentChangeView> RecentChanges);

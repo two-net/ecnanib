@@ -31,9 +31,9 @@ Rules the module enforces:
 - An exchange key is "used" by Running or Paused live agents that reference it; paper agents never need one (FR-KEY-09).
   A provider key is used by the user's Running or Paused agents with an enabled council role on that provider, in both
   modes. Deletion is refused with `AgentsInUse` unless the caller asks to stop them, which moves them to Stopped with
-  a reason first (FR-KEY-06). Until the agents runtime exists this is the state transition only; the runtime's Start
-  must take the key under its own transaction, since a Start committed between the count and the delete leaves a live
-  agent without a key.
+  a reason first (FR-KEY-06). The agents runtime registers its own `IKeyDependentAgents`, so the stop also cancels the
+  agents' orders and flags their positions unmanaged; a Start committed between the count and the delete leaves a live
+  agent without a key, which its next evaluation turns into Error.
 - `KeyRevalidator` re-checks every key whose last check is older than `Keys:RevalidationIntervalMinutes`, one at a
   time, two minutes after start and then every interval (FR-KEY-07). An invalid key is marked with the cause and the
   Running or Paused agents using it enter Error with `state_reason` set, so they open nothing new; a key that recovers

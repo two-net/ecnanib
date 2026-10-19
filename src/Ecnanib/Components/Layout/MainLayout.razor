@@ -6,6 +6,7 @@
         <AuthorizeView>
             <Authorized>
                 <span class="user">@context.User.Identity?.Name</span>
+                <a href="/agents">Agents</a>
                 <a href="/keys">Keys</a>
                 <a href="/settings">Settings</a>
                 <form method="post" action="/sign-out" class="inline">

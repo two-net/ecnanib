@@ -198,3 +198,74 @@ main form:not(.inline) fieldset {
     border: 1px solid #d0d0d0;
     padding: 0.5rem 0.75rem;
 }
+
+/* Agents pages (issue #7); the user-interface work restyles these. */
+table.agents {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5rem 0 1rem;
+}
+
+table.agents th, table.agents td {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid #d0d0d0;
+    vertical-align: top;
+}
+
+table.agents th {
+    font-weight: 600;
+}
+
+.status-draft, .status-stopped {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.status-running {
+    background: rgba(38, 176, 80, 0.15);
+    color: #1a7a38;
+}
+
+.status-paused {
+    background: rgba(229, 160, 0, 0.18);
+    color: #7a5600;
+}
+
+.status-error {
+    background: rgba(179, 33, 33, 0.12);
+    color: #b32121;
+}
+
+.unmanaged {
+    color: #b32121;
+    font-weight: 600;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    align-items: flex-start;
+}
+
+.actions form.inline {
+    margin: 0;
+}
+
+.field-errors {
+    color: #b32121;
+    margin: 0 0 0.5rem;
+    padding-left: 1.2rem;
+}
+
+form .parameters {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 0.5rem 1rem;
+}
+
+table.council td select, table.council td input {
+    width: 100%;
+    font: inherit;
+    padding: 0.3rem 0.4rem;
+}

@@ -39,7 +39,7 @@ Rules the module enforces:
   capped at Warning in the configuration file (`ecnanib.json`) and the connection string never appears in a validation message.
 - `Database:RetryOnFailureCount` enables Npgsql's retrying execution strategy; code that opens its own transaction
   must run it through `Database.CreateExecutionStrategy().ExecuteAsync(...)`.
-- Paper equity (FR-AGT-11, FR-EXE-04) is derived from the configured starting balance and the account's trades;
+- Paper equity (FR-AGT-11, FR-EXE-04) is derived from the configured starting balance (`Paper:StartingBalance`) and the agent's own closed paper trades;
   the daily loss (FR-EXE-09) is derived from `trades.realized_pnl` per UTC day. Neither has a column.
 - Enums are text except the ordinal ones compared by range: `log_entries.level` and the entry-window days are
   integers, so "Warning and above" and day ranges translate correctly.

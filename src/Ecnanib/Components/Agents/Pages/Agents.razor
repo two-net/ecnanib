@@ -1,0 +1,87 @@
+@page "/agents"
+@attribute [Authorize]
+@using Ecnanib.Database.Entities
+@inject IAgentService AgentService
+
+<PageTitle>Agents</PageTitle>
+
+<h1>Agents</h1>
+<p>Each agent trades one symbol on one market at one timeframe with one strategy and one council. Running and paused agents are evaluated server-side at every candle close, also while you are offline.</p>
+
+@if (_notice is not null)
+{
+    <p class="notice" role="status">@_notice</p>
+}
+
+<p><a href="/agents/new">New agent…</a></p>
+
+@if (_agents is null || _agents.Count == 0)
+{
+    <p>@AgentMessages.NoAgents</p>
+}
+else
+{
+    <div class="table-wrap">
+        <table class="agents">
+            <thead>
+                <tr><th>Name</th><th>Market</th><th>Timeframe</th><th>Strategy</th><th>Mode</th><th>State</th><th>Last evaluation</th><th>Positions</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var agent in _agents)
+                {
+                    <tr>
+                        <td><a href="/agents/@agent.Id">@agent.Name</a></td>
+                        <td>@agent.Symbol <span class="muted">@AgentMessages.Market(agent.MarketType)</span></td>
+                        <td>@AgentMessages.Timeframe(agent.Timeframe)</td>
+                        <td>@agent.StrategyName</td>
+                        <td>@AgentMessages.Mode(agent.Mode)</td>
+                        <td>
+                            <span class="status @AgentMessages.StateClass(agent.State)">@agent.State</span>
+                            @if (agent.StateReason is not null)
+                            {
+                                <span class="muted">@agent.StateReason</span>
+                            }
+                        </td>
+                        <td>
+                            @if (agent.LastOutcome is { } outcome)
+                            {
+                                <text>@AgentMessages.Outcome(outcome)</text>
+                                <span class="muted">@Stamp(agent.LastEvaluatedAt)</span>
+                            }
+                            else
+                            {
+                                <span class="muted">never</span>
+                            }
+                        </td>
+                        <td>@agent.OpenPositions</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<AgentSummary>? _agents;
+    private string? _notice;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    private Guid UserId => HttpContext.User.RequireUserId();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _notice = Status switch
+        {
+            "deleted" => "The agent was deleted.",
+            _ => null,
+        };
+        _agents = await AgentService.ListAsync(UserId, HttpContext.RequestAborted);
+    }
+
+    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
+}

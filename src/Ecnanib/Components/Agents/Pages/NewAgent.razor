@@ -1,0 +1,161 @@
+@page "/agents/new"
+@attribute [Authorize]
+@using Ecnanib.Agents.Configuration
+@using Ecnanib.Database.Entities
+@using Ecnanib.Exchange.Abstractions
+@using Microsoft.Extensions.Options
+@inject IAgentService AgentService
+@inject IKeyService KeyService
+@inject IOptions<RiskCapsOptions> RiskCaps
+@inject NavigationManager Navigation
+
+<PageTitle>New agent</PageTitle>
+
+<h1>New agent</h1>
+<p>Name the agent and choose its market, symbol, timeframe and mode. It is created as a draft with the timeframe's default strategy, the default council and default risk limits, which you can change before starting it.</p>
+
+<EditForm Model="Input" FormName="create-agent" OnValidSubmit="CreateAsync" method="post">
+    <DataAnnotationsValidator />
+    @if (_errors.Count > 0)
+    {
+        <ul class="field-errors" role="alert">
+            @foreach (var error in _errors)
+            {
+                <li>@error</li>
+            }
+        </ul>
+    }
+    <ValidationSummary />
+    <label>
+        Name
+        <InputText @bind-Value="Input.Name" maxlength="100" autocomplete="off" required />
+    </label>
+    <label>
+        Market
+        <InputSelect @bind-Value="Input.MarketType">
+            <option value="@MarketType.Spot">Spot (long only)</option>
+            <option value="@MarketType.UsdFutures">USDⓈ-M Futures (long or short)</option>
+        </InputSelect>
+    </label>
+    <label>
+        Symbol
+        <InputText @bind-Value="Input.Symbol" maxlength="30" autocomplete="off" spellcheck="false" placeholder="BTCUSDT" required />
+    </label>
+    <label>
+        Timeframe
+        <InputSelect @bind-Value="Input.Timeframe">
+            @foreach (var timeframe in AgentsOptions.Timeframes)
+            {
+                <option value="@timeframe">@AgentsOptions.KeyOf(timeframe)</option>
+            }
+        </InputSelect>
+    </label>
+    <label>
+        Mode
+        <InputSelect @bind-Value="Input.Mode">
+            <option value="@AgentMode.Paper">Paper</option>
+            <option value="@AgentMode.Live">Live</option>
+        </InputSelect>
+    </label>
+    <p class="hint">@AgentMessages.PaperHint</p>
+    <label>
+        Binance key (live mode)
+        <InputSelect @bind-Value="Input.ExchangeKeyId">
+            <option value="">None</option>
+            @if (_keys is not null)
+            {
+                @foreach (var key in _keys.ExchangeKeys)
+                {
+                    <option value="@key.Id">@key.Label (@key.Environment, @Markets(key))</option>
+                }
+            }
+        </InputSelect>
+    </label>
+    @if (_keys is { ExchangeKeys.Count: 0 })
+    {
+        <p class="hint">You have no Binance key; add one on the <a href="/keys">keys page</a> before starting a live agent.</p>
+    }
+    <fieldset>
+        <legend>Futures only</legend>
+        <label>
+            Leverage (1–@RiskCaps.Value.MaxLeverage)
+            <InputNumber @bind-Value="Input.Leverage" min="1" max="@RiskCaps.Value.MaxLeverage" />
+        </label>
+        <label>
+            Margin
+            <InputSelect @bind-Value="Input.MarginType">
+                <option value="@MarginType.Isolated">Isolated (default)</option>
+                <option value="@MarginType.Cross">Cross</option>
+            </InputSelect>
+        </label>
+    </fieldset>
+    <button type="submit">Create draft</button>
+</EditForm>
+
+<p><a href="/agents">Back to agents</a></p>
+
+<RiskDisclaimerNotice />
+
+@code {
+    private KeyOverview? _keys;
+    private List<string> _errors = [];
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "create-agent")]
+    private CreateInput Input { get; set; } = default!;
+
+    private Guid UserId => HttpContext.User.RequireUserId();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        _keys = await KeyService.GetOverviewAsync(UserId, HttpContext.RequestAborted);
+    }
+
+    private async Task CreateAsync()
+    {
+        var result = await AgentService.CreateAsync(UserId,
+            new AgentCreateInput(Input.Name, Input.MarketType, Input.Symbol, Input.Timeframe, Input.Mode, Input.ExchangeKeyId, Input.Leverage, Input.MarginType),
+            HttpContext.RequestAborted);
+        if (result.Status == AgentSaveStatus.Succeeded)
+        {
+            Navigation.NavigateTo($"/agents/{result.AgentId}?status=created");
+            return;
+        }
+
+        _errors = result.Errors is { Count: > 0 } errors ? errors.Select(e => e.Message).ToList() : [AgentMessages.ForSave(result)];
+    }
+
+    private static string Markets(ExchangeKeyView key) => (key.AllowSpot, key.AllowFutures) switch
+    {
+        (true, true) => "Spot and Futures",
+        (true, false) => "Spot",
+        (false, true) => "Futures",
+        _ => "no market",
+    };
+
+    private sealed class CreateInput
+    {
+        [Required(ErrorMessage = "Enter a name.")]
+        [StringLength(100, ErrorMessage = "The name must be at most 100 characters.")]
+        public string Name { get; set; } = "";
+
+        public MarketType MarketType { get; set; } = MarketType.Spot;
+
+        [Required(ErrorMessage = "Enter a symbol such as BTCUSDT.")]
+        [StringLength(30, ErrorMessage = "The symbol must be at most 30 characters.")]
+        public string Symbol { get; set; } = "";
+
+        public CandleInterval Timeframe { get; set; } = CandleInterval.OneHour;
+
+        public AgentMode Mode { get; set; } = AgentMode.Paper;
+
+        public Guid? ExchangeKeyId { get; set; }
+
+        public int? Leverage { get; set; } = 3;
+
+        public MarginType? MarginType { get; set; } = Ecnanib.Exchange.Abstractions.MarginType.Isolated;
+    }
+}

@@ -146,6 +146,28 @@ public enum ExchangeErrorKind
 
 public static class CandleIntervalExtensions
 {
+    /// <summary>1970-01-05 is the first Monday after the Unix epoch (which was a Thursday).</summary>
+    private static readonly DateTimeOffset WeekEpoch = new(1970, 1, 5, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>
+    /// UTC-aligned open time of the candle that contains <paramref name="time"/> (FR-AGT-09). Weekly candles open on
+    /// Monday 00:00 UTC, as on Binance.
+    /// </summary>
+    public static DateTimeOffset OpenTimeOf(this CandleInterval interval, DateTimeOffset time)
+    {
+        var span = interval.ToTimeSpan();
+        var epoch = interval == CandleInterval.OneWeek ? WeekEpoch : DateTimeOffset.UnixEpoch;
+        var elapsed = (time.ToUniversalTime() - epoch).Ticks;
+        var remainder = elapsed % span.Ticks;
+        if (remainder < 0)
+            remainder += span.Ticks;
+        return epoch + TimeSpan.FromTicks(elapsed - remainder);
+    }
+
+    /// <summary>The first candle boundary strictly after <paramref name="time"/>; at a boundary this is the one after it.</summary>
+    public static DateTimeOffset NextCloseAfter(this CandleInterval interval, DateTimeOffset time) =>
+        interval.OpenTimeOf(time) + interval.ToTimeSpan();
+
     public static TimeSpan ToTimeSpan(this CandleInterval interval) => interval switch
     {
         CandleInterval.FifteenMinutes => TimeSpan.FromMinutes(15),

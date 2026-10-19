@@ -80,13 +80,14 @@ public enum EntryWindowKind
     OneOff = 2,
 }
 
-/// <summary>How an evaluation ended (FR-AGT-10, FR-AI-08).</summary>
+/// <summary>How an evaluation ended (FR-AGT-10, FR-AI-08); <see cref="InProgress"/> while it runs (<c>finished_at</c> is null).</summary>
 public enum EvaluationOutcome
 {
     NoAction = 1,
     Decided = 2,
     Failed = 3,
     Skipped = 4,
+    InProgress = 5,
 }
 
 /// <summary>The Risk Manager's final action (FR-AI-10, Appendix C).</summary>

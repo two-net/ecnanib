@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Ecnanib.Accounts;
+using Ecnanib.Agents;
 using Ecnanib.Ai;
 using Ecnanib.Configuration;
 using Ecnanib.Database;
@@ -83,6 +84,7 @@ public class ReferenceFileTests
         services.AddDatabase(configuration);
         services.AddAccounts(configuration);
         services.AddModelSync(configuration);
+        services.AddAgents(configuration);
         services.AddKeys(configuration);
         return services;
     }
