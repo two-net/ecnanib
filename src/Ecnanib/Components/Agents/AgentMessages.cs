@@ -2,6 +2,8 @@ using Ecnanib.Agents.Abstractions;
 using Ecnanib.Agents.Configuration;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
+using Ecnanib.Keys.Abstractions;
+using Ecnanib.ModelSync.Abstractions;
 
 namespace Ecnanib.Components.Agents;
 
@@ -79,4 +81,24 @@ internal static class AgentMessages
         : $"{window.StartAt:yyyy-MM-dd HH:mm} → {window.EndAt:yyyy-MM-dd HH:mm} UTC";
 
     public static string Kind(EntryWindowKind kind) => kind == EntryWindowKind.Recurring ? "Every week" : "One-off";
+
+    public const string DeprecatedMark = "Deprecated model";
+
+    /// <summary>FR-SYNC-03: one role's model left its provider's list; the replacement offered is the provider's newest available catalog model, when there is one.</summary>
+    public static string DeprecatedModel(CouncilAssignmentView role, CatalogModel? replacement)
+    {
+        var provider = ProviderNames.Display(role.Provider);
+        var head = $"{provider} no longer lists {role.Model}.";
+        return replacement is null
+            ? $"{head} No {provider} model is available in the catalog: sync it on the providers page or enter a model id by hand."
+            : $"{head} Choose a replacement; {provider}'s newest model is {Label(replacement)}.";
+    }
+
+    /// <summary>The page-level prompt naming every enabled role on a deprecated model (FR-SYNC-03).</summary>
+    public static string DeprecatedModels(IReadOnlyList<CouncilAssignmentView> roles) =>
+        $"{Plural(roles.Count, "council role uses", "council roles use")} a model its provider no longer lists: "
+        + string.Join(", ", roles.Select(r => $"{CouncilRoles.Display(r.Role)} ({r.Model} on {ProviderNames.Display(r.Provider)})"))
+        + ". Choose a replacement in the council.";
+
+    private static string Label(CatalogModel model) => model.DisplayName == model.ModelId ? model.ModelId : $"{model.DisplayName} ({model.ModelId})";
 }

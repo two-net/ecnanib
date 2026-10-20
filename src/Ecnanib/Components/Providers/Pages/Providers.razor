@@ -1,0 +1,164 @@
+@page "/providers"
+@attribute [Authorize]
+@using Ecnanib.Ai.Abstractions
+@using Ecnanib.Database.Entities
+@using Ecnanib.ModelSync.Abstractions
+@inject IModelCatalog ModelCatalog
+@inject IModelSyncService ModelSync
+@inject NavigationManager Navigation
+
+<PageTitle>Providers</PageTitle>
+
+<h1>Providers</h1>
+<p>@ProviderMessages.Intro</p>
+
+@if (_notice is not null)
+{
+    <p class="@(_noticeIsError ? "error" : "notice")" role="@(_noticeIsError ? "alert" : "status")">@_notice</p>
+}
+
+<section aria-labelledby="sync-title">
+    <h2 id="sync-title">Sync status</h2>
+    @if (_syncError is not null)
+    {
+        <p class="error" role="alert">@_syncError</p>
+    }
+    <form method="post" @formname="sync-provider" @onsubmit="SyncAsync" class="inline">
+        <AntiforgeryToken />
+        <div class="table-wrap">
+            <table class="keys">
+                <thead>
+                    <tr><th>Provider</th><th>Last sync</th><th>Result</th><th>Trigger</th><th>Models</th><th>Deprecated</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var state in _states)
+                    {
+                        <tr>
+                            <td>@ProviderNames.Display(state.Provider)</td>
+                            <td>@Stamp(state.LastSyncAt)</td>
+                            <td>
+                                <span class="status @ProviderMessages.StatusClass(state.LastStatus)">@state.LastStatus</span>
+                                @if (state.LastStatus == SyncStatus.Failed && state.LastError is not null)
+                                {
+                                    <span class="muted">@state.LastError</span>
+                                }
+                            </td>
+                            <td>@ProviderMessages.Trigger(state.Trigger)</td>
+                            <td>@state.ModelCount</td>
+                            <td>@state.Deprecated</td>
+                            <td><button type="submit" name="provider" value="@ProviderNames.Route(state.Provider)">Sync now</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </form>
+    <p class="hint">@ProviderMessages.SyncHint</p>
+</section>
+
+<section aria-labelledby="catalog-title">
+    <h2 id="catalog-title">Catalog</h2>
+    @foreach (var state in _states)
+    {
+        var models = _catalog.Where(m => m.Provider == state.Provider).ToList();
+        <details class="catalog">
+            <summary>@ProviderNames.Display(state.Provider): @ProviderMessages.Plural(state.Available, "available model", "available models"), @state.Deprecated deprecated</summary>
+            @if (models.Count == 0)
+            {
+                <p class="hint">@ProviderMessages.NoModels(state.Provider)</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="keys">
+                        <thead><tr><th>Model</th><th>Status</th><th>First seen</th><th>Last seen</th></tr></thead>
+                        <tbody>
+                            @foreach (var model in models)
+                            {
+                                <tr>
+                                    <td>
+                                        @model.DisplayName
+                                        @if (model.DisplayName != model.ModelId)
+                                        {
+                                            <code class="muted">@model.ModelId</code>
+                                        }
+                                    </td>
+                                    <td><span class="status @ProviderMessages.StatusClass(model.Status)">@model.Status</span></td>
+                                    <td>@Stamp(model.FirstSeenAt)</td>
+                                    <td>@Stamp(model.LastSeenAt)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </details>
+    }
+</section>
+
+<p><a href="/keys">Keys</a> · <a href="/agents">Agents</a></p>
+
+@code {
+    private IReadOnlyList<ProviderSyncView> _states = [];
+    private IReadOnlyList<CatalogModel> _catalog = [];
+    private string? _notice;
+    private bool _noticeIsError;
+    private string? _syncError;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    /// <summary>The route name carried by the Sync now button that was clicked (only the activated submit button is posted).</summary>
+    [SupplyParameterFromForm(FormName = "sync-provider", Name = "provider")]
+    private string? SyncProvider { get; set; }
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    [SupplyParameterFromQuery(Name = "provider")]
+    private string? Provider { get; set; }
+
+    // Bound as text: a hand-edited value must not turn the page into an error.
+    [SupplyParameterFromQuery(Name = "models")]
+    private string? Models { get; set; }
+
+    [SupplyParameterFromQuery(Name = "deprecated")]
+    private string? Deprecated { get; set; }
+
+    private Guid UserId => HttpContext.User.RequireUserId();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _states = await ModelCatalog.GetSyncStatesAsync(HttpContext.RequestAborted);
+        _catalog = await ModelCatalog.ListAsync(HttpContext.RequestAborted);
+        (_notice, _noticeIsError) = (Status, ProviderNames.Parse(Provider)) switch
+        {
+            ("synced", { } p) => (ProviderMessages.Synced(p, Count(Models), Count(Deprecated)), false),
+            ("nokey", { } p) => (ProviderMessages.NoKey(p), true),
+            ("failed", { } p) => (ProviderMessages.Failed(p, _states.FirstOrDefault(s => s.Provider == p)?.LastError), true),
+            _ => (null, false),
+        };
+    }
+
+    private async Task SyncAsync()
+    {
+        if (ProviderNames.Parse(SyncProvider) is not { } provider)
+        {
+            _syncError = ProviderMessages.ChooseProvider;
+            return;
+        }
+
+        var outcome = await ModelSync.SyncNowAsync(provider, UserId, HttpContext.RequestAborted);
+        var route = ProviderNames.Route(provider);
+        Navigation.NavigateTo(outcome.Status switch
+        {
+            ModelSyncStatus.Synced => $"/providers?status=synced&provider={route}&models={outcome.Result?.Listed ?? 0}&deprecated={outcome.Result?.Deprecated ?? 0}",
+            ModelSyncStatus.NoValidKey => $"/providers?status=nokey&provider={route}",
+            _ => $"/providers?status=failed&provider={route}",
+        });
+    }
+
+    private static int Count(string? value) => int.TryParse(value, out var count) && count >= 0 ? count : 0;
+
+    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
+}

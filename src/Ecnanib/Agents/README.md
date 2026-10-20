@@ -15,6 +15,7 @@ scheduler, pipeline and paper simulator never leave this folder. `AddAgents` req
 | The strategy catalog filtered by timeframe (FR-AGT-03, Appendix A) | `IStrategyCatalog.ForTimeframe(timeframe)` → `StrategyDescriptor` with versioned, bounded parameters (provided by the Strategies module; `Find(id)` is the newest version, `Find(id, version)` the pinned one); `StrategyParameters` reads and writes `agents.parameters` |
 | Pin and upgrade the strategy version (FR-STR-06) | `AgentDetail.StrategyVersion` / `LatestStrategyVersion`, `IAgentService.UpgradeStrategyAsync` |
 | "No new entry" windows (FR-STR-05) | `IAgentService.AddEntryWindowAsync(EntryWindowInput)` / `RemoveEntryWindowAsync`, `AgentDetail.EntryWindows` → `EntryWindowView`; `EntryWindowSchedule.IsActive` is the one implementation of their semantics |
+| Warn about a council model the catalog deprecated (FR-SYNC-03) | `CouncilAssignmentView.CatalogStatus` (null for a model the catalog never listed), `AgentSummary.HasDeprecatedModel` (an enabled role only) |
 | React to agent events in the UI (FR-AGT-10, FR-UI-04) | `IAgentEvents.Subscribe(userId, handler)` → `AgentStateChanged`, `EvaluationFinished`, `OrderChanged`, `TradeChanged` |
 | Provide a pipeline stage (council, market data, execution, live venue) | implement `ICouncil`, `IMarketDataLoader`, `IExecutionService` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
 | The council roles, their order and Appendix B defaults | `CouncilRoles` (`Order`, `DefaultProvider`, `Display`, `Responsibility`) |
@@ -112,10 +113,12 @@ Pages (static server rendering, plain forms): `/agents` (the user's agents with 
 (actions, positions and orders, settings, strategy and parameters generated from the pinned version's descriptor with an
 upgrade button when a newer version exists, no-entry windows, council with the synced catalog per role and the two
 presets, risk limits, recent evaluations each linking to its deliberation, and change history; fields a state forbids
-are disabled). The disclaimer is shown on both forms
+are disabled). A council role whose model the catalog marks deprecated is flagged in the list and prompted for a
+replacement on the agent page, with the provider's newest available model suggested (FR-SYNC-03); saving and starting
+are not blocked, the provider's own rejection at call time is FR-SYNC-04. The disclaimer is shown on both forms
 (FR-UI-05). Another user's agent and a missing one both answer not found.
 
-Known gaps: deprecation warnings and replacement prompts arrive with the model-sync issue; backfill on start, candle caching and streamed mark prices with market data (#12),
+Known gaps: backfill on start, candle caching and streamed mark prices with market data (#12),
 until which the loader issues up to four REST reads per evaluation; the dashboard, agent detail with chart and live
 updates with the UI issue. `Order.WorkingType` has no column, so paper futures stops
 are last-price only.
