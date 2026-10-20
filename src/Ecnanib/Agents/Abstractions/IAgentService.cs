@@ -22,6 +22,18 @@ public interface IAgentService
 
     Task<AgentSaveResult> UpdateRiskLimitsAsync(Guid userId, Guid agentId, RiskLimitsInput input, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Moves the agent to the newest version of its strategy (FR-STR-06), in the states where its parameters are
+    /// editable; parameters the new version no longer knows or accepts are reset to their defaults and recorded. An
+    /// agent already at the newest version succeeds without a change.
+    /// </summary>
+    Task<AgentSaveResult> UpgradeStrategyAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>Adds a "no new entry" window (FR-STR-05); it applies from the next evaluation. At most <c>AgentRules.MaxEntryWindows</c> per agent.</summary>
+    Task<AgentSaveResult> AddEntryWindowAsync(Guid userId, Guid agentId, EntryWindowInput input, CancellationToken cancellationToken);
+
+    Task<AgentSaveResult> RemoveEntryWindowAsync(Guid userId, Guid agentId, long windowId, CancellationToken cancellationToken);
+
     /// <summary>A new Draft with the same configuration; counts against the agents-per-user limit (FR-AGT-04, FR-AGT-15).</summary>
     Task<AgentActionResult> CloneAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
 

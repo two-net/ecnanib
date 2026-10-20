@@ -72,6 +72,14 @@ public class AgentStateMachineTests
     [InlineData(AgentField.Name, AgentState.Running, true)]
     [InlineData(AgentField.Discretionary, AgentState.Running, false)]
     [InlineData(AgentField.Discretionary, AgentState.Paused, true)]
+    [InlineData(AgentField.StrategyVersion, AgentState.Draft, true)]
+    [InlineData(AgentField.StrategyVersion, AgentState.Stopped, true)]
+    [InlineData(AgentField.StrategyVersion, AgentState.Paused, true)]
+    [InlineData(AgentField.StrategyVersion, AgentState.Error, true)]
+    [InlineData(AgentField.StrategyVersion, AgentState.Running, false)]
+    [InlineData(AgentField.EntryWindows, AgentState.Paused, true)]
+    [InlineData(AgentField.EntryWindows, AgentState.Error, true)]
+    [InlineData(AgentField.EntryWindows, AgentState.Running, false)]
     public void EditsFollowTheStateRules(AgentField field, AgentState state, bool editable)
     {
         Assert.Equal(editable, AgentStateMachine.CanEdit(state, field));

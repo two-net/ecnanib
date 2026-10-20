@@ -1,5 +1,6 @@
 @page "/agents/{Id:guid}"
 @attribute [Authorize]
+@using System.Globalization
 @using System.Text.Json
 @using Ecnanib.Agents.Configuration
 @using Ecnanib.Ai.Abstractions
@@ -27,7 +28,7 @@
     </p>
     <dl class="details">
         <dt>Trades</dt><dd>@agent.Symbol on @AgentMessages.Market(agent.MarketType), @AgentMessages.Timeframe(agent.Timeframe) candles, @AgentMessages.Mode(agent.Mode).ToLowerInvariant() mode</dd>
-        <dt>Strategy</dt><dd>@(_strategy?.Name ?? agent.StrategyId) (version @agent.StrategyVersion)</dd>
+        <dt>Strategy</dt><dd>@(_strategy?.Name ?? agent.StrategyId) (version @agent.StrategyVersion@(UpgradeAvailable ? $", version {agent.LatestStrategyVersion} available" : ""))</dd>
         @if (AgentStateMachine.IsEvaluated(agent.State))
         {
             <dt>Next evaluation</dt><dd>@Stamp(agent.Timeframe.NextCloseAfter(Clock.GetUtcNow()))</dd>
@@ -283,57 +284,129 @@
             @if (_strategy is not null)
             {
                 <p class="hint">@_strategy.Summary</p>
+                @if (_strategy.Version != agent.StrategyVersion)
+                {
+                    <p class="error" role="alert">Version @agent.StrategyVersion of this strategy is no longer available; the parameters of version @_strategy.Version are shown. Upgrade the agent to run it.</p>
+                }
+                <fieldset>
+                    <legend>Parameters (blank means the default)</legend>
+                    <div class="parameters">
+                        @foreach (var parameter in _strategy.Parameters)
+                        {
+                            var name = parameter.Name;
+                            <label>
+                                @parameter.Label
+                                @if (parameter.Kind is StrategyParameterKind.Integer or StrategyParameterKind.Decimal)
+                                {
+                                    <span class="muted">(@parameter.Min to @parameter.Max)</span>
+                                    <InputText @bind-Value="Strategy.Values[name]" placeholder="@parameter.DefaultText" inputmode="@(parameter.Kind == StrategyParameterKind.Integer ? "numeric" : "decimal")" disabled="@(!CanEdit(AgentField.Parameters))" />
+                                }
+                                else if (parameter.Kind == StrategyParameterKind.Choice)
+                                {
+                                    <InputSelect @bind-Value="Strategy.Values[name]" disabled="@(!CanEdit(AgentField.Parameters))">
+                                        <option value="">Default (@parameter.DefaultText)</option>
+                                        @foreach (var choice in parameter.Choices!)
+                                        {
+                                            <option value="@choice">@choice</option>
+                                        }
+                                    </InputSelect>
+                                }
+                                else
+                                {
+                                    <InputSelect @bind-Value="Strategy.Values[name]" disabled="@(!CanEdit(AgentField.Parameters))">
+                                        <option value="">Default (@parameter.DefaultText)</option>
+                                        <option value="true">On</option>
+                                        <option value="false">Off</option>
+                                    </InputSelect>
+                                }
+                            </label>
+                        }
+                    </div>
+                </fieldset>
             }
-            <fieldset>
-                <legend>Parameters (blank means the default)</legend>
-                <div class="parameters">
-                    <label>
-                        ATR period
-                        <InputText @bind-Value="Strategy.AtrPeriod" placeholder="@Default(StrategyParameters.AtrPeriod)" inputmode="numeric" disabled="@(!CanEdit(AgentField.Parameters))" />
-                    </label>
-                    <label>
-                        Fast EMA period
-                        <InputText @bind-Value="Strategy.EmaFastPeriod" placeholder="@Default(StrategyParameters.EmaFastPeriod)" inputmode="numeric" disabled="@(!CanEdit(AgentField.Parameters))" />
-                    </label>
-                    <label>
-                        Slow EMA period
-                        <InputText @bind-Value="Strategy.EmaSlowPeriod" placeholder="@Default(StrategyParameters.EmaSlowPeriod)" inputmode="numeric" disabled="@(!CanEdit(AgentField.Parameters))" />
-                    </label>
-                    <label>
-                        Stop buffer (× ATR)
-                        <InputText @bind-Value="Strategy.StopBufferAtr" placeholder="@Default(StrategyParameters.StopBufferAtr)" inputmode="decimal" disabled="@(!CanEdit(AgentField.Parameters))" />
-                    </label>
-                    <label>
-                        Partial take-profit fraction
-                        <InputText @bind-Value="Strategy.PartialTakeProfitFraction" placeholder="@Default(StrategyParameters.PartialTakeProfitFraction)" inputmode="decimal" disabled="@(!CanEdit(AgentField.Parameters))" />
-                    </label>
-                    <label>
-                        Trailing method
-                        <InputSelect @bind-Value="Strategy.TrailingMethod" disabled="@(!CanEdit(AgentField.Parameters))">
-                            <option value="">Default (@Default(StrategyParameters.TrailingMethod))</option>
-                            <option value="@StrategyParameters.TrailingBySwing">Swing points</option>
-                            <option value="@StrategyParameters.TrailingByEma">EMA</option>
-                        </InputSelect>
-                    </label>
-                    <label>
-                        Entry timeout (candles)
-                        <InputText @bind-Value="Strategy.EntryTimeoutCandles" placeholder="@Default(StrategyParameters.EntryTimeoutCandles)" inputmode="numeric" disabled="@(!CanEdit(AgentField.Parameters))" />
-                    </label>
-                    <label>
-                        Market fallback after timeout
-                        <InputSelect @bind-Value="Strategy.MarketFallback" disabled="@(!CanEdit(AgentField.Parameters))">
-                            <option value="">Default (@Default(StrategyParameters.MarketFallback))</option>
-                            <option value="true">On</option>
-                            <option value="false">Off</option>
-                        </InputSelect>
-                    </label>
-                </div>
-            </fieldset>
             <label class="check">
                 <InputCheckbox @bind-Value="Strategy.ResetToDefaults" disabled="@(!CanEdit(AgentField.Parameters))" />
                 Reset every parameter to its default.
             </label>
             <button type="submit" disabled="@(!CanEdit(AgentField.Parameters) && !CanEdit(AgentField.Strategy))">Save strategy</button>
+        </EditForm>
+        @if (UpgradeAvailable)
+        {
+            <h3>Upgrade</h3>
+            <p class="hint">Version @agent.LatestStrategyVersion of @(_strategy?.Name ?? agent.StrategyId) is available; this agent runs version @agent.StrategyVersion. @AgentMessages.UpgradeHint @(CanEdit(AgentField.StrategyVersion) ? "" : "Pause or stop the agent first.")</p>
+            <form method="post" @formname="upgrade-strategy" @onsubmit="UpgradeAsync" class="inline">
+                <AntiforgeryToken />
+                <button type="submit" disabled="@(!CanEdit(AgentField.StrategyVersion))">Upgrade to version @agent.LatestStrategyVersion</button>
+            </form>
+        }
+    </section>
+
+    <section aria-labelledby="windows-title">
+        <h2 id="windows-title">No-entry windows</h2>
+        <p class="hint">@AgentMessages.WindowsHint</p>
+        @if (_windowError is not null)
+        {
+            <p class="error" role="alert">@_windowError</p>
+        }
+        @if (agent.EntryWindows.Count == 0)
+        {
+            <p>No window.</p>
+        }
+        else
+        {
+            <form method="post" @formname="remove-window" @onsubmit="RemoveWindowAsync">
+                <AntiforgeryToken />
+                <div class="table-wrap">
+                    <table class="agents">
+                        <thead><tr><th>Kind</th><th>When</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var window in agent.EntryWindows)
+                            {
+                                <tr>
+                                    <td>@AgentMessages.Kind(window.Kind)</td>
+                                    <td>@AgentMessages.Describe(window)</td>
+                                    <td><button type="submit" name="windowId" value="@window.Id" disabled="@(!CanEdit(AgentField.EntryWindows))">Remove</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </form>
+        }
+        <h3>Add a window</h3>
+        <EditForm Model="Window" FormName="add-window" OnValidSubmit="AddWindowAsync" method="post">
+            <label>
+                Kind
+                <InputSelect @bind-Value="Window.Kind" disabled="@(!CanEdit(AgentField.EntryWindows))">
+                    <option value="@EntryWindowKind.Recurring">Every week</option>
+                    <option value="@EntryWindowKind.OneOff">One-off</option>
+                </InputSelect>
+            </label>
+            <fieldset>
+                <legend>Every week (UTC)</legend>
+                <label>
+                    From
+                    <InputSelect @bind-Value="Window.StartDay" disabled="@(!CanEdit(AgentField.EntryWindows))">@DayOptions()</InputSelect>
+                    <InputText @bind-Value="Window.StartTime" type="time" placeholder="21:00" disabled="@(!CanEdit(AgentField.EntryWindows))" />
+                </label>
+                <label>
+                    Until
+                    <InputSelect @bind-Value="Window.EndDay" disabled="@(!CanEdit(AgentField.EntryWindows))">@DayOptions()</InputSelect>
+                    <InputText @bind-Value="Window.EndTime" type="time" placeholder="01:00" disabled="@(!CanEdit(AgentField.EntryWindows))" />
+                </label>
+            </fieldset>
+            <fieldset>
+                <legend>One-off (UTC)</legend>
+                <label>
+                    From
+                    <InputText @bind-Value="Window.StartAt" type="datetime-local" disabled="@(!CanEdit(AgentField.EntryWindows))" />
+                </label>
+                <label>
+                    Until
+                    <InputText @bind-Value="Window.EndAt" type="datetime-local" disabled="@(!CanEdit(AgentField.EntryWindows))" />
+                </label>
+            </fieldset>
+            <button type="submit" disabled="@(!CanEdit(AgentField.EntryWindows))">Add window</button>
         </EditForm>
     </section>
 
@@ -482,6 +555,7 @@
     private string? _strategyError;
     private string? _councilError;
     private string? _riskError;
+    private string? _windowError;
 
     [Parameter]
     public Guid Id { get; set; }
@@ -507,6 +581,13 @@
     [SupplyParameterFromForm(FormName = "delete-agent")]
     private DeleteFormInput DeleteInput { get; set; } = default!;
 
+    [SupplyParameterFromForm(FormName = "add-window")]
+    private WindowFormInput Window { get; set; } = default!;
+
+    /// <summary>The id carried by the Remove button that was clicked (only the activated submit button is posted).</summary>
+    [SupplyParameterFromForm(FormName = "remove-window", Name = "windowId")]
+    private long? RemoveWindowId { get; set; }
+
     [SupplyParameterFromQuery(Name = "status")]
     private string? Status { get; set; }
 
@@ -528,7 +609,8 @@
             Name = agent.Name, MarketType = agent.MarketType, Symbol = agent.Symbol, Timeframe = agent.Timeframe, Mode = agent.Mode,
             ExchangeKeyId = agent.ExchangeKeyId, Leverage = agent.Leverage, MarginType = agent.MarginType, Discretionary = agent.Discretionary,
         };
-        Strategy ??= StrategyFormInput.From(agent);
+        Strategy ??= StrategyFormInput.From(agent, _strategy);
+        Strategy.EnsureKeys(_strategy);
         Council ??= CouncilFormInput.From(agent);
         Risk ??= new RiskInput
         {
@@ -537,6 +619,7 @@
         };
         StopInput ??= new();
         DeleteInput ??= new();
+        Window ??= new();
 
         (_notice, _noticeIsError) = Status switch
         {
@@ -548,6 +631,9 @@
             "resumed" => ("The agent is running again.", false),
             "stopped" => ("The agent was stopped." + (Detail is null ? "" : " " + Detail), false),
             "cloned" => ("This is the copy; it starts as a draft.", false),
+            "upgraded" => ("The agent now runs the newest version of its strategy." + (Detail is null ? "" : " " + Detail), false),
+            "window-added" => ("The no-entry window was added; it applies from the next evaluation.", false),
+            "window-removed" => ("The no-entry window was removed.", false),
             _ => (null, false),
         };
     }
@@ -562,14 +648,15 @@
             return false;
         }
 
-        _strategy = Catalog.Find(_agent.StrategyId);
+        // The pinned version's parameters are what the agent runs; when it is gone, the newest version's are shown with a warning.
+        _strategy = Catalog.Find(_agent.StrategyId, _agent.StrategyVersion) ?? Catalog.Find(_agent.StrategyId);
         _keys ??= await KeyService.GetOverviewAsync(UserId, HttpContext.RequestAborted);
         return true;
     }
 
     private bool CanEdit(AgentField field) => _agent is { } agent && AgentStateMachine.CanEdit(agent.State, field);
 
-    private string Default(string parameter) => _strategy?.Parameter(parameter)?.DefaultText ?? "";
+    private bool UpgradeAvailable => _agent is { LatestStrategyVersion: { } latest } agent && latest > agent.StrategyVersion;
 
     private async Task StartAsync() => await ActAsync(AgentService.StartAsync(UserId, Id, HttpContext.RequestAborted), "started");
 
@@ -651,9 +738,74 @@
     {
         var agent = _agent!;
         var strategyId = CanEdit(AgentField.Strategy) ? Strategy.StrategyId : agent.StrategyId;
-        var parameters = CanEdit(AgentField.Parameters) ? Strategy.ToParameters() : StrategyFormInput.From(agent).ToParameters();
+        var parameters = CanEdit(AgentField.Parameters) ? Strategy.ToParameters() : StrategyFormInput.From(agent, _strategy).ToParameters();
         var result = await AgentService.UpdateStrategyAsync(UserId, Id, new StrategyInput(strategyId, parameters, CanEdit(AgentField.Parameters) && Strategy.ResetToDefaults), HttpContext.RequestAborted);
         await AfterSaveAsync(result, error => _strategyError = error);
+    }
+
+    private async Task UpgradeAsync()
+    {
+        var result = await AgentService.UpgradeStrategyAsync(UserId, Id, HttpContext.RequestAborted);
+        if (result.Status == AgentSaveStatus.Succeeded)
+        {
+            Navigation.NavigateTo(Self + "?status=upgraded" + (result.Detail is null ? "" : "&detail=" + Uri.EscapeDataString(result.Detail)));
+            return;
+        }
+
+        _strategyError = AgentMessages.ForSave(result);
+        await LoadAsync();
+    }
+
+    private async Task AddWindowAsync()
+    {
+        EntryWindowInput input;
+        if (Window.Kind == EntryWindowKind.OneOff)
+        {
+            if (!TryParseUtc(Window.StartAt, out var start))
+            {
+                _windowError = "Enter the start of the one-off window as a date and time (UTC).";
+                return;
+            }
+
+            if (!TryParseUtc(Window.EndAt, out var end))
+            {
+                _windowError = "Enter the end of the one-off window as a date and time (UTC).";
+                return;
+            }
+
+            input = new EntryWindowInput(EntryWindowKind.OneOff, start, end);
+        }
+        else
+        {
+            if (!TryParseTime(Window.StartTime, out var startTime))
+            {
+                _windowError = "Enter the start time of the weekly window as HH:mm (UTC).";
+                return;
+            }
+
+            if (!TryParseTime(Window.EndTime, out var endTime))
+            {
+                _windowError = "Enter the end time of the weekly window as HH:mm (UTC).";
+                return;
+            }
+
+            input = new EntryWindowInput(EntryWindowKind.Recurring, StartDay: Window.StartDay, StartTime: startTime, EndDay: Window.EndDay, EndTime: endTime);
+        }
+
+        var result = await AgentService.AddEntryWindowAsync(UserId, Id, input, HttpContext.RequestAborted);
+        await AfterSaveAsync(result, error => _windowError = error, "window-added");
+    }
+
+    private async Task RemoveWindowAsync()
+    {
+        if (RemoveWindowId is not { } windowId)
+        {
+            _windowError = "Choose a window to remove.";
+            return;
+        }
+
+        var result = await AgentService.RemoveEntryWindowAsync(UserId, Id, windowId, HttpContext.RequestAborted);
+        await AfterSaveAsync(result, error => _windowError = error, "window-removed");
     }
 
     private async Task SaveCouncilAsync()
@@ -669,11 +821,11 @@
         await AfterSaveAsync(result, error => _riskError = error);
     }
 
-    private async Task AfterSaveAsync(AgentSaveResult result, Action<string> setError)
+    private async Task AfterSaveAsync(AgentSaveResult result, Action<string> setError, string status = "saved")
     {
         if (result.Status == AgentSaveStatus.Succeeded)
         {
-            Navigation.NavigateTo(Self + "?status=saved");
+            Navigation.NavigateTo(Self + "?status=" + status);
             return;
         }
 
@@ -701,10 +853,35 @@
         _ => "no market",
     };
 
+    private static RenderFragment DayOptions() => builder =>
+    {
+        var sequence = 0;
+        foreach (var day in new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday })
+        {
+            builder.OpenElement(sequence++, "option");
+            builder.AddAttribute(sequence++, "value", day.ToString());
+            builder.AddContent(sequence++, day.ToString());
+            builder.CloseElement();
+        }
+    };
+
     private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
 
     private static string Text(IReadOnlyDictionary<string, JsonElement> parameters, string name) =>
         parameters.TryGetValue(name, out var value) ? StrategyParameter.Format(value) : "";
+
+    /// <summary>A datetime-local value read as UTC: the mapper would otherwise assume the server's zone.</summary>
+    private static bool TryParseUtc(string? text, out DateTimeOffset value)
+    {
+        value = default;
+        if (!DateTime.TryParseExact(text?.Trim(), ["yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+            return false;
+        value = new DateTimeOffset(parsed, TimeSpan.Zero);
+        return true;
+    }
+
+    private static bool TryParseTime(string? text, out TimeOnly value) =>
+        TimeOnly.TryParseExact(text?.Trim(), ["HH:mm", "HH:mm:ss"], CultureInfo.InvariantCulture, DateTimeStyles.None, out value);
 
     private sealed class SettingsInput
     {
@@ -729,52 +906,48 @@
         public bool Discretionary { get; set; }
     }
 
+    /// <summary>The parameter texts keyed by name; every descriptor parameter has a key so the generated inputs can bind (a disabled input is not posted).</summary>
     private sealed class StrategyFormInput
     {
         public string? StrategyId { get; set; }
 
-        public string? AtrPeriod { get; set; }
-
-        public string? EmaFastPeriod { get; set; }
-
-        public string? EmaSlowPeriod { get; set; }
-
-        public string? StopBufferAtr { get; set; }
-
-        public string? PartialTakeProfitFraction { get; set; }
-
-        public string? TrailingMethod { get; set; }
-
-        public string? EntryTimeoutCandles { get; set; }
-
-        public string? MarketFallback { get; set; }
+        public Dictionary<string, string?> Values { get; set; } = new(StringComparer.Ordinal);
 
         public bool ResetToDefaults { get; set; }
 
-        public static StrategyFormInput From(AgentDetail agent) => new()
+        public static StrategyFormInput From(AgentDetail agent, StrategyDescriptor? strategy)
         {
-            StrategyId = agent.StrategyId,
-            AtrPeriod = Text(agent.Parameters, StrategyParameters.AtrPeriod),
-            EmaFastPeriod = Text(agent.Parameters, StrategyParameters.EmaFastPeriod),
-            EmaSlowPeriod = Text(agent.Parameters, StrategyParameters.EmaSlowPeriod),
-            StopBufferAtr = Text(agent.Parameters, StrategyParameters.StopBufferAtr),
-            PartialTakeProfitFraction = Text(agent.Parameters, StrategyParameters.PartialTakeProfitFraction),
-            TrailingMethod = Text(agent.Parameters, StrategyParameters.TrailingMethod),
-            EntryTimeoutCandles = Text(agent.Parameters, StrategyParameters.EntryTimeoutCandles),
-            MarketFallback = Text(agent.Parameters, StrategyParameters.MarketFallback),
-        };
+            var input = new StrategyFormInput { StrategyId = agent.StrategyId };
+            foreach (var parameter in strategy?.Parameters ?? [])
+                input.Values[parameter.Name] = Text(agent.Parameters, parameter.Name);
+            return input;
+        }
 
-        public IReadOnlyDictionary<string, string?> ToParameters() => new Dictionary<string, string?>(StringComparer.Ordinal)
+        public void EnsureKeys(StrategyDescriptor? strategy)
         {
-            [StrategyParameters.AtrPeriod] = AtrPeriod,
-            [StrategyParameters.EmaFastPeriod] = EmaFastPeriod,
-            [StrategyParameters.EmaSlowPeriod] = EmaSlowPeriod,
-            [StrategyParameters.StopBufferAtr] = StopBufferAtr,
-            [StrategyParameters.PartialTakeProfitFraction] = PartialTakeProfitFraction,
-            [StrategyParameters.TrailingMethod] = TrailingMethod,
-            [StrategyParameters.EntryTimeoutCandles] = EntryTimeoutCandles,
-            [StrategyParameters.MarketFallback] = MarketFallback,
-        };
+            foreach (var parameter in strategy?.Parameters ?? [])
+                Values.TryAdd(parameter.Name, "");
+        }
+
+        public IReadOnlyDictionary<string, string?> ToParameters() => Values;
+    }
+
+    /// <summary>Texts on purpose: the mapper would read a date without a zone in the server's zone.</summary>
+    private sealed class WindowFormInput
+    {
+        public EntryWindowKind Kind { get; set; } = EntryWindowKind.Recurring;
+
+        public DayOfWeek StartDay { get; set; } = DayOfWeek.Friday;
+
+        public string? StartTime { get; set; }
+
+        public DayOfWeek EndDay { get; set; } = DayOfWeek.Monday;
+
+        public string? EndTime { get; set; }
+
+        public string? StartAt { get; set; }
+
+        public string? EndAt { get; set; }
     }
 
     private sealed class CouncilFormInput

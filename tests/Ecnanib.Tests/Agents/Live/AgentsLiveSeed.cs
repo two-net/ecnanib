@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Ecnanib.Agents.Abstractions;
 using Ecnanib.Agents.Services;
 using Ecnanib.Ai.Abstractions;
 using Ecnanib.Database.Entities;
@@ -39,7 +40,7 @@ internal static class AgentsLiveSeed
     public static async Task<Agent> NewAgentAsync(
         DatabaseLiveFixture fixture, Guid userId, string name, AgentState state = AgentState.Draft, AgentMode mode = AgentMode.Paper,
         MarketType market = MarketType.Spot, string symbol = "BTCUSDT", CandleInterval timeframe = CandleInterval.OneHour, string strategyId = "trend-pullback",
-        Guid? exchangeKeyId = null, string? model = "test-model", bool discretionary = false)
+        Guid? exchangeKeyId = null, string? model = "test-model", bool discretionary = false, int strategyVersion = 1)
     {
         await using var db = fixture.CreateContext();
         var agent = new Agent
@@ -50,7 +51,7 @@ internal static class AgentsLiveSeed
             Symbol = symbol,
             Timeframe = timeframe,
             StrategyId = strategyId,
-            StrategyVersion = 1,
+            StrategyVersion = strategyVersion,
             Mode = mode,
             ExchangeKeyId = exchangeKeyId,
             Leverage = market == MarketType.UsdFutures ? 3 : null,
@@ -125,7 +126,21 @@ internal static class AgentsLiveSeed
     public static async Task<Agent> AgentAsync(DatabaseLiveFixture fixture, Guid agentId)
     {
         await using var db = fixture.CreateContext();
-        return await db.Agents.AsNoTracking().Include(a => a.CouncilAssignments).SingleAsync(a => a.Id == agentId, Ct);
+        return await db.Agents.AsNoTracking().Include(a => a.CouncilAssignments).Include(a => a.EntryWindows).AsSplitQuery().SingleAsync(a => a.Id == agentId, Ct);
+    }
+
+    /// <summary>Wraps the registered <see cref="IStrategyCatalog"/> (whatever registered it) so a test can present other versions.</summary>
+    public static void WithCatalog(IServiceCollection services, Func<IStrategyCatalog, IStrategyCatalog> decorate)
+    {
+        var original = services.Last(d => d.ServiceType == typeof(IStrategyCatalog));
+        services.Remove(original);
+        services.AddSingleton(sp =>
+        {
+            var inner = original.ImplementationInstance as IStrategyCatalog
+                ?? original.ImplementationFactory?.Invoke(sp) as IStrategyCatalog
+                ?? (IStrategyCatalog)ActivatorUtilities.CreateInstance(sp, original.ImplementationType!);
+            return decorate(inner);
+        });
     }
 
     public static async Task<List<AgentChange>> ChangesAsync(DatabaseLiveFixture fixture, Guid agentId)

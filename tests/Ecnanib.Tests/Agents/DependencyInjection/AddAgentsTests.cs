@@ -5,12 +5,17 @@ using Ecnanib.Agents.Services.Paper;
 using Ecnanib.Agents.Services.Placeholders;
 using Ecnanib.Database;
 using Ecnanib.Database.Entities;
+using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Keys.Abstractions;
+using Ecnanib.Strategies;
+using Ecnanib.Strategies.Catalog;
+using Ecnanib.Strategies.Engine;
 using Ecnanib.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Candle = Ecnanib.Exchange.Abstractions.Candle;
 
 namespace Ecnanib.Tests.Agents.DependencyInjection;
 
@@ -26,10 +31,10 @@ public class AddAgentsTests
 
         Assert.IsType<AgentService>(provider.GetRequiredService<IAgentService>());
         Assert.IsType<StrategyCatalog>(provider.GetRequiredService<IStrategyCatalog>());
+        Assert.IsType<StrategyEngine>(provider.GetRequiredService<IStrategyEngine>());
         Assert.IsType<AgentEvents>(provider.GetRequiredService<IAgentEvents>());
         Assert.IsType<AgentKeyDependency>(provider.GetRequiredService<IKeyDependentAgents>());
         Assert.IsType<RecentCandleLoader>(provider.GetRequiredService<IMarketDataLoader>());
-        Assert.IsType<PendingStrategyEngine>(provider.GetRequiredService<IStrategyEngine>());
         Assert.IsType<PendingCouncil>(provider.GetRequiredService<ICouncil>());
         Assert.IsType<PendingExecutionService>(provider.GetRequiredService<IExecutionService>());
         var venues = provider.GetRequiredService<IOrderVenues>();
@@ -48,17 +53,34 @@ public class AddAgentsTests
     }
 
     [Fact]
-    public async Task AStageRegisteredFirstReplacesThePlaceholder()
+    public async Task AStageRegisteredFirstReplacesThePlaceholderAndTheStrategiesEngine()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = Database.DatabaseTestHost.OfflineConnectionString }).Build();
         var engine = new FakeStrategyEngine();
+        var loader = new FakeMarketDataLoader();
         var services = new ServiceCollection();
         services.AddDatabase(configuration);
         services.AddSingleton<IStrategyEngine>(engine);
+        services.AddSingleton<IMarketDataLoader>(loader);
+        services.AddStrategies();
         services.AddAgents(configuration);
         await using var provider = services.BuildServiceProvider();
 
         Assert.Same(engine, provider.GetRequiredService<IStrategyEngine>());
+        Assert.Same(loader, provider.GetRequiredService<IMarketDataLoader>());
+        Assert.IsType<StrategyCatalog>(provider.GetRequiredService<IStrategyCatalog>());
+    }
+
+    [Fact]
+    public void AddAgentsNeedsTheStrategiesModuleFirst()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = Database.DatabaseTestHost.OfflineConnectionString }).Build();
+        var services = new ServiceCollection();
+        services.AddDatabase(configuration);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => services.AddAgents(configuration));
+
+        Assert.Contains("AddStrategies", ex.Message);
     }
 
     [Fact]
@@ -71,6 +93,12 @@ public class AddAgentsTests
 
     private sealed class FakeStrategyEngine : IStrategyEngine
     {
-        public StrategyOutput Evaluate(StrategyContext context) => StrategyOutput.Nothing("fake");
+        public StrategyOutput Evaluate(StrategyContext context) => StrategyOutput.Nothing(context.Strategy, "fake");
+    }
+
+    private sealed class FakeMarketDataLoader : IMarketDataLoader
+    {
+        public Task<MarketSnapshot> LoadAsync(Agent agent, StrategyDescriptor strategy, MarketKey key, Candle closed, CancellationToken cancellationToken) =>
+            Task.FromResult(new MarketSnapshot([closed], new Dictionary<CandleInterval, IReadOnlyList<Candle>>(), new Dictionary<ReferenceSeries, IReadOnlyList<Candle>>(), null));
     }
 }

@@ -49,7 +49,7 @@ public enum AgentActionStatus
     KeyUnavailable,
     /// <summary>An enabled council role's provider has no Valid key (FR-KEY-08); <see cref="AgentActionResult.Detail"/> lists the providers.</summary>
     ProviderKeyMissing,
-    /// <summary>The agent's strategy is no longer in the catalog.</summary>
+    /// <summary>The agent's strategy, at its pinned version, is no longer in the catalog; upgrade it or choose another (FR-STR-06).</summary>
     StrategyUnavailable,
     /// <summary>The agent's configuration cannot run as it is (a council role without a model, leverage over the cap); <see cref="AgentActionResult.Detail"/> says what.</summary>
     InvalidConfiguration,

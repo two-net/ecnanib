@@ -5,16 +5,18 @@ FR-AI-12; NFR-PERF-01/02; NFR-REL-01/03; C-03, A-06, A-07). An agent trades one 
 with one strategy and one council; Running and Paused agents are evaluated server-side once per UTC-aligned candle
 close, while the user is offline. Other modules depend on `Ecnanib.Agents.Abstractions` and `AddAgents(...)`; the
 scheduler, pipeline and paper simulator never leave this folder. `AddAgents` requires `AddDatabase`, `AddExchange`,
-`AddAccounts` and `AddKeys` registered **after** it (so the runtime's own key handling is kept), and adds two hosted
-services.
+`AddAccounts` and `AddStrategies` (the catalog and engine) registered before it and `AddKeys` registered **after** it
+(so the runtime's own key handling is kept), and adds two hosted services.
 
 | Need | Use |
 |---|---|
 | List, create, edit or act on the user's agents (FR-AGT-01..04, FR-AGT-07) | `IAgentService` → `AgentSummary`, `AgentDetail`, `AgentSaveResult` (field errors), `AgentActionResult`; user mistakes are results, exceptions mean the database or the exchange failed |
 | Which action or edit a state allows (Appendix E, FR-AGT-07) | `AgentStateMachine.Allows(state, action)`, `CanEdit(state, field)` |
-| The strategy catalog filtered by timeframe (FR-AGT-03, Appendix A) | `IStrategyCatalog.ForTimeframe(timeframe)` → `StrategyDescriptor` with versioned, bounded parameters; `StrategyParameters` reads and writes `agents.parameters` |
+| The strategy catalog filtered by timeframe (FR-AGT-03, Appendix A) | `IStrategyCatalog.ForTimeframe(timeframe)` → `StrategyDescriptor` with versioned, bounded parameters (provided by the Strategies module; `Find(id)` is the newest version, `Find(id, version)` the pinned one); `StrategyParameters` reads and writes `agents.parameters` |
+| Pin and upgrade the strategy version (FR-STR-06) | `AgentDetail.StrategyVersion` / `LatestStrategyVersion`, `IAgentService.UpgradeStrategyAsync` |
+| "No new entry" windows (FR-STR-05) | `IAgentService.AddEntryWindowAsync(EntryWindowInput)` / `RemoveEntryWindowAsync`, `AgentDetail.EntryWindows` → `EntryWindowView`; `EntryWindowSchedule.IsActive` is the one implementation of their semantics |
 | React to agent events in the UI (FR-AGT-10, FR-UI-04) | `IAgentEvents.Subscribe(userId, handler)` → `AgentStateChanged`, `EvaluationFinished`, `OrderChanged`, `TradeChanged` |
-| Provide a pipeline stage (strategy, council, market data, execution, live venue) | implement `IStrategyEngine`, `ICouncil`, `IMarketDataLoader`, `IExecutionService` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
+| Provide a pipeline stage (council, market data, execution, live venue) | implement `ICouncil`, `IMarketDataLoader`, `IExecutionService` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
 | Place, cancel or close simulated or real orders (FR-AGT-06, FR-AGT-11) | `IOrderVenues.For(mode)` → `IOrderVenue` (`PlaceEntryAsync` with a mandatory stop, `PlaceCloseAsync`, `CancelOpenOrdersAsync`, `ClosePositionsAtMarketAsync`, `GetEquityAsync`) |
 | The candle boundary arithmetic (FR-AGT-09) | `CandleIntervalExtensions.OpenTimeOf` / `NextCloseAfter` in the exchange abstractions |
 
@@ -28,20 +30,26 @@ Rules the module enforces:
   catalog model (or an empty model to choose), and default risk limits. The agents-per-user limit applies at creation
   and cloning, the running limit at start (FR-AGT-15); both run under a per-user gate so concurrent starts cannot exceed them.
 - Edits follow the state (FR-AGT-07): market, symbol, timeframe, mode, strategy, leverage and margin only in Draft or
-  Stopped; strategy parameters, council and risk limits also in Paused and Error (they take effect at the next
-  evaluation, which re-reads the agent); the exchange key also in Error; a Running agent accepts a new name only. A
-  timeframe change switches to the new timeframe's default strategy and clears the parameters. Parameters are stored
-  as the values that differ from the defaults, so blank means default and a reset is an empty object. Every changed
-  field, every state transition and the creation are rows in `agent_changes` with the old and new value as JSON.
+  Stopped; strategy parameters, the strategy version, no-entry windows, council and risk limits also in Paused and
+  Error (they take effect at the next evaluation, which re-reads the agent); the exchange key also in Error; a Running
+  agent accepts a new name only. A timeframe change switches to the new timeframe's default strategy and clears the
+  parameters. Parameters are stored as the values that differ from the defaults, so blank means default and a reset is
+  an empty object; they are validated against the **pinned** version's descriptor. Choosing another strategy pins that
+  strategy's newest version and resets the parameters; a parameters-only save never touches the version (FR-STR-06),
+  and an explicit upgrade moves the agent to the newest version, keeping the parameters it still accepts and resetting
+  the rest. Windows (at most 20 per agent): a one-off window needs a start before an end still ahead, a recurring one
+  its four day/time fields and may wrap past Sunday; a duplicate is refused. Every changed field, every state transition
+  and the creation are rows in `agent_changes` with the old and new value as JSON (`entryWindows` records the whole
+  list before and after).
 - Risk limits stay within `RiskCaps` (risk per trade, open positions, daily loss) at edit and start time; the council
   has all four roles, the Risk Manager enabled and a model for every enabled role (FR-AI-03/05).
-- Start (Draft, Stopped or Error → Running) requires the running limit, a strategy still in the catalog, the risk
-  caps, a model per enabled role, a Valid provider key for every enabled role's provider (FR-KEY-08) and, for live
+- Start (Draft, Stopped or Error → Running) requires the running limit, a strategy still in the catalog at the pinned
+  version with parameters that still validate, the risk caps, a model per enabled role, a Valid provider key for every enabled role's provider (FR-KEY-08) and, for live
   mode, the accepted risk disclaimer (FR-ACC-08) and a Valid exchange key allowed for the market. Pause keeps the agent
   evaluated but opens nothing (FR-AGT-05). Stop cancels the agent's open orders first and then either closes its
   positions at market or leaves them flagged unmanaged (FR-AGT-06); if the orders cannot be cancelled the state is
   unchanged and the user is told. Delete needs Draft or Stopped. Error is entered by the runtime only: an unknown
-  strategy, a live agent whose key is gone or no longer resolves (which also covers a start that raced a key
+  strategy or version, parameters no longer valid, a live agent whose key is gone or no longer resolves (which also covers a start that raced a key
   deletion), or a key the keys module found invalid; the agent is untracked until the user fixes the cause and starts it.
 - The scheduler follows one candle stream per tracked agent and evaluates it under a per-agent gate that lifecycle
   actions also take, with at most `Agents:MaxConcurrentEvaluations` evaluations at once, shorter timeframes first. The
@@ -55,11 +63,16 @@ Rules the module enforces:
   lifts daily-loss pauses whose time has come (FR-EXE-09) and finalises evaluation rows nobody will finish.
 - The pipeline is FR-AGT-10 in order: load market data → strategy engine → council when a setup exists and the agent is
   Running, a position is open, or discretionary mode is on and the agent is Running (FR-AI-08) → execute → persist →
-  log → notify. No Risk Manager decision opens nothing and leaves protective orders alone (FR-AI-12). Until their
-  issues land, the stages are seeded fail-safe: the engine reports no setup (FR-STR, #8), the council answers that it
-  is not available (FR-AI, #9), execution records the decision and places nothing (FR-EXE, #13), and market data is the
-  most recent closed candles from the exchange, written through to `candles` (FR-DATA, #12). A Paused agent with a setup
-  and no position does not consult the council, and no shadow outcome is recorded for it (FR-EXP-03 is #11's).
+  log → notify. No Risk Manager decision opens nothing and leaves protective orders alone (FR-AI-12). The strategy
+  engine is the Strategies module's; the agent is loaded with its no-entry windows so the engine can apply them. Until
+  their issues land, the other stages are seeded fail-safe: the council answers that it is not available (FR-AI, #9)
+  and execution records the decision and places nothing (FR-EXE, #13). Market data (FR-DATA, #12) is, until then, the
+  most recent 300 closed candles of the agent's timeframe plus every higher timeframe and reference series the strategy
+  declares (FR-STR-03), each read from the exchange and kept only up to the evaluated candle's close (no look-ahead),
+  written through to `candles`; reference series (BTCUSDT weekly) always come from production public data; the futures
+  mark price is read once and a failure of it or of a reference series is logged and tolerated, while the own and
+  higher-timeframe series must load. A Paused agent with a setup and no position does not consult the council, and no
+  shadow outcome is recorded for it (FR-EXP-03 is #11's).
 - Paper mode (FR-AGT-11, FR-AGT-12): paper agents price against **production** public data and need no key. Orders are
   rows with `is_paper` and deterministic client ids (FR-EXE-07); the simulator follows the last-price stream of every
   symbol with open paper orders or positions, in any agent state, so a Stop's close still fills. An order fills on the
@@ -90,17 +103,19 @@ A deadline must be shorter than its timeframe; percentages are plain percents (0
 
 Pages (static server rendering, plain forms): `/agents` (the user's agents with state and last evaluation),
 `/agents/new` (name, market, symbol, timeframe, mode, key, leverage and margin; creates a draft) and `/agents/{id}`
-(actions, positions and orders, settings, strategy and parameters filtered by the timeframe, council, risk limits,
-recent evaluations and change history; fields a state forbids are disabled). The disclaimer is shown on both forms
+(actions, positions and orders, settings, strategy and parameters generated from the pinned version's descriptor with an
+upgrade button when a newer version exists, no-entry windows, council, risk limits, recent evaluations and change
+history; fields a state forbids are disabled). The disclaimer is shown on both forms
 (FR-UI-05). Another user's agent and a missing one both answer not found.
 
 Known gaps: choosing council models from the synced catalog, deprecation warnings and single-model mode arrive with
-the council and model-sync issues; entry windows and strategy-specific parameters with the strategy issue; the dashboard,
-agent detail with chart and live updates with the UI issue. `Order.WorkingType` has no column, so paper futures stops
+the council and model-sync issues; backfill on start, candle caching and streamed mark prices with market data (#12),
+until which the loader issues up to four REST reads per evaluation; the dashboard, agent detail with chart and live
+updates with the UI issue. `Order.WorkingType` has no column, so paper futures stops
 are last-price only.
 
 Tests: `dotnet test` runs offline (options, registration and placeholder replacement, the Appendix E table and edit
-rules, the catalog and parameter parsing, input rules, change sets, events, the scheduler's staleness rules and
-plumbing, the paper book's fill rules). Live checks run against PostgreSQL through the same git-ignored
+rules, parameter parsing, input rules including windows, the window schedule, change sets, events, the scheduler's
+staleness rules and plumbing, the paper book's fill rules). Live checks run against PostgreSQL through the same git-ignored
 `tests/.database.json` as the database module, with the exchange, providers and streams faked:
 `dotnet test -- --filter-trait "Category=Live"`.

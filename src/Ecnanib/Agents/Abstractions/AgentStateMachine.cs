@@ -29,6 +29,10 @@ public enum AgentField
     Parameters,
     Council,
     RiskLimits,
+    /// <summary>The pinned strategy version (FR-STR-06).</summary>
+    StrategyVersion,
+    /// <summary>The "no new entry" windows (FR-STR-05).</summary>
+    EntryWindows,
 }
 
 /// <summary>
@@ -65,9 +69,9 @@ public static class AgentStateMachine
 
     /// <summary>
     /// FR-AGT-07: timeframe, market, symbol and mode only in Draft or Stopped; strategy parameters, council and risk
-    /// limits also in Paused (they take effect at the next evaluation) and in Error (fixing the cause). The exchange
-    /// key may be re-pointed in Error for the same reason. A Running agent accepts a new name and nothing else:
-    /// pause it to edit.
+    /// limits also in Paused (they take effect at the next evaluation) and in Error (fixing the cause), as are the
+    /// strategy version (FR-STR-06) and the no-entry windows (FR-STR-05). The exchange key may be re-pointed in Error
+    /// for the same reason. A Running agent accepts a new name and nothing else: pause it to edit.
     /// </summary>
     public static bool CanEdit(AgentState state, AgentField field) => field switch
     {
@@ -76,7 +80,7 @@ public static class AgentStateMachine
         AgentField.MarketType or AgentField.Symbol or AgentField.Timeframe or AgentField.Mode or AgentField.Strategy
             or AgentField.Leverage or AgentField.MarginType => state is AgentState.Draft or AgentState.Stopped,
         AgentField.ExchangeKey => state is AgentState.Draft or AgentState.Stopped or AgentState.Error,
-        AgentField.Parameters or AgentField.Council or AgentField.RiskLimits =>
+        AgentField.Parameters or AgentField.Council or AgentField.RiskLimits or AgentField.StrategyVersion or AgentField.EntryWindows =>
             state is AgentState.Draft or AgentState.Stopped or AgentState.Paused or AgentState.Error,
         _ => false,
     };

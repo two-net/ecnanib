@@ -3,9 +3,11 @@ using Ecnanib.Agents;
 using Ecnanib.Ai.Abstractions;
 using Ecnanib.Configuration;
 using Ecnanib.Database;
+using Ecnanib.Agents.Abstractions;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Keys;
 using Ecnanib.ModelSync;
+using Ecnanib.Strategies;
 using Ecnanib.Tests.Database;
 using Ecnanib.Tests.Support;
 using Microsoft.Extensions.Configuration;
@@ -27,7 +29,8 @@ internal static class AgentsTestHost
         FakeExchangeClientFactory? exchange = null,
         FakeAiClientFactory? ai = null,
         FakeMarketStreams? streams = null,
-        Action<IServiceCollection>? configure = null)
+        Action<IServiceCollection>? configure = null,
+        IStrategyEngine? engine = null)
     {
         var values = new Dictionary<string, string?>();
         if (connectionString is not null)
@@ -41,6 +44,10 @@ internal static class AgentsTestHost
         services.AddDatabase(configuration);
         services.AddAccounts(configuration);
         services.AddModelSync(configuration);
+        // A fake engine registered first wins over the Strategies module's (TryAdd), as any stage registered before AddAgents does.
+        if (engine is not null)
+            services.AddSingleton(engine);
+        services.AddStrategies();
         services.AddAgents(configuration);
         services.AddKeys(configuration);
         services.AddSingleton<IExchangeClientFactory>(exchange ?? new FakeExchangeClientFactory());

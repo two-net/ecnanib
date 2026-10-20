@@ -78,7 +78,7 @@ internal sealed class EvaluationPipeline
         Agent? agent;
         await using (var db = await _factory.CreateDbContextAsync(stopping).ConfigureAwait(false))
         {
-            agent = await db.Agents.AsNoTracking().Include(a => a.CouncilAssignments)
+            agent = await db.Agents.AsNoTracking().Include(a => a.CouncilAssignments).Include(a => a.EntryWindows).AsSplitQuery()
                 .SingleOrDefaultAsync(a => a.Id == agentId, stopping).ConfigureAwait(false);
         }
 
@@ -86,10 +86,18 @@ internal sealed class EvaluationPipeline
             return;
 
         // Unrecoverable before anything is recorded: the agent cannot be evaluated as configured (Appendix E → Error).
-        var strategy = _catalog.Find(agent.StrategyId);
+        var strategy = _catalog.Find(agent.StrategyId, agent.StrategyVersion);
         if (strategy is null)
         {
-            await host.FailAsync(agentId, $"Strategy '{agent.StrategyId}' is not in the catalog; choose another and start the agent again.", stopping).ConfigureAwait(false);
+            await host.FailAsync(agentId, $"Strategy '{agent.StrategyId}' version {agent.StrategyVersion} is not in the catalog; upgrade it or choose another and start the agent again.", stopping).ConfigureAwait(false);
+            return;
+        }
+
+        var stored = StrategyParameters.Read(agent.Parameters);
+        var invalid = strategy.Validate(stored);
+        if (invalid.Count > 0)
+        {
+            await host.FailAsync(agentId, $"The strategy parameters are no longer valid: {string.Join("; ", invalid.Select(e => e.Message))} Edit them and start the agent again.", stopping).ConfigureAwait(false);
             return;
         }
 
@@ -138,8 +146,8 @@ internal sealed class EvaluationPipeline
         try
         {
             var entriesAllowed = agent.State == AgentState.Running;
-            var market = await _loader.LoadAsync(agent, run.Agent.Key, candle, cancellable).ConfigureAwait(false);
-            var parameters = strategy.Resolve(StrategyParameters.Read(agent.Parameters));
+            var market = await _loader.LoadAsync(agent, strategy, run.Agent.Key, candle, cancellable).ConfigureAwait(false);
+            var parameters = strategy.Resolve(stored);
             var output = _engine.Evaluate(new StrategyContext(agent, strategy, parameters, market, entriesAllowed));
             strategyJson = JsonSerializer.SerializeToElement(output, Json);
 

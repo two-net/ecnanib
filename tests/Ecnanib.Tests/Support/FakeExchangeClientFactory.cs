@@ -35,6 +35,12 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
     /// <summary>Called for recent-candle reads (symbol, interval, count); unset, the call is unsupported.</summary>
     public Func<string, CandleInterval, int, IReadOnlyList<Candle>>? OnRecentCandles { get; set; }
 
+    /// <summary>Called for mark-price reads (symbol); unset, the call is unsupported, which the loader tolerates.</summary>
+    public Func<string, MarkPrice>? OnMarkPrice { get; set; }
+
+    /// <summary>Every recent-candle read, in order, so a test can assert which series were asked for.</summary>
+    public List<(ExchangeEnvironment Environment, MarketType Market, string Symbol, CandleInterval Interval, int Count)> RecentCandleReads { get; } = [];
+
     public List<(ExchangeEnvironment Environment, MarketType Market)> ExchangeInfoReads { get; } = [];
 
     /// <summary>Exchange information listing the given symbols as trading, with permissive filters.</summary>
@@ -97,12 +103,17 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
 
         public Task<IReadOnlyList<Candle>> GetCandlesAsync(string symbol, CandleInterval interval, DateTimeOffset? from, DateTimeOffset? to, int? limit, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task<IReadOnlyList<Candle>> GetRecentCandlesAsync(string symbol, CandleInterval interval, int count, bool closedOnly, CancellationToken ct) =>
-            Task.FromResult(owner.OnRecentCandles?.Invoke(symbol, interval, count) ?? throw new NotSupportedException("No candles are scripted."));
+        public Task<IReadOnlyList<Candle>> GetRecentCandlesAsync(string symbol, CandleInterval interval, int count, bool closedOnly, CancellationToken ct)
+        {
+            lock (owner.RecentCandleReads)
+                owner.RecentCandleReads.Add((environment, market, symbol, interval, count));
+            return Task.FromResult(owner.OnRecentCandles?.Invoke(symbol, interval, count) ?? throw new NotSupportedException("No candles are scripted."));
+        }
 
         public Task<PriceTick> GetPriceAsync(string symbol, CancellationToken ct) => throw new NotSupportedException();
 
-        public Task<MarkPrice> GetMarkPriceAsync(string symbol, CancellationToken ct) => throw new NotSupportedException();
+        public Task<MarkPrice> GetMarkPriceAsync(string symbol, CancellationToken ct) =>
+            Task.FromResult(owner.OnMarkPrice?.Invoke(symbol) ?? throw new NotSupportedException("No mark price is scripted."));
     }
 
     private sealed class FakeExchangeAccountClient(FakeExchangeClientFactory owner, ExchangeKeyHandle key, MarketType market) : ISpotAccountClient, IFuturesAccountClient

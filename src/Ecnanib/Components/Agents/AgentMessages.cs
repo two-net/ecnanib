@@ -14,7 +14,11 @@ internal static class AgentMessages
 
     public const string DraftHint = "The agent is a draft: choose its strategy, council and risk limits below, then start it.";
 
-    public const string RunningEditHint = "While the agent is running only its name can be changed; pause it to edit the strategy parameters, council or risk limits.";
+    public const string RunningEditHint = "While the agent is running only its name can be changed; pause it to edit the strategy parameters, strategy version, no-entry windows, council or risk limits.";
+
+    public const string UpgradeHint = "Upgrading keeps the parameters the new version still accepts and resets the others to their defaults.";
+
+    public const string WindowsHint = "No new entry is opened while a window is active (UTC); the agent keeps managing open positions. Windows apply from the next evaluation.";
 
     public static string ForSave(AgentSaveResult result) => result.Status switch
     {
@@ -68,4 +72,11 @@ internal static class AgentMessages
     public static string Mode(AgentMode mode) => mode == AgentMode.Paper ? "Paper" : "Live";
 
     public static string Plural(int count, string one, string many) => $"{count} {(count == 1 ? one : many)}";
+
+    /// <summary>"Every Friday 21:00 → Monday 01:00 UTC" or "2026-11-05 12:00 → 2026-11-05 16:00 UTC".</summary>
+    public static string Describe(EntryWindowView window) => window.Kind == EntryWindowKind.Recurring
+        ? $"Every {window.StartDay} {window.StartTime:HH\\:mm} → {window.EndDay} {window.EndTime:HH\\:mm} UTC"
+        : $"{window.StartAt:yyyy-MM-dd HH:mm} → {window.EndAt:yyyy-MM-dd HH:mm} UTC";
+
+    public static string Kind(EntryWindowKind kind) => kind == EntryWindowKind.Recurring ? "Every week" : "One-off";
 }

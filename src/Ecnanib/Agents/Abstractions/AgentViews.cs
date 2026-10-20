@@ -63,6 +63,17 @@ public sealed record EvaluationView(
 /// <summary>Old and new values are the stored JSON as text (FR-AGT-07).</summary>
 public sealed record AgentChangeView(DateTimeOffset Timestamp, string Field, string? OldValue, string? NewValue);
 
+/// <summary>A "no new entry" window in UTC (FR-STR-05); the fields of the other kind are null.</summary>
+public sealed record EntryWindowView(
+    long Id,
+    EntryWindowKind Kind,
+    DateTimeOffset? StartAt,
+    DateTimeOffset? EndAt,
+    DayOfWeek? StartDay,
+    TimeOnly? StartTime,
+    DayOfWeek? EndDay,
+    TimeOnly? EndTime);
+
 public sealed record AgentDetail(
     Guid Id,
     string Name,
@@ -71,6 +82,9 @@ public sealed record AgentDetail(
     CandleInterval Timeframe,
     string StrategyId,
     int StrategyVersion,
+    /// <summary>The catalog's newest version of the strategy; greater than <see cref="StrategyVersion"/> when an upgrade is available (FR-STR-06), null when the strategy left the catalog.</summary>
+    int? LatestStrategyVersion,
+    /// <summary>The stored overrides only; blank means the default of the pinned version.</summary>
     IReadOnlyDictionary<string, JsonElement> Parameters,
     AgentMode Mode,
     Guid? ExchangeKeyId,
@@ -85,6 +99,7 @@ public sealed record AgentDetail(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<CouncilAssignmentView> Council,
+    IReadOnlyList<EntryWindowView> EntryWindows,
     IReadOnlyList<OpenPositionView> OpenPositions,
     IReadOnlyList<OpenOrderView> OpenOrders,
     IReadOnlyList<EvaluationView> RecentEvaluations,

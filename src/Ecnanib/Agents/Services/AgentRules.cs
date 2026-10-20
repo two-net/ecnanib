@@ -120,6 +120,62 @@ internal static partial class AgentRules
         return errors;
     }
 
+    public const int MaxEntryWindows = 20;
+
+    /// <summary>
+    /// A "no new entry" window ready to store (FR-STR-05), or null with the errors: a one-off window needs a start before
+    /// its end and an end still ahead; a recurring one needs its four fields and may wrap past the end of the week but
+    /// must not be empty. One-off instants are normalised to UTC; times are truncated to whole seconds.
+    /// </summary>
+    public static EntryWindow? NormalizeEntryWindow(EntryWindowInput input, DateTimeOffset now, List<FieldError> errors)
+    {
+        var count = errors.Count;
+        switch (input.Kind)
+        {
+            case EntryWindowKind.OneOff:
+                if (input.StartAt is null)
+                    errors.Add(new FieldError("entryWindow.startAt", "Enter the start (UTC)."));
+                if (input.EndAt is null)
+                    errors.Add(new FieldError("entryWindow.endAt", "Enter the end (UTC)."));
+                else if (input.StartAt is { } start && input.EndAt <= start)
+                    errors.Add(new FieldError("entryWindow.endAt", "The end must be after the start."));
+                else if (input.EndAt <= now)
+                    errors.Add(new FieldError("entryWindow.endAt", "That window has already ended."));
+                return errors.Count == count
+                    ? new EntryWindow { Kind = EntryWindowKind.OneOff, StartAt = input.StartAt!.Value.ToUniversalTime(), EndAt = input.EndAt!.Value.ToUniversalTime() }
+                    : null;
+            case EntryWindowKind.Recurring:
+                if (input.StartDay is not { } startDay || !Enum.IsDefined(startDay))
+                    errors.Add(new FieldError("entryWindow.startDay", "Choose the start day."));
+                if (input.StartTime is null)
+                    errors.Add(new FieldError("entryWindow.startTime", "Enter the start time (UTC)."));
+                if (input.EndDay is not { } endDay || !Enum.IsDefined(endDay))
+                    errors.Add(new FieldError("entryWindow.endDay", "Choose the end day."));
+                if (input.EndTime is null)
+                    errors.Add(new FieldError("entryWindow.endTime", "Enter the end time (UTC)."));
+                if (errors.Count != count)
+                    return null;
+                var startTime = Truncate(input.StartTime!.Value);
+                var endTime = Truncate(input.EndTime!.Value);
+                if (EntryWindowSchedule.WeekSecond(input.StartDay!.Value, startTime) == EntryWindowSchedule.WeekSecond(input.EndDay!.Value, endTime))
+                {
+                    errors.Add(new FieldError("entryWindow.endTime", "The window must not be empty."));
+                    return null;
+                }
+
+                return new EntryWindow { Kind = EntryWindowKind.Recurring, StartDay = input.StartDay, StartTime = startTime, EndDay = input.EndDay, EndTime = endTime };
+            default:
+                errors.Add(new FieldError("entryWindow.kind", "Choose a recurring or one-off window."));
+                return null;
+        }
+    }
+
+    public static bool SameWindow(EntryWindow a, EntryWindow b) =>
+        a.Kind == b.Kind && a.StartAt == b.StartAt && a.EndAt == b.EndAt
+        && a.StartDay == b.StartDay && a.StartTime == b.StartTime && a.EndDay == b.EndDay && a.EndTime == b.EndTime;
+
+    private static TimeOnly Truncate(TimeOnly time) => new(time.Hour, time.Minute, time.Second);
+
     /// <summary>The Appendix B default provider of a role.</summary>
     public static Ecnanib.Ai.Abstractions.AiProvider DefaultProvider(CouncilRole role) => role switch
     {

@@ -7,6 +7,7 @@ using Ecnanib.Database;
 using Ecnanib.Exchange;
 using Ecnanib.Keys;
 using Ecnanib.ModelSync;
+using Ecnanib.Strategies;
 using Ecnanib.Tests.Database;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Json;
@@ -84,6 +85,7 @@ public class ReferenceFileTests
         services.AddDatabase(configuration);
         services.AddAccounts(configuration);
         services.AddModelSync(configuration);
+        services.AddStrategies();
         services.AddAgents(configuration);
         services.AddKeys(configuration);
         return services;

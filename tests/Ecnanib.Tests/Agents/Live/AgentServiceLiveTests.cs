@@ -285,6 +285,13 @@ public class AgentServiceLiveTests : IClassFixture<DatabaseLiveFixture>
             await db.Agents.Where(a => a.Id == agent.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Parameters, LiveSeed.Json("""{"atrPeriod":21}""")), Ct);
         }
 
+        await using (var db = _fixture.CreateContext())
+        {
+            db.EntryWindows.Add(new EntryWindow { AgentId = agent.Id, Kind = EntryWindowKind.Recurring, StartDay = DayOfWeek.Friday, StartTime = new TimeOnly(21, 0), EndDay = DayOfWeek.Monday, EndTime = new TimeOnly(1, 0) });
+            db.EntryWindows.Add(new EntryWindow { AgentId = agent.Id, Kind = EntryWindowKind.OneOff, StartAt = AgentsLiveSeed.Now.AddDays(1), EndAt = AgentsLiveSeed.Now.AddDays(2) });
+            await db.SaveChangesAsync(Ct);
+        }
+
         var (provider, _, _, _, _) = AgentsLiveSeed.Build(_fixture);
         await using var _ = provider;
         var agents = provider.GetRequiredService<IAgentService>();
@@ -293,6 +300,8 @@ public class AgentServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal(AgentActionStatus.Succeeded, cloned.Status);
         var copy = await AgentsLiveSeed.AgentAsync(_fixture, cloned.AgentId!.Value);
         Assert.Equal("BTC (copy)", copy.Name);
+        Assert.Equal(2, copy.EntryWindows.Count);
+        Assert.Contains(copy.EntryWindows, w => w.Kind == EntryWindowKind.Recurring && w.StartDay == DayOfWeek.Friday);
         Assert.Equal(AgentState.Draft, copy.State);
         Assert.Equal(MarketType.UsdFutures, copy.MarketType);
         Assert.Equal(3, copy.Leverage);
@@ -464,6 +473,158 @@ public class AgentServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal(AgentState.Stopped, (await AgentsLiveSeed.AgentAsync(_fixture, agent.Id)).State);
         var states = (await AgentsLiveSeed.ChangesAsync(_fixture, agent.Id)).Where(c => c.Field == ChangeSet.StateField).ToList();
         Assert.Equal(6, states.Count);
+
+        await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
+    }
+
+    [Fact]
+    public async Task AParametersOnlySaveKeepsThePinnedVersionAndAStrategyChangeRePins()
+    {
+        await StartAsync();
+        var user = await AgentsLiveSeed.NewUserAsync(_fixture, "pinned@example.com");
+        var agent = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "BTC");
+        var (provider, _, _, _, _) = AgentsLiveSeed.Build(_fixture, configure: s => AgentsLiveSeed.WithCatalog(s,
+            inner => new VersionBumpingCatalog(inner, new Dictionary<string, int> { ["trend-pullback"] = 2, ["range-breakout-retest"] = 3 }, StrategyParameters.MarketFallback)));
+        await using var _ = provider;
+        var agents = provider.GetRequiredService<IAgentService>();
+
+        var saved = await agents.UpdateStrategyAsync(user.Id, agent.Id, new StrategyInput("trend-pullback", new Dictionary<string, string?> { [StrategyParameters.AtrPeriod] = "21", [StrategyParameters.MarketFallback] = "true" }), Ct);
+        Assert.Equal(AgentSaveStatus.Succeeded, saved.Status);
+        var row = await AgentsLiveSeed.AgentAsync(_fixture, agent.Id);
+        Assert.Equal(1, row.StrategyVersion);
+        Assert.Equal("""{"atrPeriod":21,"marketFallback":true}""", Canonical(row.Parameters));
+        Assert.DoesNotContain(await AgentsLiveSeed.ChangesAsync(_fixture, agent.Id), c => c.Field == "strategyVersion");
+        var detail = await agents.GetAsync(user.Id, agent.Id, Ct);
+        Assert.Equal(1, detail!.StrategyVersion);
+        Assert.Equal(2, detail.LatestStrategyVersion);
+        Assert.Equal("Trend Pullback", Assert.Single(await agents.ListAsync(user.Id, Ct)).StrategyName);
+
+        var changed = await agents.UpdateStrategyAsync(user.Id, agent.Id, new StrategyInput("range-breakout-retest", new Dictionary<string, string?>()), Ct);
+        Assert.Equal(AgentSaveStatus.Succeeded, changed.Status);
+        row = await AgentsLiveSeed.AgentAsync(_fixture, agent.Id);
+        Assert.Equal(3, row.StrategyVersion);
+        Assert.Equal("{}", Canonical(row.Parameters));
+        var changes = await AgentsLiveSeed.ChangesAsync(_fixture, agent.Id);
+        Assert.Contains(changes, c => c.Field == "strategyVersion" && c.OldValue!.Value.GetInt32() == 1 && c.NewValue!.Value.GetInt32() == 3);
+
+        await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
+    }
+
+    [Fact]
+    public async Task UpgradeMovesToTheNewestVersionResetsWhatItNoLongerAcceptsAndFollowsTheState()
+    {
+        await StartAsync();
+        var user = await AgentsLiveSeed.NewUserAsync(_fixture, "upgrade@example.com");
+        var agent = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "BTC", state: AgentState.Running);
+        await using (var db = _fixture.CreateContext())
+            await db.Agents.Where(a => a.Id == agent.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Parameters, LiveSeed.Json("""{"atrPeriod":21,"marketFallback":true}""")), Ct);
+        var (provider, _, _, _, _) = AgentsLiveSeed.Build(_fixture, configure: s => AgentsLiveSeed.WithCatalog(s,
+            inner => new VersionBumpingCatalog(inner, new Dictionary<string, int> { ["trend-pullback"] = 2 }, StrategyParameters.MarketFallback)));
+        await using var _ = provider;
+        var agents = provider.GetRequiredService<IAgentService>();
+
+        var running = await agents.UpgradeStrategyAsync(user.Id, agent.Id, Ct);
+        Assert.Equal(AgentSaveStatus.InvalidState, running.Status);
+        Assert.Contains("strategy version", running.Detail);
+        Assert.Equal(1, (await AgentsLiveSeed.AgentAsync(_fixture, agent.Id)).StrategyVersion);
+
+        await AgentsLiveSeed.SetStateAsync(_fixture, agent.Id, AgentState.Paused);
+        var upgraded = await agents.UpgradeStrategyAsync(user.Id, agent.Id, Ct);
+        Assert.Equal(AgentSaveStatus.Succeeded, upgraded.Status);
+        Assert.Contains("marketFallback", upgraded.Detail);
+        var row = await AgentsLiveSeed.AgentAsync(_fixture, agent.Id);
+        Assert.Equal(2, row.StrategyVersion);
+        Assert.Equal("""{"atrPeriod":21}""", Canonical(row.Parameters));
+        var changes = await AgentsLiveSeed.ChangesAsync(_fixture, agent.Id);
+        Assert.Contains(changes, c => c.Field == "strategyVersion" && c.OldValue!.Value.GetInt32() == 1 && c.NewValue!.Value.GetInt32() == 2);
+        Assert.Contains(changes, c => c.Field == "parameters.marketFallback" && c.OldValue!.Value.GetBoolean() && c.NewValue is null);
+        Assert.DoesNotContain(changes, c => c.Field == "parameters.atrPeriod");
+
+        var again = await agents.UpgradeStrategyAsync(user.Id, agent.Id, Ct);
+        Assert.Equal(AgentSaveStatus.Succeeded, again.Status);
+        Assert.Null(again.Detail);
+        Assert.Equal(changes.Count, (await AgentsLiveSeed.ChangesAsync(_fixture, agent.Id)).Count);
+        Assert.Equal(AgentSaveStatus.NotFound, (await agents.UpgradeStrategyAsync(Guid.NewGuid(), agent.Id, Ct)).Status);
+
+        await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
+    }
+
+    [Fact]
+    public async Task StartRefusesAMissingPinnedVersionAndInvalidStoredParameters()
+    {
+        await StartAsync();
+        var user = await AgentsLiveSeed.NewUserAsync(_fixture, "pinned-start@example.com");
+        var old = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "old", strategyVersion: 0);
+        var bad = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "bad", symbol: "ETHUSDT");
+        await using (var db = _fixture.CreateContext())
+            await db.Agents.Where(a => a.Id == bad.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Parameters, LiveSeed.Json("""{"atrPeriod":1000}""")), Ct);
+        var (provider, _, _, _, _) = AgentsLiveSeed.Build(_fixture);
+        await using var _ = provider;
+        var agents = provider.GetRequiredService<IAgentService>();
+        await AgentsLiveSeed.AddProviderKeysAsync(provider.GetRequiredService<IKeyService>(), user.Id, AiProvider.Claude, AiProvider.Gemini, AiProvider.Gpt, AiProvider.Grok);
+
+        var missing = await agents.StartAsync(user.Id, old.Id, Ct);
+        Assert.Equal(AgentActionStatus.StrategyUnavailable, missing.Status);
+        Assert.Contains("upgrade", missing.Detail);
+        var editing = await agents.UpdateStrategyAsync(user.Id, old.Id, new StrategyInput("trend-pullback", new Dictionary<string, string?> { [StrategyParameters.AtrPeriod] = "21" }), Ct);
+        Assert.Equal(AgentSaveStatus.InvalidInput, editing.Status);
+        Assert.Contains("upgrade", Assert.Single(editing.Errors!).Message);
+        Assert.Equal(AgentSaveStatus.Succeeded, (await agents.UpgradeStrategyAsync(user.Id, old.Id, Ct)).Status);
+        Assert.Equal(1, (await AgentsLiveSeed.AgentAsync(_fixture, old.Id)).StrategyVersion);
+
+        var invalid = await agents.StartAsync(user.Id, bad.Id, Ct);
+        Assert.Equal(AgentActionStatus.InvalidConfiguration, invalid.Status);
+        Assert.Contains("strategy parameters", invalid.Detail);
+
+        await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
+    }
+
+    [Fact]
+    public async Task EntryWindowsAreAddedRemovedRecordedAndGuardedByState()
+    {
+        await StartAsync();
+        var user = await AgentsLiveSeed.NewUserAsync(_fixture, "windows@example.com");
+        var agent = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "BTC");
+        var (provider, _, _, _, _) = AgentsLiveSeed.Build(_fixture);
+        await using var _ = provider;
+        var agents = provider.GetRequiredService<IAgentService>();
+        var weekend = new EntryWindowInput(EntryWindowKind.Recurring, StartDay: DayOfWeek.Friday, StartTime: new TimeOnly(21, 0), EndDay: DayOfWeek.Monday, EndTime: new TimeOnly(1, 0));
+        var macro = new EntryWindowInput(EntryWindowKind.OneOff, AgentsLiveSeed.Now.AddDays(1), AgentsLiveSeed.Now.AddDays(1).AddHours(2));
+
+        Assert.Equal(AgentSaveStatus.Succeeded, (await agents.AddEntryWindowAsync(user.Id, agent.Id, weekend, Ct)).Status);
+        Assert.Equal(AgentSaveStatus.Succeeded, (await agents.AddEntryWindowAsync(user.Id, agent.Id, macro, Ct)).Status);
+        var duplicate = await agents.AddEntryWindowAsync(user.Id, agent.Id, weekend, Ct);
+        Assert.Equal(AgentSaveStatus.InvalidInput, duplicate.Status);
+        Assert.Contains("already exists", Assert.Single(duplicate.Errors!).Message);
+        var detail = await agents.GetAsync(user.Id, agent.Id, Ct);
+        Assert.Equal(2, detail!.EntryWindows.Count);
+        Assert.Equal(EntryWindowKind.Recurring, detail.EntryWindows[0].Kind);
+        Assert.Equal(DayOfWeek.Friday, detail.EntryWindows[0].StartDay);
+        Assert.Equal(AgentsLiveSeed.Now.AddDays(1), detail.EntryWindows[1].StartAt);
+        var changes = (await AgentsLiveSeed.ChangesAsync(_fixture, agent.Id)).Where(c => c.Field == "entryWindows").ToList();
+        Assert.Equal(2, changes.Count);
+        Assert.Equal(0, changes[0].OldValue!.Value.GetArrayLength());
+        Assert.Equal(1, changes[0].NewValue!.Value.GetArrayLength());
+        Assert.Equal(2, changes[1].NewValue!.Value.GetArrayLength());
+        Assert.Contains("\"Friday\"", changes[0].NewValue!.Value.GetRawText());
+        Assert.Contains("21:00:00", changes[0].NewValue!.Value.GetRawText());
+
+        await AgentsLiveSeed.SetStateAsync(_fixture, agent.Id, AgentState.Running);
+        Assert.Equal(AgentSaveStatus.InvalidState, (await agents.AddEntryWindowAsync(user.Id, agent.Id, new EntryWindowInput(EntryWindowKind.OneOff, AgentsLiveSeed.Now.AddDays(3), AgentsLiveSeed.Now.AddDays(4)), Ct)).Status);
+        Assert.Equal(AgentSaveStatus.InvalidState, (await agents.RemoveEntryWindowAsync(user.Id, agent.Id, detail.EntryWindows[1].Id, Ct)).Status);
+        await AgentsLiveSeed.SetStateAsync(_fixture, agent.Id, AgentState.Paused);
+        Assert.Equal(AgentSaveStatus.Succeeded, (await agents.RemoveEntryWindowAsync(user.Id, agent.Id, detail.EntryWindows[1].Id, Ct)).Status);
+        var removedTwice = await agents.RemoveEntryWindowAsync(user.Id, agent.Id, detail.EntryWindows[1].Id, Ct);
+        Assert.Equal(AgentSaveStatus.InvalidInput, removedTwice.Status);
+        Assert.Single((await agents.GetAsync(user.Id, agent.Id, Ct))!.EntryWindows);
+        Assert.Equal(3, (await AgentsLiveSeed.ChangesAsync(_fixture, agent.Id)).Count(c => c.Field == "entryWindows"));
+        Assert.Equal(AgentSaveStatus.NotFound, (await agents.AddEntryWindowAsync(Guid.NewGuid(), agent.Id, macro, Ct)).Status);
+
+        for (var i = 1; i < AgentRules.MaxEntryWindows; i++)
+            Assert.Equal(AgentSaveStatus.Succeeded, (await agents.AddEntryWindowAsync(user.Id, agent.Id, new EntryWindowInput(EntryWindowKind.OneOff, AgentsLiveSeed.Now.AddDays(i + 1), AgentsLiveSeed.Now.AddDays(i + 1).AddHours(1)), Ct)).Status);
+        var tooMany = await agents.AddEntryWindowAsync(user.Id, agent.Id, new EntryWindowInput(EntryWindowKind.OneOff, AgentsLiveSeed.Now.AddDays(40), AgentsLiveSeed.Now.AddDays(41)), Ct);
+        Assert.Equal(AgentSaveStatus.InvalidInput, tooMany.Status);
+        Assert.Contains("at most 20", Assert.Single(tooMany.Errors!).Message);
 
         await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
     }

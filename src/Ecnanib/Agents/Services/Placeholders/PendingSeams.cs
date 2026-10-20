@@ -3,20 +3,13 @@ using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Candle = Ecnanib.Exchange.Abstractions.Candle;
 
 namespace Ecnanib.Agents.Services.Placeholders;
 
 // The pipeline stages other issues deliver, seeded here so the runtime is complete and fail-safe (NFR-REL-03): no
-// setup is detected, no decision is made and nothing is executed until the real implementation replaces the default.
-
-/// <summary>Reports no bias and no setup until the strategy issue (FR-STR) delivers the Appendix A engines.</summary>
-internal sealed class PendingStrategyEngine : IStrategyEngine
-{
-    public const string Note = "The strategy engine arrives with FR-STR (#8); no setup is detected yet.";
-
-    public StrategyOutput Evaluate(StrategyContext context) => StrategyOutput.Nothing(Note);
-}
+// decision is made and nothing is executed until the real implementation replaces the default.
 
 /// <summary>Answers with no decision until the council issue (FR-AI) delivers the roles; the pipeline treats that as a Risk Manager failure (FR-AI-12).</summary>
 internal sealed class PendingCouncil : ICouncil
@@ -92,9 +85,13 @@ internal sealed class OrderVenues : IOrderVenues
 }
 
 /// <summary>
-/// The "load market data" step until the market-data issue (FR-DATA) delivers backfill, higher timeframes and the mark
-/// price: the most recent closed candles of the agent's timeframe from the exchange, up to the candle being evaluated,
-/// written through to <c>candles</c> for audit (FR-DATA-05).
+/// The "load market data" step until the market-data issue (FR-DATA, #12) delivers backfill, caching and streamed mark
+/// prices: the most recent closed candles of the agent's timeframe from the exchange up to the candle being evaluated,
+/// the higher timeframes and reference series the strategy declares (FR-STR-03) aligned so that no candle closing
+/// after the evaluated one is included, all written through to <c>candles</c> for audit (FR-DATA-05), and the futures
+/// mark price (FR-DATA-04). Reference series always come from production public data, so a testnet agent judges the
+/// regime on real-market prices. The own and higher-timeframe series must load (no bias data, no evaluation); a
+/// reference or mark-price failure is logged and the series left absent. Up to four REST reads per evaluation.
 /// </summary>
 internal sealed class RecentCandleLoader : IMarketDataLoader
 {
@@ -102,21 +99,85 @@ internal sealed class RecentCandleLoader : IMarketDataLoader
 
     private readonly IExchangeClientFactory _exchange;
     private readonly CandleStore _store;
+    private readonly ILogger<RecentCandleLoader> _logger;
 
-    public RecentCandleLoader(IExchangeClientFactory exchange, CandleStore store)
+    public RecentCandleLoader(IExchangeClientFactory exchange, CandleStore store, ILogger<RecentCandleLoader> logger)
     {
         _exchange = exchange;
         _store = store;
+        _logger = logger;
     }
 
-    public async Task<MarketSnapshot> LoadAsync(Agent agent, MarketKey key, Candle closed, CancellationToken cancellationToken)
+    public async Task<MarketSnapshot> LoadAsync(Agent agent, StrategyDescriptor strategy, MarketKey key, Candle closed, CancellationToken cancellationToken)
     {
         var data = _exchange.GetPublicData(key.Environment, key.Market);
+        var cutoff = closed.OpenTime + agent.Timeframe.ToTimeSpan();
+
         var recent = await data.GetRecentCandlesAsync(key.Symbol, agent.Timeframe, CandleCount, closedOnly: true, cancellationToken).ConfigureAwait(false);
         var candles = recent.Where(c => c.OpenTime <= closed.OpenTime).ToList();
         if (candles.Count == 0 || candles[^1].OpenTime < closed.OpenTime)
             candles.Add(closed);
         await _store.StoreManyAsync(key, agent.Timeframe, candles, cancellationToken).ConfigureAwait(false);
-        return new MarketSnapshot(candles, new Dictionary<CandleInterval, IReadOnlyList<Candle>>(), null);
+
+        var higher = new Dictionary<CandleInterval, IReadOnlyList<Candle>>();
+        foreach (var interval in strategy.HigherTimeframes.Where(i => i != agent.Timeframe).Distinct())
+        {
+            var series = await LoadSeriesAsync(data, key, interval, cutoff, cancellationToken).ConfigureAwait(false);
+            higher[interval] = series;
+        }
+
+        var references = new Dictionary<ReferenceSeries, IReadOnlyList<Candle>>();
+        foreach (var reference in strategy.References.Distinct())
+        {
+            if (key.Environment == ExchangeEnvironment.Production && reference.Symbol == key.Symbol && higher.TryGetValue(reference.Interval, out var own))
+            {
+                references[reference] = own;
+                continue;
+            }
+
+            var referenceKey = new MarketKey(ExchangeEnvironment.Production, key.Market, reference.Symbol);
+            try
+            {
+                var production = key.Environment == ExchangeEnvironment.Production ? data : _exchange.GetPublicData(ExchangeEnvironment.Production, key.Market);
+                references[reference] = await LoadSeriesAsync(production, referenceKey, reference.Interval, cutoff, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Reference series {Symbol} {Interval} for agent {AgentId} could not be loaded; evaluating without it", reference.Symbol, reference.Interval.ToLabel(), agent.Id);
+            }
+        }
+
+        MarkPrice? mark = null;
+        if (key.Market == MarketType.UsdFutures)
+        {
+            try
+            {
+                mark = await data.GetMarkPriceAsync(key.Symbol, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Mark price of {Symbol} for agent {AgentId} could not be loaded; evaluating without it", key.Symbol, agent.Id);
+            }
+        }
+
+        return new MarketSnapshot(candles, higher, references, mark);
+    }
+
+    /// <summary>The recent closed candles of one series that closed at or before <paramref name="cutoff"/> (no look-ahead), stored for audit.</summary>
+    private async Task<IReadOnlyList<Candle>> LoadSeriesAsync(IPublicMarketData data, MarketKey key, CandleInterval interval, DateTimeOffset cutoff, CancellationToken cancellationToken)
+    {
+        var recent = await data.GetRecentCandlesAsync(key.Symbol, interval, CandleCount, closedOnly: true, cancellationToken).ConfigureAwait(false);
+        var span = interval.ToTimeSpan();
+        var aligned = recent.Where(c => c.OpenTime + span <= cutoff).ToList();
+        await _store.StoreManyAsync(key, interval, aligned, cancellationToken).ConfigureAwait(false);
+        return aligned;
     }
 }

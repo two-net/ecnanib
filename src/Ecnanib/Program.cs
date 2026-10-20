@@ -9,6 +9,7 @@ using Ecnanib.Database.Migrations;
 using Ecnanib.Exchange;
 using Ecnanib.Keys;
 using Ecnanib.ModelSync;
+using Ecnanib.Strategies;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Options;
 
@@ -34,6 +35,8 @@ builder.Services.AddAiProviders(builder.Configuration);
 builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddAccounts(builder.Configuration);
 builder.Services.AddModelSync(builder.Configuration);
+// Before AddAgents: the Appendix A catalog and engine the agents module requires (FR-STR).
+builder.Services.AddStrategies();
 // Before AddKeys: the runtime's own key handling (stop with orders cancelled, Error halts evaluation) replaces the default.
 builder.Services.AddAgents(builder.Configuration);
 builder.Services.AddKeys(builder.Configuration);

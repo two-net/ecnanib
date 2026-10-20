@@ -5,17 +5,23 @@ namespace Ecnanib.Agents.Abstractions;
 
 /// <summary>
 /// The strategy catalog of Appendix A, filtered by timeframe (FR-AGT-03). Every entry carries a version that agents
-/// pin at creation (FR-STR-06). The engines behind the entries arrive with the strategy issue; until then every
-/// strategy is described, selectable and parameterised but reports no setups.
+/// pin at creation (FR-STR-06); <see cref="All"/> and <see cref="ForTimeframe"/> list the newest version of each
+/// strategy, <see cref="Find(string?, int)"/> answers the pinned one. Provided by the Strategies module
+/// (<c>AddStrategies</c>, registered before <c>AddAgents</c>).
 /// </summary>
 public interface IStrategyCatalog
 {
+    /// <summary>The newest version of every strategy.</summary>
     IReadOnlyList<StrategyDescriptor> All { get; }
 
-    /// <summary>At least one strategy per agent timeframe (FR-AGT-03); empty for the weekly interval.</summary>
+    /// <summary>Newest versions only; at least one strategy per agent timeframe (FR-AGT-03); empty for the weekly interval.</summary>
     IReadOnlyList<StrategyDescriptor> ForTimeframe(CandleInterval timeframe);
 
+    /// <summary>The newest version of a strategy, or null.</summary>
     StrategyDescriptor? Find(string? id);
+
+    /// <summary>Exactly that version of a strategy (FR-STR-06), or null when the module no longer ships it.</summary>
+    StrategyDescriptor? Find(string? id, int version);
 }
 
 public enum StrategyParameterKind
@@ -142,14 +148,20 @@ public sealed record StrategyParameter(
     }
 }
 
-/// <summary>A catalog entry (Appendix A). <see cref="Parameters"/> are the editable, bounded parameters with their defaults (FR-STR-04).</summary>
+/// <summary>
+/// A catalog entry (Appendix A) at one version. <see cref="Parameters"/> are the editable, bounded parameters with their
+/// defaults (FR-STR-04); <see cref="HigherTimeframes"/> and <see cref="References"/> are the candle series beyond the
+/// agent's own that the engine needs (FR-STR-03), which the market-data loader supplies in the <see cref="MarketSnapshot"/>.
+/// </summary>
 public sealed record StrategyDescriptor(
     string Id,
     string Name,
     CandleInterval Timeframe,
     int Version,
     string Summary,
-    IReadOnlyList<StrategyParameter> Parameters)
+    IReadOnlyList<StrategyParameter> Parameters,
+    IReadOnlyList<CandleInterval> HigherTimeframes,
+    IReadOnlyList<ReferenceSeries> References)
 {
     public StrategyParameter? Parameter(string name) =>
         Parameters.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));

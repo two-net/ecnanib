@@ -81,7 +81,7 @@ internal sealed class AgentService : IAgentService
             .OrderBy(a => a.Name).ThenBy(a => a.CreatedAt)
             .Select(a => new
             {
-                a.Id, a.Name, a.MarketType, a.Symbol, a.Timeframe, a.StrategyId, a.Mode, a.State, a.StateReason, a.UpdatedAt,
+                a.Id, a.Name, a.MarketType, a.Symbol, a.Timeframe, a.StrategyId, a.StrategyVersion, a.Mode, a.State, a.StateReason, a.UpdatedAt,
                 Last = db.Evaluations.Where(e => e.AgentId == a.Id && e.FinishedAt != null)
                     .OrderByDescending(e => e.CandleOpenTime)
                     .Select(e => new { e.FinishedAt, e.Outcome })
@@ -92,7 +92,7 @@ internal sealed class AgentService : IAgentService
             .ConfigureAwait(false);
 
         return rows.Select(r => new AgentSummary(r.Id, r.Name, r.MarketType, r.Symbol, r.Timeframe, r.StrategyId,
-                _catalog.Find(r.StrategyId)?.Name ?? r.StrategyId, r.Mode, r.State, r.StateReason,
+                (_catalog.Find(r.StrategyId, r.StrategyVersion) ?? _catalog.Find(r.StrategyId))?.Name ?? r.StrategyId, r.Mode, r.State, r.StateReason,
                 r.Last?.FinishedAt, r.Last?.Outcome, r.OpenPositions, r.UpdatedAt))
             .ToList();
     }
@@ -100,7 +100,7 @@ internal sealed class AgentService : IAgentService
     public async Task<AgentDetail?> GetAsync(Guid userId, Guid agentId, CancellationToken cancellationToken)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        var agent = await db.Agents.AsNoTracking().Include(a => a.CouncilAssignments)
+        var agent = await db.Agents.AsNoTracking().Include(a => a.CouncilAssignments).Include(a => a.EntryWindows).AsSplitQuery()
             .SingleOrDefaultAsync(a => a.Id == agentId && a.UserId == userId, cancellationToken).ConfigureAwait(false);
         if (agent is null)
             return null;
@@ -122,12 +122,14 @@ internal sealed class AgentService : IAgentService
         var closing = orders.Where(o => o.Purpose == OrderPurpose.Close && o.TradeId != null).Select(o => o.TradeId!.Value).ToHashSet();
         return new AgentDetail(
             agent.Id, agent.Name, agent.MarketType, agent.Symbol, agent.Timeframe, agent.StrategyId, agent.StrategyVersion,
+            _catalog.Find(agent.StrategyId)?.Version,
             StrategyParameters.Read(agent.Parameters), agent.Mode, agent.ExchangeKeyId, agent.Leverage, agent.MarginType,
             agent.RiskLimits, agent.Discretionary, agent.State, agent.PauseCause, agent.AutoResumeAt, agent.StateReason,
             agent.CreatedAt, agent.UpdatedAt,
             AgentRules.Roles.Select(role => agent.CouncilAssignments.FirstOrDefault(c => c.Role == role))
                 .Where(c => c is not null)
                 .Select(c => new CouncilAssignmentView(c!.Role, c.Provider, c.Model, c.Enabled)).ToList(),
+            Ordered(agent.EntryWindows).Select(w => new EntryWindowView(w.Id, w.Kind, w.StartAt, w.EndAt, w.StartDay, w.StartTime, w.EndDay, w.EndTime)).ToList(),
             trades.Select(t => new OpenPositionView(t.Id, t.Side, t.Size, t.EntryPrice, t.CurrentStop, t.IsUnmanaged, closing.Contains(t.Id), t.IsPaper, t.OpenedAt)).ToList(),
             orders.Select(o => new OpenOrderView(o.Id, o.Purpose, o.Type, o.Side, o.Price, o.StopPrice, o.Quantity, o.Status, o.IsPaper, o.ExpiresAt, o.CreatedAt)).ToList(),
             evaluations,
@@ -372,13 +374,18 @@ internal sealed class AgentService : IAgentService
         if (agent is null)
             return new AgentSaveResult(AgentSaveStatus.NotFound);
 
-        var strategy = _catalog.Find(input.StrategyId);
-        if (strategy is null)
+        var latest = _catalog.Find(input.StrategyId);
+        if (latest is null)
             return AgentSaveResult.Invalid(new FieldError("strategyId", "Choose a strategy."));
-        if (strategy.Timeframe != agent.Timeframe)
-            return AgentSaveResult.Invalid(new FieldError("strategyId", $"{strategy.Name} is a {AgentsOptions.KeyOf(strategy.Timeframe)} strategy; this agent runs on {AgentsOptions.KeyOf(agent.Timeframe)}."));
+        if (latest.Timeframe != agent.Timeframe)
+            return AgentSaveResult.Invalid(new FieldError("strategyId", $"{latest.Name} is a {AgentsOptions.KeyOf(latest.Timeframe)} strategy; this agent runs on {AgentsOptions.KeyOf(agent.Timeframe)}."));
 
-        var strategyChanged = agent.StrategyId != strategy.Id;
+        // FR-STR-06: a new strategy pins its newest version and starts from defaults; an edit keeps the pinned version.
+        var strategyChanged = agent.StrategyId != latest.Id;
+        var strategy = strategyChanged ? latest : _catalog.Find(agent.StrategyId, agent.StrategyVersion);
+        if (strategy is null)
+            return AgentSaveResult.Invalid(new FieldError("strategyId", $"Version {agent.StrategyVersion} of {latest.Name} is no longer available; upgrade the agent to version {latest.Version} first."));
+
         var errors = new List<FieldError>();
         var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         if (!input.ResetToDefaults && !strategyChanged)
@@ -411,7 +418,7 @@ internal sealed class AgentService : IAgentService
         var changes = new ChangeSet(agentId, now);
         if (changes.Track("strategyId", agent.StrategyId, strategy.Id))
             agent.StrategyId = strategy.Id;
-        if (changes.Track("strategyVersion", agent.StrategyVersion, strategy.Version))
+        if (strategyChanged && changes.Track("strategyVersion", agent.StrategyVersion, strategy.Version))
             agent.StrategyVersion = strategy.Version;
         if (parametersChanged)
         {
@@ -509,6 +516,122 @@ internal sealed class AgentService : IAgentService
         return await SaveChangesAsync(db, agent, changes, now, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<AgentSaveResult> UpgradeStrategyAsync(Guid userId, Guid agentId, CancellationToken cancellationToken)
+    {
+        using var agentLock = await _runtime.LockAsync(agentId, cancellationToken).ConfigureAwait(false);
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var agent = await db.Agents.SingleOrDefaultAsync(a => a.Id == agentId && a.UserId == userId, cancellationToken).ConfigureAwait(false);
+        if (agent is null)
+            return new AgentSaveResult(AgentSaveStatus.NotFound);
+
+        var latest = _catalog.Find(agent.StrategyId);
+        if (latest is null)
+            return AgentSaveResult.Invalid(new FieldError("strategyId", $"Strategy '{agent.StrategyId}' is no longer in the catalog; choose another."));
+        if (latest.Version <= agent.StrategyVersion)
+            return new AgentSaveResult(AgentSaveStatus.Succeeded, agent.Id);
+        if (!AgentStateMachine.CanEdit(agent.State, AgentField.StrategyVersion))
+            return new AgentSaveResult(AgentSaveStatus.InvalidState, Detail: $"While the agent is {agent.State}, the strategy version cannot be changed; pause or stop it first.");
+
+        // FR-STR-04/06: what the new version still knows and accepts carries over; the rest returns to its defaults.
+        var stored = StrategyParameters.Read(agent.Parameters);
+        var kept = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        var dropped = new List<(string Name, JsonElement Old, JsonElement? New)>();
+        foreach (var (name, value) in stored)
+        {
+            var parameter = latest.Parameter(name);
+            if (parameter is null)
+                dropped.Add((name, value, null));
+            else if (parameter.Validate(value) is not null)
+                dropped.Add((name, value, parameter.Default));
+            else
+                kept[name] = value;
+        }
+
+        var crossed = latest.Validate(kept);
+        if (crossed.Count > 0)
+        {
+            foreach (var name in crossed.Select(e => e.Field["parameters.".Length..]).Where(kept.ContainsKey).Distinct(StringComparer.Ordinal).ToList())
+            {
+                dropped.Add((name, kept[name], latest.Parameter(name)!.Default));
+                kept.Remove(name);
+            }
+
+            if (latest.Validate(kept).Count > 0)
+            {
+                foreach (var (name, value) in kept)
+                    dropped.Add((name, value, latest.Parameter(name)!.Default));
+                kept.Clear();
+            }
+        }
+
+        var now = _time.GetUtcNow();
+        var changes = new ChangeSet(agentId, now);
+        changes.Track("strategyVersion", agent.StrategyVersion, latest.Version);
+        agent.StrategyVersion = latest.Version;
+        foreach (var (name, old, replacement) in dropped)
+            changes.TrackJson($"parameters.{name}", old, replacement);
+        if (dropped.Count > 0)
+            agent.Parameters = StrategyParameters.Write(kept);
+
+        var result = await SaveChangesAsync(db, agent, changes, now, cancellationToken).ConfigureAwait(false);
+        if (result.Status != AgentSaveStatus.Succeeded || dropped.Count == 0)
+            return result;
+        var names = dropped.Select(d => d.Name).Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        return result with { Detail = $"{names.Count} parameter(s) reset to the version {latest.Version} default: {string.Join(", ", names)}." };
+    }
+
+    public async Task<AgentSaveResult> AddEntryWindowAsync(Guid userId, Guid agentId, EntryWindowInput input, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var errors = new List<FieldError>();
+        var window = AgentRules.NormalizeEntryWindow(input, _time.GetUtcNow(), errors);
+        if (window is null)
+            return AgentSaveResult.Invalid(errors);
+
+        using var agentLock = await _runtime.LockAsync(agentId, cancellationToken).ConfigureAwait(false);
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var agent = await db.Agents.Include(a => a.EntryWindows)
+            .SingleOrDefaultAsync(a => a.Id == agentId && a.UserId == userId, cancellationToken).ConfigureAwait(false);
+        if (agent is null)
+            return new AgentSaveResult(AgentSaveStatus.NotFound);
+        if (!AgentStateMachine.CanEdit(agent.State, AgentField.EntryWindows))
+            return new AgentSaveResult(AgentSaveStatus.InvalidState, Detail: $"While the agent is {agent.State}, the no-entry windows cannot be changed.");
+        if (agent.EntryWindows.Count >= AgentRules.MaxEntryWindows)
+            return AgentSaveResult.Invalid(new FieldError("entryWindow", $"An agent can have at most {AgentRules.MaxEntryWindows} no-entry windows."));
+        if (agent.EntryWindows.Any(w => AgentRules.SameWindow(w, window)))
+            return AgentSaveResult.Invalid(new FieldError("entryWindow", "That window already exists."));
+
+        var now = _time.GetUtcNow();
+        var changes = new ChangeSet(agentId, now);
+        var before = Snapshot(agent.EntryWindows);
+        agent.EntryWindows.Add(window);
+        changes.Track("entryWindows", before, Snapshot(agent.EntryWindows));
+        return await SaveChangesAsync(db, agent, changes, now, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AgentSaveResult> RemoveEntryWindowAsync(Guid userId, Guid agentId, long windowId, CancellationToken cancellationToken)
+    {
+        using var agentLock = await _runtime.LockAsync(agentId, cancellationToken).ConfigureAwait(false);
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var agent = await db.Agents.Include(a => a.EntryWindows)
+            .SingleOrDefaultAsync(a => a.Id == agentId && a.UserId == userId, cancellationToken).ConfigureAwait(false);
+        if (agent is null)
+            return new AgentSaveResult(AgentSaveStatus.NotFound);
+        var window = agent.EntryWindows.FirstOrDefault(w => w.Id == windowId);
+        if (window is null)
+            return AgentSaveResult.Invalid(new FieldError("entryWindow", "That window was already removed."));
+        if (!AgentStateMachine.CanEdit(agent.State, AgentField.EntryWindows))
+            return new AgentSaveResult(AgentSaveStatus.InvalidState, Detail: $"While the agent is {agent.State}, the no-entry windows cannot be changed.");
+
+        var now = _time.GetUtcNow();
+        var changes = new ChangeSet(agentId, now);
+        var before = Snapshot(agent.EntryWindows);
+        agent.EntryWindows.Remove(window);
+        db.EntryWindows.Remove(window);
+        changes.Track("entryWindows", before, Snapshot(agent.EntryWindows));
+        return await SaveChangesAsync(db, agent, changes, now, cancellationToken).ConfigureAwait(false);
+    }
+
     // --- Lifecycle ------------------------------------------------------------------------------------------------
 
     public async Task<AgentActionResult> StartAsync(Guid userId, Guid agentId, CancellationToken cancellationToken)
@@ -527,9 +650,14 @@ internal sealed class AgentService : IAgentService
         if (!limit.Allowed)
             return new AgentActionResult(AgentActionStatus.LimitReached, Limit: limit);
 
-        var strategy = _catalog.Find(agent.StrategyId);
+        var strategy = _catalog.Find(agent.StrategyId, agent.StrategyVersion);
         if (strategy is null)
-            return new AgentActionResult(AgentActionStatus.StrategyUnavailable, $"Strategy '{agent.StrategyId}' is no longer in the catalog; choose another.");
+        {
+            var latest = _catalog.Find(agent.StrategyId);
+            return new AgentActionResult(AgentActionStatus.StrategyUnavailable, latest is null
+                ? $"Strategy '{agent.StrategyId}' is no longer in the catalog; choose another."
+                : $"Version {agent.StrategyVersion} of {latest.Name} is no longer in the catalog; upgrade the agent to version {latest.Version}.");
+        }
 
         var caps = _caps.Value;
         var problems = new List<string>();
@@ -546,6 +674,9 @@ internal sealed class AgentService : IAgentService
             problems.Add("the Risk Manager must be enabled");
         foreach (var role in enabledRoles.Where(c => string.IsNullOrWhiteSpace(c.Model)))
             problems.Add($"the {AgentRules.Display(role.Role)} has no model");
+        var parameterErrors = strategy.Validate(StrategyParameters.Read(agent.Parameters));
+        if (parameterErrors.Count > 0)
+            problems.Add("the strategy parameters are invalid: " + string.Join("; ", parameterErrors.Select(e => e.Message.TrimEnd('.'))));
         if (problems.Count > 0)
             return new AgentActionResult(AgentActionStatus.InvalidConfiguration, Capitalize(string.Join("; ", problems)) + ".");
 
@@ -731,6 +862,19 @@ internal sealed class AgentService : IAgentService
     }
 
     // --- Helpers --------------------------------------------------------------------------------------------------
+
+    /// <summary>Recurring windows first by day and time, then one-off ones by start; ties by id.</summary>
+    private static IEnumerable<EntryWindow> Ordered(IEnumerable<EntryWindow> windows) => windows
+        .OrderBy(w => w.Kind == EntryWindowKind.Recurring ? 0 : 1)
+        .ThenBy(w => w.Kind == EntryWindowKind.Recurring ? EntryWindowSchedule.WeekSecond(w.StartDay ?? DayOfWeek.Monday, w.StartTime ?? TimeOnly.MinValue) : 0)
+        .ThenBy(w => w.StartAt ?? DateTimeOffset.MinValue)
+        .ThenBy(w => w.Id);
+
+    /// <summary>The windows as the change history records them: values only, so a clone and its source compare equal.</summary>
+    private static List<WindowValue> Snapshot(IEnumerable<EntryWindow> windows) =>
+        Ordered(windows).Select(w => new WindowValue(w.Kind, w.StartAt, w.EndAt, w.StartDay, w.StartTime, w.EndDay, w.EndTime)).ToList();
+
+    private sealed record WindowValue(EntryWindowKind Kind, DateTimeOffset? StartAt, DateTimeOffset? EndAt, DayOfWeek? StartDay, TimeOnly? StartTime, DayOfWeek? EndDay, TimeOnly? EndTime);
 
     private static void Guard(AgentState state, AgentField field, bool changed, string label, List<string> blocked)
     {

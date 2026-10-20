@@ -39,3 +39,16 @@ public sealed record CouncilRoleInput(CouncilRole Role, AiProvider Provider, str
 public sealed record CouncilInput(IReadOnlyList<CouncilRoleInput> Roles);
 
 public sealed record RiskLimitsInput(decimal RiskPerTradePercent, int MaxOpenPositions, decimal DailyLossLimitPercent, decimal? MaxNotional);
+
+/// <summary>
+/// One "no new entry" window in UTC (FR-STR-05): a one-off window needs <see cref="StartAt"/> and <see cref="EndAt"/>,
+/// a recurring one the four day and time fields; the fields of the other kind are ignored.
+/// </summary>
+public sealed record EntryWindowInput(
+    EntryWindowKind Kind,
+    DateTimeOffset? StartAt = null,
+    DateTimeOffset? EndAt = null,
+    DayOfWeek? StartDay = null,
+    TimeOnly? StartTime = null,
+    DayOfWeek? EndDay = null,
+    TimeOnly? EndTime = null);

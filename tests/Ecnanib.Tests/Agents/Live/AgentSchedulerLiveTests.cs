@@ -105,14 +105,20 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
             var evaluation = Assert.Single(await db.Evaluations.AsNoTracking().Where(e => e.AgentId == agent.Id).ToListAsync(Ct));
             Assert.Equal(LastOpen, evaluation.CandleOpenTime);
             Assert.Equal(EvaluationOutcome.NoAction, evaluation.Outcome);
-            Assert.Equal(PendingStrategyEngine.Note, evaluation.OutcomeDetail);
+            // Three faked candles are not enough history for the real engine: no setup, and the reason is the detail.
+            Assert.StartsWith("insufficient history", evaluation.OutcomeDetail, StringComparison.Ordinal);
             Assert.False(evaluation.CouncilConsulted);
             Assert.NotNull(evaluation.FinishedAt);
-            Assert.Contains("\"note\"", evaluation.StrategyOutput!.Value.GetRawText());
+            var output = evaluation.StrategyOutput!.Value;
+            Assert.StartsWith("insufficient history", output.GetProperty("note").GetString());
+            Assert.Equal("trend-pullback", output.GetProperty("strategyId").GetString());
+            Assert.Equal(1, output.GetProperty("strategyVersion").GetInt32());
             Assert.Equal("BTCUSDT", evaluation.Symbol);
             var stored = await db.Candles.AsNoTracking().Where(c => c.Symbol == "BTCUSDT" && c.Interval == CandleInterval.OneHour).ToListAsync(Ct);
             Assert.Contains(stored, c => c.OpenTime == LastOpen);
             Assert.True(stored.Count >= 3);
+            // FR-STR-03: the daily series the 1H strategy declares was loaded and stored too.
+            Assert.True(await db.Candles.AsNoTracking().AnyAsync(c => c.Symbol == "BTCUSDT" && c.Interval == CandleInterval.OneDay, Ct));
         }
 
         Assert.Single(events.OfType<EvaluationFinished>());
