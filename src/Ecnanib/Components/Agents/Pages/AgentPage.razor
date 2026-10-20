@@ -6,10 +6,12 @@
 @using Ecnanib.Ai.Abstractions
 @using Ecnanib.Database.Entities
 @using Ecnanib.Exchange.Abstractions
+@using Ecnanib.ModelSync.Abstractions
 @using Microsoft.Extensions.Options
 @inject IAgentService AgentService
 @inject IStrategyCatalog Catalog
 @inject IKeyService KeyService
+@inject IModelCatalog ModelCatalog
 @inject IOptions<RiskCapsOptions> RiskCaps
 @inject TimeProvider Clock
 @inject NavigationManager Navigation
@@ -412,7 +414,7 @@
 
     <section aria-labelledby="council-title">
         <h2 id="council-title">Council</h2>
-        <p>Four roles in order; the Risk Manager always runs last and cannot be disabled. A role's provider needs a valid key before the agent can start.</p>
+        <p>Four roles in order; the Risk Manager always runs last and cannot be disabled. A role's provider needs a valid key before the agent can start. Pick a model from the synced catalog, or choose "Other" and type a model id as the provider lists it.</p>
         <EditForm Model="Council" FormName="agent-council" OnValidSubmit="SaveCouncilAsync" method="post">
             @if (_councilError is not null)
             {
@@ -420,37 +422,80 @@
             }
             <div class="table-wrap">
                 <table class="agents council">
-                    <thead><tr><th>Role</th><th>Provider</th><th>Model id</th><th>Enabled</th></tr></thead>
+                    <thead><tr><th>Role</th><th>Model</th><th>Other: provider and model id</th><th>Enabled</th></tr></thead>
                     <tbody>
                         <tr>
-                            <td>Market Analyst</td>
-                            <td><InputSelect @bind-Value="Council.MarketAnalystProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect></td>
-                            <td><InputText @bind-Value="Council.MarketAnalystModel" maxlength="200" autocomplete="off" spellcheck="false" disabled="@(!CanEdit(AgentField.Council))" /></td>
+                            <td>Market Analyst<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.MarketAnalyst)</span></td>
+                            <td><InputSelect @bind-Value="Council.MarketAnalystChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect></td>
+                            <td>
+                                <div class="other">
+                                    <InputSelect @bind-Value="Council.MarketAnalystProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                                    <InputText @bind-Value="Council.MarketAnalystModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
+                                </div>
+                            </td>
                             <td><InputCheckbox @bind-Value="Council.MarketAnalystEnabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
                         </tr>
                         <tr>
-                            <td>Sentiment &amp; Flow</td>
-                            <td><InputSelect @bind-Value="Council.SentimentFlowProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect></td>
-                            <td><InputText @bind-Value="Council.SentimentFlowModel" maxlength="200" autocomplete="off" spellcheck="false" disabled="@(!CanEdit(AgentField.Council))" /></td>
+                            <td>Sentiment &amp; Flow<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.SentimentFlow)</span></td>
+                            <td><InputSelect @bind-Value="Council.SentimentFlowChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect></td>
+                            <td>
+                                <div class="other">
+                                    <InputSelect @bind-Value="Council.SentimentFlowProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                                    <InputText @bind-Value="Council.SentimentFlowModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
+                                </div>
+                            </td>
                             <td><InputCheckbox @bind-Value="Council.SentimentFlowEnabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
                         </tr>
                         <tr>
-                            <td>Cross-Market Context</td>
-                            <td><InputSelect @bind-Value="Council.CrossMarketContextProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect></td>
-                            <td><InputText @bind-Value="Council.CrossMarketContextModel" maxlength="200" autocomplete="off" spellcheck="false" disabled="@(!CanEdit(AgentField.Council))" /></td>
+                            <td>Cross-Market Context<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.CrossMarketContext)</span></td>
+                            <td><InputSelect @bind-Value="Council.CrossMarketContextChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect></td>
+                            <td>
+                                <div class="other">
+                                    <InputSelect @bind-Value="Council.CrossMarketContextProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                                    <InputText @bind-Value="Council.CrossMarketContextModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
+                                </div>
+                            </td>
                             <td><InputCheckbox @bind-Value="Council.CrossMarketContextEnabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
                         </tr>
                         <tr>
-                            <td>Risk Manager</td>
-                            <td><InputSelect @bind-Value="Council.RiskManagerProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect></td>
-                            <td><InputText @bind-Value="Council.RiskManagerModel" maxlength="200" autocomplete="off" spellcheck="false" disabled="@(!CanEdit(AgentField.Council))" /></td>
+                            <td>Risk Manager<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.RiskManager)</span></td>
+                            <td><InputSelect @bind-Value="Council.RiskManagerChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect></td>
+                            <td>
+                                <div class="other">
+                                    <InputSelect @bind-Value="Council.RiskManagerProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                                    <InputText @bind-Value="Council.RiskManagerModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
+                                </div>
+                            </td>
                             <td>always</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-            <p class="hint">Enter a model id as the provider lists it. Choosing from the synced catalog arrives with the council work.</p>
+            @if (_catalog.Count == 0)
+            {
+                <p class="hint">No models are synced yet: add a provider key on the keys page and the catalog fills in. Until then, type the model id.</p>
+            }
             <button type="submit" disabled="@(!CanEdit(AgentField.Council))">Save council</button>
+        </EditForm>
+
+        <h3 id="council-presets-title">Presets</h3>
+        <EditForm Model="Preset" FormName="council-preset" OnValidSubmit="ApplyPresetAsync" method="post">
+            @if (_presetError is not null)
+            {
+                <p class="error" role="alert">@_presetError</p>
+            }
+            <p>Defaults by strength (Appendix B): GPT as Market Analyst, Grok for Sentiment &amp; Flow, Gemini for Cross-Market Context and Claude as Risk Manager, each on its provider's newest catalog model, all roles enabled. They are starting points, not a claim of returns.</p>
+            <button type="submit" name="preset" value="defaults" disabled="@(!CanEdit(AgentField.Council))">Use the defaults by strength</button>
+            <p>Single-model mode: one model performs all four roles in sequence.</p>
+            <label>
+                Model
+                <InputSelect @bind-Value="Preset.Choice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
+            </label>
+            <div class="other">
+                <InputSelect @bind-Value="Preset.Provider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                <InputText @bind-Value="Preset.Model" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id (when Other is chosen)" disabled="@(!CanEdit(AgentField.Council))" />
+            </div>
+            <button type="submit" name="preset" value="single" disabled="@(!CanEdit(AgentField.Council))">Use this model for every role</button>
         </EditForm>
     </section>
 
@@ -493,7 +538,7 @@
         {
             <div class="table-wrap">
                 <table class="agents">
-                    <thead><tr><th>Candle (open)</th><th>Outcome</th><th>Council</th><th>Decision</th><th>Detail</th><th>Finished</th></tr></thead>
+                    <thead><tr><th>Candle (open)</th><th>Outcome</th><th>Council</th><th>Decision</th><th>Detail</th><th>Finished</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var evaluation in agent.RecentEvaluations)
                         {
@@ -504,6 +549,7 @@
                                 <td>@(evaluation.FinalAction?.ToString() ?? "")</td>
                                 <td>@evaluation.OutcomeDetail</td>
                                 <td>@Stamp(evaluation.FinishedAt)</td>
+                                <td><a href="/agents/@Id/evaluations/@evaluation.Id">Deliberation</a></td>
                             </tr>
                         }
                     </tbody>
@@ -554,6 +600,10 @@
     private string? _settingsError;
     private string? _strategyError;
     private string? _councilError;
+
+    private string? _presetError;
+
+    private IReadOnlyList<CatalogModel> _catalog = [];
     private string? _riskError;
     private string? _windowError;
 
@@ -571,6 +621,13 @@
 
     [SupplyParameterFromForm(FormName = "agent-council")]
     private CouncilFormInput Council { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "council-preset")]
+    private PresetFormInput Preset { get; set; } = default!;
+
+    /// <summary>The preset carried by the button that was clicked: defaults by strength or single-model mode (FR-AI-04).</summary>
+    [SupplyParameterFromForm(FormName = "council-preset", Name = "preset")]
+    private string? PresetAction { get; set; }
 
     [SupplyParameterFromForm(FormName = "agent-risk")]
     private RiskInput Risk { get; set; } = default!;
@@ -611,7 +668,8 @@
         };
         Strategy ??= StrategyFormInput.From(agent, _strategy);
         Strategy.EnsureKeys(_strategy);
-        Council ??= CouncilFormInput.From(agent);
+        Council ??= CouncilFormInput.From(agent, _catalog);
+        Preset ??= PresetFormInput.From(agent, _catalog);
         Risk ??= new RiskInput
         {
             RiskPerTradePercent = agent.RiskLimits.RiskPerTradePercent, MaxOpenPositions = agent.RiskLimits.MaxOpenPositions,
@@ -634,6 +692,8 @@
             "upgraded" => ("The agent now runs the newest version of its strategy." + (Detail is null ? "" : " " + Detail), false),
             "window-added" => ("The no-entry window was added; it applies from the next evaluation.", false),
             "window-removed" => ("The no-entry window was removed.", false),
+            "council-defaults" => ("The council uses the default assignments by strength.", false),
+            "council-single" => ("One model now performs all four roles in sequence.", false),
             _ => (null, false),
         };
     }
@@ -651,6 +711,7 @@
         // The pinned version's parameters are what the agent runs; when it is gone, the newest version's are shown with a warning.
         _strategy = Catalog.Find(_agent.StrategyId, _agent.StrategyVersion) ?? Catalog.Find(_agent.StrategyId);
         _keys ??= await KeyService.GetOverviewAsync(UserId, HttpContext.RequestAborted);
+        _catalog = await ModelCatalog.ListAsync(HttpContext.RequestAborted);
         return true;
     }
 
@@ -814,6 +875,71 @@
         await AfterSaveAsync(result, error => _councilError = error);
     }
 
+    private async Task ApplyPresetAsync()
+    {
+        switch (PresetAction)
+        {
+            case "defaults":
+                await AfterSaveAsync(await AgentService.ResetCouncilToDefaultsAsync(UserId, Id, HttpContext.RequestAborted), error => _presetError = error, "council-defaults");
+                return;
+            case "single":
+                var (provider, model) = ResolveChoice(Preset.Choice, Preset.Provider, Preset.Model);
+                await AfterSaveAsync(await AgentService.UseSingleModelAsync(UserId, Id, provider, model, HttpContext.RequestAborted), error => _presetError = error, "council-single");
+                return;
+            default:
+                _presetError = "Choose a preset.";
+                await LoadAsync();
+                return;
+        }
+    }
+
+    /// <summary>The catalog options every council row offers: one group per provider, "Other" last (FR-AI-03).</summary>
+    private RenderFragment CatalogOptions() => builder =>
+    {
+        var sequence = 0;
+        foreach (var group in _catalog.GroupBy(m => m.Provider).OrderBy(g => g.Key))
+        {
+            builder.OpenElement(sequence++, "optgroup");
+            builder.AddAttribute(sequence++, "label", ProviderNames.Display(group.Key));
+            foreach (var model in group)
+            {
+                builder.OpenElement(sequence++, "option");
+                builder.AddAttribute(sequence++, "value", ChoiceOf(model.Provider, model.ModelId));
+                builder.AddContent(sequence++, model.DisplayName == model.ModelId ? model.ModelId : $"{model.DisplayName} ({model.ModelId})");
+                if (model.Status == ModelStatus.Deprecated)
+                    builder.AddContent(sequence++, " (deprecated)");
+                builder.CloseElement();
+            }
+
+            builder.CloseElement();
+        }
+
+        builder.OpenElement(sequence++, "option");
+        builder.AddAttribute(sequence++, "value", OtherChoice);
+        builder.AddContent(sequence++, "Other (enter the provider and model id)");
+        builder.CloseElement();
+    };
+
+    private const string OtherChoice = "other";
+
+    private static string ChoiceOf(AiProvider provider, string model) => provider + "|" + model;
+
+    /// <summary>A catalog choice names the provider and model; "Other" falls back to the manual fields.</summary>
+    private static (AiProvider Provider, string? Model) ResolveChoice(string? choice, AiProvider provider, string? model)
+    {
+        if (!string.IsNullOrEmpty(choice) && choice != OtherChoice)
+        {
+            var parts = choice.Split('|', 2);
+            if (parts.Length == 2 && ProviderNames.Parse(parts[0]) is { } chosen)
+                return (chosen, parts[1]);
+        }
+
+        return (provider, model);
+    }
+
+    private static string InitialChoice(AiProvider provider, string model, IReadOnlyList<CatalogModel> catalog) =>
+        catalog.Any(m => m.Provider == provider && m.ModelId == model) ? ChoiceOf(provider, model) : OtherChoice;
+
     private async Task SaveRiskAsync()
     {
         var result = await AgentService.UpdateRiskLimitsAsync(UserId, Id,
@@ -952,11 +1078,15 @@
 
     private sealed class CouncilFormInput
     {
+        public string? MarketAnalystChoice { get; set; }
+
         public AiProvider MarketAnalystProvider { get; set; } = AiProvider.Gpt;
 
         public string? MarketAnalystModel { get; set; }
 
         public bool MarketAnalystEnabled { get; set; } = true;
+
+        public string? SentimentFlowChoice { get; set; }
 
         public AiProvider SentimentFlowProvider { get; set; } = AiProvider.Grok;
 
@@ -964,34 +1094,39 @@
 
         public bool SentimentFlowEnabled { get; set; } = true;
 
+        public string? CrossMarketContextChoice { get; set; }
+
         public AiProvider CrossMarketContextProvider { get; set; } = AiProvider.Gemini;
 
         public string? CrossMarketContextModel { get; set; }
 
         public bool CrossMarketContextEnabled { get; set; } = true;
 
+        public string? RiskManagerChoice { get; set; }
+
         public AiProvider RiskManagerProvider { get; set; } = AiProvider.Claude;
 
         public string? RiskManagerModel { get; set; }
 
-        public static CouncilFormInput From(AgentDetail agent)
+        public static CouncilFormInput From(AgentDetail agent, IReadOnlyList<CatalogModel> catalog)
         {
             var input = new CouncilFormInput();
             foreach (var role in agent.Council)
             {
+                var choice = InitialChoice(role.Provider, role.Model, catalog);
                 switch (role.Role)
                 {
                     case CouncilRole.MarketAnalyst:
-                        (input.MarketAnalystProvider, input.MarketAnalystModel, input.MarketAnalystEnabled) = (role.Provider, role.Model, role.Enabled);
+                        (input.MarketAnalystChoice, input.MarketAnalystProvider, input.MarketAnalystModel, input.MarketAnalystEnabled) = (choice, role.Provider, role.Model, role.Enabled);
                         break;
                     case CouncilRole.SentimentFlow:
-                        (input.SentimentFlowProvider, input.SentimentFlowModel, input.SentimentFlowEnabled) = (role.Provider, role.Model, role.Enabled);
+                        (input.SentimentFlowChoice, input.SentimentFlowProvider, input.SentimentFlowModel, input.SentimentFlowEnabled) = (choice, role.Provider, role.Model, role.Enabled);
                         break;
                     case CouncilRole.CrossMarketContext:
-                        (input.CrossMarketContextProvider, input.CrossMarketContextModel, input.CrossMarketContextEnabled) = (role.Provider, role.Model, role.Enabled);
+                        (input.CrossMarketContextChoice, input.CrossMarketContextProvider, input.CrossMarketContextModel, input.CrossMarketContextEnabled) = (choice, role.Provider, role.Model, role.Enabled);
                         break;
                     case CouncilRole.RiskManager:
-                        (input.RiskManagerProvider, input.RiskManagerModel) = (role.Provider, role.Model);
+                        (input.RiskManagerChoice, input.RiskManagerProvider, input.RiskManagerModel) = (choice, role.Provider, role.Model);
                         break;
                 }
             }
@@ -999,13 +1134,38 @@
             return input;
         }
 
-        public CouncilInput ToInput() => new(
-        [
-            new CouncilRoleInput(CouncilRole.MarketAnalyst, MarketAnalystProvider, MarketAnalystModel, MarketAnalystEnabled),
-            new CouncilRoleInput(CouncilRole.SentimentFlow, SentimentFlowProvider, SentimentFlowModel, SentimentFlowEnabled),
-            new CouncilRoleInput(CouncilRole.CrossMarketContext, CrossMarketContextProvider, CrossMarketContextModel, CrossMarketContextEnabled),
-            new CouncilRoleInput(CouncilRole.RiskManager, RiskManagerProvider, RiskManagerModel, true),
-        ]);
+        public CouncilInput ToInput()
+        {
+            var analyst = ResolveChoice(MarketAnalystChoice, MarketAnalystProvider, MarketAnalystModel);
+            var sentiment = ResolveChoice(SentimentFlowChoice, SentimentFlowProvider, SentimentFlowModel);
+            var context = ResolveChoice(CrossMarketContextChoice, CrossMarketContextProvider, CrossMarketContextModel);
+            var risk = ResolveChoice(RiskManagerChoice, RiskManagerProvider, RiskManagerModel);
+            return new CouncilInput(
+            [
+                new CouncilRoleInput(CouncilRole.MarketAnalyst, analyst.Provider, analyst.Model, MarketAnalystEnabled),
+                new CouncilRoleInput(CouncilRole.SentimentFlow, sentiment.Provider, sentiment.Model, SentimentFlowEnabled),
+                new CouncilRoleInput(CouncilRole.CrossMarketContext, context.Provider, context.Model, CrossMarketContextEnabled),
+                new CouncilRoleInput(CouncilRole.RiskManager, risk.Provider, risk.Model, true),
+            ]);
+        }
+    }
+
+    private sealed class PresetFormInput
+    {
+        public string? Choice { get; set; }
+
+        public AiProvider Provider { get; set; } = AiProvider.Claude;
+
+        public string? Model { get; set; }
+
+        /// <summary>Starts from the Risk Manager's model, the one most agents keep when going single-model.</summary>
+        public static PresetFormInput From(AgentDetail agent, IReadOnlyList<CatalogModel> catalog)
+        {
+            var riskManager = agent.Council.FirstOrDefault(c => c.Role == CouncilRole.RiskManager);
+            return riskManager is null
+                ? new PresetFormInput()
+                : new PresetFormInput { Choice = InitialChoice(riskManager.Provider, riskManager.Model, catalog), Provider = riskManager.Provider, Model = riskManager.Model };
+        }
     }
 
     private sealed class RiskInput

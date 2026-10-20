@@ -218,6 +218,9 @@ public static class StrategyParameters
     public const string EntryTimeoutCandles = "entryTimeoutCandles";
     public const string MarketFallback = "marketFallback";
 
+    /// <summary>The upper bound on a stop's distance in ATR, a strategy-specific parameter the council's limits gate also reads (FR-EXE-04).</summary>
+    public const string MaxStopDistanceAtr = "maxStopDistanceAtr";
+
     public const string TrailingBySwing = "swing";
     public const string TrailingByEma = "ema";
 

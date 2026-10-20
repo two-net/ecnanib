@@ -269,3 +269,91 @@ table.council td select, table.council td input {
     font: inherit;
     padding: 0.3rem 0.4rem;
 }
+
+table.council .other {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+table.council td {
+    vertical-align: top;
+}
+
+/* Deliberation (FR-AI-14): one block per role in order, its status as a pill, documents collapsed. */
+.turns {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+}
+
+.turn {
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+}
+
+.turn h3 {
+    margin: 0 0 0.5rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.status-succeeded {
+    background: rgba(38, 176, 80, 0.15);
+    color: #1a7a38;
+}
+
+.status-failed, .status-timedout {
+    background: rgba(179, 33, 33, 0.12);
+    color: #b32121;
+}
+
+.status-disabled, .status-skipped {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+ul.flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    list-style: none;
+    margin: 0 0 0.5rem;
+    padding: 0;
+}
+
+ul.flags li {
+    background: rgba(128, 128, 128, 0.15);
+    border-radius: 1rem;
+    padding: 0.1rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+pre.document {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 24rem;
+    overflow: auto;
+    font-size: 0.85rem;
+    padding: 0.5rem;
+    background: rgba(128, 128, 128, 0.08);
+    border-radius: 0.25rem;
+}
+
+.limit-pass {
+    color: #1a7a38;
+}
+
+.limit-clamped {
+    color: #7a5600;
+    font-weight: 600;
+}
+
+.limit-fail {
+    color: #b32121;
+    font-weight: 600;
+}

@@ -1,0 +1,213 @@
+@page "/agents/{AgentId:guid}/evaluations/{EvaluationId:guid}"
+@attribute [Authorize]
+@using System.Globalization
+@using System.Text.Json
+@using Ecnanib.Council.Abstractions
+@using Ecnanib.Database.Entities
+@using Ecnanib.Exchange.Abstractions
+@inject IDeliberationReader Reader
+@inject NavigationManager Navigation
+
+<PageTitle>Deliberation</PageTitle>
+
+@if (_view is { } view)
+{
+    <p><a href="/agents/@view.AgentId">← @view.AgentName</a></p>
+    <h1>Evaluation of @view.Symbol, @Stamp(view.CandleOpenTime) candle</h1>
+    <dl class="details">
+        <dt>Market</dt><dd>@view.Symbol on @AgentMessages.Market(view.MarketType), @AgentMessages.Timeframe(view.Timeframe) candles</dd>
+        <dt>Outcome</dt><dd>@AgentMessages.Outcome(view.Outcome)@(view.OutcomeDetail is null ? "" : $": {view.OutcomeDetail}")</dd>
+        <dt>Council</dt><dd>@(view.CouncilConsulted ? "consulted" : "not needed")</dd>
+        <dt>Started</dt><dd>@Stamp(view.StartedAt)</dd>
+        <dt>Finished</dt><dd>@Stamp(view.FinishedAt)</dd>
+    </dl>
+
+    <section aria-labelledby="strategy-title">
+        <h2 id="strategy-title">Strategy engine</h2>
+        @if (view.StrategyOutput is { } strategy)
+        {
+            <p>@(Text(strategy, "note") ?? "No note.")</p>
+            <details>
+                <summary>Full output</summary>
+                <pre class="document">@Pretty(strategy)</pre>
+            </details>
+        }
+        else
+        {
+            <p>No strategy output was recorded.</p>
+        }
+    </section>
+
+    <section aria-labelledby="turns-title">
+        <h2 id="turns-title">Deliberation</h2>
+        @if (view.Turns.Count == 0)
+        {
+            <p>@(view.CouncilConsulted ? "No role output was recorded." : "The council was not consulted: no setup, no open position and discretionary mode off (FR-AI-08).")</p>
+        }
+        else
+        {
+            <ol class="turns">
+                @foreach (var turn in view.Turns)
+                {
+                    <li class="turn">
+                        <h3>
+                            @turn.Sequence. @CouncilRoles.Display(turn.Role)
+                            <span class="status @CouncilMessages.StatusClass(turn.Status)">@CouncilMessages.Status(turn.Status)</span>
+                        </h3>
+                        <dl class="details">
+                            <dt>Model</dt><dd>@ProviderNames.Display(turn.Provider) · @turn.Model</dd>
+                            @if (turn.Status == RoleOutputStatus.Succeeded)
+                            {
+                                <dt>Proposes</dt><dd>@CouncilMessages.Action(turn.ProposedAction)@(turn.Confidence is { } confidence ? $", confidence {confidence.ToString("0.00", CultureInfo.InvariantCulture)}" : "")</dd>
+                            }
+                            @if (turn.Status is not (RoleOutputStatus.Disabled or RoleOutputStatus.Skipped))
+                            {
+                                <dt>Cost</dt><dd>@turn.LatencyMs ms, @turn.InputTokens in / @turn.OutputTokens out tokens, @turn.Attempts @(turn.Attempts == 1 ? "attempt" : "attempts")</dd>
+                            }
+                            @if (turn.Error is not null)
+                            {
+                                <dt>Problem</dt><dd class="error">@turn.Error</dd>
+                            }
+                        </dl>
+                        @if (turn.Document is { } document)
+                        {
+                            <p>@Text(document, "assessment")</p>
+                            @if (Text(document, "rationale") is { } rationale)
+                            {
+                                <p><strong>Rationale:</strong> @rationale</p>
+                            }
+                            @if (Flags(document) is { Count: > 0 } flags)
+                            {
+                                <ul class="flags">
+                                    @foreach (var flag in flags)
+                                    {
+                                        <li>@flag</li>
+                                    }
+                                </ul>
+                            }
+                            <details>
+                                <summary>Output document</summary>
+                                <pre class="document">@Pretty(document)</pre>
+                            </details>
+                        }
+                        @if (turn.InputSummary is { } input)
+                        {
+                            <details>
+                                <summary>Input the role received</summary>
+                                <pre class="document">@input</pre>
+                            </details>
+                        }
+                        else if (turn.Attempts > 0)
+                        {
+                            <p class="muted">The transcript is no longer retained.</p>
+                        }
+                    </li>
+                }
+            </ol>
+        }
+    </section>
+
+    @if (view.Decision is { } decision)
+    {
+        <section aria-labelledby="decision-title">
+            <h2 id="decision-title">Final decision</h2>
+            <dl class="details">
+                <dt>Action</dt><dd>@CouncilMessages.Action(decision.Action)</dd>
+                @if (decision.EntryType is { } entryType)
+                {
+                    <dt>Entry</dt><dd>@entryType.ToString().ToLowerInvariant()@(decision.EntryPrice is { } entry ? $" at {Number(entry)}" : "")</dd>
+                }
+                @if (decision.StopPrice is { } stop)
+                {
+                    <dt>Stop</dt><dd>@Number(stop)</dd>
+                }
+                @if (decision.Targets.Count > 0)
+                {
+                    <dt>Targets</dt><dd>@string.Join(", ", decision.Targets.Select(Number))</dd>
+                }
+                @if (decision.PartialFraction is { } partial)
+                {
+                    <dt>Take partial</dt><dd>@Number(partial * 100)% of the position</dd>
+                }
+                @if (decision.RiskPercent is { } risk)
+                {
+                    <dt>Risk</dt><dd>@Number(risk)% of equity</dd>
+                }
+                @if (decision.Confidence is { } confidence)
+                {
+                    <dt>Confidence</dt><dd>@confidence.ToString("0.00", CultureInfo.InvariantCulture)</dd>
+                }
+                <dt>Rationale</dt><dd>@decision.Rationale</dd>
+                <dt>Cost</dt><dd>@decision.TotalLatencyMs ms, @decision.TotalInputTokens in / @decision.TotalOutputTokens out tokens</dd>
+                <dt>Decided</dt><dd>@Stamp(decision.CreatedAt)</dd>
+            </dl>
+            <h3>Limits check</h3>
+            @if (decision.Limits.Count == 0)
+            {
+                <p>No limit applied to this decision.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="agents limits">
+                        <thead><tr><th>Limit</th><th>Result</th><th>Detail</th></tr></thead>
+                        <tbody>
+                            @foreach (var limit in decision.Limits)
+                            {
+                                <tr>
+                                    <td>@limit.Limit</td>
+                                    <td class="@CouncilMessages.LimitClass(limit.Status)">@CouncilMessages.Limit(limit.Status)</td>
+                                    <td>@limit.Detail</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+}
+
+@code {
+    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
+
+    private DeliberationView? _view;
+
+    [Parameter]
+    public Guid AgentId { get; set; }
+
+    [Parameter]
+    public Guid EvaluationId { get; set; }
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private Guid UserId => HttpContext.User.RequireUserId();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var view = await Reader.GetAsync(UserId, EvaluationId, HttpContext.RequestAborted);
+        if (view is null || view.AgentId != AgentId)
+        {
+            // Someone else's evaluation, a missing one and a wrong agent id all look the same (NFR-SEC-03).
+            Navigation.NotFound();
+            return;
+        }
+
+        _view = view;
+    }
+
+    private static string Stamp(DateTimeOffset? at) => at is { } value ? value.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) : "";
+
+    private static string Number(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
+
+    private static string Pretty(JsonElement element) => JsonSerializer.Serialize(element, Indented);
+
+    private static string? Text(JsonElement document, string name) =>
+        document.ValueKind == JsonValueKind.Object && document.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    private static List<string> Flags(JsonElement document) =>
+        document.ValueKind == JsonValueKind.Object && document.TryGetProperty("flags", out var flags) && flags.ValueKind == JsonValueKind.Array
+            ? flags.EnumerateArray().Where(f => f.ValueKind == JsonValueKind.String).Select(f => f.GetString()!).ToList()
+            : [];
+}

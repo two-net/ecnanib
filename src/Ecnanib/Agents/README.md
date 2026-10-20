@@ -17,6 +17,8 @@ scheduler, pipeline and paper simulator never leave this folder. `AddAgents` req
 | "No new entry" windows (FR-STR-05) | `IAgentService.AddEntryWindowAsync(EntryWindowInput)` / `RemoveEntryWindowAsync`, `AgentDetail.EntryWindows` → `EntryWindowView`; `EntryWindowSchedule.IsActive` is the one implementation of their semantics |
 | React to agent events in the UI (FR-AGT-10, FR-UI-04) | `IAgentEvents.Subscribe(userId, handler)` → `AgentStateChanged`, `EvaluationFinished`, `OrderChanged`, `TradeChanged` |
 | Provide a pipeline stage (council, market data, execution, live venue) | implement `ICouncil`, `IMarketDataLoader`, `IExecutionService` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
+| The council roles, their order and Appendix B defaults | `CouncilRoles` (`Order`, `DefaultProvider`, `Display`, `Responsibility`) |
+| Council presets (FR-AI-04) | `IAgentService.ResetCouncilToDefaultsAsync` (defaults by strength with each provider's newest catalog model), `UseSingleModelAsync` (one model for every role); both save through `UpdateCouncilAsync` |
 | Place, cancel or close simulated or real orders (FR-AGT-06, FR-AGT-11) | `IOrderVenues.For(mode)` → `IOrderVenue` (`PlaceEntryAsync` with a mandatory stop, `PlaceCloseAsync`, `CancelOpenOrdersAsync`, `ClosePositionsAtMarketAsync`, `GetEquityAsync`) |
 | The candle boundary arithmetic (FR-AGT-09) | `CandleIntervalExtensions.OpenTimeOf` / `NextCloseAfter` in the exchange abstractions |
 
@@ -63,10 +65,14 @@ Rules the module enforces:
   lifts daily-loss pauses whose time has come (FR-EXE-09) and finalises evaluation rows nobody will finish.
 - The pipeline is FR-AGT-10 in order: load market data → strategy engine → council when a setup exists and the agent is
   Running, a position is open, or discretionary mode is on and the agent is Running (FR-AI-08) → execute → persist →
-  log → notify. No Risk Manager decision opens nothing and leaves protective orders alone (FR-AI-12). The strategy
-  engine is the Strategies module's; the agent is loaded with its no-entry windows so the engine can apply them. Until
-  their issues land, the other stages are seeded fail-safe: the council answers that it is not available (FR-AI, #9)
-  and execution records the decision and places nothing (FR-EXE, #13). Market data (FR-DATA, #12) is, until then, the
+  log → notify. The council receives the pinned strategy with its resolved parameters, the engine output, the
+  snapshot, the open position and orders and the evaluation deadline; its decision graph is persisted whenever it
+  returns one, also when the Risk Manager produced no decision, in which case the evaluation is Failed and nothing is
+  executed, so nothing new opens and protective orders stay (FR-AI-12, FR-AI-14). A council fault (a model the
+  provider rejected) moves the agent to Error with the reason once the evaluation is recorded (FR-SYNC-04). The
+  strategy engine is the Strategies module's; the agent is loaded with its no-entry windows so the engine can apply
+  them. The council is the Council module's (FR-AI, #9); until its issue lands, execution is seeded fail-safe and
+  records the decision and places nothing (FR-EXE, #13). Market data (FR-DATA, #12) is, until then, the
   most recent 300 closed candles of the agent's timeframe plus every higher timeframe and reference series the strategy
   declares (FR-STR-03), each read from the exchange and kept only up to the evaluated candle's close (no look-ahead),
   written through to `candles`; reference series (BTCUSDT weekly) always come from production public data; the futures
@@ -104,12 +110,12 @@ A deadline must be shorter than its timeframe; percentages are plain percents (0
 Pages (static server rendering, plain forms): `/agents` (the user's agents with state and last evaluation),
 `/agents/new` (name, market, symbol, timeframe, mode, key, leverage and margin; creates a draft) and `/agents/{id}`
 (actions, positions and orders, settings, strategy and parameters generated from the pinned version's descriptor with an
-upgrade button when a newer version exists, no-entry windows, council, risk limits, recent evaluations and change
-history; fields a state forbids are disabled). The disclaimer is shown on both forms
+upgrade button when a newer version exists, no-entry windows, council with the synced catalog per role and the two
+presets, risk limits, recent evaluations each linking to its deliberation, and change history; fields a state forbids
+are disabled). The disclaimer is shown on both forms
 (FR-UI-05). Another user's agent and a missing one both answer not found.
 
-Known gaps: choosing council models from the synced catalog, deprecation warnings and single-model mode arrive with
-the council and model-sync issues; backfill on start, candle caching and streamed mark prices with market data (#12),
+Known gaps: deprecation warnings and replacement prompts arrive with the model-sync issue; backfill on start, candle caching and streamed mark prices with market data (#12),
 until which the loader issues up to four REST reads per evaluation; the dashboard, agent detail with chart and live
 updates with the UI issue. `Order.WorkingType` has no column, so paper futures stops
 are last-price only.

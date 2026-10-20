@@ -143,6 +143,7 @@ internal sealed class EvaluationPipeline
         var councilConsulted = false;
         JsonElement? strategyJson = null;
         Decision? decision = null;
+        string? fault = null;
         try
         {
             var entriesAllowed = agent.State == AgentState.Running;
@@ -171,16 +172,13 @@ internal sealed class EvaluationPipeline
             else
             {
                 councilConsulted = true;
-                var council = await _council.DeliberateAsync(new CouncilContext(agent, evaluation, output, market, openTrades, openOrders, entriesAllowed), cancellable).ConfigureAwait(false);
-                if (council.Decision is null)
+                var context = new CouncilContext(agent, evaluation, strategy, parameters, output, market, openTrades, openOrders, entriesAllowed, run.DeadlineAt);
+                var council = await _council.DeliberateAsync(context, cancellable).ConfigureAwait(false);
+
+                // FR-AI-14: the deliberation is kept whether or not the Risk Manager decided.
+                if (council.Decision is { } produced)
                 {
-                    // FR-AI-12: no Risk Manager decision opens nothing and leaves protective orders alone.
-                    outcome = EvaluationOutcome.Failed;
-                    detail = $"No decision: {council.Failure ?? "the council produced none"}";
-                }
-                else
-                {
-                    decision = council.Decision;
+                    decision = produced;
                     if (decision.Id == Guid.Empty)
                         decision.Id = Guid.CreateVersion7();
                     decision.EvaluationId = evaluation.Id;
@@ -191,20 +189,33 @@ internal sealed class EvaluationPipeline
                         db.Decisions.Add(decision);
                         await db.SaveChangesAsync(stopping).ConfigureAwait(false);
                     }
+                }
 
-                    if (!host.IsTracked(agentId))
-                    {
-                        outcome = EvaluationOutcome.Failed;
-                        detail = "The agent was stopped before the decision could be executed.";
-                    }
-                    else
-                    {
-                        var venue = _venues.For(agent.Mode);
-                        var request = new ExecutionRequest(agent, decision, openTrades, openOrders, _caps.Value, venue, run.InterruptedPreviously, exchangeKey);
-                        var result = await _execution.ExecuteAsync(request, stopping).ConfigureAwait(false);
-                        outcome = EvaluationOutcome.Decided;
-                        detail = result.Note;
-                    }
+                if (council.Failure is not null || council.Fault is not null)
+                {
+                    // FR-AI-12: no Risk Manager decision opens nothing and leaves protective orders alone. A fault
+                    // (FR-SYNC-04) moves the agent to Error once the evaluation is recorded.
+                    outcome = EvaluationOutcome.Failed;
+                    detail = $"No decision: {council.Failure ?? council.Fault}";
+                    fault = council.Fault;
+                }
+                else if (decision is null)
+                {
+                    outcome = EvaluationOutcome.Failed;
+                    detail = "No decision: the council produced none";
+                }
+                else if (!host.IsTracked(agentId))
+                {
+                    outcome = EvaluationOutcome.Failed;
+                    detail = "The agent was stopped before the decision could be executed.";
+                }
+                else
+                {
+                    var venue = _venues.For(agent.Mode);
+                    var request = new ExecutionRequest(agent, decision, openTrades, openOrders, _caps.Value, venue, run.InterruptedPreviously, exchangeKey);
+                    var result = await _execution.ExecuteAsync(request, stopping).ConfigureAwait(false);
+                    outcome = EvaluationOutcome.Decided;
+                    detail = result.Note;
                 }
             }
         }
@@ -232,6 +243,10 @@ internal sealed class EvaluationPipeline
         _logger.LogInformation("Agent {AgentId} evaluated candle {CandleOpen:O} ({Timeframe}): {Outcome}{Detail}",
             agentId, candle.OpenTime, agent.Timeframe.ToLabel(), outcome, detail is null ? "" : " - " + detail);
         _events.Publish(new EvaluationFinished(agentId, agent.UserId, finishedAt, evaluation.Id, candle.OpenTime, outcome));
+
+        // FR-SYNC-04: an agent whose council cannot run as configured stops being evaluated until the user fixes it.
+        if (fault is not null)
+            await host.FailAsync(agentId, fault, stopping).ConfigureAwait(false);
     }
 
     /// <summary>Records that a candle was received but not evaluated (stale or late); a second record of the same candle is ignored.</summary>

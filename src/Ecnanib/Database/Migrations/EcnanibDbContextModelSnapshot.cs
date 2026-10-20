@@ -311,6 +311,10 @@ namespace Ecnanib.Database.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("limits_check");
 
+                    b.Property<decimal?>("PartialFraction")
+                        .HasColumnType("numeric")
+                        .HasColumnName("partial_fraction");
+
                     b.Property<string>("Rationale")
                         .IsRequired()
                         .HasMaxLength(4000)

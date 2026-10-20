@@ -37,6 +37,9 @@ public sealed class Decision
 
     public decimal? Size { get; set; }
 
+    /// <summary>Modify only: the fraction of the position to take off (FR-AI-10 "take partial"), 0 &lt; f ≤ 1.</summary>
+    public decimal? PartialFraction { get; set; }
+
     public decimal? RiskPercent { get; set; }
 
     public decimal? Confidence { get; set; }
