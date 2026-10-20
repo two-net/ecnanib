@@ -3,12 +3,14 @@
 The per-provider model catalog (SRS §3.2 FR-SYNC-01..06, A-03). This is the seed laid by the keys issue: the one
 operation the keys module needs, writing a model list that was already fetched into `provider_models` and recording
 the sync in `provider_sync_states` (FR-SYNC-01, FR-SYNC-06). Other modules depend on `Ecnanib.ModelSync.Abstractions`
-and `AddModelSync(...)`. `AddModelSync` requires `AddDatabase`, adds no hosted service and connects to nothing.
+and `AddModelSync(...)`. `AddModelSync` requires `AddDatabase`, adds no hosted service and connects to nothing; it also registers the catalog
+read the council's model picker uses.
 
 | Need | Use |
 |---|---|
 | Record the models a key validation just listed (FR-SYNC-02) | `IProviderCatalogSync.SyncAsync(provider, models, SyncTrigger.KeyValidation, ct)` → `CatalogSyncResult` (added, updated, listed) |
 | Show the last sync per provider (FR-SYNC-06, NFR-OBS-01) | read `ProviderSyncState` |
+| Offer the catalog for choosing council models (FR-AI-03, FR-SYNC-05) | `IModelCatalog.ListAsync(ct)` → `CatalogModel` per provider, available first, the most recently added first |
 
 Rules the module enforces:
 

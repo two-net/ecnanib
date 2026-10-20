@@ -20,6 +20,17 @@ public interface IAgentService
 
     Task<AgentSaveResult> UpdateCouncilAsync(Guid userId, Guid agentId, CouncilInput input, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The Appendix B assignments by strength (FR-AI-04): each role on its default provider with that provider's
+    /// newest catalog model, every role enabled. Saved through <see cref="UpdateCouncilAsync"/>, so the state rule
+    /// and the change history apply. A provider without a catalog model keeps the model the role already has on that
+    /// provider; otherwise the result is invalid input naming the role, and the user chooses the model by hand.
+    /// </summary>
+    Task<AgentSaveResult> ResetCouncilToDefaultsAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>Single-model mode (FR-AI-04): every role on the one provider and model, all enabled; saved through <see cref="UpdateCouncilAsync"/>.</summary>
+    Task<AgentSaveResult> UseSingleModelAsync(Guid userId, Guid agentId, Ecnanib.Ai.Abstractions.AiProvider provider, string? model, CancellationToken cancellationToken);
+
     Task<AgentSaveResult> UpdateRiskLimitsAsync(Guid userId, Guid agentId, RiskLimitsInput input, CancellationToken cancellationToken);
 
     /// <summary>

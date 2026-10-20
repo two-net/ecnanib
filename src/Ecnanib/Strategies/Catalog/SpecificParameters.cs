@@ -15,7 +15,7 @@ internal static class SpecificParameters
     public const string PartialTakeProfitR = "partialTakeProfitR";
     public const string MinRewardR = "minRewardR";
     public const string TypicalRewardR = "typicalRewardR";
-    public const string MaxStopDistanceAtr = "maxStopDistanceAtr";
+    public const string MaxStopDistanceAtr = Ecnanib.Agents.Abstractions.StrategyParameters.MaxStopDistanceAtr;
     public const string WeekendSizeMultiplier = "weekendSizeMultiplier";
     public const string RangeMinCandles = "rangeMinCandles";
     public const string RangeMaxHeightAtr = "rangeMaxHeightAtr";

@@ -4,6 +4,7 @@ using Ecnanib.Agents;
 using Ecnanib.Ai;
 using Ecnanib.Components;
 using Ecnanib.Configuration;
+using Ecnanib.Council;
 using Ecnanib.Database;
 using Ecnanib.Database.Migrations;
 using Ecnanib.Exchange;
@@ -37,6 +38,8 @@ builder.Services.AddAccounts(builder.Configuration);
 builder.Services.AddModelSync(builder.Configuration);
 // Before AddAgents: the Appendix A catalog and engine the agents module requires (FR-STR).
 builder.Services.AddStrategies();
+// Before AddAgents: the Appendix B council replaces the agents module's fail-safe default (FR-AI).
+builder.Services.AddCouncil(builder.Configuration);
 // Before AddKeys: the runtime's own key handling (stop with orders cancelled, Error halts evaluation) replaces the default.
 builder.Services.AddAgents(builder.Configuration);
 builder.Services.AddKeys(builder.Configuration);

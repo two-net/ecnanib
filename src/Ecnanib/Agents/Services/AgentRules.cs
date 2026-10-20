@@ -30,10 +30,8 @@ internal static partial class AgentRules
 
     public const int MaxModelLength = 200;
 
-    public static readonly IReadOnlyList<CouncilRole> Roles =
-    [
-        CouncilRole.MarketAnalyst, CouncilRole.SentimentFlow, CouncilRole.CrossMarketContext, CouncilRole.RiskManager,
-    ];
+    /// <summary>The Appendix B order; the one table is <see cref="CouncilRoles"/>.</summary>
+    public static IReadOnlyList<CouncilRole> Roles => CouncilRoles.Order;
 
     public static bool IsAgentTimeframe(CandleInterval timeframe) => AgentsOptions.Timeframes.Contains(timeframe);
 
@@ -176,30 +174,12 @@ internal static partial class AgentRules
 
     private static TimeOnly Truncate(TimeOnly time) => new(time.Hour, time.Minute, time.Second);
 
-    /// <summary>The Appendix B default provider of a role.</summary>
-    public static Ecnanib.Ai.Abstractions.AiProvider DefaultProvider(CouncilRole role) => role switch
-    {
-        CouncilRole.MarketAnalyst => Ecnanib.Ai.Abstractions.AiProvider.Gpt,
-        CouncilRole.SentimentFlow => Ecnanib.Ai.Abstractions.AiProvider.Grok,
-        CouncilRole.CrossMarketContext => Ecnanib.Ai.Abstractions.AiProvider.Gemini,
-        CouncilRole.RiskManager => Ecnanib.Ai.Abstractions.AiProvider.Claude,
-        _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown council role."),
-    };
+    /// <summary>The Appendix B default provider of a role (<see cref="CouncilRoles"/>).</summary>
+    public static Ecnanib.Ai.Abstractions.AiProvider DefaultProvider(CouncilRole role) => CouncilRoles.DefaultProvider(role);
 
-    public static string Display(CouncilRole role) => role switch
-    {
-        CouncilRole.MarketAnalyst => "Market Analyst",
-        CouncilRole.SentimentFlow => "Sentiment & Flow",
-        CouncilRole.CrossMarketContext => "Cross-Market Context",
-        CouncilRole.RiskManager => "Risk Manager",
-        _ => role.ToString(),
-    };
+    public static string Display(CouncilRole role) => CouncilRoles.Display(role);
 
-    public static string CamelCase(CouncilRole role)
-    {
-        var text = role.ToString();
-        return char.ToLowerInvariant(text[0]) + text[1..];
-    }
+    public static string CamelCase(CouncilRole role) => CouncilRoles.CamelCase(role);
 
     [GeneratedRegex("^[A-Z0-9]+$")]
     private static partial Regex SymbolPattern();

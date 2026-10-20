@@ -482,6 +482,39 @@ internal sealed class AgentService : IAgentService
         return await SaveChangesAsync(db, agent, changes, now, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<AgentSaveResult> ResetCouncilToDefaultsAsync(Guid userId, Guid agentId, CancellationToken cancellationToken)
+    {
+        var roles = new List<CouncilRoleInput>();
+        var errors = new List<FieldError>();
+        await using (var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var current = await db.CouncilAssignments.AsNoTracking()
+                .Where(c => c.AgentId == agentId && c.Agent.UserId == userId)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            if (current.Count == 0 && await StateAsync(db, userId, agentId, cancellationToken).ConfigureAwait(false) is null)
+                return new AgentSaveResult(AgentSaveStatus.NotFound);
+
+            foreach (var role in CouncilRoles.Order)
+            {
+                var provider = CouncilRoles.DefaultProvider(role);
+                var model = await NewestModelAsync(db, provider, cancellationToken).ConfigureAwait(false);
+                // Without a synced catalog the role keeps the model it already has on that provider (FR-SYNC-05: nothing is hard-coded).
+                if (model.Length == 0 && current.FirstOrDefault(c => c.Role == role) is { } existing && existing.Provider == provider)
+                    model = existing.Model;
+                if (model.Length == 0)
+                    errors.Add(new FieldError($"council.{CouncilRoles.CamelCase(role)}.model", $"No {ProviderNames.Display(provider)} model is in the catalog yet; add a {ProviderNames.Display(provider)} key to sync it, or choose the {CouncilRoles.Display(role)}'s model by hand."));
+                roles.Add(new CouncilRoleInput(role, provider, model, true));
+            }
+        }
+
+        if (errors.Count > 0)
+            return AgentSaveResult.Invalid(errors);
+        return await UpdateCouncilAsync(userId, agentId, new CouncilInput(roles), cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<AgentSaveResult> UseSingleModelAsync(Guid userId, Guid agentId, AiProvider provider, string? model, CancellationToken cancellationToken) =>
+        UpdateCouncilAsync(userId, agentId, new CouncilInput(CouncilRoles.Order.Select(role => new CouncilRoleInput(role, provider, model, true)).ToList()), cancellationToken);
+
     public async Task<AgentSaveResult> UpdateRiskLimitsAsync(Guid userId, Guid agentId, RiskLimitsInput input, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(input);

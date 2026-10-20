@@ -127,5 +127,15 @@
   "Keys": {
     "RevalidationIntervalMinutes": 60,
     "ValidationTimeoutSeconds": 60
+  },
+  "Council": {
+    "RoleTimeoutSeconds": 60,
+    "RiskManagerReserveSeconds": 45,
+    "MinimumRoleBudgetSeconds": 5,
+    "RecentCandles": 30,
+    "HigherTimeframeCandles": 10,
+    "MaxOutputTokens": 8192,
+    "MaxAssessmentLength": 1200,
+    "MaxRationaleLength": 600
   }
 }

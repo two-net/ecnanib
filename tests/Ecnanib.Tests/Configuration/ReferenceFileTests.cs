@@ -3,6 +3,7 @@ using Ecnanib.Accounts;
 using Ecnanib.Agents;
 using Ecnanib.Ai;
 using Ecnanib.Configuration;
+using Ecnanib.Council;
 using Ecnanib.Database;
 using Ecnanib.Exchange;
 using Ecnanib.Keys;
@@ -86,6 +87,7 @@ public class ReferenceFileTests
         services.AddAccounts(configuration);
         services.AddModelSync(configuration);
         services.AddStrategies();
+        services.AddCouncil(configuration);
         services.AddAgents(configuration);
         services.AddKeys(configuration);
         return services;
