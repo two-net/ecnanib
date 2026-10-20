@@ -21,9 +21,12 @@ public sealed record AgentSummary(
     DateTimeOffset? LastEvaluatedAt,
     EvaluationOutcome? LastOutcome,
     int OpenPositions,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    /// <summary>An enabled council role uses a model its provider no longer lists (FR-SYNC-03).</summary>
+    bool HasDeprecatedModel);
 
-public sealed record CouncilAssignmentView(CouncilRole Role, AiProvider Provider, string Model, bool Enabled);
+/// <summary><see cref="CatalogStatus"/> is the model's status in the synced catalog, null when the catalog does not list it (a model entered by hand); Deprecated asks for a replacement (FR-SYNC-03).</summary>
+public sealed record CouncilAssignmentView(CouncilRole Role, AiProvider Provider, string Model, bool Enabled, ModelStatus? CatalogStatus);
 
 /// <summary><see cref="IsClosing"/> means a close-at-market order is waiting for its fill; <see cref="IsUnmanaged"/> marks a position left open on Stop (FR-AGT-06).</summary>
 public sealed record OpenPositionView(

@@ -41,6 +41,10 @@ else
                             {
                                 <span class="muted">@agent.StateReason</span>
                             }
+                            @if (agent.HasDeprecatedModel)
+                            {
+                                <a class="muted warning-text" href="/agents/@agent.Id#council">@AgentMessages.DeprecatedMark</a>
+                            }
                         </td>
                         <td>
                             @if (agent.LastOutcome is { } outcome)

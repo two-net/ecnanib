@@ -26,6 +26,47 @@ public class AgentServiceLiveTests : IClassFixture<DatabaseLiveFixture>
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>FR-SYNC-03: each role's model is looked up in the shared catalog; the list flags an agent only for an enabled role on a deprecated model.</summary>
+    [Fact]
+    public async Task GetReportsEachRolesCatalogStatusAndTheListFlagsAgentsOnADeprecatedModel()
+    {
+        await StartAsync();
+        var user = await AgentsLiveSeed.NewUserAsync(_fixture, "deprecated@example.com");
+        await using (var db = _fixture.CreateContext())
+        {
+            db.AddRange(
+                new ProviderModel { Provider = AiProvider.Claude, ModelId = "sync-shared", DisplayName = "sync-shared", FirstSeenAt = AgentsLiveSeed.Now, LastSeenAt = AgentsLiveSeed.Now, Status = ModelStatus.Deprecated },
+                new ProviderModel { Provider = AiProvider.Gpt, ModelId = "sync-shared", DisplayName = "sync-shared", FirstSeenAt = AgentsLiveSeed.Now, LastSeenAt = AgentsLiveSeed.Now },
+                new ProviderModel { Provider = AiProvider.Gemini, ModelId = "sync-disabled", DisplayName = "sync-disabled", FirstSeenAt = AgentsLiveSeed.Now, LastSeenAt = AgentsLiveSeed.Now, Status = ModelStatus.Deprecated });
+            await db.SaveChangesAsync(Ct);
+        }
+
+        // Every role of a seeded agent runs the same model id on its Appendix B provider.
+        var flagged = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "flagged", model: "sync-shared");
+        var clean = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "clean", model: "sync-unknown");
+        var disabledOnly = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "disabled-only", model: "sync-disabled");
+        await using (var db = _fixture.CreateContext())
+            await db.CouncilAssignments.Where(c => c.AgentId == disabledOnly.Id && c.Role == CouncilRole.CrossMarketContext).ExecuteUpdateAsync(s => s.SetProperty(c => c.Enabled, false), Ct);
+        var (provider, _, _, _, _) = AgentsLiveSeed.Build(_fixture);
+        await using var _ = provider;
+        var agents = provider.GetRequiredService<IAgentService>();
+
+        var detail = await agents.GetAsync(user.Id, flagged.Id, Ct);
+
+        Assert.Equal(ModelStatus.Available, detail!.Council.Single(c => c.Role == CouncilRole.MarketAnalyst).CatalogStatus);
+        Assert.Null(detail.Council.Single(c => c.Role == CouncilRole.SentimentFlow).CatalogStatus);
+        Assert.Equal(ModelStatus.Deprecated, detail.Council.Single(c => c.Role == CouncilRole.RiskManager).CatalogStatus);
+        Assert.All((await agents.GetAsync(user.Id, clean.Id, Ct))!.Council, c => Assert.Null(c.CatalogStatus));
+        Assert.Equal(ModelStatus.Deprecated, (await agents.GetAsync(user.Id, disabledOnly.Id, Ct))!.Council.Single(c => c.Role == CouncilRole.CrossMarketContext).CatalogStatus);
+
+        var list = await agents.ListAsync(user.Id, Ct);
+
+        Assert.True(list.Single(a => a.Id == flagged.Id).HasDeprecatedModel);
+        Assert.False(list.Single(a => a.Id == clean.Id).HasDeprecatedModel);
+        Assert.False(list.Single(a => a.Id == disabledOnly.Id).HasDeprecatedModel);
+        await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
+    }
+
     [Fact]
     public async Task CreatesADraftWithTheTimeframeDefaultsAndTheAppendixBCouncil()
     {

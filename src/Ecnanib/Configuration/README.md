@@ -50,7 +50,7 @@ Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 | database | `Database` | connection string (the only credential), command timeout, retries | database (#3) |
 | logging | `Logging` | minimum level per category for the console; per-sink levels arrive with logging (#15); log retention is `Retention:LogDays` | logging (#15) |
 | exchange | `Exchange` | endpoints, request timeout, reconciliation interval, streams, retry | exchange (#1) |
-| providers | `Providers` | endpoints per provider, model sync interval, miss threshold, call timeout, max output tokens | AI (#2) |
+| providers | `Providers` | endpoints per provider, model sync interval, miss threshold, call timeout, max output tokens | AI (#2); the sync interval and miss threshold are read by model sync (#10) |
 | agents | `Agents` | `MaxAgentsPerUser`, `MaxRunningAgentsPerUser` (accounts); `EvaluationDeadlineSeconds` per timeframe, `MaxConcurrentEvaluations`, `DefaultEntryTimeoutCandles` (agents) | accounts (#4), agents (#7) |
 | risk caps | `RiskCaps` | `MaxRiskPerTradePercent`, `MaxLeverage`, `MaxDailyLossPercent`, `MaxOpenPositions`; agents validate against them, execution (#13) enforces them at order time | agents (#7), execution (#13) |
 | market data | — | backfill arrives with market data (#12); candle retention is `Retention:CandleDays` | market data (#12) |

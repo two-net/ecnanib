@@ -28,6 +28,10 @@
             <span class="muted">@agent.StateReason</span>
         }
     </p>
+    @if (_deprecatedRoles.Count > 0)
+    {
+        <p class="warning" role="alert">@AgentMessages.DeprecatedModels(_deprecatedRoles) <a href="#council">Go to the council</a>.</p>
+    }
     <dl class="details">
         <dt>Trades</dt><dd>@agent.Symbol on @AgentMessages.Market(agent.MarketType), @AgentMessages.Timeframe(agent.Timeframe) candles, @AgentMessages.Mode(agent.Mode).ToLowerInvariant() mode</dd>
         <dt>Strategy</dt><dd>@(_strategy?.Name ?? agent.StrategyId) (version @agent.StrategyVersion@(UpgradeAvailable ? $", version {agent.LatestStrategyVersion} available" : ""))</dd>
@@ -412,7 +416,7 @@
         </EditForm>
     </section>
 
-    <section aria-labelledby="council-title">
+    <section id="council" aria-labelledby="council-title">
         <h2 id="council-title">Council</h2>
         <p>Four roles in order; the Risk Manager always runs last and cannot be disabled. A role's provider needs a valid key before the agent can start. Pick a model from the synced catalog, or choose "Other" and type a model id as the provider lists it.</p>
         <EditForm Model="Council" FormName="agent-council" OnValidSubmit="SaveCouncilAsync" method="post">
@@ -426,7 +430,13 @@
                     <tbody>
                         <tr>
                             <td>Market Analyst<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.MarketAnalyst)</span></td>
-                            <td><InputSelect @bind-Value="Council.MarketAnalystChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect></td>
+                            <td>
+                                <InputSelect @bind-Value="Council.MarketAnalystChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
+                                @if (Deprecation(CouncilRole.MarketAnalyst) is { } analystNote)
+                                {
+                                    <span class="muted warning-text">@analystNote</span>
+                                }
+                            </td>
                             <td>
                                 <div class="other">
                                     <InputSelect @bind-Value="Council.MarketAnalystProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
@@ -437,7 +447,13 @@
                         </tr>
                         <tr>
                             <td>Sentiment &amp; Flow<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.SentimentFlow)</span></td>
-                            <td><InputSelect @bind-Value="Council.SentimentFlowChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect></td>
+                            <td>
+                                <InputSelect @bind-Value="Council.SentimentFlowChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
+                                @if (Deprecation(CouncilRole.SentimentFlow) is { } sentimentNote)
+                                {
+                                    <span class="muted warning-text">@sentimentNote</span>
+                                }
+                            </td>
                             <td>
                                 <div class="other">
                                     <InputSelect @bind-Value="Council.SentimentFlowProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
@@ -448,7 +464,13 @@
                         </tr>
                         <tr>
                             <td>Cross-Market Context<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.CrossMarketContext)</span></td>
-                            <td><InputSelect @bind-Value="Council.CrossMarketContextChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect></td>
+                            <td>
+                                <InputSelect @bind-Value="Council.CrossMarketContextChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
+                                @if (Deprecation(CouncilRole.CrossMarketContext) is { } contextNote)
+                                {
+                                    <span class="muted warning-text">@contextNote</span>
+                                }
+                            </td>
                             <td>
                                 <div class="other">
                                     <InputSelect @bind-Value="Council.CrossMarketContextProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
@@ -459,7 +481,13 @@
                         </tr>
                         <tr>
                             <td>Risk Manager<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.RiskManager)</span></td>
-                            <td><InputSelect @bind-Value="Council.RiskManagerChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect></td>
+                            <td>
+                                <InputSelect @bind-Value="Council.RiskManagerChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
+                                @if (Deprecation(CouncilRole.RiskManager) is { } riskNote)
+                                {
+                                    <span class="muted warning-text">@riskNote</span>
+                                }
+                            </td>
                             <td>
                                 <div class="other">
                                     <InputSelect @bind-Value="Council.RiskManagerProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
@@ -604,6 +632,7 @@
     private string? _presetError;
 
     private IReadOnlyList<CatalogModel> _catalog = [];
+    private IReadOnlyList<CouncilAssignmentView> _deprecatedRoles = [];
     private string? _riskError;
     private string? _windowError;
 
@@ -712,12 +741,23 @@
         _strategy = Catalog.Find(_agent.StrategyId, _agent.StrategyVersion) ?? Catalog.Find(_agent.StrategyId);
         _keys ??= await KeyService.GetOverviewAsync(UserId, HttpContext.RequestAborted);
         _catalog = await ModelCatalog.ListAsync(HttpContext.RequestAborted);
+        _deprecatedRoles = _agent.Council.Where(c => c.Enabled && c.CatalogStatus == ModelStatus.Deprecated).ToList();
         return true;
     }
 
     private bool CanEdit(AgentField field) => _agent is { } agent && AgentStateMachine.CanEdit(agent.State, field);
 
     private bool UpgradeAvailable => _agent is { LatestStrategyVersion: { } latest } agent && latest > agent.StrategyVersion;
+
+    /// <summary>The row prompt for a role on a deprecated model, enabled or not (FR-SYNC-03); null for an available or hand-entered model.</summary>
+    private string? Deprecation(CouncilRole role) =>
+        _agent?.Council.FirstOrDefault(c => c.Role == role) is { CatalogStatus: ModelStatus.Deprecated } assignment
+            ? AgentMessages.DeprecatedModel(assignment, Replacement(assignment.Provider))
+            : null;
+
+    /// <summary>The newest available catalog model of a provider: the catalog lists available first, newest first per provider (FR-SYNC-05).</summary>
+    private CatalogModel? Replacement(AiProvider provider) =>
+        _catalog.FirstOrDefault(m => m.Provider == provider && m.Status == ModelStatus.Available);
 
     private async Task StartAsync() => await ActAsync(AgentService.StartAsync(UserId, Id, HttpContext.RequestAborted), "started");
 
@@ -1080,7 +1120,7 @@
     {
         public string? MarketAnalystChoice { get; set; }
 
-        public AiProvider MarketAnalystProvider { get; set; } = AiProvider.Gpt;
+        public AiProvider MarketAnalystProvider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.MarketAnalyst);
 
         public string? MarketAnalystModel { get; set; }
 
@@ -1088,7 +1128,7 @@
 
         public string? SentimentFlowChoice { get; set; }
 
-        public AiProvider SentimentFlowProvider { get; set; } = AiProvider.Grok;
+        public AiProvider SentimentFlowProvider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.SentimentFlow);
 
         public string? SentimentFlowModel { get; set; }
 
@@ -1096,7 +1136,7 @@
 
         public string? CrossMarketContextChoice { get; set; }
 
-        public AiProvider CrossMarketContextProvider { get; set; } = AiProvider.Gemini;
+        public AiProvider CrossMarketContextProvider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.CrossMarketContext);
 
         public string? CrossMarketContextModel { get; set; }
 
@@ -1104,7 +1144,7 @@
 
         public string? RiskManagerChoice { get; set; }
 
-        public AiProvider RiskManagerProvider { get; set; } = AiProvider.Claude;
+        public AiProvider RiskManagerProvider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.RiskManager);
 
         public string? RiskManagerModel { get; set; }
 
@@ -1154,7 +1194,7 @@
     {
         public string? Choice { get; set; }
 
-        public AiProvider Provider { get; set; } = AiProvider.Claude;
+        public AiProvider Provider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.RiskManager);
 
         public string? Model { get; set; }
 

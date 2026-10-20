@@ -61,7 +61,8 @@ Configuration (the `Keys` section goes beyond Appendix D's minimum, FR-CFG-08):
 Pages (static server rendering, plain forms): `/keys` (both lists, the add-a-Binance-key form, "no key" notes per
 provider), `/keys/exchange/{id}` (details and permissions, validate now, replace credentials, delete with the option to
 stop the agents using it) and `/keys/providers/{claude|gemini|gpt|grok}` (current key, validate now, add or replace,
-delete). Another user's key and a missing one both answer not found.
+delete). The provider keys section links to `/providers` for the catalogs and sync status (model-sync module).
+Another user's key and a missing one both answer not found.
 
 Known gap: account deletion (Accounts) cascades key rows away without releasing the exchange clients cached for them;
 they linger in memory until restart. Deletion requires every agent Stopped or Draft, so no stream is open at the time.

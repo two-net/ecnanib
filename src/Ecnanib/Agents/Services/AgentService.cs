@@ -87,13 +87,15 @@ internal sealed class AgentService : IAgentService
                     .Select(e => new { e.FinishedAt, e.Outcome })
                     .FirstOrDefault(),
                 OpenPositions = db.Trades.Count(t => t.AgentId == a.Id && t.ClosedAt == null),
+                HasDeprecatedModel = a.CouncilAssignments.Any(c => c.Enabled
+                    && db.ProviderModels.Any(m => m.Provider == c.Provider && m.ModelId == c.Model && m.Status == ModelStatus.Deprecated)),
             })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
         return rows.Select(r => new AgentSummary(r.Id, r.Name, r.MarketType, r.Symbol, r.Timeframe, r.StrategyId,
                 (_catalog.Find(r.StrategyId, r.StrategyVersion) ?? _catalog.Find(r.StrategyId))?.Name ?? r.StrategyId, r.Mode, r.State, r.StateReason,
-                r.Last?.FinishedAt, r.Last?.Outcome, r.OpenPositions, r.UpdatedAt))
+                r.Last?.FinishedAt, r.Last?.Outcome, r.OpenPositions, r.UpdatedAt, r.HasDeprecatedModel))
             .ToList();
     }
 
@@ -119,6 +121,16 @@ internal sealed class AgentService : IAgentService
             .OrderByDescending(c => c.Timestamp).ThenByDescending(c => c.Id).Take(RecentChanges)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
+        // FR-SYNC-03: each role's model is looked up in the catalog so the page can warn about a deprecated one.
+        var assignments = AgentRules.Roles.Select(role => agent.CouncilAssignments.FirstOrDefault(c => c.Role == role))
+            .Where(c => c is not null).Select(c => c!).ToList();
+        var providers = assignments.Select(c => c.Provider).Distinct().ToList();
+        var models = assignments.Select(c => c.Model).Distinct().ToList();
+        var catalog = await db.ProviderModels.AsNoTracking()
+            .Where(m => providers.Contains(m.Provider) && models.Contains(m.ModelId))
+            .Select(m => new { m.Provider, m.ModelId, m.Status })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
         var closing = orders.Where(o => o.Purpose == OrderPurpose.Close && o.TradeId != null).Select(o => o.TradeId!.Value).ToHashSet();
         return new AgentDetail(
             agent.Id, agent.Name, agent.MarketType, agent.Symbol, agent.Timeframe, agent.StrategyId, agent.StrategyVersion,
@@ -126,9 +138,8 @@ internal sealed class AgentService : IAgentService
             StrategyParameters.Read(agent.Parameters), agent.Mode, agent.ExchangeKeyId, agent.Leverage, agent.MarginType,
             agent.RiskLimits, agent.Discretionary, agent.State, agent.PauseCause, agent.AutoResumeAt, agent.StateReason,
             agent.CreatedAt, agent.UpdatedAt,
-            AgentRules.Roles.Select(role => agent.CouncilAssignments.FirstOrDefault(c => c.Role == role))
-                .Where(c => c is not null)
-                .Select(c => new CouncilAssignmentView(c!.Role, c.Provider, c.Model, c.Enabled)).ToList(),
+            assignments.Select(c => new CouncilAssignmentView(c.Role, c.Provider, c.Model, c.Enabled,
+                catalog.FirstOrDefault(m => m.Provider == c.Provider && m.ModelId == c.Model)?.Status)).ToList(),
             Ordered(agent.EntryWindows).Select(w => new EntryWindowView(w.Id, w.Kind, w.StartAt, w.EndAt, w.StartDay, w.StartTime, w.EndDay, w.EndTime)).ToList(),
             trades.Select(t => new OpenPositionView(t.Id, t.Side, t.Size, t.EntryPrice, t.CurrentStop, t.IsUnmanaged, closing.Contains(t.Id), t.IsPaper, t.OpenedAt)).ToList(),
             orders.Select(o => new OpenOrderView(o.Id, o.Purpose, o.Type, o.Side, o.Price, o.StopPrice, o.Quantity, o.Status, o.IsPaper, o.ExpiresAt, o.CreatedAt)).ToList(),

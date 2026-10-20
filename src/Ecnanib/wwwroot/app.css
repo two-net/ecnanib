@@ -357,3 +357,40 @@ pre.document {
     color: #b32121;
     font-weight: 600;
 }
+
+/* Providers page and deprecation warnings (issue #10); the user-interface work restyles these. */
+.status-never {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.status-available {
+    background: rgba(38, 176, 80, 0.15);
+    color: #1a7a38;
+}
+
+.status-deprecated {
+    background: rgba(229, 160, 0, 0.18);
+    color: #7a5600;
+}
+
+/* An amber box like .risk-disclaimer for conditions that need attention but are not errors; beats the red of [role=alert]. */
+.warning, [role=alert].warning {
+    padding: 0.75rem 1rem;
+    border-left: 4px solid #e5a000;
+    background: rgba(229, 160, 0, 0.08);
+    color: inherit;
+}
+
+.warning-text {
+    color: #7a5600;
+    font-weight: 600;
+}
+
+details.catalog {
+    margin: 0.5rem 0 1rem;
+}
+
+details.catalog summary {
+    cursor: pointer;
+    font-weight: 600;
+}
