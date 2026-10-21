@@ -15,7 +15,7 @@ public static class AgentsServiceCollectionExtensions
     /// Registers the agents module: validated <see cref="AgentsOptions"/>, <see cref="RiskCapsOptions"/> and
     /// <see cref="PaperOptions"/>; <see cref="IAgentService"/>, <see cref="IAgentEvents"/> and the runtime's
     /// <see cref="IKeyDependentAgents"/>; the <see cref="AgentScheduler"/> and <see cref="PaperFillSimulator"/> hosted
-    /// services; and the pipeline seams (<see cref="IMarketDataLoader"/>, <see cref="ICouncil"/>,
+    /// services; and the seams (<see cref="IMarketDataLoader"/>, <see cref="ISymbolCatalog"/>, <see cref="ICouncil"/>,
     /// <see cref="IExecutionService"/>, <see cref="IExperienceTracker"/>, <see cref="ICouncilSuggestions"/>, the live
     /// <see cref="IOrderVenue"/>) with their fail-safe defaults, which an implementation registered earlier replaces. Requires <c>AddDatabase</c>, <c>AddExchange</c>, <c>AddAccounts</c>
     /// and <c>AddStrategies</c> (the <see cref="IStrategyCatalog"/> and <see cref="IStrategyEngine"/>) before this
@@ -48,10 +48,10 @@ public static class AgentsServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
 
         services.TryAddSingleton<IAgentEvents, AgentEvents>();
-        services.TryAddSingleton<CandleStore>();
 
         // Pipeline seams: the first registration wins, so a module registered before this call provides the real stage.
         services.TryAddSingleton<IMarketDataLoader, RecentCandleLoader>();
+        services.TryAddSingleton<ISymbolCatalog, UncachedSymbolCatalog>();
         services.TryAddSingleton<ICouncil, PendingCouncil>();
         services.TryAddSingleton<IExecutionService, PendingExecutionService>();
         services.TryAddSingleton<IExperienceTracker, NoExperienceTracker>();

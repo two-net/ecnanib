@@ -15,6 +15,7 @@ rather than `Abstractions` because the shared types here are the persisted model
 | Idempotent evaluation per candle (FR-AGT-09) | the unique index on `evaluations (agent_id, candle_open_time)`; catch `DbUpdateException` on the duplicate |
 | Never duplicate an order (FR-EXE-07, NFR-REL-02) | the unique index on `orders (client_order_id)` |
 | Concurrent edits of an agent, order or trade | `Version` (PostgreSQL `xmin`) raises `DbUpdateConcurrencyException` on a stale update |
+| A save that lost a unique-key race | `DbUpdateExceptions.IsUniqueViolation(ex)`, then read the row that won |
 
 Rules the module enforces:
 
@@ -27,7 +28,9 @@ Rules the module enforces:
   `Retention:DeleteBatchSize` through the ORM (NFR-DATA-02). Decisions, their compact role outputs, trades and
   experience statistics are never swept (NFR-DATA-03). A failing sweep is logged at Warning and retried next time.
 - All three retention periods live under `Retention` because NFR-DATA-03 defines them together; Appendix D lists
-  the log and candle periods under `logging` and `market data`, so issues #12 and #15 read them from here.
+  the log and candle periods under `logging` and `market data`, so the market-data module (#12) and the logging
+  issue (#15) read them from here. `candles` is written by the market-data module's feed: the backfill, repairs and
+  streamed closes of every followed series whose open time is inside the candle retention period.
 - Identifiers are snake_case, enums are stored as `text`, `DateTimeOffset` is normalized to UTC on write and read
   back with a zero offset, `decimal` is unbounded `numeric`, open-ended structures are `jsonb` (`JsonElement`: store
   a `Clone()` of an element whose document outlives the entity, or `JsonValues.EmptyObject`/`EmptyArray`).

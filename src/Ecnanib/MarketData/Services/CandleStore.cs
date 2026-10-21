@@ -1,13 +1,12 @@
 using Ecnanib.Database;
 using Ecnanib.Exchange.Abstractions;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Candle = Ecnanib.Exchange.Abstractions.Candle;
 using StoredCandle = Ecnanib.Database.Entities.Candle;
 
-namespace Ecnanib.Agents.Services;
+namespace Ecnanib.MarketData.Services;
 
-/// <summary>Writes closed candles into <c>candles</c> for audit (FR-DATA-05); a candle already there is left alone.</summary>
+/// <summary>Writes closed candles into <c>candles</c> for audit (FR-DATA-05); a candle already there is left alone. The retention sweep deletes them after <c>Retention:CandleDays</c>.</summary>
 internal sealed class CandleStore
 {
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
@@ -27,7 +26,7 @@ internal sealed class CandleStore
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        catch (DbUpdateException ex) when (ex.IsUniqueViolation())
         {
             return false;
         }
@@ -58,7 +57,7 @@ internal sealed class CandleStore
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return missing.Count;
         }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        catch (DbUpdateException ex) when (ex.IsUniqueViolation())
         {
             // Another evaluation stored some of them meanwhile; one by one settles it.
             db.ChangeTracker.Clear();
@@ -85,7 +84,4 @@ internal sealed class CandleStore
         QuoteVolume = candle.QuoteVolume,
         TradeCount = candle.TradeCount,
     };
-
-    internal static bool IsUniqueViolation(DbUpdateException exception) =>
-        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 }

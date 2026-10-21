@@ -34,7 +34,7 @@ internal sealed class AgentService : IAgentService
     private readonly IFairUseLimits _limits;
     private readonly IAccountService _accounts;
     private readonly IKeyResolver _keys;
-    private readonly IExchangeClientFactory _exchange;
+    private readonly ISymbolCatalog _symbols;
     private readonly IOrderVenues _venues;
     private readonly IAgentRuntime _runtime;
     private readonly IAgentEvents _events;
@@ -50,7 +50,7 @@ internal sealed class AgentService : IAgentService
         IFairUseLimits limits,
         IAccountService accounts,
         IKeyResolver keys,
-        IExchangeClientFactory exchange,
+        ISymbolCatalog symbols,
         IOrderVenues venues,
         IAgentRuntime runtime,
         IAgentEvents events,
@@ -64,7 +64,7 @@ internal sealed class AgentService : IAgentService
         _limits = limits;
         _accounts = accounts;
         _keys = keys;
-        _exchange = exchange;
+        _symbols = symbols;
         _venues = venues;
         _runtime = runtime;
         _events = events;
@@ -777,7 +777,7 @@ internal sealed class AgentService : IAgentService
         db.AgentChanges.Add(ChangeSet.State(agentId, now, agent.State, AgentState.Running, null));
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        var tracked = _runtime.Track(new AgentTrackingInfo(agentId, userId, new MarketKey(environment, agent.MarketType, agent.Symbol), agent.Timeframe));
+        var tracked = _runtime.Track(new AgentTrackingInfo(agentId, userId, new MarketKey(environment, agent.MarketType, agent.Symbol), agent.Timeframe, agent.StrategyId, agent.StrategyVersion));
         if (!tracked)
             _logger.LogWarning("Agent {AgentId} started while the host is stopping; it resumes at the next start", agentId);
         _logger.LogInformation("User {UserId} started agent {AgentId} ({Mode} {Market} {Symbol} {Timeframe})", userId, agentId, agent.Mode, agent.MarketType, agent.Symbol, agent.Timeframe.ToLabel());
@@ -843,7 +843,7 @@ internal sealed class AgentService : IAgentService
         if (!_runtime.IsTracked(agentId))
         {
             var environment = agent.Mode == AgentMode.Live ? agent.ExchangeKey?.Environment ?? ExchangeEnvironment.Production : ExchangeEnvironment.Production;
-            _runtime.Track(new AgentTrackingInfo(agentId, userId, new MarketKey(environment, agent.MarketType, agent.Symbol), agent.Timeframe));
+            _runtime.Track(new AgentTrackingInfo(agentId, userId, new MarketKey(environment, agent.MarketType, agent.Symbol), agent.Timeframe, agent.StrategyId, agent.StrategyVersion));
         }
 
         _logger.LogInformation("User {UserId} resumed agent {AgentId}", userId, agentId);
@@ -981,8 +981,7 @@ internal sealed class AgentService : IAgentService
         SymbolInfo? symbol;
         try
         {
-            var info = await _exchange.GetPublicData(environment, settings.MarketType).GetExchangeInfoAsync(cancellationToken).ConfigureAwait(false);
-            symbol = info.Symbols.FirstOrDefault(s => string.Equals(s.Symbol, settings.Symbol, StringComparison.OrdinalIgnoreCase));
+            symbol = await _symbols.FindAsync(environment, settings.MarketType, settings.Symbol, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

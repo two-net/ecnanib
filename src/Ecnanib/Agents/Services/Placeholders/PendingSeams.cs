@@ -83,6 +83,29 @@ internal sealed class PendingLiveOrderVenue : IOrderVenue
         throw new NotSupportedException(NotAvailable);
 }
 
+/// <summary>Reads the exchange's listing on every call until the market-data module (FR-DATA-01, #12) keeps one per environment and market and refreshes it.</summary>
+internal sealed class UncachedSymbolCatalog : ISymbolCatalog
+{
+    private readonly IExchangeClientFactory _exchange;
+
+    public UncachedSymbolCatalog(IExchangeClientFactory exchange)
+    {
+        _exchange = exchange;
+    }
+
+    public async Task<SymbolInfo?> FindAsync(ExchangeEnvironment environment, MarketType market, string symbol, CancellationToken cancellationToken)
+    {
+        var symbols = await ListAsync(environment, market, cancellationToken).ConfigureAwait(false);
+        return symbols.FirstOrDefault(s => string.Equals(s.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public async Task<IReadOnlyList<SymbolInfo>> ListAsync(ExchangeEnvironment environment, MarketType market, CancellationToken cancellationToken)
+    {
+        var info = await _exchange.GetPublicData(environment, market).GetExchangeInfoAsync(cancellationToken).ConfigureAwait(false);
+        return info.Symbols;
+    }
+}
+
 /// <summary>Picks the venue by mode; the first registration wins, so a live venue registered before <c>AddAgents</c> replaces the pending one.</summary>
 internal sealed class OrderVenues : IOrderVenues
 {
@@ -98,27 +121,33 @@ internal sealed class OrderVenues : IOrderVenues
 }
 
 /// <summary>
-/// The "load market data" step until the market-data issue (FR-DATA, #12) delivers backfill, caching and streamed mark
-/// prices: the most recent closed candles of the agent's timeframe from the exchange up to the candle being evaluated,
-/// the higher timeframes and reference series the strategy declares (FR-STR-03) aligned so that no candle closing
-/// after the evaluated one is included, all written through to <c>candles</c> for audit (FR-DATA-05), and the futures
-/// mark price (FR-DATA-04). Reference series always come from production public data, so a testnet agent judges the
-/// regime on real-market prices. The own and higher-timeframe series must load (no bias data, no evaluation); a
-/// reference or mark-price failure is logged and the series left absent. Up to four REST reads per evaluation.
+/// The "load market data" step until the market-data module (FR-DATA, #12) is registered before <c>AddAgents</c>:
+/// the most recent closed candles of the agent's timeframe from the exchange up to the candle being evaluated, the
+/// higher timeframes and reference series the strategy declares (FR-STR-03) aligned so that no candle closing after
+/// the evaluated one is included, and the futures mark price (FR-DATA-04). Reference series always come from
+/// production public data, so a testnet agent judges the regime on real-market prices. The own and higher-timeframe
+/// series must load (no bias data, no evaluation); a reference or mark-price failure is logged and the series left
+/// absent. Nothing is backfilled, kept or persisted: up to four REST reads per evaluation.
 /// </summary>
 internal sealed class RecentCandleLoader : IMarketDataLoader
 {
     public const int CandleCount = 300;
 
     private readonly IExchangeClientFactory _exchange;
-    private readonly CandleStore _store;
     private readonly ILogger<RecentCandleLoader> _logger;
 
-    public RecentCandleLoader(IExchangeClientFactory exchange, CandleStore store, ILogger<RecentCandleLoader> logger)
+    public RecentCandleLoader(IExchangeClientFactory exchange, ILogger<RecentCandleLoader> logger)
     {
         _exchange = exchange;
-        _store = store;
         _logger = logger;
+    }
+
+    public void Track(MarketDataNeeds needs)
+    {
+    }
+
+    public void Untrack(Guid agentId)
+    {
     }
 
     public async Task<MarketSnapshot> LoadAsync(Agent agent, StrategyDescriptor strategy, MarketKey key, Candle closed, CancellationToken cancellationToken)
@@ -130,7 +159,6 @@ internal sealed class RecentCandleLoader : IMarketDataLoader
         var candles = recent.Where(c => c.OpenTime <= closed.OpenTime).ToList();
         if (candles.Count == 0 || candles[^1].OpenTime < closed.OpenTime)
             candles.Add(closed);
-        await _store.StoreManyAsync(key, agent.Timeframe, candles, cancellationToken).ConfigureAwait(false);
 
         var higher = new Dictionary<CandleInterval, IReadOnlyList<Candle>>();
         foreach (var interval in strategy.HigherTimeframes.Where(i => i != agent.Timeframe).Distinct())
@@ -184,13 +212,11 @@ internal sealed class RecentCandleLoader : IMarketDataLoader
         return new MarketSnapshot(candles, higher, references, mark);
     }
 
-    /// <summary>The recent closed candles of one series that closed at or before <paramref name="cutoff"/> (no look-ahead), stored for audit.</summary>
-    private async Task<IReadOnlyList<Candle>> LoadSeriesAsync(IPublicMarketData data, MarketKey key, CandleInterval interval, DateTimeOffset cutoff, CancellationToken cancellationToken)
+    /// <summary>The recent closed candles of one series that closed at or before <paramref name="cutoff"/> (no look-ahead).</summary>
+    private static async Task<IReadOnlyList<Candle>> LoadSeriesAsync(IPublicMarketData data, MarketKey key, CandleInterval interval, DateTimeOffset cutoff, CancellationToken cancellationToken)
     {
         var recent = await data.GetRecentCandlesAsync(key.Symbol, interval, CandleCount, closedOnly: true, cancellationToken).ConfigureAwait(false);
         var span = interval.ToTimeSpan();
-        var aligned = recent.Where(c => c.OpenTime + span <= cutoff).ToList();
-        await _store.StoreManyAsync(key, interval, aligned, cancellationToken).ConfigureAwait(false);
-        return aligned;
+        return recent.Where(c => c.OpenTime + span <= cutoff).ToList();
     }
 }

@@ -81,7 +81,7 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
         await StartAsync();
         var user = await AgentsLiveSeed.NewUserAsync(_fixture, "evaluate@example.com");
         var agent = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "BTC", AgentState.Running);
-        var (provider, logs, _, _, streams) = AgentsLiveSeed.Build(_fixture);
+        var (provider, logs, _, exchange, streams) = AgentsLiveSeed.Build(_fixture);
         await using var _ = provider;
         var scheduler = provider.GetRequiredService<AgentScheduler>();
         var events = new List<AgentEvent>();
@@ -114,11 +114,8 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
             Assert.Equal("trend-pullback", output.GetProperty("strategyId").GetString());
             Assert.Equal(1, output.GetProperty("strategyVersion").GetInt32());
             Assert.Equal("BTCUSDT", evaluation.Symbol);
-            var stored = await db.Candles.AsNoTracking().Where(c => c.Symbol == "BTCUSDT" && c.Interval == CandleInterval.OneHour).ToListAsync(Ct);
-            Assert.Contains(stored, c => c.OpenTime == LastOpen);
-            Assert.True(stored.Count >= 3);
-            // FR-STR-03: the daily series the 1H strategy declares was loaded and stored too.
-            Assert.True(await db.Candles.AsNoTracking().AnyAsync(c => c.Symbol == "BTCUSDT" && c.Interval == CandleInterval.OneDay, Ct));
+            // FR-STR-03: the daily series the 1H strategy declares was read too (persistence is the market-data module's).
+            Assert.Contains(exchange.RecentCandleReads, r => r.Symbol == "BTCUSDT" && r.Interval == CandleInterval.OneDay);
         }
 
         Assert.Single(events.OfType<EvaluationFinished>());

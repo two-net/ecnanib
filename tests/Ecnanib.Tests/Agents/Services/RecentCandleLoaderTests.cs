@@ -1,20 +1,15 @@
 using Ecnanib.Agents.Abstractions;
-using Ecnanib.Agents.Services;
 using Ecnanib.Agents.Services.Placeholders;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
-using Ecnanib.Tests.Database.Live;
 using Ecnanib.Tests.Support;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Candle = Ecnanib.Exchange.Abstractions.Candle;
 
-namespace Ecnanib.Tests.Agents.Live;
+namespace Ecnanib.Tests.Agents.Services;
 
-/// <summary>FR-STR-03 and FR-DATA-04/05 in the placeholder loader: every declared series is read, aligned to the evaluated candle's close (no look-ahead) and stored; references and the mark price are tolerated.</summary>
-[Trait("Category", "Live")]
-public class RecentCandleLoaderLiveTests : IClassFixture<DatabaseLiveFixture>
+/// <summary>FR-STR-03 and FR-DATA-04 in the placeholder loader: every declared series is read and aligned to the evaluated candle's close (no look-ahead); references and the mark price are tolerated.</summary>
+public class RecentCandleLoaderTests
 {
     private static readonly DateTimeOffset ClosedOpen = new(2026, 1, 7, 8, 0, 0, TimeSpan.Zero);   // Wednesday 08:00; cutoff 12:00
 
@@ -23,24 +18,13 @@ public class RecentCandleLoaderLiveTests : IClassFixture<DatabaseLiveFixture>
     private static readonly StrategyDescriptor Strategy = new("test-4h", "Test", CandleInterval.FourHours, 1, "test", [],
         [CandleInterval.OneDay, CandleInterval.OneWeek], [new ReferenceSeries("BTCUSDT", CandleInterval.OneWeek)]);
 
-    private readonly DatabaseLiveFixture _fixture;
-
-    public RecentCandleLoaderLiveTests(DatabaseLiveFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task LoadsAlignsAndStoresEveryDeclaredSeries()
+    public async Task LoadsAndAlignsEveryDeclaredSeries()
     {
-        _fixture.Require();
-        await _fixture.MigrateAsync();
-        var (provider, _, _, exchange, _) = AgentsLiveSeed.Build(_fixture);
-        await using var _ = provider;
-        exchange.OnRecentCandles = Script;
-        var loader = new RecentCandleLoader(exchange, provider.GetRequiredService<CandleStore>(), NullLogger<RecentCandleLoader>.Instance);
+        var exchange = new FakeExchangeClientFactory { OnRecentCandles = Script };
+        var loader = new RecentCandleLoader(exchange, NullLogger<RecentCandleLoader>.Instance);
         var agent = new Agent { Id = Guid.NewGuid(), Name = "x", MarketType = MarketType.UsdFutures, Symbol = "ETHUSDT", Timeframe = CandleInterval.FourHours, StrategyId = "test-4h" };
         var closed = FakeMarketStreams.ClosedCandle("ETHUSDT", CandleInterval.FourHours, ClosedOpen, 101m);
 
@@ -58,15 +42,6 @@ public class RecentCandleLoaderLiveTests : IClassFixture<DatabaseLiveFixture>
             exchange.RecentCandleReads.Select(r => (r.Symbol, r.Interval)));
         Assert.All(exchange.RecentCandleReads, r => Assert.Equal(ExchangeEnvironment.Production, r.Environment));
 
-        await using (var db = _fixture.CreateContext())
-        {
-            var stored = await db.Candles.AsNoTracking().Where(c => c.Symbol == "ETHUSDT" || c.Symbol == "BTCUSDT").ToListAsync(Ct);
-            Assert.Contains(stored, c => c.Symbol == "ETHUSDT" && c.Interval == CandleInterval.OneDay);
-            Assert.Contains(stored, c => c.Symbol == "ETHUSDT" && c.Interval == CandleInterval.OneWeek);
-            Assert.Contains(stored, c => c.Symbol == "BTCUSDT" && c.Interval == CandleInterval.OneWeek && c.Environment == ExchangeEnvironment.Production);
-            Assert.DoesNotContain(stored, c => c.OpenTime + c.Interval.ToTimeSpan() > ClosedOpen + TimeSpan.FromHours(4));
-        }
-
         exchange.OnMarkPrice = symbol => new MarkPrice(symbol, 100.5m, null, 0.0001m, ClosedOpen.AddHours(8), ClosedOpen.AddHours(4));
         var withMark = await loader.LoadAsync(agent, Strategy, EthFutures, closed, Ct);
         Assert.Equal(0.0001m, withMark.MarkPrice!.FundingRate);
@@ -75,12 +50,8 @@ public class RecentCandleLoaderLiveTests : IClassFixture<DatabaseLiveFixture>
     [Fact]
     public async Task ABtcAgentReusesItsOwnWeeklySeriesAndAReferenceFailureIsTolerated()
     {
-        _fixture.Require();
-        await _fixture.MigrateAsync();
-        var (provider, _, _, exchange, _) = AgentsLiveSeed.Build(_fixture);
-        await using var _ = provider;
-        exchange.OnRecentCandles = Script;
-        var loader = new RecentCandleLoader(exchange, provider.GetRequiredService<CandleStore>(), NullLogger<RecentCandleLoader>.Instance);
+        var exchange = new FakeExchangeClientFactory { OnRecentCandles = Script };
+        var loader = new RecentCandleLoader(exchange, NullLogger<RecentCandleLoader>.Instance);
         var btcAgent = new Agent { Id = Guid.NewGuid(), Name = "x", MarketType = MarketType.Spot, Symbol = "BTCUSDT", Timeframe = CandleInterval.FourHours, StrategyId = "test-4h" };
         var closed = FakeMarketStreams.ClosedCandle("BTCUSDT", CandleInterval.FourHours, ClosedOpen, 101m);
 

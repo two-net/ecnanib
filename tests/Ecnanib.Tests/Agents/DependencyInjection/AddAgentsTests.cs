@@ -35,6 +35,7 @@ public class AddAgentsTests
         Assert.IsType<AgentEvents>(provider.GetRequiredService<IAgentEvents>());
         Assert.IsType<AgentKeyDependency>(provider.GetRequiredService<IKeyDependentAgents>());
         Assert.IsType<RecentCandleLoader>(provider.GetRequiredService<IMarketDataLoader>());
+        Assert.IsType<UncachedSymbolCatalog>(provider.GetRequiredService<ISymbolCatalog>());
         Assert.IsType<PendingCouncil>(provider.GetRequiredService<ICouncil>());
         Assert.IsType<PendingExecutionService>(provider.GetRequiredService<IExecutionService>());
         Assert.IsType<NoExperienceTracker>(provider.GetRequiredService<IExperienceTracker>());
@@ -106,6 +107,14 @@ public class AddAgentsTests
 
     private sealed class FakeMarketDataLoader : IMarketDataLoader
     {
+        public void Track(MarketDataNeeds needs)
+        {
+        }
+
+        public void Untrack(Guid agentId)
+        {
+        }
+
         public Task<MarketSnapshot> LoadAsync(Agent agent, StrategyDescriptor strategy, MarketKey key, Candle closed, CancellationToken cancellationToken) =>
             Task.FromResult(new MarketSnapshot([closed], new Dictionary<CandleInterval, IReadOnlyList<Candle>>(), new Dictionary<ReferenceSeries, IReadOnlyList<Candle>>(), null));
     }

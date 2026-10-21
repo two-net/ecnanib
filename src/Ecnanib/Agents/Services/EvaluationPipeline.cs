@@ -291,7 +291,7 @@ internal sealed class EvaluationPipeline
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
-        catch (DbUpdateException ex) when (CandleStore.IsUniqueViolation(ex))
+        catch (DbUpdateException ex) when (ex.IsUniqueViolation())
         {
             await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
             return await db.Evaluations.AnyAsync(e => e.Id == evaluation.Id, cancellationToken).ConfigureAwait(false);

@@ -143,5 +143,15 @@
     "ShadowHorizonCandles": 30,
     "RecentOutcomes": 5,
     "MinimumTradesForSuggestion": 10
+  },
+  "MarketData": {
+    "BackfillCandles": {
+      "15m": 500,
+      "1H": 500,
+      "4H": 500,
+      "1D": 400,
+      "1W": 200
+    },
+    "SymbolRefreshIntervalMinutes": 360
   }
 }

@@ -10,6 +10,7 @@ using Ecnanib.Database.Migrations;
 using Ecnanib.Exchange;
 using Ecnanib.Experience;
 using Ecnanib.Keys;
+using Ecnanib.MarketData;
 using Ecnanib.ModelSync;
 using Ecnanib.Strategies;
 using Microsoft.AspNetCore.Connections;
@@ -44,6 +45,8 @@ builder.Services.AddStrategies();
 builder.Services.AddExperience(builder.Configuration);
 // Before AddAgents: the Appendix B council replaces the agents module's fail-safe default (FR-AI).
 builder.Services.AddCouncil(builder.Configuration);
+// Before AddAgents: the symbol catalog and the backfilled, streamed market data replace the agents module's defaults (FR-DATA).
+builder.Services.AddMarketData(builder.Configuration);
 // Before AddKeys: the runtime's own key handling (stop with orders cancelled, Error halts evaluation) replaces the default.
 builder.Services.AddAgents(builder.Configuration);
 builder.Services.AddKeys(builder.Configuration);

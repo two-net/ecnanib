@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Ecnanib.Agents.Abstractions;
-using Ecnanib.Agents.Services;
 using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
@@ -92,7 +91,7 @@ internal sealed class ExperienceTracker : IExperienceTracker
         {
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateException ex) when (CandleStore.IsUniqueViolation(ex))
+        catch (DbUpdateException ex) when (ex.IsUniqueViolation())
         {
             return;
         }

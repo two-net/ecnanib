@@ -43,7 +43,8 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
     private readonly IMarketStreams _streams;
     private readonly EvaluationPipeline _pipeline;
-    private readonly CandleStore _candles;
+    private readonly IMarketDataLoader _loader;
+    private readonly IStrategyCatalog _catalog;
     private readonly IAgentEvents _events;
     private readonly IOptions<AgentsOptions> _options;
     private readonly TimeProvider _time;
@@ -63,7 +64,8 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         IDbContextFactory<EcnanibDbContext> factory,
         IMarketStreams streams,
         EvaluationPipeline pipeline,
-        CandleStore candles,
+        IMarketDataLoader loader,
+        IStrategyCatalog catalog,
         IAgentEvents events,
         IOptions<AgentsOptions> options,
         TimeProvider time,
@@ -72,7 +74,8 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         _factory = factory;
         _streams = streams;
         _pipeline = pipeline;
-        _candles = candles;
+        _loader = loader;
+        _catalog = catalog;
         _events = events;
         _options = options;
         _time = time;
@@ -120,6 +123,8 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
 
         try
         {
+            // The loader subscribes first, so on the shared stream its handler runs ahead of the intake (FR-DATA-02/03).
+            _loader.Track(new MarketDataNeeds(info.AgentId, info.Key, info.Timeframe, _catalog.Find(info.StrategyId, info.StrategyVersion)));
             tracked.Subscription = _streams.SubscribeCandles(info.Key, info.Timeframe, (candle, _) =>
             {
                 _intake.Writer.TryWrite(new CandleArrival(tracked, candle));
@@ -129,12 +134,16 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         catch
         {
             _tracked.TryRemove(info.AgentId, out _);
+            _loader.Untrack(info.AgentId);
             throw;
         }
 
         if (_stopping)
         {
-            Untrack(info.AgentId);
+            // Shutdown began meanwhile and StopAsync may already have released the entry: release what this call made.
+            _tracked.TryRemove(new KeyValuePair<Guid, TrackedAgent>(info.AgentId, tracked));
+            tracked.Subscription?.Dispose();
+            _loader.Untrack(info.AgentId);
             return false;
         }
 
@@ -144,10 +153,18 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
 
     public void Untrack(Guid agentId)
     {
+        if (Release(agentId))
+            _logger.LogInformation("Agent {AgentId} is no longer tracked", agentId);
+    }
+
+    /// <summary>Drops the agent's stream and lets the loader release its series; false when it was not tracked.</summary>
+    private bool Release(Guid agentId)
+    {
         if (!_tracked.TryRemove(agentId, out var tracked))
-            return;
+            return false;
         tracked.Subscription?.Dispose();
-        _logger.LogInformation("Agent {AgentId} is no longer tracked", agentId);
+        _loader.Untrack(agentId);
+        return true;
     }
 
     public void Forget(Guid agentId)
@@ -219,9 +236,9 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         _stopping = true;
         _intake.Writer.TryComplete();
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var tracked in _tracked.Values)
-            tracked.Subscription?.Dispose();
-        _tracked.Clear();
+        // Released one by one so the loader lets go of every series before the hub closes the streams.
+        foreach (var agentId in _tracked.Keys.ToArray())
+            Release(agentId);
     }
 
     /// <summary>Finalises evaluations a crash left open and re-tracks every Running and Paused agent (NFR-REL-01); retried until the database answers.</summary>
@@ -273,14 +290,14 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var agents = await db.Agents.AsNoTracking()
             .Where(a => a.State == AgentState.Running || a.State == AgentState.Paused)
-            .Select(a => new { a.Id, a.UserId, a.MarketType, a.Symbol, a.Timeframe, a.Mode, Environment = a.ExchangeKey != null ? a.ExchangeKey.Environment : (ExchangeEnvironment?)null })
+            .Select(a => new { a.Id, a.UserId, a.MarketType, a.Symbol, a.Timeframe, a.StrategyId, a.StrategyVersion, a.Mode, Environment = a.ExchangeKey != null ? a.ExchangeKey.Environment : (ExchangeEnvironment?)null })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         var tracked = 0;
         foreach (var agent in agents)
         {
             var environment = agent.Mode == AgentMode.Live ? agent.Environment ?? ExchangeEnvironment.Production : ExchangeEnvironment.Production;
-            if (Track(new AgentTrackingInfo(agent.Id, agent.UserId, new MarketKey(environment, agent.MarketType, agent.Symbol), agent.Timeframe)))
+            if (Track(new AgentTrackingInfo(agent.Id, agent.UserId, new MarketKey(environment, agent.MarketType, agent.Symbol), agent.Timeframe, agent.StrategyId, agent.StrategyVersion)))
                 tracked++;
         }
 
@@ -293,39 +310,9 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         await foreach (var arrival in _intake.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false))
         {
             var info = arrival.Agent.Info;
-            var streamKey = (info.Key, info.Timeframe);
             var open = arrival.Candle.OpenTime;
-            var isNew = false;
-            _latestOpen.AddOrUpdate(streamKey, _ =>
-            {
-                isNew = true;
-                return open;
-            }, (_, previous) =>
-            {
-                if (open <= previous)
-                    return previous;
-                isNew = true;
-                return open;
-            });
-            if (isNew)
-                await StoreCandleAsync(info, arrival.Candle, stoppingToken).ConfigureAwait(false);
+            _latestOpen.AddOrUpdate((info.Key, info.Timeframe), open, (_, previous) => open > previous ? open : previous);
             Enqueue(arrival);
-        }
-    }
-
-    private async Task StoreCandleAsync(AgentTrackingInfo info, Candle candle, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _candles.StoreAsync(info.Key, info.Timeframe, candle, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Candle {Key} {Timeframe} {CandleOpen:O} could not be stored", info.Key, info.Timeframe.ToLabel(), candle.OpenTime);
         }
     }
 
