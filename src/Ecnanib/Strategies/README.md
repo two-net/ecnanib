@@ -69,8 +69,9 @@ Rules the module enforces:
 
 Deferred: the optional 1D entry in up to three tranches, tick-size rounding of entry, stop and targets, and the trailing
 and breakeven management of open positions belong to execution (FR-EXE, #13); the engine is stateless, so a retest
-that keeps holding is reported on each candle until execution has an order or position. Market data (#12) replaces the
-agents module's loader, which today reads every series from the exchange on each evaluation.
+that keeps holding is reported on each candle until execution has an order or position. The market-data module
+supplies the snapshot: a window of `MarketData:BackfillCandles` candles per series, backfilled when the agent is
+tracked and followed on the streams, so the seeded indicators see the same window on every run.
 
 Tests: `dotnet test` runs offline: hand-computed indicator values, the rule primitives at their boundaries, each
 strategy's long setup with its mirrored short, spot ignoring shorts, the paused agent, insufficient history, window and

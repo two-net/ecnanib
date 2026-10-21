@@ -177,9 +177,9 @@ internal static class AgentsLiveSeed
         return result.KeyId!.Value;
     }
 
-    /// <summary>The modules the agents module needs, against the fixture's database, with the exchange listing BTCUSDT and ETHUSDT on every market.</summary>
+    /// <summary>The modules the agents module needs, against the fixture's database, with the exchange listing BTCUSDT and ETHUSDT on every market; <paramref name="marketData"/> adds the market-data module before <c>AddAgents</c>.</summary>
     public static (ServiceProvider Provider, TestLoggerProvider Logs, FakeTimeProvider Time, FakeExchangeClientFactory Exchange, FakeMarketStreams Streams) Build(
-        DatabaseLiveFixture fixture, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null)
+        DatabaseLiveFixture fixture, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null, bool marketData = false)
     {
         var logs = new TestLoggerProvider();
         var time = new FakeTimeProvider(now ?? Now);
@@ -189,7 +189,7 @@ internal static class AgentsLiveSeed
             OnRecentCandles = (symbol, interval, count) => RecentCandles(symbol, interval, count, time.GetUtcNow()),
         };
         var streams = new FakeMarketStreams();
-        var provider = AgentsTestHost.BuildServices(fixture.ConnectionString, logs, config, time, exchange, new FakeAiClientFactory(), streams, configure);
+        var provider = AgentsTestHost.BuildServices(fixture.ConnectionString, logs, config, time, exchange, new FakeAiClientFactory(), streams, configure, marketData: marketData);
         return (provider, logs, time, exchange, streams);
     }
 

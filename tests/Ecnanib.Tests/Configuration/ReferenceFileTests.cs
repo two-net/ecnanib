@@ -8,6 +8,7 @@ using Ecnanib.Database;
 using Ecnanib.Exchange;
 using Ecnanib.Experience;
 using Ecnanib.Keys;
+using Ecnanib.MarketData;
 using Ecnanib.ModelSync;
 using Ecnanib.Strategies;
 using Ecnanib.Tests.Database;
@@ -90,6 +91,7 @@ public class ReferenceFileTests
         services.AddStrategies();
         services.AddExperience(configuration);
         services.AddCouncil(configuration);
+        services.AddMarketData(configuration);
         services.AddAgents(configuration);
         services.AddKeys(configuration);
         return services;

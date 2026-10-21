@@ -91,7 +91,7 @@ Known gaps: the refresh is a full recompute (the counts and sums make an increme
 execution (#13) lands no trade is opened in the running application, so the trade figures, the recent outcomes and the
 suggestions stay empty while turns, clamps, failures, latency and shadow outcomes are real at once; funding per trade
 comes from exchange data with execution (FR-EXE-12). A shadow of an agent that stopped expires stale rather than
-resolving from the candle table, a follow-up once market data (#12) backfills. Paper excursions are tracked per tick
+resolving from the candle table the market-data module keeps, a follow-up. Paper excursions are tracked per tick
 in memory and lost on a restart (agents module).
 
 Tests: `dotnet test` runs offline (the walk's rules, the metrics' arithmetic and roll-ups, the summary text, when a

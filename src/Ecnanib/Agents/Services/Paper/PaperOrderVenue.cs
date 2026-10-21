@@ -75,7 +75,7 @@ internal sealed class PaperOrderVenue : IOrderVenue
         {
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateException ex) when (CandleStore.IsUniqueViolation(ex))
+        catch (DbUpdateException ex) when (ex.IsUniqueViolation())
         {
             db.ChangeTracker.Clear();
             var existing = await db.Orders.AsNoTracking().SingleAsync(o => o.ClientOrderId == clientOrderId, cancellationToken).ConfigureAwait(false);
@@ -121,7 +121,7 @@ internal sealed class PaperOrderVenue : IOrderVenue
         {
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateException ex) when (CandleStore.IsUniqueViolation(ex))
+        catch (DbUpdateException ex) when (ex.IsUniqueViolation())
         {
             db.ChangeTracker.Clear();
             return await db.Orders.AsNoTracking().SingleAsync(o => o.ClientOrderId == clientOrderId, cancellationToken).ConfigureAwait(false);

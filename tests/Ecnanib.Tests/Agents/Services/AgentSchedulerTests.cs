@@ -43,7 +43,7 @@ public class AgentSchedulerTests
         await using var provider = AgentsTestHost.BuildServices(streams: streams, configure: s => s.AddSingleton<IDbContextFactory<EcnanibDbContext>>(factory));
         var scheduler = provider.GetRequiredService<AgentScheduler>();
         var agentId = Guid.NewGuid();
-        var info = new AgentTrackingInfo(agentId, Guid.NewGuid(), Key, CandleInterval.OneHour);
+        var info = new AgentTrackingInfo(agentId, Guid.NewGuid(), Key, CandleInterval.OneHour, "trend-pullback", 1);
 
         Assert.True(scheduler.Track(info));
         Assert.True(scheduler.Track(info));
@@ -84,7 +84,7 @@ public class AgentSchedulerTests
         await Wait.UntilAsync(() => factory.Calls == 2, "second attempt");
 
         await scheduler.StopAsync(AgentsTestHost.Ct);
-        Assert.False(scheduler.Track(new AgentTrackingInfo(Guid.NewGuid(), Guid.NewGuid(), Key, CandleInterval.OneHour)));
+        Assert.False(scheduler.Track(new AgentTrackingInfo(Guid.NewGuid(), Guid.NewGuid(), Key, CandleInterval.OneHour, "trend-pullback", 1)));
         Assert.Equal(0, streams.CandleSubscriptionsEver);
     }
 

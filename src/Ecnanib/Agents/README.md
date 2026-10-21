@@ -17,7 +17,7 @@ scheduler, pipeline and paper simulator never leave this folder. `AddAgents` req
 | "No new entry" windows (FR-STR-05) | `IAgentService.AddEntryWindowAsync(EntryWindowInput)` / `RemoveEntryWindowAsync`, `AgentDetail.EntryWindows` → `EntryWindowView`; `EntryWindowSchedule.IsActive` is the one implementation of their semantics |
 | Warn about a council model the catalog deprecated (FR-SYNC-03) | `CouncilAssignmentView.CatalogStatus` (null for a model the catalog never listed), `AgentSummary.HasDeprecatedModel` (an enabled role only) |
 | React to agent events in the UI (FR-AGT-10, FR-UI-04) | `IAgentEvents.Subscribe(userId, handler)` → `AgentStateChanged`, `EvaluationFinished`, `OrderChanged`, `TradeChanged` |
-| Provide a pipeline stage (council, market data, execution, experience, live venue) | implement `ICouncil`, `IMarketDataLoader`, `IExecutionService`, `IExperienceTracker` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
+| Provide a pipeline stage (council, market data, execution, experience, live venue) or the symbol listing | implement `ICouncil`, `IMarketDataLoader` (`Track`, `Untrack`, `LoadAsync`), `ISymbolCatalog`, `IExecutionService`, `IExperienceTracker` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
 | Suggest a council from experience at creation (FR-EXP-08) | implement `ICouncilSuggestions` and register it **before** `AddAgents`; the default suggests nothing, so every role gets its Appendix B default |
 | The council roles, their order and Appendix B defaults | `CouncilRoles` (`Order`, `DefaultProvider`, `Display`, `Responsibility`) |
 | Council presets (FR-AI-04) | `IAgentService.ResetCouncilToDefaultsAsync` (defaults by strength with each provider's newest catalog model), `UseSingleModelAsync` (one model for every role); both save through `UpdateCouncilAsync` |
@@ -28,8 +28,10 @@ Rules the module enforces:
 
 - Creation needs a name, market, symbol, one of the four timeframes, a mode and, for live mode, one of the user's
   Binance keys that allows the market; futures agents need leverage within `RiskCaps:MaxLeverage` and default to
-  isolated margin (FR-AGT-01/02/13). The symbol is checked against the exchange's listing (production for paper agents,
-  the key's environment for live ones); an unreachable exchange is `ExchangeUnavailable` and nothing is saved. The
+  isolated margin (FR-AGT-01/02/13). The symbol is checked against the listing (`ISymbolCatalog`: the market-data
+  module's cached one, or the default that reads the exchange per call) of the environment the agent trades in
+  (production for paper agents, the key's environment for live ones); an unreachable exchange is `ExchangeUnavailable`
+  and nothing is saved. The
   draft gets the timeframe's first strategy at its current version, a council where each role takes the provider and
   model the user's own experience suggests (`ICouncilSuggestions`, FR-EXP-08) or else its Appendix B default with the
   provider's newest catalog model (or an empty model to choose), and default risk limits. The agents-per-user limit applies at creation
@@ -56,7 +58,9 @@ Rules the module enforces:
   unchanged and the user is told. Delete needs Draft or Stopped. Error is entered by the runtime only: an unknown
   strategy or version, parameters no longer valid, a live agent whose key is gone or no longer resolves (which also covers a start that raced a key
   deletion), or a key the keys module found invalid; the agent is untracked until the user fixes the cause and starts it.
-- The scheduler follows one candle stream per tracked agent and evaluates it under a per-agent gate that lifecycle
+- The scheduler hands each tracked agent's needs (its key, timeframe and pinned strategy) to the market-data loader
+  and then follows one candle stream per agent, so on a shared stream the loader's handler runs ahead of the
+  scheduler's; untracking releases the loader's series too. It evaluates under a per-agent gate that lifecycle
   actions also take, with at most `Agents:MaxConcurrentEvaluations` evaluations at once, shorter timeframes first. The
   deadline per timeframe is measured from the candle close (NFR-PERF-01) and cancels everything up to the council;
   execution and persistence never observe it, because a cancelled token does not recall an order. A candle that closed
@@ -75,12 +79,13 @@ Rules the module enforces:
   provider rejected) moves the agent to Error with the reason once the evaluation is recorded (FR-SYNC-04). The
   strategy engine is the Strategies module's; the agent is loaded with its no-entry windows so the engine can apply
   them. The council is the Council module's (FR-AI, #9); until its issue lands, execution is seeded fail-safe and
-  records the decision and places nothing (FR-EXE, #13). Market data (FR-DATA, #12) is, until then, the
-  most recent 300 closed candles of the agent's timeframe plus every higher timeframe and reference series the strategy
-  declares (FR-STR-03), each read from the exchange and kept only up to the evaluated candle's close (no look-ahead),
-  written through to `candles`; reference series (BTCUSDT weekly) always come from production public data; the futures
-  mark price is read once and a failure of it or of a reference series is logged and tolerated, while the own and
-  higher-timeframe series must load. After the council and execution, whenever market data loaded, the experience
+  records the decision and places nothing (FR-EXE, #13). Market data is the market-data module's (FR-DATA, #12): the
+  evaluation receives the window the module backfilled and streams. Without it, the default loader reads the most
+  recent 300 closed candles of the agent's timeframe plus every higher timeframe and reference series the strategy
+  declares (FR-STR-03) from the exchange on each evaluation, kept only up to the evaluated candle's close (no
+  look-ahead); reference series (BTCUSDT weekly) always come from production public data; the futures mark price is
+  read once and a failure of it or of a reference series is logged and tolerated, while the own and higher-timeframe
+  series must load; nothing is persisted. After the council and execution, whenever market data loaded, the experience
   step (`IExperienceTracker`, the experience module's) advances and opens shadow outcomes on the evaluation's own
   snapshot (FR-EXP-03); its failure is logged and never changes the outcome. A Paused agent has no setup (the engine
   suppresses them), so it consults the council only with an open position and leaves no shadow.
@@ -123,13 +128,11 @@ replacement on the agent page, with the provider's newest available model sugges
 are not blocked, the provider's own rejection at call time is FR-SYNC-04. The disclaimer is shown on both forms
 (FR-UI-05). Another user's agent and a missing one both answer not found.
 
-Known gaps: backfill on start, candle caching and streamed mark prices with market data (#12),
-until which the loader issues up to four REST reads per evaluation; the dashboard, agent detail with chart and live
-updates with the UI issue. `Order.WorkingType` has no column, so paper futures stops
-are last-price only.
+Known gaps: the dashboard, agent detail with chart and live updates with the UI issue. `Order.WorkingType` has no
+column, so paper futures stops are last-price only.
 
 Tests: `dotnet test` runs offline (options, registration and placeholder replacement, the Appendix E table and edit
 rules, parameter parsing, input rules including windows, the window schedule, change sets, events, the scheduler's
-staleness rules and plumbing, the paper book's fill rules). Live checks run against PostgreSQL through the same git-ignored
+staleness rules and plumbing, the default loader's alignment, the paper book's fill rules). Live checks run against PostgreSQL through the same git-ignored
 `tests/.database.json` as the database module, with the exchange, providers and streams faked:
 `dotnet test -- --filter-trait "Category=Live"`.

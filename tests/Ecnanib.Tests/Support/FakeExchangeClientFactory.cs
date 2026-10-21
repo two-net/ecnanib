@@ -38,6 +38,16 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
     /// <summary>Called for mark-price reads (symbol); unset, the call is unsupported, which the loader tolerates.</summary>
     public Func<string, MarkPrice>? OnMarkPrice { get; set; }
 
+    /// <summary>
+    /// Called for ranged candle reads (symbol, interval, from, to, limit); unset, the answer is derived from
+    /// <see cref="OnRecentCandles"/> (asked for the limit or 1000) cut to the range, so a host that scripts only the
+    /// recent reads still serves gap fills.
+    /// </summary>
+    public Func<string, CandleInterval, DateTimeOffset?, DateTimeOffset?, int?, IReadOnlyList<Candle>>? OnCandles { get; set; }
+
+    /// <summary>Every ranged candle read, in order.</summary>
+    public List<(ExchangeEnvironment Environment, MarketType Market, string Symbol, CandleInterval Interval, DateTimeOffset? From, DateTimeOffset? To, int? Limit)> CandleReads { get; } = [];
+
     /// <summary>Every recent-candle read, in order, so a test can assert which series were asked for.</summary>
     public List<(ExchangeEnvironment Environment, MarketType Market, string Symbol, CandleInterval Interval, int Count)> RecentCandleReads { get; } = [];
 
@@ -101,7 +111,16 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
             return Task.FromResult(owner.OnExchangeInfo?.Invoke(environment, market) ?? throw new NotSupportedException("No exchange information is scripted."));
         }
 
-        public Task<IReadOnlyList<Candle>> GetCandlesAsync(string symbol, CandleInterval interval, DateTimeOffset? from, DateTimeOffset? to, int? limit, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<Candle>> GetCandlesAsync(string symbol, CandleInterval interval, DateTimeOffset? from, DateTimeOffset? to, int? limit, CancellationToken ct)
+        {
+            lock (owner.CandleReads)
+                owner.CandleReads.Add((environment, market, symbol, interval, from, to, limit));
+            if (owner.OnCandles is { } scripted)
+                return Task.FromResult(scripted(symbol, interval, from, to, limit));
+            var recent = owner.OnRecentCandles?.Invoke(symbol, interval, limit ?? 1000) ?? throw new NotSupportedException("No candles are scripted.");
+            IReadOnlyList<Candle> cut = recent.Where(c => (from is null || c.OpenTime >= from) && (to is null || c.OpenTime <= to)).Take(limit ?? 1000).ToList();
+            return Task.FromResult(cut);
+        }
 
         public Task<IReadOnlyList<Candle>> GetRecentCandlesAsync(string symbol, CandleInterval interval, int count, bool closedOnly, CancellationToken ct)
         {

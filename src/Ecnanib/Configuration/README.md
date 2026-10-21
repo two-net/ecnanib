@@ -53,7 +53,7 @@ Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 | providers | `Providers` | endpoints per provider, model sync interval, miss threshold, call timeout, max output tokens | AI (#2); the sync interval and miss threshold are read by model sync (#10) |
 | agents | `Agents` | `MaxAgentsPerUser`, `MaxRunningAgentsPerUser` (accounts); `EvaluationDeadlineSeconds` per timeframe, `MaxConcurrentEvaluations`, `DefaultEntryTimeoutCandles` (agents) | accounts (#4), agents (#7) |
 | risk caps | `RiskCaps` | `MaxRiskPerTradePercent`, `MaxLeverage`, `MaxDailyLossPercent`, `MaxOpenPositions`; agents validate against them, execution (#13) enforces them at order time | agents (#7), execution (#13) |
-| market data | — | backfill arrives with market data (#12); candle retention is `Retention:CandleDays` | market data (#12) |
+| market data | `MarketData` | `BackfillCandles` per interval (the backfill depth and the window the engine sees), `SymbolRefreshIntervalMinutes` (beyond the appendix, a day at most); candle retention is `Retention:CandleDays` | market data (#12) |
 | paper | `Paper` | `StartingBalance`, maker and taker fee percents per market, `SlippagePercent` | agents (#7) |
 | ui | — | default theme and animation defaults arrive with the UI (#14) | UI (#14) |
 | retention | `Retention` | log, candle and deliberation-transcript days, sweep interval, batch size | database (#3) |

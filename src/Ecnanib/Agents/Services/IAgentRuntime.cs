@@ -2,8 +2,8 @@ using Ecnanib.Exchange.Abstractions;
 
 namespace Ecnanib.Agents.Services;
 
-/// <summary>What the scheduler needs to evaluate an agent: whose it is and which candle stream to follow.</summary>
-internal sealed record AgentTrackingInfo(Guid AgentId, Guid UserId, MarketKey Key, CandleInterval Timeframe);
+/// <summary>What the scheduler needs to evaluate an agent: whose it is, which candle stream to follow and which strategy's series the loader must hold.</summary>
+internal sealed record AgentTrackingInfo(Guid AgentId, Guid UserId, MarketKey Key, CandleInterval Timeframe, string StrategyId, int StrategyVersion);
 
 /// <summary>
 /// The in-process side of the lifecycle (FR-AGT-08/09): which agents are followed, a per-agent gate that serialises
