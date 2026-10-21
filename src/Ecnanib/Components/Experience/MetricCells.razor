@@ -1,0 +1,20 @@
+@* The metric cells of one experience row; the headers are <MetricHeaders />. *@
+@using Ecnanib.Database.Entities
+<td>@Metrics.Decisions</td>
+<td>@Metrics.Approvals</td>
+<td>@Metrics.Rejections</td>
+<td>@Metrics.Trades</td>
+<td>@ExperienceMessages.Percent(Metrics.WinRate)</td>
+<td class="@ExperienceMessages.RClass(Metrics.AverageR)">@ExperienceMessages.R(Metrics.AverageR)</td>
+<td class="@ExperienceMessages.RClass(Metrics.Expectancy)">@ExperienceMessages.R(Metrics.Expectancy)</td>
+<td>@ExperienceMessages.Factor(Metrics.ProfitFactor)</td>
+<td>@(Metrics.RejectionsResolved > 0 ? $"{ExperienceMessages.Percent(Metrics.RejectionAccuracy)} of {Metrics.RejectionsResolved}" : ExperienceMessages.NotAvailable)</td>
+<td>@ExperienceMessages.Percent(Metrics.DrawdownContribution)</td>
+<td>@(Metrics.ClampRate is not null ? $"{ExperienceMessages.Percent(Metrics.ClampRate)} of {Metrics.RiskManagerTurns}" : ExperienceMessages.NotAvailable)</td>
+<td>@ExperienceMessages.Percent(Metrics.FailureRate)</td>
+<td>@ExperienceMessages.Latency(Metrics.AverageLatencyMs)</td>
+
+@code {
+    [Parameter, EditorRequired]
+    public ExperienceMetrics Metrics { get; set; } = default!;
+}

@@ -57,7 +57,7 @@ Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 | paper | `Paper` | `StartingBalance`, maker and taker fee percents per market, `SlippagePercent` | agents (#7) |
 | ui | — | default theme and animation defaults arrive with the UI (#14) | UI (#14) |
 | retention | `Retention` | log, candle and deliberation-transcript days, sweep interval, batch size | database (#3) |
-| beyond the appendix | `Accounts`, `Keys`, `Council` | sessions, throttling, password length; key re-validation; the council's role budgets, prompt history and text bounds | accounts (#4), keys (#5), council (#9) |
+| beyond the appendix | `Accounts`, `Keys`, `Council`, `Experience` | sessions, throttling, password length; key re-validation; the council's role budgets, prompt history and text bounds; the experience refresh interval, shadow horizon, recent outcomes and suggestion sample | accounts (#4), keys (#5), council (#9), experience (#11) |
 
 Configuration (`Server` is this module's section; `src/Ecnanib/ecnanib.json` is the complete reference file with
 every default):

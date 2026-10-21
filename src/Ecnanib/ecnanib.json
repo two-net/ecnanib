@@ -137,5 +137,11 @@
     "MaxOutputTokens": 8192,
     "MaxAssessmentLength": 1200,
     "MaxRationaleLength": 600
+  },
+  "Experience": {
+    "RefreshIntervalMinutes": 15,
+    "ShadowHorizonCandles": 30,
+    "RecentOutcomes": 5,
+    "MinimumTradesForSuggestion": 10
   }
 }

@@ -11,7 +11,10 @@ public interface IAgentService
 
     Task<AgentDetail?> GetAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
 
-    /// <summary>Creates a Draft with the timeframe's default strategy, the Appendix B council and default risk limits (FR-AGT-01, FR-AGT-15).</summary>
+    /// <summary>
+    /// Creates a Draft with the timeframe's default strategy, the council suggested by the user's own experience per
+    /// role (FR-EXP-08) or else the Appendix B council, and default risk limits (FR-AGT-01, FR-AGT-15).
+    /// </summary>
     Task<AgentSaveResult> CreateAsync(Guid userId, AgentCreateInput input, CancellationToken cancellationToken);
 
     Task<AgentSaveResult> UpdateSettingsAsync(Guid userId, Guid agentId, AgentSettingsInput input, CancellationToken cancellationToken);

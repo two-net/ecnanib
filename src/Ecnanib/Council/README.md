@@ -11,7 +11,7 @@ to nothing at registration. The roles themselves, the prompts, the schemas and t
 | Need | Use |
 |---|---|
 | Run the council for one evaluation (FR-AI-02..07, FR-AI-09..13) | `ICouncil.DeliberateAsync(CouncilContext, ct)` → `CouncilResult` (the unsaved `Decision` graph, a `Failure` when the Risk Manager decided nothing, a `Fault` when the agent cannot run as configured); the agents module's pipeline is the only caller |
-| Feed experience into prompts (FR-AI-06, FR-EXP-06) | implement `IExperienceSummaries` and register it before `AddCouncil`; the default answers "no experience recorded yet" |
+| Feed experience into prompts (FR-AI-06, FR-EXP-06) | `IExperienceSummaries`, provided by the experience module registered before `AddCouncil`; the default here answers "no experience recorded yet" |
 | Show a deliberation (FR-AI-14) | `IDeliberationReader.GetAsync(userId, evaluationId, ct)` → `DeliberationView` (the evaluation, each role's `RoleTurnView`, the `FinalDecisionView` with its limits); another user's evaluation answers null |
 | The roles, their order, defaults and responsibilities (Appendix B) | `CouncilRoles` in the agents abstractions |
 | What a role returned (Appendix C) | `RoleOutputDocument` / `FinalDecisionDocument`; `LimitCheck` entries of the decision's limits check |
@@ -81,7 +81,8 @@ deprecated models flagged) or a provider and model id typed by hand, the Appendi
 provider's newest catalog model) and single-model mode (FR-AI-03, FR-AI-04); every recent evaluation links to
 `/agents/{id}/evaluations/{evaluationId}`, which shows the strategy output, each role's turn (status, provider, model,
 cost, proposal, assessment, flags, the document and the input it received) and the final decision with its limits
-check (FR-AI-14). The deliberation animation is the UI issue's (FR-UI-03 b).
+check (FR-AI-14) and, for a setup the council did not take, its shadow outcome (the experience module's, FR-EXP-03).
+The deliberation animation is the UI issue's (FR-UI-03 b).
 
 Tests: `dotnet test` runs offline (the sequence over faked providers: order, disabled roles, the retry, failures,
 budgets and the deadline with a fake clock, faults, keys never reaching a prompt, the limits one by one, the parser,

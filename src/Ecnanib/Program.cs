@@ -8,6 +8,7 @@ using Ecnanib.Council;
 using Ecnanib.Database;
 using Ecnanib.Database.Migrations;
 using Ecnanib.Exchange;
+using Ecnanib.Experience;
 using Ecnanib.Keys;
 using Ecnanib.ModelSync;
 using Ecnanib.Strategies;
@@ -38,6 +39,9 @@ builder.Services.AddAccounts(builder.Configuration);
 builder.Services.AddModelSync(builder.Configuration);
 // Before AddAgents: the Appendix A catalog and engine the agents module requires (FR-STR).
 builder.Services.AddStrategies();
+// Before AddCouncil and AddAgents: the experience summaries, the shadow-outcome tracker and the council suggestions
+// replace the council's and the agents module's defaults (FR-EXP).
+builder.Services.AddExperience(builder.Configuration);
 // Before AddAgents: the Appendix B council replaces the agents module's fail-safe default (FR-AI).
 builder.Services.AddCouncil(builder.Configuration);
 // Before AddKeys: the runtime's own key handling (stop with orders cancelled, Error halts evaluation) replaces the default.

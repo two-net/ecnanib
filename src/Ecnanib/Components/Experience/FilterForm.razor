@@ -1,0 +1,42 @@
+@* The leaderboard filter (FR-EXP-07): a plain GET form, so the choice lives in the query string and the page is bookmarkable. *@
+@using Ecnanib.Agents.Configuration
+@using Ecnanib.Database.Entities
+@using Ecnanib.Experience.Abstractions
+<form method="get" action="@Action" class="inline filter">
+    <label>Role
+        <select name="@ExperienceFilters.RoleName">
+            <option value="">All roles</option>
+            @foreach (var role in CouncilRoles.Order)
+            {
+                <option value="@ExperienceFilters.RoleValue(role)" selected="@(Filter.Role == role)">@CouncilRoles.Display(role)</option>
+            }
+        </select>
+    </label>
+    <label>Timeframe
+        <select name="@ExperienceFilters.TimeframeName">
+            <option value="">All timeframes</option>
+            @foreach (var timeframe in AgentsOptions.Timeframes)
+            {
+                <option value="@ExperienceFilters.TimeframeValue(timeframe)" selected="@(Filter.Timeframe == timeframe)">@AgentsOptions.KeyOf(timeframe)</option>
+            }
+        </select>
+    </label>
+    <label>Market
+        <select name="@ExperienceFilters.MarketName">
+            <option value="">All markets</option>
+            @foreach (var market in ExperienceFilters.Markets)
+            {
+                <option value="@market.Value" selected="@(Filter.MarketType == market.Market)">@market.Label</option>
+            }
+        </select>
+    </label>
+    <button type="submit">Filter</button>
+</form>
+
+@code {
+    [Parameter, EditorRequired]
+    public ExperienceFilter Filter { get; set; } = ExperienceFilter.None;
+
+    [Parameter, EditorRequired]
+    public string Action { get; set; } = "";
+}

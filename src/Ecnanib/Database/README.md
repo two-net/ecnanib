@@ -43,6 +43,10 @@ Rules the module enforces:
   the daily loss (FR-EXE-09) is derived from `trades.realized_pnl` per UTC day. Neither has a column.
 - Enums are text except the ordinal ones compared by range: `log_entries.level` and the entry-window days are
   integers, so "Warning and above" and day ranges translate correctly.
+- `experience_stats` is written by the experience module's refresher alone, which replaces every row each run; the
+  `metrics` JSON holds the counts and sums the FR-EXP-04 ratios derive from beside the ratios (`ExperienceMetrics`),
+  and the `ExtendExperienceMetrics` migration deleted the rows written in the earlier shape. `shadow_outcomes.detail`
+  holds the setup a shadow follows and the walk's progress.
 - A trade references its opening decision (`entry_decision_id`); only managing decisions set `decisions.trade_id`.
   Save the decision, then the trade, inside `Database.CreateExecutionStrategy().ExecuteAsync(...)` with a transaction;
   setting both links in one `SaveChanges` is a cycle EF refuses. Trades and evaluations snapshot the agent's

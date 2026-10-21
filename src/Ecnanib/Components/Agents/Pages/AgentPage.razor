@@ -6,12 +6,15 @@
 @using Ecnanib.Ai.Abstractions
 @using Ecnanib.Database.Entities
 @using Ecnanib.Exchange.Abstractions
+@using Ecnanib.Experience.Abstractions
 @using Ecnanib.ModelSync.Abstractions
 @using Microsoft.Extensions.Options
 @inject IAgentService AgentService
 @inject IStrategyCatalog Catalog
 @inject IKeyService KeyService
 @inject IModelCatalog ModelCatalog
+@inject IExperienceReader Experience
+@inject ICouncilSuggestions Suggestions
 @inject IOptions<RiskCapsOptions> RiskCaps
 @inject TimeProvider Clock
 @inject NavigationManager Navigation
@@ -419,6 +422,10 @@
     <section id="council" aria-labelledby="council-title">
         <h2 id="council-title">Council</h2>
         <p>Four roles in order; the Risk Manager always runs last and cannot be disabled. A role's provider needs a valid key before the agent can start. Pick a model from the synced catalog, or choose "Other" and type a model id as the provider lists it.</p>
+        @if (_suggestions.Count > 0)
+        {
+            <p class="hint">@ExperienceMessages.Suggestions(_suggestions, agent.Timeframe, agent.MarketType)</p>
+        }
         <EditForm Model="Council" FormName="agent-council" OnValidSubmit="SaveCouncilAsync" method="post">
             @if (_councilError is not null)
             {
@@ -586,6 +593,73 @@
         }
     </section>
 
+    <section id="experience" aria-labelledby="experience-title">
+        <h2 id="experience-title">Experience</h2>
+        <p>@ExperienceMessages.AgentIntro</p>
+        @if (_experience is null || _experience.Roles.Count == 0)
+        {
+            <p>@ExperienceMessages.NoStatistics</p>
+        }
+        else
+        {
+            <p class="hint">Computed @Stamp(_experience.ComputedAt). <a href="/providers">Leaderboard</a>.</p>
+            <div class="table-wrap">
+                <table class="agents leaderboard">
+                    <thead><tr><th>Role</th><th>Provider</th><th>Model</th><th>Timeframe</th><th>Market</th><MetricHeaders /></tr></thead>
+                    <tbody>
+                        @foreach (var row in _experience.Roles)
+                        {
+                            <tr class="@(row.IsCurrent ? "current-assignment" : "")">
+                                <td>@CouncilRoles.Display(row.Role)</td>
+                                <td><a href="/providers/@ProviderNames.Route(row.Provider)">@ProviderNames.Display(row.Provider)</a></td>
+                                <td>@row.Model@(row.IsCurrent ? " (current)" : "")</td>
+                                <td>@AgentMessages.Timeframe(row.Timeframe)</td>
+                                <td>@AgentMessages.Market(row.MarketType)</td>
+                                <MetricCells Metrics="row.Metrics" />
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <h3 id="trades-title">Closed trades</h3>
+        @if (_experience is null || _experience.RecentTrades.Count == 0)
+        {
+            <p>@ExperienceMessages.NoTrades</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="agents leaderboard">
+                    <thead><tr><th>Opened</th><th>Closed</th><th>Duration</th><th>Side</th><th>Entry</th><th>Exit</th><th>Size</th><th>R</th><th>P&amp;L</th><th>Fees</th><th>Funding</th><th>MAE</th><th>MFE</th><th>Exit</th><th>Decisions</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var trade in _experience.RecentTrades)
+                        {
+                            <tr>
+                                <td>@Stamp(trade.OpenedAt)</td>
+                                <td>@Stamp(trade.ClosedAt)</td>
+                                <td>@ExperienceMessages.Duration(trade.Duration)</td>
+                                <td>@trade.Side.ToString().ToLowerInvariant()@(trade.IsPaper ? " (paper)" : "")</td>
+                                <td>@ExperienceMessages.Price(trade.EntryPrice)</td>
+                                <td>@ExperienceMessages.Price(trade.ExitPrice)</td>
+                                <td>@ExperienceMessages.Price(trade.Size)</td>
+                                <td class="@ExperienceMessages.RClass(trade.RMultiple)">@ExperienceMessages.R(trade.RMultiple)</td>
+                                <td class="@ExperienceMessages.RClass(trade.RealizedPnl)">@ExperienceMessages.Money(trade.RealizedPnl)</td>
+                                <td>@ExperienceMessages.Money(trade.Fees)</td>
+                                <td>@ExperienceMessages.Money(trade.Funding)</td>
+                                <td>@ExperienceMessages.Percent(trade.MaxAdverseExcursion)</td>
+                                <td>@ExperienceMessages.Percent(trade.MaxFavorableExcursion)</td>
+                                <td>@ExperienceMessages.ExitReason(trade.ExitReason)</td>
+                                <td>@(1 + trade.ManagingDecisions)</td>
+                                <td><a href="/agents/@Id/evaluations/@trade.EntryEvaluationId">Entry deliberation</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
     <section aria-labelledby="history-title">
         <h2 id="history-title">Change history</h2>
         @if (agent.RecentChanges.Count == 0)
@@ -633,6 +707,8 @@
 
     private IReadOnlyList<CatalogModel> _catalog = [];
     private IReadOnlyList<CouncilAssignmentView> _deprecatedRoles = [];
+    private AgentExperienceView? _experience;
+    private IReadOnlyList<CouncilSuggestion> _suggestions = [];
     private string? _riskError;
     private string? _windowError;
 
@@ -742,6 +818,10 @@
         _keys ??= await KeyService.GetOverviewAsync(UserId, HttpContext.RequestAborted);
         _catalog = await ModelCatalog.ListAsync(HttpContext.RequestAborted);
         _deprecatedRoles = _agent.Council.Where(c => c.Enabled && c.CatalogStatus == ModelStatus.Deprecated).ToList();
+        _experience = await Experience.GetAgentAsync(UserId, Id, HttpContext.RequestAborted);
+        // FR-EXP-08: the roles whose best-by-experience provider and model differ from the assignment.
+        var suggestions = await Suggestions.SuggestAsync(UserId, _agent.Timeframe, _agent.MarketType, HttpContext.RequestAborted);
+        _suggestions = suggestions.Where(s => !_agent.Council.Any(c => c.Role == s.Role && c.Provider == s.Provider && string.Equals(c.Model, s.Model, StringComparison.Ordinal))).ToList();
         return true;
     }
 

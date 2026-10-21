@@ -1,0 +1,134 @@
+@page "/providers/{ProviderRoute}"
+@attribute [Authorize]
+@using Ecnanib.Ai.Abstractions
+@using Ecnanib.Database.Entities
+@using Ecnanib.Experience.Abstractions
+@inject IExperienceReader Experience
+@inject NavigationManager Navigation
+
+<PageTitle>@Name experience</PageTitle>
+
+@if (_view is { } view)
+{
+    <p><a href="/providers">← Providers</a></p>
+    <h1>@Name experience</h1>
+    <p>Each @Name model in each council role (FR-EXP-07): your own agents, then every user's as counts and ratios only, then your agents one by one at their own timeframe and market.</p>
+
+    <FilterForm Filter="_filter" Action="@Self" />
+    <p class="hint">Showing @ExperienceFilters.Describe(_filter). @(view.ComputedAt is { } computed ? $"Computed {Stamp(computed)}." : ExperienceMessages.NoStatistics)</p>
+
+    <section aria-labelledby="mine-title">
+        <h2 id="mine-title">Your agents</h2>
+        @if (view.Mine.Count == 0)
+        {
+            <p>@ExperienceMessages.NoRows</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="agents leaderboard">
+                    <thead><tr><th>Model</th><th>Role</th><MetricHeaders /></tr></thead>
+                    <tbody>
+                        @foreach (var row in view.Mine)
+                        {
+                            <tr><td>@row.Model</td><td>@CouncilRoles.Display(row.Role)</td><MetricCells Metrics="row.Metrics" /></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section aria-labelledby="system-title">
+        <h2 id="system-title">All users</h2>
+        @if (view.SystemWide.Count == 0)
+        {
+            <p>@ExperienceMessages.NoRows</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="agents leaderboard">
+                    <thead><tr><th>Model</th><th>Role</th><MetricHeaders /></tr></thead>
+                    <tbody>
+                        @foreach (var row in view.SystemWide)
+                        {
+                            <tr><td>@row.Model</td><td>@CouncilRoles.Display(row.Role)</td><MetricCells Metrics="row.Metrics" /></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section aria-labelledby="agents-title">
+        <h2 id="agents-title">Per agent</h2>
+        @if (view.Agents.Count == 0)
+        {
+            <p>@ExperienceMessages.NoRows</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="agents leaderboard">
+                    <thead><tr><th>Agent</th><th>Model</th><th>Role</th><th>Timeframe</th><th>Market</th><MetricHeaders /></tr></thead>
+                    <tbody>
+                        @foreach (var row in view.Agents)
+                        {
+                            <tr>
+                                <td><a href="/agents/@row.AgentId">@row.AgentName</a></td>
+                                <td>@row.Model</td>
+                                <td>@CouncilRoles.Display(row.Role)</td>
+                                <td>@AgentMessages.Timeframe(row.Timeframe)</td>
+                                <td>@AgentMessages.Market(row.MarketType)</td>
+                                <MetricCells Metrics="row.Metrics" />
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private AiProvider _provider;
+    private ProviderExperienceView? _view;
+    private ExperienceFilter _filter = ExperienceFilter.None;
+
+    [Parameter]
+    public string ProviderRoute { get; set; } = "";
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = ExperienceFilters.RoleName)]
+    private string? Role { get; set; }
+
+    [SupplyParameterFromQuery(Name = ExperienceFilters.TimeframeName)]
+    private string? Timeframe { get; set; }
+
+    [SupplyParameterFromQuery(Name = ExperienceFilters.MarketName)]
+    private string? Market { get; set; }
+
+    private Guid UserId => HttpContext.User.RequireUserId();
+
+    private string Name => ProviderNames.Display(_provider);
+
+    private string Self => "/providers/" + ProviderNames.Route(_provider);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ProviderNames.Parse(ProviderRoute) is not { } provider)
+        {
+            Navigation.NotFound();
+            return;
+        }
+
+        _provider = provider;
+        _filter = ExperienceFilters.Parse(Role, Timeframe, Market);
+        _view = await Experience.GetProviderAsync(UserId, provider, _filter, HttpContext.RequestAborted);
+    }
+
+    private static string Stamp(DateTimeOffset at) => at.ToString("yyyy-MM-dd HH:mm 'UTC'");
+}

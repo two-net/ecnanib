@@ -16,8 +16,8 @@ public static class AgentsServiceCollectionExtensions
     /// <see cref="PaperOptions"/>; <see cref="IAgentService"/>, <see cref="IAgentEvents"/> and the runtime's
     /// <see cref="IKeyDependentAgents"/>; the <see cref="AgentScheduler"/> and <see cref="PaperFillSimulator"/> hosted
     /// services; and the pipeline seams (<see cref="IMarketDataLoader"/>, <see cref="ICouncil"/>,
-    /// <see cref="IExecutionService"/>, the live <see cref="IOrderVenue"/>) with their fail-safe defaults, which an
-    /// implementation registered earlier replaces. Requires <c>AddDatabase</c>, <c>AddExchange</c>, <c>AddAccounts</c>
+    /// <see cref="IExecutionService"/>, <see cref="IExperienceTracker"/>, <see cref="ICouncilSuggestions"/>, the live
+    /// <see cref="IOrderVenue"/>) with their fail-safe defaults, which an implementation registered earlier replaces. Requires <c>AddDatabase</c>, <c>AddExchange</c>, <c>AddAccounts</c>
     /// and <c>AddStrategies</c> (the <see cref="IStrategyCatalog"/> and <see cref="IStrategyEngine"/>) before this
     /// call, and <c>AddKeys</c> after it, so the runtime's key handling is kept. Connects to nothing at registration.
     /// </summary>
@@ -54,6 +54,8 @@ public static class AgentsServiceCollectionExtensions
         services.TryAddSingleton<IMarketDataLoader, RecentCandleLoader>();
         services.TryAddSingleton<ICouncil, PendingCouncil>();
         services.TryAddSingleton<IExecutionService, PendingExecutionService>();
+        services.TryAddSingleton<IExperienceTracker, NoExperienceTracker>();
+        services.TryAddSingleton<ICouncilSuggestions, NoCouncilSuggestions>();
 
         services.TryAddSingleton<PaperFillSimulator>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PaperFillSimulator>(sp => sp.GetRequiredService<PaperFillSimulator>()));

@@ -69,7 +69,7 @@ internal static class LiveSeed
         RiskPercent = 0.5m,
         Confidence = 0.7m,
         Rationale = "Pullback to EMA20 with daily bias long.",
-        LimitsCheck = Json("""{"riskPerTrade":"pass","leverage":"pass"}"""),
+        LimitsCheck = Json("""[{"limit":"riskPerTrade","status":"pass","detail":"0.5% within 2%"},{"limit":"leverage","status":"pass","detail":"3x within 20x"}]"""),
         TotalInputTokens = 1200,
         TotalOutputTokens = 300,
         TotalLatencyMs = 4200,

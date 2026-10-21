@@ -21,7 +21,8 @@ internal sealed record EvaluationRun(AgentTrackingInfo Agent, Candle Candle, Dat
 /// needed (FR-AI-08) → execute → persist → log → notify. The evaluation row is inserted first with
 /// <see cref="EvaluationOutcome.InProgress"/>; its unique (agent, candle) index makes a second run of the same candle
 /// a no-op (FR-AGT-09). Everything up to the council honours the cancellable token (deadline, Stop, shutdown);
-/// execution and persistence do not, because a cancelled token does not recall an order already sent.
+/// execution and persistence do not, because a cancelled token does not recall an order already sent. The experience
+/// step (<see cref="IExperienceTracker"/>, FR-EXP-03) runs last, whenever market data loaded, and never changes the outcome.
 /// </summary>
 internal sealed class EvaluationPipeline
 {
@@ -35,6 +36,7 @@ internal sealed class EvaluationPipeline
     private readonly IStrategyEngine _engine;
     private readonly ICouncil _council;
     private readonly IExecutionService _execution;
+    private readonly IExperienceTracker _experience;
     private readonly IOrderVenues _venues;
     private readonly IKeyResolver _keys;
     private readonly IAgentEvents _events;
@@ -49,6 +51,7 @@ internal sealed class EvaluationPipeline
         IStrategyEngine engine,
         ICouncil council,
         IExecutionService execution,
+        IExperienceTracker experience,
         IOrderVenues venues,
         IKeyResolver keys,
         IAgentEvents events,
@@ -62,6 +65,7 @@ internal sealed class EvaluationPipeline
         _engine = engine;
         _council = council;
         _execution = execution;
+        _experience = experience;
         _venues = venues;
         _keys = keys;
         _events = events;
@@ -144,12 +148,14 @@ internal sealed class EvaluationPipeline
         JsonElement? strategyJson = null;
         Decision? decision = null;
         string? fault = null;
+        var entriesAllowed = agent.State == AgentState.Running;
+        var parameters = strategy.Resolve(stored);
+        MarketSnapshot? market = null;
+        StrategyOutput? output = null;
         try
         {
-            var entriesAllowed = agent.State == AgentState.Running;
-            var market = await _loader.LoadAsync(agent, strategy, run.Agent.Key, candle, cancellable).ConfigureAwait(false);
-            var parameters = strategy.Resolve(stored);
-            var output = _engine.Evaluate(new StrategyContext(agent, strategy, parameters, market, entriesAllowed));
+            market = await _loader.LoadAsync(agent, strategy, run.Agent.Key, candle, cancellable).ConfigureAwait(false);
+            output = _engine.Evaluate(new StrategyContext(agent, strategy, parameters, market, entriesAllowed));
             strategyJson = JsonSerializer.SerializeToElement(output, Json);
 
             IReadOnlyList<Trade> openTrades;
@@ -238,6 +244,9 @@ internal sealed class EvaluationPipeline
             _logger.LogError(ex, "Evaluation {EvaluationId} of agent {AgentId} for candle {CandleOpen:O} failed", evaluation.Id, agentId, candle.OpenTime);
         }
 
+        if (market is not null && output is not null)
+            await TrackExperienceAsync(new ExperienceContext(agent, evaluation, output, parameters, market, decision, entriesAllowed), stopping).ConfigureAwait(false);
+
         var finishedAt = _time.GetUtcNow();
         await FinishAsync(evaluation.Id, strategyJson, councilConsulted, outcome, Truncate(detail), finishedAt).ConfigureAwait(false);
         _logger.LogInformation("Agent {AgentId} evaluated candle {CandleOpen:O} ({Timeframe}): {Outcome}{Detail}",
@@ -286,6 +295,23 @@ internal sealed class EvaluationPipeline
         {
             await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
             return await db.Evaluations.AnyAsync(e => e.Id == evaluation.Id, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>FR-EXP-03 on the evaluation's own market data; a failure is logged and the evaluation's outcome stands (NFR-REL-03).</summary>
+    private async Task TrackExperienceAsync(ExperienceContext context, CancellationToken stopping)
+    {
+        try
+        {
+            await _experience.TrackAsync(context, stopping).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+        {
+            _logger.LogDebug("Experience tracking for evaluation {EvaluationId} of agent {AgentId} was interrupted by shutdown", context.Evaluation.Id, context.Agent.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Experience tracking for evaluation {EvaluationId} of agent {AgentId} failed; the evaluation stands", context.Evaluation.Id, context.Agent.Id);
         }
     }
 

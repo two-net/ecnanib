@@ -1551,6 +1551,8 @@ namespace Ecnanib.Database.Migrations
 
                             b1.Property<decimal?>("ClampRate");
 
+                            b1.Property<int>("Clamped");
+
                             b1.Property<int>("Decisions");
 
                             b1.Property<decimal?>("DrawdownContribution");
@@ -1559,11 +1561,43 @@ namespace Ecnanib.Database.Migrations
 
                             b1.Property<decimal?>("FailureRate");
 
+                            b1.Property<int>("Failures");
+
+                            b1.Property<decimal>("GrossLossR");
+
+                            b1.Property<decimal>("GrossProfitR");
+
+                            b1.Property<int>("Losses");
+
+                            b1.Property<int>("NetTrades");
+
                             b1.Property<decimal?>("ProfitFactor");
+
+                            b1.Property<decimal?>("RejectionAccuracy");
 
                             b1.Property<int>("Rejections");
 
+                            b1.Property<int>("RejectionsMissedWins");
+
+                            b1.Property<int>("RejectionsResolved");
+
+                            b1.Property<decimal>("RejectionsSumR");
+
+                            b1.Property<int>("RiskManagerTurns");
+
+                            b1.Property<decimal>("ScopeGrossLossR");
+
+                            b1.Property<decimal>("SumNetR");
+
+                            b1.Property<decimal>("SumR");
+
+                            b1.Property<long>("TotalLatencyMs");
+
+                            b1.Property<int>("Trades");
+
                             b1.Property<decimal?>("WinRate");
+
+                            b1.Property<int>("Wins");
 
                             b1.HasKey("ExperienceStatId");
 

@@ -53,7 +53,8 @@ Configuration (the `Providers` section is the AI module's and is validated there
 ```
 
 Pages (static server rendering, plain forms): `/providers` (per provider the last sync time, result with the error,
-trigger, models listed and deprecated count, and a "Sync now" button; below it the catalog per provider, collapsed,
+trigger, models listed and deprecated count, and a "Sync now" button; the experience module's leaderboard with its
+filter, each provider linking to `/providers/{provider}` (FR-EXP-07); below it the catalog per provider, collapsed,
 with each model's status and first and last seen). The keys page links to it.
 
 Known gap: a provider answers each key with what that key may use, so organisation-restricted, preview or fine-tuned

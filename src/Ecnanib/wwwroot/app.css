@@ -394,3 +394,62 @@ details.catalog summary {
     cursor: pointer;
     font-weight: 600;
 }
+
+/* Experience views (issue #11); the user-interface work restyles these. */
+table.leaderboard th, table.leaderboard td {
+    white-space: nowrap;
+}
+
+table.leaderboard th[title] {
+    cursor: help;
+    text-decoration: underline dotted;
+}
+
+.r-positive {
+    color: #1a7a38;
+}
+
+.r-negative {
+    color: #a12622;
+}
+
+form.filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    align-items: end;
+    margin: 0.5rem 0;
+}
+
+form.filter label {
+    display: grid;
+    gap: 0.25rem;
+}
+
+form.filter button {
+    border: 1px solid #a0a0a0;
+    background: #f4f4f4;
+    color: inherit;
+    padding: 0.3rem 0.8rem;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.status-hittarget {
+    background: rgba(38, 176, 80, 0.15);
+    color: #1a7a38;
+}
+
+.status-hitstop {
+    background: rgba(200, 40, 40, 0.12);
+    color: #a12622;
+}
+
+.status-pending, .status-expired {
+    background: rgba(120, 120, 120, 0.15);
+    color: #555;
+}
+
+.current-assignment {
+    font-weight: 600;
+}

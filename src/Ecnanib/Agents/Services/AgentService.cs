@@ -38,6 +38,7 @@ internal sealed class AgentService : IAgentService
     private readonly IOrderVenues _venues;
     private readonly IAgentRuntime _runtime;
     private readonly IAgentEvents _events;
+    private readonly ICouncilSuggestions _suggestions;
     private readonly IOptions<RiskCapsOptions> _caps;
     private readonly TimeProvider _time;
     private readonly ILogger<AgentService> _logger;
@@ -53,6 +54,7 @@ internal sealed class AgentService : IAgentService
         IOrderVenues venues,
         IAgentRuntime runtime,
         IAgentEvents events,
+        ICouncilSuggestions suggestions,
         IOptions<RiskCapsOptions> caps,
         TimeProvider time,
         ILogger<AgentService> logger)
@@ -66,6 +68,7 @@ internal sealed class AgentService : IAgentService
         _venues = venues;
         _runtime = runtime;
         _events = events;
+        _suggestions = suggestions;
         _caps = caps;
         _time = time;
         _logger = logger;
@@ -193,14 +196,22 @@ internal sealed class AgentService : IAgentService
             CreatedAt = now,
             UpdatedAt = now,
         };
+        // FR-EXP-08: a role takes the provider and model with the best expectancy in the user's own history for this
+        // timeframe and market, else the Appendix B default on its provider's newest catalog model (FR-SYNC-05).
+        var suggestions = await _suggestions.SuggestAsync(userId, settings.Timeframe, settings.MarketType, cancellationToken).ConfigureAwait(false);
+        var suggested = 0;
         foreach (var role in AgentRules.Roles)
         {
-            var provider = AgentRules.DefaultProvider(role);
+            var suggestion = suggestions.FirstOrDefault(s => s.Role == role && !string.IsNullOrWhiteSpace(s.Model));
+            var provider = suggestion?.Provider ?? AgentRules.DefaultProvider(role);
+            var model = suggestion?.Model.Trim() ?? await NewestModelAsync(db, provider, cancellationToken).ConfigureAwait(false);
+            if (suggestion is not null)
+                suggested++;
             agent.CouncilAssignments.Add(new CouncilAssignment
             {
                 Role = role,
                 Provider = provider,
-                Model = await NewestModelAsync(db, provider, cancellationToken).ConfigureAwait(false),
+                Model = model,
                 Enabled = true,
             });
         }
@@ -211,7 +222,8 @@ internal sealed class AgentService : IAgentService
         db.AgentChanges.AddRange(changes.Entries);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        _logger.LogInformation("User {UserId} created agent {AgentId} ({Mode} {Market} {Symbol} {Timeframe})", userId, agent.Id, agent.Mode, agent.MarketType, agent.Symbol, agent.Timeframe.ToLabel());
+        _logger.LogInformation("User {UserId} created agent {AgentId} ({Mode} {Market} {Symbol} {Timeframe}); {Suggested} council role(s) assigned from experience",
+            userId, agent.Id, agent.Mode, agent.MarketType, agent.Symbol, agent.Timeframe.ToLabel(), suggested);
         return new AgentSaveResult(AgentSaveStatus.Succeeded, agent.Id);
     }
 

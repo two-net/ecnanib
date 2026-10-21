@@ -20,6 +20,19 @@ internal sealed class PendingCouncil : ICouncil
         Task.FromResult(CouncilResult.Failed(Failure));
 }
 
+/// <summary>Records no experience until the experience module (FR-EXP) is registered before <c>AddAgents</c>; the pipeline runs without shadow outcomes.</summary>
+internal sealed class NoExperienceTracker : IExperienceTracker
+{
+    public Task TrackAsync(ExperienceContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>Suggests nothing until the experience module (FR-EXP-08) is registered before <c>AddAgents</c>; every role gets its Appendix B default.</summary>
+internal sealed class NoCouncilSuggestions : ICouncilSuggestions
+{
+    public Task<IReadOnlyList<CouncilSuggestion>> SuggestAsync(Guid userId, CandleInterval timeframe, MarketType marketType, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<CouncilSuggestion>>([]);
+}
+
 /// <summary>Records the decision and places nothing until the execution issue (FR-EXE) delivers sizing and limits.</summary>
 internal sealed class PendingExecutionService : IExecutionService
 {

@@ -17,7 +17,8 @@ scheduler, pipeline and paper simulator never leave this folder. `AddAgents` req
 | "No new entry" windows (FR-STR-05) | `IAgentService.AddEntryWindowAsync(EntryWindowInput)` / `RemoveEntryWindowAsync`, `AgentDetail.EntryWindows` → `EntryWindowView`; `EntryWindowSchedule.IsActive` is the one implementation of their semantics |
 | Warn about a council model the catalog deprecated (FR-SYNC-03) | `CouncilAssignmentView.CatalogStatus` (null for a model the catalog never listed), `AgentSummary.HasDeprecatedModel` (an enabled role only) |
 | React to agent events in the UI (FR-AGT-10, FR-UI-04) | `IAgentEvents.Subscribe(userId, handler)` → `AgentStateChanged`, `EvaluationFinished`, `OrderChanged`, `TradeChanged` |
-| Provide a pipeline stage (council, market data, execution, live venue) | implement `ICouncil`, `IMarketDataLoader`, `IExecutionService` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
+| Provide a pipeline stage (council, market data, execution, experience, live venue) | implement `ICouncil`, `IMarketDataLoader`, `IExecutionService`, `IExperienceTracker` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
+| Suggest a council from experience at creation (FR-EXP-08) | implement `ICouncilSuggestions` and register it **before** `AddAgents`; the default suggests nothing, so every role gets its Appendix B default |
 | The council roles, their order and Appendix B defaults | `CouncilRoles` (`Order`, `DefaultProvider`, `Display`, `Responsibility`) |
 | Council presets (FR-AI-04) | `IAgentService.ResetCouncilToDefaultsAsync` (defaults by strength with each provider's newest catalog model), `UseSingleModelAsync` (one model for every role); both save through `UpdateCouncilAsync` |
 | Place, cancel or close simulated or real orders (FR-AGT-06, FR-AGT-11) | `IOrderVenues.For(mode)` → `IOrderVenue` (`PlaceEntryAsync` with a mandatory stop, `PlaceCloseAsync`, `CancelOpenOrdersAsync`, `ClosePositionsAtMarketAsync`, `GetEquityAsync`) |
@@ -29,8 +30,9 @@ Rules the module enforces:
   Binance keys that allows the market; futures agents need leverage within `RiskCaps:MaxLeverage` and default to
   isolated margin (FR-AGT-01/02/13). The symbol is checked against the exchange's listing (production for paper agents,
   the key's environment for live ones); an unreachable exchange is `ExchangeUnavailable` and nothing is saved. The
-  draft gets the timeframe's first strategy at its current version, the Appendix B council with each provider's newest
-  catalog model (or an empty model to choose), and default risk limits. The agents-per-user limit applies at creation
+  draft gets the timeframe's first strategy at its current version, a council where each role takes the provider and
+  model the user's own experience suggests (`ICouncilSuggestions`, FR-EXP-08) or else its Appendix B default with the
+  provider's newest catalog model (or an empty model to choose), and default risk limits. The agents-per-user limit applies at creation
   and cloning, the running limit at start (FR-AGT-15); both run under a per-user gate so concurrent starts cannot exceed them.
 - Edits follow the state (FR-AGT-07): market, symbol, timeframe, mode, strategy, leverage and margin only in Draft or
   Stopped; strategy parameters, the strategy version, no-entry windows, council and risk limits also in Paused and
@@ -78,8 +80,10 @@ Rules the module enforces:
   declares (FR-STR-03), each read from the exchange and kept only up to the evaluated candle's close (no look-ahead),
   written through to `candles`; reference series (BTCUSDT weekly) always come from production public data; the futures
   mark price is read once and a failure of it or of a reference series is logged and tolerated, while the own and
-  higher-timeframe series must load. A Paused agent with a setup and no position does not consult the council, and no
-  shadow outcome is recorded for it (FR-EXP-03 is #11's).
+  higher-timeframe series must load. After the council and execution, whenever market data loaded, the experience
+  step (`IExperienceTracker`, the experience module's) advances and opens shadow outcomes on the evaluation's own
+  snapshot (FR-EXP-03); its failure is logged and never changes the outcome. A Paused agent has no setup (the engine
+  suppresses them), so it consults the council only with an open position and leaves no shadow.
 - Paper mode (FR-AGT-11, FR-AGT-12): paper agents price against **production** public data and need no key. Orders are
   rows with `is_paper` and deterministic client ids (FR-EXE-07); the simulator follows the last-price stream of every
   symbol with open paper orders or positions, in any agent state, so a Stop's close still fills. An order fills on the
@@ -111,9 +115,10 @@ A deadline must be shorter than its timeframe; percentages are plain percents (0
 Pages (static server rendering, plain forms): `/agents` (the user's agents with state and last evaluation),
 `/agents/new` (name, market, symbol, timeframe, mode, key, leverage and margin; creates a draft) and `/agents/{id}`
 (actions, positions and orders, settings, strategy and parameters generated from the pinned version's descriptor with an
-upgrade button when a newer version exists, no-entry windows, council with the synced catalog per role and the two
-presets, risk limits, recent evaluations each linking to its deliberation, and change history; fields a state forbids
-are disabled). A council role whose model the catalog marks deprecated is flagged in the list and prompted for a
+upgrade button when a newer version exists, no-entry windows, council with the synced catalog per role, the two
+presets and a hint naming the roles the user's experience would assign differently (FR-EXP-08), risk limits, recent
+evaluations each linking to its deliberation, the experience section (the experience module's: statistics per role and
+the last closed trades), and change history; fields a state forbids are disabled). A council role whose model the catalog marks deprecated is flagged in the list and prompted for a
 replacement on the agent page, with the provider's newest available model suggested (FR-SYNC-03); saving and starting
 are not blocked, the provider's own rejection at call time is FR-SYNC-04. The disclaimer is shown on both forms
 (FR-UI-05). Another user's agent and a missing one both answer not found.
