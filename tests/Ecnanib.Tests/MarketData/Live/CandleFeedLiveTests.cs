@@ -96,6 +96,8 @@ public class CandleFeedLiveTests : IClassFixture<DatabaseLiveFixture>
         await scheduler.StartAsync(Ct);
         await Wait.UntilAsync(() => scheduler.IsTracked(agent.Id), "tracked");
         await Wait.UntilAsync(() => feed.Series.Count == 2 && feed.Series.All(s => s.IsReady), "backfilled");
+        // The agent is tracked before the scheduler's own stream subscription exists (the feed's two come first), so a candle pushed before it would be missed.
+        await Wait.UntilAsync(() => streams.CandleSubscriptions == 3, "scheduler subscribed");
         Assert.True(streams.HasMarkSubscription(ethFutures));
 
         await streams.PushMarkPriceAsync(ethFutures, FakeMarketStreams.Mark("ETHUSDT", 102m, 0.0003m, AgentsLiveSeed.Now));

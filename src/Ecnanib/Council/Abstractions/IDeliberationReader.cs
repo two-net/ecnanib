@@ -1,3 +1,4 @@
+using Ecnanib.Agents.Abstractions;
 using System.Text.Json;
 using Ecnanib.Ai.Abstractions;
 using Ecnanib.Database.Entities;
@@ -22,7 +23,7 @@ public sealed record RoleTurnView(
     JsonElement? Document,
     string? InputSummary);
 
-/// <summary>The decision as stored, with its limits check (Appendix C).</summary>
+/// <summary>The decision as stored, with its limits check (Appendix C) and the execution check appended at order time.</summary>
 public sealed record FinalDecisionView(
     DecisionAction Action,
     OrderType? EntryType,
@@ -37,7 +38,12 @@ public sealed record FinalDecisionView(
     int TotalInputTokens,
     int TotalOutputTokens,
     int TotalLatencyMs,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    /// <summary>The execution module's own checks at order time (sizing, notional, balance, daily loss; FR-EXE-04), empty until it ran.</summary>
+    IReadOnlyList<LimitCheck>? ExecutionChecks = null)
+{
+    public IReadOnlyList<LimitCheck> ExecutionChecks { get; init; } = ExecutionChecks ?? [];
+}
 
 /// <summary>One evaluation with its deliberation, when the council ran (FR-AI-14).</summary>
 public sealed record DeliberationView(

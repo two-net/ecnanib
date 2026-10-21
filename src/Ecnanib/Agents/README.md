@@ -17,11 +17,14 @@ scheduler, pipeline and paper simulator never leave this folder. `AddAgents` req
 | "No new entry" windows (FR-STR-05) | `IAgentService.AddEntryWindowAsync(EntryWindowInput)` / `RemoveEntryWindowAsync`, `AgentDetail.EntryWindows` → `EntryWindowView`; `EntryWindowSchedule.IsActive` is the one implementation of their semantics |
 | Warn about a council model the catalog deprecated (FR-SYNC-03) | `CouncilAssignmentView.CatalogStatus` (null for a model the catalog never listed), `AgentSummary.HasDeprecatedModel` (an enabled role only) |
 | React to agent events in the UI (FR-AGT-10, FR-UI-04) | `IAgentEvents.Subscribe(userId, handler)` → `AgentStateChanged`, `EvaluationFinished`, `OrderChanged`, `TradeChanged` |
-| Provide a pipeline stage (council, market data, execution, experience, live venue) or the symbol listing | implement `ICouncil`, `IMarketDataLoader` (`Track`, `Untrack`, `LoadAsync`), `ISymbolCatalog`, `IExecutionService`, `IExperienceTracker` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
+| Provide a pipeline stage (council, market data, execution, experience, live venue) or the symbol listing | implement `ICouncil`, `IMarketDataLoader` (`Track`, `Untrack`, `LoadAsync`), `ISymbolCatalog`, `IExecutionService` (`ManageAsync` before the council, `ExecuteAsync` for the decision), `IExperienceTracker` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
+| The per-agent gate and the daily loss limit, for the execution module (FR-EXE-08, FR-EXE-09) | `IAgentGates.LockAsync` / `TryLock` (the scheduler's gate); `IDailyLossLimit.CheckAsync(agentId)` (gate-free, pauses a Running agent until the next UTC day when today's realized loss reaches the limit) |
+| Client order ids, protection units and the trade JSON shapes shared by both venues (FR-EXE-07, FR-EXE-06, FR-EXP-02) | `ClientOrderIds.For(prefix, agentId, scope, purpose, sequence)`; `ProtectionUnits.Split(quantity, targets, partialFraction, stepSize, minQuantity)` and `ProtectionUnits.PartialFraction(parameters)`; `TradeJson.Targets` / `StopHistory` / `AppendStop` / `InitialStop` for `trades.targets` and `trades.stop_history` |
 | Suggest a council from experience at creation (FR-EXP-08) | implement `ICouncilSuggestions` and register it **before** `AddAgents`; the default suggests nothing, so every role gets its Appendix B default |
 | The council roles, their order and Appendix B defaults | `CouncilRoles` (`Order`, `DefaultProvider`, `Display`, `Responsibility`) |
 | Council presets (FR-AI-04) | `IAgentService.ResetCouncilToDefaultsAsync` (defaults by strength with each provider's newest catalog model), `UseSingleModelAsync` (one model for every role); both save through `UpdateCouncilAsync` |
-| Place, cancel or close simulated or real orders (FR-AGT-06, FR-AGT-11) | `IOrderVenues.For(mode)` → `IOrderVenue` (`PlaceEntryAsync` with a mandatory stop, `PlaceCloseAsync`, `CancelOpenOrdersAsync`, `ClosePositionsAtMarketAsync`, `GetEquityAsync`) |
+| Place, cancel, close or manage simulated or real orders (FR-AGT-06, FR-AGT-11, FR-EXE-06) | `IOrderVenues.For(mode)` → `IOrderVenue` (`PlaceEntryAsync` with a mandatory stop and the targets, `PlaceCloseAsync`, `PlacePartialCloseAsync`, `ReplaceStopAsync`, `ReplaceTargetsAsync`, `ExpireEntryAsync`, `CancelOpenOrdersAsync`, `ClosePositionsAtMarketAsync`, `GetEquityAsync`, `GetAvailableAsync`) |
+| "Stop all my agents" (FR-EXE-10) | `IAgentService.StopAllAsync(userId, closePositions)` → `AgentBulkActionResult` |
 | The candle boundary arithmetic (FR-AGT-09) | `CandleIntervalExtensions.OpenTimeOf` / `NextCloseAfter` in the exchange abstractions |
 
 Rules the module enforces:
@@ -52,7 +55,8 @@ Rules the module enforces:
   has all four roles, the Risk Manager enabled and a model for every enabled role (FR-AI-03/05).
 - Start (Draft, Stopped or Error → Running) requires the running limit, a strategy still in the catalog at the pinned
   version with parameters that still validate, the risk caps, a model per enabled role, a Valid provider key for every enabled role's provider (FR-KEY-08) and, for live
-  mode, the accepted risk disclaimer (FR-ACC-08) and a Valid exchange key allowed for the market. Pause keeps the agent
+  mode, the accepted risk disclaimer (FR-ACC-08), a Valid exchange key allowed for the market and no other Running, Paused or Error live agent of the user on the same
+  key, market and symbol (one position per key, market and symbol belongs to one agent, FR-EXE-08). Pause keeps the agent
   evaluated but opens nothing (FR-AGT-05). Stop cancels the agent's open orders first and then either closes its
   positions at market or leaves them flagged unmanaged (FR-AGT-06); if the orders cannot be cancelled the state is
   unchanged and the user is told. Delete needs Draft or Stopped. Error is entered by the runtime only: an unknown
@@ -70,7 +74,10 @@ Rules the module enforces:
   no-op (FR-AGT-09). On start the scheduler records every evaluation left unfinished by the last stop as failed, resumes
   every Running and Paused agent (NFR-REL-01) and passes "interrupted previously" to the execution stage; once a minute it
   lifts daily-loss pauses whose time has come (FR-EXE-09) and finalises evaluation rows nobody will finish.
-- The pipeline is FR-AGT-10 in order: load market data → strategy engine → council when a setup exists and the agent is
+- The pipeline is FR-AGT-10 in order: load market data → strategy engine → with open orders or trades the execution
+  module's management step (`IExecutionService.ManageAsync`: expiry and market fallback, breakeven and trailing,
+  reconciliation after a restart; a failure is logged and leaves protection as it is, a fallback entry placed there takes
+  the setup off the table for this candle) → council when a setup exists and the agent is
   Running, a position is open, or discretionary mode is on and the agent is Running (FR-AI-08) → execute → persist →
   log → notify. The council receives the pinned strategy with its resolved parameters, the engine output, the
   snapshot, the open position and orders and the evaluation deadline; its decision graph is persisted whenever it
@@ -78,8 +85,8 @@ Rules the module enforces:
   executed, so nothing new opens and protective orders stay (FR-AI-12, FR-AI-14). A council fault (a model the
   provider rejected) moves the agent to Error with the reason once the evaluation is recorded (FR-SYNC-04). The
   strategy engine is the Strategies module's; the agent is loaded with its no-entry windows so the engine can apply
-  them. The council is the Council module's (FR-AI, #9); until its issue lands, execution is seeded fail-safe and
-  records the decision and places nothing (FR-EXE, #13). Market data is the market-data module's (FR-DATA, #12): the
+  them. The council is the Council module's (FR-AI, #9); execution is the execution module's (FR-EXE, #13), and
+  without it the seeded default records the decision and places nothing. Market data is the market-data module's (FR-DATA, #12): the
   evaluation receives the window the module backfilled and streams. Without it, the default loader reads the most
   recent 300 closed candles of the agent's timeframe plus every higher timeframe and reference series the strategy
   declares (FR-STR-03) from the exchange on each evaluation, kept only up to the evaluated candle's close (no
@@ -95,14 +102,29 @@ Rules the module enforces:
   next tick after it is registered (tick timestamps are never compared with order times): market and close orders at
   the price with `Paper:SlippagePercent` against the trader and the taker fee; a buy limit at its price once the tick is
   at or below it (sell at or above) with the maker fee; a stop at the stop price with slippage once the tick trades
-  through it; a target at its price. A tick that crosses both stop and target fills the stop. An entry fill creates
-  the trade and its stop-loss and take-profit orders in one transaction (the entry order's `stop_price` carries the
-  stop until then, the decision's targets the target, so the books rebuild from the database after a restart); an exit
-  fill records exit price, fees, realized P&L net of fees, R multiple against the initial stop, excursions as fractions
-  of the entry price and the reason (stop, target, kill switch for a Stop's close, council for a decided close) and
-  cancels the sibling order. Spot entries are long only. Futures stops trigger on the last price; the mini-ticker is a
+  through it; a unit's target at its price. A tick that crosses both stop and target fills the stop. An entry fill
+  creates the trade and its protection in one transaction: one stop-loss order for the whole size and, per unit
+  (`ProtectionUnits.Split`: the partial unit at the first target, the remainder at the second or trailing without one),
+  a take-profit order (the entry order's `stop_price` carries the stop until then, the decision's targets and the
+  strategy's partial fraction the units, so the books rebuild from the database after a restart). A target fill takes
+  its unit off: the trade keeps its size, `remaining_size` shrinks, the fill's fee and realized P&L go on the order
+  row and accumulate on the trade (the first exit also takes the entry fee off, so the P&L is net of every fee), the
+  stop shrinks to what is left; the stop, a close or the last unit's target closes the trade with exit price, fees,
+  realized P&L, R multiple against the initial stop, excursions as fractions of the entry price and the reason (stop,
+  target, kill switch for a Stop's close, council for a decided close or partial) and cancels the sibling orders; every
+  exit fill runs the daily loss check (FR-EXE-09). A partial market exit (`PartialClose`) fills at the next tick off the
+  trailing remainder first. Stop and target replacements are one transaction each (old row cancelled, new row placed)
+  and move the book. Spot entries are long only. Futures stops trigger on the last price; the mini-ticker is a
   one-second snapshot, so intra-second wicks are invisible. Equity per agent is `Paper:StartingBalance` plus the agent's
-  realized paper P&L; sizing against it belongs to the execution issue.
+  realized paper P&L (partial exits of open trades included); the available balance is the equity less what the open
+  positions and pending entries hold (the notional on spot, the initial margin on futures).
+- The daily loss limit (FR-EXE-09): `DailyLossLimit` reads today's realized loss as −Σ `orders.realized_pnl` of the
+  agent's exit fills of the current UTC day plus the entry fees paid today, against the limit on the venue's equity
+  before today's realized P&L
+  (unrealized P&L never counts) and, reached, pauses a Running agent with one atomic conditional update (no gate, so it
+  is safe from inside an evaluation and from the fill loops) with `PauseCause.DailyLoss`, `AutoResumeAt` at the next
+  00:00 UTC and the reason as `StateReason`; the minute tick lifts the pause. "Stop all my agents" (FR-EXE-10) puts every
+  Running, Paused or Error agent of the user through Stop and reports the ones that could not be.
 - The runtime's `IKeyDependentAgents`: a key being deleted stops its agents with orders cancelled and positions flagged
   unmanaged (nothing can be closed without the key); an invalid key moves them to Error and halts their evaluation
   (FR-KEY-06/07). Each agent is bounded by thirty seconds so one slow venue never delays other keys' checks.
@@ -117,7 +139,7 @@ Configuration (`Agents` runtime settings beside the accounts module's fair-use l
 
 A deadline must be shorter than its timeframe; percentages are plain percents (0.1 means 0.1%).
 
-Pages (static server rendering, plain forms): `/agents` (the user's agents with state and last evaluation),
+Pages (static server rendering, plain forms): `/agents` (the user's agents with state and last evaluation, and "Stop all my agents" with the close-or-leave choice and a confirmation),
 `/agents/new` (name, market, symbol, timeframe, mode, key, leverage and margin; creates a draft) and `/agents/{id}`
 (actions, positions and orders, settings, strategy and parameters generated from the pinned version's descriptor with an
 upgrade button when a newer version exists, no-entry windows, council with the synced catalog per role, the two
@@ -129,10 +151,11 @@ are not blocked, the provider's own rejection at call time is FR-SYNC-04. The di
 (FR-UI-05). Another user's agent and a missing one both answer not found.
 
 Known gaps: the dashboard, agent detail with chart and live updates with the UI issue. `Order.WorkingType` has no
-column, so paper futures stops are last-price only.
+column, so paper futures stops are last-price only. Paper excursions are tracked per tick in memory and lost on a
+restart.
 
 Tests: `dotnet test` runs offline (options, registration and placeholder replacement, the Appendix E table and edit
 rules, parameter parsing, input rules including windows, the window schedule, change sets, events, the scheduler's
-staleness rules and plumbing, the default loader's alignment, the paper book's fill rules). Live checks run against PostgreSQL through the same git-ignored
+staleness rules and plumbing, the default loader's alignment, the paper book's fill rules with units and partials). Live checks run against PostgreSQL through the same git-ignored
 `tests/.database.json` as the database module, with the exchange, providers and streams faked:
 `dotnet test -- --filter-trait "Category=Live"`.

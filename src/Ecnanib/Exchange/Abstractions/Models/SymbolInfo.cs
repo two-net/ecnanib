@@ -12,8 +12,10 @@ public sealed record SymbolInfo(
     SymbolFilters Filters);
 
 /// <summary>
-/// Trading filters of a symbol (tick size, lot size, notional). The rounding helpers implement the arithmetic of
-/// FR-EXE-04 ("rounded down to the symbol's filters"); sizing policy itself belongs to the execution module.
+/// Trading filters of a symbol (tick size, lot size, notional, order counts). The rounding helpers implement the
+/// arithmetic of FR-EXE-04 ("rounded down to the symbol's filters"); sizing policy itself belongs to the execution
+/// module. <see cref="MaxNumAlgoOrders"/> bounds the open stop and take-profit orders per symbol (each OCO stop leg
+/// counts on spot); null when the exchange reports no such filter.
 /// </summary>
 public sealed record SymbolFilters(
     decimal TickSize,
@@ -27,7 +29,9 @@ public sealed record SymbolFilters(
     decimal? MarketMaxQuantity,
     decimal MinNotional,
     decimal? MaxNotional,
-    bool MinNotionalAppliesToMarketOrders)
+    bool MinNotionalAppliesToMarketOrders,
+    int? MaxNumOrders = null,
+    int? MaxNumAlgoOrders = null)
 {
     /// <summary>Rounds a price to the nearest tick (midpoint away from zero).</summary>
     public decimal RoundPriceToTick(decimal price) => RoundToIncrement(price, TickSize, MidpointRounding.AwayFromZero);

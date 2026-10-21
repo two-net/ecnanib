@@ -5,6 +5,7 @@ using Ecnanib.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Agents.Abstractions;
 using Ecnanib.Exchange.Abstractions;
+using Ecnanib.Execution;
 using Ecnanib.Keys;
 using Ecnanib.MarketData;
 using Ecnanib.ModelSync;
@@ -17,7 +18,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Ecnanib.Tests.Agents;
 
-/// <summary>Builds the modules the agents module depends on as the application registers them, with fakes standing in for the exchange, the AI providers and the market streams; <c>marketData</c> adds the market-data module before <c>AddAgents</c>.</summary>
+/// <summary>Builds the modules the agents module depends on as the application registers them, with fakes standing in for the exchange, the AI providers and the market streams; <c>marketData</c> and <c>execution</c> add those modules before <c>AddAgents</c>.</summary>
 internal static class AgentsTestHost
 {
     public static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -32,7 +33,8 @@ internal static class AgentsTestHost
         FakeMarketStreams? streams = null,
         Action<IServiceCollection>? configure = null,
         IStrategyEngine? engine = null,
-        bool marketData = false)
+        bool marketData = false,
+        bool execution = false)
     {
         var values = new Dictionary<string, string?>();
         if (connectionString is not null)
@@ -53,6 +55,9 @@ internal static class AgentsTestHost
         // The market-data module replaces the agents module's loader and symbol catalog when asked for; the agents' own tests keep the placeholders.
         if (marketData)
             services.AddMarketData(configuration);
+        // The execution module replaces the fail-safe execution and the pending live venue when asked for.
+        if (execution)
+            services.AddExecution(configuration);
         services.AddAgents(configuration);
         services.AddKeys(configuration);
         services.AddSingleton<IExchangeClientFactory>(exchange ?? new FakeExchangeClientFactory());

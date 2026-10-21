@@ -33,22 +33,25 @@ internal sealed class NoCouncilSuggestions : ICouncilSuggestions
         Task.FromResult<IReadOnlyList<CouncilSuggestion>>([]);
 }
 
-/// <summary>Records the decision and places nothing until the execution issue (FR-EXE) delivers sizing and limits.</summary>
+/// <summary>Records the decision and places nothing until the execution module (FR-EXE) is registered before <c>AddAgents</c>.</summary>
 internal sealed class PendingExecutionService : IExecutionService
 {
-    public const string Note = "Execution arrives with FR-EXE (#13); the decision was recorded and nothing was placed.";
+    public const string Note = "Execution is not registered; the decision was recorded and nothing was placed.";
 
-    public Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, CancellationToken cancellationToken) =>
+    public Task<ExecutionResult> ManageAsync(ExecutionRequest request, CancellationToken cancellable, CancellationToken stopping) =>
+        Task.FromResult(ExecutionResult.Nothing());
+
+    public Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, Decision decision, CancellationToken cancellationToken) =>
         Task.FromResult(new ExecutionResult([], Note));
 }
 
 /// <summary>
-/// The live venue until the execution issue delivers it: it can confirm that a live agent has nothing open, which is
-/// all a Stop needs today, and refuses anything else.
+/// The live venue until the execution module is registered: it can confirm that a live agent has nothing open, which
+/// is all a Stop needs then, and refuses anything else.
 /// </summary>
 internal sealed class PendingLiveOrderVenue : IOrderVenue
 {
-    public const string NotAvailable = "Live execution arrives with FR-EXE (#13).";
+    public const string NotAvailable = "Live execution is not registered.";
 
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
 
@@ -63,6 +66,18 @@ internal sealed class PendingLiveOrderVenue : IOrderVenue
         throw new NotSupportedException(NotAvailable);
 
     public Task<Order> PlaceCloseAsync(Agent agent, Trade trade, Guid? decisionId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException(NotAvailable);
+
+    public Task<Order> PlacePartialCloseAsync(Agent agent, Trade trade, decimal quantity, Guid decisionId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException(NotAvailable);
+
+    public Task<IReadOnlyList<Order>> ReplaceStopAsync(Agent agent, Trade trade, decimal stop, string reason, Guid? decisionId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException(NotAvailable);
+
+    public Task<IReadOnlyList<Order>> ReplaceTargetsAsync(Agent agent, Trade trade, IReadOnlyList<decimal> targets, Guid? decisionId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException(NotAvailable);
+
+    public Task<Order> ExpireEntryAsync(Agent agent, Order entry, CancellationToken cancellationToken) =>
         throw new NotSupportedException(NotAvailable);
 
     public async Task<int> CancelOpenOrdersAsync(Agent agent, CancellationToken cancellationToken)
@@ -80,6 +95,9 @@ internal sealed class PendingLiveOrderVenue : IOrderVenue
     }
 
     public Task<decimal> GetEquityAsync(Agent agent, CancellationToken cancellationToken) =>
+        throw new NotSupportedException(NotAvailable);
+
+    public Task<decimal> GetAvailableAsync(Agent agent, CancellationToken cancellationToken) =>
         throw new NotSupportedException(NotAvailable);
 }
 

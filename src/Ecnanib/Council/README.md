@@ -61,7 +61,9 @@ Rules the module enforces:
   the rationale prefixed by the limits that failed, the Risk Manager's proposal staying on its role row. With a
   position, hold is price-free; modify may only tighten the stop (a widening stop is dropped, one that would trigger
   at once fails into hold), replace targets and take a partial (`decisions.partial_fraction`); close passes through.
-  Sizing, notional, minimum notional and balance belong to execution (#13), which appends its own checks.
+  Sizing, notional, minimum notional, balance and the daily loss in money are the execution module's (#13), recorded in
+  `decisions.execution_check` in the same shape (`LimitCheck`, `LimitNames` and `ExecutionLimitNames` live in the agents
+  abstractions); a rejection there rewrites the decision as no-trade the way a failed limit does here.
 - **Logging** (FR-LOG-04): one line per role with agent, evaluation, role, provider, model, status, attempts,
   latency and tokens, one line for the final action and the limits that were not passed; never prompt text or key
   material. The AI module logs each attempt.
@@ -81,7 +83,7 @@ deprecated models flagged) or a provider and model id typed by hand, the Appendi
 provider's newest catalog model) and single-model mode (FR-AI-03, FR-AI-04); every recent evaluation links to
 `/agents/{id}/evaluations/{evaluationId}`, which shows the strategy output, each role's turn (status, provider, model,
 cost, proposal, assessment, flags, the document and the input it received) and the final decision with its limits
-check (FR-AI-14) and, for a setup the council did not take, its shadow outcome (the experience module's, FR-EXP-03).
+check (FR-AI-14), the execution check appended at order time, and, for a setup the council did not take, its shadow outcome (the experience module's, FR-EXP-03).
 The deliberation animation is the UI issue's (FR-UI-03 b).
 
 Tests: `dotnet test` runs offline (the sequence over faked providers: order, disabled roles, the retry, failures,

@@ -10,6 +10,7 @@ using Ecnanib.Council.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
+using Ecnanib.Execution;
 using Ecnanib.Keys;
 using Ecnanib.ModelSync;
 using Ecnanib.Strategies;
@@ -52,7 +53,8 @@ internal static class CouncilTestHost
         FakeExchangeClientFactory? exchange = null,
         FakeAiClientFactory? ai = null,
         FakeMarketStreams? streams = null,
-        Action<IServiceCollection>? configure = null)
+        Action<IServiceCollection>? configure = null,
+        bool execution = false)
     {
         var values = new Dictionary<string, string?>();
         if (connectionString is not null)
@@ -68,6 +70,8 @@ internal static class CouncilTestHost
         services.AddModelSync(configuration);
         services.AddStrategies();
         services.AddCouncil(configuration);
+        if (execution)
+            services.AddExecution(configuration);
         services.AddAgents(configuration);
         services.AddKeys(configuration);
         services.AddSingleton<IExchangeClientFactory>(exchange ?? new FakeExchangeClientFactory());

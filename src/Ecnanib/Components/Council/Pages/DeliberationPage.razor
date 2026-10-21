@@ -173,6 +173,26 @@
                     </table>
                 </div>
             }
+            @if (decision.ExecutionChecks.Count > 0)
+            {
+                <h3>Execution check</h3>
+                <p class="hint">What execution found at order time: the size from equity, risk and stop distance, the notional and quantity caps, the minimum notional, the free balance and the daily loss.</p>
+                <div class="table-wrap">
+                    <table class="agents limits">
+                        <thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
+                        <tbody>
+                            @foreach (var check in decision.ExecutionChecks)
+                            {
+                                <tr>
+                                    <td>@check.Limit</td>
+                                    <td class="@CouncilMessages.LimitClass(check.Status)">@CouncilMessages.Limit(check.Status)</td>
+                                    <td>@check.Detail</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
         </section>
     }
 }

@@ -20,7 +20,7 @@ namespace Ecnanib.Agents.Services;
 /// on start (NFR-REL-01), lifts daily-loss pauses at their time (FR-EXE-09) and finalises evaluations a crash left
 /// open. Shorter timeframes are served first so a 00:00 UTC burst never starves 15m agents behind 1D councils.
 /// </summary>
-internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvaluationHost
+internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvaluationHost, IAgentGates
 {
     /// <summary>A candle that closed this long before the agent was tracked is still evaluated: the hub's safety poll hands over the candle that closed just before a stream opened.</summary>
     internal static readonly TimeSpan TrackingTolerance = TimeSpan.FromMinutes(1);
@@ -93,6 +93,12 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         var gate = GateFor(agentId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         return new Releaser(gate);
+    }
+
+    public IDisposable? TryLock(Guid agentId)
+    {
+        var gate = GateFor(agentId);
+        return gate.Wait(0) ? new Releaser(gate) : null;
     }
 
     public void CancelEvaluation(Guid agentId)

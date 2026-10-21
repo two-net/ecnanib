@@ -71,4 +71,21 @@ public interface IFuturesAccountClient : IExchangeAccountClient
 
     /// <summary>Sets the margin type for a symbol. "No need to change" responses count as success.</summary>
     Task SetMarginTypeAsync(string symbol, MarginType marginType, CancellationToken ct);
+
+    /// <summary>
+    /// Places a stop or take-profit through the conditional (algo) order endpoint, the only one Binance accepts them on
+    /// since December 2025 (FR-EXE-02). Placed exactly once; the caller relies on the client algo id (FR-EXE-07).
+    /// </summary>
+    Task<ConditionalOrder> PlaceConditionalOrderAsync(ConditionalOrderRequest request, CancellationToken ct);
+
+    /// <summary>Reads a conditional order by algo id or client algo id; unknown ones surface as <see cref="ExchangeErrorKind.UnknownOrder"/>.</summary>
+    Task<ConditionalOrder> GetConditionalOrderAsync(OrderRef order, CancellationToken ct);
+
+    /// <summary>Cancels a conditional order that has not triggered yet; a triggered one is cancelled as the regular order it became.</summary>
+    Task<ConditionalOrder> CancelConditionalOrderAsync(OrderRef order, CancellationToken ct);
+
+    Task<IReadOnlyList<ConditionalOrder>> GetOpenConditionalOrdersAsync(string? symbol, CancellationToken ct);
+
+    /// <summary>The funding payments of a symbol in a period, oldest first (FR-EXE-12).</summary>
+    Task<IReadOnlyList<FundingPayment>> GetFundingPaymentsAsync(string symbol, DateTimeOffset from, DateTimeOffset? to, CancellationToken ct);
 }

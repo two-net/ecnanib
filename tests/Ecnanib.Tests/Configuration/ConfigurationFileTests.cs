@@ -5,6 +5,7 @@ using Ecnanib.Configuration;
 using Ecnanib.Council.Configuration;
 using Ecnanib.Database.Configuration;
 using Ecnanib.Exchange.Configuration;
+using Ecnanib.Execution.Configuration;
 using Ecnanib.Experience.Configuration;
 using Ecnanib.Keys.Configuration;
 using Ecnanib.MarketData.Configuration;
@@ -109,7 +110,7 @@ public class ConfigurationFileTests
         var ex = Assert.Throws<ConfigurationException>(() => Load(path));
 
         Assert.Contains($"Configuration file {path} has unknown top-level section(s): 'AllowedHosts', 'Databse'.", ex.Message);
-        Assert.Contains("Known sections: Accounts, Agents, Council, Database, Exchange, Experience, Keys, Logging, MarketData, Paper, Providers, Retention, RiskCaps, Server.", ex.Message);
+        Assert.Contains("Known sections: Accounts, Agents, Council, Database, Exchange, Execution, Experience, Keys, Logging, MarketData, Paper, Providers, Retention, RiskCaps, Server.", ex.Message);
     }
 
     [Fact]
@@ -168,7 +169,7 @@ public class ConfigurationFileTests
             ServerOptions.SectionName, DatabaseOptions.SectionName, ConfigurationFile.LoggingSection, ExchangeOptions.SectionName,
             AiOptions.SectionName, AgentLimitsOptions.SectionName, AgentsOptions.SectionName, RiskCapsOptions.SectionName, PaperOptions.SectionName,
             RetentionOptions.SectionName, AccountsOptions.SectionName, KeysOptions.SectionName, CouncilOptions.SectionName, ExperienceOptions.SectionName,
-            MarketDataOptions.SectionName,
+            MarketDataOptions.SectionName, ExecutionOptions.SectionName,
         ];
 
         // Accounts (fair-use limits) and Agents (runtime settings) bind the same section, so the constant appears twice here and once in the file.

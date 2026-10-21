@@ -78,7 +78,11 @@ internal sealed class BinanceUserDataSource : IUserDataSource
                 onStrategyUpdate: null,
                 onGridUpdate: null,
                 onConditionalOrderTriggerRejectUpdate: null,
-                onAlgoOrderUpdate: null,
+                onAlgoOrderUpdate: e => Safe(() =>
+                {
+                    var order = BinanceMappers.ToConditionalOrder(e.Data);
+                    onEvent(new UserDataEvent.ConditionalOrderUpdate(keyId, market, order.UpdatedAt, order));
+                }, "futures algo order update"),
                 ct: ct).ConfigureAwait(false);
         }
 
@@ -100,11 +104,13 @@ internal sealed class BinanceUserDataSource : IUserDataSource
         var openOrders = BinanceErrorTranslator.EnsureSuccess(await rest.UsdFuturesApi.Trading.GetOpenOrdersAsync(ct: token).ConfigureAwait(false), "open orders", market, now);
         var positions = BinanceErrorTranslator.EnsureSuccess(await rest.UsdFuturesApi.Trading.GetPositionsAsync(ct: token).ConfigureAwait(false), "positions", market, now);
         var balances = BinanceErrorTranslator.EnsureSuccess(await rest.UsdFuturesApi.Account.GetBalancesAsync(ct: token).ConfigureAwait(false), "balances", market, now);
+        var conditional = BinanceErrorTranslator.EnsureSuccess(await rest.UsdFuturesApi.Trading.GetOpenConditionalOrdersAsync(ct: token).ConfigureAwait(false), "open conditional orders", market, now);
         var timestamp = _time.GetUtcNow();
         return new UserDataEvent.Snapshot(key.KeyId, market, timestamp,
             openOrders.Select(o => BinanceMappers.ToOrder(o)).ToArray(),
             positions.Select(p => BinanceMappers.ToPosition(p, timestamp)).ToArray(),
-            balances.Select(b => BinanceMappers.ToBalance(b)).ToArray());
+            balances.Select(b => BinanceMappers.ToBalance(b)).ToArray(),
+            conditional.Select(BinanceMappers.ToConditionalOrder).ToArray());
     }, RetryProfile.Query, "user data snapshot", ct);
 
     private void Safe(Action action, string what)

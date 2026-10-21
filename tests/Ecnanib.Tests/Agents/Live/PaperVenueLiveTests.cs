@@ -43,8 +43,8 @@ public class PaperVenueLiveTests : IClassFixture<DatabaseLiveFixture>
             return ValueTask.CompletedTask;
         });
 
-        var order = await venue.PlaceEntryAsync(agent, new EntryPlacement(decision.Id, PositionSide.Long, OrderType.Market, null, 0.1m, 90m, 120m, null), Ct);
-        var again = await venue.PlaceEntryAsync(agent, new EntryPlacement(decision.Id, PositionSide.Long, OrderType.Market, null, 0.1m, 90m, 120m, null), Ct);
+        var order = await venue.PlaceEntryAsync(agent, Placement(decision.Id, PositionSide.Long, OrderType.Market, null, 0.1m, 90m, 120m, null), Ct);
+        var again = await venue.PlaceEntryAsync(agent, Placement(decision.Id, PositionSide.Long, OrderType.Market, null, 0.1m, 90m, 120m, null), Ct);
 
         Assert.Equal(order.Id, again.Id);
         Assert.Equal(PaperClientOrderId.For(agent.Id, decision.Id, PaperClientOrderId.Entry, 0), order.ClientOrderId);
@@ -98,8 +98,8 @@ public class PaperVenueLiveTests : IClassFixture<DatabaseLiveFixture>
         var simulator = await StartSimulatorAsync(provider, logs);
         var venue = provider.GetRequiredService<IOrderVenues>().For(AgentMode.Paper);
 
-        var limit = await venue.PlaceEntryAsync(agent, new EntryPlacement(decision.Id, PositionSide.Long, OrderType.Limit, 95m, 0.2m, 90m, null, null), Ct);
-        var expiring = await venue.PlaceEntryAsync(agent, new EntryPlacement(stale.Id, PositionSide.Long, OrderType.Limit, 80m, 0.2m, 70m, null, AgentsLiveSeed.Now.AddSeconds(-1)), Ct);
+        var limit = await venue.PlaceEntryAsync(agent, Placement(decision.Id, PositionSide.Long, OrderType.Limit, 95m, 0.2m, 90m, null, null), Ct);
+        var expiring = await venue.PlaceEntryAsync(agent, Placement(stale.Id, PositionSide.Long, OrderType.Limit, 80m, 0.2m, 70m, null, AgentsLiveSeed.Now.AddSeconds(-1)), Ct);
         await streams.PushPriceAsync(AgentsLiveSeed.SpotBtc, new PriceTick("BTCUSDT", 96m, AgentsLiveSeed.Now));
         await Wait.UntilAsync(() => Status(expiring.Id) == OrderStatus.Expired, "expired");
         Assert.Equal(OrderStatus.New, Status(limit.Id));
@@ -187,10 +187,10 @@ public class PaperVenueLiveTests : IClassFixture<DatabaseLiveFixture>
         var simulator = await StartSimulatorAsync(provider, logs);
         var venue = provider.GetRequiredService<IOrderVenues>().For(AgentMode.Paper);
 
-        await Assert.ThrowsAsync<ArgumentException>(() => venue.PlaceEntryAsync(spot, new EntryPlacement(decision.Id, PositionSide.Short, OrderType.Market, null, 0.1m, 110m, null, null), Ct));
-        await Assert.ThrowsAsync<ArgumentException>(() => venue.PlaceEntryAsync(futures, new EntryPlacement(decision.Id, PositionSide.Short, OrderType.Limit, 100m, 0.1m, 95m, null, null), Ct));
-        await Assert.ThrowsAsync<ArgumentException>(() => venue.PlaceEntryAsync(futures, new EntryPlacement(decision.Id, PositionSide.Long, OrderType.Market, null, 0.1m, 0m, null, null), Ct));
-        var order = await venue.PlaceEntryAsync(futures, new EntryPlacement(decision.Id, PositionSide.Short, OrderType.Limit, 100m, 0.1m, 110m, 80m, null), Ct);
+        await Assert.ThrowsAsync<ArgumentException>(() => venue.PlaceEntryAsync(spot, Placement(decision.Id, PositionSide.Short, OrderType.Market, null, 0.1m, 110m, null, null), Ct));
+        await Assert.ThrowsAsync<ArgumentException>(() => venue.PlaceEntryAsync(futures, Placement(decision.Id, PositionSide.Short, OrderType.Limit, 100m, 0.1m, 95m, null, null), Ct));
+        await Assert.ThrowsAsync<ArgumentException>(() => venue.PlaceEntryAsync(futures, Placement(decision.Id, PositionSide.Long, OrderType.Market, null, 0.1m, 0m, null, null), Ct));
+        var order = await venue.PlaceEntryAsync(futures, Placement(decision.Id, PositionSide.Short, OrderType.Limit, 100m, 0.1m, 110m, 80m, null), Ct);
         Assert.Equal(OrderSide.Sell, order.Side);
         await using (var db = _fixture.CreateContext())
             Assert.Empty(await db.Orders.Where(o => o.AgentId == spot.Id).ToListAsync(Ct));
@@ -265,7 +265,7 @@ public class PaperVenueLiveTests : IClassFixture<DatabaseLiveFixture>
         await using var _ = provider;
         var simulator = await StartSimulatorAsync(provider, logs);
         var venue = provider.GetRequiredService<IOrderVenues>().For(AgentMode.Paper);
-        var order = await venue.PlaceEntryAsync(agent, new EntryPlacement(decision.Id, PositionSide.Long, OrderType.Limit, 95m, 0.1m, 90m, 130m, null), Ct);
+        var order = await venue.PlaceEntryAsync(agent, Placement(decision.Id, PositionSide.Long, OrderType.Limit, 95m, 0.1m, 90m, 130m, null), Ct);
 
         Assert.Equal(1, await simulator.ReloadAsync(Ct));
         Assert.Equal([(MarketType.Spot, "BTCUSDT")], simulator.Symbols);
@@ -274,19 +274,45 @@ public class PaperVenueLiveTests : IClassFixture<DatabaseLiveFixture>
         await using (var db = _fixture.CreateContext())
         {
             var trade = await db.Trades.AsNoTracking().SingleAsync(t => t.AgentId == agent.Id, Ct);
+            Assert.Equal(0.1m, trade.RemainingSize);
             Assert.Equal(90m, (await db.Orders.AsNoTracking().SingleAsync(o => o.TradeId == trade.Id && o.Purpose == OrderPurpose.StopLoss, Ct)).StopPrice);
-            Assert.Equal(130m, (await db.Orders.AsNoTracking().SingleAsync(o => o.TradeId == trade.Id && o.Purpose == OrderPurpose.TakeProfit, Ct)).Price);
+            // Rebuilt from the database, the entry took the strategy's partial fraction (0.33): the partial unit at the one target, the rest trailing.
+            var target = await db.Orders.AsNoTracking().SingleAsync(o => o.TradeId == trade.Id && o.Purpose == OrderPurpose.TakeProfit, Ct);
+            Assert.Equal((130m, 0.033m), (target.Price, target.Quantity));
         }
 
+        // After a second reload the units come from the rows: the partial unit's target takes it off and the rest stays open until the stop.
         Assert.Equal(1, await simulator.ReloadAsync(Ct));
         await streams.PushPriceAsync(AgentsLiveSeed.SpotBtc, new PriceTick("BTCUSDT", 131m, AgentsLiveSeed.Now));
-        await Wait.UntilAsync(() => simulator.BookCount == 0, "position closed after reload");
+        await Wait.UntilAsync(() => RemainingSize(agent.Id) == 0.067m, "partial taken after reload");
         await using (var db = _fixture.CreateContext())
-            Assert.Equal(TradeExitReason.Target, (await db.Trades.AsNoTracking().SingleAsync(t => t.AgentId == agent.Id, Ct)).ExitReason);
+        {
+            var trade = await db.Trades.AsNoTracking().SingleAsync(t => t.AgentId == agent.Id, Ct);
+            Assert.Null(trade.ClosedAt);
+            // Net of the entry fee (95 × 0.1 × 0.1%) and the exit fee.
+            Assert.Equal(-0.0095m + 130m * 0.033m - 95m * 0.033m - 130m * 0.033m * 0.001m, trade.RealizedPnl);
+            var target = await db.Orders.AsNoTracking().SingleAsync(o => o.TradeId == trade.Id && o.Purpose == OrderPurpose.TakeProfit, Ct);
+            Assert.Equal((OrderStatus.Filled, 0.033m), (target.Status, target.FilledQuantity));
+            Assert.Equal(0.067m, (await db.Orders.AsNoTracking().SingleAsync(o => o.TradeId == trade.Id && o.Purpose == OrderPurpose.StopLoss, Ct)).Quantity);
+        }
+
+        await streams.PushPriceAsync(AgentsLiveSeed.SpotBtc, new PriceTick("BTCUSDT", 89m, AgentsLiveSeed.Now));
+        await Wait.UntilAsync(() => simulator.BookCount == 0, "remainder stopped out after reload");
+        await using (var db = _fixture.CreateContext())
+        {
+            var trade = await db.Trades.AsNoTracking().SingleAsync(t => t.AgentId == agent.Id, Ct);
+            Assert.Equal(TradeExitReason.Stop, trade.ExitReason);
+            Assert.Equal(0m, trade.RemainingSize);
+            Assert.Equal(2, await db.Orders.AsNoTracking().CountAsync(o => o.TradeId == trade.Id && o.Purpose != OrderPurpose.Entry && o.Status == OrderStatus.Filled, Ct));
+        }
 
         await simulator.StopAsync(Ct);
         await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
     }
+
+    /// <summary>An entry whose whole size takes the one target (partial fraction 1), as a position too small to split is protected.</summary>
+    private static EntryPlacement Placement(Guid decisionId, PositionSide side, OrderType type, decimal? price, decimal quantity, decimal stop, decimal? target, DateTimeOffset? expiresAt) =>
+        new(decisionId, side, type, price, quantity, stop, target is { } t ? [t] : [], 1m, expiresAt);
 
     private static async Task<PaperFillSimulator> StartSimulatorAsync(ServiceProvider provider, TestLoggerProvider logs)
     {
@@ -300,6 +326,12 @@ public class PaperVenueLiveTests : IClassFixture<DatabaseLiveFixture>
     {
         using var db = _fixture.CreateContext();
         return db.Orders.AsNoTracking().Where(o => o.Id == orderId).Select(o => (OrderStatus?)o.Status).SingleOrDefault();
+    }
+
+    private decimal? RemainingSize(Guid agentId)
+    {
+        using var db = _fixture.CreateContext();
+        return db.Trades.AsNoTracking().Where(t => t.AgentId == agentId).Select(t => (decimal?)t.RemainingSize).SingleOrDefault();
     }
 
     private DateTimeOffset? ClosedAt(Guid tradeId)

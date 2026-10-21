@@ -42,8 +42,13 @@ Rules the module enforces:
   capped at Warning in the configuration file (`ecnanib.json`) and the connection string never appears in a validation message.
 - `Database:RetryOnFailureCount` enables Npgsql's retrying execution strategy; code that opens its own transaction
   must run it through `Database.CreateExecutionStrategy().ExecuteAsync(...)`.
-- Paper equity (FR-AGT-11, FR-EXE-04) is derived from the configured starting balance (`Paper:StartingBalance`) and the agent's own closed paper trades;
-  the daily loss (FR-EXE-09) is derived from `trades.realized_pnl` per UTC day. Neither has a column.
+- Paper equity (FR-AGT-11, FR-EXE-04) is derived from the configured starting balance (`Paper:StartingBalance`) and the agent's own paper trades' realized P&L;
+  the daily loss (FR-EXE-09) is derived from `orders.realized_pnl` of the exit fills and `orders.fee` of the entry fills per UTC day. Neither has a column.
+- A trade's `size` is what was opened and never changes; `remaining_size` is what partial exits left (0 once closed,
+  checked by `ck_trades_remaining_size`). Exit orders carry their fill's `fee` and `realized_pnl`; the trade accumulates
+  them and is net of fees and funding at the close. A futures stop or take-profit placed through the conditional (algo)
+  endpoint keeps its algo id in `orders.exchange_algo_id`; `exchange_order_id` is the actual order it became once
+  triggered. `decisions.execution_check` holds the execution module's checks beside the council's `limits_check`.
 - Enums are text except the ordinal ones compared by range: `log_entries.level` and the entry-window days are
   integers, so "Warning and above" and day ranges translate correctly.
 - `experience_stats` is written by the experience module's refresher alone, which replaces every row each run; the

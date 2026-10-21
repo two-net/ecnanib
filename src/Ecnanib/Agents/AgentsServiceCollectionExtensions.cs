@@ -17,7 +17,8 @@ public static class AgentsServiceCollectionExtensions
     /// <see cref="IKeyDependentAgents"/>; the <see cref="AgentScheduler"/> and <see cref="PaperFillSimulator"/> hosted
     /// services; and the seams (<see cref="IMarketDataLoader"/>, <see cref="ISymbolCatalog"/>, <see cref="ICouncil"/>,
     /// <see cref="IExecutionService"/>, <see cref="IExperienceTracker"/>, <see cref="ICouncilSuggestions"/>, the live
-    /// <see cref="IOrderVenue"/>) with their fail-safe defaults, which an implementation registered earlier replaces. Requires <c>AddDatabase</c>, <c>AddExchange</c>, <c>AddAccounts</c>
+    /// <see cref="IOrderVenue"/>) with their fail-safe defaults, which an implementation registered earlier replaces;
+    /// <see cref="IAgentGates"/> and <see cref="IDailyLossLimit"/> for the execution module. Requires <c>AddDatabase</c>, <c>AddExchange</c>, <c>AddAccounts</c>
     /// and <c>AddStrategies</c> (the <see cref="IStrategyCatalog"/> and <see cref="IStrategyEngine"/>) before this
     /// call, and <c>AddKeys</c> after it, so the runtime's key handling is kept. Connects to nothing at registration.
     /// </summary>
@@ -67,6 +68,8 @@ public static class AgentsServiceCollectionExtensions
         services.TryAddSingleton<EvaluationPipeline>();
         services.TryAddSingleton<AgentScheduler>();
         services.TryAddSingleton<IAgentRuntime>(sp => sp.GetRequiredService<AgentScheduler>());
+        services.TryAddSingleton<IAgentGates>(sp => sp.GetRequiredService<AgentScheduler>());
+        services.TryAddSingleton<IDailyLossLimit, DailyLossLimit>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AgentScheduler>(sp => sp.GetRequiredService<AgentScheduler>()));
 
         services.TryAddSingleton<IAgentService, AgentService>();

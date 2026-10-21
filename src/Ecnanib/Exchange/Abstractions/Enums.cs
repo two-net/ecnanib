@@ -102,6 +102,22 @@ public enum OcoListStatus
     Other = 99,
 }
 
+/// <summary>Lifecycle of a USD-M futures conditional (algo) order: it waits for its trigger, then becomes a regular order (FR-EXE-02).</summary>
+public enum ConditionalOrderStatus
+{
+    New = 1,
+    /// <summary>The trigger was met and the order is being handed to the matching engine.</summary>
+    Triggering = 2,
+    /// <summary>The actual order is in the matching engine.</summary>
+    Triggered = 3,
+    /// <summary>The actual order was filled or cancelled in the matching engine.</summary>
+    Finished = 4,
+    Canceled = 5,
+    Rejected = 6,
+    Expired = 7,
+    Other = 99,
+}
+
 public enum RateLimitKind
 {
     RequestWeight = 1,
@@ -142,6 +158,8 @@ public enum ExchangeErrorKind
     NoPosition,
     IncorrectState,
     SystemError,
+    /// <summary>Futures -4120: a stop or take-profit type sent to the plain order endpoint; it belongs to the conditional (algo) order endpoint.</summary>
+    ConditionalOrderRequired,
 }
 
 public static class CandleIntervalExtensions
@@ -196,4 +214,14 @@ public static class OrderStatusExtensions
 
     public static bool IsTerminal(this OrderStatus status) =>
         status is OrderStatus.Filled or OrderStatus.Canceled or OrderStatus.Rejected or OrderStatus.Expired;
+}
+
+public static class ConditionalOrderStatusExtensions
+{
+    /// <summary>Still waiting for its trigger, or triggered with the actual order still working.</summary>
+    public static bool IsOpen(this ConditionalOrderStatus status) =>
+        status is ConditionalOrderStatus.New or ConditionalOrderStatus.Triggering or ConditionalOrderStatus.Triggered;
+
+    public static bool IsTerminal(this ConditionalOrderStatus status) =>
+        status is ConditionalOrderStatus.Finished or ConditionalOrderStatus.Canceled or ConditionalOrderStatus.Rejected or ConditionalOrderStatus.Expired;
 }

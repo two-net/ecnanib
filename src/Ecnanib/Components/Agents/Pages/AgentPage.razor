@@ -145,7 +145,13 @@
                         {
                             <tr>
                                 <td>@position.Side</td>
-                                <td>@position.Size</td>
+                                <td>
+                                    @position.RemainingSize
+                                    @if (position.RemainingSize != position.Size)
+                                    {
+                                        <span class="muted">of @position.Size</span>
+                                    }
+                                </td>
                                 <td>@position.EntryPrice</td>
                                 <td>@(position.CurrentStop?.ToString() ?? "none")</td>
                                 <td>@Stamp(position.OpenedAt)</td>
