@@ -10,6 +10,18 @@ public class BinanceErrorTranslatorTests
     private static readonly DateTimeOffset Now = new(2026, 10, 18, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void AStopSentToThePlainOrderEndpointIsTheConditionalOrderRequiredKind()
+    {
+        var error = new ServerError(-4120, new ErrorInfo(ErrorType.Unknown, "Order type not supported for this endpoint. Please use the Algo Order API endpoints instead."), null);
+
+        var ex = Assert.IsType<ExchangeRequestException>(BinanceErrorTranslator.Translate(error, "place order", MarketType.UsdFutures, Now));
+
+        Assert.Equal(ExchangeErrorKind.ConditionalOrderRequired, ex.Kind);
+        Assert.Equal(-4120, ex.ExchangeCode);
+        Assert.False(ex.IsTransient);
+    }
+
+    [Fact]
     public void ServerRateLimitBecomesRateLimitedWithRetryAfter()
     {
         var error = new ServerRateLimitError("Too many requests", null)

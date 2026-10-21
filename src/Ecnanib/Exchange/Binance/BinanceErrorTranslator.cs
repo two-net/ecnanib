@@ -148,6 +148,7 @@ internal static partial class BinanceErrorTranslator
             -1121 => ExchangeErrorKind.UnknownSymbol,
             -1111 or -1013 => ExchangeErrorKind.InvalidQuantity,
             -4061 or -4059 or -4046 or -4067 => ExchangeErrorKind.IncorrectState,
+            -4120 => ExchangeErrorKind.ConditionalOrderRequired,
             _ => ExchangeErrorKind.Unknown,
         },
     };

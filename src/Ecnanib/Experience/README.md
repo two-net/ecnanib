@@ -87,12 +87,11 @@ R, P&L, fees, funding, excursions, exit reason and the number of decisions in th
 evaluation's deliberation) and a council hint naming the roles where the user's experience suggests another provider
 or model. `/agents/{id}/evaluations/{evaluationId}` shows the decision's shadow outcome when it has one.
 
-Known gaps: the refresh is a full recompute (the counts and sums make an incremental one possible later). Until
-execution (#13) lands no trade is opened in the running application, so the trade figures, the recent outcomes and the
-suggestions stay empty while turns, clamps, failures, latency and shadow outcomes are real at once; funding per trade
-comes from exchange data with execution (FR-EXE-12). A shadow of an agent that stopped expires stale rather than
-resolving from the candle table the market-data module keeps, a follow-up. Paper excursions are tracked per tick
-in memory and lost on a restart (agents module).
+Known gaps: the refresh is a full recompute (the counts and sums make an incremental one possible later). A shadow of
+an agent that stopped expires stale rather than resolving from the candle table the market-data module keeps, a
+follow-up. Paper excursions are tracked per tick in memory and lost on a restart (agents module); live trades carry no
+excursions (execution module). An entry the execution module rejects (balance, minimum notional, daily loss) is rewritten
+as no-trade with the limits in front of its rationale, so it leaves a `limits` shadow like a hard-limit rejection.
 
 Tests: `dotnet test` runs offline (the walk's rules, the metrics' arithmetic and roll-ups, the summary text, when a
 decision leaves a shadow, the suggestion choice, the leaderboard aggregation and order, the options, the registration

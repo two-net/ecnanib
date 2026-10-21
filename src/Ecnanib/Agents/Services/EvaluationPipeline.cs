@@ -20,9 +20,12 @@ internal sealed record EvaluationRun(AgentTrackingInfo Agent, Candle Candle, Dat
 /// The FR-AGT-10 pipeline for one agent and one closed candle: load market data → strategy engine → council when
 /// needed (FR-AI-08) → execute → persist → log → notify. The evaluation row is inserted first with
 /// <see cref="EvaluationOutcome.InProgress"/>; its unique (agent, candle) index makes a second run of the same candle
-/// a no-op (FR-AGT-09). Everything up to the council honours the cancellable token (deadline, Stop, shutdown);
-/// execution and persistence do not, because a cancelled token does not recall an order already sent. The experience
-/// step (<see cref="IExperienceTracker"/>, FR-EXP-03) runs last, whenever market data loaded, and never changes the outcome.
+/// a no-op (FR-AGT-09). With open orders or trades the execution module's management step runs before the council
+/// (expiry, market fallback, breakeven and trailing, FR-EXE-03/06/08) and the open state is reloaded, so the council
+/// sees what the rules already did. Everything up to the council honours the cancellable token (deadline, Stop,
+/// shutdown); execution and persistence do not, because a cancelled token does not recall an order already sent. The
+/// experience step (<see cref="IExperienceTracker"/>, FR-EXP-03) runs last, whenever market data loaded, and never
+/// changes the outcome.
 /// </summary>
 internal sealed class EvaluationPipeline
 {
@@ -152,20 +155,30 @@ internal sealed class EvaluationPipeline
         var parameters = strategy.Resolve(stored);
         MarketSnapshot? market = null;
         StrategyOutput? output = null;
+        string? managementNote = null;
         try
         {
             market = await _loader.LoadAsync(agent, strategy, run.Agent.Key, candle, cancellable).ConfigureAwait(false);
             output = _engine.Evaluate(new StrategyContext(agent, strategy, parameters, market, entriesAllowed));
             strategyJson = JsonSerializer.SerializeToElement(output, Json);
 
-            IReadOnlyList<Trade> openTrades;
-            IReadOnlyList<Order> openOrders;
-            await using (var db = await _factory.CreateDbContextAsync(cancellable).ConfigureAwait(false))
+            var (openTrades, openOrders) = await LoadOpenAsync(agentId, cancellable).ConfigureAwait(false);
+            var venue = _venues.For(agent.Mode);
+
+            // FR-EXE-03/06/08: the rules manage what is open before the council is asked; a fallback entry placed here
+            // takes the setup off the table for this candle.
+            if (openTrades.Count > 0 || openOrders.Count > 0)
             {
-                openTrades = await db.Trades.AsNoTracking().Where(t => t.AgentId == agentId && t.ClosedAt == null).OrderBy(t => t.OpenedAt).ToListAsync(cancellable).ConfigureAwait(false);
-                openOrders = await db.Orders.AsNoTracking()
-                    .Where(o => o.AgentId == agentId && (o.Status == OrderStatus.New || o.Status == OrderStatus.PartiallyFilled))
-                    .OrderBy(o => o.CreatedAt).ToListAsync(cancellable).ConfigureAwait(false);
+                var request = new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, openTrades, openOrders, _caps.Value, venue, run.InterruptedPreviously, exchangeKey, entriesAllowed, run.DeadlineAt);
+                var managed = await ManageAsync(request, cancellable, stopping).ConfigureAwait(false);
+                if (managed is not null)
+                {
+                    managementNote = managed.Note;
+                    fault ??= managed.Fault;
+                    if (managed.EntryPlaced)
+                        entriesAllowed = false;
+                    (openTrades, openOrders) = await LoadOpenAsync(agentId, cancellable).ConfigureAwait(false);
+                }
             }
 
             // FR-AI-08, FR-AGT-05: a Paused agent opens nothing, so only an open position makes the council worth its cost.
@@ -173,7 +186,7 @@ internal sealed class EvaluationPipeline
             if (!councilNeeded)
             {
                 outcome = EvaluationOutcome.NoAction;
-                detail = output.Note ?? (entriesAllowed ? "No setup and no open position." : "Paused: no open position to manage.");
+                detail = Join(managementNote, output.Note ?? (entriesAllowed ? "No setup and no open position." : agent.State == AgentState.Running ? "No setup; the open entry is managed." : "Paused: no open position to manage."));
             }
             else
             {
@@ -217,11 +230,11 @@ internal sealed class EvaluationPipeline
                 }
                 else
                 {
-                    var venue = _venues.For(agent.Mode);
-                    var request = new ExecutionRequest(agent, decision, openTrades, openOrders, _caps.Value, venue, run.InterruptedPreviously, exchangeKey);
-                    var result = await _execution.ExecuteAsync(request, stopping).ConfigureAwait(false);
+                    var request = new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, openTrades, openOrders, _caps.Value, venue, run.InterruptedPreviously, exchangeKey, entriesAllowed, run.DeadlineAt);
+                    var result = await _execution.ExecuteAsync(request, decision, stopping).ConfigureAwait(false);
                     outcome = EvaluationOutcome.Decided;
-                    detail = result.Note;
+                    detail = Join(managementNote, result.Note);
+                    fault ??= result.Fault;
                 }
             }
         }
@@ -253,10 +266,41 @@ internal sealed class EvaluationPipeline
             agentId, candle.OpenTime, agent.Timeframe.ToLabel(), outcome, detail is null ? "" : " - " + detail);
         _events.Publish(new EvaluationFinished(agentId, agent.UserId, finishedAt, evaluation.Id, candle.OpenTime, outcome));
 
-        // FR-SYNC-04: an agent whose council cannot run as configured stops being evaluated until the user fixes it.
+        // FR-SYNC-04, FR-EXE-11: an agent whose council or venue cannot run as configured stops being evaluated until the user fixes it.
         if (fault is not null)
             await host.FailAsync(agentId, fault, stopping).ConfigureAwait(false);
     }
+
+    private async Task<(IReadOnlyList<Trade> Trades, IReadOnlyList<Order> Orders)> LoadOpenAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var trades = await db.Trades.AsNoTracking().Where(t => t.AgentId == agentId && t.ClosedAt == null).OrderBy(t => t.OpenedAt).ToListAsync(cancellationToken).ConfigureAwait(false);
+        var orders = await db.Orders.AsNoTracking()
+            .Where(o => o.AgentId == agentId && (o.Status == OrderStatus.New || o.Status == OrderStatus.PartiallyFilled))
+            .OrderBy(o => o.CreatedAt).ToListAsync(cancellationToken).ConfigureAwait(false);
+        return (trades, orders);
+    }
+
+    /// <summary>The management step; a failure is logged and leaves protection as it is (NFR-REL-03), the evaluation goes on.</summary>
+    private async Task<ExecutionResult?> ManageAsync(ExecutionRequest request, CancellationToken cancellable, CancellationToken stopping)
+    {
+        try
+        {
+            return await _execution.ManageAsync(request, cancellable, stopping).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (stopping.IsCancellationRequested || cancellable.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Position management for evaluation {EvaluationId} of agent {AgentId} failed; the protective orders stay as they are", request.Evaluation.Id, request.Agent.Id);
+            return null;
+        }
+    }
+
+    private static string? Join(string? first, string? second) =>
+        string.IsNullOrEmpty(first) ? second : string.IsNullOrEmpty(second) ? first : $"{first} {second}";
 
     /// <summary>Records that a candle was received but not evaluated (stale or late); a second record of the same candle is ignored.</summary>
     public async Task RecordSkippedAsync(AgentTrackingInfo info, Candle candle, string detail, CancellationToken cancellationToken)

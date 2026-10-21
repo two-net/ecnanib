@@ -29,6 +29,14 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
 
     public IReadOnlyCollection<string> CachedKeyIds => _cached.Keys.ToArray();
 
+    private readonly ConcurrentDictionary<(string KeyId, MarketType Market), FakeExchangeAccount> _accounts = new();
+
+    /// <summary>The scripted book behind a key and market; created on first use.</summary>
+    public FakeExchangeAccount Account(string keyId, MarketType market) => _accounts.GetOrAdd((keyId, market), k => new FakeExchangeAccount(k.KeyId, k.Market));
+
+    /// <summary>Called for last-price reads (symbol); unset, the call is unsupported.</summary>
+    public Func<string, decimal>? OnPrice { get; set; }
+
     /// <summary>Called for exchange-info reads; throw to script an outage. Unset, every public-data call is unsupported, as before the agents work.</summary>
     public Func<ExchangeEnvironment, MarketType, ExchangeInfo>? OnExchangeInfo { get; set; }
 
@@ -129,7 +137,8 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
             return Task.FromResult(owner.OnRecentCandles?.Invoke(symbol, interval, count) ?? throw new NotSupportedException("No candles are scripted."));
         }
 
-        public Task<PriceTick> GetPriceAsync(string symbol, CancellationToken ct) => throw new NotSupportedException();
+        public Task<PriceTick> GetPriceAsync(string symbol, CancellationToken ct) =>
+            Task.FromResult(owner.OnPrice is { } price ? new PriceTick(symbol, price(symbol), DateTimeOffset.UnixEpoch) : throw new NotSupportedException("No price is scripted."));
 
         public Task<MarkPrice> GetMarkPriceAsync(string symbol, CancellationToken ct) =>
             Task.FromResult(owner.OnMarkPrice?.Invoke(symbol) ?? throw new NotSupportedException("No mark price is scripted."));
@@ -137,6 +146,8 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
 
     private sealed class FakeExchangeAccountClient(FakeExchangeClientFactory owner, ExchangeKeyHandle key, MarketType market) : ISpotAccountClient, IFuturesAccountClient
     {
+        private FakeExchangeAccount Book => owner.Account(key.KeyId, market);
+
         public string KeyId => key.KeyId;
 
         public ExchangeEnvironment Environment => key.Environment;
@@ -147,40 +158,77 @@ internal sealed class FakeExchangeClientFactory : IExchangeClientFactory
 
         public Task<ApiKeyPermissions> GetApiKeyPermissionsAsync(CancellationToken ct) => Task.FromResult(owner.Permissions(key));
 
-        public Task<IReadOnlyList<AssetBalance>> GetBalancesAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<AssetBalance>> GetBalancesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<AssetBalance>>(Book.Balances.ToList());
 
-        public Task<ExchangeOrder> PlaceOrderAsync(OrderRequest request, CancellationToken ct) => throw new NotSupportedException();
+        public Task<ExchangeOrder> PlaceOrderAsync(OrderRequest request, CancellationToken ct)
+        {
+            if (market == MarketType.Spot && (request.ReduceOnly || request.ClosePosition || request.WorkingType is not null))
+                throw new ArgumentException("ReduceOnly, ClosePosition and WorkingType apply to futures orders only.", nameof(request));
+            if (market == MarketType.UsdFutures && request.Type is OrderType.StopMarket or OrderType.TakeProfitMarket or OrderType.StopLossLimit or OrderType.TakeProfitLimit)
+                throw new ArgumentException($"{request.Type} orders are conditional orders on USD-M futures; use PlaceConditionalOrderAsync (Binance -4120).", nameof(request));
+            return Task.FromResult(Book.Place(request));
+        }
 
-        public Task<ExchangeOrder> GetOrderAsync(string symbol, OrderRef order, CancellationToken ct) => throw new NotSupportedException();
+        public Task<ExchangeOrder> GetOrderAsync(string symbol, OrderRef order, CancellationToken ct) => Task.FromResult(Book.Get(symbol, order));
 
-        public Task<IReadOnlyList<ExchangeOrder>> GetOpenOrdersAsync(string? symbol, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ExchangeOrder>> GetOpenOrdersAsync(string? symbol, CancellationToken ct) => Task.FromResult(Book.Open(symbol));
 
-        public Task<ExchangeOrder> CancelOrderAsync(string symbol, OrderRef order, CancellationToken ct) => throw new NotSupportedException();
+        public Task<ExchangeOrder> CancelOrderAsync(string symbol, OrderRef order, CancellationToken ct) => Task.FromResult(Book.Cancel(symbol, order));
 
-        public Task<IReadOnlyList<ExchangeOrder>> CancelAllOrdersAsync(string symbol, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ExchangeOrder>> CancelAllOrdersAsync(string symbol, CancellationToken ct) => Task.FromResult(Book.CancelAll(symbol));
 
-        public Task<IReadOnlyList<UserTrade>> GetTradesAsync(string symbol, DateTimeOffset? from, long? fromTradeId, int? limit, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<UserTrade>> GetTradesAsync(string symbol, DateTimeOffset? from, long? fromTradeId, int? limit, CancellationToken ct) =>
+            Task.FromResult(Book.TradesSince(symbol, from, fromTradeId, limit));
 
-        public IDisposable SubscribeUserData(Func<UserDataEvent, CancellationToken, ValueTask> handler) => throw new NotSupportedException();
+        public IDisposable SubscribeUserData(Func<UserDataEvent, CancellationToken, ValueTask> handler) => Book.Subscribe(handler);
 
-        public StreamStatus UserDataStatus => throw new NotSupportedException();
+        public StreamStatus UserDataStatus => new($"user:{key.KeyId}:{market}", Book.Health, null, DateTimeOffset.UnixEpoch, null);
 
-        public Task<OcoOrderList> PlaceOcoAsync(SpotOcoRequest request, CancellationToken ct) => throw new NotSupportedException();
+        public Task<OcoOrderList> PlaceOcoAsync(SpotOcoRequest request, CancellationToken ct) => Task.FromResult(Book.PlaceOco(request));
 
-        public Task<OcoOrderList> CancelOcoAsync(string symbol, string listClientOrderId, CancellationToken ct) => throw new NotSupportedException();
+        public Task<OcoOrderList> CancelOcoAsync(string symbol, string listClientOrderId, CancellationToken ct) => Task.FromResult(Book.CancelOco(symbol, listClientOrderId));
 
-        public Task<OcoOrderList> GetOcoAsync(string listClientOrderId, CancellationToken ct) => throw new NotSupportedException();
+        public Task<OcoOrderList> GetOcoAsync(string listClientOrderId, CancellationToken ct) => Task.FromResult(Book.GetOco(listClientOrderId));
 
-        public Task<FuturesAccountSummary> GetAccountSummaryAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<FuturesAccountSummary> GetAccountSummaryAsync(CancellationToken ct) => Task.FromResult(Book.Summary);
 
-        public Task<IReadOnlyList<FuturesPosition>> GetPositionsAsync(string? symbol, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<FuturesPosition>> GetPositionsAsync(string? symbol, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<FuturesPosition>>(Book.Positions.Values.Where(p => symbol is null || string.Equals(p.Symbol, symbol, StringComparison.OrdinalIgnoreCase)).ToList());
 
-        public Task<PositionMode> GetPositionModeAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<PositionMode> GetPositionModeAsync(CancellationToken ct) => Task.FromResult(Book.PositionMode);
 
-        public Task SetPositionModeAsync(PositionMode mode, CancellationToken ct) => throw new NotSupportedException();
+        public Task SetPositionModeAsync(PositionMode mode, CancellationToken ct)
+        {
+            Book.PositionMode = mode;
+            return Task.CompletedTask;
+        }
 
-        public Task<int> SetLeverageAsync(string symbol, int leverage, CancellationToken ct) => throw new NotSupportedException();
+        public Task<int> SetLeverageAsync(string symbol, int leverage, CancellationToken ct)
+        {
+            var applied = Book.OnSetLeverage?.Invoke(symbol, leverage) ?? leverage;
+            lock (Book.LeverageSets)
+                Book.LeverageSets.Add((symbol, leverage));
+            Book.Leverage[symbol] = applied;
+            return Task.FromResult(applied);
+        }
 
-        public Task SetMarginTypeAsync(string symbol, MarginType marginType, CancellationToken ct) => throw new NotSupportedException();
+        public Task SetMarginTypeAsync(string symbol, MarginType marginType, CancellationToken ct)
+        {
+            lock (Book.MarginSets)
+                Book.MarginSets.Add((symbol, marginType));
+            Book.Margins[symbol] = marginType;
+            return Task.CompletedTask;
+        }
+
+        public Task<ConditionalOrder> PlaceConditionalOrderAsync(ConditionalOrderRequest request, CancellationToken ct) => Task.FromResult(Book.PlaceConditional(request));
+
+        public Task<ConditionalOrder> GetConditionalOrderAsync(OrderRef order, CancellationToken ct) => Task.FromResult(Book.GetConditional(order));
+
+        public Task<ConditionalOrder> CancelConditionalOrderAsync(OrderRef order, CancellationToken ct) => Task.FromResult(Book.CancelConditional(order));
+
+        public Task<IReadOnlyList<ConditionalOrder>> GetOpenConditionalOrdersAsync(string? symbol, CancellationToken ct) => Task.FromResult(Book.OpenConditional(symbol));
+
+        public Task<IReadOnlyList<FundingPayment>> GetFundingPaymentsAsync(string symbol, DateTimeOffset from, DateTimeOffset? to, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<FundingPayment>>(Book.Funding.Where(f => string.Equals(f.Symbol, symbol, StringComparison.OrdinalIgnoreCase) && f.Timestamp >= from && (to is null || f.Timestamp <= to)).ToList());
     }
 }

@@ -18,6 +18,7 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasIndex(o => o.ClientOrderId).IsUnique();
         builder.HasIndex(o => new { o.AgentId, o.CreatedAt });
         builder.HasIndex(o => o.ExchangeOrderId);
+        builder.HasIndex(o => o.ExchangeAlgoId);
         builder.HasIndex(o => o.TradeId);
     }
 }

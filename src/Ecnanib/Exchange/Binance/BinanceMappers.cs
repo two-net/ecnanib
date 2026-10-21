@@ -114,7 +114,9 @@ internal static class BinanceMappers
             MarketMaxQuantity: marketLot?.MaxQuantity,
             MinNotional: notional?.MinNotional ?? minNotional?.MinNotional ?? 0m,
             MaxNotional: notional?.MaxNotional,
-            MinNotionalAppliesToMarketOrders: notional?.ApplyMinToMarketOrders ?? minNotional?.ApplyToMarketOrders ?? true);
+            MinNotionalAppliesToMarketOrders: notional?.ApplyMinToMarketOrders ?? minNotional?.ApplyToMarketOrders ?? true,
+            MaxNumOrders: s.MaxOrdersFilter?.MaxNumberOrders,
+            MaxNumAlgoOrders: s.MaxAlgorithmicOrdersFilter?.MaxNumberAlgorithmicOrders);
         return new SymbolInfo(
             s.Name, s.BaseAsset, s.QuoteAsset,
             IsTrading: s.Status == SymbolStatus.Trading,
@@ -142,7 +144,9 @@ internal static class BinanceMappers
             MarketMaxQuantity: marketLot?.MaxQuantity,
             MinNotional: s.MinNotionalFilter?.MinNotional ?? 0m,
             MaxNotional: null,
-            MinNotionalAppliesToMarketOrders: true);
+            MinNotionalAppliesToMarketOrders: true,
+            MaxNumOrders: s.MaxOrdersFilter?.MaxNumberOrders,
+            MaxNumAlgoOrders: s.MaxAlgoOrdersFilter?.MaxNumberAlgorithmicOrders);
         return new SymbolInfo(
             s.Name, s.BaseAsset, s.QuoteAsset,
             IsTrading: s.Status == SymbolStatus.Trading,
@@ -247,6 +251,48 @@ internal static class BinanceMappers
     public static UserTrade ToTrade(BinanceFuturesUsdtTrade t) => new(
         t.Symbol, t.Id, t.OrderId, t.Price, t.Quantity, t.QuoteQuantity, t.Fee, t.FeeAsset ?? string.Empty,
         t.Buyer, t.Maker, t.RealizedPnl, ToUtc(t.Timestamp));
+
+    // ---- conditional (algo) orders and funding ----
+
+    public static ConditionalOrder ToConditionalOrder(BinanceFuturesConditionalOrder o) => new(
+        o.Symbol, o.Id, o.ClientOrderId ?? string.Empty, ToOrderSide(o.Side), ToOrderType(o.Type), ToConditionalOrderStatus(o.Status),
+        TriggerPrice: o.TriggerPrice ?? 0m,
+        Price: o.Price > 0 ? o.Price : null,
+        Quantity: o.Quantity > 0 ? o.Quantity : null,
+        ReduceOnly: o.ReduceOnly,
+        ClosePosition: o.ClosePosition,
+        ActualOrderId: o.ActualOrderId is > 0 ? o.ActualOrderId : null,
+        FilledQuantity: o.ActualQuantity is > 0 ? o.ActualQuantity : null,
+        AverageFillPrice: o.ActualPrice is > 0 ? o.ActualPrice : null,
+        CreatedAt: ToUtc(o.CreateTime),
+        UpdatedAt: ToUtc(o.UpdateTime),
+        TriggeredAt: Stamp(o.TriggerTime));
+
+    public static ConditionalOrder ToConditionalOrder(BinanceAlgoOrderUpdate update)
+    {
+        var o = update.Order;
+        var at = ToUtc(update.Timestamp == default ? update.EventTime : update.Timestamp);
+        return new ConditionalOrder(
+            o.Symbol, o.Id, o.ClientOrderId ?? string.Empty, ToOrderSide(o.Side), ToOrderType(o.Type), ToConditionalOrderStatus(o.Status),
+            TriggerPrice: o.TriggerPrice ?? 0m,
+            Price: o.Price > 0 ? o.Price : null,
+            Quantity: o.Quantity > 0 ? o.Quantity : null,
+            ReduceOnly: o.ReduceOnly,
+            ClosePosition: o.ClosePosition,
+            ActualOrderId: o.ActualOrderId is > 0 ? o.ActualOrderId : null,
+            FilledQuantity: o.QuantityFilled is > 0 ? o.QuantityFilled : null,
+            AverageFillPrice: o.AverageFillPrice is > 0 ? o.AverageFillPrice : null,
+            CreatedAt: at,
+            UpdatedAt: at,
+            TriggeredAt: Stamp(o.TriggerTime));
+    }
+
+    public static FundingPayment ToFundingPayment(BinanceFuturesIncomeHistory income) =>
+        new(income.Symbol ?? string.Empty, income.Income, income.Asset ?? string.Empty, ToUtc(income.Timestamp),
+            string.IsNullOrEmpty(income.TransactionId) ? null : income.TransactionId);
+
+    /// <summary>Binance sends 0 (the epoch) for a trigger time that has not happened.</summary>
+    private static DateTimeOffset? Stamp(DateTime? value) => value is { Year: > 2000 } v ? ToUtc(v) : null;
 
     // ---- user-data streams ----
 
@@ -356,6 +402,27 @@ internal static class BinanceMappers
         OrderType.TakeProfitLimit => FuturesOrderType.TakeProfit,
         OrderType.TakeProfitMarket => FuturesOrderType.TakeProfitMarket,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Order type is not supported on USD-M futures."),
+    };
+
+    public static ConditionalOrderType ToConditionalOrderType(OrderType type) => type switch
+    {
+        OrderType.StopMarket => ConditionalOrderType.StopMarket,
+        OrderType.TakeProfitMarket => ConditionalOrderType.TakeProfitMarket,
+        OrderType.StopLossLimit => ConditionalOrderType.Stop,
+        OrderType.TakeProfitLimit => ConditionalOrderType.TakeProfit,
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Order type is not a conditional order type."),
+    };
+
+    public static ConditionalOrderStatus ToConditionalOrderStatus(AlgoOrderStatus status) => status switch
+    {
+        AlgoOrderStatus.New => ConditionalOrderStatus.New,
+        AlgoOrderStatus.Triggering => ConditionalOrderStatus.Triggering,
+        AlgoOrderStatus.Triggered => ConditionalOrderStatus.Triggered,
+        AlgoOrderStatus.Finished => ConditionalOrderStatus.Finished,
+        AlgoOrderStatus.Canceled => ConditionalOrderStatus.Canceled,
+        AlgoOrderStatus.Rejected => ConditionalOrderStatus.Rejected,
+        AlgoOrderStatus.Expired => ConditionalOrderStatus.Expired,
+        _ => ConditionalOrderStatus.Other,
     };
 
     public static OrderStatus ToOrderStatus(BinanceOrderStatus status) => status switch

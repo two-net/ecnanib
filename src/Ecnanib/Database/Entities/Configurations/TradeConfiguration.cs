@@ -17,5 +17,7 @@ internal sealed class TradeConfiguration : IEntityTypeConfiguration<Trade>
         builder.HasIndex(t => new { t.AgentId, t.OpenedAt });
         builder.HasIndex(t => t.EntryDecisionId);
         builder.HasIndex(t => t.AgentId).HasDatabaseName("ix_trades_agent_id_open").HasFilter("closed_at IS NULL");
+        // FR-EXE-06: a partial exit never leaves more open than was opened; a forgotten writer fails loudly.
+        builder.ToTable(t => t.HasCheckConstraint("ck_trades_remaining_size", "remaining_size >= 0 AND remaining_size <= size"));
     }
 }

@@ -81,10 +81,15 @@ internal sealed class BinanceFuturesAccountClient : BinanceAccountClientBase, IF
         }, "set margin type", ct);
     }
 
-    /// <summary>Always one-way mode (A-06): <c>positionSide=BOTH</c>. A close-position order carries no quantity.</summary>
+    /// <summary>
+    /// Always one-way mode (A-06): <c>positionSide=BOTH</c>. Stop and take-profit types are refused here before anything
+    /// is sent: Binance answers -4120 for them and they go through <see cref="PlaceConditionalOrderAsync"/>.
+    /// </summary>
     public override Task<ExchangeOrder> PlaceOrderAsync(OrderRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (IsConditional(request.Type))
+            throw new ArgumentException($"{request.Type} orders are conditional orders on USD-M futures; use PlaceConditionalOrderAsync (Binance -4120).", nameof(request));
         var type = BinanceMappers.ToFuturesOrderType(request.Type);
         var tif = DefaultTimeInForce(request);
         return OnceAsync(async token =>
@@ -162,6 +167,75 @@ internal sealed class BinanceFuturesAccountClient : BinanceAccountClientBase, IF
             return Ensure(result, "trades").Select(BinanceMappers.ToTrade).ToArray();
         }, "trades", ct);
     }
+
+    public Task<ConditionalOrder> PlaceConditionalOrderAsync(ConditionalOrderRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var type = BinanceMappers.ToConditionalOrderType(request.Type);
+        var tif = request.Type is OrderType.StopLossLimit or OrderType.TakeProfitLimit ? BinanceTimeInForce.GoodTillCanceled : (BinanceTimeInForce?)null;
+        return OnceAsync(async token =>
+        {
+            var result = await Rest.UsdFuturesApi.Trading.PlaceConditionalOrderAsync(
+                request.Symbol,
+                BinanceMappers.FromOrderSide(request.Side),
+                type,
+                quantity: request.Quantity,
+                price: request.Price,
+                positionSide: PositionSide.Both,
+                timeInForce: tif,
+                reduceOnly: request.ReduceOnly ? true : null,
+                clientOrderId: request.ClientAlgoId,
+                triggerPrice: request.TriggerPrice,
+                workingType: request.WorkingType is { } w ? BinanceMappers.FromWorkingType(w) : null,
+                closePosition: request.ClosePosition ? true : null,
+                priceProtect: request.PriceProtect ? true : null,
+                ct: token).ConfigureAwait(false);
+            return BinanceMappers.ToConditionalOrder(Ensure(result, "place conditional order"));
+        }, "place conditional order", ct);
+    }
+
+    public Task<ConditionalOrder> GetConditionalOrderAsync(OrderRef order, CancellationToken ct)
+    {
+        RequireRef(order);
+        return QueryAsync(async token =>
+        {
+            var result = await Rest.UsdFuturesApi.Trading.GetConditionalOrderAsync(orderId: order.OrderId, clientOrderId: order.ClientOrderId, ct: token).ConfigureAwait(false);
+            return BinanceMappers.ToConditionalOrder(Ensure(result, "get conditional order"));
+        }, "get conditional order", ct);
+    }
+
+    public Task<ConditionalOrder> CancelConditionalOrderAsync(OrderRef order, CancellationToken ct)
+    {
+        RequireRef(order);
+        return OnceAsync(async token =>
+        {
+            var result = await Rest.UsdFuturesApi.Trading.CancelConditionalOrderAsync(orderId: order.OrderId, clientOrderId: order.ClientOrderId, ct: token).ConfigureAwait(false);
+            return BinanceMappers.ToConditionalOrder(Ensure(result, "cancel conditional order"));
+        }, "cancel conditional order", ct);
+    }
+
+    public Task<IReadOnlyList<ConditionalOrder>> GetOpenConditionalOrdersAsync(string? symbol, CancellationToken ct)
+    {
+        var normalized = symbol is null ? null : NormalizeSymbol(symbol);
+        return QueryAsync<IReadOnlyList<ConditionalOrder>>(async token =>
+        {
+            var result = await Rest.UsdFuturesApi.Trading.GetOpenConditionalOrdersAsync(symbol: normalized, ct: token).ConfigureAwait(false);
+            return Ensure(result, "open conditional orders").Select(BinanceMappers.ToConditionalOrder).ToArray();
+        }, "open conditional orders", ct);
+    }
+
+    public Task<IReadOnlyList<FundingPayment>> GetFundingPaymentsAsync(string symbol, DateTimeOffset from, DateTimeOffset? to, CancellationToken ct)
+    {
+        var normalized = NormalizeSymbol(symbol);
+        return QueryAsync<IReadOnlyList<FundingPayment>>(async token =>
+        {
+            var result = await Rest.UsdFuturesApi.Account.GetIncomeHistoryAsync(normalized, "FUNDING_FEE", startTime: from.UtcDateTime, endTime: to?.UtcDateTime, limit: 1000, ct: token).ConfigureAwait(false);
+            return Ensure(result, "funding payments").Select(BinanceMappers.ToFundingPayment).OrderBy(p => p.Timestamp).ToArray();
+        }, "funding payments", ct);
+    }
+
+    private static bool IsConditional(OrderType type) =>
+        type is OrderType.StopMarket or OrderType.TakeProfitMarket or OrderType.StopLossLimit or OrderType.TakeProfitLimit;
 
     private static BinanceTimeInForce? DefaultTimeInForce(OrderRequest request)
     {

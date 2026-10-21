@@ -153,5 +153,13 @@
       "1W": 200
     },
     "SymbolRefreshIntervalMinutes": 360
+  },
+  "Execution": {
+    "ProtectiveOrderAttempts": 3,
+    "ProtectiveOrderRetryDelayMs": 1000,
+    "SpotStopLimitOffsetPercent": 0.5,
+    "ManageBudgetSeconds": 20,
+    "ReconcileAfterSeconds": 30,
+    "FillTrackerStartDelaySeconds": 6
   }
 }

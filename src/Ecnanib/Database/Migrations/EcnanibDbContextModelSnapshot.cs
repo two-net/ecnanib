@@ -302,6 +302,10 @@ namespace Ecnanib.Database.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("evaluation_id");
 
+                    b.Property<JsonElement?>("ExecutionCheck")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("execution_check");
+
                     b.Property<string>("FinalAction")
                         .IsRequired()
                         .HasColumnType("text")
@@ -847,6 +851,10 @@ namespace Ecnanib.Database.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("decision_id");
 
+                    b.Property<long?>("ExchangeAlgoId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("exchange_algo_id");
+
                     b.Property<long?>("ExchangeOrderId")
                         .HasColumnType("bigint")
                         .HasColumnName("exchange_order_id");
@@ -854,6 +862,10 @@ namespace Ecnanib.Database.Migrations
                     b.Property<DateTimeOffset?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
+
+                    b.Property<decimal?>("Fee")
+                        .HasColumnType("numeric")
+                        .HasColumnName("fee");
 
                     b.Property<DateTimeOffset?>("FilledAt")
                         .HasColumnType("timestamp with time zone")
@@ -888,6 +900,10 @@ namespace Ecnanib.Database.Migrations
                     b.Property<decimal>("Quantity")
                         .HasColumnType("numeric")
                         .HasColumnName("quantity");
+
+                    b.Property<decimal?>("RealizedPnl")
+                        .HasColumnType("numeric")
+                        .HasColumnName("realized_pnl");
 
                     b.Property<bool>("ReduceOnly")
                         .HasColumnType("boolean")
@@ -935,6 +951,9 @@ namespace Ecnanib.Database.Migrations
 
                     b.HasIndex("DecisionId")
                         .HasDatabaseName("ix_orders_decision_id");
+
+                    b.HasIndex("ExchangeAlgoId")
+                        .HasDatabaseName("ix_orders_exchange_algo_id");
 
                     b.HasIndex("ExchangeOrderId")
                         .HasDatabaseName("ix_orders_exchange_order_id");
@@ -1231,6 +1250,10 @@ namespace Ecnanib.Database.Migrations
                         .HasColumnType("numeric")
                         .HasColumnName("realized_pnl");
 
+                    b.Property<decimal>("RemainingSize")
+                        .HasColumnType("numeric")
+                        .HasColumnName("remaining_size");
+
                     b.Property<string>("Side")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1278,7 +1301,10 @@ namespace Ecnanib.Database.Migrations
                     b.HasIndex("AgentId", "OpenedAt")
                         .HasDatabaseName("ix_trades_agent_id_opened_at");
 
-                    b.ToTable("trades", (string)null);
+                    b.ToTable("trades", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_trades_remaining_size", "remaining_size >= 0 AND remaining_size <= size");
+                        });
                 });
 
             modelBuilder.Entity("Ecnanib.Database.Entities.User", b =>

@@ -67,9 +67,10 @@ Rules the module enforces:
   stay registered beside a newer one, and an agent pinned to a version without an engine gets a note telling it to
   upgrade. Adding a parameter or changing a rule is a new version; the agents module upgrades agents on request.
 
-Deferred: the optional 1D entry in up to three tranches, tick-size rounding of entry, stop and targets, and the trailing
-and breakeven management of open positions belong to execution (FR-EXE, #13); the engine is stateless, so a retest
-that keeps holding is reported on each candle until execution has an order or position. The market-data module
+Tick-size rounding of entry, stop and targets and the breakeven and trailing management of open positions are the
+execution module's (FR-EXE, #13), which reads the `trailLong`/`trailShort` levels, the `atr` indicator and the common
+parameters at every candle close; the optional 1D entry in up to three tranches stays deferred. The engine is stateless,
+so a retest that keeps holding is reported on each candle until execution has an order or position. The market-data module
 supplies the snapshot: a window of `MarketData:BackfillCandles` candles per series, backfilled when the agent is
 tracked and followed on the streams, so the seeded indicators see the same window on every run.
 

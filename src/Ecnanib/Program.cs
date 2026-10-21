@@ -8,6 +8,7 @@ using Ecnanib.Council;
 using Ecnanib.Database;
 using Ecnanib.Database.Migrations;
 using Ecnanib.Exchange;
+using Ecnanib.Execution;
 using Ecnanib.Experience;
 using Ecnanib.Keys;
 using Ecnanib.MarketData;
@@ -47,6 +48,8 @@ builder.Services.AddExperience(builder.Configuration);
 builder.Services.AddCouncil(builder.Configuration);
 // Before AddAgents: the symbol catalog and the backfilled, streamed market data replace the agents module's defaults (FR-DATA).
 builder.Services.AddMarketData(builder.Configuration);
+// Before AddAgents: sizing, the live venue, fills and reconciliation replace the agents module's fail-safe execution (FR-EXE).
+builder.Services.AddExecution(builder.Configuration);
 // Before AddKeys: the runtime's own key handling (stop with orders cancelled, Error halts evaluation) replaces the default.
 builder.Services.AddAgents(builder.Configuration);
 builder.Services.AddKeys(builder.Configuration);

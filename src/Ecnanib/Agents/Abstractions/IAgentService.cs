@@ -64,4 +64,7 @@ public interface IAgentService
 
     /// <summary>Cancels open orders, then closes positions at market or leaves them flagged as unmanaged (FR-AGT-06).</summary>
     Task<AgentActionResult> StopAsync(Guid userId, Guid agentId, bool closePositions, CancellationToken cancellationToken);
+
+    /// <summary>"Stop all my agents" (FR-EXE-10): every agent of the user that can be stopped goes through <see cref="StopAsync"/>; the ones that could not be are reported.</summary>
+    Task<AgentBulkActionResult> StopAllAsync(Guid userId, bool closePositions, CancellationToken cancellationToken);
 }

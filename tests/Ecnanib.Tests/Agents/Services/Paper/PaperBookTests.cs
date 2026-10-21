@@ -11,14 +11,32 @@ public class PaperBookTests
     private const decimal Slippage = 0.001m;
 
     private static PaperEntry Entry(PositionSide side, OrderType type, decimal? limit = null, decimal stop = 90m, decimal? target = 120m, DateTimeOffset? expiresAt = null) =>
-        new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), CandleInterval.OneHour, side, type, limit, 1m, stop, target, expiresAt);
+        new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), CandleInterval.OneHour, side, type, limit, 1m, stop, target is { } t ? [t] : [], 1m, expiresAt);
 
-    private static PaperPosition Position(PositionSide side, decimal entry = 100m, decimal? stop = 90m, decimal? target = 120m) => new()
+    /// <summary>A one-unit position: the whole size at one target, as a position too small to split is protected.</summary>
+    private static PaperPosition Position(PositionSide side, decimal entry = 100m, decimal? stop = 90m, decimal? target = 120m)
     {
-        TradeId = Guid.NewGuid(), AgentId = Guid.NewGuid(), UserId = Guid.NewGuid(), Side = side, EntryPrice = entry, Size = 1m,
-        InitialStop = stop, Stop = stop, StopOrderId = stop is null ? null : Guid.NewGuid(), Target = target, TargetOrderId = target is null ? null : Guid.NewGuid(),
-        HighestPrice = entry, LowestPrice = entry,
-    };
+        var position = new PaperPosition
+        {
+            TradeId = Guid.NewGuid(), AgentId = Guid.NewGuid(), UserId = Guid.NewGuid(), Side = side, EntryPrice = entry, Size = 1m, RemainingSize = 1m,
+            InitialStop = stop, Stop = stop, StopOrderId = stop is null ? null : Guid.NewGuid(), HighestPrice = entry, LowestPrice = entry,
+        };
+        position.Units.Add(new PaperUnit { Quantity = 1m, Target = target, TargetOrderId = target is null ? null : Guid.NewGuid() });
+        return position;
+    }
+
+    /// <summary>Two units (Appendix A): the partial at the first target, the remainder at the second or trailing without one.</summary>
+    private static PaperPosition TwoUnits(PositionSide side, decimal partial, decimal firstTarget, decimal? finalTarget, decimal entry = 100m, decimal stop = 90m)
+    {
+        var position = new PaperPosition
+        {
+            TradeId = Guid.NewGuid(), AgentId = Guid.NewGuid(), UserId = Guid.NewGuid(), Side = side, EntryPrice = entry, Size = 1m, RemainingSize = 1m,
+            InitialStop = stop, Stop = stop, StopOrderId = Guid.NewGuid(), HighestPrice = entry, LowestPrice = entry,
+        };
+        position.Units.Add(new PaperUnit { Quantity = partial, Target = firstTarget, TargetOrderId = Guid.NewGuid() });
+        position.Units.Add(new PaperUnit { Quantity = 1m - partial, Target = finalTarget, TargetOrderId = finalTarget is null ? null : Guid.NewGuid() });
+        return position;
+    }
 
     [Fact]
     public void AMarketEntryFillsOnTheNextTickWithSlippageAgainstTheTrader()
@@ -93,7 +111,7 @@ public class PaperBookTests
         book.RemovePosition(targeted.TradeId);
         book.RemovePosition(shortStopped.TradeId);
         book.RemovePosition(shortTargeted.TradeId);
-        stopped.Target = 95m;
+        stopped.Units[0].Target = 95m;
         var tie = Assert.IsType<PositionClosed>(Assert.Single(book.OnTick(89m, At, Slippage)));
         Assert.Equal(TradeExitReason.Stop, tie.Reason);
         Assert.Equal(89.91m, tie.Price);
@@ -101,10 +119,12 @@ public class PaperBookTests
         Assert.False(tie.IsMaker);
 
         book.AddPosition(targeted);
+        var targetOrderId = targeted.Units[0].TargetOrderId;
         var hit = Assert.IsType<PositionClosed>(Assert.Single(book.OnTick(121m, At, Slippage)));
         Assert.Equal(TradeExitReason.Target, hit.Reason);
         Assert.Equal(120m, hit.Price);
-        Assert.Equal(targeted.TargetOrderId, hit.OrderId);
+        Assert.Equal(targetOrderId, hit.OrderId);
+        Assert.Equal(1m, hit.Quantity);
         Assert.True(hit.IsMaker);
 
         book.AddPosition(shortStopped);
@@ -165,11 +185,13 @@ public class PaperBookTests
         var agentId = Guid.NewGuid();
         var entry = Entry(PositionSide.Long, OrderType.Limit, limit: 95m) with { AgentId = agentId };
         var position = Position(PositionSide.Long);
-        var mine = new PaperPosition
+        var mine = Position(PositionSide.Long) ;
+        mine = new PaperPosition
         {
-            TradeId = Guid.NewGuid(), AgentId = agentId, UserId = Guid.NewGuid(), Side = PositionSide.Long, EntryPrice = 100m, Size = 1m,
-            Stop = 90m, StopOrderId = Guid.NewGuid(), Target = 120m, TargetOrderId = Guid.NewGuid(), CloseOrderId = Guid.NewGuid(), CloseReason = TradeExitReason.Council,
+            TradeId = mine.TradeId, AgentId = agentId, UserId = Guid.NewGuid(), Side = PositionSide.Long, EntryPrice = 100m, Size = 1m, RemainingSize = 1m,
+            Stop = 90m, StopOrderId = Guid.NewGuid(), CloseOrderId = Guid.NewGuid(), CloseReason = TradeExitReason.Council, PartialOrderId = Guid.NewGuid(), PartialQuantity = 0.5m,
         };
+        mine.Units.Add(new PaperUnit { Quantity = 1m, Target = 120m, TargetOrderId = Guid.NewGuid() });
         book.AddEntry(entry);
         book.AddEntry(Entry(PositionSide.Long, OrderType.Limit, limit: 95m));
         book.AddPosition(position);
@@ -179,11 +201,82 @@ public class PaperBookTests
 
         Assert.Single(book.Entries);
         Assert.Null(mine.Stop);
-        Assert.Null(mine.Target);
+        Assert.All(mine.Units, u => Assert.Null(u.Target));
         Assert.Null(mine.CloseOrderId);
+        Assert.Null(mine.PartialOrderId);
         Assert.False(mine.IsClosing);
         Assert.Equal(90m, position.Stop);
         Assert.Empty(book.OnTick(50m, At, Slippage).OfType<PositionClosed>().Where(c => c.Position == mine));
+    }
+
+    [Fact]
+    public void AUnitsTargetTakesThatUnitOffAndTheLastUnitClosesTheTrade()
+    {
+        var book = new PaperBook(MarketType.UsdFutures, "ETHUSDT");
+        var position = TwoUnits(PositionSide.Long, partial: 0.4m, firstTarget: 110m, finalTarget: 130m);
+        book.AddPosition(position);
+
+        var reduced = Assert.IsType<PositionReduced>(Assert.Single(book.OnTick(111m, At, Slippage)));
+
+        Assert.Equal(TradeExitReason.Target, reduced.Reason);
+        Assert.Equal(0.4m, reduced.Quantity);
+        Assert.Equal(110m, reduced.Price);
+        Assert.True(reduced.IsMaker);
+        Assert.Equal(0.6m, position.RemainingSize);
+        Assert.Single(position.Units);
+        Assert.Single(book.Positions);
+
+        var closed = Assert.IsType<PositionClosed>(Assert.Single(book.OnTick(131m, At, Slippage)));
+        Assert.Equal(TradeExitReason.Target, closed.Reason);
+        Assert.Equal(0.6m, closed.Quantity);
+        Assert.Equal(130m, closed.Price);
+        Assert.True(book.IsEmpty);
+    }
+
+    [Fact]
+    public void TheStopClosesWhateverIsLeftAfterAPartialAndARemainderWithoutTargetTrails()
+    {
+        var book = new PaperBook(MarketType.Spot, "BTCUSDT");
+        var position = TwoUnits(PositionSide.Long, partial: 0.33m, firstTarget: 110m, finalTarget: null);
+        book.AddPosition(position);
+
+        Assert.IsType<PositionReduced>(Assert.Single(book.OnTick(110m, At, Slippage)));
+        Assert.Equal(0.67m, position.RemainingSize);
+        Assert.Null(Assert.Single(position.Units).Target);
+        Assert.Empty(book.OnTick(150m, At, Slippage));
+
+        var closed = Assert.IsType<PositionClosed>(Assert.Single(book.OnTick(90m, At, Slippage)));
+        Assert.Equal(TradeExitReason.Stop, closed.Reason);
+        Assert.Equal(0.67m, closed.Quantity);
+        Assert.Equal(89.91m, closed.Price);
+    }
+
+    [Fact]
+    public void AMarkedPartialFillsAtTheNextTickOffTheTrailingRemainderFirst()
+    {
+        var book = new PaperBook(MarketType.Spot, "BTCUSDT");
+        var position = TwoUnits(PositionSide.Long, partial: 0.4m, firstTarget: 110m, finalTarget: 130m);
+        book.AddPosition(position);
+        var partialOrder = Guid.NewGuid();
+        position.PartialOrderId = partialOrder;
+        position.PartialQuantity = 0.7m;
+
+        var reduced = Assert.IsType<PositionReduced>(Assert.Single(book.OnTick(100m, At, Slippage)));
+
+        Assert.Equal(TradeExitReason.Council, reduced.Reason);
+        Assert.Equal(partialOrder, reduced.OrderId);
+        Assert.Equal(0.7m, reduced.Quantity);
+        Assert.Equal(99.9m, reduced.Price);
+        Assert.Equal(0.3m, position.RemainingSize);
+        var unit = Assert.Single(position.Units);
+        Assert.Equal((0.3m, 110m), (unit.Quantity, unit.Target));
+        Assert.Null(position.PartialOrderId);
+
+        position.PartialOrderId = Guid.NewGuid();
+        position.PartialQuantity = 1m;
+        var closed = Assert.IsType<PositionClosed>(Assert.Single(book.OnTick(100m, At, Slippage)));
+        Assert.Equal(0.3m, closed.Quantity);
+        Assert.True(book.IsEmpty);
     }
 
     [Fact]

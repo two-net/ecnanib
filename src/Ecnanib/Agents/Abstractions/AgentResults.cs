@@ -59,3 +59,8 @@ public enum AgentActionStatus
 
 /// <summary><see cref="AgentId"/> is the new agent for a successful Clone.</summary>
 public sealed record AgentActionResult(AgentActionStatus Status, string? Detail = null, FairUseCheck? Limit = null, Guid? AgentId = null);
+
+public sealed record AgentBulkFailure(Guid AgentId, string Name, AgentActionResult Result);
+
+/// <summary>Outcome of "stop all my agents" (FR-EXE-10): how many stopped and which could not be, each with its own result.</summary>
+public sealed record AgentBulkActionResult(int Stopped, IReadOnlyList<AgentBulkFailure> Failed);

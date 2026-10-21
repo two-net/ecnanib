@@ -95,7 +95,7 @@ internal static class AgentsLiveSeed
         var trade = new Trade
         {
             AgentId = agent.Id, EntryDecisionId = decision.Id, Symbol = agent.Symbol, MarketType = agent.MarketType, Timeframe = agent.Timeframe,
-            Side = PositionSide.Long, EntryPrice = entry, Size = 0.1m, CurrentStop = stop,
+            Side = PositionSide.Long, EntryPrice = entry, Size = 0.1m, RemainingSize = 0.1m, CurrentStop = stop,
             StopHistory = stop is { } s ? JsonSerializer.SerializeToElement(new[] { new { at = Now, price = s, reason = "initial" } }) : JsonValues.EmptyArray,
             Targets = JsonSerializer.SerializeToElement(target is { } t ? new[] { t } : Array.Empty<decimal>()), IsPaper = true, OpenedAt = Now,
         };
@@ -179,7 +179,7 @@ internal static class AgentsLiveSeed
 
     /// <summary>The modules the agents module needs, against the fixture's database, with the exchange listing BTCUSDT and ETHUSDT on every market; <paramref name="marketData"/> adds the market-data module before <c>AddAgents</c>.</summary>
     public static (ServiceProvider Provider, TestLoggerProvider Logs, FakeTimeProvider Time, FakeExchangeClientFactory Exchange, FakeMarketStreams Streams) Build(
-        DatabaseLiveFixture fixture, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null, bool marketData = false)
+        DatabaseLiveFixture fixture, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null, bool marketData = false, bool execution = false)
     {
         var logs = new TestLoggerProvider();
         var time = new FakeTimeProvider(now ?? Now);
@@ -189,7 +189,7 @@ internal static class AgentsLiveSeed
             OnRecentCandles = (symbol, interval, count) => RecentCandles(symbol, interval, count, time.GetUtcNow()),
         };
         var streams = new FakeMarketStreams();
-        var provider = AgentsTestHost.BuildServices(fixture.ConnectionString, logs, config, time, exchange, new FakeAiClientFactory(), streams, configure, marketData: marketData);
+        var provider = AgentsTestHost.BuildServices(fixture.ConnectionString, logs, config, time, exchange, new FakeAiClientFactory(), streams, configure, marketData: marketData, execution: execution);
         return (provider, logs, time, exchange, streams);
     }
 

@@ -110,6 +110,19 @@ public class AddExchangeTests
     }
 
     [Fact]
+    public async Task FuturesClientRefusesConditionalTypesOnThePlainOrderEndpointBeforeSendingAnything()
+    {
+        await using var provider = Build();
+        var client = provider.GetRequiredService<IExchangeClientFactory>().GetFuturesClient(Handle);
+        var request = new OrderRequest("BTCUSDT", OrderSide.Sell, OrderType.StopMarket, "c2", 1m, StopPrice: 1m, ReduceOnly: true);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => client.PlaceOrderAsync(request, TestContext.Current.CancellationToken));
+
+        Assert.Contains("PlaceConditionalOrderAsync", ex.Message);
+        Assert.Contains("-4120", ex.Message);
+    }
+
+    [Fact]
     public async Task SpotClientRejectsFuturesOnlyFlags()
     {
         await using var provider = Build();

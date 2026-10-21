@@ -5,7 +5,8 @@ namespace Ecnanib.Database.Entities;
 
 /// <summary>
 /// A position from entry to exit with its outcome (FR-EXP-02, FR-EXE-12). Retained for the life of the account
-/// (NFR-DATA-03). <see cref="IsUnmanaged"/> marks positions left open on Stop (FR-AGT-06).
+/// (NFR-DATA-03). <see cref="IsUnmanaged"/> marks positions left open on Stop (FR-AGT-06). <see cref="RealizedPnl"/>
+/// and <see cref="Fees"/> accumulate over partial exits and are net of fees and funding at the close.
 /// </summary>
 public sealed class Trade
 {
@@ -32,7 +33,11 @@ public sealed class Trade
 
     public decimal? ExitPrice { get; set; }
 
+    /// <summary>The size opened; never changed by partial exits.</summary>
     public decimal Size { get; set; }
+
+    /// <summary>The quantity still open: <see cref="Size"/> until a partial exit fills, 0 once closed (FR-EXE-06).</summary>
+    public decimal RemainingSize { get; set; }
 
     /// <summary>Stops are only ever tightened (FR-AI-15); <see cref="StopHistory"/> keeps every value.</summary>
     public decimal? CurrentStop { get; set; }

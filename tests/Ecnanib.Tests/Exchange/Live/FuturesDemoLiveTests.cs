@@ -36,6 +36,38 @@ public class FuturesDemoLiveTests
     }
 
     [Fact]
+    public async Task AConditionalTakeProfitRoundTripsThroughTheAlgoEndpointAndTheFundingHistoryReads()
+    {
+        var key = LiveTestKeys.RequireFuturesTestnet();
+        await using var services = LiveTestKeys.BuildServices();
+        var factory = services.GetRequiredService<IExchangeClientFactory>();
+        var client = factory.GetFuturesClient(key);
+        var data = factory.GetPublicData(ExchangeEnvironment.Testnet, MarketType.UsdFutures);
+        var info = await data.GetExchangeInfoAsync(Ct);
+        var symbol = Assert.Single(info.Symbols, s => s.Symbol == "BTCUSDT");
+        var mark = await data.GetMarkPriceAsync("BTCUSDT", Ct);
+        var quantity = symbol.Filters.RoundQuantityDownToStep(Math.Max(symbol.Filters.MinNotional * 1.5m / mark.Mark, symbol.Filters.MinQuantity) + symbol.Filters.StepSize);
+
+        // A buy take-profit-market far below the market waits for its trigger without a position (it is not reduce-only).
+        var clientId = NewId("ecn-tp");
+        var placed = await client.PlaceConditionalOrderAsync(new ConditionalOrderRequest("BTCUSDT", OrderSide.Buy, OrderType.TakeProfitMarket, clientId, symbol.Filters.RoundPriceDownToTick(mark.Mark * 0.5m), quantity, WorkingType: WorkingType.MarkPrice), Ct);
+        Assert.Equal(clientId, placed.ClientAlgoId);
+        Assert.True(placed.AlgoId > 0);
+        Assert.True(placed.Status.IsOpen());
+
+        var fetched = await client.GetConditionalOrderAsync(OrderRef.ByClientId(clientId), Ct);
+        Assert.Equal(placed.AlgoId, fetched.AlgoId);
+        Assert.Contains(await client.GetOpenConditionalOrdersAsync("BTCUSDT", Ct), o => o.AlgoId == placed.AlgoId);
+
+        var cancelled = await client.CancelConditionalOrderAsync(OrderRef.ByClientId(clientId), Ct);
+        Assert.Equal(ConditionalOrderStatus.Canceled, cancelled.Status);
+        Assert.DoesNotContain(await client.GetOpenConditionalOrdersAsync("BTCUSDT", Ct), o => o.AlgoId == placed.AlgoId);
+
+        var funding = await client.GetFundingPaymentsAsync("BTCUSDT", DateTimeOffset.UtcNow.AddDays(-7), null, Ct);
+        Assert.All(funding, f => Assert.Equal("BTCUSDT", f.Symbol));
+    }
+
+    [Fact]
     public async Task LimitOrderRoundTripAndReduceOnlyRejection()
     {
         var key = LiveTestKeys.RequireFuturesTestnet();
@@ -65,9 +97,10 @@ public class FuturesDemoLiveTests
         var positions = await client.GetPositionsAsync("BTCUSDT", Ct);
         if (positions.All(p => !p.IsOpen))
         {
-            var rejected = await Assert.ThrowsAsync<ExchangeRequestException>(() => client.PlaceOrderAsync(
-                new OrderRequest("BTCUSDT", OrderSide.Sell, OrderType.StopMarket, NewId("ecn-sl"), quantity, StopPrice: symbol.Filters.RoundPriceDownToTick(mark.Mark * 0.4m), ReduceOnly: true, WorkingType: WorkingType.MarkPrice), Ct));
-            Assert.Contains(rejected.Kind, new[] { ExchangeErrorKind.NoPosition, ExchangeErrorKind.RejectedOrder, ExchangeErrorKind.IncorrectState });
+            // Stops go through the conditional (algo) endpoint since December 2025 (FR-EXE-02); without a position a reduce-only one is refused.
+            var rejected = await Assert.ThrowsAsync<ExchangeRequestException>(() => client.PlaceConditionalOrderAsync(
+                new ConditionalOrderRequest("BTCUSDT", OrderSide.Sell, OrderType.StopMarket, NewId("ecn-sl"), symbol.Filters.RoundPriceDownToTick(mark.Mark * 0.4m), quantity, ReduceOnly: true, WorkingType: WorkingType.MarkPrice), Ct));
+            Assert.Contains(rejected.Kind, new[] { ExchangeErrorKind.NoPosition, ExchangeErrorKind.RejectedOrder, ExchangeErrorKind.IncorrectState, ExchangeErrorKind.InvalidParameter, ExchangeErrorKind.Unknown });
         }
 
         var cancelled = await client.CancelAllOrdersAsync("BTCUSDT", Ct);

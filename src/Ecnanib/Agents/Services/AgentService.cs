@@ -144,7 +144,7 @@ internal sealed class AgentService : IAgentService
             assignments.Select(c => new CouncilAssignmentView(c.Role, c.Provider, c.Model, c.Enabled,
                 catalog.FirstOrDefault(m => m.Provider == c.Provider && m.ModelId == c.Model)?.Status)).ToList(),
             Ordered(agent.EntryWindows).Select(w => new EntryWindowView(w.Id, w.Kind, w.StartAt, w.EndAt, w.StartDay, w.StartTime, w.EndDay, w.EndTime)).ToList(),
-            trades.Select(t => new OpenPositionView(t.Id, t.Side, t.Size, t.EntryPrice, t.CurrentStop, t.IsUnmanaged, closing.Contains(t.Id), t.IsPaper, t.OpenedAt)).ToList(),
+            trades.Select(t => new OpenPositionView(t.Id, t.Side, t.Size, t.RemainingSize > 0 ? t.RemainingSize : t.Size, t.EntryPrice, t.CurrentStop, t.IsUnmanaged, closing.Contains(t.Id), t.IsPaper, t.OpenedAt)).ToList(),
             orders.Select(o => new OpenOrderView(o.Id, o.Purpose, o.Type, o.Side, o.Price, o.StopPrice, o.Quantity, o.Status, o.IsPaper, o.ExpiresAt, o.CreatedAt)).ToList(),
             evaluations,
             changes.Select(c => new AgentChangeView(c.Timestamp, c.Field, c.OldValue?.GetRawText(), c.NewValue?.GetRawText())).ToList());
@@ -748,6 +748,16 @@ internal sealed class AgentService : IAgentService
             if (!resolution.IsResolved)
                 return new AgentActionResult(AgentActionStatus.KeyUnavailable, resolution.Reason ?? KeyStatusText(resolution.Status));
             environment = resolution.Handle!.Environment;
+
+            // FR-EXE-08: one live agent per key, market and symbol, so the exchange's position and balance attribute to one agent; an agent in
+            // Error keeps its position and its rows, so it counts until it is stopped.
+            var duplicate = await db.Agents.AsNoTracking()
+                .Where(a => a.UserId == userId && a.Id != agentId && a.Mode == AgentMode.Live && a.ExchangeKeyId == keyId
+                    && a.MarketType == agent.MarketType && a.Symbol == agent.Symbol && (a.State == AgentState.Running || a.State == AgentState.Paused || a.State == AgentState.Error))
+                .Select(a => a.Name)
+                .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+            if (duplicate is not null)
+                return new AgentActionResult(AgentActionStatus.InvalidConfiguration, $"Another live agent already trades {agent.Symbol} on {MarketName(agent.MarketType)} with this Binance key; stop it first, because one position per key, market and symbol can belong to one agent only.");
         }
 
         var missing = new List<string>();
@@ -915,6 +925,33 @@ internal sealed class AgentService : IAgentService
             ? $"{cancelled} order(s) cancelled; {closed} position(s) closing at market."
             : $"{cancelled} order(s) cancelled; {unmanaged} position(s) left open as unmanaged.";
         return new AgentActionResult(AgentActionStatus.Succeeded, detail);
+    }
+
+    public async Task<AgentBulkActionResult> StopAllAsync(Guid userId, bool closePositions, CancellationToken cancellationToken)
+    {
+        List<(Guid Id, string Name)> candidates;
+        await using (var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            candidates = (await db.Agents.AsNoTracking()
+                .Where(a => a.UserId == userId && (a.State == AgentState.Running || a.State == AgentState.Paused || a.State == AgentState.Error))
+                .OrderBy(a => a.Name).ThenBy(a => a.Id)
+                .Select(a => new { a.Id, a.Name })
+                .ToListAsync(cancellationToken).ConfigureAwait(false)).Select(a => (a.Id, a.Name)).ToList();
+        }
+
+        var stopped = 0;
+        var failed = new List<AgentBulkFailure>();
+        foreach (var (id, name) in candidates)
+        {
+            var result = await StopAsync(userId, id, closePositions, cancellationToken).ConfigureAwait(false);
+            if (result.Status == AgentActionStatus.Succeeded)
+                stopped++;
+            else if (result.Status != AgentActionStatus.InvalidState)
+                failed.Add(new AgentBulkFailure(id, name, result));
+        }
+
+        _logger.LogInformation("User {UserId} stopped all agents: {Stopped} stopped, {Failed} could not be stopped", userId, stopped, failed.Count);
+        return new AgentBulkActionResult(stopped, failed);
     }
 
     // --- Helpers --------------------------------------------------------------------------------------------------

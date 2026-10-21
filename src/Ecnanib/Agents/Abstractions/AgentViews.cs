@@ -28,11 +28,12 @@ public sealed record AgentSummary(
 /// <summary><see cref="CatalogStatus"/> is the model's status in the synced catalog, null when the catalog does not list it (a model entered by hand); Deprecated asks for a replacement (FR-SYNC-03).</summary>
 public sealed record CouncilAssignmentView(CouncilRole Role, AiProvider Provider, string Model, bool Enabled, ModelStatus? CatalogStatus);
 
-/// <summary><see cref="IsClosing"/> means a close-at-market order is waiting for its fill; <see cref="IsUnmanaged"/> marks a position left open on Stop (FR-AGT-06).</summary>
+/// <summary><see cref="IsClosing"/> means a close-at-market order is waiting for its fill; <see cref="IsUnmanaged"/> marks a position left open on Stop (FR-AGT-06); <see cref="RemainingSize"/> is what partial exits left open (FR-EXE-06).</summary>
 public sealed record OpenPositionView(
     Guid TradeId,
     PositionSide Side,
     decimal Size,
+    decimal RemainingSize,
     decimal EntryPrice,
     decimal? CurrentStop,
     bool IsUnmanaged,

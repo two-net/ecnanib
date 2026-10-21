@@ -25,7 +25,11 @@ public sealed class Order
     /// <summary>Deterministic, at most 36 characters (FR-EXE-07).</summary>
     public required string ClientOrderId { get; set; }
 
+    /// <summary>The regular order's exchange id; for a triggered futures conditional order, the actual order it became.</summary>
     public long? ExchangeOrderId { get; set; }
+
+    /// <summary>The futures conditional (algo) order id of a stop or take-profit placed through the algo endpoint (FR-EXE-02).</summary>
+    public long? ExchangeAlgoId { get; set; }
 
     /// <summary>Spot OCO list that owns this leg (FR-EXE-01).</summary>
     public long? OrderListId { get; set; }
@@ -62,6 +66,12 @@ public sealed class Order
     public DateTimeOffset UpdatedAt { get; set; }
 
     public DateTimeOffset? FilledAt { get; set; }
+
+    /// <summary>Fee of the fills in the quote asset, from exchange data or the paper rates (FR-EXE-12).</summary>
+    public decimal? Fee { get; set; }
+
+    /// <summary>Exit orders only: the realized P&amp;L of the fill against the trade's entry, net of <see cref="Fee"/> (FR-EXE-09, FR-EXE-12).</summary>
+    public decimal? RealizedPnl { get; set; }
 
     /// <summary>PostgreSQL <c>xmin</c>, used as the optimistic concurrency token.</summary>
     public uint Version { get; set; }

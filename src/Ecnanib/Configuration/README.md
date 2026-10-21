@@ -52,12 +52,12 @@ Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 | exchange | `Exchange` | endpoints, request timeout, reconciliation interval, streams, retry | exchange (#1) |
 | providers | `Providers` | endpoints per provider, model sync interval, miss threshold, call timeout, max output tokens | AI (#2); the sync interval and miss threshold are read by model sync (#10) |
 | agents | `Agents` | `MaxAgentsPerUser`, `MaxRunningAgentsPerUser` (accounts); `EvaluationDeadlineSeconds` per timeframe, `MaxConcurrentEvaluations`, `DefaultEntryTimeoutCandles` (agents) | accounts (#4), agents (#7) |
-| risk caps | `RiskCaps` | `MaxRiskPerTradePercent`, `MaxLeverage`, `MaxDailyLossPercent`, `MaxOpenPositions`; agents validate against them, execution (#13) enforces them at order time | agents (#7), execution (#13) |
+| risk caps | `RiskCaps` | `MaxRiskPerTradePercent`, `MaxLeverage`, `MaxDailyLossPercent`, `MaxOpenPositions`; agents validate against them, execution enforces them at order time | agents (#7), execution (#13) |
 | market data | `MarketData` | `BackfillCandles` per interval (the backfill depth and the window the engine sees), `SymbolRefreshIntervalMinutes` (beyond the appendix, a day at most); candle retention is `Retention:CandleDays` | market data (#12) |
 | paper | `Paper` | `StartingBalance`, maker and taker fee percents per market, `SlippagePercent` | agents (#7) |
 | ui | — | default theme and animation defaults arrive with the UI (#14) | UI (#14) |
 | retention | `Retention` | log, candle and deliberation-transcript days, sweep interval, batch size | database (#3) |
-| beyond the appendix | `Accounts`, `Keys`, `Council`, `Experience` | sessions, throttling, password length; key re-validation; the council's role budgets, prompt history and text bounds; the experience refresh interval, shadow horizon, recent outcomes and suggestion sample | accounts (#4), keys (#5), council (#9), experience (#11) |
+| beyond the appendix | `Accounts`, `Keys`, `Council`, `Experience`, `Execution` | sessions, throttling, password length; key re-validation; the council's role budgets, prompt history and text bounds; the experience refresh interval, shadow horizon, recent outcomes and suggestion sample; the execution module's protective-order retries, spot stop-limit offset, management budget, reconciliation age and fill-tracker start delay | accounts (#4), keys (#5), council (#9), experience (#11), execution (#13) |
 
 Configuration (`Server` is this module's section; `src/Ecnanib/ecnanib.json` is the complete reference file with
 every default):

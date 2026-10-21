@@ -9,7 +9,7 @@ namespace Ecnanib.Tests.Council.Live;
 internal static class CouncilLiveHost
 {
     public static (ServiceProvider Provider, TestLoggerProvider Logs, FakeTimeProvider Time, FakeExchangeClientFactory Exchange, FakeMarketStreams Streams) Build(
-        DatabaseLiveFixture fixture, FakeAiClientFactory ai, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null)
+        DatabaseLiveFixture fixture, FakeAiClientFactory ai, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null, bool execution = false)
     {
         var logs = new TestLoggerProvider();
         var time = new FakeTimeProvider(now ?? AgentsLiveSeed.Now);
@@ -19,7 +19,7 @@ internal static class CouncilLiveHost
             OnRecentCandles = (symbol, interval, count) => AgentsLiveSeed.RecentCandles(symbol, interval, count, time.GetUtcNow()),
         };
         var streams = new FakeMarketStreams();
-        var provider = CouncilTestHost.BuildServices(fixture.ConnectionString, logs, config, time, exchange, ai, streams, configure);
+        var provider = CouncilTestHost.BuildServices(fixture.ConnectionString, logs, config, time, exchange, ai, streams, configure, execution);
         return (provider, logs, time, exchange, streams);
     }
 }

@@ -22,6 +22,18 @@ internal static class AgentMessages
 
     public const string WindowsHint = "No new entry is opened while a window is active (UTC); the agent keeps managing open positions. Windows apply from the next evaluation.";
 
+    public const string StopAllHint = "The kill switch: every running, paused or failed agent is stopped, its open orders are cancelled, and its open positions are closed at market or left open as unmanaged, as you choose.";
+
+    /// <summary>The outcome of "stop all my agents" (FR-EXE-10): the count stopped and, when some could not be, each with its reason.</summary>
+    public static string StoppedAll(AgentBulkActionResult result, bool closePositions)
+    {
+        var head = $"{Plural(result.Stopped, "agent was", "agents were")} stopped" + (closePositions ? ", orders cancelled and positions closing at market." : ", orders cancelled and positions left open as unmanaged.");
+        if (result.Failed.Count == 0)
+            return head;
+        return head + " " + Plural(result.Failed.Count, "agent could", "agents could") + " not be stopped: "
+            + string.Join("; ", result.Failed.Select(f => $"{f.Name} ({ForAction(f.Result)})")) + ".";
+    }
+
     public static string ForSave(AgentSaveResult result) => result.Status switch
     {
         AgentSaveStatus.InvalidInput => result.Errors is { Count: > 0 } errors ? string.Join(" ", errors.Select(e => e.Message)) : "Check the values you entered.",

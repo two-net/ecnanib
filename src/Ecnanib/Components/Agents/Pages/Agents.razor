@@ -1,7 +1,9 @@
 @page "/agents"
 @attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
 @using Ecnanib.Database.Entities
 @inject IAgentService AgentService
+@inject NavigationManager Navigation
 
 <PageTitle>Agents</PageTitle>
 
@@ -11,6 +13,10 @@
 @if (_notice is not null)
 {
     <p class="notice" role="status">@_notice</p>
+}
+@if (_error is not null)
+{
+    <p class="error" role="alert">@_error</p>
 }
 
 <p><a href="/agents/new">New agent…</a></p>
@@ -63,11 +69,36 @@ else
             </tbody>
         </table>
     </div>
+
+    @if (_agents.Any(a => AgentStateMachine.CanStop(a.State)))
+    {
+        <section aria-labelledby="stop-all-title">
+            <h2 id="stop-all-title">Stop all my agents</h2>
+            <p>@AgentMessages.StopAllHint</p>
+            <EditForm Model="StopAll" FormName="stop-all" OnValidSubmit="StopAllAsync" method="post">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <label>
+                    Open positions
+                    <InputSelect @bind-Value="StopAll.Positions">
+                        <option value="close">Close at market now</option>
+                        <option value="leave">Leave them open, shown as unmanaged</option>
+                    </InputSelect>
+                </label>
+                <label class="check">
+                    <InputCheckbox @bind-Value="StopAll.Confirm" />
+                    Stop every running, paused or failed agent and cancel their open orders.
+                </label>
+                <button type="submit" class="danger">Stop all my agents</button>
+            </EditForm>
+        </section>
+    }
 }
 
 @code {
     private IReadOnlyList<AgentSummary>? _agents;
     private string? _notice;
+    private string? _error;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -75,16 +106,46 @@ else
     [SupplyParameterFromQuery(Name = "status")]
     private string? Status { get; set; }
 
+    [SupplyParameterFromQuery(Name = "detail")]
+    private string? Detail { get; set; }
+
+    [SupplyParameterFromForm(FormName = "stop-all")]
+    private StopAllInput StopAll { get; set; } = default!;
+
     private Guid UserId => HttpContext.User.RequireUserId();
 
     protected override async Task OnInitializedAsync()
     {
+        StopAll ??= new();
         _notice = Status switch
         {
             "deleted" => "The agent was deleted.",
+            "stopped-all" => Detail ?? "Your agents were stopped.",
             _ => null,
         };
         _agents = await AgentService.ListAsync(UserId, HttpContext.RequestAborted);
+    }
+
+    /// <summary>FR-EXE-10: every agent that can be stopped is, orders cancelled and positions closed or left as chosen; the ones that could not be are listed.</summary>
+    private async Task StopAllAsync()
+    {
+        var result = await AgentService.StopAllAsync(UserId, StopAll.Positions == "close", HttpContext.RequestAborted);
+        if (result.Failed.Count == 0)
+        {
+            Navigation.NavigateTo("/agents?status=stopped-all&detail=" + Uri.EscapeDataString(AgentMessages.StoppedAll(result, StopAll.Positions == "close")));
+            return;
+        }
+
+        _error = AgentMessages.StoppedAll(result, StopAll.Positions == "close");
+        _agents = await AgentService.ListAsync(UserId, HttpContext.RequestAborted);
+    }
+
+    private sealed class StopAllInput
+    {
+        public string Positions { get; set; } = "close";
+
+        [Range(typeof(bool), "true", "true", ErrorMessage = "Tick the box to confirm.")]
+        public bool Confirm { get; set; }
     }
 
     private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";

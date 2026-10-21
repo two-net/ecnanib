@@ -14,7 +14,7 @@ registration. The series, the feed and the catalog never leave this folder.
 |---|---|
 | The snapshot an evaluation runs on (FR-AGT-10, FR-DATA-02..04) | `IMarketDataLoader.LoadAsync(agent, strategy, key, closed, ct)` → `MarketSnapshot`; the agents module's pipeline is the only caller |
 | Follow and release an agent's series (FR-DATA-02) | `IMarketDataLoader.Track(MarketDataNeeds)` / `Untrack(agentId)`; the agents module's scheduler calls them as it tracks and untracks an agent |
-| Whether a symbol is listed, and its filters (FR-DATA-01, FR-EXE-04) | `ISymbolCatalog.FindAsync(environment, market, symbol, ct)` → `SymbolInfo` with `SymbolFilters` (tick size, step size, minimum notional and the rounding helpers), `ListAsync(environment, market, ct)` |
+| Whether a symbol is listed, and its filters (FR-DATA-01, FR-EXE-04) | `ISymbolCatalog.FindAsync(environment, market, symbol, ct)` → `SymbolInfo` with `SymbolFilters` (tick size, step size, minimum notional, order counts and the rounding helpers), `ListAsync(environment, market, ct)`; the execution module sizes against it |
 | The latest mark price, funding rate and next funding time of a followed futures symbol (FR-DATA-04) | `IFuturesMetrics.Latest(key)` |
 | Candle retention (FR-DATA-05) | `Retention:CandleDays`, the database module's; its `RetentionSweeper` deletes by open time |
 

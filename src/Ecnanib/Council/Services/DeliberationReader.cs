@@ -1,3 +1,4 @@
+using Ecnanib.Agents.Abstractions;
 using System.Text.Json;
 using Ecnanib.Council.Abstractions;
 using Ecnanib.Database;
@@ -41,7 +42,7 @@ internal sealed class DeliberationReader : IDeliberationReader
 
             decision = new FinalDecisionView(
                 stored.FinalAction, stored.EntryType, stored.EntryPrice, stored.StopPrice, Targets(stored.Targets), stored.PartialFraction, stored.RiskPercent,
-                stored.Confidence, stored.Rationale, Limits(stored.LimitsCheck), stored.TotalInputTokens, stored.TotalOutputTokens, stored.TotalLatencyMs, stored.CreatedAt);
+                stored.Confidence, stored.Rationale, Limits(stored.LimitsCheck), stored.TotalInputTokens, stored.TotalOutputTokens, stored.TotalLatencyMs, stored.CreatedAt, Limits(stored.ExecutionCheck));
         }
 
         return new DeliberationView(

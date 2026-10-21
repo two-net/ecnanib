@@ -14,6 +14,11 @@ public abstract record UserDataEvent(string KeyId, MarketType Market, DateTimeOf
         string KeyId, MarketType Market, DateTimeOffset Timestamp,
         OcoOrderList List) : UserDataEvent(KeyId, Market, Timestamp);
 
+    /// <summary>Futures ALGO_UPDATE: a conditional order was created, triggered, finished, cancelled, rejected or expired.</summary>
+    public sealed record ConditionalOrderUpdate(
+        string KeyId, MarketType Market, DateTimeOffset Timestamp,
+        ConditionalOrder Order) : UserDataEvent(KeyId, Market, Timestamp);
+
     public sealed record BalanceUpdate(
         string KeyId, MarketType Market, DateTimeOffset Timestamp,
         IReadOnlyList<AssetBalance> Balances) : UserDataEvent(KeyId, Market, Timestamp);
@@ -27,12 +32,13 @@ public abstract record UserDataEvent(string KeyId, MarketType Market, DateTimeOf
         string KeyId, MarketType Market, DateTimeOffset Timestamp,
         string Symbol, int Leverage) : UserDataEvent(KeyId, Market, Timestamp);
 
-    /// <summary>Full REST snapshot, emitted by the polling fallback and once after every stream restore.</summary>
+    /// <summary>Full REST snapshot, emitted by the polling fallback and once after every stream restore. <see cref="ConditionalOrders"/> is futures only.</summary>
     public sealed record Snapshot(
         string KeyId, MarketType Market, DateTimeOffset Timestamp,
         IReadOnlyList<ExchangeOrder> OpenOrders,
         IReadOnlyList<FuturesPosition>? Positions,
-        IReadOnlyList<AssetBalance> Balances) : UserDataEvent(KeyId, Market, Timestamp);
+        IReadOnlyList<AssetBalance> Balances,
+        IReadOnlyList<ConditionalOrder>? ConditionalOrders = null) : UserDataEvent(KeyId, Market, Timestamp);
 
     public sealed record StreamLost(string KeyId, MarketType Market, DateTimeOffset Timestamp)
         : UserDataEvent(KeyId, Market, Timestamp);

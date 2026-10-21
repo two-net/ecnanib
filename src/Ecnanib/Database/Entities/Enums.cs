@@ -111,13 +111,15 @@ public enum RoleOutputStatus
     Skipped = 5,
 }
 
-/// <summary>Why an order exists in the trade lifecycle (FR-EXE-01..03, FR-EXE-10).</summary>
+/// <summary>Why an order exists in the trade lifecycle (FR-EXE-01..03, FR-EXE-06, FR-EXE-10).</summary>
 public enum OrderPurpose
 {
     Entry = 1,
     StopLoss = 2,
     TakeProfit = 3,
     Close = 4,
+    /// <summary>A market exit of part of the position decided by the council or the strategy rules (FR-EXE-06).</summary>
+    PartialClose = 5,
 }
 
 /// <summary>Direction of a position (FR-AGT-12).</summary>

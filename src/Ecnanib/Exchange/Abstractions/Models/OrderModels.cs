@@ -120,3 +120,74 @@ public sealed record UserTrade(
     bool IsMaker,
     decimal? RealizedPnl,
     DateTimeOffset Timestamp);
+
+/// <summary>
+/// A USD-M futures conditional (algo) order: the stop-market, take-profit-market, stop-limit and take-profit-limit
+/// types Binance moved to <c>POST /fapi/v1/algoOrder</c> (FR-EXE-02). <see cref="ClientAlgoId"/> is the deterministic
+/// id (FR-EXE-07). <see cref="ClosePosition"/> closes the whole position on trigger and excludes a quantity and
+/// reduce-only; a reduce-only order with a quantity reduces by at most that quantity.
+/// </summary>
+public sealed record ConditionalOrderRequest(
+    string Symbol,
+    OrderSide Side,
+    OrderType Type,
+    string ClientAlgoId,
+    decimal TriggerPrice,
+    decimal? Quantity,
+    decimal? Price = null,
+    bool ReduceOnly = false,
+    bool ClosePosition = false,
+    WorkingType? WorkingType = null,
+    bool PriceProtect = false)
+{
+    public string Symbol { get; } = !string.IsNullOrWhiteSpace(Symbol)
+        ? Symbol.Trim().ToUpperInvariant()
+        : throw new ArgumentException("Symbol is required.", nameof(Symbol));
+
+    public OrderType Type { get; } = Type is OrderType.StopMarket or OrderType.TakeProfitMarket or OrderType.StopLossLimit or OrderType.TakeProfitLimit
+        ? Type
+        : throw new ArgumentException("A conditional order is a stop-market, take-profit-market, stop-limit or take-profit-limit order.", nameof(Type));
+
+    public string ClientAlgoId { get; } = OrderRequest.IsValidClientOrderId(ClientAlgoId)
+        ? ClientAlgoId
+        : throw new ArgumentException($"Client algo id must match ^[.A-Z:/a-z0-9_-]{{1,{OrderRequest.MaxClientOrderIdLength}}}$.", nameof(ClientAlgoId));
+
+    public decimal TriggerPrice { get; } = TriggerPrice > 0
+        ? TriggerPrice
+        : throw new ArgumentException("The trigger price must be positive.", nameof(TriggerPrice));
+
+    public decimal? Quantity { get; } = ClosePosition
+        ? (Quantity is null ? null : throw new ArgumentException("A close-position order carries no quantity.", nameof(Quantity)))
+        : (Quantity is > 0 ? Quantity : throw new ArgumentException("A conditional order needs a positive quantity unless it closes the position.", nameof(Quantity)));
+
+    public bool ReduceOnly { get; } = ClosePosition && ReduceOnly
+        ? throw new ArgumentException("A close-position order cannot also be reduce-only.", nameof(ReduceOnly))
+        : ReduceOnly;
+}
+
+/// <summary>
+/// A conditional order as the exchange reports it. <see cref="AlgoId"/> identifies it until it triggers;
+/// <see cref="ActualOrderId"/> is the regular order it became, whose fills carry that id. <see cref="FilledQuantity"/>
+/// and <see cref="AverageFillPrice"/> are known once the actual order traded.
+/// </summary>
+public sealed record ConditionalOrder(
+    string Symbol,
+    long AlgoId,
+    string ClientAlgoId,
+    OrderSide Side,
+    OrderType Type,
+    ConditionalOrderStatus Status,
+    decimal TriggerPrice,
+    decimal? Price,
+    decimal? Quantity,
+    bool ReduceOnly,
+    bool ClosePosition,
+    long? ActualOrderId,
+    decimal? FilledQuantity,
+    decimal? AverageFillPrice,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? TriggeredAt);
+
+/// <summary>One funding payment of a USD-M futures position: negative when paid, positive when received (FR-EXE-12).</summary>
+public sealed record FundingPayment(string Symbol, decimal Amount, string Asset, DateTimeOffset Timestamp, string? TransactionId);

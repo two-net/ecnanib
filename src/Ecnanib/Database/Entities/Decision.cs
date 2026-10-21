@@ -49,6 +49,9 @@ public sealed class Decision
     /// <summary>Per hard limit: pass, clamped or fail (FR-AI-11).</summary>
     public JsonElement? LimitsCheck { get; set; }
 
+    /// <summary>The execution module's own checks (sizing, notional, balance; FR-EXE-04), the same shape as <see cref="LimitsCheck"/>, kept apart so the council's clamp statistics stay its own.</summary>
+    public JsonElement? ExecutionCheck { get; set; }
+
     public int TotalInputTokens { get; set; }
 
     public int TotalOutputTokens { get; set; }
