@@ -46,6 +46,8 @@ public class LiveFillsLiveTests : IClassFixture<DatabaseLiveFixture>
         await Wait.UntilAsync(() => account.PlacedOcos.Count == 2, "protected");
         var trade = (await ExecutionLiveSeed.TradeOfAsync(_fixture, agent.Id))!;
         Assert.Equal((100m, 0.1m, 0.1m, 0.01m), (trade.EntryPrice, trade.Size, trade.RemainingSize, trade.Fees));
+        var filled = Assert.Single(logs.Entries, e => e.Message.StartsWith($"Entry {entry.ClientOrderId} of agent {agent.Id} filled", StringComparison.Ordinal));
+        Assert.Equal((agent.Id, user.Id, decision.Id, entry.Id), (filled.Scope["AgentId"], filled.Scope["UserId"], filled.Scope["DecisionId"], filled.Scope["OrderId"]));
         var (_, open) = await ExecutionLiveSeed.OpenAsync(_fixture, agent.Id);
         var firstTarget = open.Single(o => o.Purpose == OrderPurpose.TakeProfit && o.Price == 110m);
         var remainderStop = open.Single(o => o.Purpose == OrderPurpose.StopLoss && o.ListClientOrderId != firstTarget.ListClientOrderId);

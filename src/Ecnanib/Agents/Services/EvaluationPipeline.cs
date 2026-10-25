@@ -6,6 +6,7 @@ using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Keys.Abstractions;
+using Ecnanib.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -146,6 +147,8 @@ internal sealed class EvaluationPipeline
         }
 
         _events.Publish(new EvaluationStarted(agentId, agent.UserId, now, evaluation.Id, candle.OpenTime));
+        // FR-LOG-02: the logs of this evaluation name it (the scheduler's scope already names the agent and the user).
+        using var evaluationScope = _logger.BeginScope(evaluationId: evaluation.Id);
 
         var outcome = EvaluationOutcome.Failed;
         string? detail = null;

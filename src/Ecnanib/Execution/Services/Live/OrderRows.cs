@@ -1,6 +1,7 @@
 using Ecnanib.Agents.Abstractions;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
+using Ecnanib.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
 
 namespace Ecnanib.Execution.Services.Live;
@@ -58,6 +59,7 @@ internal sealed class OrderRows
     /// <summary>Reserves the row, sends a regular order and records the answer's ids and open or rejected status; the row already there is returned untouched.</summary>
     public async Task<SentOrder> SendAsync(Order row, LiveAccount account, Func<CancellationToken, Task<ExchangeOrder>> send, CancellationToken cancellationToken)
     {
+        using var scope = Scope(account, row);
         var (reserved, existed) = await _ledger.ReserveAsync(row, cancellationToken).ConfigureAwait(false);
         if (existed)
         {
@@ -68,6 +70,7 @@ internal sealed class OrderRows
         ExchangeOrder placed;
         try
         {
+            _logger.LogDebug("Sending {Type} {Side} order {ClientOrderId} of agent {AgentId} to the exchange", row.Type, row.Side, row.ClientOrderId, row.AgentId);
             placed = await send(cancellationToken).ConfigureAwait(false);
         }
         catch (ExchangeException ex) when (ex.Kind == ExchangeErrorKind.DuplicateClientOrderId)
@@ -81,6 +84,7 @@ internal sealed class OrderRows
             throw;
         }
 
+        _logger.LogInformation("Order {ClientOrderId} of agent {AgentId} accepted by the exchange as {ExchangeOrderId} with status {Status}", row.ClientOrderId, row.AgentId, placed.OrderId, placed.Status);
         var updated = await _ledger.UpdateOrderAsync(row.Id, o => Apply(o, placed), cancellationToken).ConfigureAwait(false) ?? row;
         return new SentOrder(updated, ToRemote(placed));
     }
@@ -88,6 +92,7 @@ internal sealed class OrderRows
     /// <summary>The same for a futures conditional (algo) order (FR-EXE-02).</summary>
     public async Task<SentOrder> SendConditionalAsync(Order row, LiveAccount account, Func<CancellationToken, Task<ConditionalOrder>> send, CancellationToken cancellationToken)
     {
+        using var scope = Scope(account, row);
         var (reserved, existed) = await _ledger.ReserveAsync(row, cancellationToken).ConfigureAwait(false);
         if (existed)
         {
@@ -98,6 +103,7 @@ internal sealed class OrderRows
         ConditionalOrder placed;
         try
         {
+            _logger.LogDebug("Sending conditional {Type} {Side} order {ClientOrderId} of agent {AgentId} to the exchange", row.Type, row.Side, row.ClientOrderId, row.AgentId);
             placed = await send(cancellationToken).ConfigureAwait(false);
         }
         catch (ExchangeException ex) when (ex.Kind == ExchangeErrorKind.DuplicateClientOrderId)
@@ -111,6 +117,7 @@ internal sealed class OrderRows
             throw;
         }
 
+        _logger.LogInformation("Conditional order {ClientOrderId} of agent {AgentId} accepted by the exchange as algo {AlgoId} with status {Status}", row.ClientOrderId, row.AgentId, placed.AlgoId, StatusOf(placed));
         var updated = await _ledger.UpdateOrderAsync(row.Id, o => Apply(o, placed), cancellationToken).ConfigureAwait(false) ?? row;
         return new SentOrder(updated, ToRemote(placed));
     }
@@ -118,6 +125,7 @@ internal sealed class OrderRows
     /// <summary>The same for a spot OCO: both legs are reserved, the list is sent once, and each leg takes its report.</summary>
     public async Task<(Order TakeProfit, Order StopLoss)> SendOcoAsync(Order takeProfit, Order stopLoss, LiveAccount account, Func<CancellationToken, Task<OcoOrderList>> send, CancellationToken cancellationToken)
     {
+        using var scope = Scope(account, takeProfit);
         var (tp, tpExisted) = await _ledger.ReserveAsync(takeProfit, cancellationToken).ConfigureAwait(false);
         var (sl, slExisted) = await _ledger.ReserveAsync(stopLoss, cancellationToken).ConfigureAwait(false);
         if (tpExisted || slExisted)
@@ -129,6 +137,7 @@ internal sealed class OrderRows
         OcoOrderList list;
         try
         {
+            _logger.LogDebug("Sending OCO {ListClientOrderId} of agent {AgentId} to the exchange", takeProfit.ListClientOrderId, takeProfit.AgentId);
             list = await send(cancellationToken).ConfigureAwait(false);
         }
         catch (ExchangeException ex) when (ex.Kind == ExchangeErrorKind.DuplicateClientOrderId)
@@ -143,6 +152,7 @@ internal sealed class OrderRows
             throw;
         }
 
+        _logger.LogInformation("OCO {ListClientOrderId} of agent {AgentId} accepted by the exchange as list {OrderListId} with status {Status}", takeProfit.ListClientOrderId, takeProfit.AgentId, list.OrderListId, list.Status);
         var tpReport = list.OrderReports?.FirstOrDefault(o => o.ClientOrderId == tp.ClientOrderId);
         var slReport = list.OrderReports?.FirstOrDefault(o => o.ClientOrderId == sl.ClientOrderId);
         var tpRef = list.Orders.FirstOrDefault(o => o.ClientOrderId == tp.ClientOrderId);
@@ -165,6 +175,10 @@ internal sealed class OrderRows
         }, cancellationToken).ConfigureAwait(false) ?? sl;
         return (tp, sl);
     }
+
+    /// <summary>FR-LOG-02: the placement's logs, and the exchange client's, name the agent, its user, the row and what it belongs to.</summary>
+    private IDisposable? Scope(LiveAccount account, Order row) =>
+        _logger.BeginScope(agentId: account.Agent.Id, userId: account.Agent.UserId, orderId: row.Id, decisionId: row.DecisionId, tradeId: row.TradeId);
 
     /// <summary>The ids and a non-fill status; fills are the fill handler's, which compares the exchange's filled quantity with the row's.</summary>
     public static void Apply(Order row, ExchangeOrder placed)

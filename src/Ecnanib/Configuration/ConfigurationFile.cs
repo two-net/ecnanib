@@ -18,7 +18,7 @@ public static class ConfigurationFile
 
     public const string ConfigOption = "--config";
 
-    /// <summary>The <c>Logging</c> section is the framework's logger configuration until the logging issue gives it options.</summary>
+    /// <summary>The <c>Logging</c> section: the logging module's <c>LoggingOptions</c> (per-sink minimum levels and the shared category levels); pinned to its <c>SectionName</c> by a test.</summary>
     public const string LoggingSection = "Logging";
 
     /// <summary>

@@ -6,7 +6,7 @@ namespace Ecnanib.Components.Logging;
 /// <summary>User-facing texts of the log viewer (FR-LOG-07).</summary>
 internal static class LogMessages
 {
-    public const string NoEntries = "No log entries for this agent yet. The database log arrives with the logging work; until then the log is on the console.";
+    public const string NoEntries = "No log entries for this agent yet.";
 
     public const string NoMatches = "No log entries match the filter.";
 

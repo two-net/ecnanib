@@ -29,7 +29,9 @@ public static class ExchangeServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddHttpClient(BinanceClientRegistry.HttpClientName)
             .ConfigureHttpClient((sp, client) =>
-                client.Timeout = sp.GetRequiredService<IOptions<ExchangeOptions>>().Value.RequestTimeout);
+                client.Timeout = sp.GetRequiredService<IOptions<ExchangeOptions>>().Value.RequestTimeout)
+            // FR-LOG-05: the factory's logging handler would otherwise print the API key header at Trace.
+            .RedactLoggedHeaders(["X-MBX-APIKEY"]);
 
         services.TryAddSingleton<BinanceEnvironmentFactory>();
         services.TryAddSingleton<IBinanceClientRegistry, BinanceClientRegistry>();

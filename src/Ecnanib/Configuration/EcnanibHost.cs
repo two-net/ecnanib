@@ -3,7 +3,8 @@ namespace Ecnanib.Configuration;
 /// <summary>
 /// Builds the application host from the configuration file and nothing else (FR-CFG-01, FR-CFG-02). It starts from
 /// <see cref="WebApplication.CreateEmptyBuilder"/>, which reads no environment variables, no <c>appsettings</c>
-/// files, no user secrets and no command line, and adds back only what the application uses.
+/// files, no user secrets and no command line, and adds back only what the application uses. Logging is not added
+/// here: both sinks (C-08) are the logging module's, registered by <c>AddLogSinks</c> in <c>Program.cs</c>.
 /// </summary>
 public static class EcnanibHost
 {
@@ -20,11 +21,6 @@ public static class EcnanibHost
         // maps them; after publish the manifest is absent and this is a no-op.
         builder.WebHost.UseStaticWebAssets();
         builder.Services.AddRouting();
-
-        // C-08: the console sink, with the per-category levels of the Logging section; the database sink arrives
-        // with the logging issue.
-        builder.Logging.AddConfiguration(builder.Configuration.GetSection(ConfigurationFile.LoggingSection));
-        builder.Logging.AddConsole();
 
         // There is no Development environment, so the container checks the default builder reserves for it run everywhere.
         builder.Host.UseDefaultServiceProvider(options =>

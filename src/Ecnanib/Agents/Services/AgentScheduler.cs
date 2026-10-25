@@ -5,6 +5,7 @@ using Ecnanib.Agents.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
+using Ecnanib.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -436,6 +437,8 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         if (!IsCurrent(tracked))
             return;
 
+        // FR-LOG-02: every log of this arrival, down to the council, the providers and the venue, carries the agent and its user.
+        using var scope = _logger.BeginScope(agentId: info.AgentId, userId: info.UserId);
         var gate = GateFor(info.AgentId);
         if (!gate.Wait(0))
         {

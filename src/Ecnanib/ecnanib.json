@@ -5,11 +5,16 @@
     "PublicUrl": "http://localhost:5207"
   },
   "Logging": {
+    "Console": {
+      "MinimumLevel": "Information"
+    },
+    "Database": {
+      "MinimumLevel": "Information"
+    },
     "LogLevel": {
-      "Default": "Information",
       "Microsoft.AspNetCore": "Warning",
-      "Binance.Net": "Warning",
-      "CryptoExchange.Net": "Warning",
+      "Binance": "Warning",
+      "CryptoExchange": "Warning",
       "System.Net.Http.HttpClient": "Warning",
       "Microsoft.EntityFrameworkCore": "Warning",
       "Npgsql": "Warning"

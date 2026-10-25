@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Reflection;
 using Ecnanib.Accounts;
 using Ecnanib.Agents;
 using Ecnanib.Ai;
@@ -36,6 +37,9 @@ catch (ConfigurationException ex)
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+// First: both log sinks (C-08) and, as the first hosted service, the database log writer, which therefore stops last
+// and still writes the other services' shutdown logs (FR-LOG-04).
+builder.Services.AddLogSinks(builder.Configuration);
 builder.Services.AddServer(builder.Configuration);
 // Before AddAccounts: visitors and new accounts take the Ui section's theme and animation defaults (Appendix D, FR-UI-02).
 builder.Services.AddUi(builder.Configuration);
@@ -60,7 +64,7 @@ builder.Services.AddAgents(builder.Configuration);
 builder.Services.AddKeys(builder.Configuration);
 // After AddAgents and AddModelSync: the health report reads the scheduler, the exchange streams, the model sync states and the database (NFR-OBS-01).
 builder.Services.AddHealth();
-// The log viewer reads log_entries scoped to the user's own agents (FR-LOG-07); the sink that fills the table arrives with the logging work.
+// The log viewer reads log_entries scoped to the user's own agents (FR-LOG-07); AddLogSinks above fills the table.
 builder.Services.AddLogReader();
 
 await using var app = builder.Build();
@@ -96,6 +100,11 @@ app.MapAccountEndpoints();
 
 // Resolved before RunAsync, which disposes the host on its way out, including when the server fails to start.
 var endPoint = app.Services.GetRequiredService<IOptions<ServerOptions>>().Value.ToEndPoint();
+// FR-LOG-04: the application's own start and stop events, beside the framework's lifetime messages. Stopping fires
+// before the hosted services stop, so the database log writer still has it when its turn comes.
+var version = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation("Ecnanib {Version} started; listening on {EndPoint}", version, endPoint));
+app.Lifetime.ApplicationStopping.Register(() => app.Logger.LogInformation("Ecnanib is stopping"));
 try
 {
     await app.RunAsync();

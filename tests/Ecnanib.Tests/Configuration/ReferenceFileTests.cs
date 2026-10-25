@@ -86,6 +86,7 @@ public class ReferenceFileTests
     private static ServiceCollection Register(IConfiguration configuration)
     {
         var services = new ServiceCollection();
+        services.AddLogSinks(configuration);
         services.AddServer(configuration);
         services.AddUi(configuration);
         services.AddExchange(configuration);

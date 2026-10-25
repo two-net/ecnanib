@@ -8,7 +8,6 @@ using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
 
 namespace Ecnanib.Tests.Configuration;
 
@@ -42,16 +41,17 @@ public class EcnanibHostTests
     }
 
     [Fact]
-    public void TheBuilderAddsKestrelRoutingAndTheConsoleLogger()
+    public void TheBuilderAddsKestrelAndRoutingAndLeavesLoggingToTheLoggingModule()
     {
         using var dir = new TempDirectory();
-        var path = dir.Write("ecnanib.json", "{ \"Logging\": { \"LogLevel\": { \"Default\": \"Warning\" } } }");
+        var path = dir.Write("ecnanib.json", "{ \"Logging\": { \"Console\": { \"MinimumLevel\": \"Warning\" } } }");
 
         var builder = EcnanibHost.CreateBuilder(path);
 
         Assert.Contains(builder.Services, d => d.ServiceType == typeof(IServer));
-        Assert.Contains(builder.Services, d => d.ServiceType == typeof(ILoggerProvider) && d.ImplementationType == typeof(ConsoleLoggerProvider));
         Assert.Contains(builder.Services, d => d.ServiceType.Name == "LinkGenerator");
+        Assert.DoesNotContain(builder.Services, d => d.ServiceType == typeof(ILoggerProvider));
+        Assert.Equal("Warning", builder.Configuration["Logging:Console:MinimumLevel"]);
     }
 
     [Fact]

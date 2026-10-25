@@ -8,7 +8,7 @@ section, binds it in its own `Add*` method and is listed here by name.
 | Need | Use |
 |---|---|
 | Where the file is (FR-CFG-01) | `ecnanib.json` in the current directory, or `ecnanib --config <path>` (`--config=<path>` works too); nothing else is accepted on the command line |
-| What is read (FR-CFG-02) | that file and nothing else: no environment variables, no `appsettings*.json`, no user secrets, no command-line settings. `EcnanibHost.CreateBuilder` starts from `WebApplication.CreateEmptyBuilder` and adds back only Kestrel, routing, static web assets and the console logger |
+| What is read (FR-CFG-02) | that file and nothing else: no environment variables, no `appsettings*.json`, no user secrets, no command-line settings. `EcnanibHost.CreateBuilder` starts from `WebApplication.CreateEmptyBuilder` and adds back only Kestrel, routing and static web assets; both log sinks are the logging module's `AddLogSinks` |
 | Add a section for a new module | an `XOptions` with `SectionName` and an `IValidateOptions<XOptions>`, registered as `AddOptions<XOptions>().Bind(...).ValidateDataAnnotations().ValidateOnStart()` in `AddX`; the name in `ConfigurationFile.Sections`; the defaults in `ecnanib.json`; a row in the table below |
 | Where the application listens | `Server:BindAddress` and `Server:Port`, plain HTTP. `Server:PublicUrl` is the origin users reach, normally a reverse proxy that terminates TLS (NFR-SEC-02) |
 | Cookies and https | session cookies carry the Secure flag when `Server:PublicUrl` is https; with a plain-http public URL (local use) they do not |
@@ -38,9 +38,10 @@ Rules the module enforces:
 - There is no Development environment: the error page, the container checks (`ValidateScopes`, `ValidateOnBuild`)
   and the cookie policy are the same everywhere. `Properties/launchSettings.json` only opens the browser and passes
   `--config ecnanib.local.json`; its `applicationUrl` does not decide where Kestrel listens.
-- `Logging` is the framework's logger configuration (console sink, minimum level per category) until the logging
-  issue adds the database sink and per-sink levels. Data Protection logs one warning on the first start that the key
-  is stored unencrypted; that is A-02 by design, because no key may live outside the database.
+- `Logging` is the logging module's section (#15): `Console:MinimumLevel`, `Database:MinimumLevel` and the `LogLevel`
+  category levels both sinks share, validated like every other section (`LogLevel:Default`, a per-sink `LogLevel`
+  table or an exchange category below Information refuses to start). Data Protection logs one warning on the first
+  start that the key is stored unencrypted; that is A-02 by design, because no key may live outside the database.
 
 Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 
@@ -48,7 +49,7 @@ Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 |---|---|---|---|
 | server | `Server` | `BindAddress`, `Port`, `PublicUrl` | this module |
 | database | `Database` | connection string (the only credential), command timeout, retries | database (#3) |
-| logging | `Logging` | minimum level per category for the console; per-sink levels arrive with logging (#15); log retention is `Retention:LogDays` | logging (#15) |
+| logging | `Logging` | `Console:MinimumLevel`, `Database:MinimumLevel`, `LogLevel` (levels per category prefix, shared by both sinks); log retention is `Retention:LogDays` | logging (#15) |
 | exchange | `Exchange` | endpoints, request timeout, reconciliation interval, streams, retry | exchange (#1) |
 | providers | `Providers` | endpoints per provider, model sync interval, miss threshold, call timeout, max output tokens | AI (#2); the sync interval and miss threshold are read by model sync (#10) |
 | agents | `Agents` | `MaxAgentsPerUser`, `MaxRunningAgentsPerUser` (accounts); `EvaluationDeadlineSeconds` per timeframe, `MaxConcurrentEvaluations`, `DefaultEntryTimeoutCandles` (agents) | accounts (#4), agents (#7) |

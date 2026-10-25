@@ -2,15 +2,16 @@ using Ecnanib.Accounts.Configuration;
 using Ecnanib.Agents.Configuration;
 using Ecnanib.Ai.Configuration;
 using Ecnanib.Configuration;
-using Ecnanib.Ui.Configuration;
 using Ecnanib.Council.Configuration;
 using Ecnanib.Database.Configuration;
 using Ecnanib.Exchange.Configuration;
 using Ecnanib.Execution.Configuration;
 using Ecnanib.Experience.Configuration;
 using Ecnanib.Keys.Configuration;
+using Ecnanib.Logging.Configuration;
 using Ecnanib.MarketData.Configuration;
 using Ecnanib.Tests.Support;
+using Ecnanib.Ui.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Configuration.Memory;
@@ -167,7 +168,7 @@ public class ConfigurationFileTests
     {
         string[] expected =
         [
-            ServerOptions.SectionName, DatabaseOptions.SectionName, ConfigurationFile.LoggingSection, ExchangeOptions.SectionName,
+            ServerOptions.SectionName, DatabaseOptions.SectionName, LoggingOptions.SectionName, ExchangeOptions.SectionName,
             AiOptions.SectionName, AgentLimitsOptions.SectionName, AgentsOptions.SectionName, RiskCapsOptions.SectionName, PaperOptions.SectionName,
             RetentionOptions.SectionName, AccountsOptions.SectionName, KeysOptions.SectionName, CouncilOptions.SectionName, ExperienceOptions.SectionName,
             MarketDataOptions.SectionName, ExecutionOptions.SectionName, UiOptions.SectionName,
@@ -175,6 +176,7 @@ public class ConfigurationFileTests
 
         // Accounts (fair-use limits) and Agents (runtime settings) bind the same section, so the constant appears twice here and once in the file.
         Assert.Equal(expected.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal), ConfigurationFile.Sections.Order(StringComparer.Ordinal));
+        Assert.Equal(LoggingOptions.SectionName, ConfigurationFile.LoggingSection);
     }
 
     private static ConfigurationManager Load(string path)

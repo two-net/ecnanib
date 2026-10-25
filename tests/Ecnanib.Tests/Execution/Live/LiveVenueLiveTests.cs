@@ -46,6 +46,8 @@ public class LiveVenueLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal((OrderStatus.Filled, 0.1m, 100m, false), (entry.Status, entry.FilledQuantity, entry.AverageFillPrice, entry.IsPaper));
         Assert.StartsWith("e", entry.ClientOrderId, StringComparison.Ordinal);
         Assert.NotNull(entry.ExchangeOrderId);
+        var accepted = Assert.Single(logs.Entries, e => e.Message == $"Order {entry.ClientOrderId} of agent {agent.Id} accepted by the exchange as {entry.ExchangeOrderId} with status Filled");
+        Assert.Equal(new Dictionary<string, object?> { ["AgentId"] = agent.Id, ["UserId"] = user.Id, ["DecisionId"] = decision.Id, ["OrderId"] = entry.Id }, accepted.Scope);
         var trade = (await ExecutionLiveSeed.TradeOfAsync(_fixture, agent.Id))!;
         Assert.Equal((100m, 0.1m, 0.1m, 95m, 0.01m, false), (trade.EntryPrice, trade.Size, trade.RemainingSize, trade.CurrentStop, trade.Fees, trade.IsPaper));
         Assert.Equal([110m, 130m], TradeJson.Targets(trade.Targets));

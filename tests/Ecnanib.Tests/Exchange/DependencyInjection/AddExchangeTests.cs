@@ -5,7 +5,9 @@ using Ecnanib.Tests.Support;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Ecnanib.Tests.Exchange.DependencyInjection;
 
@@ -96,6 +98,18 @@ public class AddExchangeTests
         Assert.Contains(logs.Entries, e => e.Message.Contains("…2345"));
         Assert.DoesNotContain("s3cr3tvalue", logs.AllText);
         Assert.DoesNotContain("abcdefgh12345", logs.AllText);
+    }
+
+    [Fact]
+    public async Task TheApiKeyHeaderIsRedactedFromTheHttpClientLogs()
+    {
+        await using var provider = Build();
+
+        var options = provider.GetRequiredService<IOptionsMonitor<HttpClientFactoryOptions>>().Get(BinanceClientRegistry.HttpClientName);
+
+        Assert.True(options.ShouldRedactHeaderValue("X-MBX-APIKEY"));
+        Assert.True(options.ShouldRedactHeaderValue("x-mbx-apikey"));
+        Assert.False(options.ShouldRedactHeaderValue("Content-Type"));
     }
 
     [Fact]

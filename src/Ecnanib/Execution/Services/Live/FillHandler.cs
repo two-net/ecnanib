@@ -1,6 +1,7 @@
 using Ecnanib.Agents.Abstractions;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
+using Ecnanib.Logging.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -43,6 +44,8 @@ internal sealed class FillHandler
         ArgumentNullException.ThrowIfNull(account);
         ArgumentNullException.ThrowIfNull(row);
         ArgumentNullException.ThrowIfNull(remote);
+        // FR-LOG-02: fills arrive from the stream and the reconciler, outside any evaluation, so the scope names everything itself.
+        using var scope = _logger.BeginScope(agentId: account.Agent.Id, userId: account.Agent.UserId, orderId: row.Id, decisionId: row.DecisionId, tradeId: row.TradeId);
         var at = fill?.Timestamp ?? _time.GetUtcNow();
 
         if (remote.ExchangeOrderId is { } id && row.ExchangeOrderId != id || remote.AlgoId is { } algo && row.ExchangeAlgoId != algo)

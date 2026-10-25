@@ -35,9 +35,9 @@ Rules the module enforces:
   back with a zero offset, `decimal` is unbounded `numeric`, open-ended structures are `jsonb` (`JsonElement`: store
   a `Clone()` of an element whose document outlives the entity, or `JsonValues.EmptyObject`/`EmptyArray`).
   Guid keys are UUID v7, generated client-side by Npgsql.
-- Every user-owned row cascades from `users`, so account deletion is one statement (FR-ACC-04). `log_entries` has
-  no foreign keys so the log sink can never fail on a race (FR-LOG-08): account deletion must delete the user's log
-  rows explicitly. Deleting an exchange key sets `agents.exchange_key_id` to null (FR-KEY-06).
+- Every user-owned row cascades from `users`, so account deletion is one statement (FR-ACC-04). `log_entries` is
+  written in batches by the logging module's sink and has no foreign keys so that sink can never fail on a race
+  (FR-LOG-08): account deletion must delete the user's log rows explicitly. Deleting an exchange key sets `agents.exchange_key_id` to null (FR-KEY-06).
 - Keys and secrets are stored plain per A-02 and masked everywhere else (FR-KEY-04). EF and Npgsql log categories are
   capped at Warning in the configuration file (`ecnanib.json`) and the connection string never appears in a validation message.
 - `Database:RetryOnFailureCount` enables Npgsql's retrying execution strategy; code that opens its own transaction

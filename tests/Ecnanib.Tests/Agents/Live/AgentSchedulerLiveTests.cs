@@ -139,7 +139,9 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal(finished.EvaluationId, started.EvaluationId);
         Assert.Equal(LastOpen, started.CandleOpenTime);
         Assert.True(events.IndexOf(started) < events.IndexOf(finished));
-        Assert.Contains(logs.Entries, e => e.Message.Contains($"Agent {agent.Id} evaluated candle", StringComparison.Ordinal) && e.Message.Contains("NoAction", StringComparison.Ordinal));
+        var evaluated = Assert.Single(logs.Entries, e => e.Message.Contains($"Agent {agent.Id} evaluated candle", StringComparison.Ordinal) && e.Message.Contains("NoAction", StringComparison.Ordinal));
+        // FR-LOG-02: the scheduler's scope names the agent and its user, the pipeline's the evaluation, for every log of the run.
+        Assert.Equal(new Dictionary<string, object?> { ["AgentId"] = agent.Id, ["UserId"] = user.Id, ["EvaluationId"] = finished.EvaluationId }, evaluated.Scope);
         await scheduler.StopAsync(Ct);
         await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
     }

@@ -27,7 +27,7 @@ public class LogMessagesTests
     [Fact]
     public void TheEmptyStatesAreExact()
     {
-        Assert.Equal("No log entries for this agent yet. The database log arrives with the logging work; until then the log is on the console.", LogMessages.NoEntries);
+        Assert.Equal("No log entries for this agent yet.", LogMessages.NoEntries);
         Assert.Equal("No log entries match the filter.", LogMessages.NoMatches);
         Assert.Equal("2026-01-05 10:02:03 UTC", LogMessages.Stamp(new DateTimeOffset(2026, 1, 5, 12, 2, 3, TimeSpan.FromHours(2))));
     }
