@@ -14,7 +14,44 @@ internal static class AgentMessages
 
     public const string PaperHint = "Paper mode simulates fills against live Binance prices with no key; live mode sends orders with the chosen key.";
 
-    public const string DraftHint = "The agent is a draft: choose its strategy, council and risk limits below, then start it.";
+    public const string DraftHint = "The agent is a draft: finish its setup (strategy, council and risk limits), then review and start it.";
+
+    public const string SetupIntro = "Every step is saved on its own; a draft moves to the next step when it is saved. Nothing trades until the agent is started on the last step.";
+
+    /// <summary>The notice the agent page shows after an action, from the status it was redirected with.</summary>
+    public static string? DetailNotice(string? status, string? detail) => status switch
+    {
+        "started" => "The agent is running and will be evaluated at the next candle close.",
+        "paused" => "The agent is paused: it keeps managing open positions and opens nothing new.",
+        "resumed" => "The agent is running again.",
+        "stopped" => "The agent was stopped." + (detail is null ? "" : " " + detail),
+        _ => null,
+    };
+
+    /// <summary>The notice the setup wizard shows after a save, from the status it was redirected with.</summary>
+    public static string? SetupNotice(string? status, string? detail) => status switch
+    {
+        "created" => "The draft was created. Choose its strategy, council and risk limits, then review and start it.",
+        "saved" => "The changes were saved.",
+        "unchanged" => "Nothing changed.",
+        "cloned" => "This is the copy; it starts as a draft.",
+        "upgraded" => "The agent now runs the newest version of its strategy." + (detail is null ? "" : " " + detail),
+        "window-added" => "The no-entry window was added; it applies from the next evaluation.",
+        "window-removed" => "The no-entry window was removed.",
+        "council-defaults" => "The council uses the default assignments by strength.",
+        "council-single" => "One model now performs all four roles in sequence.",
+        _ => null,
+    };
+
+    public static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
+
+    public static string Markets(ExchangeKeyView key) => (key.AllowSpot, key.AllowFutures) switch
+    {
+        (true, true) => "Spot and Futures",
+        (true, false) => "Spot",
+        (false, true) => "Futures",
+        _ => "no market",
+    };
 
     public const string RunningEditHint = "While the agent is running only its name can be changed; pause it to edit the strategy parameters, strategy version, no-entry windows, council or risk limits.";
 

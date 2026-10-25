@@ -1,21 +1,13 @@
 @page "/agents/{Id:guid}"
 @attribute [Authorize]
-@using System.Globalization
-@using System.Text.Json
-@using Ecnanib.Agents.Configuration
 @using Ecnanib.Ai.Abstractions
 @using Ecnanib.Database.Entities
 @using Ecnanib.Exchange.Abstractions
 @using Ecnanib.Experience.Abstractions
 @using Ecnanib.ModelSync.Abstractions
-@using Microsoft.Extensions.Options
 @inject IAgentService AgentService
 @inject IStrategyCatalog Catalog
-@inject IKeyService KeyService
-@inject IModelCatalog ModelCatalog
 @inject IExperienceReader Experience
-@inject ICouncilSuggestions Suggestions
-@inject IOptions<RiskCapsOptions> RiskCaps
 @inject TimeProvider Clock
 @inject NavigationManager Navigation
 
@@ -23,6 +15,7 @@
 
 @if (_agent is { } agent)
 {
+    <p><a href="/agents">← Agents</a></p>
     <h1>@agent.Name</h1>
     <p>
         <span class="status @AgentMessages.StateClass(agent.State)">@AgentMessages.Describe(agent.State, agent.PauseCause)</span>
@@ -33,37 +26,33 @@
     </p>
     @if (_deprecatedRoles.Count > 0)
     {
-        <p class="warning" role="alert">@AgentMessages.DeprecatedModels(_deprecatedRoles) <a href="#council">Go to the council</a>.</p>
+        <p class="warning" role="alert">@AgentMessages.DeprecatedModels(_deprecatedRoles) <a href="@WizardSteps.Href(Id, WizardStep.Council)">Go to the council</a>.</p>
     }
     <dl class="details">
         <dt>Trades</dt><dd>@agent.Symbol on @AgentMessages.Market(agent.MarketType), @AgentMessages.Timeframe(agent.Timeframe) candles, @AgentMessages.Mode(agent.Mode).ToLowerInvariant() mode</dd>
         <dt>Strategy</dt><dd>@(_strategy?.Name ?? agent.StrategyId) (version @agent.StrategyVersion@(UpgradeAvailable ? $", version {agent.LatestStrategyVersion} available" : ""))</dd>
         @if (AgentStateMachine.IsEvaluated(agent.State))
         {
-            <dt>Next evaluation</dt><dd>@Stamp(agent.Timeframe.NextCloseAfter(Clock.GetUtcNow()))</dd>
+            <dt>Next evaluation</dt><dd>@AgentMessages.Stamp(agent.Timeframe.NextCloseAfter(Clock.GetUtcNow()))</dd>
         }
         @if (agent.AutoResumeAt is { } resumeAt)
         {
-            <dt>Resumes</dt><dd>@Stamp(resumeAt)</dd>
+            <dt>Resumes</dt><dd>@AgentMessages.Stamp(resumeAt)</dd>
         }
-        <dt>Created</dt><dd>@Stamp(agent.CreatedAt)</dd>
-        <dt>Updated</dt><dd>@Stamp(agent.UpdatedAt)</dd>
+        <dt>Created</dt><dd>@AgentMessages.Stamp(agent.CreatedAt)</dd>
+        <dt>Updated</dt><dd>@AgentMessages.Stamp(agent.UpdatedAt)</dd>
     </dl>
 
     @if (_notice is not null)
     {
-        <p class="@(_noticeIsError ? "error" : "notice")" role="@(_noticeIsError ? "alert" : "status")">@_notice</p>
+        <p class="notice" role="status">@_notice</p>
     }
     @if (agent.State == AgentState.Draft)
     {
-        <p class="hint">@AgentMessages.DraftHint</p>
-    }
-    else if (agent.State == AgentState.Running)
-    {
-        <p class="hint">@AgentMessages.RunningEditHint</p>
+        <p class="hint">@AgentMessages.DraftHint <a href="@WizardSteps.Href(Id, WizardStep.Strategy)">Continue the setup</a>.</p>
     }
 
-    <section aria-labelledby="actions-title">
+    <section class="card" aria-labelledby="actions-title">
         <h2 id="actions-title">Actions</h2>
         @if (_actionError is not null)
         {
@@ -95,6 +84,7 @@
                 <AntiforgeryToken />
                 <button type="submit">Clone</button>
             </form>
+            <a class="button" href="@WizardSteps.Href(Id, WizardStep.Basics)">Edit setup</a>
         </div>
         @if (AgentStateMachine.CanStop(agent.State))
         {
@@ -129,7 +119,7 @@
         }
     </section>
 
-    <section aria-labelledby="positions-title">
+    <section class="card" aria-labelledby="positions-title">
         <h2 id="positions-title">Positions and orders</h2>
         @if (agent.OpenPositions.Count == 0)
         {
@@ -138,24 +128,24 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents">
-                    <thead><tr><th>Side</th><th>Size</th><th>Entry</th><th>Stop</th><th>Opened</th><th>Status</th></tr></thead>
+                <table class="agents data stack">
+                    <thead><tr><th scope="col">Side</th><th scope="col">Size</th><th scope="col">Entry</th><th scope="col">Stop</th><th scope="col">Opened</th><th scope="col">Status</th></tr></thead>
                     <tbody>
                         @foreach (var position in agent.OpenPositions)
                         {
                             <tr>
-                                <td>@position.Side</td>
-                                <td>
+                                <td data-label="Side">@position.Side</td>
+                                <td data-label="Size">
                                     @position.RemainingSize
                                     @if (position.RemainingSize != position.Size)
                                     {
                                         <span class="muted">of @position.Size</span>
                                     }
                                 </td>
-                                <td>@position.EntryPrice</td>
-                                <td>@(position.CurrentStop?.ToString() ?? "none")</td>
-                                <td>@Stamp(position.OpenedAt)</td>
-                                <td>
+                                <td data-label="Entry">@position.EntryPrice</td>
+                                <td data-label="Stop">@(position.CurrentStop?.ToString() ?? "none")</td>
+                                <td data-label="Opened">@AgentMessages.Stamp(position.OpenedAt)</td>
+                                <td data-label="Status">
                                     @if (position.IsClosing)
                                     {
                                         <text>Closing at market</text>
@@ -182,20 +172,20 @@
         @if (agent.OpenOrders.Count > 0)
         {
             <div class="table-wrap">
-                <table class="agents">
-                    <thead><tr><th>Purpose</th><th>Type</th><th>Side</th><th>Price</th><th>Stop</th><th>Quantity</th><th>Status</th><th>Expires</th></tr></thead>
+                <table class="agents data stack">
+                    <thead><tr><th scope="col">Purpose</th><th scope="col">Type</th><th scope="col">Side</th><th scope="col">Price</th><th scope="col">Stop</th><th scope="col">Quantity</th><th scope="col">Status</th><th scope="col">Expires</th></tr></thead>
                     <tbody>
                         @foreach (var order in agent.OpenOrders)
                         {
                             <tr>
-                                <td>@order.Purpose</td>
-                                <td>@order.Type</td>
-                                <td>@order.Side</td>
-                                <td>@(order.Price?.ToString() ?? "market")</td>
-                                <td>@(order.StopPrice?.ToString() ?? "")</td>
-                                <td>@order.Quantity</td>
-                                <td>@order.Status@(order.IsPaper ? " (paper)" : "")</td>
-                                <td>@(order.ExpiresAt is { } expires ? Stamp(expires) : "")</td>
+                                <td data-label="Purpose">@order.Purpose</td>
+                                <td data-label="Type">@order.Type</td>
+                                <td data-label="Side">@order.Side</td>
+                                <td data-label="Price">@(order.Price?.ToString() ?? "market")</td>
+                                <td data-label="Stop">@(order.StopPrice?.ToString() ?? "")</td>
+                                <td data-label="Quantity">@order.Quantity</td>
+                                <td data-label="Status">@order.Status@(order.IsPaper ? " (paper)" : "")</td>
+                                <td data-label="Expires">@(order.ExpiresAt is { } expires ? AgentMessages.Stamp(expires) : "")</td>
                             </tr>
                         }
                     </tbody>
@@ -204,372 +194,28 @@
         }
     </section>
 
-    <section aria-labelledby="settings-title">
-        <h2 id="settings-title">Settings</h2>
-        <EditForm Model="Settings" FormName="agent-settings" OnValidSubmit="SaveSettingsAsync" method="post">
-            <DataAnnotationsValidator />
-            @if (_settingsError is not null)
-            {
-                <p class="error" role="alert">@_settingsError</p>
-            }
-            <ValidationSummary />
-            <label>
-                Name
-                <InputText @bind-Value="Settings.Name" maxlength="100" autocomplete="off" required />
-            </label>
-            <label>
-                Market
-                <InputSelect @bind-Value="Settings.MarketType" disabled="@(!CanEdit(AgentField.MarketType))">
-                    <option value="@MarketType.Spot">Spot (long only)</option>
-                    <option value="@MarketType.UsdFutures">USDⓈ-M Futures (long or short)</option>
-                </InputSelect>
-            </label>
-            <label>
-                Symbol
-                <InputText @bind-Value="Settings.Symbol" maxlength="30" autocomplete="off" spellcheck="false" disabled="@(!CanEdit(AgentField.Symbol))" />
-            </label>
-            <label>
-                Timeframe
-                <InputSelect @bind-Value="Settings.Timeframe" disabled="@(!CanEdit(AgentField.Timeframe))">
-                    @foreach (var timeframe in AgentsOptions.Timeframes)
-                    {
-                        <option value="@timeframe">@AgentsOptions.KeyOf(timeframe)</option>
-                    }
-                </InputSelect>
-            </label>
-            <p class="hint">Changing the timeframe switches to that timeframe's default strategy and resets its parameters.</p>
-            <label>
-                Mode
-                <InputSelect @bind-Value="Settings.Mode" disabled="@(!CanEdit(AgentField.Mode))">
-                    <option value="@AgentMode.Paper">Paper</option>
-                    <option value="@AgentMode.Live">Live</option>
-                </InputSelect>
-            </label>
-            <label>
-                Binance key (live mode)
-                <InputSelect @bind-Value="Settings.ExchangeKeyId" disabled="@(!CanEdit(AgentField.ExchangeKey))">
-                    <option value="">None</option>
-                    @if (_keys is not null)
-                    {
-                        @foreach (var key in _keys.ExchangeKeys)
-                        {
-                            <option value="@key.Id">@key.Label (@key.Environment, @Markets(key))</option>
-                        }
-                    }
-                </InputSelect>
-            </label>
-            <fieldset>
-                <legend>Futures only</legend>
-                <label>
-                    Leverage (1–@RiskCaps.Value.MaxLeverage)
-                    <InputNumber @bind-Value="Settings.Leverage" min="1" max="@RiskCaps.Value.MaxLeverage" disabled="@(!CanEdit(AgentField.Leverage))" />
-                </label>
-                <label>
-                    Margin
-                    <InputSelect @bind-Value="Settings.MarginType" disabled="@(!CanEdit(AgentField.MarginType))">
-                        <option value="@MarginType.Isolated">Isolated (default)</option>
-                        <option value="@MarginType.Cross">Cross</option>
-                    </InputSelect>
-                </label>
-            </fieldset>
-            <label class="check">
-                <InputCheckbox @bind-Value="Settings.Discretionary" disabled="@(!CanEdit(AgentField.Discretionary))" />
-                Discretionary mode: the council may propose an entry without a strategy setup (off by default).
-            </label>
-            <button type="submit">Save settings</button>
-        </EditForm>
-    </section>
-
-    <section aria-labelledby="strategy-title">
-        <h2 id="strategy-title">Strategy and parameters</h2>
-        <EditForm Model="Strategy" FormName="agent-strategy" OnValidSubmit="SaveStrategyAsync" method="post">
-            @if (_strategyError is not null)
-            {
-                <p class="error" role="alert">@_strategyError</p>
-            }
-            <label>
-                Strategy (@AgentMessages.Timeframe(agent.Timeframe))
-                <InputSelect @bind-Value="Strategy.StrategyId" disabled="@(!CanEdit(AgentField.Strategy))">
-                    @foreach (var descriptor in Catalog.ForTimeframe(agent.Timeframe))
-                    {
-                        <option value="@descriptor.Id">@descriptor.Name</option>
-                    }
-                </InputSelect>
-            </label>
-            @if (_strategy is not null)
-            {
-                <p class="hint">@_strategy.Summary</p>
-                @if (_strategy.Version != agent.StrategyVersion)
+    <section id="council" class="card" aria-labelledby="setup-title">
+        <h2 id="setup-title">Setup</h2>
+        <dl class="details">
+            <dt>Strategy</dt><dd>@(_strategy?.Name ?? agent.StrategyId), version @agent.StrategyVersion@(agent.Parameters.Count > 0 ? $" with {AgentMessages.Plural(agent.Parameters.Count, "changed parameter", "changed parameters")}" : ", default parameters")</dd>
+            <dt>Council</dt>
+            <dd>
+                @foreach (var role in agent.Council)
                 {
-                    <p class="error" role="alert">Version @agent.StrategyVersion of this strategy is no longer available; the parameters of version @_strategy.Version are shown. Upgrade the agent to run it.</p>
+                    <span class="muted">@CouncilRoles.Display(role.Role): @ProviderNames.Display(role.Provider) @(role.Model.Length == 0 ? "(no model)" : role.Model)@(role.Enabled ? "" : " (disabled)")@(role.CatalogStatus == ModelStatus.Deprecated ? " (deprecated)" : "")</span>
                 }
-                <fieldset>
-                    <legend>Parameters (blank means the default)</legend>
-                    <div class="parameters">
-                        @foreach (var parameter in _strategy.Parameters)
-                        {
-                            var name = parameter.Name;
-                            <label>
-                                @parameter.Label
-                                @if (parameter.Kind is StrategyParameterKind.Integer or StrategyParameterKind.Decimal)
-                                {
-                                    <span class="muted">(@parameter.Min to @parameter.Max)</span>
-                                    <InputText @bind-Value="Strategy.Values[name]" placeholder="@parameter.DefaultText" inputmode="@(parameter.Kind == StrategyParameterKind.Integer ? "numeric" : "decimal")" disabled="@(!CanEdit(AgentField.Parameters))" />
-                                }
-                                else if (parameter.Kind == StrategyParameterKind.Choice)
-                                {
-                                    <InputSelect @bind-Value="Strategy.Values[name]" disabled="@(!CanEdit(AgentField.Parameters))">
-                                        <option value="">Default (@parameter.DefaultText)</option>
-                                        @foreach (var choice in parameter.Choices!)
-                                        {
-                                            <option value="@choice">@choice</option>
-                                        }
-                                    </InputSelect>
-                                }
-                                else
-                                {
-                                    <InputSelect @bind-Value="Strategy.Values[name]" disabled="@(!CanEdit(AgentField.Parameters))">
-                                        <option value="">Default (@parameter.DefaultText)</option>
-                                        <option value="true">On</option>
-                                        <option value="false">Off</option>
-                                    </InputSelect>
-                                }
-                            </label>
-                        }
-                    </div>
-                </fieldset>
+            </dd>
+            <dt>Risk</dt><dd>@agent.RiskLimits.RiskPerTradePercent% per trade, at most @agent.RiskLimits.MaxOpenPositions open, @agent.RiskLimits.DailyLossLimitPercent% daily loss@(agent.RiskLimits.MaxNotional is { } cap ? $", notional cap {cap}" : "")</dd>
+            <dt>No-entry windows</dt><dd>@(agent.EntryWindows.Count == 0 ? "none" : string.Join("; ", agent.EntryWindows.Select(AgentMessages.Describe)))</dd>
+            @if (agent.Discretionary)
+            {
+                <dt>Discretionary</dt><dd>The council may propose an entry without a strategy setup.</dd>
             }
-            <label class="check">
-                <InputCheckbox @bind-Value="Strategy.ResetToDefaults" disabled="@(!CanEdit(AgentField.Parameters))" />
-                Reset every parameter to its default.
-            </label>
-            <button type="submit" disabled="@(!CanEdit(AgentField.Parameters) && !CanEdit(AgentField.Strategy))">Save strategy</button>
-        </EditForm>
-        @if (UpgradeAvailable)
-        {
-            <h3>Upgrade</h3>
-            <p class="hint">Version @agent.LatestStrategyVersion of @(_strategy?.Name ?? agent.StrategyId) is available; this agent runs version @agent.StrategyVersion. @AgentMessages.UpgradeHint @(CanEdit(AgentField.StrategyVersion) ? "" : "Pause or stop the agent first.")</p>
-            <form method="post" @formname="upgrade-strategy" @onsubmit="UpgradeAsync" class="inline">
-                <AntiforgeryToken />
-                <button type="submit" disabled="@(!CanEdit(AgentField.StrategyVersion))">Upgrade to version @agent.LatestStrategyVersion</button>
-            </form>
-        }
+        </dl>
+        <p><a class="button" href="@WizardSteps.Href(Id, WizardStep.Basics)">Edit setup</a></p>
     </section>
 
-    <section aria-labelledby="windows-title">
-        <h2 id="windows-title">No-entry windows</h2>
-        <p class="hint">@AgentMessages.WindowsHint</p>
-        @if (_windowError is not null)
-        {
-            <p class="error" role="alert">@_windowError</p>
-        }
-        @if (agent.EntryWindows.Count == 0)
-        {
-            <p>No window.</p>
-        }
-        else
-        {
-            <form method="post" @formname="remove-window" @onsubmit="RemoveWindowAsync">
-                <AntiforgeryToken />
-                <div class="table-wrap">
-                    <table class="agents">
-                        <thead><tr><th>Kind</th><th>When</th><th></th></tr></thead>
-                        <tbody>
-                            @foreach (var window in agent.EntryWindows)
-                            {
-                                <tr>
-                                    <td>@AgentMessages.Kind(window.Kind)</td>
-                                    <td>@AgentMessages.Describe(window)</td>
-                                    <td><button type="submit" name="windowId" value="@window.Id" disabled="@(!CanEdit(AgentField.EntryWindows))">Remove</button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </form>
-        }
-        <h3>Add a window</h3>
-        <EditForm Model="Window" FormName="add-window" OnValidSubmit="AddWindowAsync" method="post">
-            <label>
-                Kind
-                <InputSelect @bind-Value="Window.Kind" disabled="@(!CanEdit(AgentField.EntryWindows))">
-                    <option value="@EntryWindowKind.Recurring">Every week</option>
-                    <option value="@EntryWindowKind.OneOff">One-off</option>
-                </InputSelect>
-            </label>
-            <fieldset>
-                <legend>Every week (UTC)</legend>
-                <label>
-                    From
-                    <InputSelect @bind-Value="Window.StartDay" disabled="@(!CanEdit(AgentField.EntryWindows))">@DayOptions()</InputSelect>
-                    <InputText @bind-Value="Window.StartTime" type="time" placeholder="21:00" disabled="@(!CanEdit(AgentField.EntryWindows))" />
-                </label>
-                <label>
-                    Until
-                    <InputSelect @bind-Value="Window.EndDay" disabled="@(!CanEdit(AgentField.EntryWindows))">@DayOptions()</InputSelect>
-                    <InputText @bind-Value="Window.EndTime" type="time" placeholder="01:00" disabled="@(!CanEdit(AgentField.EntryWindows))" />
-                </label>
-            </fieldset>
-            <fieldset>
-                <legend>One-off (UTC)</legend>
-                <label>
-                    From
-                    <InputText @bind-Value="Window.StartAt" type="datetime-local" disabled="@(!CanEdit(AgentField.EntryWindows))" />
-                </label>
-                <label>
-                    Until
-                    <InputText @bind-Value="Window.EndAt" type="datetime-local" disabled="@(!CanEdit(AgentField.EntryWindows))" />
-                </label>
-            </fieldset>
-            <button type="submit" disabled="@(!CanEdit(AgentField.EntryWindows))">Add window</button>
-        </EditForm>
-    </section>
-
-    <section id="council" aria-labelledby="council-title">
-        <h2 id="council-title">Council</h2>
-        <p>Four roles in order; the Risk Manager always runs last and cannot be disabled. A role's provider needs a valid key before the agent can start. Pick a model from the synced catalog, or choose "Other" and type a model id as the provider lists it.</p>
-        @if (_suggestions.Count > 0)
-        {
-            <p class="hint">@ExperienceMessages.Suggestions(_suggestions, agent.Timeframe, agent.MarketType)</p>
-        }
-        <EditForm Model="Council" FormName="agent-council" OnValidSubmit="SaveCouncilAsync" method="post">
-            @if (_councilError is not null)
-            {
-                <p class="error" role="alert">@_councilError</p>
-            }
-            <div class="table-wrap">
-                <table class="agents council">
-                    <thead><tr><th>Role</th><th>Model</th><th>Other: provider and model id</th><th>Enabled</th></tr></thead>
-                    <tbody>
-                        <tr>
-                            <td>Market Analyst<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.MarketAnalyst)</span></td>
-                            <td>
-                                <InputSelect @bind-Value="Council.MarketAnalystChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
-                                @if (Deprecation(CouncilRole.MarketAnalyst) is { } analystNote)
-                                {
-                                    <span class="muted warning-text">@analystNote</span>
-                                }
-                            </td>
-                            <td>
-                                <div class="other">
-                                    <InputSelect @bind-Value="Council.MarketAnalystProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                                    <InputText @bind-Value="Council.MarketAnalystModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
-                                </div>
-                            </td>
-                            <td><InputCheckbox @bind-Value="Council.MarketAnalystEnabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
-                        </tr>
-                        <tr>
-                            <td>Sentiment &amp; Flow<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.SentimentFlow)</span></td>
-                            <td>
-                                <InputSelect @bind-Value="Council.SentimentFlowChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
-                                @if (Deprecation(CouncilRole.SentimentFlow) is { } sentimentNote)
-                                {
-                                    <span class="muted warning-text">@sentimentNote</span>
-                                }
-                            </td>
-                            <td>
-                                <div class="other">
-                                    <InputSelect @bind-Value="Council.SentimentFlowProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                                    <InputText @bind-Value="Council.SentimentFlowModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
-                                </div>
-                            </td>
-                            <td><InputCheckbox @bind-Value="Council.SentimentFlowEnabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
-                        </tr>
-                        <tr>
-                            <td>Cross-Market Context<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.CrossMarketContext)</span></td>
-                            <td>
-                                <InputSelect @bind-Value="Council.CrossMarketContextChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
-                                @if (Deprecation(CouncilRole.CrossMarketContext) is { } contextNote)
-                                {
-                                    <span class="muted warning-text">@contextNote</span>
-                                }
-                            </td>
-                            <td>
-                                <div class="other">
-                                    <InputSelect @bind-Value="Council.CrossMarketContextProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                                    <InputText @bind-Value="Council.CrossMarketContextModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
-                                </div>
-                            </td>
-                            <td><InputCheckbox @bind-Value="Council.CrossMarketContextEnabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
-                        </tr>
-                        <tr>
-                            <td>Risk Manager<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.RiskManager)</span></td>
-                            <td>
-                                <InputSelect @bind-Value="Council.RiskManagerChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
-                                @if (Deprecation(CouncilRole.RiskManager) is { } riskNote)
-                                {
-                                    <span class="muted warning-text">@riskNote</span>
-                                }
-                            </td>
-                            <td>
-                                <div class="other">
-                                    <InputSelect @bind-Value="Council.RiskManagerProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                                    <InputText @bind-Value="Council.RiskManagerModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
-                                </div>
-                            </td>
-                            <td>always</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            @if (_catalog.Count == 0)
-            {
-                <p class="hint">No models are synced yet: add a provider key on the keys page and the catalog fills in. Until then, type the model id.</p>
-            }
-            <button type="submit" disabled="@(!CanEdit(AgentField.Council))">Save council</button>
-        </EditForm>
-
-        <h3 id="council-presets-title">Presets</h3>
-        <EditForm Model="Preset" FormName="council-preset" OnValidSubmit="ApplyPresetAsync" method="post">
-            @if (_presetError is not null)
-            {
-                <p class="error" role="alert">@_presetError</p>
-            }
-            <p>Defaults by strength (Appendix B): GPT as Market Analyst, Grok for Sentiment &amp; Flow, Gemini for Cross-Market Context and Claude as Risk Manager, each on its provider's newest catalog model, all roles enabled. They are starting points, not a claim of returns.</p>
-            <button type="submit" name="preset" value="defaults" disabled="@(!CanEdit(AgentField.Council))">Use the defaults by strength</button>
-            <p>Single-model mode: one model performs all four roles in sequence.</p>
-            <label>
-                Model
-                <InputSelect @bind-Value="Preset.Choice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
-            </label>
-            <div class="other">
-                <InputSelect @bind-Value="Preset.Provider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                <InputText @bind-Value="Preset.Model" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id (when Other is chosen)" disabled="@(!CanEdit(AgentField.Council))" />
-            </div>
-            <button type="submit" name="preset" value="single" disabled="@(!CanEdit(AgentField.Council))">Use this model for every role</button>
-        </EditForm>
-    </section>
-
-    <section aria-labelledby="risk-title">
-        <h2 id="risk-title">Risk limits</h2>
-        <EditForm Model="Risk" FormName="agent-risk" OnValidSubmit="SaveRiskAsync" method="post">
-            <DataAnnotationsValidator />
-            @if (_riskError is not null)
-            {
-                <p class="error" role="alert">@_riskError</p>
-            }
-            <ValidationSummary />
-            <label>
-                Risk per trade (% of equity, at most @RiskCaps.Value.MaxRiskPerTradePercent)
-                <InputNumber @bind-Value="Risk.RiskPerTradePercent" step="0.1" disabled="@(!CanEdit(AgentField.RiskLimits))" />
-            </label>
-            <label>
-                Open positions at most (up to @RiskCaps.Value.MaxOpenPositions)
-                <InputNumber @bind-Value="Risk.MaxOpenPositions" disabled="@(!CanEdit(AgentField.RiskLimits))" />
-            </label>
-            <label>
-                Daily loss limit (% of equity, at most @RiskCaps.Value.MaxDailyLossPercent)
-                <InputNumber @bind-Value="Risk.DailyLossLimitPercent" step="0.1" disabled="@(!CanEdit(AgentField.RiskLimits))" />
-            </label>
-            <label>
-                Notional cap (quote asset; empty for none)
-                <InputNumber @bind-Value="Risk.MaxNotional" disabled="@(!CanEdit(AgentField.RiskLimits))" />
-            </label>
-            <button type="submit" disabled="@(!CanEdit(AgentField.RiskLimits))">Save risk limits</button>
-        </EditForm>
-    </section>
-
-    <section aria-labelledby="evaluations-title">
+    <section class="card" aria-labelledby="evaluations-title">
         <h2 id="evaluations-title">Recent evaluations</h2>
         @if (agent.RecentEvaluations.Count == 0)
         {
@@ -578,18 +224,18 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents">
-                    <thead><tr><th>Candle (open)</th><th>Outcome</th><th>Council</th><th>Decision</th><th>Detail</th><th>Finished</th><th></th></tr></thead>
+                <table class="agents data stack">
+                    <thead><tr><th scope="col">Candle (open)</th><th scope="col">Outcome</th><th scope="col">Council</th><th scope="col">Decision</th><th scope="col">Detail</th><th scope="col">Finished</th><th scope="col"></th></tr></thead>
                     <tbody>
                         @foreach (var evaluation in agent.RecentEvaluations)
                         {
                             <tr>
-                                <td>@Stamp(evaluation.CandleOpenTime)</td>
-                                <td>@AgentMessages.Outcome(evaluation.Outcome)</td>
-                                <td>@(evaluation.CouncilConsulted ? "consulted" : "not needed")</td>
-                                <td>@(evaluation.FinalAction?.ToString() ?? "")</td>
-                                <td>@evaluation.OutcomeDetail</td>
-                                <td>@Stamp(evaluation.FinishedAt)</td>
+                                <td data-label="Candle">@AgentMessages.Stamp(evaluation.CandleOpenTime)</td>
+                                <td data-label="Outcome">@AgentMessages.Outcome(evaluation.Outcome)</td>
+                                <td data-label="Council">@(evaluation.CouncilConsulted ? "consulted" : "not needed")</td>
+                                <td data-label="Decision">@(evaluation.FinalAction?.ToString() ?? "")</td>
+                                <td data-label="Detail">@evaluation.OutcomeDetail</td>
+                                <td data-label="Finished">@AgentMessages.Stamp(evaluation.FinishedAt)</td>
                                 <td><a href="/agents/@Id/evaluations/@evaluation.Id">Deliberation</a></td>
                             </tr>
                         }
@@ -599,7 +245,7 @@
         }
     </section>
 
-    <section id="experience" aria-labelledby="experience-title">
+    <section id="experience" class="card" aria-labelledby="experience-title">
         <h2 id="experience-title">Experience</h2>
         <p>@ExperienceMessages.AgentIntro</p>
         @if (_experience is null || _experience.Roles.Count == 0)
@@ -608,10 +254,10 @@
         }
         else
         {
-            <p class="hint">Computed @Stamp(_experience.ComputedAt). <a href="/providers">Leaderboard</a>.</p>
+            <p class="hint">Computed @AgentMessages.Stamp(_experience.ComputedAt). <a href="/providers">Leaderboard</a>.</p>
             <div class="table-wrap">
                 <table class="agents leaderboard">
-                    <thead><tr><th>Role</th><th>Provider</th><th>Model</th><th>Timeframe</th><th>Market</th><MetricHeaders /></tr></thead>
+                    <thead><tr><th scope="col">Role</th><th scope="col">Provider</th><th scope="col">Model</th><th scope="col">Timeframe</th><th scope="col">Market</th><MetricHeaders /></tr></thead>
                     <tbody>
                         @foreach (var row in _experience.Roles)
                         {
@@ -637,13 +283,13 @@
         {
             <div class="table-wrap">
                 <table class="agents leaderboard">
-                    <thead><tr><th>Opened</th><th>Closed</th><th>Duration</th><th>Side</th><th>Entry</th><th>Exit</th><th>Size</th><th>R</th><th>P&amp;L</th><th>Fees</th><th>Funding</th><th>MAE</th><th>MFE</th><th>Exit</th><th>Decisions</th><th></th></tr></thead>
+                    <thead><tr><th scope="col">Opened</th><th scope="col">Closed</th><th scope="col">Duration</th><th scope="col">Side</th><th scope="col">Entry</th><th scope="col">Exit</th><th scope="col">Size</th><th scope="col">R</th><th scope="col">P&amp;L</th><th scope="col">Fees</th><th scope="col">Funding</th><th scope="col">MAE</th><th scope="col">MFE</th><th scope="col">Exit</th><th scope="col">Decisions</th><th scope="col"></th></tr></thead>
                     <tbody>
                         @foreach (var trade in _experience.RecentTrades)
                         {
                             <tr>
-                                <td>@Stamp(trade.OpenedAt)</td>
-                                <td>@Stamp(trade.ClosedAt)</td>
+                                <td>@AgentMessages.Stamp(trade.OpenedAt)</td>
+                                <td>@AgentMessages.Stamp(trade.ClosedAt)</td>
                                 <td>@ExperienceMessages.Duration(trade.Duration)</td>
                                 <td>@trade.Side.ToString().ToLowerInvariant()@(trade.IsPaper ? " (paper)" : "")</td>
                                 <td>@ExperienceMessages.Price(trade.EntryPrice)</td>
@@ -666,7 +312,7 @@
         }
     </section>
 
-    <section aria-labelledby="history-title">
+    <section class="card" aria-labelledby="history-title">
         <h2 id="history-title">Change history</h2>
         @if (agent.RecentChanges.Count == 0)
         {
@@ -675,16 +321,16 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents">
-                    <thead><tr><th>When</th><th>Field</th><th>From</th><th>To</th></tr></thead>
+                <table class="agents data stack">
+                    <thead><tr><th scope="col">When</th><th scope="col">Field</th><th scope="col">From</th><th scope="col">To</th></tr></thead>
                     <tbody>
                         @foreach (var change in agent.RecentChanges)
                         {
                             <tr>
-                                <td>@Stamp(change.Timestamp)</td>
-                                <td>@change.Field</td>
-                                <td><code>@(change.OldValue ?? "")</code></td>
-                                <td><code>@(change.NewValue ?? "")</code></td>
+                                <td data-label="When">@AgentMessages.Stamp(change.Timestamp)</td>
+                                <td data-label="Field">@change.Field</td>
+                                <td data-label="From"><code>@(change.OldValue ?? "")</code></td>
+                                <td data-label="To"><code>@(change.NewValue ?? "")</code></td>
                             </tr>
                         }
                     </tbody>
@@ -693,30 +339,16 @@
         }
     </section>
 
-    <p><a href="/agents">Back to agents</a></p>
-
     <RiskDisclaimerNotice />
 }
 
 @code {
     private AgentDetail? _agent;
     private StrategyDescriptor? _strategy;
-    private KeyOverview? _keys;
     private string? _notice;
-    private bool _noticeIsError;
     private string? _actionError;
-    private string? _settingsError;
-    private string? _strategyError;
-    private string? _councilError;
-
-    private string? _presetError;
-
-    private IReadOnlyList<CatalogModel> _catalog = [];
     private IReadOnlyList<CouncilAssignmentView> _deprecatedRoles = [];
     private AgentExperienceView? _experience;
-    private IReadOnlyList<CouncilSuggestion> _suggestions = [];
-    private string? _riskError;
-    private string? _windowError;
 
     [Parameter]
     public Guid Id { get; set; }
@@ -724,37 +356,11 @@
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
-    [SupplyParameterFromForm(FormName = "agent-settings")]
-    private SettingsInput Settings { get; set; } = default!;
-
-    [SupplyParameterFromForm(FormName = "agent-strategy")]
-    private StrategyFormInput Strategy { get; set; } = default!;
-
-    [SupplyParameterFromForm(FormName = "agent-council")]
-    private CouncilFormInput Council { get; set; } = default!;
-
-    [SupplyParameterFromForm(FormName = "council-preset")]
-    private PresetFormInput Preset { get; set; } = default!;
-
-    /// <summary>The preset carried by the button that was clicked: defaults by strength or single-model mode (FR-AI-04).</summary>
-    [SupplyParameterFromForm(FormName = "council-preset", Name = "preset")]
-    private string? PresetAction { get; set; }
-
-    [SupplyParameterFromForm(FormName = "agent-risk")]
-    private RiskInput Risk { get; set; } = default!;
-
     [SupplyParameterFromForm(FormName = "stop-agent")]
     private StopFormInput StopInput { get; set; } = default!;
 
     [SupplyParameterFromForm(FormName = "delete-agent")]
     private DeleteFormInput DeleteInput { get; set; } = default!;
-
-    [SupplyParameterFromForm(FormName = "add-window")]
-    private WindowFormInput Window { get; set; } = default!;
-
-    /// <summary>The id carried by the Remove button that was clicked (only the activated submit button is posted).</summary>
-    [SupplyParameterFromForm(FormName = "remove-window", Name = "windowId")]
-    private long? RemoveWindowId { get; set; }
 
     [SupplyParameterFromQuery(Name = "status")]
     private string? Status { get; set; }
@@ -771,42 +377,9 @@
         if (!await LoadAsync())
             return;
 
-        var agent = _agent!;
-        Settings ??= new SettingsInput
-        {
-            Name = agent.Name, MarketType = agent.MarketType, Symbol = agent.Symbol, Timeframe = agent.Timeframe, Mode = agent.Mode,
-            ExchangeKeyId = agent.ExchangeKeyId, Leverage = agent.Leverage, MarginType = agent.MarginType, Discretionary = agent.Discretionary,
-        };
-        Strategy ??= StrategyFormInput.From(agent, _strategy);
-        Strategy.EnsureKeys(_strategy);
-        Council ??= CouncilFormInput.From(agent, _catalog);
-        Preset ??= PresetFormInput.From(agent, _catalog);
-        Risk ??= new RiskInput
-        {
-            RiskPerTradePercent = agent.RiskLimits.RiskPerTradePercent, MaxOpenPositions = agent.RiskLimits.MaxOpenPositions,
-            DailyLossLimitPercent = agent.RiskLimits.DailyLossLimitPercent, MaxNotional = agent.RiskLimits.MaxNotional,
-        };
         StopInput ??= new();
         DeleteInput ??= new();
-        Window ??= new();
-
-        (_notice, _noticeIsError) = Status switch
-        {
-            "created" => ("The draft was created. Choose its strategy, council and risk limits below, then start it.", false),
-            "saved" => ("The changes were saved.", false),
-            "unchanged" => ("Nothing changed.", false),
-            "started" => ("The agent is running and will be evaluated at the next candle close.", false),
-            "paused" => ("The agent is paused: it keeps managing open positions and opens nothing new.", false),
-            "resumed" => ("The agent is running again.", false),
-            "stopped" => ("The agent was stopped." + (Detail is null ? "" : " " + Detail), false),
-            "cloned" => ("This is the copy; it starts as a draft.", false),
-            "upgraded" => ("The agent now runs the newest version of its strategy." + (Detail is null ? "" : " " + Detail), false),
-            "window-added" => ("The no-entry window was added; it applies from the next evaluation.", false),
-            "window-removed" => ("The no-entry window was removed.", false),
-            "council-defaults" => ("The council uses the default assignments by strength.", false),
-            "council-single" => ("One model now performs all four roles in sequence.", false),
-            _ => (null, false),
-        };
+        _notice = AgentMessages.DetailNotice(Status, Detail);
     }
 
     private async Task<bool> LoadAsync()
@@ -819,31 +392,13 @@
             return false;
         }
 
-        // The pinned version's parameters are what the agent runs; when it is gone, the newest version's are shown with a warning.
         _strategy = Catalog.Find(_agent.StrategyId, _agent.StrategyVersion) ?? Catalog.Find(_agent.StrategyId);
-        _keys ??= await KeyService.GetOverviewAsync(UserId, HttpContext.RequestAborted);
-        _catalog = await ModelCatalog.ListAsync(HttpContext.RequestAborted);
         _deprecatedRoles = _agent.Council.Where(c => c.Enabled && c.CatalogStatus == ModelStatus.Deprecated).ToList();
         _experience = await Experience.GetAgentAsync(UserId, Id, HttpContext.RequestAborted);
-        // FR-EXP-08: the roles whose best-by-experience provider and model differ from the assignment.
-        var suggestions = await Suggestions.SuggestAsync(UserId, _agent.Timeframe, _agent.MarketType, HttpContext.RequestAborted);
-        _suggestions = suggestions.Where(s => !_agent.Council.Any(c => c.Role == s.Role && c.Provider == s.Provider && string.Equals(c.Model, s.Model, StringComparison.Ordinal))).ToList();
         return true;
     }
 
-    private bool CanEdit(AgentField field) => _agent is { } agent && AgentStateMachine.CanEdit(agent.State, field);
-
     private bool UpgradeAvailable => _agent is { LatestStrategyVersion: { } latest } agent && latest > agent.StrategyVersion;
-
-    /// <summary>The row prompt for a role on a deprecated model, enabled or not (FR-SYNC-03); null for an available or hand-entered model.</summary>
-    private string? Deprecation(CouncilRole role) =>
-        _agent?.Council.FirstOrDefault(c => c.Role == role) is { CatalogStatus: ModelStatus.Deprecated } assignment
-            ? AgentMessages.DeprecatedModel(assignment, Replacement(assignment.Provider))
-            : null;
-
-    /// <summary>The newest available catalog model of a provider: the catalog lists available first, newest first per provider (FR-SYNC-05).</summary>
-    private CatalogModel? Replacement(AiProvider provider) =>
-        _catalog.FirstOrDefault(m => m.Provider == provider && m.Status == ModelStatus.Available);
 
     private async Task StartAsync() => await ActAsync(AgentService.StartAsync(UserId, Id, HttpContext.RequestAborted), "started");
 
@@ -869,7 +424,7 @@
         var result = await AgentService.CloneAsync(UserId, Id, HttpContext.RequestAborted);
         if (result.Status == AgentActionStatus.Succeeded)
         {
-            Navigation.NavigateTo($"/agents/{result.AgentId}?status=cloned");
+            Navigation.NavigateTo(WizardSteps.Href(result.AgentId!.Value, WizardStep.Basics) + "?status=cloned");
             return;
         }
 
@@ -901,411 +456,6 @@
 
         _actionError = AgentMessages.ForAction(result);
         await LoadAsync();
-    }
-
-    private async Task SaveSettingsAsync()
-    {
-        // Disabled fields are not posted; the agent's current values stand in for them.
-        var agent = _agent!;
-        var input = new AgentSettingsInput(
-            Settings.Name,
-            CanEdit(AgentField.MarketType) ? Settings.MarketType : agent.MarketType,
-            CanEdit(AgentField.Symbol) ? Settings.Symbol : agent.Symbol,
-            CanEdit(AgentField.Timeframe) ? Settings.Timeframe : agent.Timeframe,
-            CanEdit(AgentField.Mode) ? Settings.Mode : agent.Mode,
-            CanEdit(AgentField.ExchangeKey) ? Settings.ExchangeKeyId : agent.ExchangeKeyId,
-            CanEdit(AgentField.Leverage) ? Settings.Leverage : agent.Leverage,
-            CanEdit(AgentField.MarginType) ? Settings.MarginType : agent.MarginType,
-            CanEdit(AgentField.Discretionary) ? Settings.Discretionary : agent.Discretionary);
-        var result = await AgentService.UpdateSettingsAsync(UserId, Id, input, HttpContext.RequestAborted);
-        await AfterSaveAsync(result, error => _settingsError = error);
-    }
-
-    private async Task SaveStrategyAsync()
-    {
-        var agent = _agent!;
-        var strategyId = CanEdit(AgentField.Strategy) ? Strategy.StrategyId : agent.StrategyId;
-        var parameters = CanEdit(AgentField.Parameters) ? Strategy.ToParameters() : StrategyFormInput.From(agent, _strategy).ToParameters();
-        var result = await AgentService.UpdateStrategyAsync(UserId, Id, new StrategyInput(strategyId, parameters, CanEdit(AgentField.Parameters) && Strategy.ResetToDefaults), HttpContext.RequestAborted);
-        await AfterSaveAsync(result, error => _strategyError = error);
-    }
-
-    private async Task UpgradeAsync()
-    {
-        var result = await AgentService.UpgradeStrategyAsync(UserId, Id, HttpContext.RequestAborted);
-        if (result.Status == AgentSaveStatus.Succeeded)
-        {
-            Navigation.NavigateTo(Self + "?status=upgraded" + (result.Detail is null ? "" : "&detail=" + Uri.EscapeDataString(result.Detail)));
-            return;
-        }
-
-        _strategyError = AgentMessages.ForSave(result);
-        await LoadAsync();
-    }
-
-    private async Task AddWindowAsync()
-    {
-        EntryWindowInput input;
-        if (Window.Kind == EntryWindowKind.OneOff)
-        {
-            if (!TryParseUtc(Window.StartAt, out var start))
-            {
-                _windowError = "Enter the start of the one-off window as a date and time (UTC).";
-                return;
-            }
-
-            if (!TryParseUtc(Window.EndAt, out var end))
-            {
-                _windowError = "Enter the end of the one-off window as a date and time (UTC).";
-                return;
-            }
-
-            input = new EntryWindowInput(EntryWindowKind.OneOff, start, end);
-        }
-        else
-        {
-            if (!TryParseTime(Window.StartTime, out var startTime))
-            {
-                _windowError = "Enter the start time of the weekly window as HH:mm (UTC).";
-                return;
-            }
-
-            if (!TryParseTime(Window.EndTime, out var endTime))
-            {
-                _windowError = "Enter the end time of the weekly window as HH:mm (UTC).";
-                return;
-            }
-
-            input = new EntryWindowInput(EntryWindowKind.Recurring, StartDay: Window.StartDay, StartTime: startTime, EndDay: Window.EndDay, EndTime: endTime);
-        }
-
-        var result = await AgentService.AddEntryWindowAsync(UserId, Id, input, HttpContext.RequestAborted);
-        await AfterSaveAsync(result, error => _windowError = error, "window-added");
-    }
-
-    private async Task RemoveWindowAsync()
-    {
-        if (RemoveWindowId is not { } windowId)
-        {
-            _windowError = "Choose a window to remove.";
-            return;
-        }
-
-        var result = await AgentService.RemoveEntryWindowAsync(UserId, Id, windowId, HttpContext.RequestAborted);
-        await AfterSaveAsync(result, error => _windowError = error, "window-removed");
-    }
-
-    private async Task SaveCouncilAsync()
-    {
-        var result = await AgentService.UpdateCouncilAsync(UserId, Id, Council.ToInput(), HttpContext.RequestAborted);
-        await AfterSaveAsync(result, error => _councilError = error);
-    }
-
-    private async Task ApplyPresetAsync()
-    {
-        switch (PresetAction)
-        {
-            case "defaults":
-                await AfterSaveAsync(await AgentService.ResetCouncilToDefaultsAsync(UserId, Id, HttpContext.RequestAborted), error => _presetError = error, "council-defaults");
-                return;
-            case "single":
-                var (provider, model) = ResolveChoice(Preset.Choice, Preset.Provider, Preset.Model);
-                await AfterSaveAsync(await AgentService.UseSingleModelAsync(UserId, Id, provider, model, HttpContext.RequestAborted), error => _presetError = error, "council-single");
-                return;
-            default:
-                _presetError = "Choose a preset.";
-                await LoadAsync();
-                return;
-        }
-    }
-
-    /// <summary>The catalog options every council row offers: one group per provider, "Other" last (FR-AI-03).</summary>
-    private RenderFragment CatalogOptions() => builder =>
-    {
-        var sequence = 0;
-        foreach (var group in _catalog.GroupBy(m => m.Provider).OrderBy(g => g.Key))
-        {
-            builder.OpenElement(sequence++, "optgroup");
-            builder.AddAttribute(sequence++, "label", ProviderNames.Display(group.Key));
-            foreach (var model in group)
-            {
-                builder.OpenElement(sequence++, "option");
-                builder.AddAttribute(sequence++, "value", ChoiceOf(model.Provider, model.ModelId));
-                builder.AddContent(sequence++, model.DisplayName == model.ModelId ? model.ModelId : $"{model.DisplayName} ({model.ModelId})");
-                if (model.Status == ModelStatus.Deprecated)
-                    builder.AddContent(sequence++, " (deprecated)");
-                builder.CloseElement();
-            }
-
-            builder.CloseElement();
-        }
-
-        builder.OpenElement(sequence++, "option");
-        builder.AddAttribute(sequence++, "value", OtherChoice);
-        builder.AddContent(sequence++, "Other (enter the provider and model id)");
-        builder.CloseElement();
-    };
-
-    private const string OtherChoice = "other";
-
-    private static string ChoiceOf(AiProvider provider, string model) => provider + "|" + model;
-
-    /// <summary>A catalog choice names the provider and model; "Other" falls back to the manual fields.</summary>
-    private static (AiProvider Provider, string? Model) ResolveChoice(string? choice, AiProvider provider, string? model)
-    {
-        if (!string.IsNullOrEmpty(choice) && choice != OtherChoice)
-        {
-            var parts = choice.Split('|', 2);
-            if (parts.Length == 2 && ProviderNames.Parse(parts[0]) is { } chosen)
-                return (chosen, parts[1]);
-        }
-
-        return (provider, model);
-    }
-
-    private static string InitialChoice(AiProvider provider, string model, IReadOnlyList<CatalogModel> catalog) =>
-        catalog.Any(m => m.Provider == provider && m.ModelId == model) ? ChoiceOf(provider, model) : OtherChoice;
-
-    private async Task SaveRiskAsync()
-    {
-        var result = await AgentService.UpdateRiskLimitsAsync(UserId, Id,
-            new RiskLimitsInput(Risk.RiskPerTradePercent, Risk.MaxOpenPositions, Risk.DailyLossLimitPercent, Risk.MaxNotional), HttpContext.RequestAborted);
-        await AfterSaveAsync(result, error => _riskError = error);
-    }
-
-    private async Task AfterSaveAsync(AgentSaveResult result, Action<string> setError, string status = "saved")
-    {
-        if (result.Status == AgentSaveStatus.Succeeded)
-        {
-            Navigation.NavigateTo(Self + "?status=" + status);
-            return;
-        }
-
-        setError(AgentMessages.ForSave(result));
-        await LoadAsync();
-    }
-
-    private static RenderFragment ProviderOptions() => builder =>
-    {
-        var sequence = 0;
-        foreach (var provider in new[] { AiProvider.Claude, AiProvider.Gemini, AiProvider.Gpt, AiProvider.Grok })
-        {
-            builder.OpenElement(sequence++, "option");
-            builder.AddAttribute(sequence++, "value", provider.ToString());
-            builder.AddContent(sequence++, ProviderNames.Display(provider));
-            builder.CloseElement();
-        }
-    };
-
-    private static string Markets(ExchangeKeyView key) => (key.AllowSpot, key.AllowFutures) switch
-    {
-        (true, true) => "Spot and Futures",
-        (true, false) => "Spot",
-        (false, true) => "Futures",
-        _ => "no market",
-    };
-
-    private static RenderFragment DayOptions() => builder =>
-    {
-        var sequence = 0;
-        foreach (var day in new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday })
-        {
-            builder.OpenElement(sequence++, "option");
-            builder.AddAttribute(sequence++, "value", day.ToString());
-            builder.AddContent(sequence++, day.ToString());
-            builder.CloseElement();
-        }
-    };
-
-    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
-
-    private static string Text(IReadOnlyDictionary<string, JsonElement> parameters, string name) =>
-        parameters.TryGetValue(name, out var value) ? StrategyParameter.Format(value) : "";
-
-    /// <summary>A datetime-local value read as UTC: the mapper would otherwise assume the server's zone.</summary>
-    private static bool TryParseUtc(string? text, out DateTimeOffset value)
-    {
-        value = default;
-        if (!DateTime.TryParseExact(text?.Trim(), ["yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
-            return false;
-        value = new DateTimeOffset(parsed, TimeSpan.Zero);
-        return true;
-    }
-
-    private static bool TryParseTime(string? text, out TimeOnly value) =>
-        TimeOnly.TryParseExact(text?.Trim(), ["HH:mm", "HH:mm:ss"], CultureInfo.InvariantCulture, DateTimeStyles.None, out value);
-
-    private sealed class SettingsInput
-    {
-        [Required(ErrorMessage = "Enter a name.")]
-        [StringLength(100, ErrorMessage = "The name must be at most 100 characters.")]
-        public string Name { get; set; } = "";
-
-        public MarketType MarketType { get; set; }
-
-        public string? Symbol { get; set; }
-
-        public CandleInterval Timeframe { get; set; }
-
-        public AgentMode Mode { get; set; }
-
-        public Guid? ExchangeKeyId { get; set; }
-
-        public int? Leverage { get; set; }
-
-        public MarginType? MarginType { get; set; }
-
-        public bool Discretionary { get; set; }
-    }
-
-    /// <summary>The parameter texts keyed by name; every descriptor parameter has a key so the generated inputs can bind (a disabled input is not posted).</summary>
-    private sealed class StrategyFormInput
-    {
-        public string? StrategyId { get; set; }
-
-        public Dictionary<string, string?> Values { get; set; } = new(StringComparer.Ordinal);
-
-        public bool ResetToDefaults { get; set; }
-
-        public static StrategyFormInput From(AgentDetail agent, StrategyDescriptor? strategy)
-        {
-            var input = new StrategyFormInput { StrategyId = agent.StrategyId };
-            foreach (var parameter in strategy?.Parameters ?? [])
-                input.Values[parameter.Name] = Text(agent.Parameters, parameter.Name);
-            return input;
-        }
-
-        public void EnsureKeys(StrategyDescriptor? strategy)
-        {
-            foreach (var parameter in strategy?.Parameters ?? [])
-                Values.TryAdd(parameter.Name, "");
-        }
-
-        public IReadOnlyDictionary<string, string?> ToParameters() => Values;
-    }
-
-    /// <summary>Texts on purpose: the mapper would read a date without a zone in the server's zone.</summary>
-    private sealed class WindowFormInput
-    {
-        public EntryWindowKind Kind { get; set; } = EntryWindowKind.Recurring;
-
-        public DayOfWeek StartDay { get; set; } = DayOfWeek.Friday;
-
-        public string? StartTime { get; set; }
-
-        public DayOfWeek EndDay { get; set; } = DayOfWeek.Monday;
-
-        public string? EndTime { get; set; }
-
-        public string? StartAt { get; set; }
-
-        public string? EndAt { get; set; }
-    }
-
-    private sealed class CouncilFormInput
-    {
-        public string? MarketAnalystChoice { get; set; }
-
-        public AiProvider MarketAnalystProvider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.MarketAnalyst);
-
-        public string? MarketAnalystModel { get; set; }
-
-        public bool MarketAnalystEnabled { get; set; } = true;
-
-        public string? SentimentFlowChoice { get; set; }
-
-        public AiProvider SentimentFlowProvider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.SentimentFlow);
-
-        public string? SentimentFlowModel { get; set; }
-
-        public bool SentimentFlowEnabled { get; set; } = true;
-
-        public string? CrossMarketContextChoice { get; set; }
-
-        public AiProvider CrossMarketContextProvider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.CrossMarketContext);
-
-        public string? CrossMarketContextModel { get; set; }
-
-        public bool CrossMarketContextEnabled { get; set; } = true;
-
-        public string? RiskManagerChoice { get; set; }
-
-        public AiProvider RiskManagerProvider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.RiskManager);
-
-        public string? RiskManagerModel { get; set; }
-
-        public static CouncilFormInput From(AgentDetail agent, IReadOnlyList<CatalogModel> catalog)
-        {
-            var input = new CouncilFormInput();
-            foreach (var role in agent.Council)
-            {
-                var choice = InitialChoice(role.Provider, role.Model, catalog);
-                switch (role.Role)
-                {
-                    case CouncilRole.MarketAnalyst:
-                        (input.MarketAnalystChoice, input.MarketAnalystProvider, input.MarketAnalystModel, input.MarketAnalystEnabled) = (choice, role.Provider, role.Model, role.Enabled);
-                        break;
-                    case CouncilRole.SentimentFlow:
-                        (input.SentimentFlowChoice, input.SentimentFlowProvider, input.SentimentFlowModel, input.SentimentFlowEnabled) = (choice, role.Provider, role.Model, role.Enabled);
-                        break;
-                    case CouncilRole.CrossMarketContext:
-                        (input.CrossMarketContextChoice, input.CrossMarketContextProvider, input.CrossMarketContextModel, input.CrossMarketContextEnabled) = (choice, role.Provider, role.Model, role.Enabled);
-                        break;
-                    case CouncilRole.RiskManager:
-                        (input.RiskManagerChoice, input.RiskManagerProvider, input.RiskManagerModel) = (choice, role.Provider, role.Model);
-                        break;
-                }
-            }
-
-            return input;
-        }
-
-        public CouncilInput ToInput()
-        {
-            var analyst = ResolveChoice(MarketAnalystChoice, MarketAnalystProvider, MarketAnalystModel);
-            var sentiment = ResolveChoice(SentimentFlowChoice, SentimentFlowProvider, SentimentFlowModel);
-            var context = ResolveChoice(CrossMarketContextChoice, CrossMarketContextProvider, CrossMarketContextModel);
-            var risk = ResolveChoice(RiskManagerChoice, RiskManagerProvider, RiskManagerModel);
-            return new CouncilInput(
-            [
-                new CouncilRoleInput(CouncilRole.MarketAnalyst, analyst.Provider, analyst.Model, MarketAnalystEnabled),
-                new CouncilRoleInput(CouncilRole.SentimentFlow, sentiment.Provider, sentiment.Model, SentimentFlowEnabled),
-                new CouncilRoleInput(CouncilRole.CrossMarketContext, context.Provider, context.Model, CrossMarketContextEnabled),
-                new CouncilRoleInput(CouncilRole.RiskManager, risk.Provider, risk.Model, true),
-            ]);
-        }
-    }
-
-    private sealed class PresetFormInput
-    {
-        public string? Choice { get; set; }
-
-        public AiProvider Provider { get; set; } = CouncilRoles.DefaultProvider(CouncilRole.RiskManager);
-
-        public string? Model { get; set; }
-
-        /// <summary>Starts from the Risk Manager's model, the one most agents keep when going single-model.</summary>
-        public static PresetFormInput From(AgentDetail agent, IReadOnlyList<CatalogModel> catalog)
-        {
-            var riskManager = agent.Council.FirstOrDefault(c => c.Role == CouncilRole.RiskManager);
-            return riskManager is null
-                ? new PresetFormInput()
-                : new PresetFormInput { Choice = InitialChoice(riskManager.Provider, riskManager.Model, catalog), Provider = riskManager.Provider, Model = riskManager.Model };
-        }
-    }
-
-    private sealed class RiskInput
-    {
-        [Range(typeof(decimal), "0.01", "100", ErrorMessage = "Risk per trade must be between 0.01 and 100 percent.")]
-        public decimal RiskPerTradePercent { get; set; } = 1m;
-
-        [Range(1, 100, ErrorMessage = "Open positions must be between 1 and 100.")]
-        public int MaxOpenPositions { get; set; } = 1;
-
-        [Range(typeof(decimal), "0.01", "100", ErrorMessage = "The daily loss limit must be between 0.01 and 100 percent.")]
-        public decimal DailyLossLimitPercent { get; set; } = 3m;
-
-        public decimal? MaxNotional { get; set; }
     }
 
     private sealed class StopFormInput

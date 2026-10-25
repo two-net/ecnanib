@@ -34,6 +34,29 @@ public class AgentMessagesTests
     public void ARowPromptWithoutAnyAvailableModelSendsToTheProvidersPage() =>
         Assert.Equal("Claude no longer lists claude-3-opus. No Claude model is available in the catalog: sync it on the providers page or enter a model id by hand.", AgentMessages.DeprecatedModel(RiskManager, null));
 
+    [Theory]
+    [InlineData("started", null, "The agent is running and will be evaluated at the next candle close.")]
+    [InlineData("stopped", null, "The agent was stopped.")]
+    [InlineData("stopped", "2 orders cancelled.", "The agent was stopped. 2 orders cancelled.")]
+    [InlineData("saved", null, null)]
+    [InlineData(null, null, null)]
+    public void TheDetailNoticeFollowsTheActionStatus(string? status, string? detail, string? expected) => Assert.Equal(expected, AgentMessages.DetailNotice(status, detail));
+
+    [Theory]
+    [InlineData("created", null, "The draft was created. Choose its strategy, council and risk limits, then review and start it.")]
+    [InlineData("saved", null, "The changes were saved.")]
+    [InlineData("upgraded", "One parameter was reset.", "The agent now runs the newest version of its strategy. One parameter was reset.")]
+    [InlineData("council-single", null, "One model now performs all four roles in sequence.")]
+    [InlineData("started", null, null)]
+    public void TheSetupNoticeFollowsTheSaveStatus(string? status, string? detail, string? expected) => Assert.Equal(expected, AgentMessages.SetupNotice(status, detail));
+
+    [Fact]
+    public void StampsAreUtcToTheMinuteAndNeverForNull()
+    {
+        Assert.Equal("2026-01-05 00:00 UTC", AgentMessages.Stamp(Now));
+        Assert.Equal("never", AgentMessages.Stamp(null));
+    }
+
     [Fact]
     public void ThePagePromptListsEveryAffectedRole()
     {

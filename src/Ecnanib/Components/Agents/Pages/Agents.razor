@@ -49,7 +49,7 @@ else
                             }
                             @if (agent.HasDeprecatedModel)
                             {
-                                <a class="muted warning-text" href="/agents/@agent.Id#council">@AgentMessages.DeprecatedMark</a>
+                                <a class="muted warning-text" href="@WizardSteps.Href(agent.Id, WizardStep.Council)">@AgentMessages.DeprecatedMark</a>
                             }
                         </td>
                         <td>
