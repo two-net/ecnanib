@@ -4,27 +4,31 @@
 
 <PageTitle>Sign in</PageTitle>
 
-<h1>Sign in</h1>
+<div class="page narrow">
+    <h1>Sign in</h1>
 
-<EditForm Model="Input" FormName="sign-in" OnValidSubmit="SignInAsync" method="post">
-    <DataAnnotationsValidator />
-    @if (_error is not null)
-    {
-        <p class="error" role="alert">@_error</p>
-    }
-    <ValidationSummary />
-    <label>
-        Email
-        <InputText @bind-Value="Input.Email" type="email" autocomplete="email" maxlength="254" required />
-    </label>
-    <label>
-        Password
-        <InputText @bind-Value="Input.Password" type="password" autocomplete="current-password" maxlength="128" required />
-    </label>
-    <button type="submit">Sign in</button>
-</EditForm>
+    <div class="card">
+        <EditForm Model="Input" FormName="sign-in" OnValidSubmit="SignInAsync" method="post">
+            <DataAnnotationsValidator />
+            @if (_error is not null)
+            {
+                <p class="error" role="alert">@_error</p>
+            }
+            <ValidationSummary />
+            <label>
+                Email
+                <InputText @bind-Value="Input.Email" type="email" autocomplete="email" maxlength="254" required />
+            </label>
+            <label>
+                Password
+                <InputText @bind-Value="Input.Password" type="password" autocomplete="current-password" maxlength="128" required />
+            </label>
+            <button type="submit" class="primary">Sign in</button>
+        </EditForm>
+    </div>
 
-<p>No account yet? <a href="/sign-up@ReturnQuery">Sign up</a>.</p>
+    <p>No account yet? <a href="/sign-up@ReturnQuery">Sign up</a>.</p>
+</div>
 
 @code {
     private string? _error;

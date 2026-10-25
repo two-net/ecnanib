@@ -19,7 +19,7 @@
     <p class="@(_noticeIsError ? "error" : "notice")" role="@(_noticeIsError ? "alert" : "status")">@_notice</p>
 }
 
-<section aria-labelledby="sync-title">
+<section class="card" aria-labelledby="sync-title">
     <h2 id="sync-title">Sync status</h2>
     @if (_syncError is not null)
     {
@@ -28,26 +28,26 @@
     <form method="post" @formname="sync-provider" @onsubmit="SyncAsync" class="inline">
         <AntiforgeryToken />
         <div class="table-wrap">
-            <table class="keys">
+            <table class="data stack keys">
                 <thead>
-                    <tr><th>Provider</th><th>Last sync</th><th>Result</th><th>Trigger</th><th>Models</th><th>Deprecated</th><th></th></tr>
+                    <tr><th scope="col">Provider</th><th scope="col">Last sync</th><th scope="col">Result</th><th scope="col">Trigger</th><th scope="col">Models</th><th scope="col">Deprecated</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
                 </thead>
                 <tbody>
                     @foreach (var state in _states)
                     {
                         <tr>
-                            <td>@ProviderNames.Display(state.Provider)</td>
-                            <td>@Stamp(state.LastSyncAt)</td>
-                            <td>
+                            <td data-label="Provider">@ProviderNames.Display(state.Provider)</td>
+                            <td data-label="Last sync">@Stamp(state.LastSyncAt)</td>
+                            <td data-label="Result">
                                 <span class="status @ProviderMessages.StatusClass(state.LastStatus)">@state.LastStatus</span>
                                 @if (state.LastStatus == SyncStatus.Failed && state.LastError is not null)
                                 {
                                     <span class="muted">@state.LastError</span>
                                 }
                             </td>
-                            <td>@ProviderMessages.Trigger(state.Trigger)</td>
-                            <td>@state.ModelCount</td>
-                            <td>@state.Deprecated</td>
+                            <td data-label="Trigger">@ProviderMessages.Trigger(state.Trigger)</td>
+                            <td data-label="Models">@state.ModelCount</td>
+                            <td data-label="Deprecated">@state.Deprecated</td>
                             <td><button type="submit" name="provider" value="@ProviderNames.Route(state.Provider)">Sync now</button></td>
                         </tr>
                     }
@@ -58,7 +58,7 @@
     <p class="hint">@ProviderMessages.SyncHint</p>
 </section>
 
-<section aria-labelledby="leaderboard-title">
+<section class="card" aria-labelledby="leaderboard-title">
     <h2 id="leaderboard-title">Leaderboard</h2>
     <p>@ExperienceMessages.LeaderboardIntro</p>
     <FilterForm Filter="_filter" Action="/providers" />
@@ -71,8 +71,8 @@
     else
     {
         <div class="table-wrap">
-            <table class="agents leaderboard">
-                <thead><tr><th>#</th><th>Provider</th><th>Model</th><MetricHeaders /></tr></thead>
+            <table class="data agents leaderboard">
+                <thead><tr><th scope="col">#</th><th scope="col">Provider</th><th scope="col">Model</th><MetricHeaders /></tr></thead>
                 <tbody>
                     @foreach (var (row, rank) in _leaderboard.Mine.Select((r, i) => (r, i + 1)))
                     {
@@ -95,8 +95,8 @@
     else
     {
         <div class="table-wrap">
-            <table class="agents leaderboard">
-                <thead><tr><th>#</th><th>Provider</th><th>Model</th><MetricHeaders /></tr></thead>
+            <table class="data agents leaderboard">
+                <thead><tr><th scope="col">#</th><th scope="col">Provider</th><th scope="col">Model</th><MetricHeaders /></tr></thead>
                 <tbody>
                     @foreach (var (row, rank) in _leaderboard.SystemWide.Select((r, i) => (r, i + 1)))
                     {
@@ -113,7 +113,7 @@
     }
 </section>
 
-<section aria-labelledby="catalog-title">
+<section class="card" aria-labelledby="catalog-title">
     <h2 id="catalog-title">Catalog</h2>
     @foreach (var state in _states)
     {
@@ -127,22 +127,22 @@
             else
             {
                 <div class="table-wrap">
-                    <table class="keys">
-                        <thead><tr><th>Model</th><th>Status</th><th>First seen</th><th>Last seen</th></tr></thead>
+                    <table class="data stack keys">
+                        <thead><tr><th scope="col">Model</th><th scope="col">Status</th><th scope="col">First seen</th><th scope="col">Last seen</th></tr></thead>
                         <tbody>
                             @foreach (var model in models)
                             {
                                 <tr>
-                                    <td>
+                                    <td data-label="Model">
                                         @model.DisplayName
                                         @if (model.DisplayName != model.ModelId)
                                         {
                                             <code class="muted">@model.ModelId</code>
                                         }
                                     </td>
-                                    <td><span class="status @ProviderMessages.StatusClass(model.Status)">@model.Status</span></td>
-                                    <td>@Stamp(model.FirstSeenAt)</td>
-                                    <td>@Stamp(model.LastSeenAt)</td>
+                                    <td data-label="Status"><span class="status @ProviderMessages.StatusClass(model.Status)">@model.Status</span></td>
+                                    <td data-label="First seen">@Stamp(model.FirstSeenAt)</td>
+                                    <td data-label="Last seen">@Stamp(model.LastSeenAt)</td>
                                 </tr>
                             }
                         </tbody>

@@ -10,109 +10,111 @@
 
 @if (_key is { } key)
 {
-    <h1>Binance key “@key.Label”</h1>
+    <div class="page narrow">
+        <h1>Binance key “@key.Label”</h1>
 
-    @if (_notice is not null)
-    {
-        <p class="@(_noticeIsError ? "error" : "notice")" role="@(_noticeIsError ? "alert" : "status")">@_notice</p>
-    }
-
-    <section aria-labelledby="details-title">
-        <h2 id="details-title">Details</h2>
-        <dl class="details">
-            <dt>Environment</dt><dd>@key.Environment</dd>
-            <dt>Markets</dt><dd>@Markets(key)</dd>
-            <dt>Key</dt><dd><code>@key.MaskedApiKey</code></dd>
-            <dt>Status</dt>
-            <dd>
-                <span class="status @StatusClass(key.Status)">@key.Status</span>
-                @if (key.Status == KeyStatus.Invalid && key.LastValidationError is not null)
-                {
-                    <span class="muted">@key.LastValidationError</span>
-                }
-            </dd>
-            <dt>Last checked</dt><dd>@Stamp(key.LastValidatedAt)</dd>
-            <dt>Added</dt><dd>@Stamp(key.CreatedAt)</dd>
-            <dt>Running or paused agents using it</dt><dd>@key.ActiveAgents</dd>
-        </dl>
-        <h3>Permissions reported by Binance</h3>
-        @if (key.Permissions is { Verified: true } p)
+        @if (_notice is not null)
         {
-            <ul class="permissions">
-                <li>Reading: @YesNo(p.EnableReading)</li>
-                <li>Spot trading: @YesNo(p.EnableSpotTrading)</li>
-                <li>Futures: @YesNo(p.EnableFutures)</li>
-                <li>Withdrawals: @YesNo(p.EnableWithdrawals)</li>
-                <li>IP restricted: @YesNo(p.IpRestricted)</li>
-                @if (p.CreatedAt is { } created)
+            <p class="@(_noticeIsError ? "error" : "notice")" role="@(_noticeIsError ? "alert" : "status")">@_notice</p>
+        }
+
+        <section class="card" aria-labelledby="details-title">
+            <h2 id="details-title">Details</h2>
+            <dl class="details">
+                <dt>Environment</dt><dd>@key.Environment</dd>
+                <dt>Markets</dt><dd>@Markets(key)</dd>
+                <dt>Key</dt><dd><code>@key.MaskedApiKey</code></dd>
+                <dt>Status</dt>
+                <dd>
+                    <span class="status @StatusClass(key.Status)">@key.Status</span>
+                    @if (key.Status == KeyStatus.Invalid && key.LastValidationError is not null)
+                    {
+                        <span class="muted">@key.LastValidationError</span>
+                    }
+                </dd>
+                <dt>Last checked</dt><dd>@Stamp(key.LastValidatedAt)</dd>
+                <dt>Added</dt><dd>@Stamp(key.CreatedAt)</dd>
+                <dt>Running or paused agents using it</dt><dd>@key.ActiveAgents</dd>
+            </dl>
+            <h3>Permissions reported by Binance</h3>
+            @if (key.Permissions is { Verified: true } p)
+            {
+                <ul class="permissions">
+                    <li>Reading: @YesNo(p.EnableReading)</li>
+                    <li>Spot trading: @YesNo(p.EnableSpotTrading)</li>
+                    <li>Futures: @YesNo(p.EnableFutures)</li>
+                    <li>Withdrawals: @YesNo(p.EnableWithdrawals)</li>
+                    <li>IP restricted: @YesNo(p.IpRestricted)</li>
+                    @if (p.CreatedAt is { } created)
+                    {
+                        <li>Created: @Stamp(created)</li>
+                    }
+                </ul>
+                @if ((key.AllowSpot && !p.EnableSpotTrading) || (key.AllowFutures && !p.EnableFutures))
                 {
-                    <li>Created: @Stamp(created)</li>
+                    <p class="hint">A selected market has no trading permission on this key; agents on that market cannot place orders with it.</p>
                 }
-            </ul>
-            @if ((key.AllowSpot && !p.EnableSpotTrading) || (key.AllowFutures && !p.EnableFutures))
-            {
-                <p class="hint">A selected market has no trading permission on this key; agents on that market cannot place orders with it.</p>
             }
-        }
-        else
-        {
-            <p class="hint">@KeyMessages.TestnetPermissions</p>
-        }
-        <form method="post" @formname="validate-exchange-key" @onsubmit="ValidateAsync" class="inline">
-            <AntiforgeryToken />
-            <button type="submit">Validate now</button>
-        </form>
-    </section>
+            else
+            {
+                <p class="hint">@KeyMessages.TestnetPermissions</p>
+            }
+            <form method="post" @formname="validate-exchange-key" @onsubmit="ValidateAsync" class="inline">
+                <AntiforgeryToken />
+                <button type="submit">Validate now</button>
+            </form>
+        </section>
 
-    <section aria-labelledby="replace-title">
-        <h2 id="replace-title">Replace credentials</h2>
-        <p>Enter a new key pair. The label, environment and markets stay, and agents keep using this key.</p>
-        <EditForm Model="Replace" FormName="replace-exchange-key" OnValidSubmit="ReplaceAsync" OnInvalidSubmit="ClearSecrets" method="post">
-            <DataAnnotationsValidator />
-            @if (_replaceError is not null)
-            {
-                <p class="error" role="alert">@_replaceError</p>
-            }
-            <ValidationSummary />
-            <label>
-                New API key
-                <InputText @bind-Value="Replace.ApiKey" autocomplete="off" spellcheck="false" maxlength="256" required />
-            </label>
-            <label>
-                New secret
-                <InputText @bind-Value="Replace.ApiSecret" type="password" autocomplete="off" spellcheck="false" maxlength="256" required />
-            </label>
-            <p class="hint">@KeyMessages.BinanceKeyHint</p>
-            <button type="submit">Validate and replace</button>
-        </EditForm>
-    </section>
-
-    <section aria-labelledby="delete-title">
-        <h2 id="delete-title">Delete key</h2>
-        <p>Agents that reference this key lose it. @(key.ActiveAgents > 0 ? KeyMessages.AgentsInUse(key.ActiveAgents) : "No running or paused agent uses it.")</p>
-        <EditForm Model="Delete" FormName="delete-exchange-key" OnValidSubmit="DeleteAsync" method="post">
-            <DataAnnotationsValidator />
-            @if (_deleteError is not null)
-            {
-                <p class="error" role="alert">@_deleteError</p>
-            }
-            <ValidationSummary />
-            <label class="check">
-                <InputCheckbox @bind-Value="Delete.Confirm" />
-                I understand that agents can no longer use this key.
-            </label>
-            @if (key.ActiveAgents > 0)
-            {
-                <label class="check">
-                    <InputCheckbox @bind-Value="Delete.StopAgents" />
-                    Stop the @KeyMessages.Plural(key.ActiveAgents, "running or paused agent", "running or paused agents") that use it as part of the deletion.
+        <section class="card" aria-labelledby="replace-title">
+            <h2 id="replace-title">Replace credentials</h2>
+            <p>Enter a new key pair. The label, environment and markets stay, and agents keep using this key.</p>
+            <EditForm Model="Replace" FormName="replace-exchange-key" OnValidSubmit="ReplaceAsync" OnInvalidSubmit="ClearSecrets" method="post">
+                <DataAnnotationsValidator />
+                @if (_replaceError is not null)
+                {
+                    <p class="error" role="alert">@_replaceError</p>
+                }
+                <ValidationSummary />
+                <label>
+                    New API key
+                    <InputText @bind-Value="Replace.ApiKey" autocomplete="off" spellcheck="false" maxlength="256" required />
                 </label>
-            }
-            <button type="submit" class="danger">Delete key</button>
-        </EditForm>
-    </section>
+                <label>
+                    New secret
+                    <InputText @bind-Value="Replace.ApiSecret" type="password" autocomplete="off" spellcheck="false" maxlength="256" required />
+                </label>
+                <p class="hint">@KeyMessages.BinanceKeyHint</p>
+                <button type="submit" class="primary">Validate and replace</button>
+            </EditForm>
+        </section>
 
-    <p><a href="/keys">Back to keys</a></p>
+        <section class="card danger-zone" aria-labelledby="delete-title">
+            <h2 id="delete-title">Delete key</h2>
+            <p>Agents that reference this key lose it. @(key.ActiveAgents > 0 ? KeyMessages.AgentsInUse(key.ActiveAgents) : "No running or paused agent uses it.")</p>
+            <EditForm Model="Delete" FormName="delete-exchange-key" OnValidSubmit="DeleteAsync" method="post">
+                <DataAnnotationsValidator />
+                @if (_deleteError is not null)
+                {
+                    <p class="error" role="alert">@_deleteError</p>
+                }
+                <ValidationSummary />
+                <label class="check">
+                    <InputCheckbox @bind-Value="Delete.Confirm" />
+                    I understand that agents can no longer use this key.
+                </label>
+                @if (key.ActiveAgents > 0)
+                {
+                    <label class="check">
+                        <InputCheckbox @bind-Value="Delete.StopAgents" />
+                        Stop the @KeyMessages.Plural(key.ActiveAgents, "running or paused agent", "running or paused agents") that use it as part of the deletion.
+                    </label>
+                }
+                <button type="submit" class="danger">Delete key</button>
+            </EditForm>
+        </section>
+
+        <p><a href="/keys">Back to keys</a></p>
+    </div>
 }
 
 @code {

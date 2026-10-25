@@ -5,33 +5,38 @@
 
 <PageTitle>Delete account</PageTitle>
 
-<h1>Delete account</h1>
+<div class="page narrow">
+    <h1>Delete account</h1>
 
-<p>
-    This permanently deletes your account together with your exchange and provider keys, agents, decisions, trades and
-    logs. It cannot be undone.
-</p>
-<p>Every agent must be Stopped or Draft first; a Running, Paused or Error agent blocks the deletion.</p>
+    <section class="card danger-zone" aria-labelledby="delete-title">
+        <h2 id="delete-title">This cannot be undone</h2>
+        <p>
+            This permanently deletes your account together with your exchange and provider keys, agents, decisions, trades and
+            logs.
+        </p>
+        <p>Every agent must be Stopped or Draft first; a Running, Paused or Error agent blocks the deletion.</p>
 
-<EditForm Model="Input" FormName="delete-account" OnValidSubmit="DeleteAsync" method="post">
-    <DataAnnotationsValidator />
-    @if (_error is not null)
-    {
-        <p class="error" role="alert">@_error</p>
-    }
-    <ValidationSummary />
-    <label>
-        Password
-        <InputText @bind-Value="Input.Password" type="password" autocomplete="current-password" maxlength="128" required />
-    </label>
-    <label class="check">
-        <InputCheckbox @bind-Value="Input.Confirm" />
-        I understand that this cannot be undone.
-    </label>
-    <button type="submit" class="danger">Delete my account permanently</button>
-</EditForm>
+        <EditForm Model="Input" FormName="delete-account" OnValidSubmit="DeleteAsync" method="post">
+            <DataAnnotationsValidator />
+            @if (_error is not null)
+            {
+                <p class="error" role="alert">@_error</p>
+            }
+            <ValidationSummary />
+            <label>
+                Password
+                <InputText @bind-Value="Input.Password" type="password" autocomplete="current-password" maxlength="128" required />
+            </label>
+            <label class="check">
+                <InputCheckbox @bind-Value="Input.Confirm" />
+                I understand that this cannot be undone.
+            </label>
+            <button type="submit" class="danger">Delete my account permanently</button>
+        </EditForm>
+    </section>
 
-<p><a href="/settings">Back to settings</a></p>
+    <p><a href="/settings">Back to settings</a></p>
+</div>
 
 @code {
     private string? _error;

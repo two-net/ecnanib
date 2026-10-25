@@ -1,11 +1,8 @@
 @page "/agents/{Id:guid}"
 @attribute [Authorize]
-@using Ecnanib.Ai.Abstractions
 @using Ecnanib.Database.Entities
-@using Ecnanib.Exchange.Abstractions
 @using Ecnanib.Experience.Abstractions
 @using Ecnanib.Logging.Abstractions
-@using Ecnanib.ModelSync.Abstractions
 @inject IAgentService AgentService
 @inject IStrategyCatalog Catalog
 @inject IExperienceReader Experience

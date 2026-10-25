@@ -7,32 +7,36 @@
 
 <PageTitle>Sign up</PageTitle>
 
-<h1>Create an account</h1>
+<div class="page narrow">
+    <h1>Create an account</h1>
 
-<EditForm Model="Input" FormName="sign-up" OnValidSubmit="RegisterAsync" method="post">
-    <DataAnnotationsValidator />
-    @if (_error is not null)
-    {
-        <p class="error" role="alert">@_error</p>
-    }
-    <ValidationSummary />
-    <label>
-        Email
-        <InputText @bind-Value="Input.Email" type="email" autocomplete="email" maxlength="254" required />
-    </label>
-    <label>
-        Password
-        <InputText @bind-Value="Input.Password" type="password" autocomplete="new-password" minlength="@MinPasswordLength" maxlength="128" required />
-    </label>
-    <label>
-        Confirm password
-        <InputText @bind-Value="Input.ConfirmPassword" type="password" autocomplete="new-password" maxlength="128" required />
-    </label>
-    <p class="hint">@AccountMessages.PasswordRule(MinPasswordLength)</p>
-    <button type="submit">Sign up</button>
-</EditForm>
+    <div class="card">
+        <EditForm Model="Input" FormName="sign-up" OnValidSubmit="RegisterAsync" method="post">
+            <DataAnnotationsValidator />
+            @if (_error is not null)
+            {
+                <p class="error" role="alert">@_error</p>
+            }
+            <ValidationSummary />
+            <label>
+                Email
+                <InputText @bind-Value="Input.Email" type="email" autocomplete="email" maxlength="254" required />
+            </label>
+            <label>
+                Password
+                <InputText @bind-Value="Input.Password" type="password" autocomplete="new-password" minlength="@MinPasswordLength" maxlength="128" required />
+            </label>
+            <label>
+                Confirm password
+                <InputText @bind-Value="Input.ConfirmPassword" type="password" autocomplete="new-password" maxlength="128" required />
+            </label>
+            <p class="hint">@AccountMessages.PasswordRule(MinPasswordLength)</p>
+            <button type="submit" class="primary">Sign up</button>
+        </EditForm>
+    </div>
 
-<p>Already have an account? <a href="/sign-in@ReturnQuery">Sign in</a>.</p>
+    <p>Already have an account? <a href="/sign-in@ReturnQuery">Sign in</a>.</p>
+</div>
 
 @code {
     private string? _error;

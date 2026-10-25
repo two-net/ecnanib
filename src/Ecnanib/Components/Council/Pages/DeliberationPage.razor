@@ -24,7 +24,7 @@
         <dt>Finished</dt><dd>@Stamp(view.FinishedAt)</dd>
     </dl>
 
-    <section aria-labelledby="strategy-title">
+    <section class="card" aria-labelledby="strategy-title">
         <h2 id="strategy-title">Strategy engine</h2>
         @if (view.StrategyOutput is { } strategy)
         {
@@ -40,7 +40,7 @@
         }
     </section>
 
-    <section aria-labelledby="turns-title">
+    <section class="card" aria-labelledby="turns-title">
         <h2 id="turns-title">Deliberation</h2>
         @if (view.Turns.Count == 0)
         {
@@ -54,7 +54,7 @@
             <ol class="turns">
                 @foreach (var turn in view.Turns)
                 {
-                    <li class="turn">
+                    <li class="turn card">
                         <h3>
                             @turn.Sequence. @CouncilRoles.Display(turn.Role)
                             <span class="status @CouncilMessages.StatusClass(turn.Status)">@CouncilMessages.Status(turn.Status)</span>
@@ -114,7 +114,7 @@
 
     @if (view.Decision is { } decision)
     {
-        <section aria-labelledby="decision-title">
+        <section class="card" aria-labelledby="decision-title">
             <h2 id="decision-title">Final decision</h2>
             <dl class="details">
                 <dt>Action</dt><dd>@CouncilMessages.Action(decision.Action)</dd>
@@ -161,8 +161,8 @@
             else
             {
                 <div class="table-wrap">
-                    <table class="agents limits">
-                        <thead><tr><th>Limit</th><th>Result</th><th>Detail</th></tr></thead>
+                    <table class="data agents limits">
+                        <thead><tr><th scope="col">Limit</th><th scope="col">Result</th><th scope="col">Detail</th></tr></thead>
                         <tbody>
                             @foreach (var limit in decision.Limits)
                             {
@@ -181,8 +181,8 @@
                 <h3>Execution check</h3>
                 <p class="hint">What execution found at order time: the size from equity, risk and stop distance, the notional and quantity caps, the minimum notional, the free balance and the daily loss.</p>
                 <div class="table-wrap">
-                    <table class="agents limits">
-                        <thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
+                    <table class="data agents limits">
+                        <thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col">Detail</th></tr></thead>
                         <tbody>
                             @foreach (var check in decision.ExecutionChecks)
                             {

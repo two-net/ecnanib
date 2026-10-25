@@ -1,0 +1,245 @@
+.hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 2rem 3rem;
+    align-items: center;
+    padding: 1.5rem 0 2.5rem;
+}
+
+.eyebrow {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+.hero h1 {
+    font-size: clamp(1.75rem, 1.2rem + 2.2vw, 2.75rem);
+    line-height: 1.15;
+    margin: 0 0 1rem;
+}
+
+.lead {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    max-width: 36rem;
+}
+
+.hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+}
+
+/* The figure is a grid so the pause checkbox can sit first in the DOM (it must precede the scene for the sibling
+   selector below) while reading last on screen. */
+.hero-figure {
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+        "scene scene"
+        "caption caption"
+        "toggle label";
+    align-items: center;
+    column-gap: 0.5rem;
+}
+
+.council-scene {
+    grid-area: scene;
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.hero-caption {
+    grid-area: caption;
+    margin: 0.5rem 0 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.hero-pause-toggle {
+    grid-area: toggle;
+    width: 1.1rem;
+    height: 1.1rem;
+    margin: 0.5rem 0 0 0.1rem;
+    accent-color: var(--accent);
+}
+
+.hero-pause {
+    grid-area: label;
+    margin: 0.5rem 0 0;
+    min-height: 2.5rem;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+/* The scene. Base styles are the final frame, so with animations off (reduced motion) it is complete. */
+.agent .box {
+    fill: var(--surface);
+    stroke: var(--border);
+    stroke-width: 1.5;
+}
+
+.agent .box.active {
+    stroke: var(--accent);
+}
+
+.agent .label {
+    font: 600 13px var(--font);
+    fill: var(--text);
+}
+
+.spark {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.spark.up {
+    stroke: var(--chart-up);
+}
+
+.spark.down {
+    stroke: var(--chart-down);
+}
+
+.pulse {
+    fill: var(--accent);
+    animation: hero-pulse 1.4s ease-in-out infinite;
+}
+
+.link,
+.rail {
+    fill: none;
+    stroke: var(--border-strong);
+    stroke-width: 2;
+}
+
+.role circle {
+    fill: var(--surface);
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+
+.role text {
+    font: 700 13px var(--font);
+    fill: var(--text);
+    text-anchor: middle;
+}
+
+.token {
+    fill: var(--accent);
+    opacity: 0;
+}
+
+.outcome rect {
+    fill: var(--surface);
+    stroke: var(--ok);
+    stroke-width: 2;
+}
+
+.outcome .title {
+    font: 700 16px var(--font);
+    fill: var(--ok);
+}
+
+.outcome .detail {
+    font: 13px var(--font);
+    fill: var(--text-muted);
+}
+
+/* One 8 s loop: each role's turn lights it up as the token arrives; the verdict appears last. */
+.role-1 circle { animation: hero-turn 8s var(--ui-ease) infinite; animation-delay: 0s; }
+.role-2 circle { animation: hero-turn 8s var(--ui-ease) infinite; animation-delay: 1.6s; }
+.role-3 circle { animation: hero-turn 8s var(--ui-ease) infinite; animation-delay: 3.2s; }
+.role-4 circle { animation: hero-turn 8s var(--ui-ease) infinite; animation-delay: 4.8s; }
+
+.token {
+    animation: hero-token 8s var(--ui-ease) infinite;
+}
+
+.outcome {
+    animation: hero-verdict 8s var(--ui-ease) infinite;
+}
+
+@keyframes hero-turn {
+    0%, 100% { stroke: var(--border-strong); fill: var(--surface); }
+    4% { stroke: var(--accent); fill: var(--accent-bg); }
+    20% { stroke: var(--accent); fill: var(--accent-bg); }
+    30% { stroke: var(--accent); fill: var(--surface); }
+    80% { stroke: var(--accent); fill: var(--surface); }
+    92% { stroke: var(--border-strong); fill: var(--surface); }
+}
+
+@keyframes hero-token {
+    0% { transform: translateX(0); opacity: 0; }
+    3% { opacity: 1; }
+    18% { transform: translateX(0); }
+    22% { transform: translateX(94px); }
+    38% { transform: translateX(94px); }
+    42% { transform: translateX(188px); }
+    58% { transform: translateX(188px); }
+    62% { transform: translateX(282px); }
+    80% { transform: translateX(282px); opacity: 1; }
+    86% { opacity: 0; transform: translateX(282px); }
+    100% { opacity: 0; transform: translateX(0); }
+}
+
+@keyframes hero-verdict {
+    0%, 78% { opacity: 0; transform: translate(300px, 214px); }
+    86% { opacity: 1; transform: translate(300px, 206px); }
+    96% { opacity: 1; transform: translate(300px, 206px); }
+    100% { opacity: 0; transform: translate(300px, 206px); }
+}
+
+@keyframes hero-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.75); }
+}
+
+.pulse,
+.role circle,
+.token {
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+.outcome {
+    transform-box: view-box;
+    transform-origin: 0 0;
+}
+
+/* Paused by the checkbox: the scene holds its current frame. */
+.hero-pause-toggle:checked ~ .council-scene * {
+    animation-play-state: paused;
+}
+
+/* With motion reduced (the system's preference or the account's) the loop never runs, so there is nothing to pause. */
+@media (prefers-reduced-motion: reduce) {
+    .hero-pause-toggle,
+    .hero-pause {
+        display: none;
+    }
+}
+
+:root[data-motion="reduced"] .hero-pause-toggle,
+:root[data-motion="reduced"] .hero-pause {
+    display: none;
+}
+
+@media (max-width: 52rem) {
+    .hero {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+        padding-top: 0.5rem;
+    }
+}

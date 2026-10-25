@@ -2,22 +2,31 @@
 
 <PageTitle>Ecnanib</PageTitle>
 
-<h1>Ecnanib</h1>
-<p>AI cryptocurrency trading agents for Binance Spot and Futures, run with your own exchange and AI provider keys.</p>
-
 @if (Notice == "account-deleted")
 {
     <p class="notice" role="status">Your account and everything it owned have been deleted.</p>
 }
 
-<AuthorizeView>
-    <Authorized>
-        <p>You are signed in as <strong>@context.User.Identity?.Name</strong>. <a href="/settings">Settings</a></p>
-    </Authorized>
-    <NotAuthorized>
-        <p><a href="/sign-up">Create an account</a> or <a href="/sign-in">sign in</a>.</p>
-    </NotAuthorized>
-</AuthorizeView>
+<Hero />
+
+<div class="features">
+    <section class="card" aria-labelledby="how-title">
+        <h2 id="how-title">One agent, one plan</h2>
+        <p>An agent trades one symbol on Spot or USDⓈ-M Futures at one timeframe (15m, 1H, 4H or 1D) with one deterministic strategy and one council. It is evaluated at every candle close, also while you are offline, and every decision is recorded with its reasoning.</p>
+    </section>
+    <section class="card" aria-labelledby="council-title">
+        <h2 id="council-title">A council, not a single model</h2>
+        <p>Four roles in sequence: Market Analyst, Sentiment &amp; Flow, Cross-Market Context and the Risk Manager, which decides last within hard risk limits. Pick a provider and model per role; the defaults follow each model's observed strengths, and your own trading experience refines them.</p>
+    </section>
+    <section class="card" aria-labelledby="keys-title">
+        <h2 id="keys-title">Your keys, your account</h2>
+        <p>Bring your own Binance and provider keys; Ecnanib holds none of its own and never asks for withdrawal permission. Keys are shown masked and never logged. Watch everything live: states, decisions, orders, fills and P&amp;L update as they happen.</p>
+    </section>
+    <section class="card" aria-labelledby="paper-title">
+        <h2 id="paper-title">Paper first, live when ready</h2>
+        <p>Paper agents fill against live Binance prices with no key at all. Go live on the testnet or production when you are ready, with a daily loss limit per agent and a kill switch that stops every agent at once.</p>
+    </section>
+</div>
 
 <RiskDisclaimerNotice />
 

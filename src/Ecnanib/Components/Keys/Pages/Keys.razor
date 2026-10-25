@@ -17,7 +17,7 @@
     <p class="notice" role="status">@_notice</p>
 }
 
-<section aria-labelledby="exchange-title">
+<section class="card" aria-labelledby="exchange-title">
     <h2 id="exchange-title">Binance API keys</h2>
     @if (_overview is null || _overview.ExchangeKeys.Count == 0)
     {
@@ -26,27 +26,27 @@
     else
     {
         <div class="table-wrap">
-            <table class="keys">
+            <table class="data stack keys">
                 <thead>
-                    <tr><th>Label</th><th>Environment</th><th>Markets</th><th>Key</th><th>Status</th><th>Checked</th><th>Agents</th><th></th></tr>
+                    <tr><th scope="col">Label</th><th scope="col">Environment</th><th scope="col">Markets</th><th scope="col">Key</th><th scope="col">Status</th><th scope="col">Checked</th><th scope="col">Agents</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
                 </thead>
                 <tbody>
                     @foreach (var key in _overview.ExchangeKeys)
                     {
                         <tr>
-                            <td>@key.Label</td>
-                            <td>@key.Environment</td>
-                            <td>@Markets(key)</td>
-                            <td><code>@key.MaskedApiKey</code></td>
-                            <td>
+                            <td data-label="Label">@key.Label</td>
+                            <td data-label="Environment">@key.Environment</td>
+                            <td data-label="Markets">@Markets(key)</td>
+                            <td data-label="Key"><code>@key.MaskedApiKey</code></td>
+                            <td data-label="Status">
                                 <span class="status @StatusClass(key.Status)">@key.Status</span>
                                 @if (key.Status == KeyStatus.Invalid && key.LastValidationError is not null)
                                 {
                                     <span class="muted">@key.LastValidationError</span>
                                 }
                             </td>
-                            <td>@Stamp(key.LastValidatedAt)</td>
-                            <td>@key.ActiveAgents</td>
+                            <td data-label="Checked">@Stamp(key.LastValidatedAt)</td>
+                            <td data-label="Agents">@key.ActiveAgents</td>
                             <td><a href="/keys/exchange/@key.Id">Manage</a></td>
                         </tr>
                     }
@@ -95,43 +95,43 @@
             <InputText @bind-Value="Input.ApiSecret" type="password" autocomplete="off" spellcheck="false" maxlength="256" required />
         </label>
         <p class="hint">@KeyMessages.BinanceKeyHint</p>
-        <button type="submit">Validate and save</button>
+        <button type="submit" class="primary">Validate and save</button>
     </EditForm>
 </section>
 
-<section aria-labelledby="providers-title">
+<section class="card" aria-labelledby="providers-title">
     <h2 id="providers-title">AI provider keys</h2>
     <p>One key per provider. A council role assigned to a provider without a key cannot run.</p>
     @if (_overview is not null)
     {
         <div class="table-wrap">
-            <table class="keys">
+            <table class="data stack keys">
                 <thead>
-                    <tr><th>Provider</th><th>Key</th><th>Status</th><th>Checked</th><th>Agents</th><th></th></tr>
+                    <tr><th scope="col">Provider</th><th scope="col">Key</th><th scope="col">Status</th><th scope="col">Checked</th><th scope="col">Agents</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
                 </thead>
                 <tbody>
                     @foreach (var slot in _overview.Providers)
                     {
                         <tr>
-                            <td>@ProviderNames.Display(slot.Provider)</td>
+                            <td data-label="Provider">@ProviderNames.Display(slot.Provider)</td>
                             @if (slot.Key is { } key)
                             {
-                                <td><code>@key.MaskedApiKey</code></td>
-                                <td>
+                                <td data-label="Key"><code>@key.MaskedApiKey</code></td>
+                                <td data-label="Status">
                                     <span class="status @StatusClass(key.Status)">@key.Status</span>
                                     @if (key.Status == KeyStatus.Invalid && key.LastValidationError is not null)
                                     {
                                         <span class="muted">@key.LastValidationError</span>
                                     }
                                 </td>
-                                <td>@Stamp(key.LastValidatedAt)</td>
-                                <td>@slot.ActiveAgents</td>
+                                <td data-label="Checked">@Stamp(key.LastValidatedAt)</td>
+                                <td data-label="Agents">@slot.ActiveAgents</td>
                                 <td><a href="/keys/providers/@ProviderNames.Route(slot.Provider)">Manage</a></td>
                             }
                             else
                             {
-                                <td colspan="3"><span class="muted">@KeyMessages.ProviderUnavailable(slot.Provider)</span></td>
-                                <td>@slot.ActiveAgents</td>
+                                <td colspan="3" data-label="Key"><span class="muted">@KeyMessages.ProviderUnavailable(slot.Provider)</span></td>
+                                <td data-label="Agents">@slot.ActiveAgents</td>
                                 <td><a href="/keys/providers/@ProviderNames.Route(slot.Provider)">Add key…</a></td>
                             }
                         </tr>

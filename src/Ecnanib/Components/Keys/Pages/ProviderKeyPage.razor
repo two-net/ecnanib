@@ -10,89 +10,91 @@
 
 @if (_slot is { } slot)
 {
-    <h1>@Name key</h1>
+    <div class="page narrow">
+        <h1>@Name key</h1>
 
-    @if (_notice is not null)
-    {
-        <p class="@(_noticeIsError ? "error" : "notice")" role="@(_noticeIsError ? "alert" : "status")">@_notice</p>
-    }
-
-    <section aria-labelledby="current-title">
-        <h2 id="current-title">Current key</h2>
-        @if (slot.Key is { } key)
+        @if (_notice is not null)
         {
-            <dl class="details">
-                <dt>Key</dt><dd><code>@key.MaskedApiKey</code></dd>
-                <dt>Status</dt>
-                <dd>
-                    <span class="status @StatusClass(key.Status)">@key.Status</span>
-                    @if (key.Status == KeyStatus.Invalid && key.LastValidationError is not null)
-                    {
-                        <span class="muted">@key.LastValidationError</span>
-                    }
-                </dd>
-                <dt>Last checked</dt><dd>@Stamp(key.LastValidatedAt)</dd>
-                <dt>Added</dt><dd>@Stamp(key.CreatedAt)</dd>
-                <dt>Running or paused agents using it</dt><dd>@slot.ActiveAgents</dd>
-            </dl>
-            <form method="post" @formname="validate-provider-key" @onsubmit="ValidateAsync" class="inline">
-                <AntiforgeryToken />
-                <button type="submit">Validate now</button>
-            </form>
+            <p class="@(_noticeIsError ? "error" : "notice")" role="@(_noticeIsError ? "alert" : "status")">@_notice</p>
         }
-        else
-        {
-            <p>@KeyMessages.ProviderUnavailable(slot.Provider)</p>
-        }
-    </section>
 
-    <section aria-labelledby="save-title">
-        <h2 id="save-title">@(slot.Key is null ? "Add" : "Replace") the key</h2>
-        <p>The key is validated by listing @Name's models before it is saved, and the model catalog is refreshed from the answer.</p>
-        <EditForm Model="Save" FormName="save-provider-key" OnValidSubmit="SaveAsync" OnInvalidSubmit="ClearSecrets" method="post">
-            <DataAnnotationsValidator />
-            @if (_saveError is not null)
+        <section class="card" aria-labelledby="current-title">
+            <h2 id="current-title">Current key</h2>
+            @if (slot.Key is { } key)
             {
-                <p class="error" role="alert">@_saveError</p>
+                <dl class="details">
+                    <dt>Key</dt><dd><code>@key.MaskedApiKey</code></dd>
+                    <dt>Status</dt>
+                    <dd>
+                        <span class="status @StatusClass(key.Status)">@key.Status</span>
+                        @if (key.Status == KeyStatus.Invalid && key.LastValidationError is not null)
+                        {
+                            <span class="muted">@key.LastValidationError</span>
+                        }
+                    </dd>
+                    <dt>Last checked</dt><dd>@Stamp(key.LastValidatedAt)</dd>
+                    <dt>Added</dt><dd>@Stamp(key.CreatedAt)</dd>
+                    <dt>Running or paused agents using it</dt><dd>@slot.ActiveAgents</dd>
+                </dl>
+                <form method="post" @formname="validate-provider-key" @onsubmit="ValidateAsync" class="inline">
+                    <AntiforgeryToken />
+                    <button type="submit">Validate now</button>
+                </form>
             }
-            <ValidationSummary />
-            <label>
-                API key
-                <InputText @bind-Value="Save.ApiKey" type="password" autocomplete="off" spellcheck="false" maxlength="512" required />
-            </label>
-            <button type="submit">Validate and save</button>
-        </EditForm>
-    </section>
+            else
+            {
+                <p>@KeyMessages.ProviderUnavailable(slot.Provider)</p>
+            }
+        </section>
 
-    @if (slot.Key is not null)
-    {
-        <section aria-labelledby="delete-title">
-            <h2 id="delete-title">Delete key</h2>
-            <p>Council roles on @Name become unavailable. @(slot.ActiveAgents > 0 ? KeyMessages.AgentsInUse(slot.ActiveAgents) : "No running or paused agent uses it.")</p>
-            <EditForm Model="Delete" FormName="delete-provider-key" OnValidSubmit="DeleteAsync" method="post">
+        <section class="card" aria-labelledby="save-title">
+            <h2 id="save-title">@(slot.Key is null ? "Add" : "Replace") the key</h2>
+            <p>The key is validated by listing @Name's models before it is saved, and the model catalog is refreshed from the answer.</p>
+            <EditForm Model="Save" FormName="save-provider-key" OnValidSubmit="SaveAsync" OnInvalidSubmit="ClearSecrets" method="post">
                 <DataAnnotationsValidator />
-                @if (_deleteError is not null)
+                @if (_saveError is not null)
                 {
-                    <p class="error" role="alert">@_deleteError</p>
+                    <p class="error" role="alert">@_saveError</p>
                 }
                 <ValidationSummary />
-                <label class="check">
-                    <InputCheckbox @bind-Value="Delete.Confirm" />
-                    I understand that agents can no longer use this key.
+                <label>
+                    API key
+                    <InputText @bind-Value="Save.ApiKey" type="password" autocomplete="off" spellcheck="false" maxlength="512" required />
                 </label>
-                @if (slot.ActiveAgents > 0)
-                {
-                    <label class="check">
-                        <InputCheckbox @bind-Value="Delete.StopAgents" />
-                        Stop the @KeyMessages.Plural(slot.ActiveAgents, "running or paused agent", "running or paused agents") that use it as part of the deletion.
-                    </label>
-                }
-                <button type="submit" class="danger">Delete key</button>
+                <button type="submit" class="primary">Validate and save</button>
             </EditForm>
         </section>
-    }
 
-    <p><a href="/keys">Back to keys</a></p>
+        @if (slot.Key is not null)
+        {
+            <section class="card danger-zone" aria-labelledby="delete-title">
+                <h2 id="delete-title">Delete key</h2>
+                <p>Council roles on @Name become unavailable. @(slot.ActiveAgents > 0 ? KeyMessages.AgentsInUse(slot.ActiveAgents) : "No running or paused agent uses it.")</p>
+                <EditForm Model="Delete" FormName="delete-provider-key" OnValidSubmit="DeleteAsync" method="post">
+                    <DataAnnotationsValidator />
+                    @if (_deleteError is not null)
+                    {
+                        <p class="error" role="alert">@_deleteError</p>
+                    }
+                    <ValidationSummary />
+                    <label class="check">
+                        <InputCheckbox @bind-Value="Delete.Confirm" />
+                        I understand that agents can no longer use this key.
+                    </label>
+                    @if (slot.ActiveAgents > 0)
+                    {
+                        <label class="check">
+                            <InputCheckbox @bind-Value="Delete.StopAgents" />
+                            Stop the @KeyMessages.Plural(slot.ActiveAgents, "running or paused agent", "running or paused agents") that use it as part of the deletion.
+                        </label>
+                    }
+                    <button type="submit" class="danger">Delete key</button>
+                </EditForm>
+            </section>
+        }
+
+        <p><a href="/keys">Back to keys</a></p>
+    </div>
 }
 
 @code {

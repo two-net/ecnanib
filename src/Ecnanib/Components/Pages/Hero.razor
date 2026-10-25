@@ -1,0 +1,79 @@
+@* The landing hero (FR-UI-03 f): three agents, the council's four roles taking their turns and the verdict, as a
+   decorative loop. It is aria-hidden with a caption that says the same in words; a checkbox pauses it (CSS only, so it
+   works on the first paint and after an enhanced navigation alike); under reduced motion the loop never runs and the
+   scene rests on its final frame (every role lit, the verdict shown). *@
+<section class="hero">
+    <div class="hero-copy">
+        <p class="eyebrow">AI cryptocurrency trading agents for Binance</p>
+        <h1>Agents that trade on your account, with a council of AI models behind every decision.</h1>
+        <p class="lead">
+            Create an agent for one symbol, one timeframe and one strategy. At every candle close it consults a council of
+            Claude, Gemini, GPT and Grok, each in the role its strengths suit; the Risk Manager has the last word and the
+            hard limits always apply. Your keys, your account, paper trading first.
+        </p>
+        <div class="hero-actions">
+            <AuthorizeView>
+                <Authorized>
+                    <a class="button primary" href="/agents">Go to the dashboard</a>
+                    <a class="button" href="/agents/new">New agent</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="button primary" href="/sign-up">Create an account</a>
+                    <a class="button" href="/sign-in">Sign in</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </div>
+    <figure class="hero-figure">
+        <input type="checkbox" id="hero-pause" class="hero-pause-toggle" />
+        <label for="hero-pause" class="hero-pause">Pause the animation</label>
+        <svg class="anim-loop council-scene" viewBox="0 0 640 360" aria-hidden="true" focusable="false">
+            <g class="agents">
+                <g class="agent" transform="translate(24 36)">
+                    <rect class="box" width="196" height="84" rx="10" />
+                    <text class="label" x="14" y="24">BTCUSDT · 1H</text>
+                    <polyline class="spark up" points="14,66 40,58 66,62 92,48 118,52 144,40 170,44 182,34" />
+                </g>
+                <g class="agent" transform="translate(24 138)">
+                    <rect class="box active" width="196" height="84" rx="10" />
+                    <text class="label" x="14" y="24">ETHUSDT · 4H</text>
+                    <circle class="pulse" cx="176" cy="18" r="5" />
+                    <polyline class="spark down" points="14,46 40,52 66,44 92,58 118,54 144,66 170,60 182,70" />
+                </g>
+                <g class="agent" transform="translate(24 240)">
+                    <rect class="box" width="196" height="84" rx="10" />
+                    <text class="label" x="14" y="24">SOLUSDT · 15m</text>
+                    <polyline class="spark up" points="14,60 40,62 66,50 92,54 118,42 144,46 170,38 182,30" />
+                </g>
+            </g>
+            <path class="link" d="M220 180 C 250 180, 250 120, 286 120" />
+            <g class="council">
+                <line class="rail" x1="286" y1="120" x2="568" y2="120" />
+                <g class="role role-1" transform="translate(286 120)">
+                    <circle r="26" />
+                    <text y="5">MA</text>
+                </g>
+                <g class="role role-2" transform="translate(380 120)">
+                    <circle r="26" />
+                    <text y="5">S&amp;F</text>
+                </g>
+                <g class="role role-3" transform="translate(474 120)">
+                    <circle r="26" />
+                    <text y="5">CMC</text>
+                </g>
+                <g class="role role-4" transform="translate(568 120)">
+                    <circle r="26" />
+                    <text y="5">RM</text>
+                </g>
+                <circle class="token" cx="286" cy="120" r="8" />
+            </g>
+            <g class="outcome" transform="translate(300 206)">
+                <rect width="316" height="110" rx="12" />
+                <text class="title" x="20" y="36">Verdict: open long</text>
+                <text class="detail" x="20" y="64">Limit 64 120 · stop 62 900 · target 66 500</text>
+                <text class="detail" x="20" y="88">Risk 1.0% of equity · limits pass</text>
+            </g>
+        </svg>
+        <figcaption class="hero-caption">Three agents; at each candle close the council's four roles take their turns, Market Analyst to Risk Manager, and the Risk Manager gives the verdict.</figcaption>
+    </figure>
+</section>

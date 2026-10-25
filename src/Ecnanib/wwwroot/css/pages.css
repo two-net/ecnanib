@@ -41,11 +41,8 @@ table.council td {
     gap: 1rem;
 }
 
-.turn {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    padding: 0.85rem 1.1rem;
+.turns .turn {
+    margin: 0;
 }
 
 .turn h3 {

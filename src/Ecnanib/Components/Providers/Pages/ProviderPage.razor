@@ -26,8 +26,8 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents leaderboard">
-                    <thead><tr><th>Model</th><th>Role</th><MetricHeaders /></tr></thead>
+                <table class="data agents leaderboard">
+                    <thead><tr><th scope="col">Model</th><th scope="col">Role</th><MetricHeaders /></tr></thead>
                     <tbody>
                         @foreach (var row in view.Mine)
                         {
@@ -48,8 +48,8 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents leaderboard">
-                    <thead><tr><th>Model</th><th>Role</th><MetricHeaders /></tr></thead>
+                <table class="data agents leaderboard">
+                    <thead><tr><th scope="col">Model</th><th scope="col">Role</th><MetricHeaders /></tr></thead>
                     <tbody>
                         @foreach (var row in view.SystemWide)
                         {
@@ -70,8 +70,8 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents leaderboard">
-                    <thead><tr><th>Agent</th><th>Model</th><th>Role</th><th>Timeframe</th><th>Market</th><MetricHeaders /></tr></thead>
+                <table class="data agents leaderboard">
+                    <thead><tr><th scope="col">Agent</th><th scope="col">Model</th><th scope="col">Role</th><th scope="col">Timeframe</th><th scope="col">Market</th><MetricHeaders /></tr></thead>
                     <tbody>
                         @foreach (var row in view.Agents)
                         {
