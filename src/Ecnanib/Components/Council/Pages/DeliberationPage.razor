@@ -48,6 +48,9 @@
         }
         else
         {
+            <DeliberationReplay @rendermode="new InteractiveServerRenderMode(prerender: false)"
+                                Turns="@view.Turns.Select(t => new ReplayTurn(t.Role, t.Sequence, t.Status, t.ProposedAction, t.LatencyMs)).ToList()"
+                                Verdict="view.Decision?.Action" />
             <ol class="turns">
                 @foreach (var turn in view.Turns)
                 {

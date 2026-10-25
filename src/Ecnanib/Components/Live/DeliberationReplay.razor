@@ -1,0 +1,125 @@
+@* The replay of a recorded deliberation (FR-UI-03 b): each role takes its turn in sequence, hands off and the verdict is
+   revealed last. Skippable at any moment, auto-skipped under reduced motion, and never the only place the facts are: the
+   recorded turns are listed in full right below it. *@
+@using Ecnanib.Database.Entities
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="deliberation-replay">
+    <DeliberationSequence Roles="_roles" Steps="_steps" Verdict="Verdict" Revealed="_revealed" ShowControls="true" OnSkip="Skip" OnReplay="ReplayAsync" />
+    <p class="hint">A replay of the recorded deliberation; each turn lasts a moment proportional to the role's latency. The turns are listed in full below.</p>
+</div>
+
+@code {
+    private readonly Dictionary<CouncilRole, RoleStep> _steps = [];
+    private IReadOnlyList<RoleSlot> _roles = [];
+    private bool _revealed;
+    private CancellationTokenSource? _playing;
+    private IJSObjectReference? _module;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ReplayTurn> Turns { get; set; } = [];
+
+    [Parameter]
+    public DecisionAction? Verdict { get; set; }
+
+    protected override void OnParametersSet() =>
+        _roles = Turns.OrderBy(t => t.Sequence).Select(t => new RoleSlot(t.Role, t.Sequence, t.Status != RoleOutputStatus.Disabled)).ToList();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        var reduced = false;
+        try
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Live/DeliberationReplay.razor.js");
+            reduced = await _module.InvokeAsync<bool>("isReduced");
+        }
+        catch (JSException)
+        {
+            // Without the script the replay still plays; the controls still skip it.
+        }
+
+        if (reduced)
+            Skip();
+        else
+            await ReplayAsync();
+    }
+
+    /// <summary>Everything at once: the final state the animation would have reached.</summary>
+    private void Skip()
+    {
+        _playing?.Cancel();
+        _playing = null;
+        foreach (var turn in Turns)
+            _steps[turn.Role] = new RoleStep(RoleStage.Done, turn.Status, turn.Proposed);
+        _revealed = true;
+        StateHasChanged();
+    }
+
+    private Task ReplayAsync()
+    {
+        _playing?.Cancel();
+        var playing = new CancellationTokenSource();
+        _playing = playing;
+        _steps.Clear();
+        _revealed = false;
+        StateHasChanged();
+        _ = PlayAsync(playing);
+        return Task.CompletedTask;
+    }
+
+    private async Task PlayAsync(CancellationTokenSource playing)
+    {
+        var token = playing.Token;
+        try
+        {
+            foreach (var turn in Turns.OrderBy(t => t.Sequence))
+            {
+                var duration = ReplayTiming.Duration(turn.Status, turn.LatencyMs);
+                if (turn.Status is not (RoleOutputStatus.Disabled or RoleOutputStatus.Skipped))
+                {
+                    _steps[turn.Role] = new RoleStep(RoleStage.Thinking, null, null);
+                    await InvokeAsync(StateHasChanged);
+                }
+
+                await Task.Delay(duration, token);
+                _steps[turn.Role] = new RoleStep(RoleStage.Done, turn.Status, turn.Proposed);
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(ReplayTiming.Handoff, token);
+            }
+
+            await Task.Delay(ReplayTiming.Reveal, token);
+            _revealed = true;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_playing, playing))
+                _playing = null;
+            playing.Dispose();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _playing?.Cancel();
+        if (_module is { } module)
+        {
+            try
+            {
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+}
