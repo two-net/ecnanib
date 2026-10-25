@@ -31,20 +31,26 @@ internal sealed class MarketStreamHub : BackgroundService, IMarketStreams
     public IDisposable SubscribeCandles(MarketKey key, CandleInterval interval, Func<Candle, CancellationToken, ValueTask> onClosed)
     {
         ArgumentNullException.ThrowIfNull(onClosed);
-        var name = CandleStreamSubscription.NameFor(key, interval);
-        return Subscribe(name, onClosed, () => new CandleStreamSubscription(key, interval, _source, _options.Value.Streams, _time, _loggerFactory.CreateLogger<CandleStreamSubscription>()));
+        return Subscribe(CandleStreamSubscription.NameFor(key, interval), () => CreateCandleStream(key, interval), s => s.AddHandler(onClosed));
+    }
+
+    public IDisposable SubscribeCandleUpdates(MarketKey key, CandleInterval interval, Func<Candle, CancellationToken, ValueTask> onUpdate)
+    {
+        ArgumentNullException.ThrowIfNull(onUpdate);
+        // The same shared stream as the closed-candle subscribers; an update handler keeps it open like any other.
+        return Subscribe(CandleStreamSubscription.NameFor(key, interval), () => CreateCandleStream(key, interval), s => ((CandleStreamSubscription)s).AddUpdateHandler(onUpdate));
     }
 
     public IDisposable SubscribePrice(MarketKey key, Func<PriceTick, CancellationToken, ValueTask> onPrice)
     {
         ArgumentNullException.ThrowIfNull(onPrice);
         var name = $"price:{key.Environment}:{key.Market}:{key.Symbol}".ToLowerInvariant();
-        return Subscribe(name, onPrice, () => new TickStreamSubscription<PriceTick>(
+        return Subscribe(name, () => new TickStreamSubscription<PriceTick>(
             name,
             (handler, ct) => _source.SubscribePriceAsync(key, handler, ct),
             ct => _source.PollPriceAsync(key, ct),
             _options.Value.Streams.PricePollInterval,
-            _options.Value.Streams, _time, _loggerFactory.CreateLogger<TickStreamSubscription<PriceTick>>()));
+            _options.Value.Streams, _time, _loggerFactory.CreateLogger<TickStreamSubscription<PriceTick>>()), s => s.AddHandler(onPrice));
     }
 
     public IDisposable SubscribeMarkPrice(MarketKey key, Func<MarkPrice, CancellationToken, ValueTask> onMark)
@@ -54,13 +60,16 @@ internal sealed class MarketStreamHub : BackgroundService, IMarketStreams
             throw new NotSupportedException("Mark price streams exist only on USD-M futures.");
 
         var name = $"mark:{key.Environment}:{key.Market}:{key.Symbol}".ToLowerInvariant();
-        return Subscribe(name, onMark, () => new TickStreamSubscription<MarkPrice>(
+        return Subscribe(name, () => new TickStreamSubscription<MarkPrice>(
             name,
             (handler, ct) => _source.SubscribeMarkPriceAsync(key, handler, ct),
             ct => _source.PollMarkPriceAsync(key, ct),
             _options.Value.Streams.MarkPricePollInterval,
-            _options.Value.Streams, _time, _loggerFactory.CreateLogger<TickStreamSubscription<MarkPrice>>()));
+            _options.Value.Streams, _time, _loggerFactory.CreateLogger<TickStreamSubscription<MarkPrice>>()), s => s.AddHandler(onMark));
     }
+
+    private CandleStreamSubscription CreateCandleStream(MarketKey key, CandleInterval interval) =>
+        new(key, interval, _source, _options.Value.Streams, _time, _loggerFactory.CreateLogger<CandleStreamSubscription>());
 
     public IReadOnlyList<StreamStatus> GetStatuses() =>
         _streams.Values.Select(s => s.Status).OrderBy(s => s.Name, StringComparer.Ordinal).ToArray();
@@ -86,7 +95,7 @@ internal sealed class MarketStreamHub : BackgroundService, IMarketStreams
         }
     }
 
-    private IDisposable Subscribe<T>(string name, Func<T, CancellationToken, ValueTask> handler, Func<StreamSubscriptionBase<T>> create)
+    private IDisposable Subscribe<T>(string name, Func<StreamSubscriptionBase<T>> create, Func<StreamSubscriptionBase<T>, IDisposable> attach)
     {
         lock (_lock)
         {
@@ -96,7 +105,7 @@ internal sealed class MarketStreamHub : BackgroundService, IMarketStreams
                 _logger.LogInformation("Opening stream {Name}", name);
                 return new StreamEntry<T>(subscription);
             });
-            var registration = entry.Subscription.AddHandler(handler);
+            var registration = attach(entry.Subscription);
             entry.Subscription.Start();
             return new Unsubscriber(() => Release(name, entry, registration));
         }

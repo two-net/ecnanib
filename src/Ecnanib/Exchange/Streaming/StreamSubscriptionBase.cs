@@ -49,7 +49,8 @@ internal abstract class StreamSubscriptionBase<T> : IAsyncDisposable
 
     public bool IsConnected => _connected;
 
-    public int HandlerCount => _dispatcher.HandlerCount;
+    /// <summary>Every handler that keeps the stream open; a subclass with a second dispatcher counts its own too.</summary>
+    public virtual int HandlerCount => _dispatcher.HandlerCount;
 
     public DateTimeOffset? LastMessageAt
     {
@@ -104,8 +105,12 @@ internal abstract class StreamSubscriptionBase<T> : IAsyncDisposable
 
         await CloseHandleAsync().ConfigureAwait(false);
         await _dispatcher.DisposeAsync().ConfigureAwait(false);
+        await DisposeExtrasAsync().ConfigureAwait(false);
         _cts.Dispose();
     }
+
+    /// <summary>Releases what a subclass added (a second dispatcher); called once the socket is closed and the main dispatcher drained.</summary>
+    protected virtual ValueTask DisposeExtrasAsync() => ValueTask.CompletedTask;
 
     /// <summary>Creates the socket subscription and wires <see cref="OnStreamUpdate"/>.</summary>
     protected abstract Task<StreamSubscriptionHandle> SubscribeAsync(CancellationToken ct);
@@ -122,9 +127,15 @@ internal abstract class StreamSubscriptionBase<T> : IAsyncDisposable
     /// <summary>Filter applied to every item, from stream or poll, before delivery (used for candle dedupe).</summary>
     protected virtual bool Accept(T item) => true;
 
+    /// <summary>Sees every socket message before <see cref="Accept"/> filters it (the candle stream forwards forming candles here).</summary>
+    protected virtual void OnRawUpdate(T item)
+    {
+    }
+
     protected void OnStreamUpdate(T item)
     {
         Interlocked.Exchange(ref _lastMessageTicks, Time.GetUtcNow().UtcTicks);
+        OnRawUpdate(item);
         Deliver(item);
     }
 

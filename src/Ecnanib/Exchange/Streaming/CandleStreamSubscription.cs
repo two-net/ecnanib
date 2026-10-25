@@ -5,7 +5,9 @@ namespace Ecnanib.Exchange.Streaming;
 
 /// <summary>
 /// Closed-candle stream for one symbol and interval. Every closed candle is delivered exactly once, whether it came
-/// from the socket, from the polling fallback or from the late-close safety poll (FR-AGT-09 depends on this).
+/// from the socket, from the polling fallback or from the late-close safety poll (FR-AGT-09 depends on this). A second
+/// set of handlers receives every update as it comes, forming candles included and without deduplication, for the
+/// chart (FR-UI-03 c); both sets share the one socket subscription.
 /// </summary>
 internal sealed class CandleStreamSubscription : StreamSubscriptionBase<Candle>
 {
@@ -14,6 +16,7 @@ internal sealed class CandleStreamSubscription : StreamSubscriptionBase<Candle>
     private readonly IMarketStreamSource _source;
     private readonly MarketKey _key;
     private readonly CandleInterval _interval;
+    private readonly SubscriptionDispatcher<Candle> _updates;
     private readonly object _dedupeLock = new();
     private DateTimeOffset? _lastDeliveredOpen;
 
@@ -23,6 +26,7 @@ internal sealed class CandleStreamSubscription : StreamSubscriptionBase<Candle>
         _key = key;
         _interval = interval;
         _source = source;
+        _updates = new SubscriptionDispatcher<Candle>(Name + ":updates", logger);
     }
 
     public static string NameFor(MarketKey key, CandleInterval interval) =>
@@ -39,8 +43,16 @@ internal sealed class CandleStreamSubscription : StreamSubscriptionBase<Candle>
         }
     }
 
+    /// <summary>Closed and update handlers together keep the stream open.</summary>
+    public override int HandlerCount => base.HandlerCount + _updates.HandlerCount;
+
+    /// <summary>Receives every update, forming or closed, as it arrives (FR-UI-03 c).</summary>
+    public IDisposable AddUpdateHandler(Func<Candle, CancellationToken, ValueTask> handler) => _updates.AddHandler(handler);
+
     protected override Task<StreamSubscriptionHandle> SubscribeAsync(CancellationToken ct) =>
         _source.SubscribeCandlesAsync(_key, _interval, OnStreamUpdate, ct);
+
+    protected override void OnRawUpdate(Candle candle) => _updates.TryPublish(candle);
 
     protected override bool Accept(Candle candle)
     {
@@ -63,8 +75,13 @@ internal sealed class CandleStreamSubscription : StreamSubscriptionBase<Candle>
             ? await _source.PollCandlesAsync(_key, _interval, open + _interval.ToTimeSpan(), GapFillLimit, ct).ConfigureAwait(false)
             : await _source.PollCandlesAsync(_key, _interval, null, 2, ct).ConfigureAwait(false);
 
-        foreach (var candle in candles.Where(c => c.IsClosed).OrderBy(c => c.OpenTime))
-            Deliver(candle);
+        // While the socket is down the poll is the chart's only source, forming candle included; closed ones still go through the dedupe.
+        foreach (var candle in candles.OrderBy(c => c.OpenTime))
+        {
+            _updates.TryPublish(candle);
+            if (candle.IsClosed)
+                Deliver(candle);
+        }
     }
 
     /// <summary>Polls shortly after each boundary: a short grace while degraded, a longer one as a safety net while connected.</summary>
@@ -82,4 +99,6 @@ internal sealed class CandleStreamSubscription : StreamSubscriptionBase<Candle>
         var last = LastDeliveredOpen;
         return last is null || last < expectedOpen;
     }
+
+    protected override ValueTask DisposeExtrasAsync() => _updates.DisposeAsync();
 }

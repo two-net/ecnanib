@@ -68,6 +68,20 @@ internal sealed class CandleStore
         }
     }
 
+    /// <summary>The newest <paramref name="count"/> stored candles of a series, ascending; every stored candle is closed.</summary>
+    public async Task<IReadOnlyList<Candle>> ReadRecentAsync(MarketKey key, CandleInterval interval, int count, CancellationToken cancellationToken)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var rows = await db.Candles.AsNoTracking()
+            .Where(c => c.Environment == key.Environment && c.MarketType == key.Market && c.Symbol == key.Symbol && c.Interval == interval)
+            .OrderByDescending(c => c.OpenTime)
+            .Take(count)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        rows.Reverse();
+        return rows.Select(c => new Candle(c.Symbol, c.Interval, c.OpenTime, c.CloseTime, c.Open, c.High, c.Low, c.Close, c.Volume, c.QuoteVolume, c.TradeCount, true)).ToList();
+    }
+
     private static StoredCandle ToEntity(MarketKey key, CandleInterval interval, Candle candle) => new()
     {
         Environment = key.Environment,

@@ -7,6 +7,7 @@ internal sealed class FakeMarketStreams : IMarketStreams
 {
     private readonly object _lock = new();
     private readonly List<CandleSubscription> _candles = [];
+    private readonly List<CandleSubscription> _updates = [];
     private readonly List<PriceSubscription> _prices = [];
     private readonly List<MarkSubscription> _marks = [];
     private int _candleSubscriptionsEver;
@@ -22,6 +23,15 @@ internal sealed class FakeMarketStreams : IMarketStreams
         {
             lock (_lock)
                 return _candles.Count;
+        }
+    }
+
+    public int CandleUpdateSubscriptions
+    {
+        get
+        {
+            lock (_lock)
+                return _updates.Count;
         }
     }
 
@@ -59,6 +69,18 @@ internal sealed class FakeMarketStreams : IMarketStreams
         {
             lock (_lock)
                 _candles.Remove(subscription);
+        });
+    }
+
+    public IDisposable SubscribeCandleUpdates(MarketKey key, CandleInterval interval, Func<Candle, CancellationToken, ValueTask> onUpdate)
+    {
+        var subscription = new CandleSubscription(key, interval, onUpdate);
+        lock (_lock)
+            _updates.Add(subscription);
+        return new Unsubscriber(() =>
+        {
+            lock (_lock)
+                _updates.Remove(subscription);
         });
     }
 
@@ -100,6 +122,12 @@ internal sealed class FakeMarketStreams : IMarketStreams
             return _candles.Any(s => s.Key == key && s.Interval == interval);
     }
 
+    public bool HasCandleUpdateSubscription(MarketKey key, CandleInterval interval)
+    {
+        lock (_lock)
+            return _updates.Any(s => s.Key == key && s.Interval == interval);
+    }
+
     public bool HasPriceSubscription(MarketKey key)
     {
         lock (_lock)
@@ -112,12 +140,23 @@ internal sealed class FakeMarketStreams : IMarketStreams
             return _marks.Any(s => s.Key == key);
     }
 
-    /// <summary>Delivers a closed candle to every handler on the stream, one after another, as the hub does.</summary>
+    /// <summary>Delivers a closed candle to every handler on the stream, one after another, as the hub does; the update handlers see it too.</summary>
     public async Task PushCandleAsync(MarketKey key, CandleInterval interval, Candle candle)
     {
         CandleSubscription[] targets;
         lock (_lock)
             targets = _candles.Where(s => s.Key == key && s.Interval == interval).ToArray();
+        foreach (var target in targets)
+            await target.Handler(candle, CancellationToken.None);
+        await PushCandleUpdateAsync(key, interval, candle);
+    }
+
+    /// <summary>Delivers an update, forming or closed, to the update handlers only (the closed-candle handlers never see a forming candle).</summary>
+    public async Task PushCandleUpdateAsync(MarketKey key, CandleInterval interval, Candle candle)
+    {
+        CandleSubscription[] targets;
+        lock (_lock)
+            targets = _updates.Where(s => s.Key == key && s.Interval == interval).ToArray();
         foreach (var target in targets)
             await target.Handler(candle, CancellationToken.None);
     }

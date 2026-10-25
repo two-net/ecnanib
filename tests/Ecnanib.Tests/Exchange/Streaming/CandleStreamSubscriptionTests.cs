@@ -89,6 +89,31 @@ public class CandleStreamSubscriptionTests
     }
 
     [Fact]
+    public async Task FormingCandlesReachTheUpdateHandlersOnlyAndClosedOnesReachBoth()
+    {
+        await using var h = new Harness();
+        var updates = new List<Candle>();
+        var registration = h.Subscription.AddUpdateHandler((c, _) => { lock (updates) updates.Add(c); return ValueTask.CompletedTask; });
+        await h.ConnectedAsync();
+        Assert.Equal(2, h.Subscription.HandlerCount);
+
+        h.Source.CandleCallback!(Candle(At("2026-10-18T10:00:00Z"), closed: false));
+        h.Source.CandleCallback!(Candle(At("2026-10-18T10:00:00Z"), closed: false));
+        h.Source.CandleCallback!(Closed("2026-10-18T09:45:00Z"));
+        h.Source.CandleCallback!(Closed("2026-10-18T09:45:00Z"));
+        await Wait.UntilAsync(() => { lock (updates) return updates.Count == 4; }, "updates");
+        await Wait.UntilAsync(() => h.DeliveredCount == 1);
+        await Wait.SettleAsync();
+
+        // FR-UI-03 c: the chart sees the forming candle move and the duplicate close; the closed-candle handlers see the close once.
+        Assert.Equal(1, h.DeliveredCount);
+        lock (updates)
+            Assert.Equal([false, false, true, true], updates.Select(c => c.IsClosed));
+        registration.Dispose();
+        Assert.Equal(1, h.Subscription.HandlerCount);
+    }
+
+    [Fact]
     public async Task LostConnectionPollsAtNextBoundaryAndGapFillsOnRestore()
     {
         await using var h = new Harness(noDataTimeoutSeconds: 3600);
@@ -193,8 +218,9 @@ public class CandleStreamSubscriptionTests
         h.Subscription.Start();
 
         await Wait.UntilAsync(() => h.Source.SubscribeCalls == 1);
-        await Wait.UntilAsync(() => h.Subscription.Status.Health == StreamHealth.Polling);
-        Assert.Equal("down", h.Subscription.Status.LastError);
+        // The stream polls from the start; the error text is written after the failed attempt returns, so wait for it rather than for Polling.
+        await Wait.UntilAsync(() => h.Subscription.Status.LastError == "down", "failure recorded");
+        Assert.Equal(StreamHealth.Polling, h.Subscription.Status.Health);
 
         await h.AdvanceToAsync("2026-10-18T10:00:07Z");
         await Wait.UntilAsync(() => h.Source.SubscribeCalls == 2, "first retry after 2 s");

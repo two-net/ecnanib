@@ -10,6 +10,13 @@ public interface IMarketStreams
     /// <summary>Delivers each closed candle exactly once, whether it arrived by stream or by polling.</summary>
     IDisposable SubscribeCandles(MarketKey key, CandleInterval interval, Func<Candle, CancellationToken, ValueTask> onClosed);
 
+    /// <summary>
+    /// Delivers every candle update of the same shared stream, the forming candle (<c>IsClosed</c> false) as often as
+    /// the exchange sends it and the closed ones, without deduplication: what a chart needs to move its last bar
+    /// (FR-UI-03 c). Polled candles are delivered too while the socket is down.
+    /// </summary>
+    IDisposable SubscribeCandleUpdates(MarketKey key, CandleInterval interval, Func<Candle, CancellationToken, ValueTask> onUpdate);
+
     IDisposable SubscribePrice(MarketKey key, Func<PriceTick, CancellationToken, ValueTask> onPrice);
 
     /// <summary>USD-M futures only. Throws <see cref="NotSupportedException"/> for a spot key.</summary>

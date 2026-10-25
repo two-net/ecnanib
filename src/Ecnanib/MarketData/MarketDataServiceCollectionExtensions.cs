@@ -42,6 +42,8 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddSingleton<CandleStore>();
         services.TryAddSingleton<CandleFeed>();
         services.TryAddSingleton<IMarketDataLoader>(sp => sp.GetRequiredService<CandleFeed>());
+        // FR-UI-03 c: the chart's history, from the series the feed holds, the audit table or the exchange.
+        services.TryAddSingleton<ICandleReader, CandleReader>();
 
         services.TryAddSingleton<SymbolCatalogRefresher>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SymbolCatalogRefresher>(sp => sp.GetRequiredService<SymbolCatalogRefresher>()));

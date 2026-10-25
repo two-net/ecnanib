@@ -87,6 +87,34 @@ public class MarketStreamHubTests
     }
 
     [Fact]
+    public async Task UpdateSubscribersShareTheCandleStreamAndKeepItOpen()
+    {
+        var source = new FakeMarketStreamSource();
+        var hub = CreateHub(source, new FakeTimeProvider());
+        var key = new MarketKey(ExchangeEnvironment.Production, MarketType.Spot, "BTCUSDT");
+        var updates = 0;
+
+        var closed = hub.SubscribeCandles(key, CandleInterval.FifteenMinutes, (_, _) => ValueTask.CompletedTask);
+        var forming = hub.SubscribeCandleUpdates(key, CandleInterval.FifteenMinutes, (_, _) => { Interlocked.Increment(ref updates); return ValueTask.CompletedTask; });
+        await Wait.UntilAsync(() => source.SubscribeCalls == 1 && source.CandleCallback is not null);
+        Assert.Single(hub.GetStatuses());
+
+        var open = DateTimeOffset.Parse("2026-10-18T10:00:00Z");
+        source.CandleCallback!(new Candle("BTCUSDT", CandleInterval.FifteenMinutes, open, open.AddMinutes(15), 1, 2, 0.5m, 1.5m, 10, 15, 3, false));
+        await Wait.UntilAsync(() => Volatile.Read(ref updates) == 1, "forming candle delivered to the update handler");
+
+        closed.Dispose();
+        await Wait.SettleAsync();
+        Assert.False(source.LastHandle.Closed);
+        Assert.Single(hub.GetStatuses());
+
+        forming.Dispose();
+        await Wait.UntilAsync(() => source.LastHandle.Closed, "closed after the last update handler left");
+        Assert.Empty(hub.GetStatuses());
+        await hub.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public void MarkPriceOnSpotIsRejected()
     {
         var hub = CreateHub(new FakeMarketStreamSource(), new FakeTimeProvider());
