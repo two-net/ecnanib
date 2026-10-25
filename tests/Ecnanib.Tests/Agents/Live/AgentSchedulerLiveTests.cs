@@ -52,9 +52,18 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
         var (provider, logs, _, _, streams) = AgentsLiveSeed.Build(_fixture);
         await using var _ = provider;
         var scheduler = provider.GetRequiredService<AgentScheduler>();
+        var events = new List<AgentEvent>();
+        using var subscription = provider.GetRequiredService<IAgentEvents>().Subscribe(user.Id, e =>
+        {
+            lock (events)
+                events.Add(e);
+            return ValueTask.CompletedTask;
+        });
         await scheduler.StartAsync(Ct);
         await Wait.UntilAsync(() => scheduler.IsTracked(running.Id) && scheduler.IsTracked(paused.Id), "resumed");
 
+        // FR-UI-04: the page that showed the interrupted evaluation as running learns that it ended.
+        await Wait.UntilAsync(() => events.OfType<EvaluationFinished>().Any(e => e.EvaluationId == interruptedId && e.Outcome == EvaluationOutcome.Failed && e.AgentId == running.Id), "sweep event");
         Assert.False(scheduler.IsTracked(stopped.Id));
         Assert.False(scheduler.IsTracked(error.Id));
         Assert.True(streams.HasCandleSubscription(AgentsLiveSeed.SpotBtc, CandleInterval.OneHour));
@@ -118,7 +127,12 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
             Assert.Contains(exchange.RecentCandleReads, r => r.Symbol == "BTCUSDT" && r.Interval == CandleInterval.OneDay);
         }
 
-        Assert.Single(events.OfType<EvaluationFinished>());
+        var finished = Assert.Single(events.OfType<EvaluationFinished>());
+        // FR-UI-03 a: "evaluating" is announced when the row is committed, before the outcome.
+        var started = Assert.Single(events.OfType<EvaluationStarted>());
+        Assert.Equal(finished.EvaluationId, started.EvaluationId);
+        Assert.Equal(LastOpen, started.CandleOpenTime);
+        Assert.True(events.IndexOf(started) < events.IndexOf(finished));
         Assert.Contains(logs.Entries, e => e.Message.Contains($"Agent {agent.Id} evaluated candle", StringComparison.Ordinal) && e.Message.Contains("NoAction", StringComparison.Ordinal));
         await scheduler.StopAsync(Ct);
         await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
@@ -302,11 +316,21 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
         var (provider, _, _, _, _) = AgentsLiveSeed.Build(_fixture);
         await using var _ = provider;
         var scheduler = provider.GetRequiredService<AgentScheduler>();
+        var events = new List<AgentEvent>();
+        using var subscription = provider.GetRequiredService<IAgentEvents>().Subscribe(user.Id, e =>
+        {
+            lock (events)
+                events.Add(e);
+            return ValueTask.CompletedTask;
+        });
 
         var (resumed, finalised) = await scheduler.TickOnceAsync(Ct);
 
         Assert.Equal(1, resumed);
         Assert.Equal(1, finalised);
+        await Wait.UntilAsync(() => events.OfType<AgentStateChanged>().Any(e => e.AgentId == due.Id && e.State == AgentState.Running)
+                                    && events.OfType<EvaluationFinished>().Any(e => e.EvaluationId == orphanId && e.Outcome == EvaluationOutcome.Failed), "tick events");
+        Assert.DoesNotContain(events.OfType<EvaluationFinished>(), e => e.EvaluationId != orphanId);
         var dueRow = await AgentsLiveSeed.AgentAsync(_fixture, due.Id);
         Assert.Equal(AgentState.Running, dueRow.State);
         Assert.Null(dueRow.AutoResumeAt);

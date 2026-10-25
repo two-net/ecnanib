@@ -83,6 +83,41 @@ public class CouncilTests
     }
 
     [Fact]
+    public async Task EveryTurnIsPublishedForTheLiveViewInOrder()
+    {
+        var agent = CouncilTestHost.NewAgent(configure: a => a.CouncilAssignments.Single(c => c.Role == CouncilRole.SentimentFlow).Enabled = false);
+        var events = new FakeAgentEvents();
+        var council = CouncilTestHost.Build(CouncilTestHost.Answering(), events: events);
+
+        await council.DeliberateAsync(CouncilTestHost.Context(agent), Ct);
+
+        // FR-UI-03 b: a role that calls a model is announced before and after its turn; a role that runs no model only after.
+        var published = events.Published;
+        Assert.All(published, e =>
+        {
+            Assert.Equal(CouncilTestHost.AgentId, e.AgentId);
+            Assert.Equal(CouncilTestHost.UserId, e.UserId);
+            Assert.Equal(CouncilTestHost.Now, e.At);
+        });
+        Assert.Equal(
+        [
+            ("started", CouncilRole.MarketAnalyst, 1, (RoleOutputStatus?)null),
+            ("finished", CouncilRole.MarketAnalyst, 1, RoleOutputStatus.Succeeded),
+            ("finished", CouncilRole.SentimentFlow, 2, RoleOutputStatus.Disabled),
+            ("started", CouncilRole.CrossMarketContext, 3, null),
+            ("finished", CouncilRole.CrossMarketContext, 3, RoleOutputStatus.Succeeded),
+            ("started", CouncilRole.RiskManager, 4, null),
+            ("finished", CouncilRole.RiskManager, 4, RoleOutputStatus.Succeeded),
+        ], published.Select(e => e switch
+        {
+            CouncilRoleStarted s => ("started", s.Role, s.Sequence, (RoleOutputStatus?)null),
+            CouncilRoleFinished f => ("finished", f.Role, f.Sequence, f.Status),
+            _ => throw new InvalidOperationException(e.GetType().Name),
+        }));
+        Assert.All(published.OfType<CouncilRoleStarted>(), s => Assert.Equal(CouncilTestHost.Context().Evaluation.Id, s.EvaluationId));
+    }
+
+    [Fact]
     public async Task ADisabledRoleIsRecordedWithoutACall()
     {
         var agent = CouncilTestHost.NewAgent(configure: a => a.CouncilAssignments.Single(c => c.Role == CouncilRole.SentimentFlow).Enabled = false);

@@ -277,7 +277,10 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     {
         var now = _time.GetUtcNow();
         await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        var agentIds = await db.Evaluations.Where(e => e.FinishedAt == null).Select(e => e.AgentId).Distinct().ToListAsync(cancellationToken).ConfigureAwait(false);
+        var orphans = await db.Evaluations.Where(e => e.FinishedAt == null)
+            .Select(e => new { e.Id, e.AgentId, e.Agent.UserId, e.CandleOpenTime })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var agentIds = orphans.Select(o => o.AgentId).Distinct().ToList();
         foreach (var id in agentIds)
             _interrupted[id] = 0;
         var rows = await db.Evaluations.Where(e => e.FinishedAt == null)
@@ -288,6 +291,9 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             .ConfigureAwait(false);
         if (rows > 0)
             _logger.LogWarning("{Evaluations} evaluation(s) of {Agents} agent(s) were in flight at the last stop and are recorded as failed", rows, agentIds.Count);
+        // FR-UI-04: a page showing one of these as "evaluating" learns that it ended.
+        foreach (var orphan in orphans)
+            _events.Publish(new EvaluationFinished(orphan.AgentId, orphan.UserId, now, orphan.Id, orphan.CandleOpenTime, EvaluationOutcome.Failed));
         return rows;
     }
 
@@ -494,7 +500,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             .Select(a => new { a.Id, a.UserId })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        var resumed = 0;
+        var resumedAgents = new List<(Guid Id, Guid UserId)>();
         foreach (var agent in due)
         {
             var rows = await db.Agents
@@ -508,16 +514,21 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
                 .ConfigureAwait(false);
             if (rows == 0)
                 continue;
-            resumed++;
+            resumedAgents.Add((agent.Id, agent.UserId));
             db.AgentChanges.Add(ChangeSet.State(agent.Id, now, AgentState.Paused, AgentState.Running, ResumedAfterDailyLoss));
             _logger.LogInformation("Agent {AgentId} resumed after its daily-loss pause", agent.Id);
-            _events.Publish(new AgentStateChanged(agent.Id, agent.UserId, now, AgentState.Running, ResumedAfterDailyLoss));
         }
 
-        if (resumed > 0)
+        if (resumedAgents.Count > 0)
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // Published after the change history is committed, so a page that re-reads on the event sees all of it.
+        foreach (var (id, userId) in resumedAgents)
+            _events.Publish(new AgentStateChanged(id, userId, now, AgentState.Running, ResumedAfterDailyLoss));
 
         var cutoff = now - (_options.Value.LongestDeadline + OrphanGrace);
+        var orphans = await db.Evaluations.Where(e => e.FinishedAt == null && e.StartedAt < cutoff)
+            .Select(e => new { e.Id, e.AgentId, e.Agent.UserId, e.CandleOpenTime })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
         var finalised = await db.Evaluations.Where(e => e.FinishedAt == null && e.StartedAt < cutoff)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(e => e.Outcome, EvaluationOutcome.Failed)
@@ -526,8 +537,10 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             .ConfigureAwait(false);
         if (finalised > 0)
             _logger.LogWarning("{Evaluations} evaluation(s) never finished and are recorded as failed", finalised);
+        foreach (var orphan in orphans)
+            _events.Publish(new EvaluationFinished(orphan.AgentId, orphan.UserId, now, orphan.Id, orphan.CandleOpenTime, EvaluationOutcome.Failed));
 
-        return (resumed, finalised);
+        return (resumedAgents.Count, finalised);
     }
 
     private SemaphoreSlim GateFor(Guid agentId) => _gates.GetOrAdd(agentId, _ => new SemaphoreSlim(1, 1));

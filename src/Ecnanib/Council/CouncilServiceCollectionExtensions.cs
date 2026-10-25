@@ -15,7 +15,8 @@ public static class CouncilServiceCollectionExtensions
     /// (FR-AI), the default <see cref="IExperienceSummaries"/> (register the experience module's first to replace it)
     /// and <see cref="IDeliberationReader"/> (FR-AI-14). Register it <b>before</b> <c>AddAgents</c>, whose fail-safe
     /// council would otherwise stay. Requires <c>AddDatabase</c>, <c>AddAiProviders</c> and <c>AddKeys</c> (both
-    /// resolved at evaluation time) and the agents module's risk caps. Connects to nothing at registration.
+    /// resolved at evaluation time) and the agents module's risk caps and <see cref="IAgentEvents"/> (the role turns
+    /// are published for the live deliberation view, FR-UI-03). Connects to nothing at registration.
     /// </summary>
     public static IServiceCollection AddCouncil(this IServiceCollection services, IConfiguration configuration)
     {

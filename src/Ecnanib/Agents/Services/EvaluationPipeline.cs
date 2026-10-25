@@ -145,6 +145,8 @@ internal sealed class EvaluationPipeline
             return;
         }
 
+        _events.Publish(new EvaluationStarted(agentId, agent.UserId, now, evaluation.Id, candle.OpenTime));
+
         var outcome = EvaluationOutcome.Failed;
         string? detail = null;
         var councilConsulted = false;
@@ -208,6 +210,8 @@ internal sealed class EvaluationPipeline
                         db.Decisions.Add(decision);
                         await db.SaveChangesAsync(stopping).ConfigureAwait(false);
                     }
+
+                    _events.Publish(new DecisionRecorded(agentId, agent.UserId, decision.CreatedAt, evaluation.Id, decision.Id, decision.FinalAction));
                 }
 
                 if (council.Failure is not null || council.Fault is not null)

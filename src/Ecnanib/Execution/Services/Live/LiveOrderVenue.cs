@@ -208,6 +208,7 @@ internal sealed class LiveOrderVenue : IOrderVenue
         _logger.LogInformation("Live stop of trade {TradeId} of agent {AgentId} moved to {Stop} ({Reason})", trade.Id, agent.Id, stop, reason);
         foreach (var order in placed)
             _ledger.Publish(new OrderChanged(agent.Id, agent.UserId, at, order.Id, order.Status));
+        _ledger.Publish(new TradeChanged(agent.Id, agent.UserId, at, trade.Id, IsOpen: true));
         return placed;
     }
 
@@ -250,6 +251,7 @@ internal sealed class LiveOrderVenue : IOrderVenue
         _logger.LogInformation("Live targets of trade {TradeId} of agent {AgentId} replaced: {Targets}", trade.Id, agent.Id, string.Join(", ", targets));
         foreach (var order in placed)
             _ledger.Publish(new OrderChanged(agent.Id, agent.UserId, at, order.Id, order.Status));
+        _ledger.Publish(new TradeChanged(agent.Id, agent.UserId, at, trade.Id, IsOpen: true));
         return placed;
     }
 

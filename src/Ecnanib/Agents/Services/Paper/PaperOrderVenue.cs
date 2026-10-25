@@ -260,6 +260,7 @@ internal sealed class PaperOrderVenue : IOrderVenue
         foreach (var id in cancelled)
             _events.Publish(new OrderChanged(agent.Id, agent.UserId, now, id, OrderStatus.Canceled));
         _events.Publish(new OrderChanged(agent.Id, agent.UserId, now, placed.Id, OrderStatus.New));
+        _events.Publish(new TradeChanged(agent.Id, agent.UserId, now, trade.Id, IsOpen: true));
         return [placed];
     }
 
@@ -340,6 +341,7 @@ internal sealed class PaperOrderVenue : IOrderVenue
             _events.Publish(new OrderChanged(agent.Id, agent.UserId, now, id, OrderStatus.Canceled));
         foreach (var order in placed)
             _events.Publish(new OrderChanged(agent.Id, agent.UserId, now, order.Id, OrderStatus.New));
+        _events.Publish(new TradeChanged(agent.Id, agent.UserId, now, trade.Id, IsOpen: true));
         return placed;
     }
 

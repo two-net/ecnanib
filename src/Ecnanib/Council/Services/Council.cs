@@ -35,6 +35,7 @@ internal sealed class Council : ICouncil
     private readonly IExperienceSummaries _experience;
     private readonly IOptions<CouncilOptions> _options;
     private readonly IOptions<RiskCapsOptions> _caps;
+    private readonly IAgentEvents _events;
     private readonly TimeProvider _time;
     private readonly ILogger<Council> _logger;
 
@@ -44,6 +45,7 @@ internal sealed class Council : ICouncil
         IExperienceSummaries experience,
         IOptions<CouncilOptions> options,
         IOptions<RiskCapsOptions> caps,
+        IAgentEvents events,
         TimeProvider time,
         ILogger<Council> logger)
     {
@@ -52,6 +54,7 @@ internal sealed class Council : ICouncil
         _experience = experience;
         _options = options;
         _caps = caps;
+        _events = events;
         _time = time;
         _logger = logger;
     }
@@ -112,6 +115,8 @@ internal sealed class Council : ICouncil
                 {
                     var experience = await SummarizeAsync(context, turn, cancellationToken).ConfigureAwait(false);
                     turn.Prompt = RolePrompts.User(context, role, experience, preceding, options);
+                    // FR-UI-03 b: the live deliberation view shows this role thinking until its turn is finished below.
+                    _events.Publish(new CouncilRoleStarted(agent.Id, agent.UserId, _time.GetUtcNow(), evaluationId, role, CouncilRoles.Sequence(role)));
                     await RunAsync(turn, context, key.Handle!, RolePrompts.System(role, options), budget, final, options, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -128,6 +133,7 @@ internal sealed class Council : ICouncil
 
             preceding.Add(new PrecedingTurn(role, turn.Status, turn.Error, turn.Document));
             Log(turn, agent.Id, evaluationId);
+            _events.Publish(new CouncilRoleFinished(agent.Id, agent.UserId, _time.GetUtcNow(), evaluationId, role, CouncilRoles.Sequence(role), turn.Status));
         }
 
         var now = _time.GetUtcNow();

@@ -10,8 +10,20 @@ public sealed record AgentStateChanged(Guid AgentId, Guid UserId, DateTimeOffset
 
 public sealed record EvaluationFinished(Guid AgentId, Guid UserId, DateTimeOffset At, Guid EvaluationId, DateTimeOffset CandleOpenTime, EvaluationOutcome Outcome) : AgentEvent(AgentId, UserId, At);
 
+/// <summary>The evaluation row is committed as InProgress; the UI shows "evaluating" until <see cref="EvaluationFinished"/> (FR-UI-03 a).</summary>
+public sealed record EvaluationStarted(Guid AgentId, Guid UserId, DateTimeOffset At, Guid EvaluationId, DateTimeOffset CandleOpenTime) : AgentEvent(AgentId, UserId, At);
+
+/// <summary>A council role's model is being called (FR-UI-03 b); roles that run no model publish only <see cref="CouncilRoleFinished"/>.</summary>
+public sealed record CouncilRoleStarted(Guid AgentId, Guid UserId, DateTimeOffset At, Guid EvaluationId, CouncilRole Role, int Sequence) : AgentEvent(AgentId, UserId, At);
+
+public sealed record CouncilRoleFinished(Guid AgentId, Guid UserId, DateTimeOffset At, Guid EvaluationId, CouncilRole Role, int Sequence, RoleOutputStatus Status) : AgentEvent(AgentId, UserId, At);
+
+/// <summary>The decision row is committed, before execution; the verdict can be revealed (FR-UI-03 b).</summary>
+public sealed record DecisionRecorded(Guid AgentId, Guid UserId, DateTimeOffset At, Guid EvaluationId, Guid DecisionId, DecisionAction Action) : AgentEvent(AgentId, UserId, At);
+
 public sealed record OrderChanged(Guid AgentId, Guid UserId, DateTimeOffset At, Guid OrderId, OrderStatus Status) : AgentEvent(AgentId, UserId, At);
 
+/// <summary>A trade opened, changed (a stop or target move keeps <paramref name="IsOpen"/> true) or closed.</summary>
 public sealed record TradeChanged(Guid AgentId, Guid UserId, DateTimeOffset At, Guid TradeId, bool IsOpen) : AgentEvent(AgentId, UserId, At);
 
 /// <summary>

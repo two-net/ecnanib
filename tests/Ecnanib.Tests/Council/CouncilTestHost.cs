@@ -92,7 +92,8 @@ internal static class CouncilTestHost
         CouncilOptions? options = null,
         RiskCapsOptions? caps = null,
         FakeTimeProvider? time = null,
-        TestLoggerProvider? logs = null)
+        TestLoggerProvider? logs = null,
+        IAgentEvents? events = null)
     {
         var factory = TestLogging.CreateFactory(logs ?? new TestLoggerProvider());
         return new Ecnanib.Council.Services.Council(
@@ -101,6 +102,7 @@ internal static class CouncilTestHost
             experience ?? new FakeExperienceSummaries(),
             Options.Create(options ?? new CouncilOptions()),
             Options.Create(caps ?? new RiskCapsOptions()),
+            events ?? new FakeAgentEvents(),
             time ?? new FakeTimeProvider(Now),
             factory.CreateLogger<Ecnanib.Council.Services.Council>());
     }
