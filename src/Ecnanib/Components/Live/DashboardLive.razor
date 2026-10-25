@@ -1,0 +1,181 @@
+@* The dashboard (FR-UI-01): every agent with its live state and money figures, re-read on the user's agent events
+   (FR-UI-04) and repriced from the market streams for the open positions. *@
+@rendermode InteractiveServer
+@inherits LiveComponentBase
+@using Ecnanib.Database.Entities
+@using Ecnanib.Exchange.Abstractions
+@using Ecnanib.Execution.Abstractions
+@using Ecnanib.MarketData.Abstractions
+@inject IAgentService AgentService
+@inject IAgentPerformance Performance
+@inject IMarketStreams Streams
+@inject IFuturesMetrics Metrics
+
+@if (_agents is null)
+{
+    <p class="hint">@LiveMessages.Loading</p>
+}
+else if (_agents.Count == 0)
+{
+    <p>@AgentMessages.NoAgents</p>
+}
+else
+{
+    <div class="agent-grid">
+        @foreach (var agent in _agents)
+        {
+            var pnl = _pnl.GetValueOrDefault(agent.Id);
+            var unrealized = Unrealized(agent);
+            <article class="agent-card card" @key="agent.Id" aria-labelledby="agent-@agent.Id">
+                <h2 id="agent-@agent.Id"><a href="/agents/@agent.Id">@agent.Name</a></h2>
+                <p class="meta">@agent.Symbol · @AgentMessages.Market(agent.MarketType) · @AgentMessages.Timeframe(agent.Timeframe) · @AgentMessages.Mode(agent.Mode)</p>
+                <p class="state" aria-live="polite">
+                    <span @key="agent.State" class="status @AgentMessages.StateClass(agent.State) pill-in">@AgentMessages.Describe(agent.State, null)</span>
+                    @if (InFlight(agent))
+                    {
+                        <span class="evaluating" role="status">@LiveMessages.Evaluating</span>
+                    }
+                    @if (agent.HasDeprecatedModel)
+                    {
+                        <a class="muted warning-text" href="@WizardSteps.Href(agent.Id, WizardStep.Council)">@AgentMessages.DeprecatedMark</a>
+                    }
+                </p>
+                @if (agent.StateReason is not null)
+                {
+                    <p class="muted">@agent.StateReason</p>
+                }
+                <dl class="kpis">
+                    <dt>Realized</dt>
+                    <dd><AnimatedValue Value="pnl?.RealizedAllTime" Signed="true" /></dd>
+                    <dt>@LiveMessages.TodayUtc</dt>
+                    <dd><AnimatedValue Value="pnl?.RealizedToday" Signed="true" /></dd>
+                    <dt>Unrealized</dt>
+                    <dd>
+                        @if (agent.OpenPositions == 0)
+                        {
+                            <span class="muted">—</span>
+                        }
+                        else
+                        {
+                            <AnimatedValue Value="unrealized" Signed="true" />
+                        }
+                    </dd>
+                    @if (pnl?.PaperEquity is { } equity)
+                    {
+                        <dt>Paper equity</dt>
+                        <dd><AnimatedValue Value="equity + (unrealized ?? 0m)" /></dd>
+                    }
+                    <dt>Positions</dt>
+                    <dd>@agent.OpenPositions</dd>
+                    <dt>Last evaluation</dt>
+                    <dd>
+                        @if (agent.LastOutcome is { } outcome)
+                        {
+                            @AgentMessages.Outcome(outcome) <span class="muted">@AgentMessages.Stamp(agent.LastEvaluatedAt)</span>
+                        }
+                        else
+                        {
+                            <span class="muted">never</span>
+                        }
+                    </dd>
+                </dl>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private static readonly TimeSpan PriceThrottle = TimeSpan.FromSeconds(1);
+
+    private IReadOnlyList<AgentSummary>? _agents;
+    private IReadOnlyDictionary<Guid, AgentPnl> _pnl = new Dictionary<Guid, AgentPnl>();
+    private IReadOnlyDictionary<Guid, IReadOnlyList<OpenPositionView>> _positions = new Dictionary<Guid, IReadOnlyList<OpenPositionView>>();
+    private readonly Dictionary<MarketKey, PriceFeed> _feeds = [];
+    private readonly HashSet<Guid> _evaluating = [];
+
+    protected override async Task LoadAsync(CancellationToken cancellationToken)
+    {
+        var agents = await AgentService.ListAsync(UserId, cancellationToken);
+        var pnl = await Performance.GetAsync(UserId, agents.Select(a => a.Id).ToList(), cancellationToken);
+        var positions = new Dictionary<Guid, IReadOnlyList<OpenPositionView>>();
+        foreach (var agent in agents.Where(a => a.OpenPositions > 0))
+        {
+            var open = await AgentService.GetOpenAsync(UserId, agent.Id, cancellationToken);
+            if (open is not null)
+                positions[agent.Id] = open.OpenPositions;
+        }
+
+        await RenderAsync(() =>
+        {
+            _agents = agents;
+            _pnl = pnl;
+            _positions = positions;
+            // The rows are the truth about what is in flight; the set only bridges the moment between an event and the re-read.
+            _evaluating.Clear();
+            if (IsLive)
+                ReconcileFeeds();
+        });
+    }
+
+    protected override Task OnLiveAsync(CancellationToken cancellationToken) => RenderAsync(ReconcileFeeds);
+
+    protected override ValueTask OnEventAsync(AgentEvent agentEvent)
+    {
+        switch (agentEvent)
+        {
+            case EvaluationStarted started:
+                // FR-UI-03 a: the indicator appears at once, without a query.
+                return new ValueTask(RenderAsync(() => _evaluating.Add(started.AgentId)));
+            case CouncilRoleStarted or CouncilRoleFinished or DecisionRecorded:
+                return ValueTask.CompletedTask;
+            case EvaluationFinished finished:
+                RequestRefresh();
+                return new ValueTask(RenderAsync(() => _evaluating.Remove(finished.AgentId)));
+            default:
+                RequestRefresh();
+                return ValueTask.CompletedTask;
+        }
+    }
+
+    protected override async ValueTask DisposeLiveAsync()
+    {
+        foreach (var feed in _feeds.Values)
+            await feed.DisposeAsync();
+        _feeds.Clear();
+    }
+
+    private bool InFlight(AgentSummary agent) => agent.EvaluationInProgress || _evaluating.Contains(agent.Id);
+
+    private decimal? Unrealized(AgentSummary agent)
+    {
+        if (!_positions.TryGetValue(agent.Id, out var positions) || !_feeds.TryGetValue(KeyOf(agent), out var feed) || feed.Latest is not { } price)
+            return null;
+        return positions.Sum(p => PnlMath.Unrealized(p.Side, p.RemainingSize, p.EntryPrice, price));
+    }
+
+    private static MarketKey KeyOf(AgentSummary agent) => new(agent.Environment, agent.MarketType, agent.Symbol);
+
+    /// <summary>One feed per market that has an open position; agents on the same symbol share it, and a market without positions releases it.</summary>
+    private void ReconcileFeeds()
+    {
+        var wanted = (_agents ?? []).Where(a => _positions.ContainsKey(a.Id)).Select(KeyOf).ToHashSet();
+        foreach (var key in _feeds.Keys.Where(k => !wanted.Contains(k)).ToList())
+        {
+            var feed = _feeds[key];
+            _feeds.Remove(key);
+            _ = feed.DisposeAsync();
+        }
+
+        foreach (var key in wanted.Where(k => !_feeds.ContainsKey(k)))
+        {
+            try
+            {
+                _feeds[key] = new PriceFeed(Streams, Metrics, key, PriceThrottle, _ => new ValueTask(InvokeAsync(StateHasChanged)));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "The dashboard could not follow the price of {Key}; unrealized P&L stays blank", key);
+            }
+        }
+    }
+}

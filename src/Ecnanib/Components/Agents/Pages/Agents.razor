@@ -5,10 +5,15 @@
 @inject IAgentService AgentService
 @inject NavigationManager Navigation
 
-<PageTitle>Agents</PageTitle>
+<PageTitle>Dashboard</PageTitle>
 
-<h1>Agents</h1>
-<p>Each agent trades one symbol on one market at one timeframe with one strategy and one council. Running and paused agents are evaluated server-side at every candle close, also while you are offline.</p>
+<div class="page-head">
+    <div>
+        <h1>Dashboard</h1>
+        <p class="hint">Each agent trades one symbol on one market at one timeframe with one strategy and one council. Running and paused agents are evaluated server-side at every candle close, also while you are offline; what you see here follows them live.</p>
+    </div>
+    <a class="button primary" href="/agents/new">New agent</a>
+</div>
 
 @if (_notice is not null)
 {
@@ -19,80 +24,30 @@
     <p class="error" role="alert">@_error</p>
 }
 
-<p><a href="/agents/new">New agent…</a></p>
+<DashboardLive />
 
-@if (_agents is null || _agents.Count == 0)
+@if (_agents is not null && _agents.Any(a => AgentStateMachine.CanStop(a.State)))
 {
-    <p>@AgentMessages.NoAgents</p>
-}
-else
-{
-    <div class="table-wrap">
-        <table class="agents">
-            <thead>
-                <tr><th>Name</th><th>Market</th><th>Timeframe</th><th>Strategy</th><th>Mode</th><th>State</th><th>Last evaluation</th><th>Positions</th></tr>
-            </thead>
-            <tbody>
-                @foreach (var agent in _agents)
-                {
-                    <tr>
-                        <td><a href="/agents/@agent.Id">@agent.Name</a></td>
-                        <td>@agent.Symbol <span class="muted">@AgentMessages.Market(agent.MarketType)</span></td>
-                        <td>@AgentMessages.Timeframe(agent.Timeframe)</td>
-                        <td>@agent.StrategyName</td>
-                        <td>@AgentMessages.Mode(agent.Mode)</td>
-                        <td>
-                            <span class="status @AgentMessages.StateClass(agent.State)">@agent.State</span>
-                            @if (agent.StateReason is not null)
-                            {
-                                <span class="muted">@agent.StateReason</span>
-                            }
-                            @if (agent.HasDeprecatedModel)
-                            {
-                                <a class="muted warning-text" href="@WizardSteps.Href(agent.Id, WizardStep.Council)">@AgentMessages.DeprecatedMark</a>
-                            }
-                        </td>
-                        <td>
-                            @if (agent.LastOutcome is { } outcome)
-                            {
-                                <text>@AgentMessages.Outcome(outcome)</text>
-                                <span class="muted">@Stamp(agent.LastEvaluatedAt)</span>
-                            }
-                            else
-                            {
-                                <span class="muted">never</span>
-                            }
-                        </td>
-                        <td>@agent.OpenPositions</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-
-    @if (_agents.Any(a => AgentStateMachine.CanStop(a.State)))
-    {
-        <section aria-labelledby="stop-all-title">
-            <h2 id="stop-all-title">Stop all my agents</h2>
-            <p>@AgentMessages.StopAllHint</p>
-            <EditForm Model="StopAll" FormName="stop-all" OnValidSubmit="StopAllAsync" method="post">
-                <DataAnnotationsValidator />
-                <ValidationSummary />
-                <label>
-                    Open positions
-                    <InputSelect @bind-Value="StopAll.Positions">
-                        <option value="close">Close at market now</option>
-                        <option value="leave">Leave them open, shown as unmanaged</option>
-                    </InputSelect>
-                </label>
-                <label class="check">
-                    <InputCheckbox @bind-Value="StopAll.Confirm" />
-                    Stop every running, paused or failed agent and cancel their open orders.
-                </label>
-                <button type="submit" class="danger">Stop all my agents</button>
-            </EditForm>
-        </section>
-    }
+    <section class="card danger-zone" aria-labelledby="stop-all-title">
+        <h2 id="stop-all-title">Stop all my agents</h2>
+        <p>@AgentMessages.StopAllHint</p>
+        <EditForm Model="StopAll" FormName="stop-all" OnValidSubmit="StopAllAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label>
+                Open positions
+                <InputSelect @bind-Value="StopAll.Positions">
+                    <option value="close">Close at market now</option>
+                    <option value="leave">Leave them open, shown as unmanaged</option>
+                </InputSelect>
+            </label>
+            <label class="check">
+                <InputCheckbox @bind-Value="StopAll.Confirm" />
+                Stop every running, paused or failed agent and cancel their open orders.
+            </label>
+            <button type="submit" class="danger">Stop all my agents</button>
+        </EditForm>
+    </section>
 }
 
 @code {
@@ -123,6 +78,7 @@ else
             "stopped-all" => Detail ?? "Your agents were stopped.",
             _ => null,
         };
+        // The kill switch is a plain form; whether it is shown is decided once, at render.
         _agents = await AgentService.ListAsync(UserId, HttpContext.RequestAborted);
     }
 
@@ -147,6 +103,4 @@ else
         [Range(typeof(bool), "true", "true", ErrorMessage = "Tick the box to confirm.")]
         public bool Confirm { get; set; }
     }
-
-    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
 }

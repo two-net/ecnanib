@@ -572,6 +572,28 @@ details summary {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
     gap: 1rem;
+    margin: 0 0 1.5rem;
+}
+
+.agent-grid .card {
+    margin: 0;
+}
+
+.page-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.page-head h1 {
+    margin-bottom: 0.3rem;
+}
+
+.page-head .hint {
+    max-width: 48rem;
 }
 
 .agent-card h2 {

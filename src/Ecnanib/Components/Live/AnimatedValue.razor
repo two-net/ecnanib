@@ -1,0 +1,39 @@
+@* A figure that changes live (FR-UI-03 d). The sign colour is always present, so reduced motion loses nothing; a change
+   re-keys the span, which replays the one-transition flash in the direction of the change. No script, no timer. *@
+@using Ecnanib.Execution.Abstractions
+<span @key="_tick" class="value @_direction @(Signed ? PnlMath.SignClass(Value) : "")">@Format(Value)</span>
+
+@code {
+    private decimal? _previous;
+    private string _direction = "";
+    private int _tick;
+    private bool _seen;
+
+    [Parameter]
+    public decimal? Value { get; set; }
+
+    /// <summary>How the figure is written; money to two decimals by default.</summary>
+    [Parameter]
+    public Func<decimal?, string> Format { get; set; } = ExperienceMessages.Money;
+
+    /// <summary>Colour the figure by its sign (profit green, loss red).</summary>
+    [Parameter]
+    public bool Signed { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (!_seen)
+        {
+            _seen = true;
+            _previous = Value;
+            return;
+        }
+
+        if (Value == _previous)
+            return;
+        // From or to "unknown" is not a move; a real change flashes once in its direction.
+        _direction = Value is { } now && _previous is { } before ? (now > before ? "up" : "down") : "";
+        _tick++;
+        _previous = Value;
+    }
+}
