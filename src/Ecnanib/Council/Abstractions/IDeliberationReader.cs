@@ -63,8 +63,24 @@ public sealed record DeliberationView(
     FinalDecisionView? Decision,
     IReadOnlyList<RoleTurnView> Turns);
 
-/// <summary>Reads one evaluation's deliberation for its owner (NFR-SEC-03): another user's evaluation and a missing one both answer null.</summary>
+/// <summary>One role's share of an agent's provider calls; roles that were disabled or skipped made none.</summary>
+public sealed record RoleTokenUsage(CouncilRole Role, int Calls, int InputTokens, int OutputTokens);
+
+/// <summary>Token usage of an agent's council (NFR-COST-01, AI-04): the totals of every stored decision, today's UTC share and the split per role.</summary>
+public sealed record AgentTokenUsage(
+    int Decisions,
+    int InputTokens,
+    int OutputTokens,
+    int DecisionsToday,
+    int InputTokensToday,
+    int OutputTokensToday,
+    DateTimeOffset? Since,
+    IReadOnlyList<RoleTokenUsage> ByRole);
+
+/// <summary>Reads one evaluation's deliberation, or an agent's token usage, for its owner (NFR-SEC-03): another user's evaluation or agent and a missing one both answer null.</summary>
 public interface IDeliberationReader
 {
     Task<DeliberationView?> GetAsync(Guid userId, Guid evaluationId, CancellationToken cancellationToken);
+
+    Task<AgentTokenUsage?> GetAgentUsageAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
 }

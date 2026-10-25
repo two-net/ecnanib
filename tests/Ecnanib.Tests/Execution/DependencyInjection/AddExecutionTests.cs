@@ -3,6 +3,7 @@ using Ecnanib.Agents.Abstractions;
 using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Execution;
+using Ecnanib.Execution.Abstractions;
 using Ecnanib.Execution.Services;
 using Ecnanib.Execution.Services.Live;
 using Ecnanib.Strategies;
@@ -35,6 +36,8 @@ public class AddExecutionTests
         Assert.Contains(hosted, h => ReferenceEquals(h, provider.GetRequiredService<ExchangeReconciler>()));
         Assert.NotNull(provider.GetRequiredService<IDailyLossLimit>());
         Assert.NotNull(provider.GetRequiredService<IAgentGates>());
+        Assert.IsType<AgentPerformance>(provider.GetRequiredService<IAgentPerformance>());
+        Assert.IsType<TradeTimelineReader>(provider.GetRequiredService<ITradeTimelineReader>());
 
         Assert.Equal(0, factory.Calls);
         Assert.Empty(exchange.ExchangeInfoReads);

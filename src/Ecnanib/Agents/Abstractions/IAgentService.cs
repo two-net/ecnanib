@@ -11,6 +11,15 @@ public interface IAgentService
 
     Task<AgentDetail?> GetAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
 
+    /// <summary>The state, in-flight evaluation and council of one agent: what the live header re-reads on every event (FR-UI-04).</summary>
+    Task<AgentStatusView?> GetStatusAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>The open positions and working orders of one agent (FR-UI-01 "position and orders").</summary>
+    Task<AgentOpenView?> GetOpenAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>The newest <paramref name="count"/> evaluations by candle; empty for another user's agent.</summary>
+    Task<IReadOnlyList<EvaluationView>> ListEvaluationsAsync(Guid userId, Guid agentId, int count, CancellationToken cancellationToken);
+
     /// <summary>
     /// Creates a Draft with the timeframe's default strategy, the council suggested by the user's own experience per
     /// role (FR-EXP-08) or else the Appendix B council, and default risk limits (FR-AGT-01, FR-AGT-15).

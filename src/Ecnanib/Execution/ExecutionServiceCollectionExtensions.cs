@@ -1,4 +1,5 @@
 using Ecnanib.Agents.Abstractions;
+using Ecnanib.Execution.Abstractions;
 using Ecnanib.Execution.Configuration;
 using Ecnanib.Execution.Services;
 using Ecnanib.Execution.Services.Live;
@@ -50,6 +51,9 @@ public static class ExecutionServiceCollectionExtensions
         services.TryAddSingleton<LiveOrderVenue>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOrderVenue, LiveOrderVenue>(sp => sp.GetRequiredService<LiveOrderVenue>()));
         services.TryAddSingleton<IExecutionService, ExecutionService>();
+        // FR-UI-01, FR-UI-03 e: the dashboard's money figures and the trade timeline read what this module writes.
+        services.TryAddSingleton<IAgentPerformance, AgentPerformance>();
+        services.TryAddSingleton<ITradeTimelineReader, TradeTimelineReader>();
         return services;
     }
 }

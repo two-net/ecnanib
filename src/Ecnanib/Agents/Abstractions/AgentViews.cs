@@ -23,7 +23,39 @@ public sealed record AgentSummary(
     int OpenPositions,
     DateTimeOffset UpdatedAt,
     /// <summary>An enabled council role uses a model its provider no longer lists (FR-SYNC-03).</summary>
-    bool HasDeprecatedModel);
+    bool HasDeprecatedModel,
+    /// <summary>The environment the agent prices against: production for paper agents, the exchange key's for live ones.</summary>
+    ExchangeEnvironment Environment,
+    /// <summary>The unfinished evaluation, when one is running; the dashboard shows it as "evaluating" (FR-UI-03 a).</summary>
+    Guid? InFlightEvaluationId,
+    DateTimeOffset? InFlightCandleOpenTime)
+{
+    public bool EvaluationInProgress => InFlightEvaluationId is not null;
+}
+
+/// <summary>What the live header of the agent page shows and re-reads on every event (FR-UI-04): the state and the council, without the configuration forms.</summary>
+public sealed record AgentStatusView(
+    Guid Id,
+    string Name,
+    MarketType MarketType,
+    string Symbol,
+    CandleInterval Timeframe,
+    ExchangeEnvironment Environment,
+    AgentMode Mode,
+    AgentState State,
+    PauseCause? PauseCause,
+    DateTimeOffset? AutoResumeAt,
+    string? StateReason,
+    Guid? InFlightEvaluationId,
+    DateTimeOffset? InFlightCandleOpenTime,
+    IReadOnlyList<CouncilAssignmentView> Council,
+    DateTimeOffset UpdatedAt)
+{
+    public bool EvaluationInProgress => InFlightEvaluationId is not null;
+}
+
+/// <summary>The open positions and working orders, re-read on every order or trade event (FR-UI-04).</summary>
+public sealed record AgentOpenView(IReadOnlyList<OpenPositionView> OpenPositions, IReadOnlyList<OpenOrderView> OpenOrders);
 
 /// <summary><see cref="CatalogStatus"/> is the model's status in the synced catalog, null when the catalog does not list it (a model entered by hand); Deprecated asks for a replacement (FR-SYNC-03).</summary>
 public sealed record CouncilAssignmentView(CouncilRole Role, AiProvider Provider, string Model, bool Enabled, ModelStatus? CatalogStatus);

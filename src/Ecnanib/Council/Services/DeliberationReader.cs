@@ -11,10 +11,43 @@ namespace Ecnanib.Council.Services;
 internal sealed class DeliberationReader : IDeliberationReader
 {
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
+    private readonly TimeProvider _time;
 
-    public DeliberationReader(IDbContextFactory<EcnanibDbContext> factory)
+    public DeliberationReader(IDbContextFactory<EcnanibDbContext> factory, TimeProvider time)
     {
         _factory = factory;
+        _time = time;
+    }
+
+    public async Task<AgentTokenUsage?> GetAgentUsageAsync(Guid userId, Guid agentId, CancellationToken cancellationToken)
+    {
+        var dayStart = new DateTimeOffset(_time.GetUtcNow().UtcDateTime.Date, TimeSpan.Zero);
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        if (!await db.Agents.AnyAsync(a => a.Id == agentId && a.UserId == userId, cancellationToken).ConfigureAwait(false))
+            return null;
+
+        var decisions = db.Decisions.AsNoTracking().Where(d => d.Evaluation.AgentId == agentId);
+        var totals = await decisions
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Count = g.Count(),
+                Input = g.Sum(d => d.TotalInputTokens),
+                Output = g.Sum(d => d.TotalOutputTokens),
+                Since = g.Min(d => (DateTimeOffset?)d.CreatedAt),
+                CountToday = g.Count(d => d.CreatedAt >= dayStart),
+                InputToday = g.Sum(d => d.CreatedAt >= dayStart ? d.TotalInputTokens : 0),
+                OutputToday = g.Sum(d => d.CreatedAt >= dayStart ? d.TotalOutputTokens : 0),
+            })
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        var roles = await db.DecisionRoleOutputs.AsNoTracking()
+            .Where(r => r.Decision.Evaluation.AgentId == agentId && r.Status != RoleOutputStatus.Disabled && r.Status != RoleOutputStatus.Skipped)
+            .GroupBy(r => r.Role)
+            .Select(g => new RoleTokenUsage(g.Key, g.Count(), g.Sum(r => r.InputTokens), g.Sum(r => r.OutputTokens)))
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        return new AgentTokenUsage(totals?.Count ?? 0, totals?.Input ?? 0, totals?.Output ?? 0, totals?.CountToday ?? 0, totals?.InputToday ?? 0, totals?.OutputToday ?? 0, totals?.Since,
+            CouncilRoles.Order.Select(role => roles.FirstOrDefault(r => r.Role == role) ?? new RoleTokenUsage(role, 0, 0, 0)).ToList());
     }
 
     public async Task<DeliberationView?> GetAsync(Guid userId, Guid evaluationId, CancellationToken cancellationToken)

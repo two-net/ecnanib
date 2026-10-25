@@ -26,6 +26,57 @@ public class AgentServiceLiveTests : IClassFixture<DatabaseLiveFixture>
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>FR-UI-03 a, FR-UI-04: the list and the status name the running evaluation; the narrow readers the live islands use are scoped to the owner (NFR-SEC-03).</summary>
+    [Fact]
+    public async Task TheListAndTheStatusReportTheRunningEvaluationAndTheNarrowReadersStayWithTheOwner()
+    {
+        await StartAsync();
+        var user = await AgentsLiveSeed.NewUserAsync(_fixture, "status@example.com");
+        var other = await AgentsLiveSeed.NewUserAsync(_fixture, "status-other@example.com");
+        var agent = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "BTC", AgentState.Running);
+        var candleOpen = new DateTimeOffset(2026, 1, 4, 22, 0, 0, TimeSpan.Zero);
+        var decision = await AgentsLiveSeed.NewDecisionAsync(_fixture, agent, candleOpen);
+        var trade = await AgentsLiveSeed.NewOpenTradeAsync(_fixture, agent, decision);
+        Guid inFlightId;
+        await using (var db = _fixture.CreateContext())
+        {
+            var running = new Evaluation { AgentId = agent.Id, Symbol = agent.Symbol, MarketType = agent.MarketType, Timeframe = agent.Timeframe, CandleOpenTime = candleOpen.AddHours(1), StartedAt = AgentsLiveSeed.Now, Outcome = EvaluationOutcome.InProgress };
+            db.Add(running);
+            await db.SaveChangesAsync(Ct);
+            inFlightId = running.Id;
+        }
+
+        var (provider, _, _, _, _) = AgentsLiveSeed.Build(_fixture);
+        await using var _ = provider;
+        var agents = provider.GetRequiredService<IAgentService>();
+
+        var summary = Assert.Single(await agents.ListAsync(user.Id, Ct));
+        Assert.Equal(inFlightId, summary.InFlightEvaluationId);
+        Assert.Equal(candleOpen.AddHours(1), summary.InFlightCandleOpenTime);
+        Assert.True(summary.EvaluationInProgress);
+        Assert.Equal(ExchangeEnvironment.Production, summary.Environment);
+        Assert.Equal(EvaluationOutcome.Decided, summary.LastOutcome);
+        Assert.Equal(1, summary.OpenPositions);
+
+        var status = await agents.GetStatusAsync(user.Id, agent.Id, Ct);
+        Assert.NotNull(status);
+        Assert.Equal((AgentState.Running, inFlightId, ExchangeEnvironment.Production, 4), (status.State, status.InFlightEvaluationId, status.Environment, status.Council.Count));
+
+        var open = await agents.GetOpenAsync(user.Id, agent.Id, Ct);
+        Assert.NotNull(open);
+        Assert.Equal(trade.Id, Assert.Single(open.OpenPositions).TradeId);
+        Assert.Equal(2, open.OpenOrders.Count);
+
+        var evaluations = await agents.ListEvaluationsAsync(user.Id, agent.Id, 10, Ct);
+        Assert.Equal([inFlightId, decision.EvaluationId], evaluations.Select(e => e.Id));
+        Assert.Single(await agents.ListEvaluationsAsync(user.Id, agent.Id, 1, Ct));
+
+        Assert.Null(await agents.GetStatusAsync(other.Id, agent.Id, Ct));
+        Assert.Null(await agents.GetOpenAsync(other.Id, agent.Id, Ct));
+        Assert.Empty(await agents.ListEvaluationsAsync(other.Id, agent.Id, 10, Ct));
+        await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id, other.Id);
+    }
+
     /// <summary>FR-SYNC-03: each role's model is looked up in the shared catalog; the list flags an agent only for an enabled role on a deprecated model.</summary>
     [Fact]
     public async Task GetReportsEachRolesCatalogStatusAndTheListFlagsAgentsOnADeprecatedModel()

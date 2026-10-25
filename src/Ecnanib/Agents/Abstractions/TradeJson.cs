@@ -39,6 +39,28 @@ public static class TradeJson
         return null;
     }
 
+    /// <summary>Every entry of a stop history in order (the first is the initial stop); a malformed entry is skipped.</summary>
+    public static IReadOnlyList<StopHistoryEntry> StopHistoryEntries(JsonElement history)
+    {
+        if (history.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<StopHistoryEntry>();
+        foreach (var item in history.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object
+                || !item.TryGetProperty("price", out var price) || price.ValueKind != JsonValueKind.Number || !price.TryGetDecimal(out var value)
+                || !item.TryGetProperty("at", out var at) || at.ValueKind != JsonValueKind.String || !at.TryGetDateTimeOffset(out var when))
+            {
+                continue;
+            }
+
+            var reason = item.TryGetProperty("reason", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()! : "";
+            result.Add(new StopHistoryEntry(when, value, reason));
+        }
+
+        return result;
+    }
+
     /// <summary>A stop history with its first entry.</summary>
     public static JsonElement StopHistory(DateTimeOffset at, decimal stop, string reason = "initial") =>
         JsonSerializer.SerializeToElement(new[] { new { at, price = stop, reason } });
@@ -69,3 +91,6 @@ public static class TradeJson
         return document.RootElement.Clone();
     }
 }
+
+/// <summary>One entry of <c>trades.stop_history</c>: when the stop was set, its price and why (<c>initial</c>, <c>breakeven</c>, <c>trail</c>, <c>council</c>).</summary>
+public sealed record StopHistoryEntry(DateTimeOffset At, decimal Price, string Reason);
