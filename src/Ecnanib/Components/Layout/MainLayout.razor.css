@@ -1,42 +1,191 @@
 .site-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid #d0d0d0;
+    gap: 0.5rem 1.5rem;
+    padding: 0.6rem 1rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 
 .site-header .brand {
-    font-weight: 600;
+    font-weight: 750;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
     text-decoration: none;
+    color: var(--text);
 }
 
-.site-header nav {
+.site-header .brand::before {
+    content: "";
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    margin-right: 0.45rem;
+    border-radius: 50%;
+    background: var(--accent);
+    vertical-align: 0.05em;
+}
+
+nav.primary {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.25rem;
 }
 
-.site-header .user {
-    opacity: 0.75;
+nav.primary ::deep a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    text-decoration: none;
+    font-weight: 500;
+    transition: background-color var(--ui-duration) var(--ui-ease), color var(--ui-duration) var(--ui-ease);
 }
 
-main {
-    max-width: 48rem;
-    margin: 0 auto;
+nav.primary ::deep a:hover {
+    color: var(--text);
+    background: var(--surface-2);
+}
+
+nav.primary ::deep a.active {
+    color: var(--text);
+    background: var(--surface-2);
+    font-weight: 600;
+}
+
+nav.primary ::deep a.button.primary {
+    color: var(--accent-text);
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    min-height: 2.25rem;
+}
+
+.user-menu {
+    position: relative;
+    justify-self: end;
+}
+
+.user-menu summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2.25rem;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 2rem;
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--text);
+    background: var(--surface);
+}
+
+.user-menu summary::-webkit-details-marker {
+    display: none;
+}
+
+.user-menu summary::after {
+    content: "";
+    width: 0.45rem;
+    height: 0.45rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    opacity: 0.7;
+}
+
+.user-menu .user {
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-menu .menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    min-width: 11rem;
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-raised);
+    animation: menu-in var(--ui-duration) var(--ui-ease);
+}
+
+@keyframes menu-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+}
+
+.user-menu .menu ::deep a,
+.user-menu .menu ::deep button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.45rem 0.6rem;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.user-menu .menu ::deep a:hover,
+.user-menu .menu ::deep button:hover {
+    background: var(--surface-2);
+}
+
+.site-footer {
+    border-top: 1px solid var(--border);
     padding: 1rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.site-footer p {
+    margin: 0;
+}
+
+@media (max-width: 48rem) {
+    .site-header {
+        grid-template-columns: 1fr auto;
+    }
+
+    nav.primary {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        margin: 0 -0.25rem;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+    }
+
+    .user-menu .user {
+        max-width: 8rem;
+    }
 }
 
 #blazor-error-ui {
-    color-scheme: light only;
-    background: lightyellow;
+    background: var(--warn-bg);
+    color: var(--text);
+    border-top: 1px solid var(--warn);
     bottom: 0;
-    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
     box-sizing: border-box;
     display: none;
     left: 0;
-    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    padding: 0.6rem 2.5rem 0.7rem 1.25rem;
     position: fixed;
     width: 100%;
     z-index: 1000;

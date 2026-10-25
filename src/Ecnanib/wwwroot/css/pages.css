@@ -1,0 +1,200 @@
+/* Page-specific rules: agent configuration, deliberation, providers, experience, logs. */
+
+/* Agent setup: generated parameter grid and the council table */
+form .parameters {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 0.6rem 1rem;
+}
+
+main form:not(.inline).wide,
+form.form-grid.wide {
+    max-width: none;
+}
+
+table.council td select,
+table.council td input {
+    width: 100%;
+}
+
+table.council .other {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+table.council td {
+    vertical-align: top;
+}
+
+.unmanaged {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+/* Deliberation (FR-AI-14): one block per role in order, its status as a pill, documents collapsed. */
+.turns {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+}
+
+.turn {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 0.85rem 1.1rem;
+}
+
+.turn h3 {
+    margin: 0 0 0.5rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+ul.flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    list-style: none;
+    margin: 0 0 0.5rem;
+    padding: 0;
+}
+
+ul.flags li {
+    background: var(--surface-2);
+    border-radius: 1rem;
+    padding: 0.1rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+pre.document {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 24rem;
+    overflow: auto;
+    font-size: 0.85rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+}
+
+.limit-pass {
+    color: var(--ok);
+}
+
+.limit-clamped {
+    color: var(--warn);
+    font-weight: 600;
+}
+
+.limit-fail {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.shadow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Providers: catalog collapsed by default */
+details.catalog {
+    margin: 0.5rem 0 1rem;
+}
+
+details.catalog summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+/* Experience views */
+table.leaderboard th,
+table.leaderboard td {
+    white-space: nowrap;
+}
+
+table.leaderboard th[title] {
+    cursor: help;
+    text-decoration: underline dotted;
+}
+
+.r-positive {
+    color: var(--ok);
+}
+
+.r-negative {
+    color: var(--danger);
+}
+
+form.filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    align-items: end;
+    margin: 0.5rem 0 1rem;
+}
+
+form.filter label {
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+form.filter button {
+    min-height: 2.5rem;
+}
+
+.current-assignment {
+    font-weight: 600;
+}
+
+/* Log viewer */
+table.log td.message {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+table.log td.time {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+details.log-detail summary {
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.paging {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0.5rem 0 1rem;
+}
+
+/* Landing page */
+.features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.features .card {
+    margin: 0;
+}
+
+.features h2 {
+    font-size: 1.05rem;
+}
+
+.features p:last-child {
+    margin-bottom: 0;
+}

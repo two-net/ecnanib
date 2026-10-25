@@ -6,6 +6,7 @@ using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Tests.Database.Live;
 using Ecnanib.Tests.Support;
+using Ecnanib.Ui.Abstractions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -320,6 +321,55 @@ public class AccountServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Null(await stamps.FindAsync(Guid.NewGuid(), Ct));
 
         await DeleteUsersAsync(user.Id);
+    }
+
+    [Fact]
+    public async Task PreferencesRoundTripAndAnUnknownUserIsNullAndFalse()
+    {
+        await StartAsync();
+        var (provider, logs, _) = Build();
+        await using var _ = provider;
+        var accounts = provider.GetRequiredService<IAccountService>();
+        var user = LiveSeed.NewUser("prefs@example.com");
+        await using (var db = _fixture.CreateContext())
+        {
+            db.Add(user);
+            await db.SaveChangesAsync(Ct);
+        }
+
+        Assert.Equal(new UserPreferences(UiTheme.System, false), await accounts.GetPreferencesAsync(user.Id, Ct));
+        Assert.True(await accounts.UpdatePreferencesAsync(user.Id, new UserPreferences(UiTheme.Dark, true), Ct));
+        Assert.Equal(new UserPreferences(UiTheme.Dark, true), await accounts.GetPreferencesAsync(user.Id, Ct));
+        await using (var db = _fixture.CreateContext())
+        {
+            var row = await db.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id, Ct);
+            Assert.Equal(UiTheme.Dark, row.Theme);
+            Assert.True(row.ReducedMotion);
+        }
+
+        Assert.Null(await accounts.GetPreferencesAsync(Guid.NewGuid(), Ct));
+        Assert.False(await accounts.UpdatePreferencesAsync(Guid.NewGuid(), new UserPreferences(UiTheme.Light, false), Ct));
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Information && e.Message == $"User {user.Id} chose the Dark theme with reduced motion True");
+        AssertNoCredentials(logs, "prefs@example.com");
+
+        await DeleteUsersAsync(user.Id);
+    }
+
+    [Fact]
+    public async Task RegistrationAppliesTheUiDefaults()
+    {
+        await StartAsync();
+        await using var provider = AccountsTestHost.BuildServices(_fixture.ConnectionString, new TestLoggerProvider(), new() { ["Ui:DefaultTheme"] = "Dark", ["Ui:ReducedMotion"] = "true" }, new FakeTimeProvider(LiveSeed.Now));
+        var accounts = provider.GetRequiredService<IAccountService>();
+
+        var registered = await accounts.RegisterAsync("defaults@example.com", Password, Address, Ct);
+
+        Assert.Equal(RegistrationStatus.Succeeded, registered.Status);
+        Assert.Equal(UiTheme.Dark, registered.User!.Theme);
+        Assert.True(registered.User.ReducedMotion);
+        Assert.Equal(new UserPreferences(UiTheme.Dark, true), await accounts.GetPreferencesAsync(registered.User.Id, Ct));
+
+        await DeleteUsersAsync(registered.User.Id);
     }
 
     private async Task StartAsync()

@@ -1,0 +1,152 @@
+/* Base styles: reset, typography, page layout and focus (UI-02, NFR-USE-01). */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+    background: var(--bg);
+}
+
+body {
+    margin: 0;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    font-family: var(--font);
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--bg);
+}
+
+h1,
+h2,
+h3 {
+    line-height: 1.2;
+    margin: 0 0 0.6rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+}
+
+h1 {
+    font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
+}
+
+h2 {
+    font-size: 1.2rem;
+}
+
+h3 {
+    font-size: 1.05rem;
+}
+
+p {
+    margin: 0 0 0.75rem;
+}
+
+a {
+    color: var(--accent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.15em;
+}
+
+a:hover {
+    color: var(--accent-hover);
+}
+
+code,
+pre {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+}
+
+code {
+    background: var(--surface-2);
+    padding: 0.05em 0.35em;
+    border-radius: var(--radius-sm);
+}
+
+main {
+    flex: 1;
+    width: 100%;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 1.25rem 1rem 2.5rem;
+}
+
+main > h1:first-child,
+main > section:first-of-type > h1 {
+    margin-top: 0.25rem;
+}
+
+/* Forms and account pages read better narrow; dashboards and tables use the full width. */
+.page.narrow {
+    max-width: 36rem;
+    margin: 0 auto;
+}
+
+.skip-link {
+    position: absolute;
+    left: 1rem;
+    top: -4rem;
+    z-index: 2000;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+}
+
+.skip-link:focus {
+    top: 0.5rem;
+}
+
+:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+/* FocusOnNavigate moves focus to the heading; the ring is for pointer users' keyboards, not for programmatic focus. */
+h1:focus {
+    outline: none;
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 1.5rem 0;
+}
+
+/* Framework form validation classes. */
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid var(--ok);
+}
+
+.invalid {
+    outline: 1px solid var(--danger);
+}
+
+.validation-message {
+    color: var(--danger);
+}
+
+.blazor-error-boundary {
+    background: var(--danger-bg);
+    color: var(--danger);
+    border-left: 4px solid var(--danger);
+    padding: 1rem;
+    border-radius: var(--radius-sm);
+}
+
+.blazor-error-boundary::after {
+    content: "An error has occurred.";
+}
+
+@media (max-width: 40rem) {
+    main {
+        padding: 1rem 1rem 2rem;
+    }
+}

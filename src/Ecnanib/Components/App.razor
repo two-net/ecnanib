@@ -1,12 +1,23 @@
-﻿<!DOCTYPE html>
-<html lang="en">
+﻿@using Ecnanib.Accounts.Services
+@using Ecnanib.Ui.Abstractions
+@using Ecnanib.Ui.Configuration
+@using Microsoft.Extensions.Options
+@inject UserPreferencesResolver Preferences
+@inject IOptions<UiOptions> Ui
+<!DOCTYPE html>
+@* FR-UI-02/03: the theme and motion preference is on the document element before the first paint; System renders no
+   data-theme so the stylesheet follows the operating system live, and --ui-duration is the length of every transition. *@
+<html lang="en" data-theme="@_attributes?.Theme" data-motion="@_attributes?.Motion" style="@_attributes?.Style">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <ResourcePreloader />
-    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["css/tokens.css"]" />
+    <link rel="stylesheet" href="@Assets["css/base.css"]" />
+    <link rel="stylesheet" href="@Assets["css/components.css"]" />
+    <link rel="stylesheet" href="@Assets["css/pages.css"]" />
     <link rel="stylesheet" href="@Assets["Ecnanib.styles.css"]" />
     <ImportMap />
     <HeadOutlet />
@@ -19,3 +30,16 @@
 </body>
 
 </html>
+
+@code {
+    private ThemeAttributes? _attributes;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var preferences = await Preferences.ResolveAsync(HttpContext, HttpContext?.RequestAborted ?? CancellationToken.None);
+        _attributes = ThemeAttributes.For(preferences, Ui.Value.TransitionMilliseconds);
+    }
+}

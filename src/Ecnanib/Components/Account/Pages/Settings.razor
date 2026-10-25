@@ -1,6 +1,8 @@
 @page "/settings"
 @attribute [Authorize]
 @using Ecnanib.Accounts.Configuration
+@using Ecnanib.Database.Entities
+@using Ecnanib.Ui.Abstractions
 @using Microsoft.Extensions.Options
 @inject IAccountService Accounts
 @inject NavigationManager Navigation
@@ -8,83 +10,90 @@
 
 <PageTitle>Settings</PageTitle>
 
-<h1>Settings</h1>
+<div class="page narrow">
+    <h1>Settings</h1>
 
-@if (Status == "password-changed")
-{
-    <p class="notice" role="status">Your password has been changed. Any other session has been signed out.</p>
-}
-else if (Status == "disclaimer-accepted")
-{
-    <p class="notice" role="status">Thank you. The risk disclaimer is accepted.</p>
-}
-
-<section aria-labelledby="account-title">
-    <h2 id="account-title">Account</h2>
-    <p>Signed in as <strong>@HttpContext.User.Identity?.Name</strong>.</p>
-    <p>Theme and animation preferences arrive with the user-interface work.</p>
-</section>
-
-<section aria-labelledby="password-title">
-    <h2 id="password-title">Change password</h2>
-    <EditForm Model="Password" FormName="change-password" OnValidSubmit="ChangePasswordAsync" method="post">
-        <DataAnnotationsValidator />
-        @if (_passwordError is not null)
-        {
-            <p class="error" role="alert">@_passwordError</p>
-        }
-        <ValidationSummary />
-        <label>
-            Current password
-            <InputText @bind-Value="Password.CurrentPassword" type="password" autocomplete="current-password" maxlength="128" required />
-        </label>
-        <label>
-            New password
-            <InputText @bind-Value="Password.NewPassword" type="password" autocomplete="new-password" minlength="@MinPasswordLength" maxlength="128" required />
-        </label>
-        <label>
-            Confirm new password
-            <InputText @bind-Value="Password.ConfirmPassword" type="password" autocomplete="new-password" maxlength="128" required />
-        </label>
-        <p class="hint">@AccountMessages.PasswordRule(MinPasswordLength) Changing it signs out every other session.</p>
-        <button type="submit">Change password</button>
-    </EditForm>
-</section>
-
-<section aria-labelledby="disclaimer-title">
-    <h2 id="disclaimer-title">Risk disclaimer</h2>
-    @if (_disclaimer is { IsAccepted: true })
+    @if (Status == "password-changed")
     {
-        <p>You accepted version @_disclaimer.CurrentVersion on @_disclaimer.CurrentVersionAcceptedAt!.Value.ToString("yyyy-MM-dd HH:mm 'UTC'").</p>
+        <p class="notice" role="status">Your password has been changed. Any other session has been signed out.</p>
     }
-    else if (_disclaimer is not null)
+    else if (Status == "disclaimer-accepted")
     {
-        @if (_disclaimer.LastAcceptedAt is { } last)
-        {
-            <p>The disclaimer has changed since you accepted it on @last.ToString("yyyy-MM-dd HH:mm 'UTC'"); please read and accept it again.</p>
-        }
-        <p>You must read and accept the risk disclaimer before your first live-mode agent can start.</p>
-        <RiskDisclaimerNotice />
-        <EditForm Model="Disclaimer" FormName="accept-disclaimer" OnValidSubmit="AcceptDisclaimerAsync" method="post">
+        <p class="notice" role="status">Thank you. The risk disclaimer is accepted.</p>
+    }
+
+    <section class="card" aria-labelledby="account-title">
+        <h2 id="account-title">Account</h2>
+        <p>Signed in as <strong>@HttpContext.User.Identity?.Name</strong>.</p>
+    </section>
+
+    <section class="card" aria-labelledby="appearance-title">
+        <h2 id="appearance-title">Appearance</h2>
+        <PreferencesPanel Theme="@(_preferences?.Theme ?? UiTheme.System)" ReducedMotion="@(_preferences?.ReducedMotion ?? false)" />
+    </section>
+
+    <section class="card" aria-labelledby="password-title">
+        <h2 id="password-title">Change password</h2>
+        <EditForm Model="Password" FormName="change-password" OnValidSubmit="ChangePasswordAsync" method="post">
             <DataAnnotationsValidator />
+            @if (_passwordError is not null)
+            {
+                <p class="error" role="alert">@_passwordError</p>
+            }
             <ValidationSummary />
-            <label class="check">
-                <InputCheckbox @bind-Value="Disclaimer.Accepted" />
-                I have read and accept the risk disclaimer (version @RiskDisclaimer.Version).
+            <label>
+                Current password
+                <InputText @bind-Value="Password.CurrentPassword" type="password" autocomplete="current-password" maxlength="128" required />
             </label>
-            <button type="submit">Accept</button>
+            <label>
+                New password
+                <InputText @bind-Value="Password.NewPassword" type="password" autocomplete="new-password" minlength="@MinPasswordLength" maxlength="128" required />
+            </label>
+            <label>
+                Confirm new password
+                <InputText @bind-Value="Password.ConfirmPassword" type="password" autocomplete="new-password" maxlength="128" required />
+            </label>
+            <p class="hint">@AccountMessages.PasswordRule(MinPasswordLength) Changing it signs out every other session.</p>
+            <button type="submit" class="primary">Change password</button>
         </EditForm>
-    }
-</section>
+    </section>
 
-<section aria-labelledby="delete-title">
-    <h2 id="delete-title">Delete account</h2>
-    <p>Deleting your account removes your keys, agents, decisions, trades and logs. It cannot be undone.</p>
-    <p><a href="/settings/delete-account">Delete my account…</a></p>
-</section>
+    <section class="card" aria-labelledby="disclaimer-title">
+        <h2 id="disclaimer-title">Risk disclaimer</h2>
+        @if (_disclaimer is { IsAccepted: true })
+        {
+            <p>You accepted version @_disclaimer.CurrentVersion on @_disclaimer.CurrentVersionAcceptedAt!.Value.ToString("yyyy-MM-dd HH:mm 'UTC'").</p>
+        }
+        else if (_disclaimer is not null)
+        {
+            @if (_disclaimer.LastAcceptedAt is { } last)
+            {
+                <p>The disclaimer has changed since you accepted it on @last.ToString("yyyy-MM-dd HH:mm 'UTC'"); please read and accept it again.</p>
+            }
+            <p>You must read and accept the risk disclaimer before your first live-mode agent can start.</p>
+            <RiskDisclaimerNotice />
+            <EditForm Model="Disclaimer" FormName="accept-disclaimer" OnValidSubmit="AcceptDisclaimerAsync" method="post">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <label class="check">
+                    <InputCheckbox @bind-Value="Disclaimer.Accepted" />
+                    I have read and accept the risk disclaimer (version @RiskDisclaimer.Version).
+                </label>
+                <button type="submit" class="primary">Accept</button>
+            </EditForm>
+        }
+    </section>
+
+    <section class="card danger-zone" aria-labelledby="delete-title">
+        <h2 id="delete-title">Delete account</h2>
+        <p>Deleting your account removes your keys, agents, decisions, trades and logs. It cannot be undone.</p>
+        <p><a class="button" href="/settings/delete-account">Delete my account…</a></p>
+    </section>
+</div>
 
 @code {
     private DisclaimerStatus? _disclaimer;
+    private UserPreferences? _preferences;
     private string? _passwordError;
 
     [CascadingParameter]
@@ -108,6 +117,7 @@ else if (Status == "disclaimer-accepted")
         Password ??= new();
         Disclaimer ??= new();
         _disclaimer = await Accounts.GetDisclaimerStatusAsync(UserId, HttpContext.RequestAborted);
+        _preferences = await Accounts.GetPreferencesAsync(UserId, HttpContext.RequestAborted);
     }
 
     private async Task ChangePasswordAsync()

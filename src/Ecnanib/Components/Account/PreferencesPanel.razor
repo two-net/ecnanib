@@ -1,0 +1,130 @@
+@* The appearance controls (FR-UI-02, FR-UI-03): an interactive island so a change is saved and applied to the document
+   element at once, without a reload. The prerendered copy is disabled until the circuit connects. *@
+@rendermode InteractiveServer
+@using Ecnanib.Database.Entities
+@using Ecnanib.Ui.Abstractions
+@using Ecnanib.Ui.Configuration
+@using Microsoft.Extensions.Options
+@implements IAsyncDisposable
+@inject IAccountService Accounts
+@inject IOptions<UiOptions> Ui
+@inject IJSRuntime JS
+@inject ILogger<PreferencesPanel> Logger
+
+<div class="preferences">
+    <fieldset>
+        <legend>Theme</legend>
+        <div class="radio-group">
+            @foreach (var theme in Themes)
+            {
+                <label>
+                    <input type="radio" name="theme" value="@theme" checked="@(theme == _theme)" disabled="@(!RendererInfo.IsInteractive)" @onchange="() => ChangeThemeAsync(theme)" />
+                    @AccountMessages.ThemeLabel(theme)
+                </label>
+            }
+        </div>
+        <p class="hint">@AccountMessages.ThemeHint</p>
+    </fieldset>
+    <fieldset>
+        <legend>Animation</legend>
+        <label class="check">
+            <input type="checkbox" checked="@_reducedMotion" disabled="@(!RendererInfo.IsInteractive)" @onchange="e => ChangeMotionAsync(e.Value is true)" />
+            @AccountMessages.ReducedMotionLabel
+        </label>
+        <p class="hint">@AccountMessages.ReducedMotionHint</p>
+    </fieldset>
+    <p class="@(_error ? "error" : "hint")" role="status" aria-live="polite">@_message</p>
+    <noscript><p class="hint">@AccountMessages.PreferencesNeedScript</p></noscript>
+</div>
+
+@code {
+    private static readonly UiTheme[] Themes = [UiTheme.System, UiTheme.Light, UiTheme.Dark];
+
+    private UiTheme _theme;
+    private bool _reducedMotion;
+    private string? _message;
+    private bool _error;
+    private IJSObjectReference? _module;
+
+    /// <summary>The stored preference, loaded by the page that hosts the panel.</summary>
+    [Parameter]
+    public UiTheme Theme { get; set; }
+
+    [Parameter]
+    public bool ReducedMotion { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        _theme = Theme;
+        _reducedMotion = ReducedMotion;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && RendererInfo.IsInteractive)
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Account/PreferencesPanel.razor.js");
+    }
+
+    private Task ChangeThemeAsync(UiTheme theme)
+    {
+        _theme = theme;
+        return SaveAsync();
+    }
+
+    private Task ChangeMotionAsync(bool reduced)
+    {
+        _reducedMotion = reduced;
+        return SaveAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        var state = await AuthenticationState;
+        if (state.User.GetUserId() is not { } userId)
+        {
+            (_error, _message) = (true, AccountMessages.PreferencesSignedOut);
+            return;
+        }
+
+        var preferences = new UserPreferences(_theme, _reducedMotion);
+        bool saved;
+        try
+        {
+            saved = await Accounts.UpdatePreferencesAsync(userId, preferences, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "The appearance preference of user {UserId} could not be saved", userId);
+            saved = false;
+        }
+
+        if (!saved)
+        {
+            (_error, _message) = (true, AccountMessages.PreferencesNotSaved);
+            return;
+        }
+
+        // The same attributes App.razor renders on the next request, applied now (FR-UI-02: no reload).
+        var attributes = ThemeAttributes.For(preferences, Ui.Value.TransitionMilliseconds);
+        if (_module is not null)
+            await _module.InvokeVoidAsync("apply", attributes.Theme, attributes.Motion);
+        (_error, _message) = (false, AccountMessages.PreferencesSaved);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null)
+            return;
+        try
+        {
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is gone; there is nothing left to release on the client.
+        }
+    }
+}

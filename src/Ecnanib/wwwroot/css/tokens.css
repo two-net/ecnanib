@@ -1,0 +1,84 @@
+/* Design tokens (FR-UI-02, FR-UI-03, NFR-USE-01). Every colour is a light-dark() pair: with color-scheme "light dark"
+   the page follows the operating system live and without a script; data-theme on <html> pins one scheme instead. */
+:root {
+    color-scheme: light dark;
+
+    --bg: light-dark(#f4f6f8, #0e1116);
+    --surface: light-dark(#ffffff, #161b22);
+    --surface-2: light-dark(#eef1f4, #1d242d);
+    --text: light-dark(#161a20, #e6ebf1);
+    --text-muted: light-dark(#5a6472, #9aa6b4);
+    --border: light-dark(#d5dbe2, #2b343f);
+    --border-strong: light-dark(#b9c2cc, #3b4652);
+
+    --accent: light-dark(#1d5fd1, #78a9ff);
+    --accent-hover: light-dark(#174db0, #9dbfff);
+    --accent-text: light-dark(#ffffff, #0e1116);
+    --accent-bg: light-dark(#e4ecfb, #16233a);
+
+    --ok: light-dark(#146c3a, #6fd397);
+    --ok-bg: light-dark(#e2f5e9, #11301f);
+    --warn: light-dark(#7a5200, #f0c266);
+    --warn-bg: light-dark(#fdf1d6, #3a2b08);
+    --danger: light-dark(#a11d1d, #f49b9b);
+    --danger-bg: light-dark(#fbe6e6, #3b1515);
+    --info: var(--accent);
+    --info-bg: var(--accent-bg);
+    --focus: light-dark(#1d5fd1, #ffd166);
+
+    /* Trading semantics: long and profit are green, short and loss are red; both always paired with text or a sign. */
+    --long: var(--ok);
+    --short: var(--danger);
+    --chart-bg: var(--surface);
+    --chart-text: var(--text-muted);
+    --chart-grid: light-dark(#e8ecf0, #222a34);
+    --chart-up: light-dark(#1f9d55, #3fcf7f);
+    --chart-down: light-dark(#d64545, #ff6b6b);
+    --chart-marker-entry-long: var(--chart-up);
+    --chart-marker-entry-short: var(--chart-down);
+    --chart-marker-exit: light-dark(#1d5fd1, #78a9ff);
+    --chart-marker-stop: light-dark(#7a5200, #f0c266);
+
+    --radius: 0.5rem;
+    --radius-sm: 0.3rem;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 1px rgb(0 0 0 / 0.04);
+    --shadow-raised: 0 6px 24px rgb(0 0 0 / 0.14);
+
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    /* FR-UI-03: UI transitions complete within 400 ms. App.razor sets --ui-duration-base from Ui:TransitionMilliseconds;
+       the derived value below is what everything reads, so the reduced-motion rules can zero it. */
+    --ui-duration: var(--ui-duration-base, 240ms);
+    --ui-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+/* NFR-USE-02: the operating system's preference and the in-app toggle both reduce; neither can force motion back on.
+   Transitions collapse to zero; decorative loops (.anim-loop) stop and show their resting state, which is their final frame. */
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --ui-duration: 0ms;
+    }
+
+    .anim-loop,
+    .anim-loop * {
+        animation: none !important;
+    }
+}
+
+:root[data-motion="reduced"] {
+    --ui-duration: 0ms;
+}
+
+:root[data-motion="reduced"] .anim-loop,
+:root[data-motion="reduced"] .anim-loop * {
+    animation: none !important;
+}

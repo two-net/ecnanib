@@ -45,6 +45,7 @@ public class AddAccountsTests
         await using var scope = provider.CreateAsyncScope();
         Assert.IsType<AccountAuthenticationStateProvider>(scope.ServiceProvider.GetRequiredService<AuthenticationStateProvider>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<AccountCookieEvents>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<UserPreferencesResolver>());
 
         Assert.DoesNotContain(provider.GetServices<IHostedService>(), h => h.GetType().Namespace!.StartsWith("Ecnanib.Accounts", StringComparison.Ordinal));
         Assert.Equal(0, factory.Calls);

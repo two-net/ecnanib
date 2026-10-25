@@ -4,7 +4,7 @@ Registration, sessions, password change, account deletion, fair-use limits and t
 FR-ACC-01..08; NFR-SEC-01/03; NFR-LEGAL-01/02; C-12, A-09). Other modules depend on `Ecnanib.Accounts.Abstractions`,
 `AddAccounts(...)` and `MapAccountEndpoints()`; the hashing, cookie and throttle types never leave this folder. There
 are users and nothing else: no email verification, roles, payments, plans, organizations or tenants (FR-ACC-05/06).
-`AddAccounts` requires `AddDatabase` and `AddServer`.
+`AddAccounts` requires `AddDatabase`, `AddServer` and `AddUi`.
 
 | Need | Use |
 |---|---|
@@ -14,6 +14,7 @@ are users and nothing else: no email verification, roles, payments, plans, organ
 | Require a signed-in user on a page | `@attribute [Authorize]`; the middleware challenges with a redirect to `/sign-in?ReturnUrl=…` |
 | Agent limits at creation and start (FR-ACC-07, FR-AGT-15) | `IFairUseLimits.CheckCreateAgentAsync` / `CheckStartAgentAsync` → `FairUseCheck` (allowed, current, max) |
 | Disclaimer text, version and status (FR-ACC-08, FR-UI-05) | `RiskDisclaimer`, `<RiskDisclaimerNotice />`, `IAccountService.GetDisclaimerStatusAsync(...).IsAccepted`, which a live-mode start must require |
+| The user's theme and animation preference (FR-UI-02, FR-UI-03) | `IAccountService.GetPreferencesAsync` / `UpdatePreferencesAsync` → `UserPreferences`; `UserPreferencesResolver.ResolveAsync(httpContext)` for the preference a page renders with (the user's own, or the `Ui` defaults for a visitor and on error pages) |
 
 Rules the module enforces:
 
@@ -40,6 +41,9 @@ Rules the module enforces:
   concurrently either blocks the deletion or finds its row gone.
 - Fair-use limits come from the `Agents` section and are identical for every user (FR-ACC-07); Running and Paused agents
   count as running, an agent in Error does not.
+- A new account takes the `Ui` section's theme and animation defaults (`users.theme`, `users.reduced_motion`); the
+  settings page changes them per user, and the root component reads them with one primary-key query per request so the
+  page is themed before the first paint. A visitor, an error page and a database failure all render with the defaults.
 - The disclaimer is versioned (`RiskDisclaimer.Version`): one acceptance row per version, the first timestamp stands,
   `users.disclaimer_accepted_at` mirrors the latest. Changing the text means bumping the version, which asks everyone again.
 - Authentication events are logged with the user id only (FR-LOG-04): registration, sign-in, sign-out, failures,
@@ -55,8 +59,9 @@ Configuration (the `Accounts` section goes beyond Appendix D's minimum; the agen
 ```
 
 Pages (static server rendering, plain forms): `/sign-up`, `/sign-in` (honours a local `ReturnUrl` only), `/settings`
-(password, disclaimer status and acceptance, link to deletion), `/settings/delete-account`, and `POST /sign-out` from the
-layout. The landing page shows the disclaimer (FR-UI-05). Theme and animation preferences belong to the user-interface issue.
+(appearance: theme and reduced animation, saved without a reload by the `PreferencesPanel` island; password; disclaimer
+status and acceptance; link to deletion), `/settings/delete-account`, and `POST /sign-out` from the layout. The landing
+page shows the disclaimer (FR-UI-05).
 
 Tests: `dotnet test` runs offline (options, registration, hashing, email and password rules, throttle windows, session
 revalidation and revocation, cookie events, return-URL guard, disclaimer text). Live checks run against PostgreSQL through

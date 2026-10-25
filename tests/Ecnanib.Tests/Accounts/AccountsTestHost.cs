@@ -3,6 +3,7 @@ using Ecnanib.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Tests.Database;
 using Ecnanib.Tests.Support;
+using Ecnanib.Ui;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,7 @@ internal static class AccountsTestHost
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
         var services = new ServiceCollection();
         services.AddServer(configuration);
+        services.AddUi(configuration);
         services.AddDatabase(configuration);
         services.AddAccounts(configuration);
         if (logs is not null)

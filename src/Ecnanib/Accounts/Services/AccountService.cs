@@ -4,6 +4,8 @@ using Ecnanib.Accounts.Authentication;
 using Ecnanib.Accounts.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Database.Entities;
+using Ecnanib.Ui.Abstractions;
+using Ecnanib.Ui.Configuration;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -25,6 +27,7 @@ internal sealed class AccountService : IAccountService
     private readonly SignInThrottle _throttle;
     private readonly SessionRevocations _revocations;
     private readonly IOptions<AccountsOptions> _options;
+    private readonly IOptions<UiOptions> _ui;
     private readonly TimeProvider _time;
     private readonly ILogger<AccountService> _logger;
     private readonly Lazy<string> _dummyHash;
@@ -35,6 +38,7 @@ internal sealed class AccountService : IAccountService
         SignInThrottle throttle,
         SessionRevocations revocations,
         IOptions<AccountsOptions> options,
+        IOptions<UiOptions> ui,
         TimeProvider time,
         ILogger<AccountService> logger)
     {
@@ -43,6 +47,7 @@ internal sealed class AccountService : IAccountService
         _throttle = throttle;
         _revocations = revocations;
         _options = options;
+        _ui = ui;
         _time = time;
         _logger = logger;
         // Verified against when the account does not exist, so an unknown email costs the same as a wrong password.
@@ -76,6 +81,9 @@ internal sealed class AccountService : IAccountService
             NormalizedEmail = normalized,
             PasswordHash = string.Empty,
             SecurityStamp = NewStamp(),
+            // A new account starts from the Ui section's defaults (Appendix D) until the user chooses on the settings page (FR-UI-02).
+            Theme = _ui.Value.Theme,
+            ReducedMotion = _ui.Value.ReducedMotion,
             CreatedAt = _time.GetUtcNow(),
         };
         user.PasswordHash = _hasher.HashPassword(user, password!);
@@ -289,6 +297,36 @@ internal sealed class AccountService : IAccountService
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         return new DisclaimerStatus(RiskDisclaimer.Version, current, last);
+    }
+
+    public async Task<UserPreferences?> GetPreferencesAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        return await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => new UserPreferences(u.Theme, u.ReducedMotion))
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<bool> UpdatePreferencesAsync(Guid userId, UserPreferences preferences, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var updated = await db.Users
+            .Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.Theme, preferences.Theme)
+                .SetProperty(u => u.ReducedMotion, preferences.ReducedMotion), cancellationToken)
+            .ConfigureAwait(false);
+        if (updated == 0)
+        {
+            _logger.LogWarning("Preference change by unknown user {UserId} ignored", userId);
+            return false;
+        }
+
+        _logger.LogInformation("User {UserId} chose the {Theme} theme with reduced motion {ReducedMotion}", userId, preferences.Theme, preferences.ReducedMotion);
+        return true;
     }
 
     /// <summary>32 hex characters; <c>users.security_stamp</c> allows 64.</summary>

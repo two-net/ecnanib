@@ -1,31 +1,44 @@
 @inherits LayoutComponentBase
 
+<a class="skip-link" href="#main">Skip to content</a>
+
 <header class="site-header">
     <a class="brand" href="/">Ecnanib</a>
-    <nav aria-label="Account">
-        <AuthorizeView>
-            <Authorized>
-                <span class="user">@context.User.Identity?.Name</span>
-                <a href="/agents">Agents</a>
-                <a href="/keys">Keys</a>
-                <a href="/providers">Providers</a>
-                <a href="/settings">Settings</a>
-                <form method="post" action="/sign-out" class="inline">
-                    <AntiforgeryToken />
-                    <button type="submit">Sign out</button>
-                </form>
-            </Authorized>
-            <NotAuthorized>
-                <a href="/sign-in">Sign in</a>
-                <a href="/sign-up">Sign up</a>
-            </NotAuthorized>
-        </AuthorizeView>
-    </nav>
+    <AuthorizeView>
+        <Authorized>
+            <nav class="primary" aria-label="Primary">
+                <NavLink href="/agents" Match="NavLinkMatch.Prefix">Agents</NavLink>
+                <NavLink href="/keys" Match="NavLinkMatch.Prefix">Keys</NavLink>
+                <NavLink href="/providers" Match="NavLinkMatch.Prefix">Providers</NavLink>
+                <NavLink href="/settings" Match="NavLinkMatch.Prefix">Settings</NavLink>
+            </nav>
+            <details class="user-menu">
+                <summary><span class="user">@context.User.Identity?.Name</span></summary>
+                <div class="menu">
+                    <a href="/settings">Settings</a>
+                    <form method="post" action="/sign-out" class="inline">
+                        <AntiforgeryToken />
+                        <button type="submit">Sign out</button>
+                    </form>
+                </div>
+            </details>
+        </Authorized>
+        <NotAuthorized>
+            <nav class="primary" aria-label="Primary">
+                <NavLink href="/sign-in">Sign in</NavLink>
+                <a class="button primary" href="/sign-up">Sign up</a>
+            </nav>
+        </NotAuthorized>
+    </AuthorizeView>
 </header>
 
-<main>
+<main id="main">
     @Body
 </main>
+
+<footer class="site-footer">
+    <p>Ecnanib is software, not financial advice. Trading cryptocurrencies, and leveraged futures in particular, can lose your entire balance. <a href="/#risk-disclaimer-title">Risk disclaimer</a></p>
+</footer>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.

@@ -18,8 +18,9 @@ public static class AccountsServiceCollectionExtensions
     /// <summary>
     /// Registers the accounts module: validated <see cref="AccountsOptions"/> and <see cref="AgentLimitsOptions"/>,
     /// Argon2id password hashing, the sign-in throttle, <see cref="IAccountService"/>, <see cref="IFairUseLimits"/>,
-    /// cookie authentication with security-stamp revalidation, authorization and the Blazor authentication state.
-    /// Requires <c>AddDatabase</c> and <c>AddServer</c>. Adds no hosted service and connects to nothing.
+    /// cookie authentication with security-stamp revalidation, authorization, the Blazor authentication state and the
+    /// per-request <see cref="UserPreferencesResolver"/>. Requires <c>AddDatabase</c>, <c>AddServer</c> and <c>AddUi</c>
+    /// (new accounts take its defaults). Adds no hosted service and connects to nothing.
     /// </summary>
     public static IServiceCollection AddAccounts(this IServiceCollection services, IConfiguration configuration)
     {
@@ -50,6 +51,8 @@ public static class AccountsServiceCollectionExtensions
         services.TryAddSingleton<IAccountService, AccountService>();
         services.TryAddSingleton<IFairUseLimits, FairUseLimits>();
         services.TryAddScoped<AccountCookieEvents>();
+        // FR-UI-02: the root component reads the signed-in user's theme once per request; visitors get the Ui defaults.
+        services.TryAddScoped<UserPreferencesResolver>();
 
         // The key ring lives in the database (FR-CFG-05); a fixed application name keeps every cookie valid when the
         // deployment moves, instead of binding it to the content-root path.

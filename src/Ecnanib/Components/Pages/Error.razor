@@ -3,17 +3,20 @@
 
 <PageTitle>Error</PageTitle>
 
-<h1 class="text-danger">Error.</h1>
-<h2 class="text-danger">An error occurred while processing your request.</h2>
+<div class="page narrow">
+    <h1>Something went wrong</h1>
+    <p class="error" role="alert">An error occurred while processing your request.</p>
 
-@if (ShowRequestId)
-{
-    <p>
-        <strong>Request ID:</strong> <code>@RequestId</code>
-    </p>
-}
+    @if (ShowRequestId)
+    {
+        <p>
+            <strong>Request ID:</strong> <code>@RequestId</code>
+        </p>
+    }
 
-<p>The details were written to the application log under this request id.</p>
+    <p>The details were written to the application log under this request id.</p>
+    <p><a class="button" href="/">Back to the start</a></p>
+</div>
 
 @code{
     [CascadingParameter]
