@@ -1,0 +1,84 @@
+@* The trade lifecycle timeline (FR-UI-03 e): the agent's open trades and its latest closed ones, each from evaluation to
+   close, re-read on order, trade and decision events. New steps reveal with a short stagger; known ones stay still. *@
+@rendermode InteractiveServer
+@inherits LiveComponentBase
+@using Ecnanib.Database.Entities
+@using Ecnanib.Execution.Abstractions
+@inject ITradeTimelineReader Reader
+
+@if (_trades is null)
+{
+    <p class="hint">@LiveMessages.Loading</p>
+}
+else if (_trades.Count == 0)
+{
+    <p>@LiveMessages.NoTrades</p>
+}
+else
+{
+    @foreach (var trade in _trades)
+    {
+        <article class="timeline-trade" @key="trade.TradeId">
+            <h3>
+                <span class="status @(trade.IsOpen ? "status-running" : "status-stopped")">@(trade.IsOpen ? "Open" : "Closed")</span>
+                @trade.Side.ToString().ToLowerInvariant() @LiveMessages.Price(trade.Size) @trade.Symbol at @LiveMessages.Price(trade.EntryPrice)
+                @if (trade.IsPaper)
+                {
+                    <span class="muted">paper</span>
+                }
+                @if (trade.RealizedPnl is { } pnl)
+                {
+                    <span class="@PnlMath.SignClass(pnl)">P&amp;L @ExperienceMessages.Money(pnl)</span>
+                }
+            </h3>
+            <ol class="timeline">
+                @{ var fresh = 0; }
+                @foreach (var step in trade.Events)
+                {
+                    var key = Key(trade.TradeId, step);
+                    var isNew = IsLive && !_known.Contains(key);
+                    <li class="tl-@step.Kind.ToString().ToLowerInvariant() @(isNew ? "tl-item" : "")" style="@(isNew ? $"--i:{fresh++}" : null)" @key="key">
+                        <span class="tl-time">@AgentMessages.Stamp(step.At)</span>
+                        <span class="tl-title">@LiveMessages.Timeline(step)</span>
+                        @if (LiveMessages.TimelineDetail(step) is { Length: > 0 } detail)
+                        {
+                            <span class="tl-detail">@detail</span>
+                        }
+                        @if (step.EvaluationId is { } evaluationId && step.Kind is TimelineKind.Evaluated or TimelineKind.Decided or TimelineKind.Managed)
+                        {
+                            <a class="tl-link" href="/agents/@AgentId/evaluations/@evaluationId">Deliberation</a>
+                        }
+                    </li>
+                }
+            </ol>
+        </article>
+    }
+}
+
+@code {
+    private IReadOnlyList<TradeTimelineView>? _trades;
+    private HashSet<string> _known = [];
+
+    [Parameter, EditorRequired]
+    public Guid AgentId { get; set; }
+
+    /// <summary>Open trades first, then the most recently closed ones.</summary>
+    [Parameter]
+    public int Count { get; set; } = 3;
+
+    protected override async Task LoadAsync(CancellationToken cancellationToken)
+    {
+        var trades = await Reader.ListRecentAsync(UserId, AgentId, Count, cancellationToken);
+        await RenderAsync(() =>
+        {
+            // What was already on the page does not animate again; the keys of this load become the known set after the render.
+            _trades = trades;
+        });
+        await RenderAsync(() => _known = trades.SelectMany(t => t.Events.Select(e => Key(t.TradeId, e))).ToHashSet());
+    }
+
+    protected override bool Accepts(AgentEvent agentEvent) =>
+        agentEvent.AgentId == AgentId && agentEvent is OrderChanged or TradeChanged or DecisionRecorded or EvaluationFinished;
+
+    private static string Key(Guid tradeId, TimelineEvent step) => $"{tradeId:N}:{(int)step.Kind}:{step.At.UtcTicks}:{step.OrderId:N}";
+}

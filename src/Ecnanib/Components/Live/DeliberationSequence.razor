@@ -1,0 +1,64 @@
+@* The council as a sequence (FR-UI-03 b): each role takes its turn, hands off to the next, and the verdict is revealed
+   last. Every state is also text (the role's status, the verdict), so the motion carries nothing on its own. *@
+@using Ecnanib.Database.Entities
+
+<div class="deliberation">
+    <ol class="council-sequence" aria-label="Council deliberation">
+        @for (var i = 0; i < Roles.Count; i++)
+        {
+            var slot = Roles[i];
+            var step = Steps.GetValueOrDefault(slot.Role);
+            <li class="role role-@StageClass(slot, step)" @key="slot.Role">
+                <span class="role-name">@CouncilRoles.Display(slot.Role)</span>
+                <span class="role-state @(step?.Status is { } status ? CouncilMessages.StatusClass(status) : "")">@LiveMessages.RoleState(slot, step)</span>
+                @if (step?.Proposed is { } proposed)
+                {
+                    <span class="role-proposal muted">@CouncilMessages.Action(proposed)</span>
+                }
+            </li>
+            @if (i < Roles.Count - 1)
+            {
+                <li class="handoff @(step?.Stage == RoleStage.Done ? "done" : "")" aria-hidden="true" role="presentation"></li>
+            }
+        }
+    </ol>
+    <p class="verdict @(Revealed ? "revealed" : "pending")" aria-live="polite">@(Revealed ? LiveMessages.Verdict(Verdict) : LiveMessages.AwaitingVerdict)</p>
+    @if (ShowControls)
+    {
+        <div class="sequence-controls">
+            <button type="button" class="quiet" @onclick="OnSkip">@LiveMessages.Skip</button>
+            <button type="button" class="quiet" @onclick="OnReplay">@LiveMessages.Replay</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<RoleSlot> Roles { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public IReadOnlyDictionary<CouncilRole, RoleStep> Steps { get; set; } = new Dictionary<CouncilRole, RoleStep>();
+
+    [Parameter]
+    public DecisionAction? Verdict { get; set; }
+
+    [Parameter]
+    public bool Revealed { get; set; }
+
+    [Parameter]
+    public bool ShowControls { get; set; }
+
+    [Parameter]
+    public EventCallback OnSkip { get; set; }
+
+    [Parameter]
+    public EventCallback OnReplay { get; set; }
+
+    private static string StageClass(RoleSlot slot, RoleStep? step) => (slot.Enabled, step?.Stage) switch
+    {
+        (false, _) => "disabled",
+        (_, RoleStage.Thinking) => "thinking",
+        (_, RoleStage.Done) => "done",
+        _ => "waiting",
+    };
+}

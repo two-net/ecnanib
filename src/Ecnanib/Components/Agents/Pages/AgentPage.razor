@@ -8,7 +8,6 @@
 @inject IAgentService AgentService
 @inject IStrategyCatalog Catalog
 @inject IExperienceReader Experience
-@inject TimeProvider Clock
 @inject NavigationManager Navigation
 
 <PageTitle>Agent</PageTitle>
@@ -17,13 +16,7 @@
 {
     <p><a href="/agents">← Agents</a></p>
     <h1>@agent.Name</h1>
-    <p>
-        <span class="status @AgentMessages.StateClass(agent.State)">@AgentMessages.Describe(agent.State, agent.PauseCause)</span>
-        @if (agent.StateReason is not null)
-        {
-            <span class="muted">@agent.StateReason</span>
-        }
-    </p>
+    <AgentHeaderLive AgentId="Id" />
     @if (_deprecatedRoles.Count > 0)
     {
         <p class="warning" role="alert">@AgentMessages.DeprecatedModels(_deprecatedRoles) <a href="@WizardSteps.Href(Id, WizardStep.Council)">Go to the council</a>.</p>
@@ -31,14 +24,6 @@
     <dl class="details">
         <dt>Trades</dt><dd>@agent.Symbol on @AgentMessages.Market(agent.MarketType), @AgentMessages.Timeframe(agent.Timeframe) candles, @AgentMessages.Mode(agent.Mode).ToLowerInvariant() mode</dd>
         <dt>Strategy</dt><dd>@(_strategy?.Name ?? agent.StrategyId) (version @agent.StrategyVersion@(UpgradeAvailable ? $", version {agent.LatestStrategyVersion} available" : ""))</dd>
-        @if (AgentStateMachine.IsEvaluated(agent.State))
-        {
-            <dt>Next evaluation</dt><dd>@AgentMessages.Stamp(agent.Timeframe.NextCloseAfter(Clock.GetUtcNow()))</dd>
-        }
-        @if (agent.AutoResumeAt is { } resumeAt)
-        {
-            <dt>Resumes</dt><dd>@AgentMessages.Stamp(resumeAt)</dd>
-        }
         <dt>Created</dt><dd>@AgentMessages.Stamp(agent.CreatedAt)</dd>
         <dt>Updated</dt><dd>@AgentMessages.Stamp(agent.UpdatedAt)</dd>
     </dl>
@@ -51,6 +36,11 @@
     {
         <p class="hint">@AgentMessages.DraftHint <a href="@WizardSteps.Href(Id, WizardStep.Strategy)">Continue the setup</a>.</p>
     }
+
+    <section class="card" aria-labelledby="chart-title">
+        <h2 id="chart-title">Chart</h2>
+        <PriceChart AgentId="Id" />
+    </section>
 
     <section class="card" aria-labelledby="actions-title">
         <h2 id="actions-title">Actions</h2>
@@ -121,77 +111,12 @@
 
     <section class="card" aria-labelledby="positions-title">
         <h2 id="positions-title">Positions and orders</h2>
-        @if (agent.OpenPositions.Count == 0)
-        {
-            <p>No open position.</p>
-        }
-        else
-        {
-            <div class="table-wrap">
-                <table class="agents data stack">
-                    <thead><tr><th scope="col">Side</th><th scope="col">Size</th><th scope="col">Entry</th><th scope="col">Stop</th><th scope="col">Opened</th><th scope="col">Status</th></tr></thead>
-                    <tbody>
-                        @foreach (var position in agent.OpenPositions)
-                        {
-                            <tr>
-                                <td data-label="Side">@position.Side</td>
-                                <td data-label="Size">
-                                    @position.RemainingSize
-                                    @if (position.RemainingSize != position.Size)
-                                    {
-                                        <span class="muted">of @position.Size</span>
-                                    }
-                                </td>
-                                <td data-label="Entry">@position.EntryPrice</td>
-                                <td data-label="Stop">@(position.CurrentStop?.ToString() ?? "none")</td>
-                                <td data-label="Opened">@AgentMessages.Stamp(position.OpenedAt)</td>
-                                <td data-label="Status">
-                                    @if (position.IsClosing)
-                                    {
-                                        <text>Closing at market</text>
-                                    }
-                                    else if (position.IsUnmanaged)
-                                    {
-                                        <span class="unmanaged">Unmanaged</span>
-                                    }
-                                    else
-                                    {
-                                        <text>Managed</text>
-                                    }
-                                    @if (position.IsPaper)
-                                    {
-                                        <span class="muted">paper</span>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-        @if (agent.OpenOrders.Count > 0)
-        {
-            <div class="table-wrap">
-                <table class="agents data stack">
-                    <thead><tr><th scope="col">Purpose</th><th scope="col">Type</th><th scope="col">Side</th><th scope="col">Price</th><th scope="col">Stop</th><th scope="col">Quantity</th><th scope="col">Status</th><th scope="col">Expires</th></tr></thead>
-                    <tbody>
-                        @foreach (var order in agent.OpenOrders)
-                        {
-                            <tr>
-                                <td data-label="Purpose">@order.Purpose</td>
-                                <td data-label="Type">@order.Type</td>
-                                <td data-label="Side">@order.Side</td>
-                                <td data-label="Price">@(order.Price?.ToString() ?? "market")</td>
-                                <td data-label="Stop">@(order.StopPrice?.ToString() ?? "")</td>
-                                <td data-label="Quantity">@order.Quantity</td>
-                                <td data-label="Status">@order.Status@(order.IsPaper ? " (paper)" : "")</td>
-                                <td data-label="Expires">@(order.ExpiresAt is { } expires ? AgentMessages.Stamp(expires) : "")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
+        <PositionsOrdersLive AgentId="Id" />
+    </section>
+
+    <section class="card" aria-labelledby="trades-title">
+        <h2 id="trades-title">Trades</h2>
+        <TradeTimeline AgentId="Id" />
     </section>
 
     <section id="council" class="card" aria-labelledby="setup-title">
@@ -216,33 +141,13 @@
     </section>
 
     <section class="card" aria-labelledby="evaluations-title">
-        <h2 id="evaluations-title">Recent evaluations</h2>
-        @if (agent.RecentEvaluations.Count == 0)
-        {
-            <p>No evaluation yet. Running and paused agents are evaluated once per @AgentMessages.Timeframe(agent.Timeframe) candle close.</p>
-        }
-        else
-        {
-            <div class="table-wrap">
-                <table class="agents data stack">
-                    <thead><tr><th scope="col">Candle (open)</th><th scope="col">Outcome</th><th scope="col">Council</th><th scope="col">Decision</th><th scope="col">Detail</th><th scope="col">Finished</th><th scope="col"></th></tr></thead>
-                    <tbody>
-                        @foreach (var evaluation in agent.RecentEvaluations)
-                        {
-                            <tr>
-                                <td data-label="Candle">@AgentMessages.Stamp(evaluation.CandleOpenTime)</td>
-                                <td data-label="Outcome">@AgentMessages.Outcome(evaluation.Outcome)</td>
-                                <td data-label="Council">@(evaluation.CouncilConsulted ? "consulted" : "not needed")</td>
-                                <td data-label="Decision">@(evaluation.FinalAction?.ToString() ?? "")</td>
-                                <td data-label="Detail">@evaluation.OutcomeDetail</td>
-                                <td data-label="Finished">@AgentMessages.Stamp(evaluation.FinishedAt)</td>
-                                <td><a href="/agents/@Id/evaluations/@evaluation.Id">Deliberation</a></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
+        <h2 id="evaluations-title">Decisions</h2>
+        <DecisionsLive AgentId="Id" Timeframe="agent.Timeframe" />
+    </section>
+
+    <section class="card" aria-labelledby="usage-title">
+        <h2 id="usage-title">Council usage</h2>
+        <TokenUsage AgentId="Id" />
     </section>
 
     <section id="experience" class="card" aria-labelledby="experience-title">

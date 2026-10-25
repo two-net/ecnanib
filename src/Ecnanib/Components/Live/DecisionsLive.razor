@@ -1,0 +1,154 @@
+@* The recent evaluations (FR-UI-01 "decision history") with the council's live deliberation while one runs
+   (FR-UI-03 b): the sequence advances on the role events and the verdict is revealed when the decision is recorded. *@
+@rendermode InteractiveServer
+@inherits LiveComponentBase
+@using Ecnanib.Database.Entities
+@using Ecnanib.Exchange.Abstractions
+@inject IAgentService AgentService
+
+@if (_live is { } live)
+{
+    <div class="deliberation-live">
+        <p class="hint">Candle @AgentMessages.Stamp(live.CandleOpenTime): the council is deliberating.</p>
+        <DeliberationSequence Roles="_roles" Steps="live.Steps" Verdict="live.Verdict" Revealed="live.Revealed" />
+    </div>
+}
+
+@if (_evaluations is null)
+{
+    <p class="hint">@LiveMessages.Loading</p>
+}
+else if (_evaluations.Count == 0)
+{
+    <p>No evaluation yet. Running and paused agents are evaluated once per @AgentMessages.Timeframe(Timeframe) candle close.</p>
+}
+else
+{
+    <div class="table-wrap">
+        <table class="agents data stack">
+            <thead><tr><th scope="col">Candle (open)</th><th scope="col">Outcome</th><th scope="col">Council</th><th scope="col">Decision</th><th scope="col">Detail</th><th scope="col">Finished</th><th scope="col"></th></tr></thead>
+            <tbody>
+                @foreach (var evaluation in _evaluations)
+                {
+                    <tr @key="evaluation.Id" class="@(_fresh.Contains(evaluation.Id) ? "row-in" : "")">
+                        <td data-label="Candle">@AgentMessages.Stamp(evaluation.CandleOpenTime)</td>
+                        <td data-label="Outcome">
+                            @if (evaluation.Outcome == EvaluationOutcome.InProgress)
+                            {
+                                <span class="evaluating" role="status">@LiveMessages.Evaluating</span>
+                            }
+                            else
+                            {
+                                @AgentMessages.Outcome(evaluation.Outcome)
+                            }
+                        </td>
+                        <td data-label="Council">@(evaluation.CouncilConsulted ? "consulted" : "not needed")</td>
+                        <td data-label="Decision">@(evaluation.FinalAction is { } action ? CouncilMessages.Action(action) : "")</td>
+                        <td data-label="Detail">@evaluation.OutcomeDetail</td>
+                        <td data-label="Finished">@AgentMessages.Stamp(evaluation.FinishedAt)</td>
+                        <td><a href="/agents/@AgentId/evaluations/@evaluation.Id">Deliberation</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private static readonly TimeSpan KeepVerdict = TimeSpan.FromSeconds(8);
+
+    private IReadOnlyList<EvaluationView>? _evaluations;
+    private IReadOnlyList<RoleSlot> _roles = [];
+    private HashSet<Guid> _fresh = [];
+    private LiveDeliberation? _live;
+
+    [Parameter, EditorRequired]
+    public Guid AgentId { get; set; }
+
+    [Parameter, EditorRequired]
+    public CandleInterval Timeframe { get; set; }
+
+    [Parameter]
+    public int Count { get; set; } = 20;
+
+    protected override async Task LoadAsync(CancellationToken cancellationToken)
+    {
+        var evaluations = await AgentService.ListEvaluationsAsync(UserId, AgentId, Count, cancellationToken);
+        var status = await AgentService.GetStatusAsync(UserId, AgentId, cancellationToken);
+        var roles = CouncilRoles.Order
+            .Select(role => new RoleSlot(role, CouncilRoles.Sequence(role), status?.Council.FirstOrDefault(c => c.Role == role)?.Enabled ?? false))
+            .ToList();
+        await RenderAsync(() =>
+        {
+            _fresh = IsLive && _evaluations is not null ? evaluations.Select(e => e.Id).Except(_evaluations.Select(e => e.Id)).ToHashSet() : [];
+            _evaluations = evaluations;
+            _roles = roles;
+        });
+    }
+
+    protected override bool Accepts(AgentEvent agentEvent) => agentEvent.AgentId == AgentId;
+
+    protected override ValueTask OnEventAsync(AgentEvent agentEvent)
+    {
+        switch (agentEvent)
+        {
+            case EvaluationStarted started:
+                return new ValueTask(RenderAsync(() => _live = new LiveDeliberation(started.EvaluationId, started.CandleOpenTime)));
+            case CouncilRoleStarted role:
+                return new ValueTask(RenderAsync(() => Live(role.EvaluationId, role.At).Steps[role.Role] = new RoleStep(RoleStage.Thinking, null, null)));
+            case CouncilRoleFinished role:
+                return new ValueTask(RenderAsync(() => Live(role.EvaluationId, role.At).Steps[role.Role] = new RoleStep(RoleStage.Done, role.Status, null)));
+            case DecisionRecorded decision:
+                return new ValueTask(RenderAsync(() =>
+                {
+                    var live = Live(decision.EvaluationId, decision.At);
+                    live.Verdict = decision.Action;
+                    live.Revealed = true;
+                }));
+            case EvaluationFinished finished:
+                RequestRefresh();
+                _ = ClearLaterAsync(finished.EvaluationId);
+                return ValueTask.CompletedTask;
+            default:
+                return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>The deliberation in view, started on the first role event when the start itself was missed.</summary>
+    private LiveDeliberation Live(Guid evaluationId, DateTimeOffset at)
+    {
+        if (_live is null || _live.EvaluationId != evaluationId)
+            _live = new LiveDeliberation(evaluationId, Timeframe.OpenTimeOf(at) - Timeframe.ToTimeSpan());
+        return _live;
+    }
+
+    /// <summary>The verdict stays readable for a moment after the evaluation ends; the row below carries it from then on.</summary>
+    private async Task ClearLaterAsync(Guid evaluationId)
+    {
+        try
+        {
+            await Task.Delay(KeepVerdict, Lifetime);
+            await RenderAsync(() =>
+            {
+                if (_live?.EvaluationId == evaluationId)
+                    _live = null;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private sealed class LiveDeliberation(Guid evaluationId, DateTimeOffset candleOpenTime)
+    {
+        public Guid EvaluationId { get; } = evaluationId;
+
+        public DateTimeOffset CandleOpenTime { get; } = candleOpenTime;
+
+        public Dictionary<CouncilRole, RoleStep> Steps { get; } = [];
+
+        public DecisionAction? Verdict { get; set; }
+
+        public bool Revealed { get; set; }
+    }
+}

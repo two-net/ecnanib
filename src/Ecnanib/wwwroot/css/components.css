@@ -955,6 +955,67 @@ details summary {
     color: var(--text-muted);
 }
 
+.chart-placeholder {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    pointer-events: none;
+}
+
+/* Agent page islands */
+.agent-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin: 0 0 0.75rem;
+}
+
+.deliberation-live {
+    padding: 0.75rem 1rem;
+    margin: 0 0 1rem;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    background: var(--accent-bg);
+}
+
+.deliberation-live .hint {
+    margin-bottom: 0.5rem;
+}
+
+.council-sequence .role-disabled {
+    opacity: 0.6;
+    border-style: dashed;
+}
+
+.council-sequence .role-proposal {
+    font-size: 0.85rem;
+}
+
+.timeline-trade {
+    margin: 0 0 1.25rem;
+}
+
+.timeline-trade h3 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.timeline .tl-detail,
+.timeline .tl-link {
+    margin-left: 0.4rem;
+}
+
+.timeline .tl-link {
+    font-size: 0.85rem;
+}
+
 /* Log levels (FR-LOG-07) */
 .level-trace,
 .level-debug {

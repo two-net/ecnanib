@@ -1,0 +1,230 @@
+@* The price chart with trade markers (FR-UI-03 c): closed candles from the candle reader, the forming candle from the
+   shared stream, markers from the trade timelines, re-read on order and trade events. A new marker is announced in a
+   badge, because canvas markers cannot be styled or animated by CSS; the trades section below says the same in words. *@
+@rendermode InteractiveServer
+@inherits LiveComponentBase
+@using Ecnanib.Database.Entities
+@using Ecnanib.Exchange.Abstractions
+@using Ecnanib.Execution.Abstractions
+@using Ecnanib.MarketData.Abstractions
+@using Candle = Ecnanib.Exchange.Abstractions.Candle
+@inject IAgentService AgentService
+@inject ICandleReader Candles
+@inject ITradeTimelineReader Trades
+@inject IMarketStreams Streams
+@inject IJSRuntime JS
+
+<div class="chart" aria-label="@(_status is { } s ? $"Price chart of {s.Symbol}, {AgentMessages.Timeframe(s.Timeframe)} candles" : "Price chart")">
+    <div class="chart-canvas" @ref="_element"></div>
+    @if (_badge is { } badge)
+    {
+        <div class="chart-badge" role="status" @key="_badgeTick">@badge</div>
+    }
+    @if (!_ready)
+    {
+        <p class="chart-placeholder hint">@(_status is not null && _bars.Count == 0 && _loaded ? "No candles yet." : LiveMessages.Loading)</p>
+    }
+</div>
+<p class="chart-legend">
+    @if (_status is { } status)
+    {
+        <span>@status.Symbol · @AgentMessages.Timeframe(status.Timeframe) · @_bars.Count candles</span>
+    }
+    <span>Last: <strong>@LiveMessages.Price(_last)</strong></span>
+    <span>@LiveMessages.Count(_markers.Count) trade markers</span>
+    <span class="muted">▲ long entry · ▼ short entry · ● exit · ■ stop move</span>
+</p>
+
+@code {
+    private static readonly TimeSpan UpdateThrottle = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan BadgeFor = TimeSpan.FromSeconds(4);
+
+    private ElementReference _element;
+    private IJSObjectReference? _module;
+    private AgentStatusView? _status;
+    private IReadOnlyList<ChartBar> _bars = [];
+    private IReadOnlyList<ChartMarker> _markers = [];
+    private HashSet<string> _knownMarkers = [];
+    private decimal? _last;
+    private bool _loaded;
+    private bool _ready;
+    private string? _badge;
+    private int _badgeTick;
+    private IDisposable? _updates;
+    private PeriodicTimer? _throttle;
+    private Task? _pump;
+    private Candle? _pendingUpdate;
+    private readonly object _pendingLock = new();
+
+    [Parameter, EditorRequired]
+    public Guid AgentId { get; set; }
+
+    /// <summary>How many closed candles the chart starts with.</summary>
+    [Parameter]
+    public int Count { get; set; } = 300;
+
+    protected override async Task LoadAsync(CancellationToken cancellationToken)
+    {
+        var status = _status ?? await AgentService.GetStatusAsync(UserId, AgentId, cancellationToken);
+        if (status is null)
+            return;
+        var key = new MarketKey(status.Environment, status.MarketType, status.Symbol);
+        // Once the chart is live its bars move with the stream; a re-read only refreshes the markers.
+        var candles = _ready ? null : await Candles.ReadAsync(key, status.Timeframe, Count, cancellationToken);
+        var trades = await Trades.ListRecentAsync(UserId, AgentId, 20, cancellationToken);
+        var oldest = candles is { Count: > 0 } ? candles[0].OpenTime : _bars.Count > 0 ? DateTimeOffset.FromUnixTimeSeconds(_bars[0].Time) : (DateTimeOffset?)null;
+        var markers = ChartMarkers.From(trades, status.Timeframe, oldest);
+        var bars = candles?.Select(ChartBar.From).ToList();
+        var added = _knownMarkers.Count == 0 && !IsLive ? [] : markers.Where(m => !_knownMarkers.Contains(m.Id)).ToList();
+
+        await RenderAsync(() =>
+        {
+            _status = status;
+            _loaded = true;
+            if (bars is not null)
+            {
+                _bars = bars;
+                if (candles is { Count: > 0 })
+                    _last = candles[^1].Close;
+            }
+
+            _markers = markers;
+            _knownMarkers = markers.Select(m => m.Id).ToHashSet();
+        });
+
+        if (_module is null)
+            return;
+        if (bars is not null)
+            await _module.InvokeVoidAsync("setData", cancellationToken, _element, bars);
+        await _module.InvokeVoidAsync("setMarkers", cancellationToken, _element, markers);
+        if (added.Count > 0)
+            _ = ShowBadgeAsync(LiveMessages.NewMarker(added[^1].Text));
+    }
+
+    protected override bool Accepts(AgentEvent agentEvent) => agentEvent.AgentId == AgentId && agentEvent is OrderChanged or TradeChanged;
+
+    protected override async Task OnLiveAsync(CancellationToken cancellationToken)
+    {
+        if (_status is null)
+            return;
+        try
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", cancellationToken, "./Components/Live/PriceChart.razor.js");
+            await _module.InvokeVoidAsync("create", cancellationToken, _element, Assets["lib/lightweight-charts/lightweight-charts.production.mjs"], _status.Timeframe.ToLabel());
+            await _module.InvokeVoidAsync("setData", cancellationToken, _element, _bars);
+            await _module.InvokeVoidAsync("setMarkers", cancellationToken, _element, _markers);
+        }
+        catch (JSException ex)
+        {
+            Logger.LogWarning(ex, "The price chart could not be drawn in the browser");
+            return;
+        }
+
+        var key = new MarketKey(_status.Environment, _status.MarketType, _status.Symbol);
+        _updates = Streams.SubscribeCandleUpdates(key, _status.Timeframe, OnCandleUpdateAsync);
+        _throttle = new PeriodicTimer(UpdateThrottle);
+        _pump = PumpAsync(_throttle, cancellationToken);
+        await RenderAsync(() => _ready = true);
+    }
+
+    protected override async ValueTask DisposeLiveAsync()
+    {
+        _updates?.Dispose();
+        _throttle?.Dispose();
+        if (_pump is { } pump)
+        {
+            try
+            {
+                await pump;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        if (_module is { } module)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("dispose", _element);
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+            catch (JSException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+    }
+
+    /// <summary>The stream handler only parks the newest update; the pump pushes it at most once a second.</summary>
+    private ValueTask OnCandleUpdateAsync(Candle candle, CancellationToken cancellationToken)
+    {
+        lock (_pendingLock)
+        {
+            if (_pendingUpdate is null || candle.OpenTime >= _pendingUpdate.OpenTime)
+                _pendingUpdate = candle;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private async Task PumpAsync(PeriodicTimer throttle, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (await throttle.WaitForNextTickAsync(cancellationToken))
+            {
+                Candle? candle;
+                lock (_pendingLock)
+                {
+                    candle = _pendingUpdate;
+                    _pendingUpdate = null;
+                }
+
+                if (candle is null || _module is null)
+                    continue;
+                await _module.InvokeVoidAsync("update", cancellationToken, _element, ChartBar.From(candle));
+                await RenderAsync(() => _last = candle.Close);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "The price chart stopped following the stream");
+        }
+    }
+
+    private async Task ShowBadgeAsync(string text)
+    {
+        try
+        {
+            await RenderAsync(() =>
+            {
+                _badge = text;
+                _badgeTick++;
+            });
+            await Task.Delay(BadgeFor, Lifetime);
+            await RenderAsync(() =>
+            {
+                if (_badge == text)
+                    _badge = null;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+}

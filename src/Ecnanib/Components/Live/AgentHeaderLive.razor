@@ -1,0 +1,123 @@
+@* The agent's state as it changes (FR-UI-03 a, FR-UI-04): the pill, the pause cause, the evaluating indicator and the
+   countdown to the next candle close. *@
+@rendermode InteractiveServer
+@inherits LiveComponentBase
+@using Ecnanib.Database.Entities
+@using Ecnanib.Exchange.Abstractions
+@inject IAgentService AgentService
+@inject TimeProvider Clock
+
+@if (_status is { } status)
+{
+    <div class="agent-header" aria-live="polite">
+        <span @key="status.State" class="status @AgentMessages.StateClass(status.State) pill-in">@AgentMessages.Describe(status.State, status.PauseCause)</span>
+        @if (InFlight)
+        {
+            <span class="evaluating" role="status">@LiveMessages.Evaluating</span>
+        }
+        @if (status.StateReason is not null)
+        {
+            <span class="muted">@status.StateReason</span>
+        }
+    </div>
+    @if (AgentStateMachine.IsEvaluated(status.State) || status.AutoResumeAt is not null)
+    {
+        var now = Clock.GetUtcNow();
+        var nextClose = status.Timeframe.NextCloseAfter(now);
+        <dl class="details">
+            @if (AgentStateMachine.IsEvaluated(status.State))
+            {
+                <dt>Next evaluation</dt>
+                <dd>@AgentMessages.Stamp(nextClose) <span class="muted">@LiveMessages.NextEvaluation(nextClose - now)</span></dd>
+            }
+            @if (status.AutoResumeAt is { } resumeAt)
+            {
+                <dt>Resumes</dt>
+                <dd>@AgentMessages.Stamp(resumeAt)</dd>
+            }
+        </dl>
+    }
+}
+
+@code {
+    private AgentStatusView? _status;
+    private bool _evaluating;
+    private PeriodicTimer? _ticker;
+    private Task? _ticking;
+
+    [Parameter, EditorRequired]
+    public Guid AgentId { get; set; }
+
+    private bool InFlight => _evaluating || _status?.EvaluationInProgress == true;
+
+    protected override async Task LoadAsync(CancellationToken cancellationToken)
+    {
+        var status = await AgentService.GetStatusAsync(UserId, AgentId, cancellationToken);
+        await RenderAsync(() =>
+        {
+            _status = status;
+            // The row is the truth; the flag only bridges the moment between the event and this re-read.
+            _evaluating = false;
+        });
+    }
+
+    protected override bool Accepts(AgentEvent agentEvent) => agentEvent.AgentId == AgentId;
+
+    protected override ValueTask OnEventAsync(AgentEvent agentEvent)
+    {
+        switch (agentEvent)
+        {
+            case EvaluationStarted:
+                return new ValueTask(RenderAsync(() => _evaluating = true));
+            case EvaluationFinished:
+                RequestRefresh();
+                return new ValueTask(RenderAsync(() => _evaluating = false));
+            case AgentStateChanged:
+                RequestRefresh();
+                return ValueTask.CompletedTask;
+            default:
+                return ValueTask.CompletedTask;
+        }
+    }
+
+    protected override Task OnLiveAsync(CancellationToken cancellationToken)
+    {
+        // The countdown is text that changes once a second; it is not an animation and runs under reduced motion too.
+        _ticker = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        _ticking = TickAsync(_ticker, cancellationToken);
+        return Task.CompletedTask;
+    }
+
+    protected override async ValueTask DisposeLiveAsync()
+    {
+        _ticker?.Dispose();
+        if (_ticking is { } ticking)
+        {
+            try
+            {
+                await ticking;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+    }
+
+    private async Task TickAsync(PeriodicTimer ticker, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (await ticker.WaitForNextTickAsync(cancellationToken))
+            {
+                if (_status is { } status && AgentStateMachine.IsEvaluated(status.State))
+                    await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+}

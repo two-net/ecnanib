@@ -1,0 +1,59 @@
+@* Token usage per agent (NFR-COST-01): totals, today's share and the split per role, refreshed when a decision is recorded. *@
+@rendermode InteractiveServer
+@inherits LiveComponentBase
+@using Ecnanib.Council.Abstractions
+@inject IDeliberationReader Reader
+
+@if (_usage is null)
+{
+    <p class="hint">@LiveMessages.Loading</p>
+}
+else if (_usage.Decisions == 0)
+{
+    <p>@LiveMessages.NoUsage</p>
+}
+else
+{
+    <dl class="kpis">
+        <dt>Decisions</dt>
+        <dd><AnimatedValue Value="_usage.Decisions" Format="LiveMessages.Count" /></dd>
+        <dt>Input tokens</dt>
+        <dd><AnimatedValue Value="_usage.InputTokens" Format="LiveMessages.Count" /></dd>
+        <dt>Output tokens</dt>
+        <dd><AnimatedValue Value="_usage.OutputTokens" Format="LiveMessages.Count" /></dd>
+        <dt>@LiveMessages.TodayUtc</dt>
+        <dd>@LiveMessages.Count(_usage.DecisionsToday) decisions, <AnimatedValue Value="_usage.InputTokensToday" Format="LiveMessages.Count" /> in / <AnimatedValue Value="_usage.OutputTokensToday" Format="LiveMessages.Count" /> out</dd>
+    </dl>
+    <p class="hint">Since @AgentMessages.Stamp(_usage.Since). Provider costs are yours under BYOK; the output tokens per call are capped by the configuration.</p>
+    <div class="table-wrap">
+        <table class="agents data">
+            <thead><tr><th scope="col">Role</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input tokens</th><th scope="col" class="num">Output tokens</th></tr></thead>
+            <tbody>
+                @foreach (var role in _usage.ByRole)
+                {
+                    <tr>
+                        <td>@CouncilRoles.Display(role.Role)</td>
+                        <td class="num">@LiveMessages.Count(role.Calls)</td>
+                        <td class="num">@LiveMessages.Count(role.InputTokens)</td>
+                        <td class="num">@LiveMessages.Count(role.OutputTokens)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private AgentTokenUsage? _usage;
+
+    [Parameter, EditorRequired]
+    public Guid AgentId { get; set; }
+
+    protected override async Task LoadAsync(CancellationToken cancellationToken)
+    {
+        var usage = await Reader.GetAgentUsageAsync(UserId, AgentId, cancellationToken);
+        await RenderAsync(() => _usage = usage);
+    }
+
+    protected override bool Accepts(AgentEvent agentEvent) => agentEvent.AgentId == AgentId && agentEvent is DecisionRecorded or EvaluationFinished;
+}

@@ -1,0 +1,172 @@
+@* Open positions and working orders (FR-UI-01), re-read on every order and trade event (FR-UI-04) and repriced from the
+   market stream for the unrealized P&L (FR-UI-03 d). *@
+@rendermode InteractiveServer
+@inherits LiveComponentBase
+@using Ecnanib.Database.Entities
+@using Ecnanib.Exchange.Abstractions
+@using Ecnanib.Execution.Abstractions
+@using Ecnanib.MarketData.Abstractions
+@inject IAgentService AgentService
+@inject IMarketStreams Streams
+@inject IFuturesMetrics Metrics
+
+@if (_open is null)
+{
+    <p class="hint">@LiveMessages.Loading</p>
+}
+else
+{
+    @if (_open.OpenPositions.Count == 0)
+    {
+        <p>No open position.</p>
+    }
+    else
+    {
+        <p class="hint">Last price: <strong>@LiveMessages.Price(_feed?.Latest)</strong>@(_status?.MarketType == MarketType.UsdFutures ? " (mark)" : "")</p>
+        <div class="table-wrap">
+            <table class="agents data stack">
+                <thead><tr><th scope="col">Side</th><th scope="col">Size</th><th scope="col">Entry</th><th scope="col">Stop</th><th scope="col">Unrealized</th><th scope="col">Opened</th><th scope="col">Status</th></tr></thead>
+                <tbody>
+                    @foreach (var position in _open.OpenPositions)
+                    {
+                        <tr @key="position.TradeId">
+                            <td data-label="Side">@position.Side</td>
+                            <td data-label="Size">
+                                @position.RemainingSize
+                                @if (position.RemainingSize != position.Size)
+                                {
+                                    <span class="muted">of @position.Size</span>
+                                }
+                            </td>
+                            <td data-label="Entry">@LiveMessages.Price(position.EntryPrice)</td>
+                            <td data-label="Stop">@(position.CurrentStop is { } stop ? LiveMessages.Price(stop) : "none")</td>
+                            <td data-label="Unrealized"><AnimatedValue Value="Unrealized(position)" Signed="true" /></td>
+                            <td data-label="Opened">@AgentMessages.Stamp(position.OpenedAt)</td>
+                            <td data-label="Status">
+                                @if (position.IsClosing)
+                                {
+                                    <text>Closing at market</text>
+                                }
+                                else if (position.IsUnmanaged)
+                                {
+                                    <span class="unmanaged">Unmanaged</span>
+                                }
+                                else
+                                {
+                                    <text>Managed</text>
+                                }
+                                @if (position.IsPaper)
+                                {
+                                    <span class="muted">paper</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                @if (_open.OpenPositions.Count > 1)
+                {
+                    <tfoot>
+                        <tr>
+                            <td colspan="4">Total</td>
+                            <td data-label="Unrealized"><AnimatedValue Value="TotalUnrealized()" Signed="true" /></td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        </div>
+    }
+    @if (_open.OpenOrders.Count > 0)
+    {
+        <div class="table-wrap">
+            <table class="agents data stack">
+                <thead><tr><th scope="col">Purpose</th><th scope="col">Type</th><th scope="col">Side</th><th scope="col">Price</th><th scope="col">Stop</th><th scope="col">Quantity</th><th scope="col">Status</th><th scope="col">Expires</th></tr></thead>
+                <tbody>
+                    @foreach (var order in _open.OpenOrders)
+                    {
+                        <tr @key="order.OrderId" class="@(_fresh.Contains(order.OrderId) ? "row-in" : "")">
+                            <td data-label="Purpose">@order.Purpose</td>
+                            <td data-label="Type">@order.Type</td>
+                            <td data-label="Side">@order.Side</td>
+                            <td data-label="Price">@(order.Price is { } price ? LiveMessages.Price(price) : "market")</td>
+                            <td data-label="Stop">@(order.StopPrice is { } stop ? LiveMessages.Price(stop) : "")</td>
+                            <td data-label="Quantity">@order.Quantity</td>
+                            <td data-label="Status"><span class="status status-@order.Status.ToString().ToLowerInvariant()">@order.Status</span>@(order.IsPaper ? " (paper)" : "")</td>
+                            <td data-label="Expires">@(order.ExpiresAt is { } expires ? AgentMessages.Stamp(expires) : "")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else if (_open.OpenPositions.Count > 0)
+    {
+        <p class="hint">No working order.</p>
+    }
+}
+
+@code {
+    private static readonly TimeSpan PriceThrottle = TimeSpan.FromSeconds(1);
+
+    private AgentStatusView? _status;
+    private AgentOpenView? _open;
+    private PriceFeed? _feed;
+    private HashSet<Guid> _fresh = [];
+
+    [Parameter, EditorRequired]
+    public Guid AgentId { get; set; }
+
+    protected override async Task LoadAsync(CancellationToken cancellationToken)
+    {
+        var status = _status ?? await AgentService.GetStatusAsync(UserId, AgentId, cancellationToken);
+        var open = await AgentService.GetOpenAsync(UserId, AgentId, cancellationToken);
+        await RenderAsync(() =>
+        {
+            _fresh = IsLive && _open is not null && open is not null
+                ? open.OpenOrders.Select(o => o.OrderId).Except(_open.OpenOrders.Select(o => o.OrderId)).ToHashSet()
+                : [];
+            _status = status;
+            _open = open;
+            if (IsLive)
+                ReconcileFeed();
+        });
+    }
+
+    protected override bool Accepts(AgentEvent agentEvent) => agentEvent.AgentId == AgentId && agentEvent is OrderChanged or TradeChanged or AgentStateChanged;
+
+    protected override Task OnLiveAsync(CancellationToken cancellationToken) => RenderAsync(ReconcileFeed);
+
+    protected override async ValueTask DisposeLiveAsync()
+    {
+        if (_feed is { } feed)
+            await feed.DisposeAsync();
+    }
+
+    private decimal? Unrealized(OpenPositionView position) =>
+        _feed?.Latest is { } price ? PnlMath.Unrealized(position.Side, position.RemainingSize, position.EntryPrice, price) : null;
+
+    private decimal? TotalUnrealized() =>
+        _open is null || _feed?.Latest is not { } price ? null : _open.OpenPositions.Sum(p => PnlMath.Unrealized(p.Side, p.RemainingSize, p.EntryPrice, price));
+
+    /// <summary>Follow the price while a position is open; let go when none is.</summary>
+    private void ReconcileFeed()
+    {
+        var wanted = _status is not null && _open is { OpenPositions.Count: > 0 };
+        if (!wanted && _feed is { } feed)
+        {
+            _feed = null;
+            _ = feed.DisposeAsync();
+        }
+        else if (wanted && _feed is null)
+        {
+            try
+            {
+                _feed = new PriceFeed(Streams, Metrics, new MarketKey(_status!.Environment, _status.MarketType, _status.Symbol), PriceThrottle, _ => new ValueTask(InvokeAsync(StateHasChanged)));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "The agent page could not follow the price of {Symbol}; unrealized P&L stays blank", _status!.Symbol);
+            }
+        }
+    }
+}
