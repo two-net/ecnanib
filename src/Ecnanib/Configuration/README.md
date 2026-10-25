@@ -55,7 +55,7 @@ Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 | risk caps | `RiskCaps` | `MaxRiskPerTradePercent`, `MaxLeverage`, `MaxDailyLossPercent`, `MaxOpenPositions`; agents validate against them, execution enforces them at order time | agents (#7), execution (#13) |
 | market data | `MarketData` | `BackfillCandles` per interval (the backfill depth and the window the engine sees), `SymbolRefreshIntervalMinutes` (beyond the appendix, a day at most); candle retention is `Retention:CandleDays` | market data (#12) |
 | paper | `Paper` | `StartingBalance`, maker and taker fee percents per market, `SlippagePercent` | agents (#7) |
-| ui | — | default theme and animation defaults arrive with the UI (#14) | UI (#14) |
+| ui | `Ui` | `DefaultTheme` (System, Dark or Light; System by default, FR-UI-02), `ReducedMotion` (the animation default for visitors and new accounts), `TransitionMilliseconds` (the length of UI transitions, at most 400, FR-UI-03) | UI (#14) |
 | retention | `Retention` | log, candle and deliberation-transcript days, sweep interval, batch size | database (#3) |
 | beyond the appendix | `Accounts`, `Keys`, `Council`, `Experience`, `Execution` | sessions, throttling, password length; key re-validation; the council's role budgets, prompt history and text bounds; the experience refresh interval, shadow horizon, recent outcomes and suggestion sample; the execution module's protective-order retries, spot stop-limit offset, management budget, reconciliation age and fill-tracker start delay | accounts (#4), keys (#5), council (#9), experience (#11), execution (#13) |
 

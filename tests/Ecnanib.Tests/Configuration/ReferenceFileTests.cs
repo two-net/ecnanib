@@ -13,6 +13,7 @@ using Ecnanib.MarketData;
 using Ecnanib.ModelSync;
 using Ecnanib.Strategies;
 using Ecnanib.Tests.Database;
+using Ecnanib.Ui;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,6 +85,7 @@ public class ReferenceFileTests
     {
         var services = new ServiceCollection();
         services.AddServer(configuration);
+        services.AddUi(configuration);
         services.AddExchange(configuration);
         services.AddAiProviders(configuration);
         services.AddDatabase(configuration);

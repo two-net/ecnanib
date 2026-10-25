@@ -161,5 +161,10 @@
     "ManageBudgetSeconds": 20,
     "ReconcileAfterSeconds": 30,
     "FillTrackerStartDelaySeconds": 6
+  },
+  "Ui": {
+    "DefaultTheme": "System",
+    "ReducedMotion": false,
+    "TransitionMilliseconds": 240
   }
 }

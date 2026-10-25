@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Ecnanib.Ui.Configuration;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.FileProviders.Physical;
@@ -26,7 +27,7 @@ public static class ConfigurationFile
     /// </summary>
     public static readonly IReadOnlyList<string> Sections =
     [
-        ServerOptions.SectionName, "Database", LoggingSection, "Exchange", "Providers", "Agents", "RiskCaps", "Paper", "Retention", "Accounts", "Keys", "Council", "Experience", "MarketData", "Execution",
+        ServerOptions.SectionName, "Database", LoggingSection, "Exchange", "Providers", "Agents", "RiskCaps", "Paper", "Retention", "Accounts", "Keys", "Council", "Experience", "MarketData", "Execution", UiOptions.SectionName,
     ];
 
     public static readonly string Usage =

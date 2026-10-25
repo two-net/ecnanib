@@ -14,6 +14,7 @@ using Ecnanib.Keys;
 using Ecnanib.MarketData;
 using Ecnanib.ModelSync;
 using Ecnanib.Strategies;
+using Ecnanib.Ui;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Options;
 
@@ -34,6 +35,8 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddServer(builder.Configuration);
+// Before AddAccounts: visitors and new accounts take the Ui section's theme and animation defaults (Appendix D, FR-UI-02).
+builder.Services.AddUi(builder.Configuration);
 builder.Services.AddExchange(builder.Configuration);
 builder.Services.AddAiProviders(builder.Configuration);
 builder.Services.AddDatabase(builder.Configuration);
