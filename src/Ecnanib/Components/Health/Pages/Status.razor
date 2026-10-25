@@ -1,0 +1,163 @@
+@page "/status"
+@attribute [Authorize]
+@using Ecnanib.Agents.Abstractions
+@using Ecnanib.Database.Entities
+@using Ecnanib.Exchange.Abstractions
+@using Ecnanib.Health.Abstractions
+@inject ISystemHealth Health
+@inject TimeProvider Clock
+
+<PageTitle>System status</PageTitle>
+<HeadContent>
+    <meta http-equiv="refresh" content="60" />
+</HeadContent>
+
+<div class="page-head">
+    <div>
+        <h1>System status</h1>
+        <p class="hint">@HealthMessages.Intro</p>
+    </div>
+    @if (_report is { } head)
+    {
+        <p class="overall"><span class="status @HealthMessages.StateClass(head.Overall)">@HealthMessages.Describe(head.Overall)</span> <span class="muted">as of @HealthMessages.Stamp(head.At)</span></p>
+    }
+</div>
+
+@if (_report is { } report)
+{
+    <section class="card" aria-labelledby="database-title">
+        <h2 id="database-title">Database</h2>
+        <dl class="details">
+            <dt>Connectivity</dt>
+            <dd><span class="status @HealthMessages.StateClass(report.Database.State)">@HealthMessages.Describe(report.Database.State)</span> @if (report.Database.Error is not null) { <span class="muted">@report.Database.Error</span> }</dd>
+            <dt>Latency</dt>
+            <dd>@HealthMessages.Latency(report.Database.Latency)</dd>
+        </dl>
+    </section>
+
+    <section class="card" aria-labelledby="scheduler-title">
+        <h2 id="scheduler-title">Agent scheduler</h2>
+        <dl class="details">
+            <dt>Phase</dt>
+            <dd><span class="status @HealthMessages.PhaseClass(report.Scheduler.Phase)">@HealthMessages.Phase(report.Scheduler.Phase)</span></dd>
+            <dt>Started</dt>
+            <dd>@HealthMessages.Stamp(report.Scheduler.StartedAt)</dd>
+            <dt>Last minute tick</dt>
+            <dd>@HealthMessages.Age(report.Scheduler.LastTickAt, report.At)</dd>
+            <dt>Tracked agents</dt>
+            <dd>@report.Scheduler.TrackedAgents</dd>
+            <dt>Evaluations</dt>
+            <dd>@report.Scheduler.InFlightEvaluations in flight of @report.Scheduler.MaxConcurrentEvaluations at most, @report.Scheduler.QueuedEvaluations queued</dd>
+            @if (report.Scheduler.LastError is not null)
+            {
+                <dt>Last error</dt>
+                <dd><span class="error">@report.Scheduler.LastError</span> <span class="muted">@HealthMessages.Age(report.Scheduler.LastErrorAt, report.At)</span></dd>
+            }
+        </dl>
+    </section>
+
+    <section class="card" aria-labelledby="streams-title">
+        <h2 id="streams-title">Market streams</h2>
+        <p class="hint">@HealthMessages.Streams(report.MarketStreams)</p>
+        @if (report.MarketStreams.Count > 0)
+        {
+            <div class="table-wrap">
+                <table class="agents data stack">
+                    <thead><tr><th scope="col">Stream</th><th scope="col">Health</th><th scope="col">Last message</th><th scope="col">Since</th><th scope="col">Last error</th></tr></thead>
+                    <tbody>
+                        @foreach (var stream in report.MarketStreams)
+                        {
+                            <tr>
+                                <td data-label="Stream"><code>@stream.Name</code></td>
+                                <td data-label="Health"><span class="status @HealthMessages.StreamClass(stream.Health)">@HealthMessages.Stream(stream.Health)</span></td>
+                                <td data-label="Last message">@HealthMessages.Age(stream.LastMessageAt, report.At)</td>
+                                <td data-label="Since">@HealthMessages.Stamp(stream.Since)</td>
+                                <td data-label="Last error">@stream.LastError</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <h3>Account streams</h3>
+        <p class="hint">@HealthMessages.UserDataNote</p>
+        <p>@HealthMessages.Streams(report.UserDataStreams)@(report.UserDataStreams.Select(s => s.LastError).LastOrDefault(e => e is not null) is { } error ? $". Last error: {error}" : "")</p>
+    </section>
+
+    <section class="card" aria-labelledby="sync-title">
+        <h2 id="sync-title">Model catalog sync</h2>
+        @if (report.ModelSyncError is not null)
+        {
+            <p class="error" role="alert">The sync states could not be read: @report.ModelSyncError</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="agents data stack">
+                    <thead><tr><th scope="col">Provider</th><th scope="col">Last sync</th><th scope="col">Result</th><th scope="col">Trigger</th><th scope="col">Models</th><th scope="col">Deprecated</th></tr></thead>
+                    <tbody>
+                        @foreach (var state in report.ModelSync)
+                        {
+                            <tr>
+                                <td data-label="Provider">@ProviderNames.Display(state.Provider)</td>
+                                <td data-label="Last sync">@HealthMessages.Stamp(state.LastSyncAt)</td>
+                                <td data-label="Result">
+                                    <span class="status @ProviderMessages.StatusClass(state.LastStatus)">@state.LastStatus</span>
+                                    @if (state.LastStatus == SyncStatus.Failed && state.LastError is not null)
+                                    {
+                                        <span class="muted">@state.LastError</span>
+                                    }
+                                </td>
+                                <td data-label="Trigger">@ProviderMessages.Trigger(state.Trigger)</td>
+                                <td data-label="Models">@state.ModelCount</td>
+                                <td data-label="Deprecated">@state.Deprecated</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <p class="hint"><a href="/providers">Sync a provider on the providers page</a>.</p>
+    </section>
+
+    <section class="card" aria-labelledby="limits-title">
+        <h2 id="limits-title">Exchange rate limits</h2>
+        @if (report.RateLimits.Usages.Count == 0)
+        {
+            <p>No request weight has been used yet.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="agents data stack">
+                    <thead><tr><th scope="col">Limit</th><th scope="col">Used</th><th scope="col">Window</th></tr></thead>
+                    <tbody>
+                        @foreach (var usage in report.RateLimits.Usages)
+                        {
+                            <tr>
+                                <td data-label="Limit">@usage.Limit</td>
+                                <td data-label="Used">@usage.Current of @usage.Max</td>
+                                <td data-label="Window">@usage.Window</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        @if (report.RateLimits.LastTriggeredAt is { } triggered)
+        {
+            <p class="@(report.RateLimits.RetryAfterUntil > report.At ? "warning" : "hint")">A rate limit was hit @HealthMessages.Age(triggered, report.At)@(report.RateLimits.RetryAfterUntil is { } until && until > report.At ? $"; requests wait until {HealthMessages.Stamp(until)}" : "").</p>
+        }
+    </section>
+
+    <p class="hint">@HealthMessages.RefreshHint <a href="/status">Refresh now</a>.</p>
+}
+
+@code {
+    private SystemHealthReport? _report;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => _report = await Health.GetAsync(HttpContext.RequestAborted);
+}

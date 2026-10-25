@@ -596,6 +596,13 @@ details summary {
     max-width: 48rem;
 }
 
+.page-head .overall {
+    margin: 0.4rem 0 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 .agent-card h2 {
     font-size: 1.1rem;
     margin: 0 0 0.2rem;

@@ -1,0 +1,131 @@
+@page "/agents/{Id:guid}/log"
+@attribute [Authorize]
+@using Ecnanib.Logging.Abstractions
+@inject ILogReader Logs
+@inject NavigationManager Navigation
+
+<PageTitle>Agent log</PageTitle>
+
+@if (_result is { } result)
+{
+    <p><a href="/agents/@Id">← @result.AgentName</a></p>
+    <h1>Log of @result.AgentName</h1>
+    <p class="hint">@LogMessages.FilterHint</p>
+
+    <form method="get" action="/agents/@Id/log" class="inline filter">
+        <label>Level
+            <select name="@LogFilters.LevelName">
+                <option value="">@LogMessages.AllLevels</option>
+                @foreach (var level in LogFilters.Levels)
+                {
+                    <option value="@level.Value" selected="@(_query.MinLevel == level.Level)">@level.Label and above</option>
+                }
+            </select>
+        </label>
+        <label>Component
+            <select name="@LogFilters.ComponentName">
+                <option value="">@LogMessages.AllComponents</option>
+                @foreach (var component in _components)
+                {
+                    <option value="@component" selected="@(_query.Component == component)">@LogMessages.Component(component)</option>
+                }
+            </select>
+        </label>
+        <label>Text
+            <input type="search" name="@LogFilters.SearchName" value="@_query.Search" maxlength="200" />
+        </label>
+        <label>From (UTC)
+            <input type="datetime-local" name="@LogFilters.FromName" value="@LogFilters.ForInput(_query.From)" />
+        </label>
+        <label>Until (UTC)
+            <input type="datetime-local" name="@LogFilters.ToName" value="@LogFilters.ForInput(_query.To)" />
+        </label>
+        <button type="submit">Filter</button>
+        @if (LogFilters.IsFiltered(_query))
+        {
+            <a class="button quiet" href="/agents/@Id/log">Clear</a>
+        }
+    </form>
+
+    @if (result.Entries.Count == 0)
+    {
+        <p>@(result.Page == 1 && !LogFilters.IsFiltered(_query) ? LogMessages.NoEntries : LogMessages.NoMatches)</p>
+    }
+    else
+    {
+        <LogRows Entries="result.Entries" AgentId="Id" />
+    }
+
+    <nav class="paging" aria-label="Log pages">
+        @if (result.Page > 1)
+        {
+            <a class="button" href="@Href(result.Page - 1)">← Newer</a>
+        }
+        else
+        {
+            <span></span>
+        }
+        <span class="muted">Page @result.Page</span>
+        @if (result.HasMore)
+        {
+            <a class="button" href="@Href(result.Page + 1)">Older →</a>
+        }
+        else
+        {
+            <span></span>
+        }
+    </nav>
+}
+
+@code {
+    private LogPage? _result;
+    private LogQuery _query = default!;
+    private IReadOnlyList<string> _components = [];
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    // Bound as text: a hand-edited value must not turn the page into an error.
+    [SupplyParameterFromQuery(Name = LogFilters.LevelName)]
+    private string? Level { get; set; }
+
+    [SupplyParameterFromQuery(Name = LogFilters.ComponentName)]
+    private string? Component { get; set; }
+
+    [SupplyParameterFromQuery(Name = LogFilters.SearchName)]
+    private string? Search { get; set; }
+
+    [SupplyParameterFromQuery(Name = LogFilters.FromName)]
+    private string? From { get; set; }
+
+    [SupplyParameterFromQuery(Name = LogFilters.ToName)]
+    private string? To { get; set; }
+
+    [SupplyParameterFromQuery(Name = LogFilters.PageName)]
+    private string? PageNumber { get; set; }
+
+    private Guid UserId => HttpContext.User.RequireUserId();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _query = LogFilters.Parse(Id, Level, Component, Search, From, To, PageNumber);
+        _result = await Logs.QueryAsync(UserId, _query, HttpContext.RequestAborted);
+        if (_result is null)
+        {
+            // Someone else's agent and a non-existent one look the same (NFR-SEC-03).
+            Navigation.NotFound();
+            return;
+        }
+
+        _components = await Logs.ComponentsAsync(UserId, Id, HttpContext.RequestAborted);
+    }
+
+    private string Href(int page)
+    {
+        var query = LogFilters.Query(_query, page);
+        return $"/agents/{Id}/log" + (query.Length == 0 ? "" : "?" + query);
+    }
+}

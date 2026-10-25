@@ -4,10 +4,12 @@
 @using Ecnanib.Database.Entities
 @using Ecnanib.Exchange.Abstractions
 @using Ecnanib.Experience.Abstractions
+@using Ecnanib.Logging.Abstractions
 @using Ecnanib.ModelSync.Abstractions
 @inject IAgentService AgentService
 @inject IStrategyCatalog Catalog
 @inject IExperienceReader Experience
+@inject ILogReader Logs
 @inject NavigationManager Navigation
 
 <PageTitle>Agent</PageTitle>
@@ -150,6 +152,19 @@
         <TokenUsage AgentId="Id" />
     </section>
 
+    <section class="card" aria-labelledby="log-title">
+        <h2 id="log-title">Log</h2>
+        @if (_log is null || _log.Entries.Count == 0)
+        {
+            <p>@LogMessages.NoEntries</p>
+        }
+        else
+        {
+            <LogRows Entries="_log.Entries" AgentId="Id" />
+        }
+        <p><a class="button" href="/agents/@Id/log">All log entries and filters</a></p>
+    </section>
+
     <section id="experience" class="card" aria-labelledby="experience-title">
         <h2 id="experience-title">Experience</h2>
         <p>@ExperienceMessages.AgentIntro</p>
@@ -254,6 +269,7 @@
     private string? _actionError;
     private IReadOnlyList<CouncilAssignmentView> _deprecatedRoles = [];
     private AgentExperienceView? _experience;
+    private LogPage? _log;
 
     [Parameter]
     public Guid Id { get; set; }
@@ -300,6 +316,7 @@
         _strategy = Catalog.Find(_agent.StrategyId, _agent.StrategyVersion) ?? Catalog.Find(_agent.StrategyId);
         _deprecatedRoles = _agent.Council.Where(c => c.Enabled && c.CatalogStatus == ModelStatus.Deprecated).ToList();
         _experience = await Experience.GetAgentAsync(UserId, Id, HttpContext.RequestAborted);
+        _log = await Logs.QueryAsync(UserId, new LogQuery(Id, PageSize: 10), HttpContext.RequestAborted);
         return true;
     }
 

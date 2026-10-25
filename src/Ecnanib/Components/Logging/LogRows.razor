@@ -1,0 +1,48 @@
+@* The rows of a log page (FR-LOG-07): time, level, component, message, the exception and context behind a disclosure, and a link to the deliberation when the row names a decision. *@
+@using Ecnanib.Logging.Abstractions
+<div class="table-wrap">
+    <table class="agents data stack log">
+        <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Component</th><th scope="col">Message</th><th scope="col"></th></tr></thead>
+        <tbody>
+            @foreach (var entry in Entries)
+            {
+                <tr @key="entry.Id">
+                    <td class="time" data-label="Time">@LogMessages.Stamp(entry.Timestamp)</td>
+                    <td data-label="Level"><span class="status @LogMessages.LevelClass(entry.Level)">@LogMessages.Level(entry.Level)</span></td>
+                    <td data-label="Component"><code title="@entry.Component">@LogMessages.Component(entry.Component)</code></td>
+                    <td class="message" data-label="Message">
+                        @entry.Message
+                        @if (entry.Exception is not null || entry.ContextJson is not null)
+                        {
+                            <details class="log-detail">
+                                <summary>Details</summary>
+                                @if (entry.Exception is not null)
+                                {
+                                    <pre class="document">@entry.Exception</pre>
+                                }
+                                @if (entry.ContextJson is not null)
+                                {
+                                    <pre class="document">@entry.ContextJson</pre>
+                                }
+                            </details>
+                        }
+                    </td>
+                    <td>
+                        @if (entry.EvaluationId is { } evaluationId)
+                        {
+                            <a href="/agents/@AgentId/evaluations/@evaluationId">Deliberation</a>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<LogEntryView> Entries { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public Guid AgentId { get; set; }
+}
