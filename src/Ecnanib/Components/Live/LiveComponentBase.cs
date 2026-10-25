@@ -1,4 +1,3 @@
-using System.Threading.Channels;
 using Ecnanib.Accounts.Abstractions;
 using Ecnanib.Agents.Abstractions;
 using Microsoft.AspNetCore.Components;
@@ -10,17 +9,21 @@ namespace Ecnanib.Components.Live;
 /// The base of every interactive island that reflects agent events without a reload (FR-UI-04, NFR-PERF-03). It
 /// resolves the signed-in user from the authentication state (never from <c>HttpContext</c>, which a circuit does not
 /// have), loads once for the prerender, and only once the circuit is interactive subscribes to the user's
-/// <see cref="IAgentEvents"/>. Events request a refresh; a bounded channel coalesces bursts into one re-read after a
-/// short debounce, and a signal that arrives during a read yields one trailing read, so nothing is missed. The
-/// subscription ends when the session is no longer the same user's (NFR-SEC-03) and when the circuit goes away.
+/// <see cref="IAgentEvents"/>. Events request a refresh; a <see cref="RefreshCoalescer"/> turns bursts into one re-read
+/// after a short debounce, a signal that arrives during a read yields one trailing read, so nothing is missed, and the
+/// time from an event to its render is measured against <see cref="LatencyBudget"/> (NFR-PERF-03). The subscription
+/// ends when the session is no longer the same user's (NFR-SEC-03) and when the circuit goes away.
 /// </summary>
 public abstract class LiveComponentBase : ComponentBase, IAsyncDisposable
 {
     /// <summary>Bursts (a fill, its protection and the trade update arrive within milliseconds) become one re-read.</summary>
     protected static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(250);
 
-    private readonly Channel<bool> _signal = Channel.CreateBounded<bool>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
+    /// <summary>NFR-PERF-03: an island reflects an event within two seconds; a refresh that takes longer is logged as a Warning.</summary>
+    protected static readonly TimeSpan LatencyBudget = TimeSpan.FromSeconds(2);
+
     private readonly CancellationTokenSource _cts = new();
+    private RefreshCoalescer? _refresh;
     private IDisposable? _subscription;
     private Task? _loop;
     private Task _firstLoad = Task.CompletedTask;
@@ -38,6 +41,9 @@ public abstract class LiveComponentBase : ComponentBase, IAsyncDisposable
 
     [Inject]
     private ILoggerFactory LoggerFactory { get; set; } = default!;
+
+    [Inject]
+    private TimeProvider Time { get; set; } = default!;
 
     /// <summary>The signed-in user; every read is scoped to it (NFR-SEC-03).</summary>
     protected Guid UserId { get; private set; }
@@ -78,10 +84,12 @@ public abstract class LiveComponentBase : ComponentBase, IAsyncDisposable
         if (_cts.IsCancellationRequested)
             return;
 
+        // The loop exists before the subscription, so the first event's request is never lost.
+        _refresh = new RefreshCoalescer(LoadAsync, () => InvokeAsync(StateHasChanged), Time, Logger, GetType().Name, Debounce, LatencyBudget);
+        _loop = _refresh.RunAsync(Lifetime);
         _subscription = Events.Subscribe(UserId, HandleAsync);
         AuthenticationProvider.AuthenticationStateChanged += OnAuthenticationStateChanged;
         _authenticationHooked = true;
-        _loop = RunRefreshLoopAsync(Lifetime);
         IsLive = true;
         await OnLiveAsync(Lifetime);
         // Whatever changed between the prerender and the circuit's start is picked up by one re-read.
@@ -107,7 +115,7 @@ public abstract class LiveComponentBase : ComponentBase, IAsyncDisposable
     protected virtual ValueTask DisposeLiveAsync() => ValueTask.CompletedTask;
 
     /// <summary>Asks for a re-read; several requests in flight collapse into one.</summary>
-    protected void RequestRefresh() => _signal.Writer.TryWrite(true);
+    protected void RequestRefresh() => _refresh?.Request();
 
     /// <summary>Runs <paramref name="update"/> on the renderer's context and renders; for in-memory changes an event brings on its own.</summary>
     protected Task RenderAsync(Action update) => InvokeAsync(() =>
@@ -122,7 +130,7 @@ public abstract class LiveComponentBase : ComponentBase, IAsyncDisposable
         if (_authenticationHooked)
             AuthenticationProvider.AuthenticationStateChanged -= OnAuthenticationStateChanged;
         await _cts.CancelAsync();
-        _signal.Writer.TryComplete();
+        _refresh?.Complete();
         if (_loop is { } loop)
         {
             try
@@ -157,48 +165,6 @@ public abstract class LiveComponentBase : ComponentBase, IAsyncDisposable
         {
             // Never back into the publisher: a UI failure must not become a warning on the trading side.
             Logger.LogWarning(ex, "Live view {Component} could not handle {Event}", GetType().Name, agentEvent.GetType().Name);
-        }
-    }
-
-    private async Task RunRefreshLoopAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await foreach (var requested in _signal.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
-            {
-                _ = requested;
-                await Task.Delay(Debounce, cancellationToken).ConfigureAwait(false);
-                while (_signal.Reader.TryRead(out var pending))
-                {
-                    _ = pending;
-                }
-
-                try
-                {
-                    await LoadAsync(cancellationToken).ConfigureAwait(false);
-                    await InvokeAsync(StateHasChanged).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (ObjectDisposedException)
-                {
-                    return;
-                }
-                catch (InvalidOperationException ex) when (cancellationToken.IsCancellationRequested)
-                {
-                    Logger.LogDebug(ex, "Live view {Component} refreshed after its circuit ended", GetType().Name);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning(ex, "Live view {Component} could not refresh; the next event tries again", GetType().Name);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
         }
     }
 

@@ -41,11 +41,12 @@ Rules the module enforces:
   answer is asked for once more with the reason; a second rejection fails the role. The AI module's own retries
   (rate limits, outages) run inside the role's budget.
 - **Deadline budget** (FR-AI-13, NFR-PERF-01): a role may use `min(Council:RoleTimeoutSeconds, time left before the
-  evaluation deadline − 2 s − Council:RiskManagerReserveSeconds)`; the Risk Manager gets the reserve too. A role with
+  evaluation deadline − Council:ExecutionReserveSeconds − Council:RiskManagerReserveSeconds)`; the Risk Manager gets the
+  execution reserve too, which leaves the decision's checks and placement their time inside the deadline. A role with
   less than `Council:MinimumRoleBudgetSeconds` is skipped (the Risk Manager: timed out). A role that overruns its
   budget is recorded as timed out and the next role runs; the deadline passing inside a role ends the council with the
-  rest skipped. At the defaults a 15m agent (90 s deadline) has room for one or two non-final roles: disable roles or
-  raise `Agents:EvaluationDeadlineSeconds:15m`.
+  rest skipped. At the defaults a 15m agent (90 s deadline, 35 s per non-final role) has room for one or two non-final
+  roles: disable roles or raise `Agents:EvaluationDeadlineSeconds:15m`.
 - **Failures** (FR-AI-12): a failed, timed-out or skipped non-final role is noted to the roles after it and the
   deliberation goes on. Without a Risk Manager document the result is a `Failure` carrying the full deliberation
   (final action no-trade, rationale "No decision: …"), which the pipeline persists but never executes, so nothing new
@@ -73,12 +74,15 @@ Rules the module enforces:
 Configuration (`Council` section; the defaults are in `src/Ecnanib/ecnanib.json`):
 
 ```json
-{ "Council": { "RoleTimeoutSeconds": 60, "RiskManagerReserveSeconds": 45, "MinimumRoleBudgetSeconds": 5, "RecentCandles": 30,
-  "HigherTimeframeCandles": 10, "MaxOutputTokens": 8192, "MaxAssessmentLength": 1200, "MaxRationaleLength": 600 } }
+{ "Council": { "RoleTimeoutSeconds": 60, "RiskManagerReserveSeconds": 45, "MinimumRoleBudgetSeconds": 5, "ExecutionReserveSeconds": 10,
+  "RecentCandles": 30, "HigherTimeframeCandles": 10, "MaxOutputTokens": 8192, "MaxAssessmentLength": 1200, "MaxRationaleLength": 600 } }
 ```
 
 `MaxOutputTokens` may only lower `Providers:MaxOutputTokens`; reasoning tokens count against it on GPT, Grok and
 Gemini. The rationale bound is at most 3000 so the limits prefix fits the 4000-character column.
+`ExecutionReserveSeconds` plus `MinimumRoleBudgetSeconds` must leave the Risk Manager time within the shortest
+`Agents:EvaluationDeadlineSeconds` (checked at start); the Risk Manager reserve is not checked against it, so a
+council with too little room skips its non-final roles instead.
 
 Pages: the agent page's council section offers each role the synced catalog (`IModelCatalog`, one group per provider,
 deprecated models flagged) or a provider and model id typed by hand, the Appendix B defaults by strength (each

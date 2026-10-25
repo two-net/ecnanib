@@ -12,7 +12,7 @@ It adds two hosted services and connects to nothing at registration. The venue m
 
 | Need | Use |
 |---|---|
-| Apply a council decision (FR-AI-11, FR-EXE-04) | `IExecutionService.ExecuteAsync(ExecutionRequest, Decision, ct)` → `ExecutionResult` (the orders placed, the note shown as the evaluation's detail, a `Fault` the pipeline moves the agent to Error with); the agents module's pipeline is the only caller |
+| Apply a council decision (FR-AI-11, FR-EXE-04) | `IExecutionService.ExecuteAsync(ExecutionRequest, Decision, cancellable, stopping)` → `ExecutionResult` (the orders placed, the note shown as the evaluation's detail, a `Fault` the pipeline moves the agent to Error with); the agents module's pipeline is the only caller |
 | Manage what is open before the council (FR-EXE-03, FR-EXE-06, FR-EXE-08) | `IExecutionService.ManageAsync(ExecutionRequest, cancellable, stopping)`; `EntryPlaced` tells the pipeline a market fallback took the setup off the table for this candle |
 | Place, replace, cancel or close on the exchange (FR-EXE-01, FR-EXE-02, FR-EXE-10) | `IOrderVenues.For(AgentMode.Live)` → the live `IOrderVenue` (`PlaceEntryAsync`, `PlaceCloseAsync`, `PlacePartialCloseAsync`, `ReplaceStopAsync`, `ReplaceTargetsAsync`, `ExpireEntryAsync`, `CancelOpenOrdersAsync`, `ClosePositionsAtMarketAsync`, `GetEquityAsync`, `GetAvailableAsync`); the paper venue is the agents module's |
 | The daily loss limit (FR-EXE-09) | `IDailyLossLimit.CheckAsync(agentId, ct)` (agents module), called after every exit fill and before every entry |
@@ -97,6 +97,11 @@ Rules the module enforces:
   simulator's shape (a transaction, a re-read, a status guard; a stale row is re-read once).
 - **Logging** (FR-LOG-04): every placement, replacement, fill, cancellation, reconciliation adoption and the daily-loss
   pause with ids, symbols and prices; never key material.
+- **Deadline** (NFR-PERF-01): `ExecuteAsync` runs every read before its first order (the filters, the daily loss,
+  equity and balance) on the evaluation's cancellable token, checks it once more right before that order, and from
+  then on places and records on the shutdown token only: a cancelled token does not recall an order, and a decision's
+  several placements (stop, targets, partial) are finished once started. The pipeline does not call it for an entry
+  decided after the deadline; a late Close or Modify is executed with the deadline waived.
 
 Configuration (`Execution` section; the defaults are in `src/Ecnanib/ecnanib.json`):
 

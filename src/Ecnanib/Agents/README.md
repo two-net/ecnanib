@@ -16,10 +16,10 @@ scheduler, pipeline and paper simulator never leave this folder. `AddAgents` req
 | Pin and upgrade the strategy version (FR-STR-06) | `AgentDetail.StrategyVersion` / `LatestStrategyVersion`, `IAgentService.UpgradeStrategyAsync` |
 | "No new entry" windows (FR-STR-05) | `IAgentService.AddEntryWindowAsync(EntryWindowInput)` / `RemoveEntryWindowAsync`, `AgentDetail.EntryWindows` → `EntryWindowView`; `EntryWindowSchedule.IsActive` is the one implementation of their semantics |
 | One agent's state, open positions and orders, or recent evaluations, for the live islands (FR-UI-04) | `IAgentService.GetStatusAsync` → `AgentStatusView`, `GetOpenAsync` → `AgentOpenView`, `ListEvaluationsAsync(userId, agentId, count)`; `AgentSummary` carries the environment and the evaluation in flight (`InFlightEvaluationId`, `InFlightCandleOpenTime`) |
-| The scheduler's own state, for the status page (NFR-OBS-01) | `ISchedulerStatus.GetStatus()` → `SchedulerStatus` (phase, started, last tick, tracked agents, evaluations in flight and queued, the last error) |
+| The scheduler's own state, for the status page (NFR-OBS-01) | `ISchedulerStatus.GetStatus()` → `SchedulerStatus` (phase, started, last tick, tracked agents, evaluations in flight and queued, deadline misses since start, the last error) |
 | Warn about a council model the catalog deprecated (FR-SYNC-03) | `CouncilAssignmentView.CatalogStatus` (null for a model the catalog never listed), `AgentSummary.HasDeprecatedModel` (an enabled role only) |
 | React to agent events in the UI (FR-AGT-10, FR-UI-04) | `IAgentEvents.Subscribe(userId, handler)` → `AgentStateChanged`, `EvaluationStarted`, `CouncilRoleStarted` / `CouncilRoleFinished` (published by the council module), `DecisionRecorded`, `EvaluationFinished`, `OrderChanged`, `TradeChanged` (also on a stop or target move); every event is published after its row is committed and carries ids only, so a page re-reads what it shows |
-| Provide a pipeline stage (council, market data, execution, experience, live venue) or the symbol listing | implement `ICouncil`, `IMarketDataLoader` (`Track`, `Untrack`, `LoadAsync`), `ISymbolCatalog`, `IExecutionService` (`ManageAsync` before the council, `ExecuteAsync` for the decision), `IExperienceTracker` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
+| Provide a pipeline stage (council, market data, execution, experience, live venue) or the symbol listing | implement `ICouncil`, `IMarketDataLoader` (`Track`, `Untrack`, `LoadAsync`), `ISymbolCatalog`, `IExecutionService` (`ManageAsync` before the council, `ExecuteAsync(request, decision, cancellable, stopping)` for the decision), `IExperienceTracker` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
 | The per-agent gate and the daily loss limit, for the execution module (FR-EXE-08, FR-EXE-09) | `IAgentGates.LockAsync` / `TryLock` (the scheduler's gate); `IDailyLossLimit.CheckAsync(agentId)` (gate-free, pauses a Running agent until the next UTC day when today's realized loss reaches the limit) |
 | Client order ids, protection units and the trade JSON shapes shared by both venues (FR-EXE-07, FR-EXE-06, FR-EXP-02) | `ClientOrderIds.For(prefix, agentId, scope, purpose, sequence)`; `ProtectionUnits.Split(quantity, targets, partialFraction, stepSize, minQuantity)` and `ProtectionUnits.PartialFraction(parameters)`; `TradeJson.Targets` / `StopHistory` / `StopHistoryEntries` (typed, for the timeline and the chart) / `AppendStop` / `InitialStop` for `trades.targets` and `trades.stop_history` |
 | Suggest a council from experience at creation (FR-EXP-08) | implement `ICouncilSuggestions` and register it **before** `AddAgents`; the default suggests nothing, so every role gets its Appendix B default |
@@ -68,8 +68,12 @@ Rules the module enforces:
   and then follows one candle stream per agent, so on a shared stream the loader's handler runs ahead of the
   scheduler's; untracking releases the loader's series too. It evaluates under a per-agent gate that lifecycle
   actions also take, with at most `Agents:MaxConcurrentEvaluations` evaluations at once, shorter timeframes first. The
-  deadline per timeframe is measured from the candle close (NFR-PERF-01) and cancels everything up to the council;
-  execution and persistence never observe it, because a cancelled token does not recall an order. A candle that closed
+  deadline per timeframe is measured from the candle close (NFR-PERF-01) and cancels everything up to the council and
+  execution's checks before its first order; a position is not opened once it has passed (the decision is recorded,
+  nothing placed), a late Close or Modify still executes, and a placement under way is never interrupted, because a
+  cancelled token does not recall an order. Every outcome line carries the run's duration and its distance from the
+  close; a run that ends at or past its deadline is a Warning, and the scheduler counts deadline misses (late finishes
+  and candles too late to start) for the status page. A candle that closed
   more than a minute before the agent was tracked is ignored, one older than the newest seen on its stream is recorded
   as Skipped (superseded), and one whose deadline has already passed is recorded as Skipped (too late). The evaluation
   row is inserted first with `InProgress`; its unique (agent, candle) index makes any second run of the same candle a
@@ -161,10 +165,13 @@ is FR-SYNC-04. The disclaimer is shown on every setup step and on the agent page
 missing one both answer not found.
 
 Known gaps: `Order.WorkingType` has no column, so paper futures stops are last-price only. Paper excursions are
-tracked per tick in memory and lost on a restart.
+tracked per tick in memory and lost on a restart. A decision the deadline or a Stop kept from executing leaves neither a
+trade nor a shadow outcome.
 
 Tests: `dotnet test` runs offline (options, registration and placeholder replacement, the Appendix E table and edit
 rules, parameter parsing, input rules including windows, the window schedule, change sets, events, the scheduler's
-staleness rules and plumbing, the default loader's alignment, the paper book's fill rules with units and partials). Live checks run against PostgreSQL through the same git-ignored
+staleness rules and plumbing, the default loader's alignment, the paper book's fill rules with units and partials). Live checks (the scheduler end to
+end; the deadline cutting a council and refusing a late entry while a late close still executes, the concurrency cap
+with shorter timeframes first and a hundred running agents, NFR-PERF-01/02) run against PostgreSQL through the same git-ignored
 `tests/.database.json` as the database module, with the exchange, providers and streams faked:
 `dotnet test -- --filter-trait "Category=Live"`.

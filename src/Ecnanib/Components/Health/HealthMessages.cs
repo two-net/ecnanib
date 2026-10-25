@@ -69,6 +69,10 @@ internal static class HealthMessages
         return $"{(int)elapsed.TotalDays} d ago";
     }
 
+    /// <summary>"none" or "3 since start, last 2 min ago" (NFR-PERF-01).</summary>
+    public static string DeadlineMisses(int misses, DateTimeOffset? lastAt, DateTimeOffset now) =>
+        misses == 0 ? "none" : $"{misses} since start, last {Age(lastAt, now)}";
+
     /// <summary>"—", "12 ms" or "1.2 s".</summary>
     public static string Latency(TimeSpan? latency) => latency switch
     {

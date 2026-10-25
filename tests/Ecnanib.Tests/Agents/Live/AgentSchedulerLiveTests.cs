@@ -411,20 +411,4 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
         _fixture.Require();
         await _fixture.MigrateAsync();
     }
-
-    private sealed class FakeCouncil : ICouncil
-    {
-        public CouncilContext? Context { get; private set; }
-
-        public Task<CouncilResult> DeliberateAsync(CouncilContext context, CancellationToken cancellationToken)
-        {
-            Context = context;
-            var decision = new Decision
-            {
-                FinalAction = DecisionAction.OpenLong, EntryType = OrderType.Limit, EntryPrice = 100m, StopPrice = 90m, Size = 0.1m, Rationale = "fake council",
-                RoleOutputs = [new DecisionRoleOutput { Role = CouncilRole.RiskManager, Sequence = 4, Provider = AiProvider.Claude, Model = "m", Status = RoleOutputStatus.Succeeded, ProposedAction = DecisionAction.OpenLong }],
-            };
-            return Task.FromResult(CouncilResult.Decided(decision));
-        }
-    }
 }

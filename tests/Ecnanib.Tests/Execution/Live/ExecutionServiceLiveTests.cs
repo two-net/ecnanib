@@ -35,7 +35,7 @@ public class ExecutionServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         var execution = provider.GetRequiredService<IExecutionService>();
         var request = await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, decision.Evaluation);
 
-        var result = await execution.ExecuteAsync(request, decision, Ct);
+        var result = await execution.ExecuteAsync(request, decision, Ct, Ct);
 
         var order = Assert.Single(result.Orders);
         Assert.Equal((OrderPurpose.Entry, OrderType.Limit, OrderSide.Buy, 100m, 95m, 20m, OrderStatus.New, true), (order.Purpose, order.Type, order.Side, order.Price, order.StopPrice, order.Quantity, order.Status, order.IsPaper));
@@ -64,7 +64,7 @@ public class ExecutionServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         await using var _ = provider;
         var execution = provider.GetRequiredService<IExecutionService>();
 
-        var result = await execution.ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, decision.Evaluation), decision, Ct);
+        var result = await execution.ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, decision.Evaluation), decision, Ct, Ct);
 
         Assert.Empty(result.Orders);
         Assert.StartsWith("Rejected by execution limits: minNotional", result.Note);
@@ -109,7 +109,7 @@ public class ExecutionServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         var events = new List<AgentEvent>();
         using var subscription = provider.GetRequiredService<IAgentEvents>().Subscribe(user.Id, e => { lock (events) events.Add(e); return ValueTask.CompletedTask; });
 
-        var result = await provider.GetRequiredService<IExecutionService>().ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, decision.Evaluation), decision, Ct);
+        var result = await provider.GetRequiredService<IExecutionService>().ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, decision.Evaluation), decision, Ct, Ct);
 
         Assert.Empty(result.Orders);
         Assert.StartsWith("Rejected by execution limits: dailyLoss", result.Note);
@@ -137,7 +137,7 @@ public class ExecutionServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         var (provider, _, _, _, _) = ExecutionLiveSeed.Build(_fixture);
         await using var _ = provider;
 
-        var result = await provider.GetRequiredService<IExecutionService>().ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, decision.Evaluation, close: 110m), decision, Ct);
+        var result = await provider.GetRequiredService<IExecutionService>().ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, decision.Evaluation, close: 110m), decision, Ct, Ct);
 
         Assert.Equal("Stop moved to 97. Targets set to 125. Partial of 0.05 taken at market.", result.Note);
         var orders = await ExecutionLiveSeed.OrdersOfAsync(_fixture, agent.Id);
@@ -155,7 +155,7 @@ public class ExecutionServiceLiveTests : IClassFixture<DatabaseLiveFixture>
 
         // A stop that would not tighten, or would trigger against the last close, stays.
         var loosening = await ExecutionLiveSeed.NewDecisionAsync(_fixture, agent, ExecutionLiveSeed.LastOpen.AddHours(1), DecisionAction.Modify, null, null, 96m, [], tradeId: trade.Id);
-        var kept = await provider.GetRequiredService<IExecutionService>().ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, loosening.Evaluation, close: 110m), loosening, Ct);
+        var kept = await provider.GetRequiredService<IExecutionService>().ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, loosening.Evaluation, close: 110m), loosening, Ct, Ct);
         Assert.Equal("The stop stays.", kept.Note);
         Assert.Equal(97m, (await ExecutionLiveSeed.TradeOfAsync(_fixture, agent.Id))!.CurrentStop);
 
@@ -176,8 +176,8 @@ public class ExecutionServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         await using var _ = provider;
         var execution = provider.GetRequiredService<IExecutionService>();
 
-        var one = await execution.ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, first.Evaluation), first, Ct);
-        var two = await execution.ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, second.Evaluation), second, Ct);
+        var one = await execution.ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, first.Evaluation), first, Ct, Ct);
+        var two = await execution.ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, second.Evaluation), second, Ct, Ct);
 
         Assert.Equal("Closing the position at market.", one.Note);
         Assert.Equal(Assert.Single(one.Orders).Id, Assert.Single(two.Orders).Id);
@@ -287,7 +287,7 @@ public class ExecutionServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         var (provider, _, _, _, _) = ExecutionLiveSeed.Build(_fixture);
         await using var _ = provider;
 
-        var result = await provider.GetRequiredService<IExecutionService>().ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, decision.Evaluation, close: 110m), decision, Ct);
+        var result = await provider.GetRequiredService<IExecutionService>().ExecuteAsync(await ExecutionLiveSeed.RequestAsync(_fixture, provider, agent, decision.Evaluation, close: 110m), decision, Ct, Ct);
 
         Assert.Equal("No partial: the remainder would be below the exchange minimum.", result.Note);
         Assert.Empty(result.Orders);

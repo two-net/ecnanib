@@ -11,8 +11,12 @@ public sealed class CouncilOptions
 {
     public const string SectionName = "Council";
 
-    /// <summary>Kept between the council's own timers and the scheduler's deadline timer so a timed-out role is recorded rather than cancelled.</summary>
-    public static TimeSpan DeadlineMargin { get; } = TimeSpan.FromSeconds(2);
+    /// <summary>An outer cancellation this close to the deadline counts as the deadline; the role budgets end well before it, so a timed-out role is recorded rather than cancelled.</summary>
+    public static TimeSpan DeadlineTolerance { get; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>Time the council leaves before the evaluation deadline for the decision's checks and placement (NFR-PERF-01); every role's budget ends at least this long before it.</summary>
+    [Range(1, 120)]
+    public int ExecutionReserveSeconds { get; set; } = 10;
 
     /// <summary>Upper bound of one role's turn, retries included; the evaluation deadline may leave it less.</summary>
     [Range(5, 600)]
@@ -51,4 +55,6 @@ public sealed class CouncilOptions
     public TimeSpan RiskManagerReserve => TimeSpan.FromSeconds(RiskManagerReserveSeconds);
 
     public TimeSpan MinimumRoleBudget => TimeSpan.FromSeconds(MinimumRoleBudgetSeconds);
+
+    public TimeSpan ExecutionReserve => TimeSpan.FromSeconds(ExecutionReserveSeconds);
 }

@@ -528,9 +528,9 @@ public class CouncilTests
         var now = CouncilTestHost.Now;
 
         Assert.Equal(TimeSpan.FromSeconds(60), Ecnanib.Council.Services.Council.Budget(options, now.AddSeconds(500), now, final: false));
-        Assert.Equal(TimeSpan.FromSeconds(43), Ecnanib.Council.Services.Council.Budget(options, now.AddSeconds(90), now, final: false));
+        Assert.Equal(TimeSpan.FromSeconds(35), Ecnanib.Council.Services.Council.Budget(options, now.AddSeconds(90), now, final: false));
         Assert.Equal(TimeSpan.FromSeconds(60), Ecnanib.Council.Services.Council.Budget(options, now.AddSeconds(90), now, final: true));
-        Assert.Equal(TimeSpan.FromSeconds(28), Ecnanib.Council.Services.Council.Budget(options, now.AddSeconds(30), now, final: true));
+        Assert.Equal(TimeSpan.FromSeconds(20), Ecnanib.Council.Services.Council.Budget(options, now.AddSeconds(30), now, final: true));
         Assert.Null(Ecnanib.Council.Services.Council.Budget(options, now.AddSeconds(51), now, final: false));
         Assert.Null(Ecnanib.Council.Services.Council.Budget(options, now.AddSeconds(6), now, final: true));
     }

@@ -253,7 +253,11 @@ internal sealed class ExecutionService : IExecutionService
 
     // --- The decision ---------------------------------------------------------------------------------------------
 
-    public async Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, Decision decision, CancellationToken cancellationToken)
+    // The token rule (NFR-PERF-01): every await before the first venue placement runs on `cancellable` (the evaluation
+    // deadline, Stop, shutdown), with one last check right before that placement; the placement and everything after
+    // it, the writes recording it included, run on `stopping`, because a cancelled token does not recall an order
+    // already sent and a decision's several placements are finished once started. No read follows a placement.
+    public async Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, Decision decision, CancellationToken cancellable, CancellationToken stopping)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(decision);
@@ -261,9 +265,9 @@ internal sealed class ExecutionService : IExecutionService
         {
             return decision.FinalAction switch
             {
-                DecisionAction.OpenLong or DecisionAction.OpenShort => await OpenAsync(request, decision, cancellationToken).ConfigureAwait(false),
-                DecisionAction.Modify => await ModifyAsync(request, decision, cancellationToken).ConfigureAwait(false),
-                DecisionAction.Close => await CloseAsync(request, decision, cancellationToken).ConfigureAwait(false),
+                DecisionAction.OpenLong or DecisionAction.OpenShort => await OpenAsync(request, decision, cancellable, stopping).ConfigureAwait(false),
+                DecisionAction.Modify => await ModifyAsync(request, decision, cancellable, stopping).ConfigureAwait(false),
+                DecisionAction.Close => await CloseAsync(request, decision, cancellable, stopping).ConfigureAwait(false),
                 DecisionAction.Hold => ExecutionResult.Nothing("Holding the position."),
                 _ => ExecutionResult.Nothing("No trade."),
             };
@@ -279,41 +283,43 @@ internal sealed class ExecutionService : IExecutionService
         }
     }
 
-    private async Task<ExecutionResult> OpenAsync(ExecutionRequest request, Decision decision, CancellationToken cancellationToken)
+    private async Task<ExecutionResult> OpenAsync(ExecutionRequest request, Decision decision, CancellationToken cancellable, CancellationToken stopping)
     {
         var agent = request.Agent;
         var side = decision.FinalAction == DecisionAction.OpenLong ? PositionSide.Long : PositionSide.Short;
         var checks = new List<LimitCheck>();
-        var filters = await FiltersAsync(request, cancellationToken).ConfigureAwait(false);
+        var filters = await FiltersAsync(request, cancellable).ConfigureAwait(false);
         var lastClose = request.Market.Latest?.Close ?? 0m;
         var market = decision.EntryType == OrderType.Market;
         var price = market ? lastClose : decision.EntryPrice ?? 0m;
         if (filters is null || decision.StopPrice is not { } stop || price <= 0)
         {
             checks.Add(new LimitCheck(ExecutionLimitNames.Size, LimitCheckStatus.Fail, filters is null ? "the symbol's filters are unavailable" : decision.StopPrice is null ? "no stop was given" : "no entry price is available"));
-            return await RejectAsync(decision, checks, cancellationToken).ConfigureAwait(false);
+            return await RejectAsync(decision, checks, stopping).ConfigureAwait(false);
         }
 
-        var daily = await _dailyLoss.CheckAsync(agent.Id, cancellationToken).ConfigureAwait(false);
+        var daily = await _dailyLoss.CheckAsync(agent.Id, cancellable).ConfigureAwait(false);
         checks.Add(new LimitCheck(ExecutionLimitNames.DailyLoss, daily.Reached ? LimitCheckStatus.Fail : LimitCheckStatus.Pass,
             daily.Reached ? $"the daily loss of {Sizer.N(daily.LossToday)} reached the limit of {Sizer.N(daily.LimitAmount)}" : daily.LossToday > 0 ? $"a daily loss of {Sizer.N(daily.LossToday)} is under the limit of {Sizer.N(daily.LimitAmount)}" : "no loss today"));
         if (daily.Reached)
-            return await RejectAsync(decision, checks, cancellationToken).ConfigureAwait(false);
+            return await RejectAsync(decision, checks, stopping).ConfigureAwait(false);
 
-        var equity = await request.Venue.GetEquityAsync(agent, cancellationToken).ConfigureAwait(false);
-        var available = await request.Venue.GetAvailableAsync(agent, cancellationToken).ConfigureAwait(false);
+        var equity = await request.Venue.GetEquityAsync(agent, cancellable).ConfigureAwait(false);
+        var available = await request.Venue.GetAvailableAsync(agent, cancellable).ConfigureAwait(false);
         var risk = decision.RiskPercent ?? Math.Min(agent.RiskLimits.RiskPerTradePercent, request.Caps.MaxRiskPerTradePercent);
         var sizing = Sizer.Size(new SizingInput(side, price, stop, risk, equity, available, request.Output.Setup?.SizeMultiplier ?? 1m, filters, agent.RiskLimits.MaxNotional, Math.Max(1, agent.Leverage ?? 1), market, agent.MarketType));
         checks.AddRange(sizing.Checks);
         if (sizing.Rejected)
-            return await RejectAsync(decision, checks, cancellationToken).ConfigureAwait(false);
+            return await RejectAsync(decision, checks, stopping).ConfigureAwait(false);
 
         var timeout = PositionManager.EntryTimeoutCandles(request.Parameters, _agents.Value.DefaultEntryTimeoutCandles);
         var expiresAt = market ? (DateTimeOffset?)null : request.CandleClose + agent.Timeframe.ToTimeSpan() * timeout;
         var targets = TradeJson.Targets(decision.Targets).Select(t => side == PositionSide.Long ? filters.RoundPriceUpToTick(t) : filters.RoundPriceDownToTick(t)).ToList();
         var placement = new EntryPlacement(decision.Id, side, market ? OrderType.Market : OrderType.Limit, market ? null : sizing.Price, sizing.Quantity, sizing.Stop, targets, ProtectionUnits.PartialFraction(request.Parameters), expiresAt);
-        var order = await request.Venue.PlaceEntryAsync(agent, placement, cancellationToken).ConfigureAwait(false);
-        await AppendExecutionCheckAsync(decision.Id, checks, sizing.Quantity, cancellationToken).ConfigureAwait(false);
+        // The last check before the first order (NFR-PERF-01): from here on nothing is cut short.
+        cancellable.ThrowIfCancellationRequested();
+        var order = await request.Venue.PlaceEntryAsync(agent, placement, stopping).ConfigureAwait(false);
+        await AppendExecutionCheckAsync(decision.Id, checks, sizing.Quantity, stopping).ConfigureAwait(false);
         decision.Size = sizing.Quantity;
         decision.ExecutionCheck = ToJson(checks);
 
@@ -326,18 +332,19 @@ internal sealed class ExecutionService : IExecutionService
         return new ExecutionResult([order], note);
     }
 
-    private async Task<ExecutionResult> ModifyAsync(ExecutionRequest request, Decision decision, CancellationToken cancellationToken)
+    private async Task<ExecutionResult> ModifyAsync(ExecutionRequest request, Decision decision, CancellationToken cancellable, CancellationToken stopping)
     {
         var agent = request.Agent;
         var trade = request.OpenTrades.FirstOrDefault(t => t.Id == decision.TradeId) ?? request.OpenTrades.FirstOrDefault();
         if (trade is null)
             return ExecutionResult.Nothing("Nothing to modify: no position is open.");
-        var filters = await FiltersAsync(request, cancellationToken).ConfigureAwait(false);
+        var filters = await FiltersAsync(request, cancellable).ConfigureAwait(false);
         var lastClose = request.Market.Latest?.Close ?? 0m;
         var isLong = trade.Side == PositionSide.Long;
         var notes = new List<string>();
         var orders = new List<Order>();
         var checks = new List<LimitCheck>();
+        var placed = false;
 
         if (decision.StopPrice is { } proposed)
         {
@@ -346,7 +353,8 @@ internal sealed class ExecutionService : IExecutionService
             var safe = lastClose <= 0 || (isLong ? stop < lastClose : stop > lastClose);
             if (tightens && safe)
             {
-                orders.AddRange(await request.Venue.ReplaceStopAsync(agent, trade, stop, "council", decision.Id, cancellationToken).ConfigureAwait(false));
+                LastCheck();
+                orders.AddRange(await request.Venue.ReplaceStopAsync(agent, trade, stop, "council", decision.Id, stopping).ConfigureAwait(false));
                 notes.Add($"Stop moved to {Sizer.N(stop)}.");
                 checks.Add(new LimitCheck(LimitNames.StopTightenOnly, LimitCheckStatus.Pass, $"stop {Sizer.N(stop)}"));
             }
@@ -360,9 +368,10 @@ internal sealed class ExecutionService : IExecutionService
         var targets = TradeJson.Targets(decision.Targets);
         if (targets.Count > 0)
         {
-            var placed = await request.Venue.ReplaceTargetsAsync(agent, trade, targets, decision.Id, cancellationToken).ConfigureAwait(false);
-            orders.AddRange(placed);
-            notes.Add(placed.Count > 0 ? $"Targets set to {string.Join(", ", targets.Select(Sizer.N))}." : "Targets unchanged.");
+            LastCheck();
+            var replaced = await request.Venue.ReplaceTargetsAsync(agent, trade, targets, decision.Id, stopping).ConfigureAwait(false);
+            orders.AddRange(replaced);
+            notes.Add(replaced.Count > 0 ? $"Targets set to {string.Join(", ", targets.Select(Sizer.N))}." : "Targets unchanged.");
         }
 
         if (decision.PartialFraction is { } fraction)
@@ -372,7 +381,8 @@ internal sealed class ExecutionService : IExecutionService
             var reference = lastClose > 0 ? lastClose : trade.EntryPrice;
             if (quantity >= open)
             {
-                orders.Add(await request.Venue.PlaceCloseAsync(agent, trade, decision.Id, cancellationToken).ConfigureAwait(false));
+                LastCheck();
+                orders.Add(await request.Venue.PlaceCloseAsync(agent, trade, decision.Id, stopping).ConfigureAwait(false));
                 checks.Add(new LimitCheck(ExecutionLimitNames.PartialFraction, LimitCheckStatus.Clamped, "the fraction takes the whole position; it is closed"));
                 notes.Add("The whole position is closed at market.");
             }
@@ -383,7 +393,8 @@ internal sealed class ExecutionService : IExecutionService
             }
             else
             {
-                orders.Add(await request.Venue.PlacePartialCloseAsync(agent, trade, quantity, decision.Id, cancellationToken).ConfigureAwait(false));
+                LastCheck();
+                orders.Add(await request.Venue.PlacePartialCloseAsync(agent, trade, quantity, decision.Id, stopping).ConfigureAwait(false));
                 checks.Add(new LimitCheck(ExecutionLimitNames.PartialFraction, LimitCheckStatus.Pass, $"{Sizer.N(quantity)} of {Sizer.N(open)} taken at market"));
                 notes.Add($"Partial of {Sizer.N(quantity)} taken at market.");
             }
@@ -391,38 +402,48 @@ internal sealed class ExecutionService : IExecutionService
 
         if (checks.Count > 0)
         {
-            await AppendExecutionCheckAsync(decision.Id, checks, null, cancellationToken).ConfigureAwait(false);
+            await AppendExecutionCheckAsync(decision.Id, checks, null, stopping).ConfigureAwait(false);
             decision.ExecutionCheck = ToJson(checks);
         }
 
         return new ExecutionResult(orders, notes.Count == 0 ? "Nothing to modify." : string.Join(" ", notes));
+
+        // The last check before the first order (NFR-PERF-01): the stop, the targets and the partial are one decision and are finished once started.
+        void LastCheck()
+        {
+            if (!placed)
+                cancellable.ThrowIfCancellationRequested();
+            placed = true;
+        }
     }
 
-    private async Task<ExecutionResult> CloseAsync(ExecutionRequest request, Decision decision, CancellationToken cancellationToken)
+    private async Task<ExecutionResult> CloseAsync(ExecutionRequest request, Decision decision, CancellationToken cancellable, CancellationToken stopping)
     {
         var trade = request.OpenTrades.FirstOrDefault(t => t.Id == decision.TradeId) ?? request.OpenTrades.FirstOrDefault();
         if (trade is null)
             return ExecutionResult.Nothing("Nothing to close: no position is open.");
-        var order = await request.Venue.PlaceCloseAsync(request.Agent, trade, decision.Id, cancellationToken).ConfigureAwait(false);
+        // The last check before the order (NFR-PERF-01).
+        cancellable.ThrowIfCancellationRequested();
+        var order = await request.Venue.PlaceCloseAsync(request.Agent, trade, decision.Id, stopping).ConfigureAwait(false);
         _logger.LogInformation("Agent {AgentId} decision {DecisionId}: position {TradeId} closing at market", request.Agent.Id, decision.Id, trade.Id);
         return new ExecutionResult([order], "Closing the position at market.");
     }
 
     /// <summary>A rejected entry is recorded as no-trade with the failed limits in front of the rationale, as the council does, so a shadow outcome follows it (FR-EXP-03).</summary>
-    private async Task<ExecutionResult> RejectAsync(Decision decision, List<LimitCheck> checks, CancellationToken cancellationToken)
+    private async Task<ExecutionResult> RejectAsync(Decision decision, List<LimitCheck> checks, CancellationToken stopping)
     {
         var failed = checks.Where(c => c.Status == LimitCheckStatus.Fail).Select(c => c.Limit).ToList();
         var prefix = $"Rejected by execution limits ({string.Join(", ", failed)}): ";
         var rationale = Truncate(prefix + decision.Rationale, 4000);
         var json = ToJson(checks);
-        await using (var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false))
+        await using (var db = await _factory.CreateDbContextAsync(stopping).ConfigureAwait(false))
         {
             await db.Decisions.Where(d => d.Id == decision.Id)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(d => d.FinalAction, DecisionAction.NoTrade)
                     .SetProperty(d => d.Rationale, rationale)
                     .SetProperty(d => d.Size, (decimal?)null)
-                    .SetProperty(d => d.ExecutionCheck, json), cancellationToken).ConfigureAwait(false);
+                    .SetProperty(d => d.ExecutionCheck, json), stopping).ConfigureAwait(false);
         }
 
         decision.FinalAction = DecisionAction.NoTrade;
@@ -434,17 +455,17 @@ internal sealed class ExecutionService : IExecutionService
         return ExecutionResult.Nothing($"Rejected by execution limits: {detail}.");
     }
 
-    private async Task AppendExecutionCheckAsync(Guid decisionId, IReadOnlyList<LimitCheck> checks, decimal? size, CancellationToken cancellationToken)
+    private async Task AppendExecutionCheckAsync(Guid decisionId, IReadOnlyList<LimitCheck> checks, decimal? size, CancellationToken stopping)
     {
-        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        var row = await db.Decisions.SingleOrDefaultAsync(d => d.Id == decisionId, cancellationToken).ConfigureAwait(false);
+        await using var db = await _factory.CreateDbContextAsync(stopping).ConfigureAwait(false);
+        var row = await db.Decisions.SingleOrDefaultAsync(d => d.Id == decisionId, stopping).ConfigureAwait(false);
         if (row is null)
             return;
         var existing = Checks(row.ExecutionCheck);
         row.ExecutionCheck = ToJson(existing.Concat(checks).ToList());
         if (size is not null)
             row.Size = size;
-        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await db.SaveChangesAsync(stopping).ConfigureAwait(false);
     }
 
     private async Task<SymbolFilters?> FiltersAsync(ExecutionRequest request, CancellationToken cancellationToken)

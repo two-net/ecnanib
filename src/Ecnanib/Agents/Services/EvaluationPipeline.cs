@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ecnanib.Agents.Abstractions;
@@ -18,15 +19,29 @@ namespace Ecnanib.Agents.Services;
 internal sealed record EvaluationRun(AgentTrackingInfo Agent, Candle Candle, DateTimeOffset DeadlineAt, bool InterruptedPreviously);
 
 /// <summary>
+/// What a run did: nothing (the agent is gone, cannot be evaluated as configured, or another run owns the candle), an
+/// evaluation that finished before its deadline, or one that ended at or past it (NFR-PERF-01).
+/// </summary>
+internal enum EvaluationRunResult
+{
+    NotEvaluated,
+    Finished,
+    MissedDeadline,
+}
+
+/// <summary>
 /// The FR-AGT-10 pipeline for one agent and one closed candle: load market data → strategy engine → council when
 /// needed (FR-AI-08) → execute → persist → log → notify. The evaluation row is inserted first with
 /// <see cref="EvaluationOutcome.InProgress"/>; its unique (agent, candle) index makes a second run of the same candle
 /// a no-op (FR-AGT-09). With open orders or trades the execution module's management step runs before the council
 /// (expiry, market fallback, breakeven and trailing, FR-EXE-03/06/08) and the open state is reloaded, so the council
-/// sees what the rules already did. Everything up to the council honours the cancellable token (deadline, Stop,
-/// shutdown); execution and persistence do not, because a cancelled token does not recall an order already sent. The
-/// experience step (<see cref="IExperienceTracker"/>, FR-EXP-03) runs last, whenever market data loaded, and never
-/// changes the outcome.
+/// sees what the rules already did. Everything up to the council, and execution's checks before its first order,
+/// honour the cancellable token (deadline, Stop, shutdown); from the first placement on, placements and the writes
+/// recording them run on the stopping token, because a cancelled token does not recall an order already sent. An entry
+/// decided after the deadline is recorded and not placed; a protective decision (close, modify) still executes
+/// (NFR-PERF-01). Every outcome line carries the run's duration and its distance from the close and the deadline; a
+/// run that ends at or past its deadline is a Warning. The experience step (<see cref="IExperienceTracker"/>,
+/// FR-EXP-03) runs last, whenever market data loaded, and never changes the outcome.
 /// </summary>
 internal sealed class EvaluationPipeline
 {
@@ -78,7 +93,7 @@ internal sealed class EvaluationPipeline
         _logger = logger;
     }
 
-    public async Task RunAsync(EvaluationRun run, IEvaluationHost host, CancellationToken cancellable, CancellationToken stopping)
+    public async Task<EvaluationRunResult> RunAsync(EvaluationRun run, IEvaluationHost host, CancellationToken cancellable, CancellationToken stopping)
     {
         var agentId = run.Agent.AgentId;
         var candle = run.Candle;
@@ -91,14 +106,14 @@ internal sealed class EvaluationPipeline
         }
 
         if (agent is null || !AgentStateMachine.IsEvaluated(agent.State))
-            return;
+            return EvaluationRunResult.NotEvaluated;
 
         // Unrecoverable before anything is recorded: the agent cannot be evaluated as configured (Appendix E → Error).
         var strategy = _catalog.Find(agent.StrategyId, agent.StrategyVersion);
         if (strategy is null)
         {
             await host.FailAsync(agentId, $"Strategy '{agent.StrategyId}' version {agent.StrategyVersion} is not in the catalog; upgrade it or choose another and start the agent again.", stopping).ConfigureAwait(false);
-            return;
+            return EvaluationRunResult.NotEvaluated;
         }
 
         var stored = StrategyParameters.Read(agent.Parameters);
@@ -106,7 +121,7 @@ internal sealed class EvaluationPipeline
         if (invalid.Count > 0)
         {
             await host.FailAsync(agentId, $"The strategy parameters are no longer valid: {string.Join("; ", invalid.Select(e => e.Message))} Edit them and start the agent again.", stopping).ConfigureAwait(false);
-            return;
+            return EvaluationRunResult.NotEvaluated;
         }
 
         ExchangeKeyHandle? exchangeKey = null;
@@ -115,14 +130,14 @@ internal sealed class EvaluationPipeline
             if (agent.ExchangeKeyId is not { } keyId)
             {
                 await host.FailAsync(agentId, "The exchange key is gone; choose a key and start the agent again.", stopping).ConfigureAwait(false);
-                return;
+                return EvaluationRunResult.NotEvaluated;
             }
 
             var resolution = await _keys.ResolveExchangeKeyAsync(agent.UserId, keyId, agent.MarketType, stopping).ConfigureAwait(false);
             if (!resolution.IsResolved)
             {
                 await host.FailAsync(agentId, $"The exchange key cannot be used: {resolution.Reason}", stopping).ConfigureAwait(false);
-                return;
+                return EvaluationRunResult.NotEvaluated;
             }
 
             exchangeKey = resolution.Handle;
@@ -143,7 +158,7 @@ internal sealed class EvaluationPipeline
         if (!await InsertAsync(evaluation, stopping).ConfigureAwait(false))
         {
             _logger.LogDebug("Agent {AgentId} already has an evaluation for candle {CandleOpen:O}; skipping", agentId, candle.OpenTime);
-            return;
+            return EvaluationRunResult.NotEvaluated;
         }
 
         _events.Publish(new EvaluationStarted(agentId, agent.UserId, now, evaluation.Id, candle.OpenTime));
@@ -237,11 +252,29 @@ internal sealed class EvaluationPipeline
                 }
                 else
                 {
-                    var request = new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, openTrades, openOrders, _caps.Value, venue, run.InterruptedPreviously, exchangeKey, entriesAllowed, run.DeadlineAt);
-                    var result = await _execution.ExecuteAsync(request, decision, stopping).ConfigureAwait(false);
-                    outcome = EvaluationOutcome.Decided;
-                    detail = Join(managementNote, result.Note);
-                    fault ??= result.Fault;
+                    // NFR-PERF-01: no position is opened once the deadline, or a lifecycle action, has cut the run. A Close or
+                    // Modify executes on the stopping token whatever the time, the deadline waived, because dropping protection
+                    // for a whole candle is worse than a late finish; a placement under way is never interrupted either way.
+                    var late = cancellable.IsCancellationRequested || _time.GetUtcNow() >= run.DeadlineAt;
+                    var opens = decision.FinalAction is DecisionAction.OpenLong or DecisionAction.OpenShort;
+                    var protective = decision.FinalAction is DecisionAction.Close or DecisionAction.Modify;
+                    if (late && opens)
+                    {
+                        if (stopping.IsCancellationRequested)
+                            throw new OperationCanceledException(stopping);
+                        outcome = EvaluationOutcome.Failed;
+                        detail = _time.GetUtcNow() >= run.DeadlineAt
+                            ? $"The deadline of {run.DeadlineAt:HH:mm:ss} UTC passed before the decision could be executed; nothing was placed."
+                            : "The evaluation was cancelled by a lifecycle action before the decision could be executed; nothing was placed.";
+                    }
+                    else
+                    {
+                        var request = new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, openTrades, openOrders, _caps.Value, venue, run.InterruptedPreviously, exchangeKey, entriesAllowed, run.DeadlineAt);
+                        var result = await _execution.ExecuteAsync(request, decision, protective ? stopping : cancellable, stopping).ConfigureAwait(false);
+                        outcome = EvaluationOutcome.Decided;
+                        detail = Join(managementNote, result.Note);
+                        fault ??= result.Fault;
+                    }
                 }
             }
         }
@@ -269,13 +302,19 @@ internal sealed class EvaluationPipeline
 
         var finishedAt = _time.GetUtcNow();
         await FinishAsync(evaluation.Id, strategyJson, councilConsulted, outcome, Truncate(detail), finishedAt).ConfigureAwait(false);
-        _logger.LogInformation("Agent {AgentId} evaluated candle {CandleOpen:O} ({Timeframe}): {Outcome}{Detail}",
-            agentId, candle.OpenTime, agent.Timeframe.ToLabel(), outcome, detail is null ? "" : " - " + detail);
+        // NFR-PERF-01: how long the run took and where it ended relative to the close and the deadline; a miss is a Warning, whatever cut it.
+        var overrun = finishedAt - run.DeadlineAt;
+        var missed = overrun >= TimeSpan.Zero;
+        _logger.Log(missed ? LogLevel.Warning : LogLevel.Information,
+            "Agent {AgentId} evaluated candle {CandleOpen:O} ({Timeframe}): {Outcome} in {Elapsed}, {SinceClose} after the close{Overrun}{Detail}",
+            agentId, candle.OpenTime, agent.Timeframe.ToLabel(), outcome, Seconds(finishedAt - evaluation.StartedAt), Seconds(finishedAt - (candle.OpenTime + agent.Timeframe.ToTimeSpan())),
+            missed ? $", {Seconds(overrun)} past the deadline" : "", detail is null ? "" : " - " + detail);
         _events.Publish(new EvaluationFinished(agentId, agent.UserId, finishedAt, evaluation.Id, candle.OpenTime, outcome));
 
         // FR-SYNC-04, FR-EXE-11: an agent whose council or venue cannot run as configured stops being evaluated until the user fixes it.
         if (fault is not null)
             await host.FailAsync(agentId, fault, stopping).ConfigureAwait(false);
+        return missed ? EvaluationRunResult.MissedDeadline : EvaluationRunResult.Finished;
     }
 
     private async Task<(IReadOnlyList<Trade> Trades, IReadOnlyList<Order> Orders)> LoadOpenAsync(Guid agentId, CancellationToken cancellationToken)
@@ -309,8 +348,11 @@ internal sealed class EvaluationPipeline
     private static string? Join(string? first, string? second) =>
         string.IsNullOrEmpty(first) ? second : string.IsNullOrEmpty(second) ? first : $"{first} {second}";
 
-    /// <summary>Records that a candle was received but not evaluated (stale or late); a second record of the same candle is ignored.</summary>
-    public async Task RecordSkippedAsync(AgentTrackingInfo info, Candle candle, string detail, CancellationToken cancellationToken)
+    /// <summary>
+    /// Records that a candle was received but not evaluated (stale or late); a second record of the same candle is
+    /// ignored and returns false. A candle too late to start is a deadline miss and logged as a Warning (NFR-PERF-01).
+    /// </summary>
+    public async Task<bool> RecordSkippedAsync(AgentTrackingInfo info, Candle candle, string detail, bool deadlineMissed, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow();
         var evaluation = new Evaluation
@@ -327,9 +369,10 @@ internal sealed class EvaluationPipeline
             OutcomeDetail = Truncate(detail),
         };
         if (!await InsertAsync(evaluation, cancellationToken).ConfigureAwait(false))
-            return;
-        _logger.LogInformation("Agent {AgentId} skipped candle {CandleOpen:O}: {Detail}", info.AgentId, candle.OpenTime, detail);
+            return false;
+        _logger.Log(deadlineMissed ? LogLevel.Warning : LogLevel.Information, "Agent {AgentId} skipped candle {CandleOpen:O}: {Detail}", info.AgentId, candle.OpenTime, detail);
         _events.Publish(new EvaluationFinished(info.AgentId, info.UserId, now, evaluation.Id, candle.OpenTime, EvaluationOutcome.Skipped));
+        return true;
     }
 
     /// <summary>False when another run owns the candle. A duplicate of our own row (the retrying strategy re-ran a committed insert) counts as inserted.</summary>
@@ -390,4 +433,6 @@ internal sealed class EvaluationPipeline
 
     private static string? Truncate(string? text) =>
         text is null || text.Length <= MaxDetailLength ? text : text[..MaxDetailLength];
+
+    private static string Seconds(TimeSpan span) => span.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + " s";
 }

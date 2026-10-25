@@ -29,9 +29,9 @@ Rules the module enforces:
 
 Configuration: none.
 
-Pages (static server rendering): `/status` (signed-in users): the overall state, the database, the agent scheduler,
-the market streams, the account streams in aggregate, the model sync per provider and the exchange rate limits, with a
-refresh every minute.
+Pages (static server rendering): `/status` (signed-in users): the overall state, the database, the agent scheduler
+(evaluations in flight and queued, deadline misses since start, NFR-PERF-01), the market streams, the account streams
+in aggregate, the model sync per provider and the exchange rate limits, with a refresh every minute.
 
 Known gaps: no JSON endpoint yet; the observability issue (#23) maps one over the same `ISystemHealth`. Only the agent
 scheduler reports a status; the model sync, retention and symbol refresh jobs log their failures and retry.

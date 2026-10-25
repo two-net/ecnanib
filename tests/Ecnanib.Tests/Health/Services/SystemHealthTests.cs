@@ -145,7 +145,7 @@ public class SystemHealthTests
         Assert.Equal(expected, SystemHealth.RollUp(database, scheduler, market, userData, sync, syncError, limits, Now));
     }
 
-    private static SchedulerStatus Running() => new(SchedulerPhase.Running, Now.AddHours(-1), Now.AddSeconds(-30), 3, 1, 0, 10, null, null);
+    private static SchedulerStatus Running() => new(SchedulerPhase.Running, Now.AddHours(-1), Now.AddSeconds(-30), 3, 1, 0, 10, null, null, 0, null);
 
     private static StreamStatus Stream(string name, StreamHealth health) => new(name, health, Now.AddSeconds(-2), Now.AddHours(-1), health == StreamHealth.Down ? "poll failed" : null);
 

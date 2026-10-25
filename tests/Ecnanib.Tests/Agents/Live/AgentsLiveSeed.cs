@@ -43,6 +43,30 @@ internal static class AgentsLiveSeed
         Guid? exchangeKeyId = null, string? model = "test-model", bool discretionary = false, int strategyVersion = 1)
     {
         await using var db = fixture.CreateContext();
+        var agent = NewAgent(userId, name, state, mode, market, symbol, timeframe, strategyId, exchangeKeyId, model, discretionary, strategyVersion);
+        db.Add(agent);
+        await db.SaveChangesAsync(Ct);
+        return agent;
+    }
+
+    /// <summary>Many paper agents of one user on BTCUSDT in one round trip (the fixture's connections are unpooled, so one context per agent would open as many connections).</summary>
+    public static async Task<List<Agent>> NewAgentsAsync(
+        DatabaseLiveFixture fixture, Guid userId, int count, AgentState state = AgentState.Running, CandleInterval timeframe = CandleInterval.OneHour,
+        string strategyId = "trend-pullback", bool discretionary = false)
+    {
+        await using var db = fixture.CreateContext();
+        var agents = Enumerable.Range(1, count)
+            .Select(i => NewAgent(userId, $"Agent {i}", state, AgentMode.Paper, MarketType.Spot, "BTCUSDT", timeframe, strategyId, null, "test-model", discretionary, 1))
+            .ToList();
+        db.AddRange(agents);
+        await db.SaveChangesAsync(Ct);
+        return agents;
+    }
+
+    private static Agent NewAgent(
+        Guid userId, string name, AgentState state, AgentMode mode, MarketType market, string symbol, CandleInterval timeframe, string strategyId,
+        Guid? exchangeKeyId, string? model, bool discretionary, int strategyVersion)
+    {
         var agent = new Agent
         {
             UserId = userId,
@@ -65,8 +89,6 @@ internal static class AgentsLiveSeed
         };
         foreach (var role in AgentRules.Roles)
             agent.CouncilAssignments.Add(new CouncilAssignment { Role = role, Provider = AgentRules.DefaultProvider(role), Model = model ?? "", Enabled = true });
-        db.Add(agent);
-        await db.SaveChangesAsync(Ct);
         return agent;
     }
 

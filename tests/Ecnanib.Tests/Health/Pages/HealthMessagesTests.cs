@@ -52,4 +52,13 @@ public class HealthMessagesTests
         Assert.Equal("2026-01-05 12:00:00 UTC", HealthMessages.Stamp(Now));
         Assert.Equal("never", HealthMessages.Stamp(null));
     }
+
+    [Fact]
+    public void DeadlineMissesReadNoneOrACountWithTheLastAge()
+    {
+        var now = new DateTimeOffset(2026, 1, 5, 12, 0, 0, TimeSpan.Zero);
+
+        Assert.Equal("none", HealthMessages.DeadlineMisses(0, null, now));
+        Assert.Equal("3 since start, last 2 min ago", HealthMessages.DeadlineMisses(3, now.AddMinutes(-2), now));
+    }
 }

@@ -137,6 +137,7 @@
     "RoleTimeoutSeconds": 60,
     "RiskManagerReserveSeconds": 45,
     "MinimumRoleBudgetSeconds": 5,
+    "ExecutionReserveSeconds": 10,
     "RecentCandles": 30,
     "HigherTimeframeCandles": 10,
     "MaxOutputTokens": 8192,

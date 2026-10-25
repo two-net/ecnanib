@@ -22,7 +22,10 @@ public sealed record SchedulerStatus(
     int MaxConcurrentEvaluations,
     /// <summary>The last start-up, tick or loop failure, kept until the next one.</summary>
     string? LastError,
-    DateTimeOffset? LastErrorAt);
+    DateTimeOffset? LastErrorAt,
+    /// <summary>Evaluations that missed their deadline since the scheduler started: runs that ended at or past it and candles too late to start (NFR-PERF-01).</summary>
+    int DeadlineMisses,
+    DateTimeOffset? LastDeadlineMissAt);
 
 public interface ISchedulerStatus
 {

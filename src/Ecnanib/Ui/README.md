@@ -34,8 +34,12 @@ Rules the module enforces:
   streams for the signed-in user only (NFR-SEC-03): `DashboardLive`, `AgentHeaderLive`, `PositionsOrdersLive`,
   `DecisionsLive` (with `DeliberationSequence`), `TokenUsage`, `TradeTimeline`, `PriceChart` and `DeliberationReplay`,
   plus the account module's `PreferencesPanel`. They share `LiveComponentBase` (one event subscription per island,
-  refreshes debounced at 250 ms, disposed with the circuit) and `PriceFeed` (one price stream per symbol, at most one
-  update a second). The chart is TradingView's Lightweight Charts, vendored under `wwwroot/lib` (Apache-2.0, see
+  refreshes coalesced by `RefreshCoalescer` after a 250 ms debounce, disposed with the circuit) and `PriceFeed` (one
+  price stream per symbol, at most one update a second). The latency budget of NFR-PERF-03 is 2 s from an event to its
+  render: the event reaches the island on the thread pool at once, the debounce adds 250 ms, then one re-read and one
+  render; the coalescer measures that span on the server (the SignalR hop to the browser excluded) and logs a Warning
+  naming the island when it is exceeded, Debug otherwise. Islands that render from the event's own data skip the
+  debounce. The chart is TradingView's Lightweight Charts, vendored under `wwwroot/lib` (Apache-2.0, see
   `THIRD-PARTY-NOTICES.md`); nothing is loaded from a third-party origin (NFR-SEC-04). The landing hero's loop is CSS
   only and pauses with a checkbox.
 
@@ -49,4 +53,5 @@ Pages: none of its own; the design system is used by every page.
 
 Known gaps: `light-dark()` needs a current browser (Baseline 2024); older browsers see the light palette.
 
-Tests: `dotnet test` runs offline (options and validation, registration, the theme attributes).
+Tests: `dotnet test` runs offline (options and validation, registration, the theme attributes, the refresh coalescer under a
+fake clock: coalescing, the trailing read, the latency and its budget).

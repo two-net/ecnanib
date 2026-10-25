@@ -195,12 +195,12 @@ internal sealed class Council : ICouncil
     }
 
     /// <summary>
-    /// Time a role may use: its timeout, or what is left before the deadline (less a margin, and less the Risk
-    /// Manager's reserve for a non-final role); null when that is below the configured minimum (FR-AI-13).
+    /// Time a role may use: its timeout, or what is left before the deadline (less the execution reserve, and less the
+    /// Risk Manager's reserve for a non-final role); null when that is below the configured minimum (FR-AI-13).
     /// </summary>
     internal static TimeSpan? Budget(CouncilOptions options, DateTimeOffset deadlineAt, DateTimeOffset now, bool final)
     {
-        var remaining = deadlineAt - now - CouncilOptions.DeadlineMargin;
+        var remaining = deadlineAt - now - options.ExecutionReserve;
         if (!final)
             remaining -= options.RiskManagerReserve;
         var budget = remaining < options.RoleTimeout ? remaining : options.RoleTimeout;
@@ -271,7 +271,7 @@ internal sealed class Council : ICouncil
             turn.Status = RoleOutputStatus.TimedOut;
             turn.Error = $"no valid answer within the role's budget of {(int)budget.TotalSeconds} s";
         }
-        catch (OperationCanceledException) when (_time.GetUtcNow() >= context.DeadlineAt - CouncilOptions.DeadlineMargin)
+        catch (OperationCanceledException) when (_time.GetUtcNow() >= context.DeadlineAt - CouncilOptions.DeadlineTolerance)
         {
             turn.Status = RoleOutputStatus.TimedOut;
             turn.DeadlinePassed = true;

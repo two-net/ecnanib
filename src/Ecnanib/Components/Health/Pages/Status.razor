@@ -48,6 +48,8 @@
             <dd>@report.Scheduler.TrackedAgents</dd>
             <dt>Evaluations</dt>
             <dd>@report.Scheduler.InFlightEvaluations in flight of @report.Scheduler.MaxConcurrentEvaluations at most, @report.Scheduler.QueuedEvaluations queued</dd>
+            <dt>Deadline misses</dt>
+            <dd>@HealthMessages.DeadlineMisses(report.Scheduler.DeadlineMisses, report.Scheduler.LastDeadlineMissAt, report.At)</dd>
             @if (report.Scheduler.LastError is not null)
             {
                 <dt>Last error</dt>

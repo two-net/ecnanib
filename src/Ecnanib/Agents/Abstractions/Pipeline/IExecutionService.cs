@@ -60,6 +60,14 @@ public interface IExecutionService
     /// </summary>
     Task<ExecutionResult> ManageAsync(ExecutionRequest request, CancellationToken cancellable, CancellationToken stopping);
 
-    /// <summary>Applies the council's decision (FR-AI-11, FR-EXE-04): sizes and places an entry, tightens a stop, takes a partial, closes, or does nothing. The decision is already saved.</summary>
-    Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, Decision decision, CancellationToken cancellationToken);
+    /// <summary>
+    /// Applies the council's decision (FR-AI-11, FR-EXE-04): sizes and places an entry, tightens a stop, takes a
+    /// partial, closes, or does nothing. The decision is already saved. Every read before the first placement (the
+    /// filters, the daily loss, equity and balance) runs on <paramref name="cancellable"/>, the evaluation deadline
+    /// included (NFR-PERF-01), with one last check right before the first order; from that order on every placement
+    /// and the writes recording it run on <paramref name="stopping"/>, because a cancelled token does not recall an
+    /// order already sent, and a decision's several placements (stop, targets, partial) are finished once started so
+    /// protection is never left half done.
+    /// </summary>
+    Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, Decision decision, CancellationToken cancellable, CancellationToken stopping);
 }

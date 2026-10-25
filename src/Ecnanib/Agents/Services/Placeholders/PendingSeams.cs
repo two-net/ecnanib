@@ -41,7 +41,7 @@ internal sealed class PendingExecutionService : IExecutionService
     public Task<ExecutionResult> ManageAsync(ExecutionRequest request, CancellationToken cancellable, CancellationToken stopping) =>
         Task.FromResult(ExecutionResult.Nothing());
 
-    public Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, Decision decision, CancellationToken cancellationToken) =>
+    public Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, Decision decision, CancellationToken cancellable, CancellationToken stopping) =>
         Task.FromResult(new ExecutionResult([], Note));
 }
 

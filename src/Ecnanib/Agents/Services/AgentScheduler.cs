@@ -68,6 +68,8 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     private DateTimeOffset? _lastTickAt;
     private DateTimeOffset? _lastErrorAt;
     private string? _lastError;
+    private int _deadlineMisses;
+    private DateTimeOffset? _lastDeadlineMissAt;
 
     public AgentScheduler(
         IDbContextFactory<EcnanibDbContext> factory,
@@ -100,8 +102,9 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     public SchedulerStatus GetStatus()
     {
         SchedulerPhase phase;
-        DateTimeOffset? startedAt, lastTickAt, lastErrorAt;
+        DateTimeOffset? startedAt, lastTickAt, lastErrorAt, lastDeadlineMissAt;
         string? lastError;
+        int deadlineMisses;
         lock (_statusLock)
         {
             phase = _phase;
@@ -109,10 +112,12 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             lastTickAt = _lastTickAt;
             lastErrorAt = _lastErrorAt;
             lastError = _lastError;
+            deadlineMisses = _deadlineMisses;
+            lastDeadlineMissAt = _lastDeadlineMissAt;
         }
 
         var queued = _queues.Values.Sum(q => q.Reader.CanCount ? q.Reader.Count : 0);
-        return new SchedulerStatus(phase, startedAt, lastTickAt, _tracked.Count, _inFlight.Count, queued, _options.Value.MaxConcurrentEvaluations, lastError, lastErrorAt);
+        return new SchedulerStatus(phase, startedAt, lastTickAt, _tracked.Count, _inFlight.Count, queued, _options.Value.MaxConcurrentEvaluations, lastError, lastErrorAt, deadlineMisses, lastDeadlineMissAt);
     }
 
     private void SetPhase(SchedulerPhase phase)
@@ -138,6 +143,16 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     {
         lock (_statusLock)
             _lastTickAt = _time.GetUtcNow();
+    }
+
+    /// <summary>NFR-PERF-01: an evaluation that ended at or past its deadline, or a candle too late to start.</summary>
+    private void RecordDeadlineMiss()
+    {
+        lock (_statusLock)
+        {
+            _deadlineMisses++;
+            _lastDeadlineMissAt = _time.GetUtcNow();
+        }
     }
 
     // --- IAgentRuntime -------------------------------------------------------------------------------------------
@@ -465,10 +480,11 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
                     _logger.LogDebug("Agent {AgentId} ignores candle {CandleOpen:O}, which closed before the agent was tracked", info.AgentId, candle.OpenTime);
                     return;
                 case ArrivalDisposition.Superseded:
-                    await _pipeline.RecordSkippedAsync(info, candle, "Superseded by a later candle.", stoppingToken).ConfigureAwait(false);
+                    await _pipeline.RecordSkippedAsync(info, candle, "Superseded by a later candle.", deadlineMissed: false, stoppingToken).ConfigureAwait(false);
                     return;
                 case ArrivalDisposition.TooLate:
-                    await _pipeline.RecordSkippedAsync(info, candle, $"Too late to start: the {deadlineLength.TotalSeconds:0} s deadline passed at {deadlineAt:HH:mm:ss} UTC.", stoppingToken).ConfigureAwait(false);
+                    if (await _pipeline.RecordSkippedAsync(info, candle, $"Too late to start: the {deadlineLength.TotalSeconds:0} s deadline passed at {deadlineAt:HH:mm:ss} UTC.", deadlineMissed: true, stoppingToken).ConfigureAwait(false))
+                        RecordDeadlineMiss();
                     return;
             }
 
@@ -476,14 +492,17 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             using var inFlight = new CancellationTokenSource();
             _inFlight[info.AgentId] = inFlight;
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, inFlight.Token, deadline.Token);
+            var result = EvaluationRunResult.NotEvaluated;
             try
             {
                 var interrupted = _interrupted.TryRemove(info.AgentId, out _);
-                await _pipeline.RunAsync(new EvaluationRun(info, candle, deadlineAt, interrupted), this, linked.Token, stoppingToken).ConfigureAwait(false);
+                result = await _pipeline.RunAsync(new EvaluationRun(info, candle, deadlineAt, interrupted), this, linked.Token, stoppingToken).ConfigureAwait(false);
             }
             finally
             {
                 _inFlight.TryRemove(new KeyValuePair<Guid, CancellationTokenSource>(info.AgentId, inFlight));
+                if (result == EvaluationRunResult.MissedDeadline)
+                    RecordDeadlineMiss();
             }
         }
         finally

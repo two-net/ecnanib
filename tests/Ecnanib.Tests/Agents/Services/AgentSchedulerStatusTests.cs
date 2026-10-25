@@ -31,6 +31,8 @@ public class AgentSchedulerStatusTests
         Assert.Null(before.LastError);
         Assert.Equal((0, 0, 0), (before.TrackedAgents, before.InFlightEvaluations, before.QueuedEvaluations));
         Assert.True(before.MaxConcurrentEvaluations > 0);
+        Assert.Equal(0, before.DeadlineMisses);
+        Assert.Null(before.LastDeadlineMissAt);
 
         // The database is down: the scheduler stays in Starting, retrying, and says why.
         await scheduler.StartAsync(AgentsTestHost.Ct);
