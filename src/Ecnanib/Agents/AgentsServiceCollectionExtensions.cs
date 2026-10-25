@@ -69,6 +69,7 @@ public static class AgentsServiceCollectionExtensions
         services.TryAddSingleton<AgentScheduler>();
         services.TryAddSingleton<IAgentRuntime>(sp => sp.GetRequiredService<AgentScheduler>());
         services.TryAddSingleton<IAgentGates>(sp => sp.GetRequiredService<AgentScheduler>());
+        services.TryAddSingleton<ISchedulerStatus>(sp => sp.GetRequiredService<AgentScheduler>());
         services.TryAddSingleton<IDailyLossLimit, DailyLossLimit>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AgentScheduler>(sp => sp.GetRequiredService<AgentScheduler>()));
 

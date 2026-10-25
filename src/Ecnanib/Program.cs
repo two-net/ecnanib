@@ -10,7 +10,9 @@ using Ecnanib.Database.Migrations;
 using Ecnanib.Exchange;
 using Ecnanib.Execution;
 using Ecnanib.Experience;
+using Ecnanib.Health;
 using Ecnanib.Keys;
+using Ecnanib.Logging;
 using Ecnanib.MarketData;
 using Ecnanib.ModelSync;
 using Ecnanib.Strategies;
@@ -56,6 +58,10 @@ builder.Services.AddExecution(builder.Configuration);
 // Before AddKeys: the runtime's own key handling (stop with orders cancelled, Error halts evaluation) replaces the default.
 builder.Services.AddAgents(builder.Configuration);
 builder.Services.AddKeys(builder.Configuration);
+// After AddAgents and AddModelSync: the health report reads the scheduler, the exchange streams, the model sync states and the database (NFR-OBS-01).
+builder.Services.AddHealth();
+// The log viewer reads log_entries scoped to the user's own agents (FR-LOG-07); the sink that fills the table arrives with the logging work.
+builder.Services.AddLogReader();
 
 await using var app = builder.Build();
 

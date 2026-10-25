@@ -20,7 +20,7 @@ namespace Ecnanib.Agents.Services;
 /// on start (NFR-REL-01), lifts daily-loss pauses at their time (FR-EXE-09) and finalises evaluations a crash left
 /// open. Shorter timeframes are served first so a 00:00 UTC burst never starves 15m agents behind 1D councils.
 /// </summary>
-internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvaluationHost, IAgentGates
+internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvaluationHost, IAgentGates, ISchedulerStatus
 {
     /// <summary>A candle that closed this long before the agent was tracked is still evaluated: the hub's safety poll hands over the candle that closed just before a stream opened.</summary>
     internal static readonly TimeSpan TrackingTolerance = TimeSpan.FromMinutes(1);
@@ -60,6 +60,14 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     private readonly SemaphoreSlim _available = new(0);
     private volatile bool _stopping;
 
+    // NFR-OBS-01: written by the loops, read by the status page; a lock because the timestamps are wider than a word.
+    private readonly Lock _statusLock = new();
+    private SchedulerPhase _phase = SchedulerPhase.NotStarted;
+    private DateTimeOffset? _startedAt;
+    private DateTimeOffset? _lastTickAt;
+    private DateTimeOffset? _lastErrorAt;
+    private string? _lastError;
+
     public AgentScheduler(
         IDbContextFactory<EcnanibDbContext> factory,
         IMarketStreams streams,
@@ -85,6 +93,51 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     public int TrackedCount => _tracked.Count;
 
     public IReadOnlyCollection<Guid> TrackedAgents => _tracked.Keys.ToArray();
+
+    // --- ISchedulerStatus ------------------------------------------------------------------------------------------
+
+    public SchedulerStatus GetStatus()
+    {
+        SchedulerPhase phase;
+        DateTimeOffset? startedAt, lastTickAt, lastErrorAt;
+        string? lastError;
+        lock (_statusLock)
+        {
+            phase = _phase;
+            startedAt = _startedAt;
+            lastTickAt = _lastTickAt;
+            lastErrorAt = _lastErrorAt;
+            lastError = _lastError;
+        }
+
+        var queued = _queues.Values.Sum(q => q.Reader.CanCount ? q.Reader.Count : 0);
+        return new SchedulerStatus(phase, startedAt, lastTickAt, _tracked.Count, _inFlight.Count, queued, _options.Value.MaxConcurrentEvaluations, lastError, lastErrorAt);
+    }
+
+    private void SetPhase(SchedulerPhase phase)
+    {
+        lock (_statusLock)
+        {
+            _phase = phase;
+            if (phase == SchedulerPhase.Running)
+                _startedAt = _time.GetUtcNow();
+        }
+    }
+
+    private void RecordError(string message)
+    {
+        lock (_statusLock)
+        {
+            _lastError = message;
+            _lastErrorAt = _time.GetUtcNow();
+        }
+    }
+
+    private void RecordTick()
+    {
+        lock (_statusLock)
+            _lastTickAt = _time.GetUtcNow();
+    }
 
     // --- IAgentRuntime -------------------------------------------------------------------------------------------
 
@@ -213,9 +266,14 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        SetPhase(SchedulerPhase.Starting);
         if (!await StartupAsync(stoppingToken).ConfigureAwait(false))
+        {
+            SetPhase(SchedulerPhase.Stopped);
             return;
+        }
 
+        SetPhase(SchedulerPhase.Running);
         var loops = new List<Task> { Guard(DispatchAsync(stoppingToken)), Guard(TickAsync(stoppingToken)) };
         for (var i = 0; i < _options.Value.MaxConcurrentEvaluations; i++)
             loops.Add(Guard(WorkAsync(stoppingToken)));
@@ -232,6 +290,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             }
             catch (Exception ex)
             {
+                RecordError(ex.Message);
                 _logger.LogError(ex, "An agent scheduler loop stopped unexpectedly");
             }
         }
@@ -242,6 +301,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         _stopping = true;
         _intake.Writer.TryComplete();
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        SetPhase(SchedulerPhase.Stopped);
         // Released one by one so the loader lets go of every series before the hub closes the streams.
         foreach (var agentId in _tracked.Keys.ToArray())
             Release(agentId);
@@ -264,6 +324,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             }
             catch (Exception ex)
             {
+                RecordError(ex.Message);
                 _logger.LogWarning(ex, "The agent scheduler could not start; next attempt in {Delay}", StartupRetry);
                 if (!await DelayAsync(StartupRetry, stoppingToken).ConfigureAwait(false))
                     return false;
@@ -477,6 +538,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             try
             {
                 await TickOnceAsync(stoppingToken).ConfigureAwait(false);
+                RecordTick();
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -484,6 +546,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             }
             catch (Exception ex)
             {
+                RecordError(ex.Message);
                 _logger.LogWarning(ex, "The agent scheduler's minute tick failed; next attempt in {Interval}", TickInterval);
             }
         }

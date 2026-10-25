@@ -64,6 +64,12 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
 
         // FR-UI-04: the page that showed the interrupted evaluation as running learns that it ended.
         await Wait.UntilAsync(() => events.OfType<EvaluationFinished>().Any(e => e.EvaluationId == interruptedId && e.Outcome == EvaluationOutcome.Failed && e.AgentId == running.Id), "sweep event");
+        // NFR-OBS-01: once the sweep and the resume are through, the scheduler reports itself Running with its counts.
+        var status = ((ISchedulerStatus)scheduler).GetStatus();
+        Assert.Equal(SchedulerPhase.Running, status.Phase);
+        Assert.Equal(AgentsLiveSeed.Now, status.StartedAt);
+        Assert.Equal(2, status.TrackedAgents);
+        Assert.Null(status.LastError);
         Assert.False(scheduler.IsTracked(stopped.Id));
         Assert.False(scheduler.IsTracked(error.Id));
         Assert.True(streams.HasCandleSubscription(AgentsLiveSeed.SpotBtc, CandleInterval.OneHour));
