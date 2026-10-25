@@ -11,9 +11,10 @@ Binance Spot and USDⓈ-M Futures gateway (SRS §3.1.2, EX-01..06). Other module
 | Futures stops and take-profits, which Binance accepts on the conditional (algo) endpoint only since December 2025 (`-4120` on the plain one) | `IFuturesAccountClient.PlaceConditionalOrderAsync` / `GetConditionalOrderAsync` / `CancelConditionalOrderAsync` (by algo id or client algo id) / `GetOpenConditionalOrdersAsync`; the stream delivers `UserDataEvent.ConditionalOrderUpdate` and the snapshot the open ones |
 | Funding payments of a symbol (FR-EXE-12) | `IFuturesAccountClient.GetFundingPaymentsAsync(symbol, from, to)` |
 | Live closed candles, prices, mark prices with reconnect and polling fallback | `IMarketStreams.SubscribeCandles / SubscribePrice / SubscribeMarkPrice` |
+| The forming candle as it updates (the chart) | `IMarketStreams.SubscribeCandleUpdates(key, interval, handler)`: every kline update, closed or not, on the same shared stream; polled closes are forwarded too |
 | Order, fill, balance and position events per key, with snapshot polling fallback | `IExchangeAccountClient.SubscribeUserData(...)` |
 | Key deleted or rotated | `IExchangeClientFactory.ReleaseAsync(keyId)` then obtain clients again |
-| Health for the status page | `IExchangeHealth` |
+| Health for the status page (`/status`, health module) | `IExchangeHealth` |
 
 Rules the module enforces:
 

@@ -18,6 +18,8 @@ It adds two hosted services and connects to nothing at registration. The venue m
 | The daily loss limit (FR-EXE-09) | `IDailyLossLimit.CheckAsync(agentId, ct)` (agents module), called after every exit fill and before every entry |
 | What execution found at order time | `decisions.execution_check` (the council's `LimitCheck` shape, names in `ExecutionLimitNames`) and `decisions.size`; the deliberation page shows both lists |
 | Deterministic client order ids (FR-EXE-07) | `ClientOrderIds.For(prefix, agentId, scope, purpose, sequence)`: `p` paper, `e` live |
+| P&L per agent for the dashboard (FR-UI-04) | `IAgentPerformance.GetAsync(userId, agentIds)` → `AgentPnl` per agent (realized all-time and today in UTC, fees, funding, closed trades, open positions, paper equity); `PnlMath.Unrealized` for an open position at the last price |
+| A trade's lifecycle for the timeline (FR-UI-03 e) | `ITradeTimelineReader.GetAsync(userId, tradeId)` / `ListRecentAsync(userId, agentId, count)` → `TradeTimelineView` with its `TimelineEvent`s from the evaluation to the close |
 
 Rules the module enforces:
 
@@ -105,13 +107,17 @@ Configuration (`Execution` section; the defaults are in `src/Ecnanib/ecnanib.jso
 The reconciliation interval is `Exchange:ReconciliationIntervalSeconds`, the risk caps `RiskCaps`, the entry timeout
 default `Agents:DefaultEntryTimeoutCandles`.
 
-Pages: `/agents` gains "Stop all my agents"; `/agents/{id}` shows a position's remaining size; the deliberation page
-shows the execution check beside the council's limits check.
+Pages: the dashboard (`/agents`) shows each agent's realized P&L, all-time and today, and the unrealized P&L of its open
+positions at the last price, and offers "Stop all my agents"; `/agents/{id}` shows the positions and orders with their
+unrealized P&L and remaining size and the trade lifecycle timeline (evaluated, decided, entry placed and filled,
+protected, stop moves, partials, exit, closed); the deliberation page shows the execution check beside the council's
+limits check.
 
 Known gaps: an exchange position or order the system did not open is reported, not adopted; a fee asset other than the
 base or quote asset needs a public `FEEASSET+quote` price, else the fee is 0 with a warning; the optional 1D entry in
 up to three tranches stays deferred (one entry per decision); after a key rotation the fill tracker is blind for at most
-one round, which reconciliation covers; live excursions (MAE/MFE) are not tracked; live updates in the UI stay with #14.
+one round, which reconciliation covers; live excursions (MAE/MFE) are not tracked; the dashboard's equity is the paper
+venue's only, a live agent's equity being the whole account's.
 
 Tests: `dotnet test` runs offline (the options, the registration and the placeholder replacement, the sizing arithmetic,
 the management rules, the ids and the units, the conditional-order mappings). Live checks run against PostgreSQL through

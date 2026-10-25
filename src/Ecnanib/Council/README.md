@@ -13,6 +13,8 @@ to nothing at registration. The roles themselves, the prompts, the schemas and t
 | Run the council for one evaluation (FR-AI-02..07, FR-AI-09..13) | `ICouncil.DeliberateAsync(CouncilContext, ct)` → `CouncilResult` (the unsaved `Decision` graph, a `Failure` when the Risk Manager decided nothing, a `Fault` when the agent cannot run as configured); the agents module's pipeline is the only caller |
 | Feed experience into prompts (FR-AI-06, FR-EXP-06) | `IExperienceSummaries`, provided by the experience module registered before `AddCouncil`; the default here answers "no experience recorded yet" |
 | Show a deliberation (FR-AI-14) | `IDeliberationReader.GetAsync(userId, evaluationId, ct)` → `DeliberationView` (the evaluation, each role's `RoleTurnView`, the `FinalDecisionView` with its limits); another user's evaluation answers null |
+| An agent's token usage (NFR-COST-01) | `IDeliberationReader.GetAgentUsageAsync(userId, agentId, ct)` → `AgentTokenUsage` (tokens in and out, all-time and today, decisions, per role) |
+| Follow a deliberation as it happens (FR-UI-03 b, FR-UI-04) | the agents module's `IAgentEvents`: `CouncilRoleStarted` and `CouncilRoleFinished` per role in order, published here before and after each call, then the pipeline's `DecisionRecorded` |
 | The roles, their order, defaults and responsibilities (Appendix B) | `CouncilRoles` in the agents abstractions |
 | What a role returned (Appendix C) | `RoleOutputDocument` / `FinalDecisionDocument`; `LimitCheck` entries of the decision's limits check |
 
@@ -84,7 +86,10 @@ provider's newest catalog model) and single-model mode (FR-AI-03, FR-AI-04); eve
 `/agents/{id}/evaluations/{evaluationId}`, which shows the strategy output, each role's turn (status, provider, model,
 cost, proposal, assessment, flags, the document and the input it received) and the final decision with its limits
 check (FR-AI-14), the execution check appended at order time, and, for a setup the council did not take, its shadow outcome (the experience module's, FR-EXP-03).
-The deliberation animation is the UI issue's (FR-UI-03 b).
+While a council runs, the agent page's decisions list shows the roles taking their turns in order and the verdict last
+(FR-UI-03 b), driven by the role events; the deliberation page replays the recorded turns at a pace set by each role's
+latency, skippable and skipped under reduced motion. The agent page's council usage section shows the tokens per role,
+all-time and today (NFR-COST-01).
 
 Tests: `dotnet test` runs offline (the sequence over faked providers: order, disabled roles, the retry, failures,
 budgets and the deadline with a fake clock, faults, keys never reaching a prompt, the limits one by one, the parser,

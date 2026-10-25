@@ -12,7 +12,7 @@ adds one hosted service and connects to nothing at registration.
 |---|---|
 | Record the models a key validation just listed (FR-SYNC-02) | `IProviderCatalogSync.SyncAsync(provider, models, SyncTrigger.KeyValidation, ct)` → `CatalogSyncResult` (added, updated, listed, missed, deprecated) |
 | Sync a provider now with a stored key (FR-SYNC-02) | `IModelSyncService.SyncNowAsync(provider, userId, ct)` → `ModelSyncOutcome`: `Synced` with the result, `NoValidKey`, or `Failed` with the detail; an exception means the database failed |
-| Show the last sync per provider (FR-SYNC-06, NFR-OBS-01) | `IModelCatalog.GetSyncStatesAsync(ct)` → one `ProviderSyncView` per provider in enum order (time, result and error, trigger, models listed, available and deprecated counts), `Never` for a provider never synced; the health status (#23) reads the same |
+| Show the last sync per provider (FR-SYNC-06, NFR-OBS-01) | `IModelCatalog.GetSyncStatesAsync(ct)` → one `ProviderSyncView` per provider in enum order (time, result and error, trigger, models listed, available and deprecated counts), `Never` for a provider never synced; the health module's `/status` page reads the same |
 | Offer the catalog for choosing council models (FR-AI-03, FR-SYNC-05) | `IModelCatalog.ListAsync(ct)` → `CatalogModel` per provider, available first, the most recently added first |
 
 Rules the module enforces:

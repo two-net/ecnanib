@@ -16,6 +16,7 @@ registration. The series, the feed and the catalog never leave this folder.
 | Follow and release an agent's series (FR-DATA-02) | `IMarketDataLoader.Track(MarketDataNeeds)` / `Untrack(agentId)`; the agents module's scheduler calls them as it tracks and untracks an agent |
 | Whether a symbol is listed, and its filters (FR-DATA-01, FR-EXE-04) | `ISymbolCatalog.FindAsync(environment, market, symbol, ct)` → `SymbolInfo` with `SymbolFilters` (tick size, step size, minimum notional, order counts and the rounding helpers), `ListAsync(environment, market, ct)`; the execution module sizes against it |
 | The latest mark price, funding rate and next funding time of a followed futures symbol (FR-DATA-04) | `IFuturesMetrics.Latest(key)` |
+| The closed candles for the agent page's chart (FR-UI-03 c) | `ICandleReader.ReadAsync(key, interval, count, ct)`: the followed series when it is loaded, else the `candles` table, else one exchange read (a draft or untracked agent); the forming candle comes from the exchange module's `IMarketStreams.SubscribeCandleUpdates` |
 | Candle retention (FR-DATA-05) | `Retention:CandleDays`, the database module's; its `RetentionSweeper` deletes by open time |
 
 Rules the module enforces:
@@ -67,9 +68,9 @@ Each depth is between 20 and 5000; the defaults cover every Appendix A strategy 
 parameter at its maximum, such as a 500-candle range, needs more) and cost one request per series. The refresh interval
 beyond Appendix D's minimum enforces "at least daily". Candle retention is `Retention:CandleDays`.
 
-Pages: none. The deliberation page (council module) shows the candles, higher timeframes, reference closes and the mark
-price each role received; the agent page's chart is the UI issue's (#14), the stream status the status page's (#23,
-`IMarketStreams.GetStatuses()` and `IExchangeHealth`).
+Pages: none of its own. The agent page's chart reads its candles through `ICandleReader` and follows the forming one on
+the candle stream; the deliberation page (council module) shows the candles, higher timeframes, reference closes and the
+mark price each role received; `/status` (health module) shows every stream's state from `IExchangeHealth`.
 
 Known gaps: a series the exchange's own history leaves short (a hole in what it returns) only grows at its tail, so
 the window stays short until enough candles have closed; the listing is in memory and read again after a restart; a

@@ -31,7 +31,13 @@ Rules the module enforces:
   tokens and never select on `data-theme`.
 - Live updates (FR-UI-04, NFR-PERF-03): pages stay statically rendered with plain forms; the parts that change without
   a reload are interactive server islands under `Components/Live` that subscribe to `IAgentEvents` and the market
-  streams for the signed-in user only (NFR-SEC-03).
+  streams for the signed-in user only (NFR-SEC-03): `DashboardLive`, `AgentHeaderLive`, `PositionsOrdersLive`,
+  `DecisionsLive` (with `DeliberationSequence`), `TokenUsage`, `TradeTimeline`, `PriceChart` and `DeliberationReplay`,
+  plus the account module's `PreferencesPanel`. They share `LiveComponentBase` (one event subscription per island,
+  refreshes debounced at 250 ms, disposed with the circuit) and `PriceFeed` (one price stream per symbol, at most one
+  update a second). The chart is TradingView's Lightweight Charts, vendored under `wwwroot/lib` (Apache-2.0, see
+  `THIRD-PARTY-NOTICES.md`); nothing is loaded from a third-party origin (NFR-SEC-04). The landing hero's loop is CSS
+  only and pauses with a checkbox.
 
 Configuration (`Ui` is this module's section):
 

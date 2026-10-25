@@ -15,11 +15,13 @@ scheduler, pipeline and paper simulator never leave this folder. `AddAgents` req
 | The strategy catalog filtered by timeframe (FR-AGT-03, Appendix A) | `IStrategyCatalog.ForTimeframe(timeframe)` → `StrategyDescriptor` with versioned, bounded parameters (provided by the Strategies module; `Find(id)` is the newest version, `Find(id, version)` the pinned one); `StrategyParameters` reads and writes `agents.parameters` |
 | Pin and upgrade the strategy version (FR-STR-06) | `AgentDetail.StrategyVersion` / `LatestStrategyVersion`, `IAgentService.UpgradeStrategyAsync` |
 | "No new entry" windows (FR-STR-05) | `IAgentService.AddEntryWindowAsync(EntryWindowInput)` / `RemoveEntryWindowAsync`, `AgentDetail.EntryWindows` → `EntryWindowView`; `EntryWindowSchedule.IsActive` is the one implementation of their semantics |
+| One agent's state, open positions and orders, or recent evaluations, for the live islands (FR-UI-04) | `IAgentService.GetStatusAsync` → `AgentStatusView`, `GetOpenAsync` → `AgentOpenView`, `ListEvaluationsAsync(userId, agentId, count)`; `AgentSummary` carries the environment and the evaluation in flight (`InFlightEvaluationId`, `InFlightCandleOpenTime`) |
+| The scheduler's own state, for the status page (NFR-OBS-01) | `ISchedulerStatus.GetStatus()` → `SchedulerStatus` (phase, started, last tick, tracked agents, evaluations in flight and queued, the last error) |
 | Warn about a council model the catalog deprecated (FR-SYNC-03) | `CouncilAssignmentView.CatalogStatus` (null for a model the catalog never listed), `AgentSummary.HasDeprecatedModel` (an enabled role only) |
 | React to agent events in the UI (FR-AGT-10, FR-UI-04) | `IAgentEvents.Subscribe(userId, handler)` → `AgentStateChanged`, `EvaluationStarted`, `CouncilRoleStarted` / `CouncilRoleFinished` (published by the council module), `DecisionRecorded`, `EvaluationFinished`, `OrderChanged`, `TradeChanged` (also on a stop or target move); every event is published after its row is committed and carries ids only, so a page re-reads what it shows |
 | Provide a pipeline stage (council, market data, execution, experience, live venue) or the symbol listing | implement `ICouncil`, `IMarketDataLoader` (`Track`, `Untrack`, `LoadAsync`), `ISymbolCatalog`, `IExecutionService` (`ManageAsync` before the council, `ExecuteAsync` for the decision), `IExperienceTracker` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
 | The per-agent gate and the daily loss limit, for the execution module (FR-EXE-08, FR-EXE-09) | `IAgentGates.LockAsync` / `TryLock` (the scheduler's gate); `IDailyLossLimit.CheckAsync(agentId)` (gate-free, pauses a Running agent until the next UTC day when today's realized loss reaches the limit) |
-| Client order ids, protection units and the trade JSON shapes shared by both venues (FR-EXE-07, FR-EXE-06, FR-EXP-02) | `ClientOrderIds.For(prefix, agentId, scope, purpose, sequence)`; `ProtectionUnits.Split(quantity, targets, partialFraction, stepSize, minQuantity)` and `ProtectionUnits.PartialFraction(parameters)`; `TradeJson.Targets` / `StopHistory` / `AppendStop` / `InitialStop` for `trades.targets` and `trades.stop_history` |
+| Client order ids, protection units and the trade JSON shapes shared by both venues (FR-EXE-07, FR-EXE-06, FR-EXP-02) | `ClientOrderIds.For(prefix, agentId, scope, purpose, sequence)`; `ProtectionUnits.Split(quantity, targets, partialFraction, stepSize, minQuantity)` and `ProtectionUnits.PartialFraction(parameters)`; `TradeJson.Targets` / `StopHistory` / `StopHistoryEntries` (typed, for the timeline and the chart) / `AppendStop` / `InitialStop` for `trades.targets` and `trades.stop_history` |
 | Suggest a council from experience at creation (FR-EXP-08) | implement `ICouncilSuggestions` and register it **before** `AddAgents`; the default suggests nothing, so every role gets its Appendix B default |
 | The council roles, their order and Appendix B defaults | `CouncilRoles` (`Order`, `DefaultProvider`, `Display`, `Responsibility`) |
 | Council presets (FR-AI-04) | `IAgentService.ResetCouncilToDefaultsAsync` (defaults by strength with each provider's newest catalog model), `UseSingleModelAsync` (one model for every role); both save through `UpdateCouncilAsync` |
@@ -139,20 +141,27 @@ Configuration (`Agents` runtime settings beside the accounts module's fair-use l
 
 A deadline must be shorter than its timeframe; percentages are plain percents (0.1 means 0.1%).
 
-Pages (static server rendering, plain forms): `/agents` (the user's agents with state and last evaluation, and "Stop all my agents" with the close-or-leave choice and a confirmation),
-`/agents/new` (name, market, symbol, timeframe, mode, key, leverage and margin; creates a draft) and `/agents/{id}`
-(actions, positions and orders, settings, strategy and parameters generated from the pinned version's descriptor with an
-upgrade button when a newer version exists, no-entry windows, council with the synced catalog per role, the two
-presets and a hint naming the roles the user's experience would assign differently (FR-EXP-08), risk limits, recent
-evaluations each linking to its deliberation, the experience section (the experience module's: statistics per role and
-the last closed trades), and change history; fields a state forbids are disabled). A council role whose model the catalog marks deprecated is flagged in the list and prompted for a
-replacement on the agent page, with the provider's newest available model suggested (FR-SYNC-03); saving and starting
-are not blocked, the provider's own rejection at call time is FR-SYNC-04. The disclaimer is shown on both forms
-(FR-UI-05). Another user's agent and a missing one both answer not found.
+Pages (statically rendered with plain forms; the parts that change without a reload are the interactive islands under
+`Components/Live`, FR-UI-04): `/agents` is the dashboard, one card per agent with its state, the evaluating indicator,
+realized P&L all-time and today, the unrealized P&L of its open positions at the last price, paper equity, open positions
+and the last evaluation, updated from the agent events and the price streams, plus "Stop all my agents" with the
+close-or-leave choice and a confirmation. `/agents/new` is the first step of the setup wizard (FR-UI-01: name, market,
+symbol, timeframe, mode, key, leverage and margin; it creates a draft and continues to the strategy step) and
+`/agents/{id}/setup/{step}` holds the rest: strategy and parameters generated from the pinned version's descriptor with
+an upgrade button when a newer version exists; the council with the synced catalog per role, the two presets and a hint
+naming the roles the user's experience would assign differently (FR-EXP-08); risk limits and no-entry windows; review
+and start. `/agents/{id}` is the operational view: state with pause cause and the countdown to the next candle close,
+actions, the price chart with the forming candle and trade markers, positions and orders with unrealized P&L, the trade
+lifecycle timeline, recent evaluations each linking to its deliberation with the council's progress shown while one
+runs, the council's token usage, the newest log rows, the experience section (the experience module's), the setup
+summary and the change history. Fields a state forbids are disabled. A council role whose model the catalog marks
+deprecated is flagged on the dashboard and prompted for a replacement on the council step, with the provider's newest
+available model suggested (FR-SYNC-03); saving and starting are not blocked, the provider's own rejection at call time
+is FR-SYNC-04. The disclaimer is shown on every setup step and on the agent page (FR-UI-05). Another user's agent and a
+missing one both answer not found.
 
-Known gaps: the dashboard, agent detail with chart and live updates with the UI issue. `Order.WorkingType` has no
-column, so paper futures stops are last-price only. Paper excursions are tracked per tick in memory and lost on a
-restart.
+Known gaps: `Order.WorkingType` has no column, so paper futures stops are last-price only. Paper excursions are
+tracked per tick in memory and lost on a restart.
 
 Tests: `dotnet test` runs offline (options, registration and placeholder replacement, the Appendix E table and edit
 rules, parameter parsing, input rules including windows, the window schedule, change sets, events, the scheduler's

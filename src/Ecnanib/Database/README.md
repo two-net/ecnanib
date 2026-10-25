@@ -29,7 +29,7 @@ Rules the module enforces:
   experience statistics are never swept (NFR-DATA-03). A failing sweep is logged at Warning and retried next time.
 - All three retention periods live under `Retention` because NFR-DATA-03 defines them together; Appendix D lists
   the log and candle periods under `logging` and `market data`, so the market-data module (#12) and the logging
-  issue (#15) read them from here. `candles` is written by the market-data module's feed: the backfill, repairs and
+  module read them from here. `candles` is written by the market-data module's feed: the backfill, repairs and
   streamed closes of every followed series whose open time is inside the candle retention period.
 - Identifiers are snake_case, enums are stored as `text`, `DateTimeOffset` is normalized to UTC on write and read
   back with a zero offset, `decimal` is unbounded `numeric`, open-ended structures are `jsonb` (`JsonElement`: store
