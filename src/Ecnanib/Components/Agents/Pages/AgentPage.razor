@@ -13,7 +13,7 @@
 
 @if (_agent is { } agent)
 {
-    <p><a href="/agents">← Agents</a></p>
+    <p><a href="/agents">← Dashboard</a></p>
     <h1>@agent.Name</h1>
     <AgentHeaderLive AgentId="Id" />
     @if (_deprecatedRoles.Count > 0)
@@ -124,10 +124,12 @@
             <dt>Strategy</dt><dd>@(_strategy?.Name ?? agent.StrategyId), version @agent.StrategyVersion@(agent.Parameters.Count > 0 ? $" with {AgentMessages.Plural(agent.Parameters.Count, "changed parameter", "changed parameters")}" : ", default parameters")</dd>
             <dt>Council</dt>
             <dd>
-                @foreach (var role in agent.Council)
-                {
-                    <span class="muted">@CouncilRoles.Display(role.Role): @ProviderNames.Display(role.Provider) @(role.Model.Length == 0 ? "(no model)" : role.Model)@(role.Enabled ? "" : " (disabled)")@(role.CatalogStatus == ModelStatus.Deprecated ? " (deprecated)" : "")</span>
-                }
+                <ul class="plain">
+                    @foreach (var role in agent.Council)
+                    {
+                        <li>@CouncilRoles.Display(role.Role): @ProviderNames.Display(role.Provider) @(role.Model.Length == 0 ? "(no model)" : role.Model)@(role.Enabled ? "" : " (disabled)")@(role.CatalogStatus == ModelStatus.Deprecated ? " (deprecated)" : "")</li>
+                    }
+                </ul>
             </dd>
             <dt>Risk</dt><dd>@agent.RiskLimits.RiskPerTradePercent% per trade, at most @agent.RiskLimits.MaxOpenPositions open, @agent.RiskLimits.DailyLossLimitPercent% daily loss@(agent.RiskLimits.MaxNotional is { } cap ? $", notional cap {cap}" : "")</dd>
             <dt>No-entry windows</dt><dd>@(agent.EntryWindows.Count == 0 ? "none" : string.Join("; ", agent.EntryWindows.Select(AgentMessages.Describe)))</dd>

@@ -24,6 +24,13 @@ section + section {
     border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
 }
 
+/* A list without bullets or indent, for short enumerations inside a definition. */
+ul.plain {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
 /* Text helpers */
 .hint {
     color: var(--text-muted);
