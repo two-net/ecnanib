@@ -110,7 +110,7 @@
         try
         {
             _module = await JS.InvokeAsync<IJSObjectReference>("import", cancellationToken, "./Components/Live/PriceChart.razor.js");
-            await _module.InvokeVoidAsync("create", cancellationToken, _element, Assets["lib/lightweight-charts/lightweight-charts.production.mjs"], _status.Timeframe.ToLabel());
+            await _module.InvokeVoidAsync("create", cancellationToken, _element, Assets["lib/lightweight-charts/lightweight-charts.standalone.production.js"], _status.Timeframe.ToLabel());
             await _module.InvokeVoidAsync("setData", cancellationToken, _element, _bars);
             await _module.InvokeVoidAsync("setMarkers", cancellationToken, _element, _markers);
         }

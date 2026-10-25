@@ -23,6 +23,7 @@ public abstract class LiveComponentBase : ComponentBase, IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private IDisposable? _subscription;
     private Task? _loop;
+    private Task _firstLoad = Task.CompletedTask;
     private bool _authenticationHooked;
     private ILogger? _logger;
 
@@ -53,12 +54,28 @@ public abstract class LiveComponentBase : ComponentBase, IAsyncDisposable
     {
         var state = await AuthenticationState;
         UserId = state.User.RequireUserId();
-        await LoadAsync(Lifetime);
+        _firstLoad = LoadAsync(Lifetime);
+        await _firstLoad;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || !RendererInfo.IsInteractive)
+            return;
+
+        // The first render happens while the first load is still awaited, so this runs before it finished; the live
+        // hook needs what it read (the symbol a chart or a price feed follows). A failed load surfaces from
+        // OnInitializedAsync, not from here.
+        try
+        {
+            await _firstLoad;
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        if (_cts.IsCancellationRequested)
             return;
 
         _subscription = Events.Subscribe(UserId, HandleAsync);

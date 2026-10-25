@@ -47,12 +47,36 @@ function coloured(state, list) {
     return list.map(m => ({ time: m.time, position: m.position, shape: m.shape, color: resolve(state, tones[m.tone] || "--accent"), text: m.text, id: m.id }));
 }
 
+let library = null;
+
+// The standalone build registers window.LightweightCharts and is loaded once, by a script element: the ESM build
+// imports "fancy-canvas" by bare specifier, which a browser cannot resolve without an import map. The URL is the
+// fingerprinted one the asset pipeline gives the page, resolved against the document base.
+function loadLibrary(url) {
+    if (window.LightweightCharts) {
+        return Promise.resolve(window.LightweightCharts);
+    }
+
+    library ??= new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = url;
+        script.onload = () => resolve(window.LightweightCharts);
+        script.onerror = () => {
+            library = null;
+            script.remove();
+            reject(new Error(`The chart library could not be loaded from ${url}`));
+        };
+        document.head.appendChild(script);
+    });
+    return library;
+}
+
 export async function create(element, libraryUrl, intervalLabel) {
     if (charts.has(element)) {
         return;
     }
 
-    const lib = await import(libraryUrl);
+    const lib = await loadLibrary(new URL(libraryUrl, document.baseURI).href);
     const probe = document.createElement("span");
     probe.style.display = "none";
     element.appendChild(probe);
