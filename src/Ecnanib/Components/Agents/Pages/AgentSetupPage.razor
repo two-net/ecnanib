@@ -17,7 +17,7 @@
 @inject IOptions<RiskCapsOptions> RiskCaps
 @inject NavigationManager Navigation
 
-<PageTitle>Agent setup</PageTitle>
+<PageTitle>@(_agent is { } titleAgent ? $"Set up {titleAgent.Name}: {WizardSteps.Title(_step)}" : "Agent setup")</PageTitle>
 
 @if (_agent is { } agent)
 {
@@ -158,7 +158,7 @@
                                     @parameter.Label
                                     @if (parameter.Kind is StrategyParameterKind.Integer or StrategyParameterKind.Decimal)
                                     {
-                                        <span class="muted">(@parameter.Min to @parameter.Max)</span>
+                                        <span class="muted">(@parameter.Min to @parameter.Max, default @parameter.DefaultText)</span>
                                         <InputText @bind-Value="Strategy.Values[name]" placeholder="@parameter.DefaultText" inputmode="@(parameter.Kind == StrategyParameterKind.Integer ? "numeric" : "decimal")" disabled="@(!CanEdit(AgentField.Parameters))" />
                                     }
                                     else if (parameter.Kind == StrategyParameterKind.Choice)
@@ -216,13 +216,13 @@
                     <p class="error" role="alert">@_councilError</p>
                 }
                 <div class="table-wrap">
-                    <table class="agents council">
+                    <table class="agents council" aria-labelledby="council-title">
                         <thead><tr><th scope="col">Role</th><th scope="col">Model</th><th scope="col">Other: provider and model id</th><th scope="col">Enabled</th></tr></thead>
                         <tbody>
                             <tr>
                                 <td>Market Analyst<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.MarketAnalyst)</span></td>
                                 <td>
-                                    <InputSelect @bind-Value="Council.MarketAnalystChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
+                                    <InputSelect @bind-Value="Council.MarketAnalystChoice" aria-label="Market Analyst model" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
                                     @if (Deprecation(CouncilRole.MarketAnalyst) is { } analystNote)
                                     {
                                         <span class="muted warning-text">@analystNote</span>
@@ -230,16 +230,16 @@
                                 </td>
                                 <td>
                                     <div class="other">
-                                        <InputSelect @bind-Value="Council.MarketAnalystProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                                        <InputText @bind-Value="Council.MarketAnalystModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
+                                        <InputSelect @bind-Value="Council.MarketAnalystProvider" aria-label="Market Analyst provider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                                        <InputText @bind-Value="Council.MarketAnalystModel" aria-label="Market Analyst model id" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
                                     </div>
                                 </td>
-                                <td><InputCheckbox @bind-Value="Council.MarketAnalystEnabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
+                                <td><InputCheckbox @bind-Value="Council.MarketAnalystEnabled" aria-label="Market Analyst enabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
                             </tr>
                             <tr>
                                 <td>Sentiment &amp; Flow<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.SentimentFlow)</span></td>
                                 <td>
-                                    <InputSelect @bind-Value="Council.SentimentFlowChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
+                                    <InputSelect @bind-Value="Council.SentimentFlowChoice" aria-label="Sentiment &amp; Flow model" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
                                     @if (Deprecation(CouncilRole.SentimentFlow) is { } sentimentNote)
                                     {
                                         <span class="muted warning-text">@sentimentNote</span>
@@ -247,16 +247,16 @@
                                 </td>
                                 <td>
                                     <div class="other">
-                                        <InputSelect @bind-Value="Council.SentimentFlowProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                                        <InputText @bind-Value="Council.SentimentFlowModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
+                                        <InputSelect @bind-Value="Council.SentimentFlowProvider" aria-label="Sentiment &amp; Flow provider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                                        <InputText @bind-Value="Council.SentimentFlowModel" aria-label="Sentiment &amp; Flow model id" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
                                     </div>
                                 </td>
-                                <td><InputCheckbox @bind-Value="Council.SentimentFlowEnabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
+                                <td><InputCheckbox @bind-Value="Council.SentimentFlowEnabled" aria-label="Sentiment &amp; Flow enabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
                             </tr>
                             <tr>
                                 <td>Cross-Market Context<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.CrossMarketContext)</span></td>
                                 <td>
-                                    <InputSelect @bind-Value="Council.CrossMarketContextChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
+                                    <InputSelect @bind-Value="Council.CrossMarketContextChoice" aria-label="Cross-Market Context model" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
                                     @if (Deprecation(CouncilRole.CrossMarketContext) is { } contextNote)
                                     {
                                         <span class="muted warning-text">@contextNote</span>
@@ -264,16 +264,16 @@
                                 </td>
                                 <td>
                                     <div class="other">
-                                        <InputSelect @bind-Value="Council.CrossMarketContextProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                                        <InputText @bind-Value="Council.CrossMarketContextModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
+                                        <InputSelect @bind-Value="Council.CrossMarketContextProvider" aria-label="Cross-Market Context provider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                                        <InputText @bind-Value="Council.CrossMarketContextModel" aria-label="Cross-Market Context model id" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
                                     </div>
                                 </td>
-                                <td><InputCheckbox @bind-Value="Council.CrossMarketContextEnabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
+                                <td><InputCheckbox @bind-Value="Council.CrossMarketContextEnabled" aria-label="Cross-Market Context enabled" disabled="@(!CanEdit(AgentField.Council))" /></td>
                             </tr>
                             <tr>
                                 <td>Risk Manager<br /><span class="muted">@CouncilRoles.Responsibility(CouncilRole.RiskManager)</span></td>
                                 <td>
-                                    <InputSelect @bind-Value="Council.RiskManagerChoice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
+                                    <InputSelect @bind-Value="Council.RiskManagerChoice" aria-label="Risk Manager model" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
                                     @if (Deprecation(CouncilRole.RiskManager) is { } riskNote)
                                     {
                                         <span class="muted warning-text">@riskNote</span>
@@ -281,8 +281,8 @@
                                 </td>
                                 <td>
                                     <div class="other">
-                                        <InputSelect @bind-Value="Council.RiskManagerProvider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                                        <InputText @bind-Value="Council.RiskManagerModel" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
+                                        <InputSelect @bind-Value="Council.RiskManagerProvider" aria-label="Risk Manager provider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                                        <InputText @bind-Value="Council.RiskManagerModel" aria-label="Risk Manager model id" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id" disabled="@(!CanEdit(AgentField.Council))" />
                                     </div>
                                 </td>
                                 <td>always</td>
@@ -311,8 +311,8 @@
                     <InputSelect @bind-Value="Preset.Choice" disabled="@(!CanEdit(AgentField.Council))">@CatalogOptions()</InputSelect>
                 </label>
                 <div class="other">
-                    <InputSelect @bind-Value="Preset.Provider" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
-                    <InputText @bind-Value="Preset.Model" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id (when Other is chosen)" disabled="@(!CanEdit(AgentField.Council))" />
+                    <InputSelect @bind-Value="Preset.Provider" aria-label="Provider for every role, when Other is chosen" disabled="@(!CanEdit(AgentField.Council))">@ProviderOptions()</InputSelect>
+                    <InputText @bind-Value="Preset.Model" aria-label="Model id for every role, when Other is chosen" maxlength="200" autocomplete="off" spellcheck="false" placeholder="model id (when Other is chosen)" disabled="@(!CanEdit(AgentField.Council))" />
                 </div>
                 <button type="submit" name="preset" value="single" disabled="@(!CanEdit(AgentField.Council))">Use this model for every role</button>
             </EditForm>
@@ -365,8 +365,8 @@
                 <form method="post" @formname="remove-window" @onsubmit="RemoveWindowAsync">
                     <AntiforgeryToken />
                     <div class="table-wrap">
-                        <table class="agents">
-                            <thead><tr><th scope="col">Kind</th><th scope="col">When</th><th scope="col"></th></tr></thead>
+                        <table class="agents" aria-labelledby="windows-title">
+                            <thead><tr><th scope="col">Kind</th><th scope="col">When</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                             <tbody>
                                 @foreach (var window in agent.EntryWindows)
                                 {
@@ -392,14 +392,21 @@
                 </label>
                 <fieldset>
                     <legend>Every week (UTC)</legend>
+                    @* One label per control: a label names only the first control inside it. *@
                     <label>
-                        From
+                        From day
                         <InputSelect @bind-Value="Window.StartDay" disabled="@(!CanEdit(AgentField.EntryWindows))">@DayOptions()</InputSelect>
+                    </label>
+                    <label>
+                        From time
                         <InputText @bind-Value="Window.StartTime" type="time" placeholder="21:00" disabled="@(!CanEdit(AgentField.EntryWindows))" />
                     </label>
                     <label>
-                        Until
+                        Until day
                         <InputSelect @bind-Value="Window.EndDay" disabled="@(!CanEdit(AgentField.EntryWindows))">@DayOptions()</InputSelect>
+                    </label>
+                    <label>
+                        Until time
                         <InputText @bind-Value="Window.EndTime" type="time" placeholder="01:00" disabled="@(!CanEdit(AgentField.EntryWindows))" />
                     </label>
                 </fieldset>
@@ -445,7 +452,7 @@
                     }
                     <a href="@WizardSteps.Href(Id, WizardStep.Council)">Edit</a>
                 </dd>
-                <dt>Risk</dt><dd>@agent.RiskLimits.RiskPerTradePercent% per trade, at most @agent.RiskLimits.MaxOpenPositions open, @agent.RiskLimits.DailyLossLimitPercent% daily loss@(agent.RiskLimits.MaxNotional is { } cap ? $", notional cap {cap}" : "") <a href="@WizardSteps.Href(Id, WizardStep.Risk)">Edit</a></dd>
+                <dt>Risk</dt><dd>@ExperienceMessages.Price(agent.RiskLimits.RiskPerTradePercent)% per trade, at most @agent.RiskLimits.MaxOpenPositions open, @ExperienceMessages.Price(agent.RiskLimits.DailyLossLimitPercent)% daily loss@(agent.RiskLimits.MaxNotional is { } cap ? $", notional cap {ExperienceMessages.Price(cap)}" : "") <a href="@WizardSteps.Href(Id, WizardStep.Risk)">Edit</a></dd>
                 <dt>No-entry windows</dt><dd>@AgentMessages.Plural(agent.EntryWindows.Count, "window", "windows")</dd>
             </dl>
             @if (AgentStateMachine.CanStart(agent.State))

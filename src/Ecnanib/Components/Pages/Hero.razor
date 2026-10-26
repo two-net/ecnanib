@@ -1,7 +1,8 @@
 @* The landing hero (FR-UI-03 f): three agents, the council's four roles taking their turns and the verdict, as a
-   decorative loop. It is aria-hidden with a caption that says the same in words; a checkbox pauses it (CSS only, so it
-   works on the first paint and after an enhanced navigation alike); under reduced motion the loop never runs and the
-   scene rests on its final frame (every role lit, the verdict shown). *@
+   decorative loop. It is aria-hidden with a caption that says the same in words; a checkbox after it pauses it (CSS only,
+   through :has(), so it works on the first paint and after an enhanced navigation alike, and the DOM order is the
+   reading order); under reduced motion the loop never runs and the scene rests on its final frame (every role lit, the
+   verdict shown). *@
 <section class="hero">
     <div class="hero-copy">
         <p class="eyebrow">AI cryptocurrency trading agents for Binance</p>
@@ -25,8 +26,6 @@
         </div>
     </div>
     <figure class="hero-figure">
-        <input type="checkbox" id="hero-pause" class="hero-pause-toggle" />
-        <label for="hero-pause" class="hero-pause">Pause the animation</label>
         <svg class="anim-loop council-scene" viewBox="0 0 640 360" aria-hidden="true" focusable="false">
             <g class="agents">
                 <g class="agent" transform="translate(24 36)">
@@ -75,5 +74,7 @@
             </g>
         </svg>
         <figcaption class="hero-caption">Three agents; at each candle close the council's four roles take their turns, Market Analyst to Risk Manager, and the Risk Manager gives the verdict.</figcaption>
+        <input type="checkbox" id="hero-pause" class="hero-pause-toggle" />
+        <label for="hero-pause" class="hero-pause">Pause the animation</label>
     </figure>
 </section>

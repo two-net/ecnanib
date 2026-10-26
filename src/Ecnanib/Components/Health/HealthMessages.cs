@@ -5,6 +5,7 @@ using Ecnanib.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Health.Abstractions;
+using Ecnanib.Ui.Abstractions;
 
 namespace Ecnanib.Components.Health;
 
@@ -15,7 +16,13 @@ internal static class HealthMessages
 
     public const string ReconciliationUnavailable = "Live execution is not registered.";
 
-    public const string RefreshHint = "This page reloads every minute.";
+    public const string ReloadHint = "This page does not reload by itself.";
+
+    public const string ReloadingHint = "This page reloads every minute.";
+
+    public const string StartReloading = "Reload every minute";
+
+    public const string StopReloading = "Stop reloading";
 
     public const string UserDataNote = "Account streams carry fills for live agents; they are counted here, not named, because their names carry key ids.";
 
@@ -195,5 +202,5 @@ internal static class HealthMessages
 
     public sealed record StreamGroup(string Name, int Count, StreamHealth Worst, DateTimeOffset? LastMessageAt, DateTimeOffset Since, string? LastError);
 
-    public static string Stamp(DateTimeOffset? at) => at is { } when ? when.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) : "never";
+    public static string Stamp(DateTimeOffset? at) => UtcStamp.Second(at);
 }

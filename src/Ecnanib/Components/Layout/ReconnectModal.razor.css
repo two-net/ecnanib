@@ -19,7 +19,8 @@
     display: block;
 }
 
-/* Themed through the tokens; every duration derives from --ui-duration so reduced motion makes it instant (FR-UI-03). */
+/* Themed through the tokens; every duration is --ui-duration, so nothing exceeds the 400 ms of FR-UI-03 and reduced motion
+   makes it instant. */
 #components-reconnect-modal {
     background-color: var(--surface);
     color: var(--text);
@@ -36,12 +37,12 @@
 }
 
 #components-reconnect-modal[open] {
-    animation: components-reconnect-modal-slideUp calc(var(--ui-duration) * 1.5) var(--ui-ease), components-reconnect-modal-fadeInOpacity var(--ui-duration) ease-in-out;
+    animation: components-reconnect-modal-slideUp var(--ui-duration) var(--ui-ease), components-reconnect-modal-fadeInOpacity var(--ui-duration) ease-in-out;
     animation-fill-mode: both;
 }
 
 #components-reconnect-modal::backdrop {
-    background-color: rgb(0 0 0 / 0.45);
+    background-color: var(--backdrop);
     animation: components-reconnect-modal-fadeInOpacity var(--ui-duration) ease-in-out;
     opacity: 1;
 }
@@ -104,7 +105,8 @@
     border-color: var(--accent-hover);
 }
 
-/* The spinner is decorative (.anim-loop stops it under reduced motion); the text beside it says what is happening. */
+/* The spinner is decorative (.anim-loop stops it under reduced motion); the text beside it says what is happening. At rest
+   the two rings are one full circle, the loop's final frame, instead of collapsing to nothing. */
 .components-rejoining-animation {
     position: relative;
     width: 80px;
@@ -113,6 +115,10 @@
 
 .components-rejoining-animation div {
     position: absolute;
+    top: 0;
+    left: 0;
+    width: 80px;
+    height: 80px;
     border: 3px solid var(--accent);
     opacity: 1;
     border-radius: 50%;

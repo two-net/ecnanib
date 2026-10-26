@@ -34,8 +34,7 @@
     margin-top: 1.5rem;
 }
 
-/* The figure is a grid so the pause checkbox can sit first in the DOM (it must precede the scene for the sibling
-   selector below) while reading last on screen. */
+/* The figure is a grid: the scene, its caption, then the pause control, in the DOM and on screen alike. */
 .hero-figure {
     margin: 0;
     display: grid;
@@ -221,7 +220,7 @@
 }
 
 /* Paused by the checkbox: the scene holds its current frame. */
-.hero-pause-toggle:checked ~ .council-scene * {
+.hero-figure:has(.hero-pause-toggle:checked) .council-scene * {
     animation-play-state: paused;
 }
 

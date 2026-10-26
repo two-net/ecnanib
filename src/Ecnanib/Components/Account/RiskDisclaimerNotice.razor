@@ -1,9 +1,23 @@
-@* The risk disclaimer (FR-UI-05, NFR-LEGAL-01/02); text and version live in RiskDisclaimer. *@
+@* The risk disclaimer (FR-UI-05, NFR-LEGAL-01/02); text and version live in RiskDisclaimer. The heading level follows the
+   page's outline (a page section by default, a sub-heading inside the settings page's own section). *@
 <section class="risk-disclaimer" aria-labelledby="risk-disclaimer-title">
-    <h2 id="risk-disclaimer-title">@RiskDisclaimer.Title</h2>
+    @if (Level == 3)
+    {
+        <h3 id="risk-disclaimer-title">@RiskDisclaimer.Title</h3>
+    }
+    else
+    {
+        <h2 id="risk-disclaimer-title">@RiskDisclaimer.Title</h2>
+    }
     @foreach (var paragraph in RiskDisclaimer.Paragraphs)
     {
         <p>@paragraph</p>
     }
     <p class="version">Version @RiskDisclaimer.Version</p>
 </section>
+
+@code {
+    /// <summary>2 (the default) for a section of the page, 3 inside a section with its own h2.</summary>
+    [Parameter]
+    public int Level { get; set; } = 2;
+}

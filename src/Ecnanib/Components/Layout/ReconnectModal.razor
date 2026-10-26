@@ -1,30 +1,35 @@
 ﻿<script type="module" src="@Assets["Components/Layout/ReconnectModal.razor.js"]"></script>
 
-<dialog id="components-reconnect-modal" data-nosnippet>
+@* Blazor's reconnection dialog, named and described for assistive technology (NFR-USE-01): the state texts are one live
+   region, the script focuses Retry or Resume when it appears and keeps Escape from closing a modal over a dead page. *@
+<dialog id="components-reconnect-modal" role="alertdialog" aria-labelledby="components-reconnect-title" aria-describedby="components-reconnect-status" data-nosnippet>
     <div class="components-reconnect-container">
+        <h2 id="components-reconnect-title" class="visually-hidden">Connection to the server</h2>
         <div class="components-rejoining-animation anim-loop" aria-hidden="true">
             <div></div>
             <div></div>
         </div>
-        <p class="components-reconnect-first-attempt-visible">
-            Rejoining the server...
-        </p>
-        <p class="components-reconnect-repeated-attempt-visible">
-            Rejoin failed... trying again in <span id="components-seconds-to-next-attempt"></span> seconds.
-        </p>
-        <p class="components-reconnect-failed-visible">
-            Failed to rejoin.<br />Please retry or reload the page.
-        </p>
-        <button id="components-reconnect-button" class="components-reconnect-failed-visible">
+        <div id="components-reconnect-status" aria-live="polite">
+            <p class="components-reconnect-first-attempt-visible">
+                Rejoining the server...
+            </p>
+            <p class="components-reconnect-repeated-attempt-visible">
+                Rejoin failed... trying again in <span id="components-seconds-to-next-attempt"></span> seconds.
+            </p>
+            <p class="components-reconnect-failed-visible">
+                Failed to rejoin.<br />Please retry or reload the page.
+            </p>
+            <p class="components-pause-visible">
+                The session has been paused by the server.
+            </p>
+            <p class="components-resume-failed-visible">
+                Failed to resume the session.<br />Please retry or reload the page.
+            </p>
+        </div>
+        <button id="components-reconnect-button" type="button" class="components-reconnect-failed-visible">
             Retry
         </button>
-        <p class="components-pause-visible">
-            The session has been paused by the server.
-        </p>
-        <p class="components-resume-failed-visible">
-            Failed to resume the session.<br />Please retry or reload the page.
-        </p>
-        <button id="components-resume-button" class="components-pause-visible components-resume-failed-visible">
+        <button id="components-resume-button" type="button" class="components-pause-visible components-resume-failed-visible">
             Resume
         </button>
     </div>

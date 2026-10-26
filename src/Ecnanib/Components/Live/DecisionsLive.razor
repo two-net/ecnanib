@@ -26,7 +26,8 @@ else
 {
     <div class="table-wrap">
         <table class="agents data stack">
-            <thead><tr><th scope="col">Candle (open)</th><th scope="col">Outcome</th><th scope="col">Council</th><th scope="col">Decision</th><th scope="col">Detail</th><th scope="col">Finished</th><th scope="col"></th></tr></thead>
+            <caption class="visually-hidden">Recent evaluations</caption>
+            <thead><tr><th scope="col">Candle (open)</th><th scope="col">Outcome</th><th scope="col">Council</th><th scope="col">Decision</th><th scope="col">Detail</th><th scope="col">Finished</th><th scope="col"><span class="visually-hidden">Deliberation</span></th></tr></thead>
             <tbody>
                 @foreach (var evaluation in _evaluations)
                 {
@@ -35,7 +36,7 @@ else
                         <td data-label="Outcome">
                             @if (evaluation.Outcome == EvaluationOutcome.InProgress)
                             {
-                                <span class="evaluating" role="status">@LiveMessages.Evaluating</span>
+                                <span class="evaluating anim-loop" role="status">@LiveMessages.Evaluating</span>
                             }
                             else
                             {

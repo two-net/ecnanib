@@ -42,7 +42,9 @@ Pages (static server rendering): `/status` (signed-in users): the overall state,
 address after the trusted proxy's forwarded headers, the trusted proxies; NFR-SEC-02), the agent scheduler (evaluations in flight and queued, deadline misses since start, NFR-PERF-01, the
 evaluations the last stop cut short, NFR-REL-01), the exchange reconciliation (last round, live agents verified since
 start and awaiting their check, adoptions, last error), the market streams grouped by kind, environment and market, the account streams in aggregate, the model
-sync per provider and the exchange rate limits, with a refresh every minute.
+sync per provider and the exchange rate limits. It reloads only when asked (WCAG 2.2.1, NFR-USE-01): "Reload every
+minute" follows `/status?reload=1`, where a meta refresh reloads the page each minute and "Stop reloading" returns to the
+still page; "Refresh now" reloads once.
 
 Known gaps: no JSON endpoint yet; the observability issue (#23) maps one over the same `ISystemHealth`. The scheduler
 and the reconciler report a status; the model sync, retention and symbol refresh jobs log their failures and retry.

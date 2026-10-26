@@ -29,11 +29,12 @@ else
             <article class="agent-card card" @key="agent.Id" aria-labelledby="agent-@agent.Id">
                 <h2 id="agent-@agent.Id"><a href="/agents/@agent.Id">@agent.Name</a></h2>
                 <p class="meta">@agent.Symbol · @AgentMessages.Market(agent.MarketType) · @AgentMessages.Timeframe(agent.Timeframe) · @AgentMessages.Mode(agent.Mode)</p>
+                @* One live region per card: the pill and the indicator inside it change, and are announced, together. *@
                 <p class="state" aria-live="polite">
                     <span @key="agent.State" class="status @AgentMessages.StateClass(agent.State) pill-in">@AgentMessages.Describe(agent.State, null)</span>
                     @if (InFlight(agent))
                     {
-                        <span class="evaluating" role="status">@LiveMessages.Evaluating</span>
+                        <span class="evaluating anim-loop">@LiveMessages.Evaluating</span>
                     }
                     @if (agent.HasDeprecatedModel)
                     {

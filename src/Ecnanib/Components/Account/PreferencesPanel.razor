@@ -2,7 +2,6 @@
    element at once, without a reload. The prerendered copy is disabled until the circuit connects. *@
 @rendermode InteractiveServer
 @using Ecnanib.Database.Entities
-@using Ecnanib.Ui.Abstractions
 @using Ecnanib.Ui.Configuration
 @using Microsoft.Extensions.Options
 @implements IAsyncDisposable
@@ -42,6 +41,7 @@
 
     private UiTheme _theme;
     private bool _reducedMotion;
+    private bool _changed;
     private string? _message;
     private bool _error;
     private IJSObjectReference? _module;
@@ -56,8 +56,15 @@
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
-    protected override void OnInitialized()
+    /// <summary>
+    /// The page loads the stored preference asynchronously, so the island is prerendered first with the parent's initial
+    /// parameters and again with the loaded ones: the controls follow the parameters until the user touches them, so the
+    /// prerendered page shows the saved choice (NFR-USE-01: the state on screen is the state in the account).
+    /// </summary>
+    protected override void OnParametersSet()
     {
+        if (_changed)
+            return;
         _theme = Theme;
         _reducedMotion = ReducedMotion;
     }
@@ -70,12 +77,14 @@
 
     private Task ChangeThemeAsync(UiTheme theme)
     {
+        _changed = true;
         _theme = theme;
         return SaveAsync();
     }
 
     private Task ChangeMotionAsync(bool reduced)
     {
+        _changed = true;
         _reducedMotion = reduced;
         return SaveAsync();
     }

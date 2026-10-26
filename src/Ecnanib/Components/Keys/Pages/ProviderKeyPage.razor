@@ -32,8 +32,8 @@
                             <span class="muted">@key.LastValidationError</span>
                         }
                     </dd>
-                    <dt>Last checked</dt><dd>@Stamp(key.LastValidatedAt)</dd>
-                    <dt>Added</dt><dd>@Stamp(key.CreatedAt)</dd>
+                    <dt>Last checked</dt><dd>@UtcStamp.Minute(key.LastValidatedAt)</dd>
+                    <dt>Added</dt><dd>@UtcStamp.Minute(key.CreatedAt)</dd>
                     <dt>Running or paused agents using it</dt><dd>@slot.ActiveAgents</dd>
                 </dl>
                 <form method="post" @formname="validate-provider-key" @onsubmit="ValidateAsync" class="inline">
@@ -197,8 +197,6 @@
         KeyStatus.Invalid => "status-invalid",
         _ => "status-unvalidated",
     };
-
-    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
 
     private sealed class SaveInput
     {

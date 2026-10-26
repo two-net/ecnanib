@@ -1,7 +1,15 @@
 // The price chart (FR-UI-03 c) over the vendored TradingView Lightweight Charts. One chart per element; colours come
 // from the design tokens of the current theme and follow it live (FR-UI-02); markers are coloured by tone the same way.
+// Up candles are hollow and down candles filled, so direction never rests on colour alone (NFR-USE-01); the axis labels
+// are English whatever the browser's language (NFR-USE-03); under reduced motion the chart neither animates its scroll
+// nor keeps kinetic scrolling (NFR-USE-02).
 const charts = new WeakMap();
 const tones = { long: "--chart-up", short: "--chart-down", exit: "--chart-marker-exit", stop: "--chart-marker-stop" };
+
+// Whether motion should be reduced (NFR-USE-02): the in-app choice on the document element or the operating system's preference.
+function isReduced() {
+    return document.documentElement.dataset.motion === "reduced" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 // Custom properties hold light-dark() expressions; a probe element resolves them to a colour the canvas can use.
 function resolve(state, name) {
@@ -21,17 +29,30 @@ function palette(state) {
 }
 
 function chartOptions(p, intervalLabel) {
+    const reduced = isReduced();
     return {
         autoSize: true,
         layout: { background: { type: "solid", color: p.background }, textColor: p.text, attributionLogo: true },
         grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
         rightPriceScale: { borderColor: p.border },
         timeScale: { borderColor: p.border, timeVisible: intervalLabel !== "1D" && intervalLabel !== "1W", secondsVisible: false },
+        localization: { locale: "en-US" },
+        kineticScroll: { touch: !reduced, mouse: false },
     };
 }
 
 function seriesOptions(p) {
-    return { upColor: p.up, downColor: p.down, wickUpColor: p.up, wickDownColor: p.down, borderVisible: false };
+    return { upColor: "transparent", downColor: p.down, borderVisible: true, borderUpColor: p.up, borderDownColor: p.down, wickUpColor: p.up, wickDownColor: p.down };
+}
+
+// The library's attribution link sits inside the aria-hidden canvas box: it keeps its visible logo, gets a name for
+// completeness and leaves the tab order, as a hidden control must.
+function labelAttribution(element) {
+    const logo = element.querySelector("#tv-attr-logo");
+    if (logo) {
+        logo.setAttribute("aria-label", "Charting by TradingView (opens in a new tab)");
+        logo.setAttribute("tabindex", "-1");
+    }
 }
 
 function applyTheme(state) {
@@ -85,6 +106,7 @@ export async function create(element, libraryUrl, intervalLabel) {
     state.chart = lib.createChart(element, chartOptions(p, intervalLabel));
     state.series = state.chart.addSeries(lib.CandlestickSeries, seriesOptions(p));
     state.markers = lib.createSeriesMarkers(state.series, []);
+    labelAttribution(element);
     state.observer = new MutationObserver(() => applyTheme(state));
     state.observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     state.media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -103,6 +125,9 @@ export function setData(element, bars) {
     if (!state.hasData) {
         state.chart.timeScale().fitContent();
         state.hasData = true;
+    } else if (isReduced()) {
+        // scrollToRealTime animates over 400 ms; the position is the same, set at once.
+        state.chart.timeScale().scrollToPosition(0, false);
     } else {
         state.chart.timeScale().scrollToRealTime();
     }

@@ -13,7 +13,7 @@
         <span @key="status.State" class="status @AgentMessages.StateClass(status.State) pill-in">@AgentMessages.Describe(status.State, status.PauseCause)</span>
         @if (InFlight)
         {
-            <span class="evaluating" role="status">@LiveMessages.Evaluating</span>
+            <span class="evaluating anim-loop">@LiveMessages.Evaluating</span>
         }
         @if (status.StateReason is not null)
         {

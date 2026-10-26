@@ -2,7 +2,8 @@
 @using Ecnanib.Logging.Abstractions
 <div class="table-wrap">
     <table class="agents data stack log">
-        <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Component</th><th scope="col">Message</th><th scope="col"></th></tr></thead>
+        <caption class="visually-hidden">Log entries</caption>
+        <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Component</th><th scope="col">Message</th><th scope="col"><span class="visually-hidden">Deliberation</span></th></tr></thead>
         <tbody>
             @foreach (var entry in Entries)
             {

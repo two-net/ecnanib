@@ -15,7 +15,7 @@
     <p>Each @Name model in each council role (FR-EXP-07): your own agents, then every user's as counts and ratios only, then your agents one by one at their own timeframe and market.</p>
 
     <FilterForm Filter="_filter" Action="@Self" />
-    <p class="hint">Showing @ExperienceFilters.Describe(_filter). @(view.ComputedAt is { } computed ? $"Computed {Stamp(computed)}." : ExperienceMessages.NoStatistics)</p>
+    <p class="hint">Showing @ExperienceFilters.Describe(_filter). @(view.ComputedAt is { } computed ? $"Computed {UtcStamp.Minute(computed)}." : ExperienceMessages.NoStatistics)</p>
 
     <section aria-labelledby="mine-title">
         <h2 id="mine-title">Your agents</h2>
@@ -26,7 +26,7 @@
         else
         {
             <div class="table-wrap">
-                <table class="data agents leaderboard">
+                <table class="data agents leaderboard" aria-labelledby="mine-title">
                     <thead><tr><th scope="col">Model</th><th scope="col">Role</th><MetricHeaders /></tr></thead>
                     <tbody>
                         @foreach (var row in view.Mine)
@@ -48,7 +48,7 @@
         else
         {
             <div class="table-wrap">
-                <table class="data agents leaderboard">
+                <table class="data agents leaderboard" aria-labelledby="system-title">
                     <thead><tr><th scope="col">Model</th><th scope="col">Role</th><MetricHeaders /></tr></thead>
                     <tbody>
                         @foreach (var row in view.SystemWide)
@@ -70,7 +70,7 @@
         else
         {
             <div class="table-wrap">
-                <table class="data agents leaderboard">
+                <table class="data agents leaderboard" aria-labelledby="agents-title">
                     <thead><tr><th scope="col">Agent</th><th scope="col">Model</th><th scope="col">Role</th><th scope="col">Timeframe</th><th scope="col">Market</th><MetricHeaders /></tr></thead>
                     <tbody>
                         @foreach (var row in view.Agents)
@@ -129,6 +129,4 @@
         _filter = ExperienceFilters.Parse(Role, Timeframe, Market);
         _view = await Experience.GetProviderAsync(UserId, provider, _filter, HttpContext.RequestAborted);
     }
-
-    private static string Stamp(DateTimeOffset at) => at.ToString("yyyy-MM-dd HH:mm 'UTC'");
 }

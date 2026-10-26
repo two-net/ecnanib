@@ -25,6 +25,7 @@ else
         <p class="hint">Last price: <strong>@LiveMessages.Price(_feed?.Latest)</strong>@(_status?.MarketType == MarketType.UsdFutures ? " (mark)" : "")</p>
         <div class="table-wrap">
             <table class="agents data stack">
+                <caption class="visually-hidden">Open positions</caption>
                 <thead><tr><th scope="col">Side</th><th scope="col">Size</th><th scope="col">Entry</th><th scope="col">Stop</th><th scope="col">Unrealized</th><th scope="col">Opened</th><th scope="col">Status</th></tr></thead>
                 <tbody>
                     @foreach (var position in _open.OpenPositions)
@@ -32,10 +33,10 @@ else
                         <tr @key="position.TradeId">
                             <td data-label="Side">@position.Side</td>
                             <td data-label="Size">
-                                @position.RemainingSize
+                                @LiveMessages.Price(position.RemainingSize)
                                 @if (position.RemainingSize != position.Size)
                                 {
-                                    <span class="muted">of @position.Size</span>
+                                    <span class="muted">of @LiveMessages.Price(position.Size)</span>
                                 }
                             </td>
                             <td data-label="Entry">@LiveMessages.Price(position.EntryPrice)</td>
@@ -80,6 +81,7 @@ else
     {
         <div class="table-wrap">
             <table class="agents data stack">
+                <caption class="visually-hidden">Open orders</caption>
                 <thead><tr><th scope="col">Purpose</th><th scope="col">Type</th><th scope="col">Side</th><th scope="col">Price</th><th scope="col">Stop</th><th scope="col">Quantity</th><th scope="col">Status</th><th scope="col">Expires</th></tr></thead>
                 <tbody>
                     @foreach (var order in _open.OpenOrders)
@@ -90,7 +92,7 @@ else
                             <td data-label="Side">@order.Side</td>
                             <td data-label="Price">@(order.Price is { } price ? LiveMessages.Price(price) : "market")</td>
                             <td data-label="Stop">@(order.StopPrice is { } stop ? LiveMessages.Price(stop) : "")</td>
-                            <td data-label="Quantity">@order.Quantity</td>
+                            <td data-label="Quantity">@LiveMessages.Price(order.Quantity)</td>
                             <td data-label="Status"><span class="status status-@order.Status.ToString().ToLowerInvariant()">@order.Status</span>@(order.IsPaper ? " (paper)" : "")</td>
                             <td data-label="Expires">@(order.ExpiresAt is { } expires ? AgentMessages.Stamp(expires) : "")</td>
                         </tr>

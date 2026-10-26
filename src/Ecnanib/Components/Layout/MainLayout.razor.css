@@ -164,10 +164,12 @@ nav.primary ::deep a.button.primary {
         grid-template-columns: 1fr auto;
     }
 
+    /* A horizontal scroller clips what overflows it, so the padding leaves room for the focus ring around the links. */
     nav.primary {
         grid-column: 1 / -1;
         grid-row: 2;
-        margin: 0 -0.25rem;
+        margin: 0 -0.5rem;
+        padding: 0.25rem;
         overflow-x: auto;
         flex-wrap: nowrap;
     }
@@ -191,9 +193,25 @@ nav.primary ::deep a.button.primary {
     z-index: 1000;
 }
 
+/* The dismiss control is a real button (blazor.web.js wires any .dismiss inside the bar), named by its aria-label. */
 #blazor-error-ui .dismiss {
-    cursor: pointer;
     position: absolute;
-    right: 0.75rem;
-    top: 0.5rem;
+    right: 0.5rem;
+    top: 0.3rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+#blazor-error-ui .dismiss:hover {
+    background: var(--surface);
 }

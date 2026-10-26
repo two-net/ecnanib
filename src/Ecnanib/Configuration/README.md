@@ -104,6 +104,10 @@ Development: copy `ecnanib.json` to `ecnanib.local.json` (git-ignored, never bui
 string and `dotnet run`; the launch profile passes `--config ecnanib.local.json`. `dotnet run --no-launch-profile`
 uses the committed file and refuses to start on the empty connection string, which is FR-CFG-06 at work.
 
+One culture (NFR-USE-03): the project sets `InvariantGlobalization`, so the process formats and parses numbers and dates
+the same way on every host, needs no ICU library, and cannot be switched to another culture; the UI is English and writes
+every instant in UTC. `CultureTests` pins the mode on both projects and the built application's runtime configuration.
+
 Running one instance (NFR-REL-04, NFR-ARCH-01): exactly one process serves a database. On start the process migrates
 the schema, takes the database's instance lock and only then starts its jobs; on a restart it records the evaluations
 the stop cut short as failed, resumes every Running and Paused agent and verifies each live agent against the exchange

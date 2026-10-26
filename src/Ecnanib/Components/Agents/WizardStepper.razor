@@ -1,11 +1,11 @@
-@* The wizard's steps (FR-UI-01): earlier steps link back, the current one is marked, the others are plain text until the draft exists. *@
+@* The wizard's steps (FR-UI-01): earlier steps link back and say so (their green badge alone would be colour only), the current one is marked, the others are plain text until the draft exists. *@
 <ol class="stepper" aria-label="Setup steps">
     @foreach (var step in WizardSteps.Ordered)
     {
         <li class="@(step < Current ? "done" : null)" aria-current="@(step == Current ? "step" : null)">
             @if (AgentId is { } id && step != Current)
             {
-                <a href="@WizardSteps.Href(id, step)">@WizardSteps.Title(step)</a>
+                <a href="@WizardSteps.Href(id, step)">@WizardSteps.Title(step)@if (step < Current) { <span class="visually-hidden"> (completed)</span> }</a>
             }
             else
             {
