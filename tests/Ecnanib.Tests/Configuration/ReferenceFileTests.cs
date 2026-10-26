@@ -1,21 +1,7 @@
 using System.Text.RegularExpressions;
-using Ecnanib.Accounts;
-using Ecnanib.Agents;
-using Ecnanib.Ai;
 using Ecnanib.Configuration;
-using Ecnanib.Council;
-using Ecnanib.Database;
-using Ecnanib.Exchange;
-using Ecnanib.Execution;
-using Ecnanib.Experience;
-using Ecnanib.Health;
-using Ecnanib.Keys;
 using Ecnanib.Logging;
-using Ecnanib.MarketData;
-using Ecnanib.ModelSync;
-using Ecnanib.Strategies;
 using Ecnanib.Tests.Database;
-using Ecnanib.Ui;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
@@ -87,22 +73,7 @@ public class ReferenceFileTests
     {
         var services = new ServiceCollection();
         services.AddLogSinks(configuration);
-        services.AddServer(configuration);
-        services.AddUi(configuration);
-        services.AddExchange(configuration);
-        services.AddAiProviders(configuration);
-        services.AddDatabase(configuration);
-        services.AddAccounts(configuration);
-        services.AddModelSync(configuration);
-        services.AddStrategies();
-        services.AddExperience(configuration);
-        services.AddCouncil(configuration);
-        services.AddMarketData(configuration);
-        services.AddExecution(configuration);
-        services.AddAgents(configuration);
-        services.AddKeys(configuration);
-        services.AddHealth();
-        services.AddLogReader();
+        services.AddEcnanibModules(configuration);
         return services;
     }
 }

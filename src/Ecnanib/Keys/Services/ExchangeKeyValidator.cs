@@ -67,11 +67,12 @@ internal sealed class ExchangeKeyValidator
         }
         catch (ExchangeAuthException ex)
         {
-            return new ExchangeKeyValidation(ValidationVerdict.Invalid, Reason: ex.Message);
+            // The reason is stored and shown (FR-KEY-07); the credentials are scrubbed from it should the exchange ever echo them (FR-KEY-04).
+            return new ExchangeKeyValidation(ValidationVerdict.Invalid, Reason: credentials.Scrub(ex.Message));
         }
         catch (ExchangeException ex)
         {
-            return new ExchangeKeyValidation(ValidationVerdict.Failed, Reason: ex.Message);
+            return new ExchangeKeyValidation(ValidationVerdict.Failed, Reason: credentials.Scrub(ex.Message));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

@@ -15,6 +15,8 @@ internal static class AccountSession
 {
     public const string CookieName = "ecnanib.session";
 
+    public const string AntiforgeryCookieName = "ecnanib.antiforgery";
+
     public const string Scheme = CookieAuthenticationDefaults.AuthenticationScheme;
 
     public static ClaimsPrincipal CreatePrincipal(User user)

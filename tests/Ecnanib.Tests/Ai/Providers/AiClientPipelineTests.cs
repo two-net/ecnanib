@@ -225,10 +225,10 @@ public class AiClientPipelineTests
     public async Task BaseUrlComesFromConfigurationWithoutDoublingTheVersionPath()
     {
         var handler = new FakeHttpMessageHandler().When(_ => true, _ => AiTestHost.Json("gpt/models.json"));
-        var client = AiTestHost.Direct(AiProvider.Gpt, handler, new AiOptions { Gpt = new AiEndpointOptions { BaseUrl = "https://proxy.example/openai/v1/" } });
+        var client = AiTestHost.Direct(AiProvider.Gpt, handler, new AiOptions { Gpt = new AiEndpointOptions { BaseUrl = "https://eu.api.openai.com/gateway/v1/" } });
 
         await client.ListModelsAsync(Handle, AiTestHost.Ct);
 
-        Assert.Equal("https://proxy.example/openai/v1/models", Assert.Single(handler.Requests).Uri.ToString());
+        Assert.Equal("https://eu.api.openai.com/gateway/v1/models", Assert.Single(handler.Requests).Uri.ToString());
     }
 }

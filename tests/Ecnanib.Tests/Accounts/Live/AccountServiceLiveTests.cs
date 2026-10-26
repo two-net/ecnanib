@@ -242,14 +242,15 @@ public class AccountServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         Guid deletedId, otherId;
         await using (var db = _fixture.CreateContext())
         {
-            var (user, _, _, _) = await LiveSeed.SeedEverythingAsync(db, Ct);
+            var (user, agent, _, _) = await LiveSeed.SeedEverythingAsync(db, Ct);
             user.PasswordHash = hasher.HashPassword(user, Password);
             var other = LiveSeed.NewUser("other@example.com");
             var otherAgent = LiveSeed.NewAgent(other, "other");
             otherAgent.State = AgentState.Stopped;
             db.AddRange(other, otherAgent);
-            // The id is generated on Add, so the log entry is built afterwards.
-            db.AddRange(LiveSeed.NewLogEntry(LiveSeed.Now, other.Id), LiveSeed.NewLogEntry(LiveSeed.Now));
+            // The id is generated on Add, so the log entry is built afterwards. A row written for the user's agent without the
+            // user id (a message outside a LogScope) is the user's too (NFR-SEC-03); the row without either stays.
+            db.AddRange(LiveSeed.NewLogEntry(LiveSeed.Now, other.Id), LiveSeed.NewLogEntry(LiveSeed.Now), LiveSeed.NewLogEntry(LiveSeed.Now, null, agent.Id));
             await db.SaveChangesAsync(Ct);
             deletedId = user.Id;
             otherId = other.Id;
@@ -258,7 +259,7 @@ public class AccountServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         var result = await accounts.DeleteAccountAsync(deletedId, Password, Address, Ct);
 
         Assert.Equal(AccountDeletionStatus.Succeeded, result.Status);
-        Assert.Equal(1, result.DeletedLogEntries);
+        Assert.Equal(2, result.DeletedLogEntries);
         await using (var db = _fixture.CreateContext())
         {
             Assert.Equal(0, await db.Users.CountAsync(u => u.Id == deletedId, Ct));
@@ -288,7 +289,7 @@ public class AccountServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Null(await provider.GetRequiredService<ISecurityStampSource>().FindAsync(deletedId, Ct));
         Assert.True(provider.GetRequiredService<SessionRevocations>().IsRevokedSince(deletedId, LiveSeed.Now));
         Assert.Equal(AccountDeletionStatus.UserNotFound, (await accounts.DeleteAccountAsync(deletedId, Password, Address, Ct)).Status);
-        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Information && e.Message == $"User {deletedId} deleted their account; 1 log entries removed");
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Information && e.Message == $"User {deletedId} deleted their account; 2 log entries removed");
         AssertNoCredentials(logs, "trader@example.com");
 
         await DeleteUsersAsync(otherId);
@@ -370,6 +371,42 @@ public class AccountServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal(new UserPreferences(UiTheme.Dark, true), await accounts.GetPreferencesAsync(registered.User.Id, Ct));
 
         await DeleteUsersAsync(registered.User.Id);
+    }
+
+    /// <summary>NFR-SEC-01: sign-out rotates the stamp and revokes at once, so a ticket copied before it is rejected everywhere; signing in again works.</summary>
+    [Fact]
+    public async Task SigningOutEndsEverySessionOnTheServer()
+    {
+        await StartAsync();
+        var (provider, logs, time) = Build();
+        await using var _ = provider;
+        var accounts = provider.GetRequiredService<IAccountService>();
+        var validator = provider.GetRequiredService<SessionValidator>();
+        var user = (await accounts.RegisterAsync("signout@example.com", Password, Address, Ct)).User!;
+        var ticket = AccountSession.CreatePrincipal(user);
+        var issued = time.GetUtcNow();
+        Assert.Equal(SessionCheck.KeptWithoutLookup, await validator.CheckAsync(ticket, issued, Ct));
+
+        time.Advance(TimeSpan.FromSeconds(1));
+        await accounts.SignOutAsync(user.Id, Ct);
+
+        // Revoked in-process at once, and the stored stamp no longer matches the ticket's after a restart either.
+        Assert.Equal(SessionCheck.Rejected, await validator.CheckAsync(ticket, issued, Ct));
+        Assert.True(provider.GetRequiredService<SessionRevocations>().IsRevokedSince(user.Id, issued));
+        var stored = await provider.GetRequiredService<ISecurityStampSource>().FindAsync(user.Id, Ct);
+        Assert.NotNull(stored);
+        Assert.NotEqual(user.SecurityStamp, stored);
+        Assert.Equal(32, stored.Length);
+
+        var again = await accounts.AuthenticateAsync("signout@example.com", Password, Address, Ct);
+        Assert.Equal(AuthenticationStatus.Succeeded, again.Status);
+        Assert.Equal(stored, again.User!.SecurityStamp);
+        Assert.Equal(SessionCheck.Kept, await validator.CheckAsync(AccountSession.CreatePrincipal(again.User), null, Ct));
+        await accounts.SignOutAsync(Guid.NewGuid(), Ct);
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Information && e.Message == $"User {user.Id} signed out; every session is ended");
+        AssertNoCredentials(logs, "signout@example.com");
+
+        await DeleteUsersAsync(user.Id);
     }
 
     private async Task StartAsync()

@@ -53,7 +53,7 @@ public class AccountServiceTests
         await using var _ = provider;
         var throttle = provider.GetRequiredService<SignInThrottle>();
         for (var i = 0; i < 10; i++)
-            throttle.RecordFailure(Email.ToUpperInvariant(), Address);
+            throttle.TryBegin(Email.ToUpperInvariant(), Address);
 
         var result = await accounts.AuthenticateAsync(Email, Password, Address, Ct);
 
@@ -71,7 +71,7 @@ public class AccountServiceTests
         await using var _ = provider;
         var throttle = provider.GetRequiredService<SignInThrottle>();
         for (var i = 0; i < 100; i++)
-            throttle.RecordAttempt(Address);
+            throttle.TryBeginForAddress(Address);
 
         var result = await accounts.RegisterAsync(Email, Password, Address, Ct);
 

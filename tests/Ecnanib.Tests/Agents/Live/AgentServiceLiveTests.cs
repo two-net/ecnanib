@@ -724,6 +724,91 @@ public class AgentServiceLiveTests : IClassFixture<DatabaseLiveFixture>
     /// <summary>jsonb re-formats what it stores; comparing the canonical shape keeps the assertions about values.</summary>
     private static string Canonical(System.Text.Json.JsonElement parameters) => StrategyParameters.Write(StrategyParameters.Read(parameters)).GetRawText();
 
+    /// <summary>NFR-SEC-03: every mutation on another user's agent is NotFound and changes nothing; Stop in particular cancels no evaluation before it knows the owner.</summary>
+    [Fact]
+    public async Task EveryMutationOnAnotherUsersAgentIsNotFoundAndChangesNothing()
+    {
+        await StartAsync();
+        var owner = await AgentsLiveSeed.NewUserAsync(_fixture, "mutations-owner@example.com");
+        var intruder = await AgentsLiveSeed.NewUserAsync(_fixture, "mutations-intruder@example.com");
+        var running = await AgentsLiveSeed.NewAgentAsync(_fixture, owner.Id, "running", AgentState.Running);
+        var paused = await AgentsLiveSeed.NewAgentAsync(_fixture, owner.Id, "paused", AgentState.Paused);
+        var stopped = await AgentsLiveSeed.NewAgentAsync(_fixture, owner.Id, "stopped", AgentState.Stopped);
+        var cancelled = new List<Guid>();
+        var (provider, _, _, _, _) = AgentsLiveSeed.Build(_fixture, configure: services => RecordCancellations(services, cancelled));
+        await using var _ = provider;
+        var agents = provider.GetRequiredService<IAgentService>();
+        var council = new CouncilInput(CouncilRoles.Order.Select(role => new CouncilRoleInput(role, AiProvider.Gpt, "test-model", true)).ToList());
+
+        var actions = new List<(string Name, AgentActionStatus Status)>
+        {
+            ("pause", (await agents.PauseAsync(intruder.Id, running.Id, Ct)).Status),
+            ("resume", (await agents.ResumeAsync(intruder.Id, paused.Id, Ct)).Status),
+            ("stop", (await agents.StopAsync(intruder.Id, running.Id, true, Ct)).Status),
+            ("start", (await agents.StartAsync(intruder.Id, stopped.Id, Ct)).Status),
+            ("clone", (await agents.CloneAsync(intruder.Id, stopped.Id, Ct)).Status),
+            ("delete", (await agents.DeleteAsync(intruder.Id, stopped.Id, Ct)).Status),
+        };
+        var saves = new List<(string Name, AgentSaveStatus Status)>
+        {
+            ("settings", (await agents.UpdateSettingsAsync(intruder.Id, stopped.Id, new AgentSettingsInput("x", MarketType.Spot, "ETHUSDT", CandleInterval.FourHours, AgentMode.Paper, null, null, null, true), Ct)).Status),
+            ("strategy", (await agents.UpdateStrategyAsync(intruder.Id, stopped.Id, new StrategyInput("trend-pullback", new Dictionary<string, string?>()), Ct)).Status),
+            ("council", (await agents.UpdateCouncilAsync(intruder.Id, stopped.Id, council, Ct)).Status),
+            ("council defaults", (await agents.ResetCouncilToDefaultsAsync(intruder.Id, stopped.Id, Ct)).Status),
+            ("single model", (await agents.UseSingleModelAsync(intruder.Id, stopped.Id, AiProvider.Gpt, "test-model", Ct)).Status),
+            ("risk", (await agents.UpdateRiskLimitsAsync(intruder.Id, stopped.Id, new RiskLimitsInput(0.5m, 1, 2m, null), Ct)).Status),
+            ("upgrade", (await agents.UpgradeStrategyAsync(intruder.Id, stopped.Id, Ct)).Status),
+            ("window", (await agents.RemoveEntryWindowAsync(intruder.Id, stopped.Id, 1, Ct)).Status),
+        };
+        var bulk = await agents.StopAllAsync(intruder.Id, true, Ct);
+
+        Assert.All(actions, a => Assert.True(a.Status == AgentActionStatus.NotFound, $"{a.Name}: {a.Status}"));
+        Assert.All(saves, s => Assert.True(s.Status == AgentSaveStatus.NotFound, $"{s.Name}: {s.Status}"));
+        Assert.Equal((0, 0), (bulk.Stopped, bulk.Failed.Count));
+        Assert.Empty(cancelled);
+        foreach (var (id, state) in new[] { (running.Id, AgentState.Running), (paused.Id, AgentState.Paused), (stopped.Id, AgentState.Stopped) })
+        {
+            var agent = await AgentsLiveSeed.AgentAsync(_fixture, id);
+            Assert.Equal((state, AgentsLiveSeed.Now, 4), (agent.State, agent.UpdatedAt, agent.CouncilAssignments.Count));
+        }
+        Assert.Equal(3, (await agents.ListAsync(owner.Id, Ct)).Count);
+        Assert.Empty(await agents.ListAsync(intruder.Id, Ct));
+
+        // The owner's stop is the one that cancels the evaluation in flight.
+        Assert.Equal(AgentActionStatus.Succeeded, (await agents.StopAsync(owner.Id, running.Id, false, Ct)).Status);
+        Assert.Equal([running.Id], cancelled);
+        await AgentsLiveSeed.DeleteUsersAsync(_fixture, owner.Id, intruder.Id);
+    }
+
+    private static void RecordCancellations(IServiceCollection services, List<Guid> cancelled)
+    {
+        var original = services.Last(d => d.ServiceType == typeof(IAgentRuntime));
+        services.Remove(original);
+        services.AddSingleton<IAgentRuntime>(sp => new RecordingRuntime((IAgentRuntime)original.ImplementationFactory!(sp), cancelled));
+    }
+
+    private sealed class RecordingRuntime(IAgentRuntime inner, List<Guid> cancelled) : IAgentRuntime
+    {
+        public Task<IDisposable> LockAsync(Guid agentId, CancellationToken cancellationToken) => inner.LockAsync(agentId, cancellationToken);
+
+        public void CancelEvaluation(Guid agentId)
+        {
+            lock (cancelled)
+                cancelled.Add(agentId);
+            inner.CancelEvaluation(agentId);
+        }
+
+        public bool IsTracked(Guid agentId) => inner.IsTracked(agentId);
+
+        public bool Track(AgentTrackingInfo info) => inner.Track(info);
+
+        public void Untrack(Guid agentId) => inner.Untrack(agentId);
+
+        public void Forget(Guid agentId) => inner.Forget(agentId);
+
+        public Task<bool> FailAsync(Guid agentId, string reason, CancellationToken cancellationToken) => inner.FailAsync(agentId, reason, cancellationToken);
+    }
+
     private async Task StartAsync()
     {
         _fixture.Require();

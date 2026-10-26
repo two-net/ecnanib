@@ -138,7 +138,7 @@ internal sealed class UserDataStreamSession : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    Volatile.Write(ref _lastError, ex.Message);
+                    Volatile.Write(ref _lastError, ErrorSummary.Describe(ex));
                     nextSubscribeAt = now + backoff;
                     backoff = Grow(backoff);
                     SetConnected(false, now);
@@ -164,7 +164,7 @@ internal sealed class UserDataStreamSession : IAsyncDisposable
                 catch (Exception ex)
                 {
                     _lastPollFailed = true;
-                    Volatile.Write(ref _lastError, ex.Message);
+                    Volatile.Write(ref _lastError, ErrorSummary.Describe(ex));
                     _logger.LogWarning(ex, "User-data session {Name} snapshot failed", Name);
                 }
 

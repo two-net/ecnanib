@@ -7,6 +7,7 @@ using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Tests.Database;
 using Ecnanib.Tests.Support;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -107,6 +108,24 @@ public class AddAccountsTests
         var options = provider.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>().Get(CookieAuthenticationDefaults.AuthenticationScheme);
 
         Assert.Equal(expected, options.Cookie.SecurePolicy);
+    }
+
+    /// <summary>NFR-SEC-01: the antiforgery cookie follows the session cookie's rules and leaves the frame headers to the pipeline.</summary>
+    [Theory]
+    [InlineData("http://localhost:5207", CookieSecurePolicy.SameAsRequest)]
+    [InlineData("https://ecnanib.example.com", CookieSecurePolicy.Always)]
+    public async Task TheAntiforgeryCookieMatchesTheDesign(string publicUrl, CookieSecurePolicy expected)
+    {
+        await using var provider = AccountsTestHost.BuildServices(config: new() { ["Server:PublicUrl"] = publicUrl });
+
+        var options = provider.GetRequiredService<IOptions<AntiforgeryOptions>>().Value;
+
+        Assert.Equal("ecnanib.antiforgery", options.Cookie.Name);
+        Assert.True(options.Cookie.HttpOnly);
+        Assert.True(options.Cookie.IsEssential);
+        Assert.Equal(SameSiteMode.Strict, options.Cookie.SameSite);
+        Assert.Equal(expected, options.Cookie.SecurePolicy);
+        Assert.True(options.SuppressXFrameOptionsHeader);
     }
 
     [Fact]

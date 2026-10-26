@@ -15,6 +15,9 @@ public interface IKeyService
 
     Task<ProviderKeySlot> GetProviderSlotAsync(Guid userId, AiProvider provider, CancellationToken cancellationToken);
 
+    /// <summary>The providers the user holds a Valid key for, in one query: what a page may offer that needs a key of the user's own (FR-KEY-08, NFR-SEC-03).</summary>
+    Task<IReadOnlySet<AiProvider>> ValidProvidersAsync(Guid userId, CancellationToken cancellationToken);
+
     /// <summary>Validates with Binance (an authenticated request per allowed market plus the permissions read) and refuses withdrawal-enabled keys (FR-KEY-01, FR-KEY-02).</summary>
     Task<KeySaveResult> AddExchangeKeyAsync(Guid userId, ExchangeKeyInput input, CancellationToken cancellationToken);
 

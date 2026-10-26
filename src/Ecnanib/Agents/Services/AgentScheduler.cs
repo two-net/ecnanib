@@ -378,7 +378,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             }
             catch (Exception ex)
             {
-                RecordError(ex.Message);
+                RecordError(ErrorSummary.Describe(ex));
                 _logger.LogError(ex, "An agent scheduler loop stopped unexpectedly");
             }
         }
@@ -412,7 +412,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             }
             catch (Exception ex)
             {
-                RecordError(ex.Message);
+                RecordError(ErrorSummary.Describe(ex));
                 _logger.LogWarning(ex, "The agent scheduler could not start; next attempt in {Delay}", StartupRetry);
                 if (!await DelayAsync(StartupRetry, stoppingToken).ConfigureAwait(false))
                     return false;
@@ -641,7 +641,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             }
             catch (Exception ex)
             {
-                RecordError(ex.Message);
+                RecordError(ErrorSummary.Describe(ex));
                 _logger.LogWarning(ex, "The agent scheduler's minute tick failed; next attempt in {Interval}", TickInterval);
             }
         }

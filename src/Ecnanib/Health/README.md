@@ -28,16 +28,20 @@ Rules the module enforces:
   three minutes after the scheduler started is **Degraded**; everything else is **Healthy**. Polling is the designed
   stream fallback (FR-DATA-03) and shows as such without degrading; a provider never synced is not a problem; a lock
   not taken is how every test host runs and is not a problem either.
-- The report names market streams (`candles:production:spot:btcusdt:1h`), which carry the symbols running agents
-  trade: public market data, shown behind sign-in only. User-data stream names carry exchange-key ids; the status
-  page shows their counts and the last error, never their names.
+- The report names market streams (`candles:production:spot:btcusdt:1h`) for the hub and the logs; the status page
+  groups them by kind, environment and market and shows counts, the worst health and the last error, never a symbol:
+  which symbols are followed is the agents' owners' business (NFR-SEC-03). User-data stream names carry exchange-key
+  ids; the page shows their counts and the last error, never their names. Every last error the page shows (scheduler,
+  reconciliation, streams) is a kind (`ErrorSummary.Describe`: the exception type, or an exchange error's kind and
+  code), never a message that could name a key, an agent, a symbol or a host; the log line beside each has the detail.
 
 Configuration: none.
 
 Pages (static server rendering): `/status` (signed-in users): the overall state, the database with its instance lock
-(NFR-REL-04), the agent scheduler (evaluations in flight and queued, deadline misses since start, NFR-PERF-01, the
+(NFR-REL-04), the transport (the public origin and what follows from its scheme, this request's scheme and client
+address after the trusted proxy's forwarded headers, the trusted proxies; NFR-SEC-02), the agent scheduler (evaluations in flight and queued, deadline misses since start, NFR-PERF-01, the
 evaluations the last stop cut short, NFR-REL-01), the exchange reconciliation (last round, live agents verified since
-start and awaiting their check, adoptions, last error), the market streams, the account streams in aggregate, the model
+start and awaiting their check, adoptions, last error), the market streams grouped by kind, environment and market, the account streams in aggregate, the model
 sync per provider and the exchange rate limits, with a refresh every minute.
 
 Known gaps: no JSON endpoint yet; the observability issue (#23) maps one over the same `ISystemHealth`. The scheduler

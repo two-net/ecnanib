@@ -24,8 +24,9 @@ public class ModelSyncRunnerLiveTests : IClassFixture<DatabaseLiveFixture>
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>NFR-SEC-03: a manual sync spends the requester's own key and nobody else's; the scheduled sync, which has no requester, falls back across users' keys.</summary>
     [Fact]
-    public async Task AManualSyncTriesTheRequestersKeyFirstAndFallsBackWhenItIsRejected()
+    public async Task AManualSyncUsesTheRequestersKeyOnlyAndTheScheduledSyncFallsBackAcrossUsers()
     {
         await StartAsync();
         var first = await KeysLiveSeed.NewUserAsync(_fixture, "claude-first@example.com", Ct);
@@ -36,24 +37,39 @@ public class ModelSyncRunnerLiveTests : IClassFixture<DatabaseLiveFixture>
         await ModelSyncLiveSeed.NewKeyAsync(_fixture, third.Id, AiProvider.Claude, ModelSyncLiveSeed.ApiKey + "3", lastValidatedAt: LiveSeed.Now.AddHours(-3));
         var ai = new FakeAiClientFactory
         {
-            OnListModels = (key, _) => key.KeyId == firstKey.Id.ToString("D")
+            OnListModels = (key, _) => key.KeyId == secondKey.Id.ToString("D")
                 ? throw new AiAuthException("Claude list models failed: invalid x-api-key (authentication_error)", AiProvider.Claude, 401, "authentication_error")
                 : Task.FromResult(FakeAiClientFactory.DefaultModels(AiProvider.Claude)),
         };
         var logs = new TestLoggerProvider();
         await using var provider = Build(logs, ai);
+        var runner = Assert.IsType<ModelSyncRunner>(provider.GetRequiredService<IModelSyncService>());
 
-        var outcome = await provider.GetRequiredService<IModelSyncService>().SyncNowAsync(AiProvider.Claude, first.Id, Ct);
+        // The second user's own key is rejected: their manual sync fails without touching anyone else's key.
+        var refused = await runner.SyncNowAsync(AiProvider.Claude, second.Id, Ct);
 
-        Assert.Equal(ModelSyncStatus.Synced, outcome.Status);
-        Assert.Equal(new CatalogSyncResult(AiProvider.Claude, 2, 0, 2, LiveSeed.Now), outcome.Result);
-        // The requester's own key first, then the most recently validated one; the third is never needed.
-        Assert.Equal([firstKey.Id.ToString("D"), secondKey.Id.ToString("D")], ai.Listings.Select(k => k.KeyId));
-        var rejected = await ModelSyncLiveSeed.KeyAsync(_fixture, firstKey.Id);
-        Assert.Equal((KeyStatus.Valid, LiveSeed.Now.AddHours(-2)), (rejected.Status, rejected.LastValidatedAt));
+        Assert.Equal(ModelSyncStatus.Failed, refused.Status);
+        Assert.Equal("Claude rejected every key tried (1); last answer: Claude list models failed: invalid x-api-key (authentication_error)", refused.Detail);
+        Assert.Equal([secondKey.Id.ToString("D")], ai.Listings.Select(k => k.KeyId));
+        var rejected = await ModelSyncLiveSeed.KeyAsync(_fixture, secondKey.Id);
+        Assert.Equal((KeyStatus.Valid, LiveSeed.Now.AddHours(-1)), (rejected.Status, rejected.LastValidatedAt));
+
+        // The first user's manual sync uses the first user's key, and only that one.
+        var synced = await runner.SyncNowAsync(AiProvider.Claude, first.Id, Ct);
+
+        Assert.Equal(ModelSyncStatus.Synced, synced.Status);
+        Assert.Equal(new CatalogSyncResult(AiProvider.Claude, 2, 0, 2, LiveSeed.Now), synced.Result);
+        Assert.Equal([secondKey.Id.ToString("D"), firstKey.Id.ToString("D")], ai.Listings.Select(k => k.KeyId));
         var state = await ModelSyncLiveSeed.StateAsync(_fixture, AiProvider.Claude);
         Assert.Equal((LiveSeed.Now, SyncStatus.Succeeded, (string?)null, 2, SyncTrigger.Manual), (state!.LastSyncAt, state.LastStatus, state.LastError, state.ModelCount, state.Trigger));
-        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Information && e.Message == $"Catalog sync for Claude (Manual): key {firstKey.Id} was rejected: Claude list models failed: invalid x-api-key (authentication_error)");
+
+        // The scheduled sync has no requester: the most recently validated key first (the second's, rejected), then the next.
+        ai.Listings.Clear();
+        var scheduled = await runner.SyncAsync(AiProvider.Claude, SyncTrigger.Scheduled, null, Ct);
+
+        Assert.Equal(ModelSyncStatus.Synced, scheduled.Status);
+        Assert.Equal([secondKey.Id.ToString("D"), firstKey.Id.ToString("D")], ai.Listings.Select(k => k.KeyId));
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Information && e.Message == $"Catalog sync for Claude (Scheduled): key {secondKey.Id} was rejected: Claude list models failed: invalid x-api-key (authentication_error)");
         AssertNoSecret(logs);
         await KeysLiveSeed.DeleteUsersAsync(_fixture, Ct, first.Id, second.Id, third.Id);
     }
@@ -72,7 +88,7 @@ public class ModelSyncRunnerLiveTests : IClassFixture<DatabaseLiveFixture>
 
         var outcome = await provider.GetRequiredService<IModelSyncService>().SyncNowAsync(AiProvider.Gemini, user.Id, Ct);
 
-        Assert.Equal(new ModelSyncOutcome(ModelSyncStatus.NoValidKey, AiProvider.Gemini, null, "No valid Gemini key is stored."), outcome);
+        Assert.Equal(new ModelSyncOutcome(ModelSyncStatus.NoValidKey, AiProvider.Gemini, null, "You have no valid Gemini key."), outcome);
         Assert.Empty(ai.Listings);
         Assert.Null(await ModelSyncLiveSeed.StateAsync(_fixture, AiProvider.Gemini));
         Assert.Contains(logs.Entries, e => e.Level == LogLevel.Debug && e.Message == "Catalog sync for Gemini (Manual) skipped: no valid key is stored");
@@ -99,7 +115,7 @@ public class ModelSyncRunnerLiveTests : IClassFixture<DatabaseLiveFixture>
             await ModelSyncLiveSeed.NewKeyAsync(_fixture, user.Id, AiProvider.Gpt, ModelSyncLiveSeed.ApiKey + i, lastValidatedAt: LiveSeed.Now.AddMinutes(-i));
         }
 
-        var sync = provider.GetRequiredService<IModelSyncService>();
+        var sync = Assert.IsType<ModelSyncRunner>(provider.GetRequiredService<IModelSyncService>());
 
         // An outage is recorded as the last result; no other key is tried and nothing is counted missing.
         time.Advance(TimeSpan.FromHours(1));
@@ -112,9 +128,9 @@ public class ModelSyncRunnerLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal((LiveSeed.Now.AddHours(1), SyncStatus.Failed, "Gpt list models failed: gateway timeout", 1, SyncTrigger.Manual), (state!.LastSyncAt, state.LastStatus, state.LastError, state.ModelCount, state.Trigger));
         Assert.Contains(logs.Entries, e => e.Level == LogLevel.Information && e.Message == "Catalog sync for Gpt (Manual) failed: Gpt list models failed: gateway timeout");
 
-        // Every key refused: three are tried, none is marked (re-validation owns FR-KEY-07).
+        // Every key refused on the scheduled sync (the one that may try several users' keys): three are tried, none is marked (re-validation owns FR-KEY-07).
         ai.OnListModels = (_, _) => throw new AiAuthException("Gpt list models failed: invalid api key", AiProvider.Gpt, 401, "invalid_api_key");
-        var refused = await sync.SyncNowAsync(AiProvider.Gpt, users[0], Ct);
+        var refused = await sync.SyncAsync(AiProvider.Gpt, SyncTrigger.Scheduled, null, Ct);
 
         Assert.Equal(ModelSyncStatus.Failed, refused.Status);
         Assert.Equal("Gpt rejected every key tried (3); last answer: Gpt list models failed: invalid api key", refused.Detail);

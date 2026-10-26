@@ -1,12 +1,15 @@
 @page "/status"
 @attribute [Authorize]
 @using Ecnanib.Agents.Abstractions
+@using Ecnanib.Configuration
 @using Ecnanib.Database
 @using Ecnanib.Database.Entities
 @using Ecnanib.Exchange.Abstractions
 @using Ecnanib.Health.Abstractions
+@using Microsoft.Extensions.Options
 @inject ISystemHealth Health
 @inject TimeProvider Clock
+@inject IOptions<ServerOptions> Server
 
 <PageTitle>System status</PageTitle>
 <HeadContent>
@@ -35,6 +38,18 @@
             <dd>@HealthMessages.Latency(report.Database.Latency)</dd>
             <dt>Instance lock</dt>
             <dd><span class="status @HealthMessages.InstanceLockClass(report.InstanceLock.State)">@HealthMessages.InstanceLock(report.InstanceLock, report.At)</span></dd>
+        </dl>
+    </section>
+
+    <section class="card" aria-labelledby="transport-title">
+        <h2 id="transport-title">Transport</h2>
+        <dl class="details">
+            <dt>Public origin</dt>
+            <dd>@HealthMessages.PublicOrigin(Server.Value)</dd>
+            <dt>This request</dt>
+            <dd>@HealthMessages.RequestTransport(HttpContext.Request.IsHttps, HttpContext.Connection.RemoteIpAddress)</dd>
+            <dt>Trusted proxies</dt>
+            <dd>@HealthMessages.TrustedProxies(Server.Value)</dd>
         </dl>
     </section>
 
@@ -92,18 +107,20 @@
         <p class="hint">@HealthMessages.Streams(report.MarketStreams)</p>
         @if (report.MarketStreams.Count > 0)
         {
+            <p class="hint">@HealthMessages.MarketStreamsNote</p>
             <div class="table-wrap">
                 <table class="agents data stack">
-                    <thead><tr><th scope="col">Stream</th><th scope="col">Health</th><th scope="col">Last message</th><th scope="col">Since</th><th scope="col">Last error</th></tr></thead>
+                    <thead><tr><th scope="col">Streams</th><th scope="col">Open</th><th scope="col">Health</th><th scope="col">Last message</th><th scope="col">Since</th><th scope="col">Last error</th></tr></thead>
                     <tbody>
-                        @foreach (var stream in report.MarketStreams)
+                        @foreach (var group in HealthMessages.GroupStreams(report.MarketStreams))
                         {
                             <tr>
-                                <td data-label="Stream"><code>@stream.Name</code></td>
-                                <td data-label="Health"><span class="status @HealthMessages.StreamClass(stream.Health)">@HealthMessages.Stream(stream.Health)</span></td>
-                                <td data-label="Last message">@HealthMessages.Age(stream.LastMessageAt, report.At)</td>
-                                <td data-label="Since">@HealthMessages.Stamp(stream.Since)</td>
-                                <td data-label="Last error">@stream.LastError</td>
+                                <td data-label="Streams"><code>@group.Name</code></td>
+                                <td data-label="Open">@group.Count</td>
+                                <td data-label="Health"><span class="status @HealthMessages.StreamClass(group.Worst)">@HealthMessages.Stream(group.Worst)</span></td>
+                                <td data-label="Last message">@HealthMessages.Age(group.LastMessageAt, report.At)</td>
+                                <td data-label="Since">@HealthMessages.Stamp(group.Since)</td>
+                                <td data-label="Last error">@group.LastError</td>
                             </tr>
                         }
                     </tbody>

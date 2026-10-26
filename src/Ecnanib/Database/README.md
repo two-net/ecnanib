@@ -48,7 +48,11 @@ Rules the module enforces:
   Guid keys are UUID v7, generated client-side by Npgsql.
 - Every user-owned row cascades from `users`, so account deletion is one statement (FR-ACC-04). `log_entries` is
   written in batches by the logging module's sink and has no foreign keys so that sink can never fail on a race
-  (FR-LOG-08): account deletion must delete the user's log rows explicitly. Deleting an exchange key sets `agents.exchange_key_id` to null (FR-KEY-06).
+  (FR-LOG-08): account deletion must delete the user's log rows explicitly, the agents' rows without a user id among them.
+  `agents (exchange_key_id, user_id)` references `exchange_keys (id, user_id)`, so an agent can carry only a key of its
+  own user (NFR-SEC-03); the constraint is NO ACTION (a composite SET NULL would null `user_id` too), so the keys module
+  clears the reference before it deletes a key (FR-KEY-06), and deleting a user still cascades to keys and agents in one
+  statement because the check runs at its end.
 - Keys and secrets are stored plain per A-02 and masked everywhere else (FR-KEY-04). EF and Npgsql log categories are
   capped at Warning in the configuration file (`ecnanib.json`) and the connection string never appears in a validation message.
 - `Database:RetryOnFailureCount` enables Npgsql's retrying execution strategy; code that opens its own transaction

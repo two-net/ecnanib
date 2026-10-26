@@ -99,6 +99,8 @@ public class UserPreferencesResolverTests
 
         public Task<AccountDeletionResult> DeleteAccountAsync(Guid userId, string? password, string? clientAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task SignOutAsync(Guid userId, CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<DisclaimerStatus> GetDisclaimerStatusAsync(Guid userId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<DisclaimerStatus> AcceptDisclaimerAsync(Guid userId, CancellationToken cancellationToken) => throw new NotSupportedException();

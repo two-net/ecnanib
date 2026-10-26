@@ -9,8 +9,9 @@ namespace Ecnanib.ModelSync.Services;
 
 /// <summary>
 /// One catalog sync of one provider with a stored key (FR-SYNC-02): the scheduled and the on-demand sync share it.
-/// Picks Valid keys, the requester's own first, then the most recently validated, and tries at most
-/// <see cref="MaxKeysPerSync"/>; a rejected key is skipped, never marked (FR-KEY-07 belongs to the keys module). The
+/// An on-demand sync uses the requester's own Valid key only (NFR-SEC-03); the scheduled sync picks the most recently
+/// validated Valid keys and tries at most <see cref="MaxKeysPerSync"/>; a rejected key is skipped, never marked
+/// (FR-KEY-07 belongs to the keys module). The
 /// AI module retries and bounds every listing (FR-AI-13). A provider-side failure becomes a Failed sync state and a
 /// Failed outcome; a database failure propagates. One provider never syncs twice at once.
 /// </summary>
@@ -106,20 +107,24 @@ internal sealed class ModelSyncRunner : IModelSyncService
         if (tried == 0)
         {
             _logger.LogDebug("Catalog sync for {Provider} ({Trigger}) skipped: no valid key is stored", provider, trigger);
-            return new ModelSyncOutcome(ModelSyncStatus.NoValidKey, provider, Detail: $"No valid {provider} key is stored.");
+            return new ModelSyncOutcome(ModelSyncStatus.NoValidKey, provider, Detail: requestedBy is null ? $"No valid {provider} key is stored." : $"You have no valid {provider} key.");
         }
 
         return await FailAsync(provider, trigger, $"{provider} rejected every key tried ({tried}); last answer: {lastRejection}", cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Valid keys of the provider, the requester's own first, then the most recently validated; at most <see cref="MaxKeysPerSync"/> leave the database.</summary>
+    /// <summary>
+    /// Valid keys of the provider, at most <see cref="MaxKeysPerSync"/>. A manual sync uses the requester's own key and
+    /// nothing else (NFR-SEC-03: one user's action never spends another user's key); the scheduled sync, which has no
+    /// requester, takes the most recently validated ones.
+    /// </summary>
     private async Task<List<(Guid Id, string ApiKey)>> CandidateKeysAsync(AiProvider provider, Guid? requestedBy, CancellationToken cancellationToken)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var valid = db.ProviderKeys.AsNoTracking().Where(k => k.Provider == provider && k.Status == KeyStatus.Valid);
-        var ordered = requestedBy is { } user
-            ? valid.OrderBy(k => k.UserId == user ? 0 : 1).ThenByDescending(k => k.LastValidatedAt ?? DateTimeOffset.MinValue).ThenBy(k => k.Id)
-            : valid.OrderByDescending(k => k.LastValidatedAt ?? DateTimeOffset.MinValue).ThenBy(k => k.Id);
+        if (requestedBy is { } user)
+            valid = valid.Where(k => k.UserId == user);
+        var ordered = valid.OrderByDescending(k => k.LastValidatedAt ?? DateTimeOffset.MinValue).ThenBy(k => k.Id);
         var rows = await ordered.Take(MaxKeysPerSync)
             .Select(k => new { k.Id, k.ApiKey })
             .ToListAsync(cancellationToken).ConfigureAwait(false);

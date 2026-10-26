@@ -108,7 +108,8 @@ public class UserDataStreamSessionTests
         await Wait.UntilAsync(() => h.Count<UserDataEvent.StreamLost>() == 1);
         await Wait.UntilAsync(() => h.Source.SnapshotCalls == 1);
         Assert.Equal(StreamHealth.Polling, h.Session.Status.Health);
-        Assert.Equal("bad key", h.Session.Status.LastError);
+        // The kind, not the message: the status page shows it to every signed-in user (NFR-SEC-03).
+        Assert.Equal("Unauthorized from the exchange", h.Session.Status.LastError);
 
         h.Source.SnapshotError = new ExchangeUnavailableException("rest down");
         await Wait.SettleAsync();

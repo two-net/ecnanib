@@ -202,7 +202,7 @@ internal sealed class ExchangeReconciler : BackgroundService, IReconciliationSta
             catch (Exception ex)
             {
                 failures++;
-                RecordError($"key {group.Key.Item1} on {group.Key.MarketType}: {ex.Message}");
+                RecordError($"a key could not be read on {group.Key.MarketType}: {ErrorSummary.Describe(ex)}");
                 _logger.LogWarning(ex, "Key {KeyId} on {Market} could not be read for reconciliation", group.Key.Item1, group.Key.MarketType);
                 continue;
             }
@@ -233,7 +233,7 @@ internal sealed class ExchangeReconciler : BackgroundService, IReconciliationSta
                 catch (Exception ex)
                 {
                     failures++;
-                    RecordError($"agent {agent.Id}: {ex.Message}");
+                    RecordError($"an agent could not be reconciled: {ErrorSummary.Describe(ex)}");
                     _logger.LogWarning(ex, "Agent {AgentId} could not be reconciled", agent.Id);
                 }
             }
@@ -278,7 +278,7 @@ internal sealed class ExchangeReconciler : BackgroundService, IReconciliationSta
         {
             var reason = $"the exchange state could not be verified after the restart ({ex.Message})";
             _failedChecks[agent.Id] = (now, reason);
-            RecordError($"agent {agent.Id}: {reason}");
+            RecordError($"an agent's exchange state could not be verified after the restart: {ErrorSummary.Describe(ex)}");
             _logger.LogWarning(ex, "Agent {AgentId}: the exchange state could not be verified after the restart; nothing is placed this candle (NFR-REL-01, NFR-REL-03)", agent.Id);
             return new RestartCheck(false, true, reason, 0);
         }

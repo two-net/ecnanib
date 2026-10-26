@@ -30,6 +30,9 @@ public static class ExchangeServiceCollectionExtensions
         services.AddHttpClient(BinanceClientRegistry.HttpClientName)
             .ConfigureHttpClient((sp, client) =>
                 client.Timeout = sp.GetRequiredService<IOptions<ExchangeOptions>>().Value.RequestTimeout)
+            // NFR-SEC-04, FR-KEY-05: a 3xx from the exchange must not carry X-MBX-APIKEY anywhere else; the runtime strips
+            // only the Authorization header on a cross-origin redirect.
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
             // FR-LOG-05: the factory's logging handler would otherwise print the API key header at Trace.
             .RedactLoggedHeaders(["X-MBX-APIKEY"]);
 

@@ -29,6 +29,9 @@ public static class AiServiceCollectionExtensions
         services.AddHttpClient(AiProviderClientBase.HttpClientName)
             .ConfigureHttpClient((sp, client) =>
                 client.Timeout = sp.GetRequiredService<IOptions<AiOptions>>().Value.CallTimeout)
+            // NFR-SEC-04, FR-KEY-05: a 3xx from a provider must not carry the key anywhere else, and the runtime strips
+            // only the Authorization header on a cross-origin redirect, not x-api-key or x-goog-api-key.
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
             // FR-LOG-05: the factory's logging handler would otherwise print auth headers at Trace.
             .RedactLoggedHeaders(["x-api-key", "Authorization", "x-goog-api-key"]);
 

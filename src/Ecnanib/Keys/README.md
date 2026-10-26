@@ -9,7 +9,7 @@ Binance API key pairs and one key per AI provider; the system holds no credentia
 |---|---|
 | List, add, replace, validate or delete the user's keys (FR-KEY-01..03, FR-KEY-06) | `IKeyService` → `KeyOverview`, `KeySaveResult`, `KeyValidationResult`, `KeyDeletionResult`; user mistakes and refused keys are results, exceptions mean infrastructure failed |
 | A handle to trade or call a provider with the user's key (AI-03, FR-KEY-05) | `IKeyResolver` → `KeyResolution<ExchangeKeyHandle>` / `KeyResolution<AiKeyHandle>`; only a Valid key resolves, the others carry the reason |
-| Say that a feature is unavailable because a key is missing (FR-KEY-08) | `ProviderKeySlot.Key == null`, `KeyResolutionStatus.Missing` / `Invalid` with `Reason` |
+| Say that a feature is unavailable because a key is missing (FR-KEY-08) | `ProviderKeySlot.Key == null`, `KeyResolutionStatus.Missing` / `Invalid` with `Reason`; `IKeyService.ValidProvidersAsync(userId, ct)` answers "which providers may this user sync" in one query (the providers page) |
 | Stop or fail agents that use a key (FR-KEY-06, FR-KEY-07) | `IKeyDependentAgents`; the default writes the agent rows, the agents runtime registers its own before `AddKeys` so that Stop also cancels orders |
 
 Rules the module enforces:
@@ -27,7 +27,9 @@ Rules the module enforces:
 - Validations run under a throwaway key id (`validate:…`) that is released afterwards, so they never touch the account
   clients the exchange module caches per stored key. Replacing a key keeps its id, environment and markets (agents keep
   their reference) and releases the stored id after the save, because the cached clients were built on the old secret.
-  Deleting a key releases it after the row is gone; `agents.exchange_key_id` is cleared by the foreign key.
+  Deleting a key clears `agents.exchange_key_id` on every agent of the user that referenced it and deletes the row in
+  one transaction, then releases the id: the database's composite constraint keeps an agent on its own user's keys
+  (NFR-SEC-03) and no longer clears the column itself.
 - An exchange key is "used" by Running or Paused live agents that reference it; paper agents never need one (FR-KEY-09).
   A provider key is used by the user's Running or Paused agents with an enabled council role on that provider, in both
   modes. Deletion is refused with `AgentsInUse` unless the caller asks to stop them, which moves them to Stopped with
@@ -47,7 +49,8 @@ Rules the module enforces:
 - Masking and logging (FR-KEY-04, FR-UI-06, FR-LOG-04, FR-LOG-05): views carry the key masked to its last four
   characters and never the secret; handles are the only objects that leave the module with a value, and they print
   masked. Logs carry the user id, key id, environment or provider and the outcome; the reasons stored and shown come
-  from the exchange and AI modules, which scrub the key, and a label (the user's own text) is never logged. The pages
+  from the exchange and AI modules and are scrubbed of the key (and, for an exchange key, of the secret) before they
+  are kept, and a label (the user's own text) is never logged and never part of a reason. The pages
   blank the key and secret fields before a failed form is rendered again, so a value never comes back in the page.
 - Keys are stored plain (A-02, Appendix F #1): protection is database access control, transport security, masking,
   non-logging and the refusal of withdrawal permission.

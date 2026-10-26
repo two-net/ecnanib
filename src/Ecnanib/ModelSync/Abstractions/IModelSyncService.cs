@@ -3,10 +3,11 @@ using Ecnanib.Ai.Abstractions;
 namespace Ecnanib.ModelSync.Abstractions;
 
 /// <summary>
-/// The on-demand catalog sync (FR-SYNC-02): lists the provider's models with a valid stored key, the requester's own
-/// first, and writes the list through <see cref="IProviderCatalogSync"/> with trigger Manual, which counts misses and
-/// deprecates (FR-SYNC-03). A missing key, a refused key or a provider failure is an outcome; an exception means the
-/// database failed. Syncs of one provider run one at a time, whoever starts them.
+/// The on-demand catalog sync (FR-SYNC-02): lists the provider's models with the requester's own valid key (NFR-SEC-03:
+/// a user's action never spends another user's key; the scheduled sync may use any valid key) and writes the list
+/// through <see cref="IProviderCatalogSync"/> with trigger Manual, which counts misses and deprecates (FR-SYNC-03). A
+/// missing key, a refused key or a provider failure is an outcome; an exception means the database failed. Syncs of one
+/// provider run one at a time, whoever starts them.
 /// </summary>
 public interface IModelSyncService
 {
@@ -18,7 +19,7 @@ public enum ModelSyncStatus
     /// <summary>The list was written; <see cref="ModelSyncOutcome.Result"/> carries the counts.</summary>
     Synced = 1,
 
-    /// <summary>No stored key of the provider is Valid: nothing was called and nothing was recorded.</summary>
+    /// <summary>The requester has no Valid key of the provider (for a scheduled sync: nobody has): nothing was called and nothing was recorded.</summary>
     NoValidKey = 2,
 
     /// <summary>The provider failed, listed nothing or rejected every key tried; recorded as the provider's last result (FR-SYNC-06).</summary>

@@ -4,6 +4,7 @@ using Ecnanib.Accounts.Configuration;
 using Ecnanib.Accounts.Services;
 using Ecnanib.Configuration;
 using Ecnanib.Database.Entities;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -18,7 +19,7 @@ public static class AccountsServiceCollectionExtensions
     /// <summary>
     /// Registers the accounts module: validated <see cref="AccountsOptions"/> and <see cref="AgentLimitsOptions"/>,
     /// Argon2id password hashing, the sign-in throttle, <see cref="IAccountService"/>, <see cref="IFairUseLimits"/>,
-    /// cookie authentication with security-stamp revalidation, authorization, the Blazor authentication state and the
+    /// cookie authentication with security-stamp revalidation, the antiforgery cookie, authorization, the Blazor authentication state and the
     /// per-request <see cref="UserPreferencesResolver"/>. Requires <c>AddDatabase</c>, <c>AddServer</c> and <c>AddUi</c>
     /// (new accounts take its defaults). Adds no hosted service and connects to nothing.
     /// </summary>
@@ -76,6 +77,20 @@ public static class AccountsServiceCollectionExtensions
                 cookie.LogoutPath = "/sign-out";
                 cookie.ReturnUrlParameter = "ReturnUrl";
                 cookie.EventsType = typeof(AccountCookieEvents);
+            });
+
+        // NFR-SEC-01: the antiforgery cookie follows the session cookie's rules; its name no longer derives from the
+        // application discriminator, and the frame headers are the pipeline's (EcnanibPipeline), not this service's.
+        services.AddAntiforgery();
+        services.AddOptions<AntiforgeryOptions>()
+            .Configure<IOptions<ServerOptions>>((antiforgery, server) =>
+            {
+                antiforgery.Cookie.Name = AccountSession.AntiforgeryCookieName;
+                antiforgery.Cookie.HttpOnly = true;
+                antiforgery.Cookie.SameSite = SameSiteMode.Strict;
+                antiforgery.Cookie.IsEssential = true;
+                antiforgery.Cookie.SecurePolicy = server.Value.IsHttps ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
+                antiforgery.SuppressXFrameOptionsHeader = true;
             });
 
         // AddRazorComponents registers no authorization services; UseAuthorization needs these.

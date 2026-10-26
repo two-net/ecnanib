@@ -1,3 +1,4 @@
+using Ecnanib.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Ecnanib.Exchange.Configuration;
@@ -5,6 +6,14 @@ namespace Ecnanib.Exchange.Configuration;
 /// <summary>Validates the whole <c>Exchange</c> section at startup so an invalid file refuses to start (FR-CFG-06).</summary>
 public sealed class ExchangeOptionsValidator : IValidateOptions<ExchangeOptions>
 {
+    /// <summary>
+    /// The domains Binance answers on (NFR-SEC-04): production and its alternate API hosts under binance.com, the spot
+    /// testnet under binance.vision. A configured endpoint must be one of them or a host under one, and nothing else.
+    /// </summary>
+    internal static readonly string[] AllowedDomains = ["binance.com", "binance.vision"];
+
+    internal static bool IsAllowedHost(string host) => AllowedDomains.Any(domain => HostNames.IsUnder(host, domain));
+
     public ValidateOptionsResult Validate(string? name, ExchangeOptions options)
     {
         var failures = new List<string>();
@@ -94,6 +103,8 @@ public sealed class ExchangeOptionsValidator : IValidateOptions<ExchangeOptions>
 
         if (!string.Equals(uri.Scheme, scheme, StringComparison.OrdinalIgnoreCase))
             failures.Add($"{path}:{name} must use the {scheme} scheme.");
+        else if (!IsAllowedHost(uri.Host))
+            failures.Add($"{path}:{name} must be a host under {string.Join(" or ", AllowedDomains)}: outbound traffic is limited to Binance (NFR-SEC-04).");
     }
 
     private static void RequirePositive(string path, string name, int value, List<string> failures)

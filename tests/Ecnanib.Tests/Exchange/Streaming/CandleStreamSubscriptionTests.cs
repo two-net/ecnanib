@@ -219,12 +219,12 @@ public class CandleStreamSubscriptionTests
 
         await Wait.UntilAsync(() => h.Source.SubscribeCalls == 1);
         // The stream polls from the start; the error text is written after the failed attempt returns, so wait for it rather than for Polling.
-        await Wait.UntilAsync(() => h.Subscription.Status.LastError == "down", "failure recorded");
+        await Wait.UntilAsync(() => h.Subscription.Status.LastError == "Network from the exchange", "failure recorded");
         Assert.Equal(StreamHealth.Polling, h.Subscription.Status.Health);
 
         await h.AdvanceToAsync("2026-10-18T10:00:07Z");
         await Wait.UntilAsync(() => h.Source.SubscribeCalls == 2, "first retry after 2 s");
-        Assert.Equal("down", h.Subscription.Status.LastError);
+        Assert.Equal("Network from the exchange", h.Subscription.Status.LastError);
 
         h.Source.SubscribeError = null;
         await h.AdvanceToAsync("2026-10-18T10:00:10Z");
@@ -248,7 +248,7 @@ public class CandleStreamSubscriptionTests
         await h.AdvanceToAsync("2026-10-18T10:15:03Z");
         await Wait.UntilAsync(() => h.Subscription.Status.Health == StreamHealth.Down, "down");
 
-        Assert.Equal("rest down", h.Subscription.Status.LastError);
+        Assert.Equal("Network from the exchange", h.Subscription.Status.LastError);
         Assert.Equal(0, h.DeliveredCount);
     }
 

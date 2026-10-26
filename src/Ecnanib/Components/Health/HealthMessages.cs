@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Net;
 using Ecnanib.Agents.Abstractions;
+using Ecnanib.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Health.Abstractions;
@@ -16,6 +18,8 @@ internal static class HealthMessages
     public const string RefreshHint = "This page reloads every minute.";
 
     public const string UserDataNote = "Account streams carry fills for live agents; they are counted here, not named, because their names carry key ids.";
+
+    public const string MarketStreamsNote = "Grouped by kind, environment and market: which symbols are followed is the agents' owners' business, not this page's (NFR-SEC-03).";
 
     public static string Describe(HealthState state) => state switch
     {
@@ -139,6 +143,57 @@ internal static class HealthMessages
         return $"{streams.Count(s => s.Health == StreamHealth.Connected)} connected, {streams.Count(s => s.Health == StreamHealth.Polling)} polling, "
                + $"{streams.Count(s => s.Health == StreamHealth.Down)} down, {streams.Count(s => s.Health == StreamHealth.Stopped)} stopped";
     }
+
+    /// <summary>"https://ecnanib.example.com: https, so …" or "http://localhost:5207: plain http, allowed for this machine only" (NFR-SEC-02).</summary>
+    public static string PublicOrigin(ServerOptions server)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        return server.IsHttps
+            ? $"{server.PublicUrl}: https, so cookies are Secure, HSTS is sent and a plain request is redirected"
+            : $"{server.PublicUrl}: plain http, allowed for this machine only";
+    }
+
+    /// <summary>"https from 203.0.113.9": the scheme and client address this request arrived with, after the trusted proxy's forwarded headers.</summary>
+    public static string RequestTransport(bool isHttps, IPAddress? client) =>
+        $"{(isHttps ? "https" : "http")} from {client?.ToString() ?? "an unknown address"}";
+
+    /// <summary>"loopback only" or "loopback and 2 configured".</summary>
+    public static string TrustedProxies(ServerOptions server)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        var configured = server.TrustedProxies?.Length ?? 0;
+        return configured == 0 ? "loopback only" : $"loopback and {configured} configured";
+    }
+
+    /// <summary>
+    /// One row per kind, environment and market (the first three segments of a stream name): how many streams, the worst
+    /// health among them, the latest message, the earliest start and the first recorded error. Symbols stay out (NFR-SEC-03).
+    /// </summary>
+    public static IReadOnlyList<StreamGroup> GroupStreams(IReadOnlyList<StreamStatus> streams)
+    {
+        ArgumentNullException.ThrowIfNull(streams);
+        return streams
+            .GroupBy(s => string.Join(':', s.Name.Split(':').Take(3)), StringComparer.Ordinal)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => new StreamGroup(
+                g.Key,
+                g.Count(),
+                g.Select(s => s.Health).MaxBy(Severity),
+                g.Max(s => s.LastMessageAt),
+                g.Min(s => s.Since),
+                g.Select(s => s.LastError).FirstOrDefault(e => e is not null)))
+            .ToList();
+    }
+
+    private static int Severity(StreamHealth health) => health switch
+    {
+        StreamHealth.Down => 3,
+        StreamHealth.Polling => 2,
+        StreamHealth.Stopped => 1,
+        _ => 0,
+    };
+
+    public sealed record StreamGroup(string Name, int Count, StreamHealth Worst, DateTimeOffset? LastMessageAt, DateTimeOffset Since, string? LastError);
 
     public static string Stamp(DateTimeOffset? at) => at is { } when ? when.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) : "never";
 }

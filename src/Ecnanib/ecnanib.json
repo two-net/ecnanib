@@ -2,7 +2,8 @@
   "Server": {
     "BindAddress": "127.0.0.1",
     "Port": 5207,
-    "PublicUrl": "http://localhost:5207"
+    "PublicUrl": "http://localhost:5207",
+    "TrustedProxies": []
   },
   "Logging": {
     "Console": {

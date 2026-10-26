@@ -25,11 +25,11 @@ public class ExchangeOptionsValidationTests
         var options = Resolve(new()
         {
             ["Exchange:RequestTimeoutSeconds"] = "30",
-            ["Exchange:Testnet:FuturesRest"] = "https://testnet.binancefuture.com",
+            ["Exchange:Testnet:FuturesRest"] = "https://testnet.binance.vision/fapi",
         });
 
         Assert.Equal(TimeSpan.FromSeconds(30), options.RequestTimeout);
-        Assert.Equal("https://testnet.binancefuture.com", options.Testnet.FuturesRest);
+        Assert.Equal("https://testnet.binance.vision/fapi", options.Testnet.FuturesRest);
         Assert.Equal("https://testnet.binance.vision", options.Testnet.SpotRest);
     }
 
@@ -39,6 +39,9 @@ public class ExchangeOptionsValidationTests
     [InlineData("Exchange:Production:SpotStreams", "https://stream.binance.com", "Exchange:Production:SpotStreams must use the wss scheme")]
     [InlineData("Exchange:Testnet:FuturesRest", "not a url", "Exchange:Testnet:FuturesRest must be an absolute URL")]
     [InlineData("Exchange:Testnet:FuturesWsApi", "https://x.example", "Exchange:Testnet:FuturesWsApi must use the wss scheme")]
+    [InlineData("Exchange:Testnet:FuturesRest", "https://testnet.binancefuture.com", "Exchange:Testnet:FuturesRest must be a host under binance.com or binance.vision: outbound traffic is limited to Binance (NFR-SEC-04)")]
+    [InlineData("Exchange:Production:SpotStreams", "wss://stream.notbinance.com:9443/", "Exchange:Production:SpotStreams must be a host under binance.com or binance.vision")]
+    [InlineData("Exchange:Production:SpotRest", "https://api.binance.com.example", "Exchange:Production:SpotRest must be a host under binance.com or binance.vision")]
     [InlineData("Exchange:Streams:MarkPriceUpdateIntervalMs", "2000", "MarkPriceUpdateIntervalMs must be 1000 or 3000")]
     [InlineData("Exchange:Streams:ReconnectMaxDelaySeconds", "1", "ReconnectMaxDelaySeconds must be >= ReconnectInitialDelaySeconds")]
     [InlineData("Exchange:Retry:MaxAttempts", "0", "Exchange:Retry:MaxAttempts must be > 0")]

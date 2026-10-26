@@ -17,6 +17,13 @@ public interface IAccountService
     Task<PasswordChangeResult> ChangePasswordAsync(Guid userId, string? currentPassword, string? newPassword, string? clientAddress, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Ends every session of the user on the server (NFR-SEC-01): the security stamp is rotated, so a ticket copied
+    /// before this is rejected at its next check, and the in-process revocation ends it at once. The caller deletes the
+    /// browser's cookie. Nothing happens for a user that no longer exists.
+    /// </summary>
+    Task SignOutAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Deletes the account after the password is entered again (the explicit confirmation of FR-ACC-04). Requires every
     /// agent to be Stopped or Draft and removes the user's keys, agents, decisions, trades and log entries in one transaction.
     /// </summary>
