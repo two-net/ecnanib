@@ -1,4 +1,4 @@
-namespace Ecnanib.Database.Migrations;
+namespace Ecnanib.Database;
 
 /// <summary>The schema could not be brought up to date at startup; the application refuses to start (NFR-ARCH-03).</summary>
 public sealed class DatabaseMigrationException : Exception

@@ -6,6 +6,7 @@ using Ecnanib.Configuration;
 using Ecnanib.Exchange.Binance;
 using Ecnanib.Exchange.Configuration;
 using Ecnanib.Tests.Database;
+using Ecnanib.Tests.Support;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -31,8 +32,6 @@ public class OutboundTrafficTests
         "Serilog.Extensions.Hosting",
         "Serilog.Sinks.Console",
     ];
-
-    private static readonly string RepoRoot = FindRepoRoot();
 
     private static readonly Regex Url = new("^(https?|wss?)://", RegexOptions.IgnoreCase);
 
@@ -75,7 +74,7 @@ public class OutboundTrafficTests
     [Fact]
     public void TheApplicationReferencesOnlyTheAllowedPackages()
     {
-        var project = XDocument.Load(Path.Combine(RepoRoot, "src", "Ecnanib", "Ecnanib.csproj"));
+        var project = XDocument.Load(Path.Combine(SourceTree.ApplicationRoot, "Ecnanib.csproj"));
         var packages = project.Descendants("PackageReference").Select(p => p.Attribute("Include")!.Value).Order(StringComparer.Ordinal).ToArray();
 
         Assert.Equal(AllowedPackages, packages);
@@ -86,13 +85,7 @@ public class OutboundTrafficTests
     public void TheSourceOpensNoOtherNetworkClientAndNoTelemetry()
     {
         var forbidden = new[] { "new HttpClient(", "ClientWebSocket", "TcpClient", "UdpClient", "SmtpClient", "WebRequest.", "Dns.Get", "Process.Start(", "ActivitySource", "new Meter(", "HttpClient.DefaultProxy", "OpenTelemetry", "ApplicationInsights", "Sentry" };
-        var sources = Directory.EnumerateFiles(Path.Combine(RepoRoot, "src", "Ecnanib"), "*.*", SearchOption.AllDirectories)
-            .Where(f => (f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".razor", StringComparison.Ordinal) || f.EndsWith(".js", StringComparison.Ordinal))
-                        && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                        && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                        && !f.Contains($"{Path.DirectorySeparatorChar}wwwroot{Path.DirectorySeparatorChar}lib{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-            .ToList();
-        Assert.NotEmpty(sources);
+        var sources = SourceTree.ApplicationSources(".cs", ".razor", ".js");
 
         var httpClients = 0;
         foreach (var file in sources)
@@ -128,8 +121,8 @@ public class OutboundTrafficTests
     [Fact]
     public void TheFrontEndReferencesNoOtherOrigin()
     {
-        var files = Directory.EnumerateFiles(Path.Combine(RepoRoot, "src", "Ecnanib", "Components"), "*.*", SearchOption.AllDirectories)
-            .Concat(Directory.EnumerateFiles(Path.Combine(RepoRoot, "src", "Ecnanib", "wwwroot", "css"), "*.css", SearchOption.AllDirectories))
+        var files = Directory.EnumerateFiles(Path.Combine(SourceTree.ApplicationRoot, "Components"), "*.*", SearchOption.AllDirectories)
+            .Concat(Directory.EnumerateFiles(Path.Combine(SourceTree.ApplicationRoot, "wwwroot", "css"), "*.css", SearchOption.AllDirectories))
             .Where(f => f.EndsWith(".razor", StringComparison.Ordinal) || f.EndsWith(".js", StringComparison.Ordinal) || f.EndsWith(".css", StringComparison.Ordinal))
             .ToList();
         Assert.NotEmpty(files);
@@ -139,18 +132,5 @@ public class OutboundTrafficTests
             var text = File.ReadAllText(file);
             Assert.DoesNotMatch(@"(?i)(src|href|url\(|@import|fetch\(|sendBeacon|new WebSocket|XMLHttpRequest)[^\n]*https?://", text);
         }
-    }
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "Ecnanib.slnx")))
-                return directory.FullName;
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Ecnanib.slnx not found above the test directory.");
     }
 }

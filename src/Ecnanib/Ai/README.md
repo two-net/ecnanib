@@ -1,7 +1,8 @@
 # AI provider module
 
 Anthropic (Claude), Google (Gemini), OpenAI (GPT) and xAI (Grok) over their REST APIs (SRS §3.1.3, AI-01..04). Other
-modules depend only on `Ecnanib.Ai.Abstractions` and `AddAiProviders(...)`; wire types never leave this folder. Every
+modules depend only on `Ecnanib.Ai.Abstractions`, `AiOptions` (the model-sync module reads the sync interval and the
+miss threshold) and `AddAiProviders(...)`; wire types never leave this folder. Every
 call carries the key of the user who owns the agent (C-05, AI-03); the system holds none (C-11, FR-CFG-03).
 
 | Need | Use |

@@ -2,7 +2,6 @@ using System.Net.Sockets;
 using System.Reflection;
 using Ecnanib.Configuration;
 using Ecnanib.Database;
-using Ecnanib.Database.Migrations;
 using Ecnanib.Logging;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Options;

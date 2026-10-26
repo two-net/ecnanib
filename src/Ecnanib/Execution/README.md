@@ -7,7 +7,8 @@ agent's venue and manages the open position at every candle close; the live venu
 key. Before a live agent's first action in the process the module verifies its exchange state (NFR-REL-01), and nothing
 it places can double an order or leave a position without protection (NFR-REL-02/03). Other modules depend on the
 seams in `Ecnanib.Agents.Abstractions` (`IExecutionService`, `IOrderVenue`, `IDailyLossLimit`, `IAgentGates`,
-`IReconciliationStatus`, `ClientOrderIds`, `ProtectionUnits`, `TradeJson`, `LimitCheck`) and on `AddExecution(...)`, which
+`IReconciliationStatus`, `ClientOrderIds`, `ProtectionUnits`, `TradeJson`, `LimitCheck`), on `Ecnanib.Execution.Abstractions`
+(`ITradeTimelineReader`, `IAgentPerformance`, `PnlMath`, read by the pages and the live islands) and on `AddExecution(...)`, which
 must be registered **before** `AddAgents` (whose fail-safe execution and pending live venue stay otherwise; it throws
 when `AddAgents` came first) and requires `AddExchange`, `AddDatabase` and, at call time, the keys module's resolver.
 It adds two hosted services and connects to nothing at registration. The venue mechanics never leave this folder.

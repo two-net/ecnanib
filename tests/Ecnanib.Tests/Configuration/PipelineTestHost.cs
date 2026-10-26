@@ -154,12 +154,7 @@ internal sealed class PipelineTestHost : IAsyncDisposable
 
     private static void RemoveModuleHostedServices(IServiceCollection services)
     {
-        foreach (var descriptor in services.Where(d => d.ServiceType == typeof(IHostedService) && !d.IsKeyedService && Implementation(d)?.Assembly == typeof(EcnanibHost).Assembly).ToList())
+        foreach (var descriptor in services.Where(d => d.ServiceType == typeof(IHostedService) && !d.IsKeyedService && HostedServices.ImplementationType(d)?.Assembly == typeof(EcnanibHost).Assembly).ToList())
             services.Remove(descriptor);
-
-        static Type? Implementation(ServiceDescriptor descriptor) =>
-            descriptor.ImplementationType
-            ?? descriptor.ImplementationInstance?.GetType()
-            ?? descriptor.ImplementationFactory?.GetType().GenericTypeArguments.ElementAtOrDefault(1);
     }
 }

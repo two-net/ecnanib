@@ -3,8 +3,10 @@
 User-owned trading agents and the runtime that evaluates them (SRS §1.3, §3.2 FR-AGT-01..15, Appendix E; FR-AI-08,
 FR-AI-12; NFR-PERF-01/02; NFR-REL-01/03; C-03, A-06, A-07). An agent trades one symbol on one market at one timeframe
 with one strategy and one council; Running and Paused agents are evaluated server-side once per UTC-aligned candle
-close, while the user is offline. Other modules depend on `Ecnanib.Agents.Abstractions` and `AddAgents(...)`; the
-scheduler, pipeline and paper simulator never leave this folder. `AddAgents` requires `AddDatabase`, `AddExchange`,
+close, while the user is offline. Other modules depend on `Ecnanib.Agents.Abstractions`, on the `Agents`, `RiskCaps`
+and `Paper` option types in `Ecnanib.Agents.Configuration` (the council and execution modules enforce the caps, the
+strategies read the parameters, the pages show the limits) and on `AddAgents(...)`; the scheduler, pipeline and paper
+simulator never leave this folder. `AddAgents` requires `AddDatabase`, `AddExchange`,
 `AddAccounts` and `AddStrategies` (the catalog and engine) registered before it and `AddKeys` registered **after** it
 (so the runtime's own key handling is kept), and adds two hosted services.
 

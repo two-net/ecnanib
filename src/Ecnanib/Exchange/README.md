@@ -1,7 +1,8 @@
 # Exchange module
 
 Binance Spot and USDⓈ-M Futures gateway (SRS §3.1.2, EX-01..06). Other modules depend only on
-`Ecnanib.Exchange.Abstractions` and `AddExchange(...)`; Binance.Net types never leave this folder.
+`Ecnanib.Exchange.Abstractions`, `ExchangeOptions` (the execution module reads the reconciliation interval) and
+`AddExchange(...)`; Binance.Net types never leave this folder.
 
 | Need | Use |
 |---|---|
