@@ -490,3 +490,5 @@ tests/.exchange-keys.json
 tests/.ai-keys.json
 # Ecnanib: local live-test PostgreSQL connection (never commit)
 tests/.database.json
+# Ecnanib: local scratch directory
+.temp/
