@@ -1,5 +1,11 @@
 @* The risk disclaimer (FR-UI-05, NFR-LEGAL-01/02); text and version live in RiskDisclaimer. The heading level follows the
-   page's outline (a page section by default, a sub-heading inside the settings page's own section). *@
+   page's outline (a page section by default, a sub-heading inside a card with its own h2). Given a Status that is not
+   accepted it also carries the acceptance form (FR-ACC-08): the settings page, a live agent's Actions card and its review
+   step offer it there, and the post records the acceptance and redirects to ReturnTo. One instance with a Status per page:
+   the form name and the heading id must be unique. *@
+@inject IAccountService Accounts
+@inject NavigationManager Navigation
+
 <section class="risk-disclaimer" aria-labelledby="risk-disclaimer-title">
     @if (Level == 3)
     {
@@ -9,15 +15,65 @@
     {
         <h2 id="risk-disclaimer-title">@RiskDisclaimer.Title</h2>
     }
+    @if (Offer)
+    {
+        @if (Status!.LastAcceptedAt is { } last)
+        {
+            <p>@AccountMessages.DisclaimerChanged(last)</p>
+        }
+        <p>@RiskDisclaimer.AcceptancePrompt</p>
+    }
     @foreach (var paragraph in RiskDisclaimer.Paragraphs)
     {
         <p>@paragraph</p>
     }
     <p class="version">Version @RiskDisclaimer.Version</p>
+    @if (Offer)
+    {
+        <EditForm Model="Input" FormName="accept-disclaimer" OnValidSubmit="AcceptAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <label class="check">
+                <InputCheckbox @bind-Value="Input.Accepted" />
+                @RiskDisclaimer.AcceptanceLabel
+            </label>
+            <button type="submit" class="primary">Accept</button>
+        </EditForm>
+    }
 </section>
 
 @code {
     /// <summary>2 (the default) for a section of the page, 3 inside a section with its own h2.</summary>
     [Parameter]
     public int Level { get; set; } = 2;
+
+    /// <summary>The signed-in user's status: the acceptance form is shown while the current version is not accepted. Null shows the text alone.</summary>
+    [Parameter]
+    public DisclaimerStatus? Status { get; set; }
+
+    /// <summary>Where the page continues after the acceptance (a path of this application with its status query); set it with <see cref="Status"/>.</summary>
+    [Parameter]
+    public string? ReturnTo { get; set; }
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "accept-disclaimer")]
+    private AcceptDisclaimerInput Input { get; set; } = default!;
+
+    private bool Offer => Status is { IsAccepted: false };
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task AcceptAsync()
+    {
+        await Accounts.AcceptDisclaimerAsync(HttpContext.User.RequireUserId(), HttpContext.RequestAborted);
+        Navigation.NavigateTo(ReturnTo ?? "/settings?status=disclaimer-accepted");
+    }
+
+    private sealed class AcceptDisclaimerInput
+    {
+        [Range(typeof(bool), "true", "true", ErrorMessage = "Tick the box to accept the disclaimer.")]
+        public bool Accepted { get; set; }
+    }
 }

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Ecnanib.Accounts.Abstractions;
 using Ecnanib.Ai.Abstractions;
 using Ecnanib.Components.Agents;
 using Ecnanib.Components.Experience;
@@ -21,10 +22,11 @@ namespace Ecnanib.Tests.Ui.Live;
 
 /// <summary>
 /// NFR-USE-01 and NFR-USE-03 on every signed-in page of FR-UI-01, rendered by the application's own pipeline against a real
-/// database: one account seeded with a Binance key, provider keys, a catalog with a deprecated model, three agents (running
+/// database: one account seeded with a Binance key, provider keys, a catalog with a deprecated model, four agents (running
 /// with a decided, a failed and an in-flight evaluation, an open and a closed trade, statistics, log rows, a change and a
-/// window; a draft with every setup field enabled; a paused live agent on the key), so that every table, form, island,
-/// island branch and notice renders with content and passes <see cref="AccessibilityChecks"/>, in English, with its own title.
+/// window; a draft with every setup field enabled; a paused and a stopped live agent on the key, the stopped one offering
+/// the disclaimer's acceptance where it can be started), so that every table, form, island, island branch and notice
+/// renders with content and passes <see cref="AccessibilityChecks"/>, in English, with its own title.
 /// </summary>
 [Trait("Category", "Live")]
 public class AccessibilityLiveTests : IClassFixture<DatabaseLiveFixture>
@@ -64,6 +66,13 @@ public class AccessibilityLiveTests : IClassFixture<DatabaseLiveFixture>
                 Assert.True(text.Contains(marker, StringComparison.Ordinal), $"{path} does not contain \"{marker}\".");
         }
 
+        // FR-ACC-08: the acceptance form is offered only where a live agent can be started, not for a paper agent and not beside a paused live agent's Resume.
+        foreach (var path in new[] { $"/agents/{seeded.Running}", WizardSteps.Href(seeded.Draft, WizardStep.Review), $"/agents/{seeded.Paused}", WizardSteps.Href(seeded.Paused, WizardStep.Review) })
+        {
+            var (_, html) = await PipelineSession.GetAsync(host, path, session);
+            Assert.DoesNotContain(AcceptForm, html, StringComparison.Ordinal);
+        }
+
         // WCAG 2.2.1: the status page sits still until asked, and the reloading variant says how to stop.
         var (_, still) = await PipelineSession.GetAsync(host, "/status", session);
         Assert.Null(AccessibilityChecks.Parse(still).QuerySelector("meta[http-equiv=refresh]"));
@@ -91,6 +100,9 @@ public class AccessibilityLiveTests : IClassFixture<DatabaseLiveFixture>
             yield return Exact(WizardSteps.Href(s.Draft, step), $"Set up Draft BTC: {WizardSteps.Title(step)}");
         yield return Exact(WizardSteps.Href(s.Running, WizardStep.Council), "Set up Running BTC: Council");
         yield return Exact(WizardSteps.Href(s.Running, WizardStep.Review), "Set up Running BTC: Review and start");
+        yield return Exact(WizardSteps.Href(s.Paused, WizardStep.Review), "Set up Paused live: Review and start");
+        yield return Exact($"/agents/{s.StoppedLive}", "Stopped live");
+        yield return Exact(WizardSteps.Href(s.StoppedLive, WizardStep.Review), "Set up Stopped live: Review and start");
         yield return Exact($"/agents/{s.Running}/log", "Log of Running BTC");
         yield return Exact($"/agents/{s.Running}/log?{LogFilters.LevelName}={LogFilters.LevelValue(LogLevel.Warning)}&{LogFilters.ComponentName}=Ecnanib.Tests", "Log of Running BTC");
         yield return Starts($"/agents/{s.Running}/evaluations/{s.DecidedEvaluation}", "Evaluation of Running BTC, ");
@@ -107,11 +119,26 @@ public class AccessibilityLiveTests : IClassFixture<DatabaseLiveFixture>
         yield return Exact("/status", "System status");
     }
 
+    /// <summary>The hidden handler field of the acceptance form <c>RiskDisclaimerNotice</c> renders with a status that is not accepted (FR-ACC-08).</summary>
+    private const string AcceptForm = "value=\"accept-disclaimer\"";
+
     /// <summary>What the seeded content must have put on the page; each is a branch the structural checks are meant to cover.</summary>
     private static IEnumerable<(string Path, string[] Markers)> Markers(Seeded s)
     {
+        // FR-UI-05: the full disclaimer on the creation steps and the agent pages; FR-ACC-08: the acceptance form on the stopped live agent's page and
+        // review step, where it can be started, and on the settings page (the seeded account never accepts it).
+        string[] notice = ["id=\"risk-disclaimer-title\"", RiskDisclaimer.Paragraphs[0], "Version " + RiskDisclaimer.Version];
+        string[] form = [AcceptForm, RiskDisclaimer.AcceptanceLabel, RiskDisclaimer.AcceptancePrompt];
+
         yield return ("/agents", ["Evaluating…", "Running BTC", "Paused live", "Stop all my agents", "aria-live=\"polite\""]);
-        yield return ($"/agents/{s.Running}", ["Evaluating…", "Open positions", "Open orders", "Closed trades", "Entry deliberation", "Change history", "no longer lists", "Price chart of BTCUSDT", "300 candles", "Details</summary>", "Council usage", "Council calls and tokens by role", ">Reasoning<", "capped at 8,192 output tokens", "costs are yours under BYOK"]);
+        yield return ("/agents/new", notice);
+        foreach (var step in WizardSteps.Ordered)
+            yield return (WizardSteps.Href(s.Draft, step), notice);
+        yield return ($"/agents/{s.Running}", ["Evaluating…", "Open positions", "Open orders", "Closed trades", "Entry deliberation", "Change history", "no longer lists", "Price chart of BTCUSDT", "300 candles", "Details</summary>", "Council usage", "Council calls and tokens by role", ">Reasoning<", "capped at 8,192 output tokens", "costs are yours under BYOK", .. notice]);
+        yield return ($"/agents/{s.Paused}", notice);
+        yield return (WizardSteps.Href(s.Paused, WizardStep.Review), notice);
+        yield return ($"/agents/{s.StoppedLive}", [.. notice, .. form]);
+        yield return (WizardSteps.Href(s.StoppedLive, WizardStep.Review), [.. notice, .. form, "Start the agent"]);
         yield return (WizardSteps.Href(s.Draft, WizardStep.Council), ["aria-label=\"Market Analyst model\"", "aria-label=\"Risk Manager model id\"", "Model id for every role"]);
         yield return (WizardSteps.Href(s.Draft, WizardStep.Risk), ["From time", "Until day", ">Remove<", "Every Saturday"]);
         yield return (WizardSteps.Href(s.Draft, WizardStep.Strategy), [", default "]);
@@ -121,7 +148,7 @@ public class AccessibilityLiveTests : IClassFixture<DatabaseLiveFixture>
         yield return ("/keys", ["revoked", "Add key…", "Manage"]);
         yield return ("/providers", ["Sync now", "401 Unauthorized", "Claude catalog", "test-model"]);
         yield return ($"/providers/{ProviderNames.Route(AiProvider.Claude)}", ["Risk Manager", "Running BTC"]);
-        yield return ("/settings", ["Reduce animation", "Risk disclaimer"]);
+        yield return ("/settings", ["Reduce animation", .. form]);
     }
 
     /// <summary>
@@ -154,6 +181,7 @@ public class AccessibilityLiveTests : IClassFixture<DatabaseLiveFixture>
         var running = await AgentsLiveSeed.NewAgentAsync(_fixture, userId, "Running BTC", AgentState.Running, AgentMode.Paper, MarketType.UsdFutures);
         var draft = await AgentsLiveSeed.NewAgentAsync(_fixture, userId, "Draft BTC", AgentState.Draft, AgentMode.Paper, MarketType.UsdFutures);
         var paused = await AgentsLiveSeed.NewAgentAsync(_fixture, userId, "Paused live", AgentState.Paused, AgentMode.Live, MarketType.UsdFutures, exchangeKeyId: keyId);
+        var stoppedLive = await AgentsLiveSeed.NewAgentAsync(_fixture, userId, "Stopped live", AgentState.Stopped, AgentMode.Live, MarketType.UsdFutures, exchangeKeyId: keyId);
 
         Decision decided;
         Guid decidedEvaluation;
@@ -199,8 +227,8 @@ public class AccessibilityLiveTests : IClassFixture<DatabaseLiveFixture>
             await db.SaveChangesAsync(Ct);
         }
 
-        return new Seeded(keyId, running.Id, draft.Id, paused.Id, decidedEvaluation, inFlight.Id);
+        return new Seeded(keyId, running.Id, draft.Id, paused.Id, stoppedLive.Id, decidedEvaluation, inFlight.Id);
     }
 
-    private sealed record Seeded(Guid Key, Guid Running, Guid Draft, Guid Paused, Guid DecidedEvaluation, Guid InFlightEvaluation);
+    private sealed record Seeded(Guid Key, Guid Running, Guid Draft, Guid Paused, Guid StoppedLive, Guid DecidedEvaluation, Guid InFlightEvaluation);
 }

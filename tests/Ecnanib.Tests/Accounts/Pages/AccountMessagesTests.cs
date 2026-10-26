@@ -5,6 +5,16 @@ namespace Ecnanib.Tests.Accounts.Pages;
 
 public class AccountMessagesTests
 {
+    /// <summary>FR-ACC-08, NFR-USE-03: the acceptance status sentences write the instant in UTC whatever offset it carries.</summary>
+    [Fact]
+    public void DisclaimerStatusSentencesAreStampedInUtc()
+    {
+        var at = new DateTimeOffset(2026, 10, 19, 14, 30, 0, TimeSpan.FromHours(2));
+
+        Assert.Equal("You accepted version 2026-10-19 on 2026-10-19 12:30 UTC.", AccountMessages.DisclaimerAcceptedOn("2026-10-19", at));
+        Assert.Equal("The disclaimer has changed since you accepted it on 2026-10-19 12:30 UTC; please read and accept it again.", AccountMessages.DisclaimerChanged(at));
+    }
+
     [Theory]
     [InlineData(UiTheme.System, "Follow the system")]
     [InlineData(UiTheme.Light, "Light")]

@@ -37,8 +37,9 @@
     @Body
 </main>
 
+@* NFR-LEGAL-01 "prominently": the one-sentence summary on every page, linking to the full text on the landing page. *@
 <footer class="site-footer">
-    <p>Ecnanib is software, not financial advice. Trading cryptocurrencies, and leveraged futures in particular, can lose your entire balance. <a href="/#risk-disclaimer-title">Risk disclaimer</a></p>
+    <p>@RiskDisclaimer.Summary <a href="/#risk-disclaimer-title">Risk disclaimer</a></p>
 </footer>
 
 @* blazor.web.js shows this bar and wires .reload and .dismiss; the bar is an alert and the dismiss a named button (NFR-USE-01). *@

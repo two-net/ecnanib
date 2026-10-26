@@ -4,13 +4,26 @@ namespace Ecnanib.Accounts.Abstractions;
 /// The risk disclaimer shown on the landing page, during agent creation and on the agent detail page (FR-UI-05) and
 /// accepted before a user's first live-mode agent starts (FR-ACC-08). It states what NFR-LEGAL-01 and NFR-LEGAL-02
 /// require. Changing any paragraph means bumping <see cref="Version"/>: every user is then asked to accept again, and
-/// each acceptance is kept per version in <c>disclaimer_acceptances</c>.
+/// each acceptance is kept per version in <c>disclaimer_acceptances</c> (<c>RiskDisclaimerTests</c> pins a hash of the
+/// paragraphs beside the version). <see cref="Summary"/> is the one sentence every page's footer states (NFR-LEGAL-01
+/// "prominently"); it is not part of what the user accepts and is outside the version rule.
 /// </summary>
 public static class RiskDisclaimer
 {
     public const string Version = "2026-10-19";
 
     public const string Title = "Risk disclaimer";
+
+    public const string Summary = "Ecnanib is software, not financial advice. Trading cryptocurrencies, and leveraged futures in particular, can lose your entire balance.";
+
+    /// <summary>Shown with the acceptance form (FR-ACC-08), where a live agent can be started and on the settings page.</summary>
+    public const string AcceptancePrompt = "You must read and accept the risk disclaimer before a live-mode agent can start.";
+
+    /// <summary>The acceptance checkbox's label; it names the version being accepted.</summary>
+    public const string AcceptanceLabel = $"I have read and accept the risk disclaimer (version {Version}).";
+
+    /// <summary>The notice a page shows once the acceptance is recorded.</summary>
+    public const string AcceptedNotice = "Thank you. The risk disclaimer is accepted.";
 
     public static readonly IReadOnlyList<string> Paragraphs =
     [

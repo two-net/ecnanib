@@ -38,6 +38,7 @@ public class AgentMessagesTests
     [InlineData("started", null, "The agent is running and will be evaluated at the next candle close.")]
     [InlineData("stopped", null, "The agent was stopped.")]
     [InlineData("stopped", "2 orders cancelled.", "The agent was stopped. 2 orders cancelled.")]
+    [InlineData("disclaimer-accepted", null, "Thank you. The risk disclaimer is accepted.")]
     [InlineData("saved", null, null)]
     [InlineData(null, null, null)]
     public void TheDetailNoticeFollowsTheActionStatus(string? status, string? detail, string? expected) => Assert.Equal(expected, AgentMessages.DetailNotice(status, detail));
@@ -47,8 +48,20 @@ public class AgentMessagesTests
     [InlineData("saved", null, "The changes were saved.")]
     [InlineData("upgraded", "One parameter was reset.", "The agent now runs the newest version of its strategy. One parameter was reset.")]
     [InlineData("council-single", null, "One model now performs all four roles in sequence.")]
+    [InlineData("disclaimer-accepted", null, "Thank you. The risk disclaimer is accepted.")]
     [InlineData("started", null, null)]
     public void TheSetupNoticeFollowsTheSaveStatus(string? status, string? detail, string? expected) => Assert.Equal(expected, AgentMessages.SetupNotice(status, detail));
+
+    /// <summary>FR-ACC-08: a refused live start points at the acceptance box the agent page and the review step carry, not at another page.</summary>
+    [Fact]
+    public void ARefusedLiveStartPointsAtTheBoxOnThePage()
+    {
+        var text = AgentMessages.ForAction(new AgentActionResult(AgentActionStatus.DisclaimerRequired, "Read and accept the risk disclaimer before starting a live agent."));
+
+        Assert.Equal("Read and accept the risk disclaimer before starting a live agent. The disclaimer and the box to accept it are below.", text);
+        Assert.DoesNotContain("settings", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Accept the risk disclaimer first. The disclaimer and the box to accept it are below.", AgentMessages.ForAction(new AgentActionResult(AgentActionStatus.DisclaimerRequired)));
+    }
 
     /// <summary>NFR-USE-03: the stamp is the UTC instant in the invariant culture, whatever offset the value carries.</summary>
     [Fact]

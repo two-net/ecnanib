@@ -63,7 +63,7 @@ Rules the module enforces:
   has all four roles, the Risk Manager enabled and a model for every enabled role (FR-AI-03/05).
 - Start (Draft, Stopped or Error → Running) requires the running limit, a strategy still in the catalog at the pinned
   version with parameters that still validate, the risk caps, a model per enabled role, a Valid provider key for every enabled role's provider (FR-KEY-08) and, for live
-  mode, the accepted risk disclaimer (FR-ACC-08), a Valid exchange key allowed for the market and no other Running, Paused or Error live agent of the user on the same
+  mode, the accepted risk disclaimer (FR-ACC-08; the agent page and the review step carry the acceptance box until it is accepted), a Valid exchange key allowed for the market and no other Running, Paused or Error live agent of the user on the same
   key, market and symbol (one position per key, market and symbol belongs to one agent, FR-EXE-08). Pause keeps the agent
   evaluated but opens nothing (FR-AGT-05). Stop cancels the agent's pending entries first, then either closes its
   positions at market while their protection still stands (futures place the reduce-only close beside the stop; spot
@@ -177,8 +177,12 @@ runs, the council's token usage, the newest log rows, the experience section (th
 summary and the change history. Fields a state forbids are disabled. A council role whose model the catalog marks
 deprecated is flagged on the dashboard and prompted for a replacement on the council step, with the provider's newest
 available model suggested (FR-SYNC-03); saving and starting are not blocked, the provider's own rejection at call time
-is FR-SYNC-04. The disclaimer is shown on every setup step and on the agent page (FR-UI-05). Another user's agent and a
-missing one both answer not found.
+is FR-SYNC-04. The disclaimer is shown on every setup step and on the agent page (FR-UI-05); for a live agent that can be
+started (Draft, Stopped or Error) whose owner has not accepted its current version, the agent page's Actions card and the
+review step show it with the acceptance form instead (the accounts module's `RiskDisclaimerNotice` with a `Status`), a
+refused Start points at it, and the acceptance redirects back with `status=disclaimer-accepted` (FR-ACC-08). A Paused
+live agent's Resume is not a start and is not gated, so its page shows the text alone. The status is read only where the
+form can appear. Another user's agent and a missing one both answer not found.
 
 Known gaps: `Order.WorkingType` has no column, so paper futures stops are last-price only. Paper excursions are
 tracked per tick in memory and lost on a restart. A decision the deadline or a Stop kept from executing leaves neither a
