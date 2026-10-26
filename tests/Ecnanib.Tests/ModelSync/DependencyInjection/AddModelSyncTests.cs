@@ -30,6 +30,8 @@ public class AddModelSyncTests
         Assert.Same(runner, provider.GetRequiredService<ModelSyncRunner>());
         var hosted = Assert.Single(provider.GetServices<IHostedService>().Where(h => h.GetType().Namespace!.StartsWith("Ecnanib.ModelSync", StringComparison.Ordinal)));
         Assert.Same(provider.GetRequiredService<ModelSyncScheduler>(), hosted);
+        Assert.Same(hosted, provider.GetRequiredService<IModelSyncStatus>());
+        Assert.Equal(ModelSyncJobStatus.NotStarted, provider.GetRequiredService<IModelSyncStatus>().GetStatus());
         Assert.Equal(0, factory.Calls);
         Assert.Empty(ai.Listings);
     }

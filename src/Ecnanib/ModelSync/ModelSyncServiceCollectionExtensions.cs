@@ -11,7 +11,7 @@ public static class ModelSyncServiceCollectionExtensions
     /// Registers the model-sync module: <see cref="IProviderCatalogSync"/>, the catalog upsert that key validation
     /// feeds (FR-SYNC-02); <see cref="IModelSyncService"/>, the sync on demand; <see cref="IModelCatalog"/>, the
     /// catalog and the last sync per provider (FR-AI-03, FR-SYNC-06, NFR-OBS-01); and the scheduled sync, one hosted
-    /// service (FR-SYNC-02, FR-SYNC-03). Binds the <c>Providers</c> section for its interval and miss threshold;
+    /// service (FR-SYNC-02, FR-SYNC-03) that reports its heartbeat as <see cref="IModelSyncStatus"/> (NFR-OBS-01). Binds the <c>Providers</c> section for its interval and miss threshold;
     /// <c>AddAiProviders</c> validates it. Requires <c>AddDatabase</c> and <c>AddAiProviders</c>. Connects to nothing
     /// at registration.
     /// </summary>
@@ -28,6 +28,7 @@ public static class ModelSyncServiceCollectionExtensions
         services.TryAddSingleton<ModelSyncRunner>();
         services.TryAddSingleton<IModelSyncService>(sp => sp.GetRequiredService<ModelSyncRunner>());
         services.TryAddSingleton<ModelSyncScheduler>();
+        services.TryAddSingleton<IModelSyncStatus>(sp => sp.GetRequiredService<ModelSyncScheduler>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, ModelSyncScheduler>(sp => sp.GetRequiredService<ModelSyncScheduler>()));
         return services;
     }

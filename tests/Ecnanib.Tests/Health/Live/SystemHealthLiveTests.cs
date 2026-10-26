@@ -46,5 +46,9 @@ public class SystemHealthLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal(Enum.GetValues<AiProvider>().Order(), report.ModelSync.Select(s => s.Provider));
         Assert.All(report.ModelSync, s => Assert.Equal(SyncStatus.Never, s.LastStatus));
         Assert.Null(report.ModelSyncError);
+        Assert.Equal(HealthState.Healthy, report.States.Database);
+        Assert.Equal(HealthState.Unhealthy, report.States.Scheduler);
+        Assert.Equal(HealthState.Healthy, report.States.ModelSync);
+        Assert.Null(report.ModelSyncJob.StartedAt);
     }
 }

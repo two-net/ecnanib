@@ -1,3 +1,4 @@
+using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Ai.Abstractions;
 using Ecnanib.Ai.Configuration;
 using Ecnanib.Database;
@@ -77,7 +78,8 @@ internal sealed class ProviderCatalogSync : IProviderCatalogSync
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await RecordFailureAsync(provider, trigger, ex.Message, cancellationToken).ConfigureAwait(false);
+            // The kind, never the message: the row is shown on the providers and status pages; the caller logs the exception.
+            await RecordFailureAsync(provider, trigger, ErrorSummary.Describe(ex), cancellationToken).ConfigureAwait(false);
             throw;
         }
 

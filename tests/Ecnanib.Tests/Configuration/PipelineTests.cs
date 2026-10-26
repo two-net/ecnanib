@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Ecnanib.Configuration;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -8,11 +9,14 @@ namespace Ecnanib.Tests.Configuration;
 /// <summary>
 /// NFR-SEC-01/02 at the HTTP level, on the application's own pipeline: the trusted proxy's forwarded headers, https
 /// redirection and HSTS behind an https public URL, the security headers, antiforgery on every POST and the challenge of
-/// anonymous requests. Offline: no page here reaches the database.
+/// anonymous requests; and NFR-OBS-01's <c>/health</c> document. Offline: no page here reaches the database, and the health
+/// document reaches one that refuses at once (the retrying strategy is off).
 /// </summary>
 public class PipelineTests
 {
     private static readonly Dictionary<string, string?> HttpsOrigin = new() { ["Server:PublicUrl"] = $"https://{PipelineTestHost.Host}" };
+
+    private static readonly Dictionary<string, string?> NoRetry = new() { ["Database:RetryOnFailureCount"] = "0" };
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -165,6 +169,88 @@ public class PipelineTests
 
         Assert.Equal(HttpStatusCode.Found, response.StatusCode);
         Assert.Equal($"http://{PipelineTestHost.Host}/sign-in?ReturnUrl={Uri.EscapeDataString(path)}", response.Headers.Location?.ToString());
+    }
+
+    /// <summary>NFR-OBS-01: the health document needs no session; with the database refusing and no job running it says so with a 503, in the wire's spelling, uncached.</summary>
+    [Fact]
+    public async Task AnAnonymousGetOfHealthAnswersJsonWithNoStore()
+    {
+        await using var host = await PipelineTestHost.StartAsync(NoRetry);
+
+        var response = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Get, "/health"), Ct);
+        var json = await response.Content.ReadAsStringAsync(Ct);
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Equal("nosniff", PipelineTestHost.Header(response, "X-Content-Type-Options"));
+        Assert.Null(PipelineTestHost.Header(response, "Set-Cookie"));
+        Assert.Equal("unhealthy", root.GetProperty("status").GetString());
+        Assert.Equal("unhealthy", root.GetProperty("database").GetProperty("status").GetString());
+        Assert.Equal("unhealthy", root.GetProperty("scheduler").GetProperty("status").GetString());
+        Assert.Equal("notStarted", root.GetProperty("scheduler").GetProperty("phase").GetString());
+        Assert.Equal("healthy", root.GetProperty("instanceLock").GetProperty("status").GetString());
+        Assert.Equal("notHeld", root.GetProperty("instanceLock").GetProperty("state").GetString());
+        Assert.Equal("degraded", root.GetProperty("modelSync").GetProperty("status").GetString());
+        Assert.Equal(0, root.GetProperty("modelSync").GetProperty("providers").GetArrayLength());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("modelSync").GetProperty("job").GetProperty("startedAt").ValueKind);
+        Assert.Equal(0, root.GetProperty("marketStreams").GetProperty("connected").GetInt32());
+    }
+
+    [Fact]
+    public async Task AHeadOfHealthAnswersTheStatusAndTheHeadersWithoutABody()
+    {
+        await using var host = await PipelineTestHost.StartAsync(NoRetry);
+
+        var response = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Head, "/health"), Ct);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Equal("", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
+    public async Task APostToHealthIsNotAllowed()
+    {
+        await using var host = await PipelineTestHost.StartAsync(NoRetry);
+
+        var posted = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Post, "/health", content: PipelineTestHost.Form()), Ct);
+        var deleted = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Delete, "/health"), Ct);
+
+        foreach (var response in new[] { posted, deleted })
+        {
+            Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+            Assert.Equal("GET, HEAD", PipelineTestHost.Header(response, "Allow") ?? string.Join(", ", response.Content.Headers.Allow));
+            Assert.Equal("", await response.Content.ReadAsStringAsync(Ct));
+        }
+    }
+
+    /// <summary>NFR-OBS-01 behind the proxy: the health document, and only it, is answered over plain http (a proxy's upstream check, a local monitor); a forwarded https request still gets HSTS.</summary>
+    [Fact]
+    public async Task WithAnHttpsPublicUrlAPlainHealthRequestIsAnsweredNotRedirected()
+    {
+        await using var host = await PipelineTestHost.StartAsync(new Dictionary<string, string?>(HttpsOrigin) { ["Database:RetryOnFailureCount"] = "0" });
+
+        var viaProxy = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Get, "/health", forwardedProto: "http"), Ct);
+        var direct = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Get, "/health"), Ct);
+        var secure = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Get, "/health", forwardedProto: "https"), Ct);
+        var lookalike = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Get, "/healthz"), Ct);
+        var below = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Get, "/health/detail"), Ct);
+
+        foreach (var response in new[] { viaProxy, direct, secure })
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        }
+
+        Assert.Null(PipelineTestHost.Header(viaProxy, "Strict-Transport-Security"));
+        Assert.Null(PipelineTestHost.Header(direct, "Strict-Transport-Security"));
+        Assert.Equal($"max-age={(int)ConfigurationServiceCollectionExtensions.HstsMaxAge.TotalSeconds}", PipelineTestHost.Header(secure, "Strict-Transport-Security"));
+        Assert.Equal(HttpStatusCode.TemporaryRedirect, lookalike.StatusCode);
+        Assert.Equal(HttpStatusCode.TemporaryRedirect, below.StatusCode);
     }
 
     /// <summary>NFR-SEC-01: no session exists before authentication, so there is nothing a fixation attempt could plant; the antiforgery cookie is Secure iff the origin is https.</summary>

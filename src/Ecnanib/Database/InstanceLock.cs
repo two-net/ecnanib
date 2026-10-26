@@ -1,3 +1,4 @@
+using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Database.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
@@ -177,6 +178,7 @@ internal sealed class InstanceLock : IHostedService, IInstanceLockStatus, IAsync
             }
 
             string? why;
+            Exception? cause = null;
             try
             {
                 if (_db is { } db && GetStatus().State == InstanceLockState.Held)
@@ -200,11 +202,13 @@ internal sealed class InstanceLock : IHostedService, IInstanceLockStatus, IAsync
             }
             catch (Exception ex)
             {
-                why = ex.Message;
+                // The kind, never the message (the status page shows it); the log line below carries the exception.
+                why = ErrorSummary.Describe(ex);
+                cause = ex;
             }
 
             Set(GetStatus() with { State = InstanceLockState.Reacquiring, LastError = why, LastErrorAt = _time.GetUtcNow() });
-            _logger.LogWarning("The instance lock on database {Database} on {Host} was lost ({Reason}); it is taken again (NFR-REL-04)", database, host, why);
+            _logger.LogWarning(cause, "The instance lock on database {Database} on {Host} was lost ({Reason}); it is taken again (NFR-REL-04)", database, host, why);
             if (_db is { } lost)
             {
                 _db = null;
@@ -245,7 +249,7 @@ internal sealed class InstanceLock : IHostedService, IInstanceLockStatus, IAsync
             }
             catch (Exception ex)
             {
-                Set(GetStatus() with { LastError = ex.Message, LastErrorAt = _time.GetUtcNow() });
+                Set(GetStatus() with { LastError = ErrorSummary.Describe(ex), LastErrorAt = _time.GetUtcNow() });
                 _logger.LogWarning(ex, "The instance lock on database {Database} on {Host} could not be taken again yet; next attempt in {Interval}", database, host, KeepAliveInterval);
             }
         }

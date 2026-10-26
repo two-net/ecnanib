@@ -4,7 +4,8 @@ The one system configuration file, the host built from it and the request pipeli
 C-11; A-01; NFR-ARCH-02; NFR-SEC-02/04). `Program.cs` depends on `ConfigurationFile`, `EcnanibHost`, `AddEcnanibModules(...)`,
 `EnsureSystemKeys()` and `UseEcnanibPipeline()`; other modules depend on `ServerOptions` and `HostNames` only. The module
 references the others in two places only: `AddEcnanibModules`, which registers every module in the order their defaults
-and replacements require, and the pipeline, which maps the accounts module's endpoints and the root component (the
+and replacements require, and the pipeline, which maps the root component, the accounts module's sign-out and the
+health module's `/health` (the
 section names in `ConfigurationFile.Sections` are literals, pinned to the modules' constants by a test). Every
 module owns its own section, binds it in its own `Add*` method and is listed here by name. The root `README.md` is the
 architecture overview: the SRS modules mapped to the folders, the dependency rule and every job the process runs.
@@ -16,7 +17,7 @@ architecture overview: the SRS modules mapped to the folders, the dependency rul
 | Add a section for a new module | an `XOptions` with `SectionName` and an `IValidateOptions<XOptions>`, registered as `AddOptions<XOptions>().Bind(...).ValidateDataAnnotations().ValidateOnStart()` in `AddX`; the name in `ConfigurationFile.Sections`; the defaults in `ecnanib.json`; a row in the table below |
 | Where the application listens | `Server:BindAddress` and `Server:Port`, plain HTTP. `Server:PublicUrl` is the origin users reach, normally a reverse proxy that terminates TLS; it must be https unless its host is localhost or a loopback address (NFR-SEC-02) |
 | Behind a reverse proxy | `Server:TrustedProxies`: the proxies (IP addresses or CIDR networks) whose `X-Forwarded-For` and `X-Forwarded-Proto` are believed; loopback always is, so a same-host proxy needs no entry |
-| Cookies, HSTS and redirection | with an https `Server:PublicUrl` the session and antiforgery cookies carry the Secure flag, every request Kestrel sees as plain http is redirected to the same path on the public origin and `Strict-Transport-Security` (one year) is sent; with a loopback http public URL none of that happens |
+| Cookies, HSTS and redirection | with an https `Server:PublicUrl` the session and antiforgery cookies carry the Secure flag, every request Kestrel sees as plain http is redirected to the same path on the public origin (except `/health`, the health module's anonymous document, which a proxy's upstream check reaches over plain http) and `Strict-Transport-Security` (one year) is sent; with a loopback http public URL none of that happens |
 | Register every module | `services.AddEcnanibModules(configuration)`, in `Program.cs` after `AddLogSinks` (C-08) and in the tests' in-memory server |
 | The request pipeline | `app.UseEcnanibPipeline()` in `Program.cs`: forwarded headers, error pages, redirection and HSTS, the security headers, authentication, authorization, antiforgery and the endpoints, in that order; the tests run the same method on an in-memory server |
 | The system's own keys (FR-CFG-05) | `EnsureSystemKeys()` after `MigrateDatabaseAsync()`: the Data Protection key ring that protects session tickets and antiforgery tokens is created on the first start and persisted in `data_protection_keys`. `SystemKey` stays reserved for other internal keys by purpose |
@@ -50,7 +51,10 @@ Rules the module enforces:
   scheme. With an https `PublicUrl`, every request Kestrel sees as plain http is redirected (307) to the same path on
   the public origin, built from `PublicUrl` rather than a Host header the proxy may have rewritten to the upstream
   address: a request the trusted proxy received over http (`X-Forwarded-Proto: http`) and a direct hit on Kestrel
-  alike. A proxy that is not trusted or forwards no scheme therefore loops on its first request, which is the intended
+  alike, with one exemption: `/health`, the health module's anonymous document, is answered over plain http too, so a
+  reverse proxy's upstream check and a local monitor can reach Kestrel directly (it carries nothing a transport
+  protects; `/healthz` or `/health/x` is redirected like any other path). A proxy that is not trusted or forwards no
+  scheme therefore loops on its first request, which is the intended
   visible failure (the Transport card on `/status`, reached over the proxy once it is fixed, shows the scheme and
   client address the application sees); serving such requests instead would fail on every form, because the
   antiforgery cookie is Secure. An https response carries
@@ -125,7 +129,8 @@ trusted proxies, Kestrel, forwarded-header, redirection and HSTS registration, k
 repository, the reference file: known sections, no credential, every module binds and validates it, every endpoint an
 allowed host; the outbound allowlist, package list and source scan; and the pipeline itself on an in-memory server:
 security headers, redirection and HSTS behind an https origin, forwarded headers believed from trusted proxies only,
-antiforgery on every POST and the challenge of anonymous requests). `ArchitectureTests` pin NFR-ARCH-01/02 and C-10: one
+antiforgery on every POST, the challenge of anonymous requests, and the health module's `/health` answered over plain
+http while every other path is redirected). `ArchitectureTests` pin NFR-ARCH-01/02 and C-10: one
 deployable project, one context over Npgsql, no broker, queue, cache or file state in the source, the fourteen hosted
 services in registration order and connecting to nothing when constructed, the sixteen module folders with their
 registrations and READMEs, the contract-only dependency rule, the visibility split, the folder-derived namespaces and the

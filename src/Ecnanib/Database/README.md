@@ -35,7 +35,8 @@ Rules the module enforces:
   release it (a restart), then logs the holding backend at Critical and exits 1. The lock's hosted service asks
   `pg_locks` every 30 s whether its own backend still holds the key (a connection the retrying strategy reopened answers
   a plain query and holds nothing), takes the lock again on a new connection when it was lost, and stops the host when
-  another instance holds it by then. `SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND classid = 6644590 AND objid =
+  another instance holds it by then; a lost or failed re-acquisition reaches the status page as the failure's kind,
+  never its message, the log line beside it having the detail. `SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND classid = 6644590 AND objid =
   1634625890 AND granted` names the holder; a backend left behind by a dead process can be ended with
   `pg_terminate_backend(pid)`.
 - No table is partitioned (DB-03). Retention is scheduled deletion: `RetentionSweeper` runs every

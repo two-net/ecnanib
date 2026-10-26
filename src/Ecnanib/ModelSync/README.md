@@ -6,13 +6,15 @@ module hands over the list it already fetched), on the `Providers:ModelSyncInter
 from the providers page. No model identifier is written in code (FR-SYNC-05): the catalog is the only source of model
 ids and of a provider's suggested default, its most recently added available model. Other modules depend on
 `Ecnanib.ModelSync.Abstractions` and `AddModelSync(...)`. `AddModelSync` requires `AddDatabase` and `AddAiProviders`,
-adds one hosted service and connects to nothing at registration.
+adds one hosted service, which reports its heartbeat through `IModelSyncStatus`, and connects to nothing at
+registration.
 
 | Need | Use |
 |---|---|
 | Record the models a key validation just listed (FR-SYNC-02) | `IProviderCatalogSync.SyncAsync(provider, models, SyncTrigger.KeyValidation, ct)` → `CatalogSyncResult` (added, updated, listed, missed, deprecated) |
 | Sync a provider now with the user's own key (FR-SYNC-02, NFR-SEC-03) | `IModelSyncService.SyncNowAsync(provider, userId, ct)` → `ModelSyncOutcome`: `Synced` with the result, `NoValidKey`, or `Failed` with the detail; an exception means the database failed |
 | Show the last sync per provider (FR-SYNC-06, NFR-OBS-01) | `IModelCatalog.GetSyncStatesAsync(ct)` → one `ProviderSyncView` per provider in enum order (time, result and error, trigger, models listed, available and deprecated counts), `Never` for a provider never synced; the health module's `/status` page reads the same |
+| Know whether the scheduled sync runs (FR-SYNC-02, NFR-OBS-01) | `IModelSyncStatus.GetStatus()` → `ModelSyncJobStatus`: started, running since, last run with its counts (synced, without a key, failed, failures), next run, last error as a kind; a provider without a key writes nothing to its row, so this is what tells a stalled job from a keyless provider; the health module reads it |
 | Offer the catalog for choosing council models (FR-AI-03, FR-SYNC-05) | `IModelCatalog.ListAsync(ct)` → `CatalogModel` per provider, available first, the most recently added first |
 
 Rules the module enforces:
@@ -39,11 +41,13 @@ Rules the module enforces:
 - `ModelSyncScheduler` syncs every provider three minutes after start and then every
   `Providers:ModelSyncIntervalMinutes`, one provider at a time, each in its own try/catch: a provider without a valid
   key is skipped at Debug, a provider-side failure is logged at Warning, an exception (the database) is logged at
-  Warning and retried next run. The hosted service never stops the host.
+  Warning and retried next run. The hosted service never stops the host. It records each pass's end, counts and next
+  due time and the last exception's kind (`ErrorSummary.Describe`, the exchange contract's helper: the type, never the
+  message, because the status page shows it; this is the module's one reference to that contract).
 - Syncs of one provider never interleave: the runner holds one gate per provider, so a manual sync overlapping the
   scheduled one waits and then runs in full. Key-validation syncs go straight to the upsert and race only on the
   unique index, where the loser rereads and retries once; any other failure is recorded as the provider's last sync
-  result and rethrown (the keys module logs it and keeps the key: a catalog failure is never the user's problem).
+  result, as the failure's kind, and rethrown (the keys module logs it and keeps the key: a catalog failure is never the user's problem).
 - The catalog is shared by all users and a key never leaves the module: logs carry provider, trigger, key id and the
   AI module's scrubbed reason, never a key value.
 
@@ -65,7 +69,7 @@ whenever another key is chosen and comes back as Available when that key is used
 of empty lists soften this, a per-key catalog would remove it. A manual sync counts like a scheduled one, so repeated
 "Sync now" clicks shorten the time to deprecation for a model the provider really dropped.
 
-Tests: `dotnet test` runs offline (registration and the options binding, the runner's guards, the scheduler's schedule
-and failure handling, the page texts). Live checks run against PostgreSQL through the git-ignored
+Tests: `dotnet test` runs offline (registration and the options binding, the runner's guards, the scheduler's schedule,
+failure handling and heartbeat, the page texts). Live checks run against PostgreSQL through the git-ignored
 `tests/.database.json`, with the providers faked: the upsert and the miss counting, key choice and recorded failures,
 one pass of the scheduler, the catalog reads: `dotnet test -- --filter-trait "Category=Live"`.

@@ -164,7 +164,7 @@ internal sealed class ExchangeReconciler : BackgroundService, IReconciliationSta
             }
             catch (Exception ex)
             {
-                RecordError(ex.Message);
+                RecordError(ErrorSummary.Describe(ex));
                 _logger.LogWarning(ex, "The reconciliation round failed; next attempt in {Interval}", _exchangeOptions.Value.ReconciliationInterval);
             }
 

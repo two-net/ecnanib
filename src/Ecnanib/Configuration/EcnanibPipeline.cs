@@ -1,5 +1,6 @@
 using Ecnanib.Accounts;
 using Ecnanib.Components;
+using Ecnanib.Health;
 using Microsoft.Extensions.Options;
 
 namespace Ecnanib.Configuration;
@@ -10,7 +11,8 @@ namespace Ecnanib.Configuration;
 /// first, so the client address and the scheme behind it are the real ones (the sign-in throttle and the Secure cookie
 /// policy read them); the error and status-code pages; when <c>Server:PublicUrl</c> is https, a request the proxy
 /// received over plain http is redirected to the public origin and HSTS is sent; the response headers every page
-/// carries; authentication before antiforgery, whose tokens are bound to the identity; then the endpoints.
+/// carries; authentication before antiforgery, whose tokens are bound to the identity; then the endpoints: the pages,
+/// the accounts module's sign-out and the health module's anonymous <c>/health</c> document (NFR-OBS-01).
 /// </summary>
 public static class EcnanibPipeline
 {
@@ -48,6 +50,7 @@ public static class EcnanibPipeline
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();
         app.MapAccountEndpoints();
+        app.MapHealthEndpoints();
 
         return app;
     }
@@ -59,11 +62,13 @@ public static class EcnanibPipeline
     /// on Kestrel alike; a proxy that is not trusted or forwards no scheme makes every request look like that and loops
     /// here, which is the visible failure (the status page's Transport card shows what the application sees), whereas
     /// serving such a request would fail on every form, because the antiforgery cookie is Secure. 307 keeps the method.
+    /// <c>/health</c> is exempt: a reverse proxy's upstream check and a local monitor hit Kestrel over plain http, and the
+    /// document is anonymous and carries nothing a transport protects (NFR-OBS-01).
     /// </summary>
     private static Task RedirectToPublicOrigin(HttpContext context, RequestDelegate next, Uri publicOrigin)
     {
         var request = context.Request;
-        if (request.IsHttps)
+        if (request.IsHttps || request.Path.Equals(HealthEndpointRouteBuilderExtensions.HealthPath, StringComparison.OrdinalIgnoreCase))
             return next(context);
 
         var target = new UriBuilder(publicOrigin)
