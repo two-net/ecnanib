@@ -1,12 +1,19 @@
 using Ecnanib.Accounts.Services;
 using Ecnanib.Database.Entities;
+using Ecnanib.Ui.Abstractions;
 
 namespace Ecnanib.Components.Account;
 
-/// <summary>User-facing texts shared by the account pages.</summary>
+/// <summary>User-facing texts shared by the account pages; the disclaimer's own texts are in <c>RiskDisclaimer</c>.</summary>
 internal static class AccountMessages
 {
     public const string IncorrectCredentials = "Incorrect email or password.";
+
+    /// <summary>The settings page's status line (FR-UI-01): the version accepted and when, stamped in UTC (NFR-USE-03).</summary>
+    public static string DisclaimerAcceptedOn(string version, DateTimeOffset at) => $"You accepted version {version} on {UtcStamp.Minute(at)}.";
+
+    /// <summary>An earlier version was accepted and the text changed since (FR-ACC-08: every user is asked again).</summary>
+    public static string DisclaimerChanged(DateTimeOffset last) => $"The disclaimer has changed since you accepted it on {UtcStamp.Minute(last)}; please read and accept it again.";
 
     public const string ThemeHint = "System follows your device's light or dark setting, also when it changes while you are here.";
 

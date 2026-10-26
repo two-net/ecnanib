@@ -110,3 +110,14 @@ with the forward-only throw; the database README has the details.
   content through the accessibility checker, and the application process itself creating and migrating a database, taking
   the lock, serving `/`, refusing a second process and stopping cleanly on SIGTERM. The exchange and provider live checks
   need `tests/.exchange-keys.json` and `tests/.ai-keys.json` as the exchange and AI READMEs describe.
+
+## Disclaimer and licence
+
+Ecnanib is software, not financial advice: nothing it shows, the AI council's output included, is a recommendation to
+buy, sell or hold anything. Trading cryptocurrencies can lose the entire balance, and leveraged futures can lose it in a
+very short time. Using Binance and the AI providers must be legal where you are, and the taxes on your trading are yours.
+The service is provided free of charge, as is, without warranty of any kind (SRS NFR-LEGAL-01/02). The full text is
+`Ecnanib.Accounts.Abstractions.RiskDisclaimer`: it is shown on the landing page, during agent creation and on every
+agent page, every page's footer states its summary, and a user accepts it before their first live agent starts
+(FR-ACC-08). The code is released under the MIT licence, see [LICENSE](LICENSE); third-party code is listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

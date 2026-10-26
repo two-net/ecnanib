@@ -1,4 +1,5 @@
 using System.Net;
+using Ecnanib.Accounts.Abstractions;
 using Ecnanib.Tests.Configuration;
 using Ecnanib.Tests.Support;
 
@@ -59,12 +60,33 @@ public class AccessibilityTests
         Assert.NotNull(figure);
         Assert.Equal(["svg", "figcaption", "input", "label"], figure.Children.Select(c => c.LocalName));
     }
+
+    /// <summary>
+    /// FR-UI-05, NFR-LEGAL-01/02: the landing page carries the full disclaimer as one named section, its paragraphs in order and its
+    /// version, under the heading every page's footer links to (the footer itself is checked on every toured page by <see cref="PageTour"/>).
+    /// </summary>
+    [Fact]
+    public async Task TheLandingPageCarriesTheFullRiskDisclaimer()
+    {
+        await using var host = await PipelineTestHost.StartAsync();
+        var (_, html) = await PipelineSession.GetAsync(host, "/");
+        var document = AccessibilityChecks.Parse(html);
+
+        var section = document.QuerySelector("section.risk-disclaimer[aria-labelledby='risk-disclaimer-title']");
+        Assert.NotNull(section);
+        Assert.Equal(RiskDisclaimer.Title, section.QuerySelector("#risk-disclaimer-title")?.TextContent.Trim());
+        Assert.Equal([.. RiskDisclaimer.Paragraphs, "Version " + RiskDisclaimer.Version], section.QuerySelectorAll("p").Select(p => p.TextContent.Trim()));
+        Assert.Same(section.QuerySelector("#risk-disclaimer-title"), document.GetElementById("risk-disclaimer-title"));
+    }
 }
 
 /// <summary>What a toured page must answer: its status, a title predicate (and how to describe it when it fails).</summary>
 internal sealed record PageExpectation(string Path, HttpStatusCode Status, Func<string, bool> Title, string TitleDescription);
 
-/// <summary>Fetches pages and gathers every problem at once (status, language, title, structural violations), so one run reports every page's gaps.</summary>
+/// <summary>
+/// Fetches pages and gathers every problem at once (status, language, title, the footer's disclaimer summary and link, structural
+/// violations), so one run reports every page's gaps.
+/// </summary>
 internal static class PageTour
 {
     public static async Task<IReadOnlyList<string>> RunAsync(PipelineTestHost host, IEnumerable<PageExpectation> pages, string? session)
@@ -84,6 +106,10 @@ internal static class PageTour
                 problems.Add($"{page.Path}: <html lang=\"{document.DocumentElement.GetAttribute("lang")}\"> is not English");
             if (!page.Title(document.Title?.Trim() ?? ""))
                 problems.Add($"{page.Path}: title \"{document.Title?.Trim()}\" is not {page.TitleDescription}");
+            // NFR-LEGAL-01 "prominently": every page's footer states the disclaimer's summary and links to the full text on the landing page.
+            var footer = document.QuerySelector("footer.site-footer");
+            if (footer is null || !footer.TextContent.Contains(RiskDisclaimer.Summary, StringComparison.Ordinal) || footer.QuerySelector("a[href='/#risk-disclaimer-title']") is null)
+                problems.Add($"{page.Path}: the footer does not state the risk disclaimer's summary with a link to the full text");
             problems.AddRange(AccessibilityChecks.Check(document).Select(v => $"{page.Path}: {v}"));
         }
 

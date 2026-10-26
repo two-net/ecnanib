@@ -80,6 +80,14 @@ Rules the module enforces:
   decision is recorded or an evaluation finishes; the deliberation page's cost lines show each turn's latency, tokens
   and attempts and the decision's totals, every number with thousands separators; the keys page and the usage card say
   that provider and exchange costs are the user's under BYOK.
+- Legal (NFR-LEGAL-01/02, FR-UI-05, FR-ACC-08): the risk disclaimer's text and version live in the accounts module's
+  `RiskDisclaimer` (software, not financial advice; cryptocurrencies and leveraged futures in particular can lose the
+  entire balance; jurisdiction and taxes are the user's; free, as is, without warranty). `RiskDisclaimerNotice` renders
+  it on the landing page, on `/agents/new` and every setup step, on the agent page and on the settings page, with the
+  acceptance form where a live start needs it; the layout's footer states `RiskDisclaimer.Summary` on every page and
+  links to the landing page's section. `AccessibilityTests` pins the landing section and the footer on every anonymous
+  page, `AccessibilityLiveTests` the placements and the form with content, `RiskDisclaimerTests` the clauses and the
+  text's hash beside its version.
 
 Configuration (`Ui` is this module's section):
 
@@ -98,9 +106,11 @@ The chart's candle data has no table of its own; the legend and the trades secti
 Tests: `dotnet test` runs offline (options and validation, registration, the theme attributes for a visitor through the
 pipeline, `UtcStamp`, the live islands' texts (`LiveMessagesTests`, the usage card's among them), the refresh coalescer
 under a fake clock: coalescing, the trailing read, the latency and its budget;
-`AccessibilityChecksTests` prove every rule of the checker fires; `AccessibilityTests` tour the anonymous pages;
-`DesignContractTests` compute the contrast of every token pair and scan the stylesheets and scripts for the focus, colour
-and motion rules; `CultureTests` pin the invariant mode). Live, against PostgreSQL: `AccessibilityLiveTests` seed an account
-with every kind of content and tour every signed-in page (the usage card and the deliberation's cost lines among the
-markers); `ThemeAttributesLiveTests` save a reduced-motion dark preference
-and read it back on the document element.
+`AccessibilityChecksTests` prove every rule of the checker fires; `AccessibilityTests` tour the anonymous pages and pin
+the landing page's disclaimer section and the footer's summary on each of them; `DesignContractTests` compute the
+contrast of every token pair and scan the stylesheets and scripts for the focus, colour and motion rules; `CultureTests`
+pin the invariant mode). Live, against PostgreSQL: `AccessibilityLiveTests` seed an account with every kind of content and
+tour every signed-in page (the usage card, the deliberation's cost lines, the disclaimer on every creation step and agent
+page and the acceptance form on a startable live agent's page, its review step and the settings page among the markers;
+the footer's summary and link on every toured page, anonymous or signed in, through the shared `PageTour`);
+`ThemeAttributesLiveTests` save a reduced-motion dark preference and read it back on the document element.

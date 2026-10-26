@@ -93,7 +93,8 @@ span.muted {
     background: var(--surface);
 }
 
-.risk-disclaimer h2 {
+.risk-disclaimer h2,
+.risk-disclaimer h3 {
     margin-top: 0;
     font-size: 1.1rem;
 }
@@ -102,6 +103,16 @@ span.muted {
     margin-bottom: 0;
     color: var(--text-muted);
     font-size: 0.9rem;
+}
+
+/* With the acceptance form (FR-ACC-08) the version line is followed by the box and the Accept button. */
+.risk-disclaimer form {
+    margin-top: 1rem;
+}
+
+/* Inside a card that offers Start, the notice sits between the refusal above and the buttons below. */
+.card .risk-disclaimer {
+    margin: 1rem 0 1.25rem;
 }
 
 /* Status pills: text always carries the meaning; colour and the state-change animation only reinforce it (FR-UI-03 a). */

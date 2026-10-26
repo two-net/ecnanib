@@ -15,6 +15,7 @@
 @inject IModelCatalog ModelCatalog
 @inject ICouncilSuggestions Suggestions
 @inject IOptions<RiskCapsOptions> RiskCaps
+@inject IAccountService Accounts
 @inject NavigationManager Navigation
 
 <PageTitle>@(_agent is { } titleAgent ? $"Set up {titleAgent.Name}: {WizardSteps.Title(_step)}" : "Agent setup")</PageTitle>
@@ -455,6 +456,11 @@
                 <dt>Risk</dt><dd>@ExperienceMessages.Price(agent.RiskLimits.RiskPerTradePercent)% per trade, at most @agent.RiskLimits.MaxOpenPositions open, @ExperienceMessages.Price(agent.RiskLimits.DailyLossLimitPercent)% daily loss@(agent.RiskLimits.MaxNotional is { } cap ? $", notional cap {ExperienceMessages.Price(cap)}" : "") <a href="@WizardSteps.Href(Id, WizardStep.Risk)">Edit</a></dd>
                 <dt>No-entry windows</dt><dd>@AgentMessages.Plural(agent.EntryWindows.Count, "window", "windows")</dd>
             </dl>
+            @if (OfferDisclaimer)
+            {
+                @* FR-ACC-08: a live agent that can be started, whose owner has not accepted the current version, gets the text and the box beside Start. *@
+                <RiskDisclaimerNotice Level="3" Status="_disclaimer" ReturnTo="@(WizardSteps.Href(Id, WizardStep.Review) + "?status=disclaimer-accepted")" />
+            }
             @if (AgentStateMachine.CanStart(agent.State))
             {
                 <p>Starting evaluates the agent at every @AgentMessages.Timeframe(agent.Timeframe) candle close from now on, also while you are offline.</p>
@@ -489,12 +495,17 @@
         }
     </nav>
 
-    <RiskDisclaimerNotice />
+    @if (!OfferDisclaimer)
+    {
+        @* FR-UI-05 on every step; the heading id and the form name are unique per page, so the review card's instance stands in when it is shown. *@
+        <RiskDisclaimerNotice />
+    }
 }
 
 @code {
     private AgentDetail? _agent;
     private StrategyDescriptor? _strategy;
+    private DisclaimerStatus? _disclaimer;
     private KeyOverview? _keys;
     private WizardStep _step;
     private string? _notice;
@@ -556,6 +567,8 @@
     /// <summary>A draft moves on when a step is saved; an existing agent stays on the step it edited.</summary>
     private string SaveLabel => _agent?.State == AgentState.Draft && WizardSteps.Next(_step) is not null ? "Save and continue" : "Save";
 
+    private bool OfferDisclaimer => _disclaimer is { IsAccepted: false };
+
     protected override async Task OnInitializedAsync()
     {
         _step = WizardSteps.Parse(Step);
@@ -593,6 +606,8 @@
 
         // The pinned version's parameters are what the agent runs; when it is gone, the newest version's are shown with a warning.
         _strategy = Catalog.Find(_agent.StrategyId, _agent.StrategyVersion) ?? Catalog.Find(_agent.StrategyId);
+        // Only the review step offers Start and only a live start needs the acceptance (FR-ACC-08), so the status is read only there and only while the agent can be started.
+        _disclaimer = _step == WizardStep.Review && _agent.Mode == AgentMode.Live && AgentStateMachine.CanStart(_agent.State) ? await Accounts.GetDisclaimerStatusAsync(UserId, HttpContext.RequestAborted) : null;
         _keys ??= await KeyService.GetOverviewAsync(UserId, HttpContext.RequestAborted);
         _catalog = await ModelCatalog.ListAsync(HttpContext.RequestAborted);
         _deprecatedRoles = _agent.Council.Where(c => c.Enabled && c.CatalogStatus == ModelStatus.Deprecated).ToList();

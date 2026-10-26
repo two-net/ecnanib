@@ -1,4 +1,5 @@
 using System.Globalization;
+using Ecnanib.Accounts.Abstractions;
 using Ecnanib.Agents.Abstractions;
 using Ecnanib.Agents.Configuration;
 using Ecnanib.Database.Entities;
@@ -27,6 +28,7 @@ internal static class AgentMessages
         "paused" => "The agent is paused: it keeps managing open positions and opens nothing new.",
         "resumed" => "The agent is running again.",
         "stopped" => "The agent was stopped." + (detail is null ? "" : " " + detail),
+        "disclaimer-accepted" => RiskDisclaimer.AcceptedNotice,
         _ => null,
     };
 
@@ -42,6 +44,7 @@ internal static class AgentMessages
         "window-removed" => "The no-entry window was removed.",
         "council-defaults" => "The council uses the default assignments by strength.",
         "council-single" => "One model now performs all four roles in sequence.",
+        "disclaimer-accepted" => RiskDisclaimer.AcceptedNotice,
         _ => null,
     };
 
@@ -94,7 +97,8 @@ internal static class AgentMessages
         AgentActionStatus.LimitReached => result.Limit is { } limit
             ? $"You already have {limit.Current} of {limit.Max} running or paused agents allowed per user."
             : "The limit on running agents per user is reached.",
-        AgentActionStatus.DisclaimerRequired => (result.Detail ?? "Accept the risk disclaimer first.") + " You can do that on the settings page.",
+        // Both pages that offer Start carry the disclaimer with its acceptance box when a live agent needs it (FR-ACC-08).
+        AgentActionStatus.DisclaimerRequired => (result.Detail ?? "Accept the risk disclaimer first.") + " The disclaimer and the box to accept it are below.",
         AgentActionStatus.KeyUnavailable => "The agent cannot start: " + (result.Detail ?? "its Binance key cannot be used."),
         AgentActionStatus.ProviderKeyMissing => "The agent cannot start: " + (result.Detail ?? "a council provider has no valid key."),
         AgentActionStatus.StrategyUnavailable => "The agent cannot start: " + (result.Detail ?? "its strategy is no longer available."),

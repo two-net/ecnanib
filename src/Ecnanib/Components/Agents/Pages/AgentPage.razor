@@ -7,6 +7,7 @@
 @inject IStrategyCatalog Catalog
 @inject IExperienceReader Experience
 @inject ILogReader Logs
+@inject IAccountService Accounts
 @inject NavigationManager Navigation
 
 <PageTitle>@(_agent?.Name ?? "Agent")</PageTitle>
@@ -46,6 +47,11 @@
         @if (_actionError is not null)
         {
             <p class="error" role="alert">@_actionError</p>
+        }
+        @if (OfferDisclaimer)
+        {
+            @* FR-ACC-08: a live agent that can be started, whose owner has not accepted the current version, gets the text and the box beside Start. *@
+            <RiskDisclaimerNotice Level="3" Status="_disclaimer" ReturnTo="@(Self + "?status=disclaimer-accepted")" />
         }
         <div class="actions">
             @if (AgentStateMachine.CanStart(agent.State))
@@ -258,12 +264,17 @@
         }
     </section>
 
-    <RiskDisclaimerNotice />
+    @if (!OfferDisclaimer)
+    {
+        @* FR-UI-05; the heading id and the form name are unique per page, so the Actions card's instance stands in when it is shown. *@
+        <RiskDisclaimerNotice />
+    }
 }
 
 @code {
     private AgentDetail? _agent;
     private StrategyDescriptor? _strategy;
+    private DisclaimerStatus? _disclaimer;
     private string? _notice;
     private string? _actionError;
     private IReadOnlyList<CouncilAssignmentView> _deprecatedRoles = [];
@@ -314,12 +325,16 @@
 
         _strategy = Catalog.Find(_agent.StrategyId, _agent.StrategyVersion) ?? Catalog.Find(_agent.StrategyId);
         _deprecatedRoles = _agent.Council.Where(c => c.Enabled && c.CatalogStatus == ModelStatus.Deprecated).ToList();
+        // Only a live start needs the acceptance (FR-ACC-08), so the status is read only where Start is possible for a live agent; a Paused agent's Resume is not a start.
+        _disclaimer = _agent.Mode == AgentMode.Live && AgentStateMachine.CanStart(_agent.State) ? await Accounts.GetDisclaimerStatusAsync(UserId, HttpContext.RequestAborted) : null;
         _experience = await Experience.GetAgentAsync(UserId, Id, HttpContext.RequestAborted);
         _log = await Logs.QueryAsync(UserId, new LogQuery(Id, PageSize: 10), HttpContext.RequestAborted);
         return true;
     }
 
     private bool UpgradeAvailable => _agent is { LatestStrategyVersion: { } latest } agent && latest > agent.StrategyVersion;
+
+    private bool OfferDisclaimer => _disclaimer is { IsAccepted: false };
 
     private async Task StartAsync() => await ActAsync(AgentService.StartAsync(UserId, Id, HttpContext.RequestAborted), "started");
 

@@ -15,7 +15,7 @@ are users and nothing else: no email verification, roles, payments, plans, organ
 | Start or end the cookie session after a result (FR-ACC-02) | `AccountSession.SignInAsync(httpContext, user)` from a static page handler; the layout's `POST /sign-out` form, which calls `IAccountService.SignOutAsync` (every session of the user ends) and deletes the cookie |
 | Require a signed-in user on a page | `@attribute [Authorize]`; the middleware challenges with a redirect to `/sign-in?ReturnUrl=…` |
 | Agent limits at creation and start (FR-ACC-07, FR-AGT-15) | `IFairUseLimits.CheckCreateAgentAsync` / `CheckStartAgentAsync` → `FairUseCheck` (allowed, current, max) |
-| Disclaimer text, version and status (FR-ACC-08, FR-UI-05) | `RiskDisclaimer`, `<RiskDisclaimerNotice />`, `IAccountService.GetDisclaimerStatusAsync(...).IsAccepted`, which a live-mode start must require |
+| Disclaimer text, version and status (FR-ACC-08, FR-UI-05, NFR-LEGAL-01/02) | `RiskDisclaimer` (the paragraphs, the version, the footer's one-sentence `Summary` and the acceptance texts); `<RiskDisclaimerNotice />` for the text alone, or with `Status` and `ReturnTo` for the text with the acceptance form (one such instance per page); `IAccountService.GetDisclaimerStatusAsync(...).IsAccepted`, which a live-mode start must require |
 | The user's theme and animation preference (FR-UI-02, FR-UI-03) | `IAccountService.GetPreferencesAsync` / `UpdatePreferencesAsync` → `UserPreferences`; `IUserPreferencesResolver.ResolveAsync(httpContext, ct)` for the preference a page renders with (the user's own, or the `Ui` defaults for a visitor and on error pages) |
 
 Rules the module enforces:
@@ -55,7 +55,9 @@ Rules the module enforces:
   settings page changes them per user, and the root component reads them with one primary-key query per request so the
   page is themed before the first paint. A visitor, an error page and a database failure all render with the defaults.
 - The disclaimer is versioned (`RiskDisclaimer.Version`): one acceptance row per version, the first timestamp stands,
-  `users.disclaimer_accepted_at` mirrors the latest. Changing the text means bumping the version, which asks everyone again.
+  `users.disclaimer_accepted_at` mirrors the latest. Changing the text means bumping the version, which asks everyone
+  again; `RiskDisclaimerTests` pins a hash of the paragraphs beside the version, so a changed paragraph under the same
+  version fails the build. The footer's `Summary` is not part of what the user accepts and is outside that rule.
 - Authentication events are logged with the user id only (FR-LOG-04): registration, sign-in, sign-out, failures,
   throttling, password change, acceptance, deletion and rejected sessions. No submitted email or password ever reaches a
   log or an exception message (FR-LOG-05); the unique-index violation on a registration race is not logged because its
@@ -71,10 +73,19 @@ Configuration (the `Accounts` section goes beyond Appendix D's minimum; the agen
 Pages (static server rendering, plain forms): `/sign-up`, `/sign-in` (honours a local `ReturnUrl` only), `/settings`
 (appearance: theme and reduced animation, saved without a reload by the `PreferencesPanel` island; password; disclaimer
 status and acceptance; link to deletion), `/settings/delete-account`, and `POST /sign-out` from the layout. The landing
-page shows the disclaimer (FR-UI-05).
+page shows the disclaimer (FR-UI-05). The acceptance form is `RiskDisclaimerNotice` given a `Status`: the settings page
+shows it until the current version is accepted, and the agents module shows it where Start is offered, on a live agent's
+page and on its review step while the agent can be started (Draft, Stopped or Error; a Paused agent's Resume is not a
+start, FR-ACC-08); the post records the acceptance and redirects to the page's `ReturnTo` with
+`status=disclaimer-accepted`. A second Accept from a stale tab, after the first was recorded, lands on the error page
+because the form is no longer on the page (Blazor refuses a post to a named form the page does not render); the
+acceptance stands.
 
 Tests: `dotnet test` runs offline (options, registration, hashing, email and password rules, throttle windows and the
 parallel burst, session revalidation and revocation, cookie and antiforgery options, cookie events, return-URL guard,
-disclaimer text). Live checks run against PostgreSQL through the same git-ignored `tests/.database.json` as the database
-module: `dotnet test -- --filter-trait "Category=Live"` (sign-out ending every session, deletion removing the agents'
-log rows, and the configuration module's pipeline tests signing up, in and out over HTTP).
+the disclaimer's clauses, its summary and the hash of its text beside its version, the acceptance texts). Live checks run
+against PostgreSQL through the same git-ignored `tests/.database.json` as the database module:
+`dotnet test -- --filter-trait "Category=Live"` (sign-out ending every session, deletion removing the agents' log rows,
+the acceptance recorded once per version, the acceptance posted from a live agent's page and its review step over HTTP
+with the refused and the continued Start around it (`DisclaimerAcceptanceLiveTests`), and the configuration module's
+pipeline tests signing up, in and out over HTTP).
