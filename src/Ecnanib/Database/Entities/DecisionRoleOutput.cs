@@ -31,5 +31,11 @@ public sealed class DecisionRoleOutput
 
     public int OutputTokens { get; set; }
 
+    /// <summary>Calls the council made for this role: 1, or 2 after a rejected answer (FR-AI-07); 0 when none was made (NFR-COST-01).</summary>
+    public int Attempts { get; set; }
+
+    /// <summary>The share of <see cref="OutputTokens"/> the model spent reasoning, where the provider reports it (AI-04).</summary>
+    public int ReasoningTokens { get; set; }
+
     public int LatencyMs { get; set; }
 }

@@ -158,6 +158,8 @@ internal sealed class Council : ICouncil
                 Confidence = turn.Document?.Confidence,
                 InputTokens = turn.InputTokens,
                 OutputTokens = turn.OutputTokens,
+                Attempts = turn.Attempts,
+                ReasoningTokens = turn.ReasoningTokens,
                 LatencyMs = (int)Math.Min(int.MaxValue, turn.Latency.TotalMilliseconds),
             });
             if (turn.Status != RoleOutputStatus.Disabled)
@@ -220,8 +222,9 @@ internal sealed class Council : ICouncil
             for (var attempt = 1; attempt <= 2; attempt++)
             {
                 var request = new AiRequest(turn.Model, system, user, schema, options.MaxOutputTokens, turn.Role.ToString());
-                var completion = await client.CompleteAsync(key, request, linked.Token).ConfigureAwait(false);
+                // Counted before the call so an attempt that throws is a call the agent paid for (NFR-COST-01).
                 turn.Attempts = attempt;
+                var completion = await client.CompleteAsync(key, request, linked.Token).ConfigureAwait(false);
                 turn.InputTokens += completion.Usage.InputTokens;
                 turn.OutputTokens += completion.Usage.OutputTokens;
                 turn.ReasoningTokens += completion.Usage.ReasoningTokens ?? 0;

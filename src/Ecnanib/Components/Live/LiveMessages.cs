@@ -27,7 +27,12 @@ internal static class LiveMessages
 
     public const string NoTrades = "No trade yet. The timeline of each trade appears here: evaluation, decision, entry, protection, stop moves, exits and the close.";
 
-    public const string NoUsage = "No council call yet. Token usage per role and per day appears here once the council has deliberated.";
+    public const string NoUsage = "No council call yet. Token usage per role and for today appears here once the council has deliberated.";
+
+    public const string CostsAreYours = "Provider and exchange costs are yours under BYOK.";
+
+    /// <summary>The output-token cap new council calls are made under (NFR-COST-01): the configuration's current value, so it is said of new calls, not of the totals above it.</summary>
+    public static string OutputTokenCap(int cap) => $"New council calls are capped at {Count(cap)} output tokens each.";
 
     /// <summary>"in 12 min 05 s", "in 1 h 02 min", "in 3 d 04 h" or "now" once the close is due.</summary>
     public static string NextEvaluation(TimeSpan remaining)

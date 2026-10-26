@@ -1,21 +1,28 @@
 using Ecnanib.Agents.Abstractions;
 using System.Text.Json;
+using Ecnanib.Ai.Configuration;
 using Ecnanib.Council.Abstractions;
+using Ecnanib.Council.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Ecnanib.Council.Services;
 
-/// <summary>Reads one evaluation with its decision, role outputs and transcripts for the owning user (FR-AI-14, NFR-SEC-03).</summary>
+/// <summary>Reads one evaluation with its decision, role outputs and transcripts for the owning user (FR-AI-14, NFR-SEC-03), and an agent's token usage (NFR-COST-01).</summary>
 internal sealed class DeliberationReader : IDeliberationReader
 {
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
+    private readonly IOptions<CouncilOptions> _council;
+    private readonly IOptions<AiOptions> _ai;
     private readonly TimeProvider _time;
 
-    public DeliberationReader(IDbContextFactory<EcnanibDbContext> factory, TimeProvider time)
+    public DeliberationReader(IDbContextFactory<EcnanibDbContext> factory, IOptions<CouncilOptions> council, IOptions<AiOptions> ai, TimeProvider time)
     {
         _factory = factory;
+        _council = council;
+        _ai = ai;
         _time = time;
     }
 
@@ -43,11 +50,12 @@ internal sealed class DeliberationReader : IDeliberationReader
         var roles = await db.DecisionRoleOutputs.AsNoTracking()
             .Where(r => r.Decision.Evaluation.AgentId == agentId && r.Status != RoleOutputStatus.Disabled && r.Status != RoleOutputStatus.Skipped)
             .GroupBy(r => r.Role)
-            .Select(g => new RoleTokenUsage(g.Key, g.Count(), g.Sum(r => r.InputTokens), g.Sum(r => r.OutputTokens)))
+            .Select(g => new RoleTokenUsage(g.Key, g.Sum(r => r.Attempts), g.Sum(r => r.InputTokens), g.Sum(r => r.OutputTokens), g.Sum(r => r.ReasoningTokens)))
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         return new AgentTokenUsage(totals?.Count ?? 0, totals?.Input ?? 0, totals?.Output ?? 0, totals?.CountToday ?? 0, totals?.InputToday ?? 0, totals?.OutputToday ?? 0, totals?.Since,
-            CouncilRoles.Order.Select(role => roles.FirstOrDefault(r => r.Role == role) ?? new RoleTokenUsage(role, 0, 0, 0)).ToList());
+            CouncilRoles.Order.Select(role => roles.FirstOrDefault(r => r.Role == role) ?? new RoleTokenUsage(role, 0, 0, 0)).ToList(),
+            _council.Value.MaxOutputTokens ?? _ai.Value.MaxOutputTokens);
     }
 
     public async Task<DeliberationView?> GetAsync(Guid userId, Guid evaluationId, CancellationToken cancellationToken)
@@ -85,13 +93,10 @@ internal sealed class DeliberationReader : IDeliberationReader
 
     private static RoleTurnView Turn(DecisionRoleOutput output, DeliberationTranscript? transcript)
     {
-        var attempts = 0;
         string? error = null;
         JsonElement? document = null;
         if (transcript is { Output.ValueKind: JsonValueKind.Object } t)
         {
-            if (t.Output.TryGetProperty("attempts", out var a) && a.ValueKind == JsonValueKind.Number)
-                attempts = a.GetInt32();
             if (t.Output.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String)
                 error = e.GetString();
             if (t.Output.TryGetProperty("document", out var d) && d.ValueKind == JsonValueKind.Object)
@@ -99,7 +104,7 @@ internal sealed class DeliberationReader : IDeliberationReader
         }
 
         return new RoleTurnView(output.Role, output.Sequence, output.Provider, output.Model, output.Status, output.ProposedAction, output.Confidence,
-            output.InputTokens, output.OutputTokens, output.LatencyMs, attempts, error, document, string.IsNullOrEmpty(transcript?.InputSummary) ? null : transcript!.InputSummary);
+            output.InputTokens, output.OutputTokens, output.LatencyMs, output.Attempts, error, document, string.IsNullOrEmpty(transcript?.InputSummary) ? null : transcript!.InputSummary);
     }
 
     private static IReadOnlyList<decimal> Targets(JsonElement? targets)

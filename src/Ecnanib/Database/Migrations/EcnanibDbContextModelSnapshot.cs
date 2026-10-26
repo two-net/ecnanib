@@ -380,6 +380,10 @@ namespace Ecnanib.Database.Migrations
                         .HasColumnType("text")
                         .HasColumnName("role");
 
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
                     b.Property<decimal?>("Confidence")
                         .HasColumnType("numeric")
                         .HasColumnName("confidence");
@@ -410,6 +414,10 @@ namespace Ecnanib.Database.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("provider");
+
+                    b.Property<int>("ReasoningTokens")
+                        .HasColumnType("integer")
+                        .HasColumnName("reasoning_tokens");
 
                     b.Property<int>("Sequence")
                         .HasColumnType("integer")

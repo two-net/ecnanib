@@ -192,18 +192,42 @@ public class AiClientPipelineTests
         Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("no usage"));
     }
 
+    /// <summary>NFR-COST-01: <c>Providers:MaxOutputTokens</c> bounds every provider's wire field; a request may ask for fewer, never more.</summary>
     [Theory]
-    [InlineData(null, 100)]
-    [InlineData(500, 100)]
-    [InlineData(50, 50)]
-    public async Task MaxOutputTokensIsCappedByConfiguration(int? requested, int expected)
+    [InlineData(AiProvider.Gpt, null, 100)]
+    [InlineData(AiProvider.Gpt, 500, 100)]
+    [InlineData(AiProvider.Gpt, 50, 50)]
+    [InlineData(AiProvider.Grok, null, 100)]
+    [InlineData(AiProvider.Grok, 500, 100)]
+    [InlineData(AiProvider.Grok, 50, 50)]
+    [InlineData(AiProvider.Claude, null, 100)]
+    [InlineData(AiProvider.Claude, 500, 100)]
+    [InlineData(AiProvider.Claude, 50, 50)]
+    [InlineData(AiProvider.Gemini, null, 100)]
+    [InlineData(AiProvider.Gemini, 500, 100)]
+    [InlineData(AiProvider.Gemini, 50, 50)]
+    public async Task MaxOutputTokensIsCappedByConfigurationOnEveryProvider(AiProvider provider, int? requested, int expected)
     {
-        var handler = new FakeHttpMessageHandler().When(_ => true, _ => AiTestHost.Json("gpt/responses-completed.json"));
-        var client = AiTestHost.Direct(AiProvider.Gpt, handler, new AiOptions { MaxOutputTokens = 100 });
+        var fixture = provider switch
+        {
+            AiProvider.Claude => "claude/messages-end-turn.json",
+            AiProvider.Gemini => "gemini/generate-stop.json",
+            AiProvider.Grok => "grok/responses-completed.json",
+            _ => "gpt/responses-completed.json",
+        };
+        var handler = new FakeHttpMessageHandler().When(_ => true, _ => AiTestHost.Json(fixture));
+        var client = AiTestHost.Direct(provider, handler, new AiOptions { MaxOutputTokens = 100 });
 
-        await client.CompleteAsync(Handle, new AiRequest("model-one", "s", "u", MaxOutputTokens: requested), AiTestHost.Ct);
+        await client.CompleteAsync(AiTestHost.Handle(provider), new AiRequest("model-one", "s", "u", MaxOutputTokens: requested), AiTestHost.Ct);
 
-        Assert.Equal(expected, Assert.Single(handler.Requests).Json.GetProperty("max_output_tokens").GetInt32());
+        var json = Assert.Single(handler.Requests).Json;
+        var sent = provider switch
+        {
+            AiProvider.Claude => json.GetProperty("max_tokens").GetInt32(),
+            AiProvider.Gemini => json.GetProperty("generationConfig").GetProperty("maxOutputTokens").GetInt32(),
+            _ => json.GetProperty("max_output_tokens").GetInt32(),
+        };
+        Assert.Equal(expected, sent);
     }
 
     [Fact]

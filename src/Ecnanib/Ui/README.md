@@ -75,6 +75,11 @@ Rules the module enforces:
   debounce. The chart is TradingView's Lightweight Charts, vendored under `wwwroot/lib` (Apache-2.0, see
   `THIRD-PARTY-NOTICES.md`); nothing is loaded from a third-party origin (NFR-SEC-04). The landing hero's loop is CSS
   only and pauses with a checkbox.
+- Cost (NFR-COST-01): the agent page's `TokenUsage` island shows the council's decisions and tokens all-time and today,
+  the output-token cap new calls are made under and, per role, the calls, tokens and reasoning tokens, re-read when a
+  decision is recorded or an evaluation finishes; the deliberation page's cost lines show each turn's latency, tokens
+  and attempts and the decision's totals, every number with thousands separators; the keys page and the usage card say
+  that provider and exchange costs are the user's under BYOK.
 
 Configuration (`Ui` is this module's section):
 
@@ -91,9 +96,11 @@ browser may stop exposing it as a table then, though the column names stay in th
 The chart's candle data has no table of its own; the legend and the trades section are its text.
 
 Tests: `dotnet test` runs offline (options and validation, registration, the theme attributes for a visitor through the
-pipeline, `UtcStamp`, the refresh coalescer under a fake clock: coalescing, the trailing read, the latency and its budget;
+pipeline, `UtcStamp`, the live islands' texts (`LiveMessagesTests`, the usage card's among them), the refresh coalescer
+under a fake clock: coalescing, the trailing read, the latency and its budget;
 `AccessibilityChecksTests` prove every rule of the checker fires; `AccessibilityTests` tour the anonymous pages;
 `DesignContractTests` compute the contrast of every token pair and scan the stylesheets and scripts for the focus, colour
 and motion rules; `CultureTests` pin the invariant mode). Live, against PostgreSQL: `AccessibilityLiveTests` seed an account
-with every kind of content and tour every signed-in page; `ThemeAttributesLiveTests` save a reduced-motion dark preference
+with every kind of content and tour every signed-in page (the usage card and the deliberation's cost lines among the
+markers); `ThemeAttributesLiveTests` save a reduced-motion dark preference
 and read it back on the document element.

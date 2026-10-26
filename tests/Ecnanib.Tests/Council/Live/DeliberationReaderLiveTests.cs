@@ -35,13 +35,13 @@ public class DeliberationReaderLiveTests : IClassFixture<DatabaseLiveFixture>
         {
             db.AddRange(
                 Decision(agent, now.AddHours(-1), now, 1200, 300,
-                    Role(CouncilRole.MarketAnalyst, 1, RoleOutputStatus.Succeeded, 600, 150),
-                    Role(CouncilRole.SentimentFlow, 2, RoleOutputStatus.Disabled, 0, 0),
-                    Role(CouncilRole.RiskManager, 4, RoleOutputStatus.Succeeded, 600, 150)),
+                    Role(CouncilRole.MarketAnalyst, 1, RoleOutputStatus.Succeeded, 600, 150, attempts: 2, reasoning: 40),
+                    Role(CouncilRole.SentimentFlow, 2, RoleOutputStatus.Disabled, 0, 0, attempts: 0),
+                    Role(CouncilRole.RiskManager, 4, RoleOutputStatus.Succeeded, 600, 150, attempts: 1)),
                 Decision(agent, yesterday.AddHours(-1), yesterday, 1000, 200,
-                    Role(CouncilRole.MarketAnalyst, 1, RoleOutputStatus.Failed, 500, 100),
-                    Role(CouncilRole.CrossMarketContext, 3, RoleOutputStatus.Skipped, 0, 0),
-                    Role(CouncilRole.RiskManager, 4, RoleOutputStatus.Succeeded, 500, 100)));
+                    Role(CouncilRole.MarketAnalyst, 1, RoleOutputStatus.Failed, 500, 100, attempts: 2, reasoning: 10),
+                    Role(CouncilRole.CrossMarketContext, 3, RoleOutputStatus.Skipped, 0, 0, attempts: 0),
+                    Role(CouncilRole.RiskManager, 4, RoleOutputStatus.Succeeded, 500, 100, attempts: 1)));
             await db.SaveChangesAsync(Ct);
         }
 
@@ -55,13 +55,16 @@ public class DeliberationReaderLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal((2, 2200, 500), (usage.Decisions, usage.InputTokens, usage.OutputTokens));
         Assert.Equal((1, 1200, 300), (usage.DecisionsToday, usage.InputTokensToday, usage.OutputTokensToday));
         Assert.Equal(yesterday, usage.Since);
+        // Calls are the council's attempts (a retried turn is two), reasoning tokens the part of the output spent reasoning.
         Assert.Equal(
         [
-            new RoleTokenUsage(CouncilRole.MarketAnalyst, 2, 1100, 250),
+            new RoleTokenUsage(CouncilRole.MarketAnalyst, 4, 1100, 250, 50),
             new RoleTokenUsage(CouncilRole.SentimentFlow, 0, 0, 0),
             new RoleTokenUsage(CouncilRole.CrossMarketContext, 0, 0, 0),
             new RoleTokenUsage(CouncilRole.RiskManager, 2, 1100, 250),
         ], usage.ByRole);
+        // The cap every call was made under: the council has none of its own here, so the provider cap.
+        Assert.Equal(8192, usage.OutputTokenCap);
 
         var fresh = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "fresh");
         var none = await reader.GetAgentUsageAsync(user.Id, fresh.Id, Ct);
@@ -83,8 +86,9 @@ public class DeliberationReaderLiveTests : IClassFixture<DatabaseLiveFixture>
         FinalAction = DecisionAction.NoTrade, Rationale = "seeded", TotalInputTokens = input, TotalOutputTokens = output, TotalLatencyMs = 1000, CreatedAt = createdAt, RoleOutputs = roles,
     };
 
-    private static DecisionRoleOutput Role(CouncilRole role, int sequence, RoleOutputStatus status, int input, int output) => new()
+    private static DecisionRoleOutput Role(CouncilRole role, int sequence, RoleOutputStatus status, int input, int output, int attempts, int reasoning = 0) => new()
     {
-        Role = role, Sequence = sequence, Provider = AiProvider.Gpt, Model = "m", Status = status, InputTokens = input, OutputTokens = output, LatencyMs = status == RoleOutputStatus.Succeeded ? 500 : 0,
+        Role = role, Sequence = sequence, Provider = AiProvider.Gpt, Model = "m", Status = status, InputTokens = input, OutputTokens = output, Attempts = attempts, ReasoningTokens = reasoning,
+        LatencyMs = status == RoleOutputStatus.Succeeded ? 500 : 0,
     };
 }

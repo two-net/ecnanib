@@ -214,13 +214,14 @@ internal sealed class EvaluationPipeline
                 }
             }
 
-            // FR-AI-08, FR-AGT-05, NFR-REL-03: a Paused agent, or one whose open state could not be managed, opens nothing,
-            // so only an open position makes the council worth its cost.
-            var councilNeeded = (output.Setup is not null && entriesAllowed) || openTrades.Count > 0 || (agent.Discretionary && entriesAllowed);
-            if (!councilNeeded)
+            // FR-AI-08, FR-AGT-05, NFR-REL-03, NFR-COST-01: the council is asked for an open position, or when an entry is
+            // possible and wanted (a Paused agent, one whose open state could not be managed, a no-entry window or a full
+            // position cap opens nothing); otherwise the evaluation ends here with the gate's reason.
+            var need = CouncilGate.Decide(agent, output, entriesAllowed, entriesBlocked, openTrades, openOrders, _caps.Value.MaxOpenPositions, candle.OpenTime + agent.Timeframe.ToTimeSpan());
+            if (!need.Needed)
             {
                 outcome = EvaluationOutcome.NoAction;
-                detail = Join(managementNote, output.Note ?? (entriesAllowed ? "No setup and no open position." : entriesBlocked is not null ? "No new entry this candle." : agent.State == AgentState.Running ? "No setup; the open entry is managed." : "Paused: no open position to manage."));
+                detail = Join(managementNote, need.Detail);
             }
             else
             {
@@ -359,7 +360,8 @@ internal sealed class EvaluationPipeline
         }
     }
 
-    private static string? Join(string? first, string? second) =>
+    /// <summary>Two detail segments with a space between, either one absent; shared with the council gate.</summary>
+    internal static string? Join(string? first, string? second) =>
         string.IsNullOrEmpty(first) ? second : string.IsNullOrEmpty(second) ? first : $"{first} {second}";
 
     /// <summary>

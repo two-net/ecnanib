@@ -95,8 +95,11 @@ Rules the module enforces:
   module's management step (`IExecutionService.ManageAsync`: the restart check of a live agent, expiry and market
   fallback, breakeven and trailing; a failed check or step is logged, leaves protection as it is and blocks new entries
   for this candle, NFR-REL-03, so the council is told entries are off and is not asked when nothing is open; a fallback
-  entry placed there takes the setup off the table for this candle) → council when a setup exists and entries are
-  allowed, a position is open, or discretionary mode is on and entries are allowed (FR-AI-08) → execute → persist →
+  entry placed there takes the setup off the table for this candle) → council when a position is open, or when an
+  entry is possible (entries are allowed, no no-entry window is active at the candle close and the position cap leaves
+  room, judged exactly as the hard limits judge them) and the strategy reports a setup or discretionary mode is on
+  (FR-AI-08, NFR-COST-01: `CouncilGate`, whose reason becomes the no-action detail otherwise; a position flagged
+  unmanaged still counts, since the council's Close or Modify is the only way left to act on it) → execute → persist →
   log → notify. The council receives the pinned strategy with its resolved parameters, the engine output, the
   snapshot, the open position and orders and the evaluation deadline; its decision graph is persisted whenever it
   returns one, also when the Risk Manager produced no decision, in which case the evaluation is Failed and nothing is
@@ -113,7 +116,8 @@ Rules the module enforces:
   series must load; nothing is persisted. After the council and execution, whenever market data loaded, the experience
   step (`IExperienceTracker`, the experience module's) advances and opens shadow outcomes on the evaluation's own
   snapshot (FR-EXP-03); its failure is logged and never changes the outcome. A Paused agent has no setup (the engine
-  suppresses them), so it consults the council only with an open position and leaves no shadow.
+  suppresses them), so it consults the council only with an open position and leaves no shadow; nor does a council the
+  gate skipped, since no decision rejected the setup.
 - Paper mode (FR-AGT-11, FR-AGT-12): paper agents price against **production** public data and need no key. Orders are
   rows with `is_paper` and deterministic client ids (FR-EXE-07); the simulator follows the last-price stream of every
   symbol with open paper orders or positions, in any agent state, so a Stop's close still fills. An order fills on the
