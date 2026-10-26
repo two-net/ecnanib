@@ -43,12 +43,19 @@ internal static class ExperienceLiveSeed
         };
         foreach (var turn in turns)
         {
+            // A role that was disabled or skipped made no call and has no tokens; the decision's totals are the sum of its rows.
+            var called = turn.Status is not (RoleOutputStatus.Disabled or RoleOutputStatus.Skipped);
             decision.RoleOutputs.Add(new DecisionRoleOutput
             {
                 Role = turn.Role, Sequence = Ecnanib.Agents.Abstractions.CouncilRoles.Sequence(turn.Role), Provider = turn.Provider, Model = turn.Model, Status = turn.Status,
                 ProposedAction = turn.Status == RoleOutputStatus.Succeeded ? turn.Proposed : null, Confidence = turn.Status == RoleOutputStatus.Succeeded ? 0.6m : null,
-                InputTokens = 10, OutputTokens = 5, LatencyMs = turn.Status is RoleOutputStatus.Disabled or RoleOutputStatus.Skipped ? 0 : turn.LatencyMs,
+                InputTokens = called ? 10 : 0, OutputTokens = called ? 5 : 0, Attempts = called ? 1 : 0, LatencyMs = called ? turn.LatencyMs : 0,
             });
+            if (called)
+            {
+                decision.TotalInputTokens += 10;
+                decision.TotalOutputTokens += 5;
+            }
         }
 
         db.AddRange(evaluation, decision);

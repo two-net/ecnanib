@@ -260,6 +260,42 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
         await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
     }
 
+    /// <summary>NFR-COST-01, FR-AI-08: inside a no-entry window a discretionary agent with no position has nothing the council could open, so no provider is called.</summary>
+    [Fact]
+    public async Task ADiscretionaryAgentInsideANoEntryWindowDoesNotConsultTheCouncil()
+    {
+        await StartAsync();
+        var user = await AgentsLiveSeed.NewUserAsync(_fixture, "window@example.com");
+        var agent = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "BTC", AgentState.Running, discretionary: true);
+        await using (var db = _fixture.CreateContext())
+        {
+            db.Add(new EntryWindow { AgentId = agent.Id, Kind = EntryWindowKind.OneOff, StartAt = LastOpen, EndAt = LastOpen.AddHours(2) });
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var council = new FakeCouncil();
+        var (provider, _, _, _, streams) = AgentsLiveSeed.Build(_fixture, configure: s => s.Replace(ServiceDescriptor.Singleton<ICouncil>(council)));
+        await using var _ = provider;
+        var scheduler = provider.GetRequiredService<AgentScheduler>();
+        await scheduler.StartAsync(Ct);
+        await Wait.UntilAsync(() => scheduler.IsTracked(agent.Id), "tracked");
+
+        await streams.PushCandleAsync(AgentsLiveSeed.SpotBtc, CandleInterval.OneHour, FakeMarketStreams.ClosedCandle("BTCUSDT", CandleInterval.OneHour, LastOpen));
+        await Wait.UntilAsync(() => Outcome(agent.Id, LastOpen) is not null, "evaluated");
+
+        await using (var db = _fixture.CreateContext())
+        {
+            var evaluation = await db.Evaluations.AsNoTracking().SingleAsync(e => e.AgentId == agent.Id, Ct);
+            Assert.Equal(EvaluationOutcome.NoAction, evaluation.Outcome);
+            Assert.False(evaluation.CouncilConsulted);
+            Assert.StartsWith("No new entry: a no-entry window is active at the candle close. ", evaluation.OutcomeDetail, StringComparison.Ordinal);
+        }
+
+        Assert.Empty(council.Calls);
+        await scheduler.StopAsync(Ct);
+        await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
+    }
+
     [Fact]
     public async Task ADecisionIsPersistedAndTheExecutionStageIsRecorded()
     {

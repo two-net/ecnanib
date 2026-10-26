@@ -44,7 +44,7 @@
         <h2 id="turns-title">Deliberation</h2>
         @if (view.Turns.Count == 0)
         {
-            <p>@(view.CouncilConsulted ? "No role output was recorded." : "The council was not consulted: no setup, no open position and discretionary mode off (FR-AI-08).")</p>
+            <p>@(view.CouncilConsulted ? "No role output was recorded." : "The council was not consulted (FR-AI-08); the outcome above says why.")</p>
         }
         else
         {
@@ -67,7 +67,7 @@
                             }
                             @if (turn.Status is not (RoleOutputStatus.Disabled or RoleOutputStatus.Skipped))
                             {
-                                <dt>Cost</dt><dd>@turn.LatencyMs ms, @turn.InputTokens in / @turn.OutputTokens out tokens, @turn.Attempts @(turn.Attempts == 1 ? "attempt" : "attempts")</dd>
+                                <dt>Cost</dt><dd>@LiveMessages.Count(turn.LatencyMs) ms, @LiveMessages.Count(turn.InputTokens) in / @LiveMessages.Count(turn.OutputTokens) out tokens@(turn.Attempts > 0 ? $", {turn.Attempts} {(turn.Attempts == 1 ? "attempt" : "attempts")}" : "")</dd>
                             }
                             @if (turn.Error is not null)
                             {
@@ -143,7 +143,7 @@
                     <dt>Confidence</dt><dd>@confidence.ToString("0.00", CultureInfo.InvariantCulture)</dd>
                 }
                 <dt>Rationale</dt><dd>@decision.Rationale</dd>
-                <dt>Cost</dt><dd>@decision.TotalLatencyMs ms, @decision.TotalInputTokens in / @decision.TotalOutputTokens out tokens</dd>
+                <dt>Cost</dt><dd>@LiveMessages.Count(decision.TotalLatencyMs) ms, @LiveMessages.Count(decision.TotalInputTokens) in / @LiveMessages.Count(decision.TotalOutputTokens) out tokens</dd>
                 <dt>Decided</dt><dd>@Stamp(decision.CreatedAt)</dd>
             </dl>
             @if (_shadow is { } shadow)

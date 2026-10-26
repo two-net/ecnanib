@@ -1,4 +1,4 @@
-@* Token usage per agent (NFR-COST-01): totals, today's share and the split per role, refreshed when a decision is recorded. *@
+@* Token usage per agent (NFR-COST-01): totals, today's share, the cap and the split per role, re-read when a decision is recorded or an evaluation finishes. *@
 @rendermode InteractiveServer
 @inherits LiveComponentBase
 @using Ecnanib.Council.Abstractions
@@ -24,11 +24,11 @@ else
         <dt>@LiveMessages.TodayUtc</dt>
         <dd>@LiveMessages.Count(_usage.DecisionsToday) decisions, <AnimatedValue Value="_usage.InputTokensToday" Format="LiveMessages.Count" /> in / <AnimatedValue Value="_usage.OutputTokensToday" Format="LiveMessages.Count" /> out</dd>
     </dl>
-    <p class="hint">Since @AgentMessages.Stamp(_usage.Since). Provider costs are yours under BYOK; the output tokens per call are capped by the configuration.</p>
+    <p class="hint">Since @AgentMessages.Stamp(_usage.Since). @LiveMessages.OutputTokenCap(_usage.OutputTokenCap) @LiveMessages.CostsAreYours</p>
     <div class="table-wrap">
         <table class="agents data">
-            <caption class="visually-hidden">Council calls and tokens by role</caption>
-            <thead><tr><th scope="col">Role</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input tokens</th><th scope="col" class="num">Output tokens</th></tr></thead>
+            <caption class="visually-hidden">Council calls and tokens by role; reasoning tokens are part of the output tokens</caption>
+            <thead><tr><th scope="col">Role</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input tokens</th><th scope="col" class="num">Output tokens</th><th scope="col" class="num">Reasoning</th></tr></thead>
             <tbody>
                 @foreach (var role in _usage.ByRole)
                 {
@@ -37,6 +37,7 @@ else
                         <td class="num">@LiveMessages.Count(role.Calls)</td>
                         <td class="num">@LiveMessages.Count(role.InputTokens)</td>
                         <td class="num">@LiveMessages.Count(role.OutputTokens)</td>
+                        <td class="num">@LiveMessages.Count(role.ReasoningTokens)</td>
                     </tr>
                 }
             </tbody>

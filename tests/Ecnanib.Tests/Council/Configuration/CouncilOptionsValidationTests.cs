@@ -17,7 +17,7 @@ public class CouncilOptionsValidationTests
         Assert.Equal(5, options.MinimumRoleBudgetSeconds);
         Assert.Equal(30, options.RecentCandles);
         Assert.Equal(10, options.HigherTimeframeCandles);
-        Assert.Equal(8192, options.MaxOutputTokens);
+        Assert.Null(options.MaxOutputTokens);
         Assert.Equal(1200, options.MaxAssessmentLength);
         Assert.Equal(600, options.MaxRationaleLength);
         Assert.Equal(TimeSpan.FromSeconds(60), options.RoleTimeout);
@@ -29,12 +29,27 @@ public class CouncilOptionsValidationTests
     [Fact]
     public void OverridesAreHonoured()
     {
-        var options = Resolve(new() { ["Council:RoleTimeoutSeconds"] = "120", ["Council:RecentCandles"] = "12", ["Council:HigherTimeframeCandles"] = "0", ["Council:ExecutionReserveSeconds"] = "4" });
+        var options = Resolve(new() { ["Council:RoleTimeoutSeconds"] = "120", ["Council:RecentCandles"] = "12", ["Council:HigherTimeframeCandles"] = "0", ["Council:ExecutionReserveSeconds"] = "4", ["Council:MaxOutputTokens"] = "4096" });
 
         Assert.Equal(TimeSpan.FromSeconds(120), options.RoleTimeout);
         Assert.Equal(TimeSpan.FromSeconds(4), options.ExecutionReserve);
         Assert.Equal(12, options.RecentCandles);
         Assert.Equal(0, options.HigherTimeframeCandles);
+        Assert.Equal(4096, options.MaxOutputTokens);
+    }
+
+    /// <summary>NFR-COST-01: lowering only the provider cap keeps the council inheriting it, an equal explicit value passes, and one over a lowered provider cap fails against that cap, not the default.</summary>
+    [Fact]
+    public void TheCouncilCapInheritsOrEqualsTheProviderCapAndIsCheckedAgainstTheConfiguredOne()
+    {
+        var inherited = Resolve(new() { ["Providers:MaxOutputTokens"] = "4096" });
+        Assert.Null(inherited.MaxOutputTokens);
+
+        var equal = Resolve(new() { ["Providers:MaxOutputTokens"] = "4096", ["Council:MaxOutputTokens"] = "4096" });
+        Assert.Equal(4096, equal.MaxOutputTokens);
+
+        var ex = Assert.Throws<OptionsValidationException>(() => Resolve(new() { ["Providers:MaxOutputTokens"] = "4096", ["Council:MaxOutputTokens"] = "5000" }));
+        Assert.Contains("Council:MaxOutputTokens (5000) must not exceed Providers:MaxOutputTokens (4096)", ex.Message);
     }
 
     [Theory]
@@ -47,6 +62,7 @@ public class CouncilOptionsValidationTests
     [InlineData("Council:ExecutionReserveSeconds", "86", "shortest Agents:EvaluationDeadlineSeconds (90 s)")]
     [InlineData("Council:RecentCandles", "0", "Council:RecentCandles")]
     [InlineData("Council:MaxOutputTokens", "0", "Council:MaxOutputTokens")]
+    [InlineData("Council:MaxOutputTokens", "9000", "Council:MaxOutputTokens (9000) must not exceed Providers:MaxOutputTokens (8192); omit it to inherit the provider cap.")]
     [InlineData("Council:MaxAssessmentLength", "10", "MaxAssessmentLength")]
     [InlineData("Council:MaxRationaleLength", "4000", "MaxRationaleLength")]
     public void InvalidValuesFailWithPropertyPath(string key, string value, string expectedFragment)

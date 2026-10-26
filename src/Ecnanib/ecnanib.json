@@ -142,7 +142,7 @@
     "ExecutionReserveSeconds": 10,
     "RecentCandles": 30,
     "HigherTimeframeCandles": 10,
-    "MaxOutputTokens": 8192,
+    "MaxOutputTokens": null,
     "MaxAssessmentLength": 1200,
     "MaxRationaleLength": 600
   },

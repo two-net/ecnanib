@@ -76,8 +76,8 @@ internal static class LiveSeed
         CreatedAt = createdAt,
         RoleOutputs =
         [
-            new DecisionRoleOutput { Role = CouncilRole.MarketAnalyst, Sequence = 1, Provider = AiProvider.Gpt, Model = "gpt-test", Status = RoleOutputStatus.Succeeded, ProposedAction = DecisionAction.OpenLong, Confidence = 0.6m, InputTokens = 600, OutputTokens = 150, LatencyMs = 2000 },
-            new DecisionRoleOutput { Role = CouncilRole.RiskManager, Sequence = 4, Provider = AiProvider.Claude, Model = "claude-test", Status = RoleOutputStatus.Succeeded, ProposedAction = DecisionAction.OpenLong, Confidence = 0.7m, InputTokens = 600, OutputTokens = 150, LatencyMs = 2200 },
+            new DecisionRoleOutput { Role = CouncilRole.MarketAnalyst, Sequence = 1, Provider = AiProvider.Gpt, Model = "gpt-test", Status = RoleOutputStatus.Succeeded, ProposedAction = DecisionAction.OpenLong, Confidence = 0.6m, InputTokens = 600, OutputTokens = 150, Attempts = 1, ReasoningTokens = 40, LatencyMs = 2000 },
+            new DecisionRoleOutput { Role = CouncilRole.RiskManager, Sequence = 4, Provider = AiProvider.Claude, Model = "claude-test", Status = RoleOutputStatus.Succeeded, ProposedAction = DecisionAction.OpenLong, Confidence = 0.7m, InputTokens = 600, OutputTokens = 150, Attempts = 1, LatencyMs = 2200 },
         ],
         Transcripts =
         [

@@ -77,8 +77,8 @@ internal static class HardLimits
 
         Add(checks, LimitNames.DailyLoss, agent.PauseCause != PauseCause.DailyLoss, "the daily loss limit is not reached", "the daily loss limit is reached");
 
-        var positionCap = Math.Min(agent.RiskLimits.MaxOpenPositions, caps.MaxOpenPositions);
-        var open = context.OpenTrades.Count + context.OpenOrders.Count(o => o.Purpose == OrderPurpose.Entry);
+        var positionCap = PositionRoom.Cap(agent, caps.MaxOpenPositions);
+        var open = PositionRoom.Open(context.OpenTrades, context.OpenOrders);
         Add(checks, LimitNames.OpenPositions, open < positionCap, $"{open} of {positionCap} open (positions and pending entries)", $"{open} of {positionCap} already open (positions and pending entries)");
 
         var stop = document.StopPrice;

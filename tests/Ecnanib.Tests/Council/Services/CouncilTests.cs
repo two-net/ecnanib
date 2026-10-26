@@ -47,6 +47,8 @@ public class CouncilTests
             Assert.Equal(CouncilTestHost.Model(r.Provider), r.Model);
             Assert.Equal(10, r.InputTokens);
             Assert.Equal(5, r.OutputTokens);
+            Assert.Equal(1, r.Attempts);
+            Assert.Equal(0, r.ReasoningTokens);
             Assert.Equal(100, r.LatencyMs);
             Assert.NotNull(r.ProposedAction);
             Assert.NotNull(r.Confidence);
@@ -70,7 +72,7 @@ public class CouncilTests
         Assert.All(ai.Completions, c =>
         {
             Assert.NotNull(c.Request.OutputSchema);
-            Assert.Equal(8192, c.Request.MaxOutputTokens);
+            Assert.Null(c.Request.MaxOutputTokens);
             Assert.Equal(CouncilTestHost.Model(c.Key.Provider), c.Request.Model);
             Assert.Contains("You are the", c.Request.SystemPrompt);
         });
@@ -143,7 +145,7 @@ public class CouncilTests
         var inner = ai.OnComplete!;
         ai.OnComplete = (key, request, ct) =>
             request.Purpose == "MarketAnalyst" && Interlocked.Increment(ref calls) == 1
-                ? Task.FromResult(FakeAiClientFactory.Completion(key.Provider, request.Model, "{ not json", inputTokens: 7, outputTokens: 3))
+                ? Task.FromResult(FakeAiClientFactory.Completion(key.Provider, request.Model, "{ not json", inputTokens: 7, outputTokens: 3, reasoningTokens: 2))
                 : inner(key, request, ct);
         var council = CouncilTestHost.Build(ai);
 
@@ -153,6 +155,8 @@ public class CouncilTests
         Assert.Equal(RoleOutputStatus.Succeeded, analyst.Status);
         Assert.Equal(17, analyst.InputTokens);
         Assert.Equal(8, analyst.OutputTokens);
+        Assert.Equal(2, analyst.Attempts);
+        Assert.Equal(2, analyst.ReasoningTokens);
         Assert.Equal(200, analyst.LatencyMs);
         Assert.Equal(2, result.Decision.Transcripts.Single(t => t.Role == CouncilRole.MarketAnalyst).Output.GetProperty("attempts").GetInt32());
         Assert.Equal(5, ai.Completions.Count);
@@ -160,6 +164,49 @@ public class CouncilTests
         Assert.Contains("## Correction", retry);
         Assert.Contains("not valid JSON", retry);
         Assert.StartsWith(ai.Completions[0].Request.UserPrompt, retry);
+    }
+
+    /// <summary>NFR-COST-01, AI-04: a call that throws is still a call the agent paid for, and the tokens of the attempt before it stay on the row.</summary>
+    [Fact]
+    public async Task AThrowingRetryKeepsTheFirstAttemptsTokensAndCountsBothCalls()
+    {
+        var calls = 0;
+        var ai = CouncilTestHost.Answering();
+        var inner = ai.OnComplete!;
+        ai.OnComplete = (key, request, ct) =>
+        {
+            if (request.Purpose != "MarketAnalyst")
+                return inner(key, request, ct);
+            return Interlocked.Increment(ref calls) == 1
+                ? Task.FromResult(FakeAiClientFactory.Completion(key.Provider, request.Model, "{ not json", inputTokens: 7, outputTokens: 3, reasoningTokens: 2))
+                : throw new AiUnavailableException("GPT completion failed: upstream error", AiProvider.Gpt, AiErrorKind.ServerError, 500, model: request.Model);
+        };
+        var council = CouncilTestHost.Build(ai);
+
+        var result = await council.DeliberateAsync(CouncilTestHost.Context(), Ct);
+
+        Assert.Null(result.Failure);
+        var analyst = result.Decision!.RoleOutputs.Single(r => r.Role == CouncilRole.MarketAnalyst);
+        Assert.Equal(RoleOutputStatus.Failed, analyst.Status);
+        Assert.Equal(2, analyst.Attempts);
+        Assert.Equal((7, 3, 2), (analyst.InputTokens, analyst.OutputTokens, analyst.ReasoningTokens));
+        Assert.Contains("ServerError", result.Decision.Transcripts.Single(t => t.Role == CouncilRole.MarketAnalyst).Output.GetProperty("error").GetString());
+        Assert.Equal(5, ai.Completions.Count);
+        Assert.Equal(7 + 30, result.Decision.TotalInputTokens);
+    }
+
+    /// <summary>NFR-COST-01: the council's own cap, when set, goes out with every request (the first test pins that none goes out without one).</summary>
+    [Fact]
+    public async Task TheCouncilCapGoesOutWithEveryRequest()
+    {
+        var ai = CouncilTestHost.Answering();
+        var council = CouncilTestHost.Build(ai, options: new CouncilOptions { MaxOutputTokens = 2048 });
+
+        var result = await council.DeliberateAsync(CouncilTestHost.Context(), Ct);
+
+        Assert.Null(result.Failure);
+        Assert.Equal(4, ai.Completions.Count);
+        Assert.All(ai.Completions, c => Assert.Equal(2048, c.Request.MaxOutputTokens));
     }
 
     [Fact]
@@ -372,6 +419,8 @@ public class CouncilTests
         Assert.Null(result.Fault);
         var analyst = result.Decision!.RoleOutputs.Single(r => r.Role == CouncilRole.MarketAnalyst);
         Assert.Equal(RoleOutputStatus.Failed, analyst.Status);
+        // NFR-COST-01: the call that threw is counted; it reported no tokens.
+        Assert.Equal((1, 0, 0), (analyst.Attempts, analyst.InputTokens, analyst.OutputTokens));
         Assert.Equal("GPT Unauthorized: Incorrect API key provided: sk-...wxyz.", result.Decision.Transcripts.Single(t => t.Role == CouncilRole.MarketAnalyst).Output.GetProperty("error").GetString());
     }
 

@@ -34,6 +34,16 @@ public class LiveMessagesTests
         Assert.Equal("Verdict: none", LiveMessages.Verdict(null));
     }
 
+    /// <summary>NFR-COST-01: the usage card's texts say what is counted, the cap every call is made under and whose costs they are.</summary>
+    [Fact]
+    public void TheUsageTextsAreExact()
+    {
+        Assert.Equal("No council call yet. Token usage per role and for today appears here once the council has deliberated.", LiveMessages.NoUsage);
+        Assert.Equal("New council calls are capped at 8,192 output tokens each.", LiveMessages.OutputTokenCap(8192));
+        Assert.Equal("New council calls are capped at 512 output tokens each.", LiveMessages.OutputTokenCap(512));
+        Assert.Equal("Provider and exchange costs are yours under BYOK.", LiveMessages.CostsAreYours);
+    }
+
     [Fact]
     public void ARoleSlotSaysWhereItIs()
     {

@@ -38,9 +38,13 @@ public sealed class CouncilOptions
     [Range(0, 200)]
     public int HigherTimeframeCandles { get; set; } = 10;
 
-    /// <summary>Output tokens requested per role call; may only lower <c>Providers:MaxOutputTokens</c> (NFR-COST-01). Reasoning tokens count against it on GPT, Grok and Gemini.</summary>
+    /// <summary>
+    /// Output tokens requested per role call (NFR-COST-01): lowers <c>Providers:MaxOutputTokens</c> for the council and
+    /// may not exceed it (checked at start); null, the default, inherits the provider cap. Reasoning tokens count
+    /// against it on GPT, Grok and Gemini.
+    /// </summary>
     [Range(1, 1_000_000)]
-    public int MaxOutputTokens { get; set; } = 8192;
+    public int? MaxOutputTokens { get; set; }
 
     /// <summary>Bound of a role's assessment text (Appendix C); longer answers are cut.</summary>
     [Range(100, 4000)]

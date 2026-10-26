@@ -5,15 +5,16 @@ sequence at each evaluation that needs them (FR-AI-08 is the agents module's), e
 agent assigns it, every call under the user's own key; the Risk Manager runs last and is the only role whose decision
 is executed. Other modules depend on `Ecnanib.Council.Abstractions` and `AddCouncil(...)`, which must be registered
 **before** `AddAgents` (whose fail-safe council stays otherwise) and requires `AddDatabase`, `AddAiProviders` and
-`AddKeys` (both resolved at evaluation time) and the agents module's `RiskCaps`. It adds no hosted service and connects
-to nothing at registration. The roles themselves, the prompts, the schemas and the limits never leave this folder.
+`AddKeys` (both resolved at evaluation time) and the agents module's `RiskCaps`; it reads the AI module's `AiOptions`
+for the provider cap its own output-token cap is checked against. It adds no hosted service and connects to nothing at
+registration. The roles themselves, the prompts, the schemas and the limits never leave this folder.
 
 | Need | Use |
 |---|---|
 | Run the council for one evaluation (FR-AI-02..07, FR-AI-09..13) | `ICouncil.DeliberateAsync(CouncilContext, ct)` → `CouncilResult` (the unsaved `Decision` graph, a `Failure` when the Risk Manager decided nothing, a `Fault` when the agent cannot run as configured); the agents module's pipeline is the only caller |
 | Feed experience into prompts (FR-AI-06, FR-EXP-06) | `IExperienceSummaries`, provided by the experience module registered before `AddCouncil`; the default here answers "no experience recorded yet" |
 | Show a deliberation (FR-AI-14) | `IDeliberationReader.GetAsync(userId, evaluationId, ct)` → `DeliberationView` (the evaluation, each role's `RoleTurnView`, the `FinalDecisionView` with its limits); another user's evaluation answers null |
-| An agent's token usage (NFR-COST-01) | `IDeliberationReader.GetAgentUsageAsync(userId, agentId, ct)` → `AgentTokenUsage` (tokens in and out, all-time and today, decisions, per role) |
+| An agent's token usage (NFR-COST-01) | `IDeliberationReader.GetAgentUsageAsync(userId, agentId, ct)` → `AgentTokenUsage` (decisions and tokens in and out, all-time and today; per role the council's calls, tokens and reasoning tokens; the output-token cap new calls are made under) |
 | Follow a deliberation as it happens (FR-UI-03 b, FR-UI-04) | the agents module's `IAgentEvents`: `CouncilRoleStarted` and `CouncilRoleFinished` per role in order, published here before and after each call, then the pipeline's `DecisionRecorded` |
 | The roles, their order, defaults and responsibilities (Appendix B) | `CouncilRoles` in the agents abstractions |
 | What a role returned (Appendix C) | `RoleOutputDocument` / `FinalDecisionDocument`; `LimitCheck` entries of the decision's limits check |
@@ -23,7 +24,7 @@ Rules the module enforces:
 - **Order and roles** (FR-AI-02, FR-AI-05): Market Analyst, Sentiment & Flow, Cross-Market Context, Risk Manager, each
   with the agent's `CouncilAssignment`. A disabled role is recorded as such and skipped; without an enabled Risk
   Manager nothing is called. Each role is a `DecisionRoleOutput` row (status, proposed action, confidence, tokens,
-  latency) and, when it was called, a `DeliberationTranscript` (the message it received and
+  reasoning tokens, the calls made, latency) and, when it was called, a `DeliberationTranscript` (the message it received and
   `{ promptVersion, status, attempts, finishReason, reasoningTokens, document, error, raw }`), swept after
   `Retention:DeliberationTranscriptDays` while the row stays (FR-AI-14, NFR-DATA-03).
 - **Every role receives** (FR-AI-06), in this order: the agent configuration (market, symbol, timeframe, mode, strategy
@@ -76,11 +77,12 @@ Configuration (`Council` section; the defaults are in `src/Ecnanib/ecnanib.json`
 
 ```json
 { "Council": { "RoleTimeoutSeconds": 60, "RiskManagerReserveSeconds": 45, "MinimumRoleBudgetSeconds": 5, "ExecutionReserveSeconds": 10,
-  "RecentCandles": 30, "HigherTimeframeCandles": 10, "MaxOutputTokens": 8192, "MaxAssessmentLength": 1200, "MaxRationaleLength": 600 } }
+  "RecentCandles": 30, "HigherTimeframeCandles": 10, "MaxOutputTokens": null, "MaxAssessmentLength": 1200, "MaxRationaleLength": 600 } }
 ```
 
-`MaxOutputTokens` may only lower `Providers:MaxOutputTokens`; reasoning tokens count against it on GPT, Grok and
-Gemini. The rationale bound is at most 3000 so the limits prefix fits the 4000-character column.
+`MaxOutputTokens` lowers `Providers:MaxOutputTokens` for the council's calls and may not exceed it (checked at start,
+the message naming both values); null, the default, inherits the provider cap (NFR-COST-01). Reasoning tokens count
+against it on GPT, Grok and Gemini. The rationale bound is at most 3000 so the limits prefix fits the 4000-character column.
 `ExecutionReserveSeconds` plus `MinimumRoleBudgetSeconds` must leave the Risk Manager time within the shortest
 `Agents:EvaluationDeadlineSeconds` (checked at start); the Risk Manager reserve is not checked against it, so a
 council with too little room skips its non-final roles instead.
@@ -93,11 +95,20 @@ cost, proposal, assessment, flags, the document and the input it received) and t
 check (FR-AI-14), the execution check appended at order time, and, for a setup the council did not take, its shadow outcome (the experience module's, FR-EXP-03).
 While a council runs, the agent page's decisions list shows the roles taking their turns in order and the verdict last
 (FR-UI-03 b), driven by the role events; the deliberation page replays the recorded turns at a pace set by each role's
-latency, skippable and skipped under reduced motion. The agent page's council usage section shows the tokens per role,
-all-time and today (NFR-COST-01).
+latency, skippable and skipped under reduced motion. The agent page's council usage card (NFR-COST-01) shows the
+decisions and tokens all-time and today, the output-token cap new calls are made under and, per role, the calls (the
+council's attempts: one per turn, two after a rejected answer, a call that threw included; the AI module's transient
+retries are in its log only), the tokens and the reasoning tokens; it re-reads when a decision is recorded or an
+evaluation finishes. Attempts and reasoning tokens are on the role output row, so they outlive the transcript sweep
+(rows from before the columns existed were backfilled from their transcripts; one already swept counts one call when it
+reported tokens or latency, so a historic call that threw before any answer is not counted). A
+council cut by a Stop or a shutdown before it returns persists nothing, so the tokens of its finished roles are in the
+AI module's per-attempt log only (FR-LOG-04).
 
-Tests: `dotnet test` runs offline (the sequence over faked providers: order, disabled roles, the retry, failures,
+Tests: `dotnet test` runs offline (the sequence over faked providers: order, disabled roles, the retry with its attempts
+and tokens summed, a retry that throws still counted, the council cap on every request and none without one, failures,
 budgets and the deadline with a fake clock, faults, keys never reaching a prompt, the limits one by one, the parser,
-the schema subset, the prompts, the options, the registration). Live checks run the council inside the real pipeline
-against PostgreSQL through the git-ignored `tests/.database.json` with the providers faked:
+the schema subset, the prompts, the options with the cap checked against the provider's, the registration). Live checks
+run the council inside the real pipeline against PostgreSQL through the git-ignored `tests/.database.json` with the
+providers faked, and read an agent's usage back with its calls, reasoning tokens and cap:
 `dotnet test -- --filter-trait "Category=Live"`.

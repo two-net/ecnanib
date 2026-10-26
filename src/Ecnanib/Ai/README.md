@@ -25,14 +25,17 @@ Rules the module enforces:
   Warning in `ecnanib.json` and the auth headers are redacted (FR-KEY-04, FR-LOG-05).
 - Requests carry the model, the system and user content, the output-token cap and the optional schema, nothing else:
   no temperature, thinking or provider-specific switches, and no model identifiers in code (FR-SYNC-05).
-- Output tokens are capped by `Providers:MaxOutputTokens`; a request may ask for fewer, never more (NFR-COST-01).
-  Reasoning tokens count against the cap on GPT, Grok and Gemini.
+- Output tokens are capped by `Providers:MaxOutputTokens`; a request may ask for fewer, never more (NFR-COST-01): the
+  smaller of the two goes out as Claude's `max_tokens`, the Responses API's `max_output_tokens` and Gemini's
+  `maxOutputTokens`. Reasoning tokens count against the cap on GPT, Grok and Gemini and come back as
+  `Usage.ReasoningTokens`, a part of the output tokens.
 - Each attempt times out after `Providers:CallTimeoutSeconds`; the caller's cancellation token is the deadline
   (FR-AI-13). Only transient failures (network, timeout, rate limit, overload, 5xx) are retried.
 - Every attempt is logged with provider, operation, purpose, model, status, latency and tokens, never prompt content
   (FR-LOG-04).
-- Refusals, safety blocks and truncation are results (`AiCompletion.FinishReason`), not exceptions, so usage is always
-  recorded (AI-04). Only `Stop` means the text is complete.
+- Refusals, safety blocks and truncation are results (`AiCompletion.FinishReason`), not exceptions, so the usage of
+  every answer is recorded (AI-04); a response the provider marks failed, or one with no candidate and no block reason,
+  is an exception and carries none. Only `Stop` means the text is complete.
 - Base URLs include the API version path (`Providers:<Provider>:BaseUrl`); Claude's `anthropic-version` header comes
   from `Providers:Claude:ApiVersion`. OpenAI and xAI are called through the Responses API, Gemini through
   `generateContent`.

@@ -63,10 +63,20 @@ public sealed record DeliberationView(
     FinalDecisionView? Decision,
     IReadOnlyList<RoleTurnView> Turns);
 
-/// <summary>One role's share of an agent's provider calls; roles that were disabled or skipped made none.</summary>
-public sealed record RoleTokenUsage(CouncilRole Role, int Calls, int InputTokens, int OutputTokens);
+/// <summary>
+/// One role's share of an agent's council calls (NFR-COST-01). <see cref="Calls"/> counts the council's attempts (one per
+/// turn, two after a rejected answer, FR-AI-07), not the AI module's transient retries, which only the log has;
+/// <see cref="ReasoningTokens"/> is the part of <see cref="OutputTokens"/> the models spent reasoning. Roles that were
+/// disabled or skipped made none.
+/// </summary>
+public sealed record RoleTokenUsage(CouncilRole Role, int Calls, int InputTokens, int OutputTokens, int ReasoningTokens = 0);
 
-/// <summary>Token usage of an agent's council (NFR-COST-01, AI-04): the totals of every stored decision, today's UTC share and the split per role.</summary>
+/// <summary>
+/// Token usage of an agent's council (NFR-COST-01, AI-04): the totals of every stored decision, today's UTC share, the
+/// split per role and the output-token cap new calls are made under (<c>Council:MaxOutputTokens</c>, or
+/// <c>Providers:MaxOutputTokens</c> when the council has none of its own; the configuration's current value, not the
+/// cap a past decision was made under).
+/// </summary>
 public sealed record AgentTokenUsage(
     int Decisions,
     int InputTokens,
@@ -75,7 +85,8 @@ public sealed record AgentTokenUsage(
     int InputTokensToday,
     int OutputTokensToday,
     DateTimeOffset? Since,
-    IReadOnlyList<RoleTokenUsage> ByRole);
+    IReadOnlyList<RoleTokenUsage> ByRole,
+    int OutputTokenCap);
 
 /// <summary>Reads one evaluation's deliberation, or an agent's token usage, for its owner (NFR-SEC-03): another user's evaluation or agent and a missing one both answer null.</summary>
 public interface IDeliberationReader

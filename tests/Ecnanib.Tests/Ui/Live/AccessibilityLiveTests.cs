@@ -111,11 +111,11 @@ public class AccessibilityLiveTests : IClassFixture<DatabaseLiveFixture>
     private static IEnumerable<(string Path, string[] Markers)> Markers(Seeded s)
     {
         yield return ("/agents", ["Evaluating…", "Running BTC", "Paused live", "Stop all my agents", "aria-live=\"polite\""]);
-        yield return ($"/agents/{s.Running}", ["Evaluating…", "Open positions", "Open orders", "Closed trades", "Entry deliberation", "Change history", "no longer lists", "Price chart of BTCUSDT", "300 candles", "Details</summary>"]);
+        yield return ($"/agents/{s.Running}", ["Evaluating…", "Open positions", "Open orders", "Closed trades", "Entry deliberation", "Change history", "no longer lists", "Price chart of BTCUSDT", "300 candles", "Details</summary>", "Council usage", "Council calls and tokens by role", ">Reasoning<", "capped at 8,192 output tokens", "costs are yours under BYOK"]);
         yield return (WizardSteps.Href(s.Draft, WizardStep.Council), ["aria-label=\"Market Analyst model\"", "aria-label=\"Risk Manager model id\"", "Model id for every role"]);
         yield return (WizardSteps.Href(s.Draft, WizardStep.Risk), ["From time", "Until day", ">Remove<", "Every Saturday"]);
         yield return (WizardSteps.Href(s.Draft, WizardStep.Strategy), [", default "]);
-        yield return ($"/agents/{s.Running}/evaluations/{s.DecidedEvaluation}", ["Limits check", "Execution check", "Shadow outcome", "low volume"]);
+        yield return ($"/agents/{s.Running}/evaluations/{s.DecidedEvaluation}", ["Limits check", "Execution check", "Shadow outcome", "low volume", "2,000 ms, 600 in / 150 out tokens, 1 attempt", "4,200 ms, 1,200 in / 300 out tokens"]);
         yield return ($"/agents/{s.Running}/log", [">Deliberation</a>", "Details</summary>", "Warning"]);
         yield return ($"/keys/exchange/{s.Key}", ["Reading: yes", "Stop the 1 running or paused agent"]);
         yield return ("/keys", ["revoked", "Add key…", "Manage"]);
