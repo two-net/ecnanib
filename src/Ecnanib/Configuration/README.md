@@ -4,8 +4,10 @@ The one system configuration file, the host built from it and the request pipeli
 C-11; A-01; NFR-ARCH-02; NFR-SEC-02/04). `Program.cs` depends on `ConfigurationFile`, `EcnanibHost`, `AddEcnanibModules(...)`,
 `EnsureSystemKeys()` and `UseEcnanibPipeline()`; other modules depend on `ServerOptions` and `HostNames` only. The module
 references the others in two places only: `AddEcnanibModules`, which registers every module in the order their defaults
-and replacements require, and the pipeline, which maps the accounts module's endpoints and the root component. Every
-module owns its own section, binds it in its own `Add*` method and is listed here by name.
+and replacements require, and the pipeline, which maps the accounts module's endpoints and the root component (the
+section names in `ConfigurationFile.Sections` are literals, pinned to the modules' constants by a test). Every
+module owns its own section, binds it in its own `Add*` method and is listed here by name. The root `README.md` is the
+architecture overview: the SRS modules mapped to the folders, the dependency rule and every job the process runs.
 
 | Need | Use |
 |---|---|
@@ -109,7 +111,9 @@ before doing anything to it (NFR-REL-01). A second process pointed at the same d
 `Database:InstanceLockWaitSeconds` (30 by default) for the first to let go, which covers a restart whose old process is
 still shutting down, then prints `Another Ecnanib instance holds database … (backend N); this instance will not start`
 at Critical and exits with code 1 without binding its port. The status page shows the lock, the restart sweep and the
-exchange reconciliation. High availability is out of scope.
+exchange reconciliation. High availability is out of scope. `StartupProcessLiveTests` drives this on the built
+application: a fresh database created, migrated and locked, `/` served, a second process refused with exit code 1, a
+clean stop with exit code 0 on SIGTERM.
 
 Tests: `dotnet test` runs offline (argument parsing, file errors with line numbers, duplicate keys, unknown sections,
 the single configuration source, environment variables ignored, `Server` validation including the https rule and the
@@ -117,6 +121,13 @@ trusted proxies, Kestrel, forwarded-header, redirection and HSTS registration, k
 repository, the reference file: known sections, no credential, every module binds and validates it, every endpoint an
 allowed host; the outbound allowlist, package list and source scan; and the pipeline itself on an in-memory server:
 security headers, redirection and HSTS behind an https origin, forwarded headers believed from trusted proxies only,
-antiforgery on every POST and the challenge of anonymous requests). Live checks sign up, sign in, sign out and read
-another user's agent through the same pipeline against PostgreSQL. The start-up path end to end is checked by running
-the application.
+antiforgery on every POST and the challenge of anonymous requests). `ArchitectureTests` pin NFR-ARCH-01/02 and C-10: one
+deployable project, one context over Npgsql, no broker, queue, cache or file state in the source, the fourteen hosted
+services in registration order and connecting to nothing when constructed, the sixteen module folders with their
+registrations and READMEs, the contract-only dependency rule, the visibility split, the folder-derived namespaces and the
+root README naming every module and job. `StartupProcessTests` (in the default run under `Category=Process`; exclude them
+with `-- --filter-not-trait "Category=Process"`) start the built application as a child process: an unknown argument and
+a missing file are reported on standard error, an empty connection string and an unreachable database at Critical, each
+with exit code 1 and no port bound. Live checks sign up, sign in, sign out and read another user's agent through the same
+pipeline against PostgreSQL, and `StartupProcessLiveTests` (both `Live` and `Process`) run the application process
+itself (above).

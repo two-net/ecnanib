@@ -1,8 +1,11 @@
 # Database module
 
 The one PostgreSQL database, reached only through EF Core (SRS §3.1.4, DB-01..03; NFR-DATA-01..03; NFR-ARCH-03;
-C-09). Other modules depend on `EcnanibDbContext`, the entities in `Ecnanib.Database.Entities` and
-`AddDatabase(...)`; there is no repository layer because the ORM is the boundary. The folder is named `Entities`
+C-09). Other modules depend on `EcnanibDbContext`, the entities in `Ecnanib.Database.Entities`, `RetentionOptions`
+(the market-data module reads the candle retention), `DbUpdateExceptions`, `IInstanceLockStatus` (the health module) and
+`AddDatabase(...)`; `Program.cs` also calls `MigrateDatabaseAsync()` and `AcquireInstanceLockAsync()` and catches
+`DatabaseMigrationException` and `InstanceLockException`. There is no repository layer because the ORM is the boundary.
+The folder is named `Entities`
 rather than `Abstractions` because the shared types here are the persisted model itself.
 
 | Need | Use |
@@ -22,8 +25,9 @@ Rules the module enforces:
 
 - Migrations are versioned, forward-only and applied at startup (DB-02). The migrator refuses to start when the
   database knows a migration the build does not, when the model has changes no migration covers, when the server is
-  older than PostgreSQL 15, or when a migration fails; the cause is logged at Critical and the process exits
-  (NFR-ARCH-03, FR-LOG-04). Every migration's `Down` throws.
+  older than PostgreSQL 15, or when a migration fails; the cause is logged at Critical (every distinct message down
+  the exception chain, so a refused connection is named and not only EF's "transient failure" wrapper) and the process
+  exits (NFR-ARCH-03, FR-LOG-04). Every migration's `Down` throws.
 - One process per database (NFR-REL-04): `InstanceLock` takes a PostgreSQL session advisory lock on the key
   `0x65636E616E6962` (the ASCII bytes of "ecnanib", 28538298379954530) through one context whose connection stays open
   for the process's lifetime, so the lock goes when the process does, cleanly or not. It is taken after the migrations
@@ -88,7 +92,10 @@ An empty connection string refuses to start (FR-CFG-06). PostgreSQL 15 or newer 
 validate the configuration → migrate → take the instance lock → ensure the system keys → run.
 
 Tests: `dotnet test` runs offline (model snapshot, generated SQL, forward-only and convention checks, the lock's
-registration). Live checks (the schema, the sweeper, a second instance waiting then refusing and acquiring once the first
+registration). The start-up path is checked end to end on the built application as a child process (the configuration
+module's `StartupProcessTests` and `StartupProcessLiveTests`): an empty connection string, an unreachable database and a
+failing migration each end with exit code 1, the cause at Critical and no port bound; a fresh database is created,
+migrated and locked by the process, and a second process on it is refused. Live checks (the schema, the sweeper, a second instance waiting then refusing and acquiring once the first
 stops, the lock taken again after a lost connection and the host stopped when another instance holds it)
 are opt-in through `tests/.database.json` (git-ignored):
 

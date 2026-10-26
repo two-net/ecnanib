@@ -1,8 +1,7 @@
-﻿@using Ecnanib.Accounts.Services
-@using Ecnanib.Ui.Abstractions
+﻿@using Ecnanib.Ui.Abstractions
 @using Ecnanib.Ui.Configuration
 @using Microsoft.Extensions.Options
-@inject UserPreferencesResolver Preferences
+@inject IUserPreferencesResolver Preferences
 @inject IOptions<UiOptions> Ui
 <!DOCTYPE html>
 @* FR-UI-02/03: the theme and motion preference is on the document element before the first paint; System renders no

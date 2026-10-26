@@ -3,8 +3,12 @@
 The web user interface's shared pieces (SRS §3.1.1 UI-01..04; §3.2 FR-UI-01..06; NFR-USE-01..03; NFR-PERF-03; C-06,
 C-07; Appendix D "ui"). The pages themselves live in `Components` next to the module they belong to; this folder holds
 what every page shares: the `Ui` configuration section and the theme and motion contract between the server and the
-stylesheet. Other modules depend on `Ecnanib.Ui.Abstractions` and `AddUi(...)`, which requires nothing and must be
-registered before `AddAccounts` (new accounts take its defaults).
+stylesheet. Other modules depend on `Ecnanib.Ui.Abstractions`, `UiOptions` (the accounts module and the pages read the
+defaults) and `AddUi(...)`, which requires nothing and must be registered before `AddAccounts` (new accounts take its
+defaults). A page under `Components/<Module>` is part of that module and may use its internals
+(`Components/Account/_Imports.razor` imports the accounts module's session helpers for its pages alone); the shared
+components (`Layout`, `Live`, `Pages`) see the other modules' contracts only (NFR-ARCH-02; the root `README.md` states the
+rule and `ArchitectureTests` enforce it).
 
 | Need | Use |
 |---|---|

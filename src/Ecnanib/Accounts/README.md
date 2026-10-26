@@ -1,8 +1,10 @@
 # Accounts module
 
 Registration, sessions, password change, account deletion, fair-use limits and the risk disclaimer (SRS §3.2
-FR-ACC-01..08; NFR-SEC-01/03; NFR-LEGAL-01/02; C-12, A-09). Other modules depend on `Ecnanib.Accounts.Abstractions`,
-`AddAccounts(...)` and `MapAccountEndpoints()`; the hashing, cookie and throttle types never leave this folder. There
+FR-ACC-01..08; NFR-SEC-01/03; NFR-LEGAL-01/02; C-12, A-09). Other modules depend on `Ecnanib.Accounts.Abstractions`
+(`IAccountService`, `IFairUseLimits`, `IUserPreferencesResolver`, the user-id extensions), `AddAccounts(...)` and
+`MapAccountEndpoints()`; the hashing, cookie and throttle types never leave this folder, whose own pages under
+`Components/Account` are part of it and issue and end the cookie session through `AccountSession` (NFR-ARCH-02). There
 are users and nothing else: no email verification, roles, payments, plans, organizations or tenants (FR-ACC-05/06).
 `AddAccounts` requires `AddDatabase`, `AddServer` and `AddUi`.
 
@@ -14,7 +16,7 @@ are users and nothing else: no email verification, roles, payments, plans, organ
 | Require a signed-in user on a page | `@attribute [Authorize]`; the middleware challenges with a redirect to `/sign-in?ReturnUrl=…` |
 | Agent limits at creation and start (FR-ACC-07, FR-AGT-15) | `IFairUseLimits.CheckCreateAgentAsync` / `CheckStartAgentAsync` → `FairUseCheck` (allowed, current, max) |
 | Disclaimer text, version and status (FR-ACC-08, FR-UI-05) | `RiskDisclaimer`, `<RiskDisclaimerNotice />`, `IAccountService.GetDisclaimerStatusAsync(...).IsAccepted`, which a live-mode start must require |
-| The user's theme and animation preference (FR-UI-02, FR-UI-03) | `IAccountService.GetPreferencesAsync` / `UpdatePreferencesAsync` → `UserPreferences`; `UserPreferencesResolver.ResolveAsync(httpContext)` for the preference a page renders with (the user's own, or the `Ui` defaults for a visitor and on error pages) |
+| The user's theme and animation preference (FR-UI-02, FR-UI-03) | `IAccountService.GetPreferencesAsync` / `UpdatePreferencesAsync` → `UserPreferences`; `IUserPreferencesResolver.ResolveAsync(httpContext, ct)` for the preference a page renders with (the user's own, or the `Ui` defaults for a visitor and on error pages) |
 
 Rules the module enforces:
 

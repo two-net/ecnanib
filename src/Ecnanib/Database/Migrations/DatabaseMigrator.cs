@@ -85,7 +85,7 @@ internal sealed class DatabaseMigrator
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        throw new DatabaseMigrationException($"Migration '{migration}' failed: {ex.Message}", ex);
+                        throw new DatabaseMigrationException($"Migration '{migration}' failed: {Describe(ex)}", ex);
                     }
 
                     _logger.LogInformation("Applied database migration {Migration} in {ElapsedMs:F0} ms",
@@ -100,10 +100,31 @@ internal sealed class DatabaseMigrator
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             var wrapped = ex as DatabaseMigrationException
-                ?? new DatabaseMigrationException($"Database migration failed: {ex.Message}", ex);
+                ?? new DatabaseMigrationException($"Database migration failed: {Describe(ex)}", ex);
             _logger.LogCritical(wrapped, "Database migration failed; the application will not start (NFR-ARCH-03): {Reason}", wrapped.Message);
             throw wrapped;
         }
+    }
+
+    /// <summary>
+    /// The cause as the operator should read it on the Critical line: every distinct message down the inner-exception
+    /// chain, so a refused connection is named ("Failed to connect to host:port: Connection refused") and not only EF's
+    /// "likely due to a transient failure" wrapper around it. A wrapper that already quotes its cause, such as an
+    /// <see cref="AggregateException"/>'s "One or more errors occurred. (…)", adds nothing and is left out.
+    /// </summary>
+    internal static string Describe(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        var messages = new List<string>();
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            var message = current.Message.TrimEnd('.', ' ');
+            if (message.Length > 0 && !messages.Contains(message, StringComparer.Ordinal))
+                messages.Add(message);
+        }
+
+        var own = messages.Where((message, index) => !messages.Skip(index + 1).Any(inner => message.Contains(inner, StringComparison.Ordinal)));
+        return string.Join(": ", own);
     }
 
     /// <summary>Rejects servers older than <see cref="NpgsqlConfiguration.MinimumPostgresVersion"/> before any DDL runs.</summary>

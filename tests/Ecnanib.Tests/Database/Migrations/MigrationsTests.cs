@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Net.Sockets;
 using Ecnanib.Database;
 using Ecnanib.Database.Configuration;
 using Ecnanib.Database.Migrations;
@@ -6,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql;
 
 namespace Ecnanib.Tests.Database.Migrations;
 
@@ -90,6 +92,24 @@ public class MigrationsTests
             var ex = Assert.Throws<DatabaseMigrationException>(() => DatabaseMigrator.RequireSupportedVersion(version));
             Assert.Contains("PostgreSQL 15.0 or newer", ex.Message);
         }
+    }
+
+    /// <summary>NFR-ARCH-03: the Critical line names the real cause, not only EF's wrapper around a refused connection.</summary>
+    [Fact]
+    public void DescribeNamesEveryDistinctCauseDownTheChain()
+    {
+        var refused = new InvalidOperationException("An exception has been raised that is likely due to a transient failure.",
+            new NpgsqlException("Failed to connect to 127.0.0.1:1", new SocketException((int)SocketError.ConnectionRefused)));
+
+        var described = DatabaseMigrator.Describe(refused);
+
+        Assert.StartsWith("An exception has been raised that is likely due to a transient failure: Failed to connect to 127.0.0.1:1: ", described);
+        Assert.Equal("one: two", DatabaseMigrator.Describe(new InvalidOperationException("one.", new InvalidOperationException("one", new InvalidOperationException("two.")))));
+        Assert.Equal("alone", DatabaseMigrator.Describe(new InvalidOperationException("alone")));
+        // An AggregateException quotes its cause in its own message; the cause is named once.
+        var aggregate = new AggregateException(new NpgsqlException("Failed to connect to 127.0.0.1:1", new SocketException((int)SocketError.ConnectionRefused)));
+        Assert.StartsWith("Failed to connect to 127.0.0.1:1: ", DatabaseMigrator.Describe(aggregate));
+        Assert.DoesNotContain("One or more errors", DatabaseMigrator.Describe(aggregate));
     }
 
     [Fact]
