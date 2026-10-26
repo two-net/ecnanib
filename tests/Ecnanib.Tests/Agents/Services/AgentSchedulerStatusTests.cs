@@ -40,7 +40,9 @@ public class AgentSchedulerStatusTests
         await Wait.UntilAsync(() => status.GetStatus().LastError is not null, "error recorded");
         var starting = status.GetStatus();
         Assert.Equal(SchedulerPhase.Starting, starting.Phase);
-        Assert.Equal("database down", starting.LastError);
+        // The status page shows the failure's kind, never its message (NFR-SEC-03).
+        Assert.Matches("^[A-Za-z]+Exception$", starting.LastError);
+        Assert.DoesNotContain("database down", starting.LastError, StringComparison.Ordinal);
         Assert.Equal(time.GetUtcNow(), starting.LastErrorAt);
         Assert.Null(starting.StartedAt);
 

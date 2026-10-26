@@ -23,7 +23,7 @@ public class ProviderMessagesTests
 
     [Fact]
     public void NoKeyPointsToTheKeysPage() =>
-        Assert.Equal("No valid Grok key is stored, so its catalog could not be synced. Add one on the keys page.", ProviderMessages.NoKey(AiProvider.Grok));
+        Assert.Equal("You have no valid Grok key, so you cannot sync its catalog. Add one on the keys page.", ProviderMessages.NoKey(AiProvider.Grok));
 
     [Fact]
     public void TriggersAndStatusesRenderAsPlainWordsAndPillClasses()

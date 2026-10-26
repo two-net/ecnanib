@@ -125,14 +125,14 @@ namespace Ecnanib.Database.Migrations
                     b.HasKey("Id")
                         .HasName("pk_agents");
 
-                    b.HasIndex("ExchangeKeyId")
-                        .HasDatabaseName("ix_agents_exchange_key_id");
-
                     b.HasIndex("State")
                         .HasDatabaseName("ix_agents_state");
 
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_agents_user_id");
+
+                    b.HasIndex("ExchangeKeyId", "UserId")
+                        .HasDatabaseName("ix_agents_exchange_key_id_user_id");
 
                     b.ToTable("agents", (string)null);
                 });
@@ -674,6 +674,9 @@ namespace Ecnanib.Database.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_exchange_keys");
+
+                    b.HasAlternateKey("Id", "UserId")
+                        .HasName("ak_exchange_keys_id_user_id");
 
                     b.HasIndex("UserId", "Label")
                         .IsUnique()
@@ -1389,18 +1392,19 @@ namespace Ecnanib.Database.Migrations
 
             modelBuilder.Entity("Ecnanib.Database.Entities.Agent", b =>
                 {
-                    b.HasOne("Ecnanib.Database.Entities.ExchangeKey", "ExchangeKey")
-                        .WithMany()
-                        .HasForeignKey("ExchangeKeyId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_agents_exchange_keys_exchange_key_id");
-
                     b.HasOne("Ecnanib.Database.Entities.User", "User")
                         .WithMany("Agents")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_agents_users_user_id");
+
+                    b.HasOne("Ecnanib.Database.Entities.ExchangeKey", "ExchangeKey")
+                        .WithMany()
+                        .HasForeignKey("ExchangeKeyId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_agents_exchange_keys_exchange_key_id_user_id");
 
                     b.OwnsOne("Ecnanib.Database.Entities.RiskLimits", "RiskLimits", b1 =>
                         {

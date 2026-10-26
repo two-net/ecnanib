@@ -56,13 +56,12 @@ internal sealed class AccountService : IAccountService
 
     public async Task<RegistrationResult> RegisterAsync(string? email, string? password, string? clientAddress, CancellationToken cancellationToken)
     {
-        if (_throttle.RetryAfterForAddress(clientAddress) is { } retryAfter)
+        if (_throttle.TryBeginForAddress(clientAddress) is { } retryAfter)
         {
             _logger.LogWarning("Registration throttled from {Address}", clientAddress ?? "unknown");
             return new RegistrationResult(RegistrationStatus.Throttled, RetryAfter: retryAfter);
         }
 
-        _throttle.RecordAttempt(clientAddress);
         if (!EmailAddress.TryNormalize(email, out var address, out var normalized))
             return new RegistrationResult(RegistrationStatus.InvalidEmail);
         if (!PasswordPolicy.IsAcceptable(password, _options.Value.MinPasswordLength))
@@ -107,7 +106,8 @@ internal sealed class AccountService : IAccountService
     {
         var wellFormed = EmailAddress.TryNormalize(email, out _, out var normalized);
         var key = wellFormed ? normalized : (email ?? string.Empty).Trim().ToUpperInvariant();
-        if (_throttle.RetryAfter(key, clientAddress) is { } retryAfter)
+        // Counted before the hash is checked, so a burst of attempts cannot all pass the check before the first failure lands.
+        if (_throttle.TryBegin(key, clientAddress) is { } retryAfter)
         {
             _logger.LogWarning("Sign-in throttled from {Address}", clientAddress ?? "unknown");
             return new AuthenticationResult(AuthenticationStatus.Throttled, RetryAfter: retryAfter);
@@ -128,7 +128,6 @@ internal sealed class AccountService : IAccountService
             {
                 // Same hashing cost as a wrong password, so timing does not reveal whether the account exists (NFR-SEC-01).
                 _hasher.VerifyHashedPassword(DummyUser, _dummyHash.Value, password);
-                _throttle.RecordFailure(key, clientAddress);
                 _logger.LogWarning("Sign-in failed: unknown account");
                 return new AuthenticationResult(AuthenticationStatus.InvalidCredentials);
             }
@@ -136,7 +135,6 @@ internal sealed class AccountService : IAccountService
             var verification = _hasher.VerifyHashedPassword(user, user.PasswordHash, password);
             if (verification == PasswordVerificationResult.Failed)
             {
-                _throttle.RecordFailure(key, clientAddress);
                 _logger.LogWarning("Sign-in failed for user {UserId}: wrong password", user.Id);
                 return new AuthenticationResult(AuthenticationStatus.InvalidCredentials);
             }
@@ -169,7 +167,7 @@ internal sealed class AccountService : IAccountService
         if (user is null)
             return new PasswordChangeResult(PasswordChangeStatus.UserNotFound);
 
-        if (_throttle.RetryAfter(user.NormalizedEmail, clientAddress) is { } retryAfter)
+        if (_throttle.TryBegin(user.NormalizedEmail, clientAddress) is { } retryAfter)
         {
             _logger.LogWarning("Password change for user {UserId} throttled from {Address}", userId, clientAddress ?? "unknown");
             return new PasswordChangeResult(PasswordChangeStatus.Throttled, RetryAfter: retryAfter);
@@ -177,17 +175,29 @@ internal sealed class AccountService : IAccountService
 
         if (_hasher.VerifyHashedPassword(user, user.PasswordHash, currentPassword ?? string.Empty) == PasswordVerificationResult.Failed)
         {
-            _throttle.RecordFailure(user.NormalizedEmail, clientAddress);
             _logger.LogWarning("Password change for user {UserId} rejected: wrong current password", userId);
             return new PasswordChangeResult(PasswordChangeStatus.InvalidCurrentPassword);
         }
 
+        _throttle.RecordSuccess(user.NormalizedEmail, clientAddress);
         user.PasswordHash = _hasher.HashPassword(user, newPassword!);
         user.SecurityStamp = NewStamp();
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _revocations.Revoke(userId);
         _logger.LogInformation("User {UserId} changed their password; other sessions are ended", userId);
         return new PasswordChangeResult(PasswordChangeStatus.Succeeded, user);
+    }
+
+    public async Task SignOutAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var stamp = NewStamp();
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var rows = await db.Users.Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.SecurityStamp, stamp), cancellationToken)
+            .ConfigureAwait(false);
+        _revocations.Revoke(userId);
+        if (rows > 0)
+            _logger.LogInformation("User {UserId} signed out; every session is ended", userId);
     }
 
     public async Task<AccountDeletionResult> DeleteAccountAsync(Guid userId, string? password, string? clientAddress, CancellationToken cancellationToken)
@@ -197,7 +207,7 @@ internal sealed class AccountService : IAccountService
         if (user is null)
             return new AccountDeletionResult(AccountDeletionStatus.UserNotFound);
 
-        if (_throttle.RetryAfter(user.NormalizedEmail, clientAddress) is { } retryAfter)
+        if (_throttle.TryBegin(user.NormalizedEmail, clientAddress) is { } retryAfter)
         {
             _logger.LogWarning("Account deletion for user {UserId} throttled from {Address}", userId, clientAddress ?? "unknown");
             return new AccountDeletionResult(AccountDeletionStatus.Throttled, RetryAfter: retryAfter);
@@ -205,16 +215,20 @@ internal sealed class AccountService : IAccountService
 
         if (_hasher.VerifyHashedPassword(user, user.PasswordHash, password ?? string.Empty) == PasswordVerificationResult.Failed)
         {
-            _throttle.RecordFailure(user.NormalizedEmail, clientAddress);
             _logger.LogWarning("Account deletion for user {UserId} rejected: wrong password", userId);
             return new AccountDeletionResult(AccountDeletionStatus.InvalidPassword);
         }
+
+        _throttle.RecordSuccess(user.NormalizedEmail, clientAddress);
 
         // Database:RetryOnFailureCount enables the retrying strategy; a transaction of our own must run inside it.
         var strategy = db.Database.CreateExecutionStrategy();
         var result = await strategy.ExecuteAsync(async token =>
         {
             await using var transaction = await db.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+
+            // The agents' ids first: their log rows carry the agent id but not always the user id (NFR-SEC-03, FR-ACC-04).
+            var agentIds = await db.Agents.Where(a => a.UserId == userId).Select(a => (Guid?)a.Id).ToListAsync(token).ConfigureAwait(false);
 
             // Delete what FR-ACC-04 allows first. The row locks are held until commit, so an agent started concurrently
             // either committed before the count below (deletion refused) or finds its row gone (its update matches nothing).
@@ -230,7 +244,7 @@ internal sealed class AccountService : IAccountService
             }
 
             // log_entries has no foreign keys (FR-LOG-08); every other user-owned row cascades from the user row.
-            var logs = await db.LogEntries.Where(l => l.UserId == userId).ExecuteDeleteAsync(token).ConfigureAwait(false);
+            var logs = await db.LogEntries.Where(l => l.UserId == userId || (l.AgentId != null && agentIds.Contains(l.AgentId))).ExecuteDeleteAsync(token).ConfigureAwait(false);
             var users = await db.Users.Where(u => u.Id == userId).ExecuteDeleteAsync(token).ConfigureAwait(false);
             await transaction.CommitAsync(token).ConfigureAwait(false);
             return users == 0

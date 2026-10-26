@@ -115,4 +115,20 @@ public class AiCredentialsTests
         Assert.Contains("risk-manager", request.ToString());
         Assert.Equal(15, new AiTokenUsage(10, 5, null, null).TotalTokens);
     }
+
+
+    /// <summary>FR-KEY-04, FR-LOG-05: nothing a serialiser or a formatter can reach carries the key.</summary>
+    [Fact]
+    public void SerialisingCredentialsOrAHandleRevealsNothing()
+    {
+        var credentials = new AiCredentials("sk-test-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd");
+        var handle = new AiKeyHandle("key-1", AiProvider.Claude, credentials);
+
+        foreach (var text in new[] { JsonSerializer.Serialize(credentials), JsonSerializer.Serialize(handle), credentials.ToString(), handle.ToString() })
+        {
+            Assert.DoesNotContain("sk-test-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd", text, StringComparison.Ordinal);
+            // The serialiser escapes the ellipsis; the mask's tail is what remains visible either way.
+            Assert.Contains("abcd", text, StringComparison.Ordinal);
+        }
+    }
 }

@@ -10,7 +10,7 @@ are users and nothing else: no email verification, roles, payments, plans, organ
 |---|---|
 | The signed-in user's id for any data access (NFR-SEC-03) | `HttpContext.User.RequireUserId()` (or `GetUserId()` when anonymous is possible); nothing else identifies a user |
 | Register, authenticate, change password, delete (FR-ACC-01..04) | `IAccountService` → `RegistrationResult`, `AuthenticationResult`, `PasswordChangeResult`, `AccountDeletionResult`; user mistakes are results, exceptions mean the database failed |
-| Start or end the cookie session after a result (FR-ACC-02) | `AccountSession.SignInAsync(httpContext, user)` from a static page handler; the layout's `POST /sign-out` form |
+| Start or end the cookie session after a result (FR-ACC-02) | `AccountSession.SignInAsync(httpContext, user)` from a static page handler; the layout's `POST /sign-out` form, which calls `IAccountService.SignOutAsync` (every session of the user ends) and deletes the cookie |
 | Require a signed-in user on a page | `@attribute [Authorize]`; the middleware challenges with a redirect to `/sign-in?ReturnUrl=…` |
 | Agent limits at creation and start (FR-ACC-07, FR-AGT-15) | `IFairUseLimits.CheckCreateAgentAsync` / `CheckStartAgentAsync` → `FairUseCheck` (allowed, current, max) |
 | Disclaimer text, version and status (FR-ACC-08, FR-UI-05) | `RiskDisclaimer`, `<RiskDisclaimerNotice />`, `IAccountService.GetDisclaimerStatusAsync(...).IsAccepted`, which a live-mode start must require |
@@ -23,22 +23,30 @@ Rules the module enforces:
   128 characters (NFR-SEC-01). Emails are trimmed and matched case-insensitively through `users.normalized_email`.
 - One persistent, sliding cookie session (`ecnanib.session`: HttpOnly, SameSite=Lax, Secure when `Server:PublicUrl` is
   https, lifetime `Accounts:SessionDays`), protected by the Data Protection key ring the database module persists
-  (FR-CFG-05) under the application name `Ecnanib`. Every sign-in mints a fresh ticket; nothing from before authentication is carried forward,
-  and every state-changing POST, sign-out included, carries an antiforgery token (NFR-SEC-01).
+  (FR-CFG-05) under the application name `Ecnanib`. There is no session before authentication (no session state, no
+  pre-auth cookie), and every sign-in mints a fresh ticket from the account alone, so a cookie planted in the browser
+  beforehand is replaced, never adopted (fixation, NFR-SEC-01). Every state-changing POST, sign-out included, carries an
+  antiforgery token; the antiforgery cookie (`ecnanib.antiforgery`: HttpOnly, SameSite=Strict, Secure by the same rule)
+  is configured beside the session cookie, and the frame headers are the pipeline's (configuration module).
 - The ticket carries the user's security stamp. It is compared with the account every `Accounts:SessionRevalidationMinutes`,
-  and at once when the user changed their password or deleted the account (an in-process revocation list; after a
-  restart the interval alone bounds the gap). A password change ends every other session and re-issues the current one
-  (FR-ACC-03); deletion ends them all.
+  and at once when the user signed out, changed their password or deleted the account (an in-process revocation list;
+  after a restart the interval alone bounds the gap). Sign-out rotates the stamp, so it ends every session of the user
+  on every device (the layout's button says so) and a copied cookie stops working; the cookie is deleted even when the
+  database refused the rotation.
+  A password change ends every other session and re-issues the current one (FR-ACC-03); deletion ends them all.
 - Sign-in is throttled in memory (one instance, C-10): `Accounts:SignInAttemptsPerWindow` failures per (email, client
   address) pair and `Accounts:SignInAttemptsPerAddress` failed sign-ins plus registrations per address, each within
-  `Accounts:SignInWindowMinutes`. Keying the credential bucket by address too keeps an attacker from locking a user out of
-  their own kill switch (FR-EXE-10). Wrong current passwords on the settings pages count as well. An unknown email costs
-  the same as a wrong password and gets the same message. Behind a reverse proxy the address is the proxy's until
-  forwarded headers are configured.
+  `Accounts:SignInWindowMinutes`. An attempt is counted before the password is checked and refunded when it succeeds or is
+  refused, so a burst of parallel attempts is cut at the limit and only failures stay counted. Keying the credential
+  bucket by address too keeps an attacker from locking a user out of their own kill switch (FR-EXE-10). Wrong current
+  passwords on the settings pages count as well. An unknown email costs the same as a wrong password and gets the same
+  message. Behind a reverse proxy the address is the real client's once the proxy is trusted (`Server:TrustedProxies`,
+  loopback by default; configuration module).
 - Account deletion needs the password again (the explicit confirmation of FR-ACC-04) and every agent Stopped or Draft.
-  One transaction deletes the allowed agents first, counts what remains, then removes the user's log entries (no foreign
-  key, FR-LOG-08) and the user row, from which keys, agents, decisions, trades and acceptances cascade. An agent started
-  concurrently either blocks the deletion or finds its row gone.
+  One transaction reads the user's agent ids, deletes the allowed agents, counts what remains, then removes the log
+  entries that carry the user id or one of those agent ids (no foreign key, FR-LOG-08; a row written for an agent
+  outside a scope carries no user id, NFR-SEC-03) and the user row, from which keys, agents, decisions, trades and
+  acceptances cascade. An agent started concurrently either blocks the deletion or finds its row gone.
 - Fair-use limits come from the `Agents` section and are identical for every user (FR-ACC-07); Running and Paused agents
   count as running, an agent in Error does not.
 - A new account takes the `Ui` section's theme and animation defaults (`users.theme`, `users.reduced_motion`); the
@@ -63,6 +71,8 @@ Pages (static server rendering, plain forms): `/sign-up`, `/sign-in` (honours a 
 status and acceptance; link to deletion), `/settings/delete-account`, and `POST /sign-out` from the layout. The landing
 page shows the disclaimer (FR-UI-05).
 
-Tests: `dotnet test` runs offline (options, registration, hashing, email and password rules, throttle windows, session
-revalidation and revocation, cookie events, return-URL guard, disclaimer text). Live checks run against PostgreSQL through
-the same git-ignored `tests/.database.json` as the database module: `dotnet test -- --filter-trait "Category=Live"`.
+Tests: `dotnet test` runs offline (options, registration, hashing, email and password rules, throttle windows and the
+parallel burst, session revalidation and revocation, cookie and antiforgery options, cookie events, return-URL guard,
+disclaimer text). Live checks run against PostgreSQL through the same git-ignored `tests/.database.json` as the database
+module: `dotnet test -- --filter-trait "Category=Live"` (sign-out ending every session, deletion removing the agents'
+log rows, and the configuration module's pipeline tests signing up, in and out over HTTP).

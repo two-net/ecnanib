@@ -3,6 +3,8 @@ using Ecnanib.Components.Health;
 using Ecnanib.Database;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Health.Abstractions;
+using System.Net;
+using Ecnanib.Configuration;
 
 namespace Ecnanib.Tests.Health.Pages;
 
@@ -95,5 +97,41 @@ public class HealthMessagesTests
         Assert.Equal("4 since start, last 5 min ago", HealthMessages.Adoptions(status, Now));
         Assert.Equal("never", HealthMessages.LastRound(ReconciliationStatus.Unavailable, Now));
         Assert.Equal("none", HealthMessages.Adoptions(ReconciliationStatus.Unavailable, Now));
+    }
+
+
+    /// <summary>NFR-SEC-03: the status page groups streams by kind, environment and market; the symbols stay with their owners.</summary>
+    [Fact]
+    public void StreamsAreGroupedByKindEnvironmentAndMarketWithoutSymbols()
+    {
+        IReadOnlyList<StreamStatus> streams =
+        [
+            new("candles:production:spot:btcusdt:1h", StreamHealth.Connected, Now.AddSeconds(-30), Now.AddHours(-2), null),
+            new("candles:production:spot:ethusdt:15m", StreamHealth.Polling, Now.AddSeconds(-5), Now.AddHours(-1), "HttpRequestException"),
+            new("candles:testnet:usdfutures:btcusdt:1h", StreamHealth.Down, null, Now, "TimeoutException"),
+        ];
+
+        var groups = HealthMessages.GroupStreams(streams);
+
+        Assert.Equal(["candles:production:spot", "candles:testnet:usdfutures"], groups.Select(g => g.Name));
+        Assert.Equal((2, StreamHealth.Polling, Now.AddSeconds(-5), Now.AddHours(-2), "HttpRequestException"), (groups[0].Count, groups[0].Worst, groups[0].LastMessageAt, groups[0].Since, groups[0].LastError));
+        Assert.Equal((1, StreamHealth.Down, (DateTimeOffset?)null), (groups[1].Count, groups[1].Worst, groups[1].LastMessageAt));
+        Assert.DoesNotContain(groups, g => g.Name.Contains("btcusdt", StringComparison.Ordinal));
+        Assert.Empty(HealthMessages.GroupStreams([]));
+    }
+
+    /// <summary>NFR-SEC-02: the Transport card states the public origin's consequences, this request's transport and the trusted proxies.</summary>
+    [Fact]
+    public void TransportTextsFollowThePublicOrigin()
+    {
+        var https = new ServerOptions { PublicUrl = "https://ecnanib.example.com", TrustedProxies = ["10.0.0.0/8", "203.0.113.9"] };
+        var http = new ServerOptions();
+
+        Assert.Equal("https://ecnanib.example.com: https, so cookies are Secure, HSTS is sent and a plain request is redirected", HealthMessages.PublicOrigin(https));
+        Assert.Equal("http://localhost:5207: plain http, allowed for this machine only", HealthMessages.PublicOrigin(http));
+        Assert.Equal("loopback and 2 configured", HealthMessages.TrustedProxies(https));
+        Assert.Equal("loopback only", HealthMessages.TrustedProxies(http));
+        Assert.Equal("https from 203.0.113.9", HealthMessages.RequestTransport(true, IPAddress.Parse("203.0.113.9")));
+        Assert.Equal("http from an unknown address", HealthMessages.RequestTransport(false, null));
     }
 }

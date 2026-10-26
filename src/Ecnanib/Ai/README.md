@@ -16,8 +16,9 @@ call carries the key of the user who owns the agent (C-05, AI-03); the system ho
 
 Rules the module enforces:
 
-- A key travels only in its own provider's auth header to that provider's configured base URL; a handle for another
-  provider is rejected before any request (FR-KEY-05).
+- A key travels only in its own provider's auth header to that provider's configured base URL, which must be a host
+  under the provider's own domain (`anthropic.com`, `googleapis.com`, `openai.com`, `x.ai`; startup validation refuses
+  anything else, NFR-SEC-04); a handle for another provider is rejected before any request (FR-KEY-05).
 - `AiCredentials.ApiKey` is internal and read only by each client's `ApplyAuth`. Logs and exception messages carry the
   key id and the masked key; provider error text is scrubbed of the key value; `HttpClient` logging is capped at
   Warning in `ecnanib.json` and the auth headers are redacted (FR-KEY-04, FR-LOG-05).

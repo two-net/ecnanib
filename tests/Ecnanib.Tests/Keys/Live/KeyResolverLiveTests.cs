@@ -47,7 +47,8 @@ public class KeyResolverLiveTests : IClassFixture<DatabaseLiveFixture>
         var futures = await resolver.ResolveExchangeKeyAsync(user.Id, keyId, MarketType.UsdFutures, Ct);
         Assert.Equal(KeyResolutionStatus.MarketNotAllowed, futures.Status);
         Assert.Null(futures.Handle);
-        Assert.Contains("spot-only", futures.Reason);
+        // The reason is stored on agents and logged; the label, the user's own text, is never part of it (FR-LOG-05).
+        Assert.Equal("The exchange key is not enabled for UsdFutures.", futures.Reason);
 
         Assert.Equal(KeyResolutionStatus.Missing, (await resolver.ResolveExchangeKeyAsync(other.Id, keyId, MarketType.Spot, Ct)).Status);
         Assert.Equal(KeyResolutionStatus.Missing, (await resolver.ResolveExchangeKeyAsync(user.Id, Guid.NewGuid(), MarketType.Spot, Ct)).Status);

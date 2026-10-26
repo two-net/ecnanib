@@ -37,7 +37,7 @@ internal sealed class KeyResolver : IKeyResolver
             _ => false,
         };
         if (!allowed)
-            return new KeyResolution<ExchangeKeyHandle>(KeyResolutionStatus.MarketNotAllowed, Reason: $"Key '{key.Label}' is not enabled for {market}.");
+            return new KeyResolution<ExchangeKeyHandle>(KeyResolutionStatus.MarketNotAllowed, Reason: $"The exchange key is not enabled for {market}.");
 
         ExchangeCredentials credentials;
         try

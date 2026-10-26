@@ -18,6 +18,9 @@ internal sealed class KeyService : IKeyService
 {
     internal const int MaxLabelLength = 100;
 
+    /// <summary>How often a deletion repeats the clear-then-delete when an agent takes the key in between.</summary>
+    internal const int DeleteAttempts = 3;
+
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
     private readonly IExchangeClientFactory _exchange;
     private readonly ExchangeKeyValidator _exchangeValidator;
@@ -89,6 +92,17 @@ internal sealed class KeyService : IKeyService
         var key = await db.ProviderKeys.AsNoTracking().SingleOrDefaultAsync(k => k.UserId == userId && k.Provider == provider, cancellationToken).ConfigureAwait(false);
         var active = await AgentKeyTransitions.ActiveOnProvider(db, userId, provider).CountAsync(cancellationToken).ConfigureAwait(false);
         return new ProviderKeySlot(provider, key is null ? null : ToView(key), active);
+    }
+
+    public async Task<IReadOnlySet<AiProvider>> ValidProvidersAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var providers = await db.ProviderKeys.AsNoTracking()
+            .Where(k => k.UserId == userId && k.Status == KeyStatus.Valid)
+            .Select(k => k.Provider)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return providers.ToHashSet();
     }
 
     public async Task<KeySaveResult> AddExchangeKeyAsync(Guid userId, ExchangeKeyInput input, CancellationToken cancellationToken)
@@ -197,8 +211,35 @@ internal sealed class KeyService : IKeyService
         }
 
         var stopped = active.Count == 0 ? 0 : await _agents.StopAsync(active, KeyReasons.StoppedExchangeKeyDeleted, cancellationToken).ConfigureAwait(false);
-        // ON DELETE SET NULL clears agents.exchange_key_id on every agent that referenced the key (FR-KEY-06).
-        var deleted = await db.ExchangeKeys.Where(k => k.Id == keyId && k.UserId == userId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
+        // FR-KEY-06: every agent that referenced the key loses the reference, then the key goes, in one transaction; the
+        // database's (exchange_key_id, user_id) constraint keeps agents on their owner's keys and no longer clears the
+        // column itself (NFR-SEC-03). Database:RetryOnFailureCount enables the retrying strategy, so the transaction runs inside it.
+        var strategy = db.Database.CreateExecutionStrategy();
+        int deleted;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                deleted = await strategy.ExecuteAsync(async token =>
+                {
+                    await using var transaction = await db.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+                    await db.Agents.Where(a => a.ExchangeKeyId == keyId && a.UserId == userId)
+                        .ExecuteUpdateAsync(s => s.SetProperty(a => a.ExchangeKeyId, (Guid?)null), token)
+                        .ConfigureAwait(false);
+                    var rows = await db.ExchangeKeys.Where(k => k.Id == keyId && k.UserId == userId).ExecuteDeleteAsync(token).ConfigureAwait(false);
+                    await transaction.CommitAsync(token).ConfigureAwait(false);
+                    return rows;
+                }, cancellationToken).ConfigureAwait(false);
+                break;
+            }
+            catch (Exception ex) when (DbUpdateExceptions.IsForeignKeyViolation(ex) && attempt < DeleteAttempts)
+            {
+                // An agent of the user took the key between the clearing and the delete; the constraint that used to SET NULL
+                // refuses the delete instead (NFR-SEC-03), so the next attempt clears that agent too.
+                _logger.LogDebug("Exchange key {KeyId} was referenced again while being deleted; clearing again (attempt {Attempt})", keyId, attempt);
+            }
+        }
+
         if (deleted == 0)
             return new KeyDeletionResult(KeyDeletionStatus.NotFound);
 

@@ -11,7 +11,7 @@ adds one hosted service and connects to nothing at registration.
 | Need | Use |
 |---|---|
 | Record the models a key validation just listed (FR-SYNC-02) | `IProviderCatalogSync.SyncAsync(provider, models, SyncTrigger.KeyValidation, ct)` → `CatalogSyncResult` (added, updated, listed, missed, deprecated) |
-| Sync a provider now with a stored key (FR-SYNC-02) | `IModelSyncService.SyncNowAsync(provider, userId, ct)` → `ModelSyncOutcome`: `Synced` with the result, `NoValidKey`, or `Failed` with the detail; an exception means the database failed |
+| Sync a provider now with the user's own key (FR-SYNC-02, NFR-SEC-03) | `IModelSyncService.SyncNowAsync(provider, userId, ct)` → `ModelSyncOutcome`: `Synced` with the result, `NoValidKey`, or `Failed` with the detail; an exception means the database failed |
 | Show the last sync per provider (FR-SYNC-06, NFR-OBS-01) | `IModelCatalog.GetSyncStatesAsync(ct)` → one `ProviderSyncView` per provider in enum order (time, result and error, trigger, models listed, available and deprecated counts), `Never` for a provider never synced; the health module's `/status` page reads the same |
 | Offer the catalog for choosing council models (FR-AI-03, FR-SYNC-05) | `IModelCatalog.ListAsync(ct)` → `CatalogModel` per provider, available first, the most recently added first |
 
@@ -28,8 +28,9 @@ Rules the module enforces:
   user's action, not the cadence FR-SYNC-03 counts, so validating a key never deprecates anything. A deprecated model
   stays in the catalog, marked in the council picker; the agents pages warn about agents still using one and prompt
   for a replacement (agents module).
-- Key choice for a fetch: the provider's stored keys with status Valid, the requester's own first for a manual sync,
-  then the most recently validated; at most three are tried per sync. A key the provider rejects is skipped with its id
+- Key choice for a fetch: a manual sync uses the requester's own Valid key and nobody else's (NFR-SEC-03: a user's
+  action never spends another user's key); the scheduled sync, which has no requester, takes the provider's Valid keys
+  most recently validated first and tries at most three. A key the provider rejects is skipped with its id
   logged and is never marked: FR-KEY-07 belongs to the keys module's re-validation. A malformed stored value is
   skipped the same way. Any other provider failure, every tried key rejected, or an empty list ends the sync as
   `Failed`: the reason is recorded as the provider's last result and the catalog is left untouched, so no miss is
@@ -53,7 +54,8 @@ Configuration (the `Providers` section is the AI module's and is validated there
 ```
 
 Pages (static server rendering, plain forms): `/providers` (per provider the last sync time, result with the error,
-trigger, models listed and deprecated count, and a "Sync now" button; the experience module's leaderboard with its
+trigger, models listed and deprecated count, and a "Sync now" button where the user has a valid key of their own, a
+link to add one otherwise; the experience module's leaderboard with its
 filter, each provider linking to `/providers/{provider}` (FR-EXP-07); below it the catalog per provider, collapsed,
 with each model's status and first and last seen). The keys page links to it.
 

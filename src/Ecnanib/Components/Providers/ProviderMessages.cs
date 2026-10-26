@@ -11,7 +11,9 @@ internal static class ProviderMessages
         "Each provider's model catalog is synced from the provider's own model list with a stored key: when a key is validated, on the configured schedule, and on demand here. The catalog is shared by all users. A model the provider stops listing is marked deprecated, and agents still using one are warned on their page.";
 
     public const string SyncHint =
-        "Sync now uses your valid key for the provider, or any valid stored key when you have none. Without one the catalog cannot be refreshed.";
+        "Sync now uses your own valid key for the provider and nobody else's; the scheduled sync uses any valid stored key. Without a key of your own, add one on the keys page to sync.";
+
+    public const string AddYourKey = "Add your key to sync";
 
     public const string ChooseProvider = "Choose a provider to sync.";
 
@@ -20,7 +22,7 @@ internal static class ProviderMessages
         + (deprecated > 0 ? $", {Plural(deprecated, "model", "models")} newly deprecated." : ".");
 
     public static string NoKey(AiProvider provider) =>
-        $"No valid {ProviderNames.Display(provider)} key is stored, so its catalog could not be synced. Add one on the keys page.";
+        $"You have no valid {ProviderNames.Display(provider)} key, so you cannot sync its catalog. Add one on the keys page.";
 
     public static string Failed(AiProvider provider, string? error) =>
         $"The {ProviderNames.Display(provider)} sync failed{Detail(error)} The catalog is unchanged; try again.";

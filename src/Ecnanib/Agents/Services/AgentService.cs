@@ -923,9 +923,13 @@ internal sealed class AgentService : IAgentService
 
     public async Task<AgentActionResult> StopAsync(Guid userId, Guid agentId, bool closePositions, CancellationToken cancellationToken)
     {
+        // NFR-SEC-03: nothing touches an agent before its owner is known; the in-flight evaluation is cancelled for the user's own only.
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        if (!await db.Agents.AnyAsync(a => a.Id == agentId && a.UserId == userId, cancellationToken).ConfigureAwait(false))
+            return new AgentActionResult(AgentActionStatus.NotFound);
+
         _runtime.CancelEvaluation(agentId);
         using var agentLock = await _runtime.LockAsync(agentId, cancellationToken).ConfigureAwait(false);
-        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var agent = await db.Agents.AsNoTracking().SingleOrDefaultAsync(a => a.Id == agentId && a.UserId == userId, cancellationToken).ConfigureAwait(false);
         if (agent is null)
             return new AgentActionResult(AgentActionStatus.NotFound);

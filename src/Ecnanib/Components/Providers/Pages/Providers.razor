@@ -6,6 +6,7 @@
 @using Ecnanib.ModelSync.Abstractions
 @inject IModelCatalog ModelCatalog
 @inject IModelSyncService ModelSync
+@inject IKeyService Keys
 @inject IExperienceReader Experience
 @inject NavigationManager Navigation
 
@@ -48,7 +49,16 @@
                             <td data-label="Trigger">@ProviderMessages.Trigger(state.Trigger)</td>
                             <td data-label="Models">@state.ModelCount</td>
                             <td data-label="Deprecated">@state.Deprecated</td>
-                            <td><button type="submit" name="provider" value="@ProviderNames.Route(state.Provider)">Sync now</button></td>
+                            <td>
+                                @if (_ownValidKeys.Contains(state.Provider))
+                                {
+                                    <button type="submit" name="provider" value="@ProviderNames.Route(state.Provider)">Sync now</button>
+                                }
+                                else
+                                {
+                                    <a href="/keys/providers/@ProviderNames.Route(state.Provider)">@ProviderMessages.AddYourKey</a>
+                                }
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -158,6 +168,7 @@
 @code {
     private IReadOnlyList<ProviderSyncView> _states = [];
     private IReadOnlyList<CatalogModel> _catalog = [];
+    private IReadOnlySet<AiProvider> _ownValidKeys = new HashSet<AiProvider>();
     private LeaderboardView? _leaderboard;
     private ExperienceFilter _filter = ExperienceFilter.None;
     private string? _notice;
@@ -199,6 +210,8 @@
     {
         _states = await ModelCatalog.GetSyncStatesAsync(HttpContext.RequestAborted);
         _catalog = await ModelCatalog.ListAsync(HttpContext.RequestAborted);
+        // NFR-SEC-03: a manual sync spends the user's own key only, so the button exists only where they have a valid one.
+        _ownValidKeys = await Keys.ValidProvidersAsync(UserId, HttpContext.RequestAborted);
         _filter = ExperienceFilters.Parse(Role, Timeframe, Market);
         _leaderboard = await Experience.GetLeaderboardAsync(UserId, _filter, HttpContext.RequestAborted);
         (_notice, _noticeIsError) = (Status, ProviderNames.Parse(Provider)) switch

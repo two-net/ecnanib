@@ -33,12 +33,12 @@ public class AiOptionsValidationTests
         {
             ["Providers:CallTimeoutSeconds"] = "30",
             ["Providers:MaxOutputTokens"] = "1024",
-            ["Providers:Grok:BaseUrl"] = "https://grok.example/v1",
+            ["Providers:Grok:BaseUrl"] = "https://eu-west.api.x.ai/v1",
         });
 
         Assert.Equal(TimeSpan.FromSeconds(30), options.CallTimeout);
         Assert.Equal(1024, options.MaxOutputTokens);
-        Assert.Equal("https://grok.example/v1", options.Grok.BaseUrl);
+        Assert.Equal("https://eu-west.api.x.ai/v1", options.Grok.BaseUrl);
         Assert.Equal("https://api.openai.com/v1", options.Gpt.BaseUrl);
     }
 
@@ -48,6 +48,10 @@ public class AiOptionsValidationTests
     [InlineData("Providers:DeprecationMissThreshold", "0", "DeprecationMissThreshold")]
     [InlineData("Providers:Claude:BaseUrl", "http://api.anthropic.com/v1", "Providers:Claude:BaseUrl must use the https scheme")]
     [InlineData("Providers:Gpt:BaseUrl", "not a url", "Providers:Gpt:BaseUrl must be an absolute URL")]
+    [InlineData("Providers:Grok:BaseUrl", "https://grok.example/v1", "Providers:Grok:BaseUrl must be a host under x.ai: outbound traffic is limited to the four providers (NFR-SEC-04)")]
+    [InlineData("Providers:Gpt:BaseUrl", "https://api.anthropic.com/v1", "Providers:Gpt:BaseUrl must be a host under openai.com")]
+    [InlineData("Providers:Claude:BaseUrl", "https://evilanthropic.com/v1", "Providers:Claude:BaseUrl must be a host under anthropic.com")]
+    [InlineData("Providers:Gemini:BaseUrl", "https://googleapis.com.example/v1beta", "Providers:Gemini:BaseUrl must be a host under googleapis.com")]
     [InlineData("Providers:Gemini:BaseUrl", "", "Providers:Gemini:BaseUrl is required")]
     [InlineData("Providers:Claude:ApiVersion", "", "Providers:Claude:ApiVersion is required")]
     [InlineData("Providers:Retry:MaxAttempts", "0", "Providers:Retry:MaxAttempts must be > 0")]

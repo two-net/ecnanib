@@ -31,6 +31,10 @@ scheduler, pipeline and paper simulator never leave this folder. `AddAgents` req
 
 Rules the module enforces:
 
+- Every read and every mutation is scoped to the user (NFR-SEC-03): another user's agent id is NotFound and nothing
+  happens to it. Stop reads the agent as the user's own before it cancels the evaluation in flight or takes the gate.
+  The scheduler's and the reconciliation's last error are kinds (`ErrorSummary.Describe`), never messages, because the
+  status page shows them to every signed-in user.
 - Creation needs a name, market, symbol, one of the four timeframes, a mode and, for live mode, one of the user's
   Binance keys that allows the market; futures agents need leverage within `RiskCaps:MaxLeverage` and default to
   isolated margin (FR-AGT-01/02/13). The symbol is checked against the listing (`ISymbolCatalog`: the market-data
@@ -177,7 +181,7 @@ a Paused one.
 
 Tests: `dotnet test` runs offline (options, registration and placeholder replacement, the Appendix E table and edit
 rules, parameter parsing, input rules including windows, the window schedule, change sets, events, the scheduler's
-staleness rules and plumbing, the default loader's alignment, the paper book's fill rules with units and partials). Live checks (the scheduler end to
+staleness rules and plumbing, the default loader's alignment, the paper book's fill rules with units and partials). Live checks (every mutation on another user's agent NotFound with no evaluation cancelled; the scheduler end to
 end; the deadline cutting a council and refusing a late entry while a late close still executes, the concurrency cap
 with shorter timeframes first and a hundred running agents, NFR-PERF-01/02; an agent entering Error cancelling its pending
 entries and keeping its protection, NFR-REL-03) run against PostgreSQL through the same git-ignored

@@ -35,11 +35,12 @@ public class MigrationLiveTests : IClassFixture<DatabaseLiveFixture>
         await migrator.MigrateAsync(Ct);
 
         Assert.Contains(logs.Entries, e => e.Message.StartsWith("Connected to PostgreSQL"));
-        Assert.Contains(logs.Entries, e => e.Message.StartsWith("Applying 4 database migration"));
+        Assert.Contains(logs.Entries, e => e.Message.StartsWith("Applying 5 database migration"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("InitialSchema"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("AddDecisionPartialFraction"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("ExtendExperienceMetrics"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("AddExecutionColumns"));
+        Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("AddExchangeKeyOwnerConstraint"));
 
         await using var db = _fixture.CreateContext();
         Assert.Empty(await db.Database.GetPendingMigrationsAsync(Ct));

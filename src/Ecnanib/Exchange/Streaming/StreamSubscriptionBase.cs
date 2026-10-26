@@ -183,7 +183,7 @@ internal abstract class StreamSubscriptionBase<T> : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    Volatile.Write(ref _lastError, ex.Message);
+                    Volatile.Write(ref _lastError, ErrorSummary.Describe(ex));
                     nextSubscribeAt = now + backoff;
                     backoff = Grow(backoff);
                     SetConnected(false, now);
@@ -245,7 +245,7 @@ internal abstract class StreamSubscriptionBase<T> : IAsyncDisposable
                 catch (Exception ex)
                 {
                     _lastPollFailed = true;
-                    Volatile.Write(ref _lastError, ex.Message);
+                    Volatile.Write(ref _lastError, ErrorSummary.Describe(ex));
                     Logger.LogWarning(ex, "Stream {Name} poll failed", Name);
                 }
 

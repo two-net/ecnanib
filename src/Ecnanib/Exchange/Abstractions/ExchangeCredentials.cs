@@ -1,8 +1,8 @@
 namespace Ecnanib.Exchange.Abstractions;
 
 /// <summary>
-/// A user-supplied Binance API key pair (BYOK, C-05). The secret is only readable inside this assembly, is never
-/// serialised and never appears in <see cref="ToString"/> (FR-KEY-04, FR-LOG-05).
+/// A user-supplied Binance API key pair (BYOK, C-05). The key and the secret are readable inside this assembly only,
+/// are never serialised (no public property carries them) and never appear in <see cref="ToString"/> (FR-KEY-04, FR-LOG-05).
 /// </summary>
 public sealed class ExchangeCredentials
 {
@@ -18,7 +18,7 @@ public sealed class ExchangeCredentials
         MaskedApiKey = Mask(ApiKey);
     }
 
-    public string ApiKey { get; }
+    internal string ApiKey { get; }
 
     internal string ApiSecret { get; }
 
@@ -26,6 +26,17 @@ public sealed class ExchangeCredentials
     public string MaskedApiKey { get; }
 
     public override string ToString() => $"ExchangeCredentials({MaskedApiKey})";
+
+    /// <summary>
+    /// Replaces the secret and the key in exchange text with the mask, so that a reason built from an exchange message
+    /// can be stored or shown (FR-KEY-04, FR-LOG-05). Binance echoes neither today; this is the guard for the day it does.
+    /// </summary>
+    internal string Scrub(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+        return text.Replace(ApiSecret, "…", StringComparison.Ordinal).Replace(ApiKey, MaskedApiKey, StringComparison.Ordinal);
+    }
 
     public static string Mask(string value)
     {

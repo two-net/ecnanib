@@ -27,6 +27,18 @@ public sealed class ServerOptionsValidator : IValidateOptions<ServerOptions>
         {
             failures.Add($"{prefix}:PublicUrl must be an absolute http or https URL without path, query or fragment, e.g. https://ecnanib.example.com.");
         }
+        else if (uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback)
+        {
+            // NFR-SEC-02: "production" is any origin other users can reach. Only this machine's own loopback stays http.
+            failures.Add($"{prefix}:PublicUrl must be https unless its host is localhost or a loopback address: the application is served over HTTPS in production (NFR-SEC-02). Terminate TLS at a reverse proxy and set its https origin here.");
+        }
+
+        var proxies = options.TrustedProxies ?? [];
+        for (var i = 0; i < proxies.Length; i++)
+        {
+            if (!ServerOptions.TryParseTrustedProxy(proxies[i], out _, out _))
+                failures.Add($"{prefix}:TrustedProxies[{i}] must be an IP address or a network in CIDR notation whose address is the network's first, such as 10.0.0.0/8.");
+        }
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }

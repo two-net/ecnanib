@@ -1,23 +1,9 @@
 using System.Net.Sockets;
 using System.Reflection;
-using Ecnanib.Accounts;
-using Ecnanib.Agents;
-using Ecnanib.Ai;
-using Ecnanib.Components;
 using Ecnanib.Configuration;
-using Ecnanib.Council;
 using Ecnanib.Database;
 using Ecnanib.Database.Migrations;
-using Ecnanib.Exchange;
-using Ecnanib.Execution;
-using Ecnanib.Experience;
-using Ecnanib.Health;
-using Ecnanib.Keys;
 using Ecnanib.Logging;
-using Ecnanib.MarketData;
-using Ecnanib.ModelSync;
-using Ecnanib.Strategies;
-using Ecnanib.Ui;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Options;
 
@@ -40,34 +26,14 @@ builder.Services.AddRazorComponents()
 // First: both log sinks (C-08) and, as the first hosted service, the database log writer, which therefore stops last
 // and still writes the other services' shutdown logs (FR-LOG-04).
 builder.Services.AddLogSinks(builder.Configuration);
-builder.Services.AddServer(builder.Configuration);
-// Before AddAccounts: visitors and new accounts take the Ui section's theme and animation defaults (Appendix D, FR-UI-02).
-builder.Services.AddUi(builder.Configuration);
-builder.Services.AddExchange(builder.Configuration);
-builder.Services.AddAiProviders(builder.Configuration);
-builder.Services.AddDatabase(builder.Configuration);
-builder.Services.AddAccounts(builder.Configuration);
-builder.Services.AddModelSync(builder.Configuration);
-// Before AddAgents: the Appendix A catalog and engine the agents module requires (FR-STR).
-builder.Services.AddStrategies();
-// Before AddCouncil and AddAgents: the experience summaries, the shadow-outcome tracker and the council suggestions
-// replace the council's and the agents module's defaults (FR-EXP).
-builder.Services.AddExperience(builder.Configuration);
-// Before AddAgents: the Appendix B council replaces the agents module's fail-safe default (FR-AI).
-builder.Services.AddCouncil(builder.Configuration);
-// Before AddAgents: the symbol catalog and the backfilled, streamed market data replace the agents module's defaults (FR-DATA).
-builder.Services.AddMarketData(builder.Configuration);
-// Before AddAgents: sizing, the live venue, fills and reconciliation replace the agents module's fail-safe execution (FR-EXE).
-builder.Services.AddExecution(builder.Configuration);
-// Before AddKeys: the runtime's own key handling (stop with orders cancelled, Error halts evaluation) replaces the default.
-builder.Services.AddAgents(builder.Configuration);
-builder.Services.AddKeys(builder.Configuration);
-// After AddAgents and AddModelSync: the health report reads the scheduler, the exchange streams, the model sync states and the database (NFR-OBS-01).
-builder.Services.AddHealth();
-// The log viewer reads log_entries scoped to the user's own agents (FR-LOG-07); AddLogSinks above fills the table.
-builder.Services.AddLogReader();
+builder.Services.AddEcnanibModules(builder.Configuration);
 
-await using var app = builder.Build();
+// Kestrel reads the Server section while the host is built, before any logger exists: an invalid Server section (a
+// plain-http public URL that is not loopback, NFR-SEC-02; an unparseable trusted proxy) ends here, on stderr, with exit
+// code 1 like any other invalid setting (FR-CFG-06). Every other section is validated inside MigrateDatabaseAsync below.
+await using var app = TryBuild(builder);
+if (app is null)
+    return 1;
 
 try
 {
@@ -87,20 +53,10 @@ catch (Exception ex) when (ex is OptionsValidationException or DatabaseMigration
     return 1;
 }
 
-// There is no Development environment: the error page and status-code pages are the same everywhere.
-app.UseExceptionHandler("/Error", createScopeForErrors: true);
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-
-// NFR-SEC-01: antiforgery tokens are bound to the signed-in identity, so authentication runs first. The explicit calls
-// fix the order instead of leaving it to WebApplication's automatic insertion.
-app.UseAuthentication();
-app.UseAuthorization();
-app.UseAntiforgery();
-
-app.MapStaticAssets();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
-app.MapAccountEndpoints();
+// NFR-SEC-01/02: forwarded headers from the trusted proxy, the error pages, https redirection and HSTS behind an https
+// public URL, the security headers, authentication before antiforgery, and the endpoints. One method, so the tests run
+// the same pipeline in memory; the explicit order replaces WebApplication's automatic insertion.
+app.UseEcnanibPipeline();
 
 // Resolved before RunAsync, which disposes the host on its way out, including when the server fails to start.
 var endPoint = app.Services.GetRequiredService<IOptions<ServerOptions>>().Value.ToEndPoint();
@@ -121,3 +77,17 @@ catch (Exception ex) when (ex is IOException { InnerException: AddressInUseExcep
 }
 
 return 0;
+
+static WebApplication? TryBuild(WebApplicationBuilder builder)
+{
+    try
+    {
+        return builder.Build();
+    }
+    catch (OptionsValidationException ex)
+    {
+        foreach (var failure in ex.Failures)
+            Console.Error.WriteLine(failure);
+        return null;
+    }
+}

@@ -10,6 +10,7 @@ using Ecnanib.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Ecnanib.Tests.ModelSync.Live;
 
 namespace Ecnanib.Tests.Keys.Live;
 
@@ -454,6 +455,26 @@ public class KeyServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         AssertNoSecrets(logs);
         Assert.DoesNotContain(ProviderKey, logs.AllText);
         await KeysLiveSeed.DeleteUsersAsync(_fixture, Ct, user.Id);
+    }
+
+    /// <summary>NFR-SEC-03, FR-KEY-08: the providers page asks which providers the user may sync; the answer is the user's own Valid keys, in one query.</summary>
+    [Fact]
+    public async Task ValidProvidersListsTheUsersValidKeysOnly()
+    {
+        await StartAsync();
+        var user = await KeysLiveSeed.NewUserAsync(_fixture, "valid-providers@example.com", Ct);
+        var other = await KeysLiveSeed.NewUserAsync(_fixture, "valid-providers-other@example.com", Ct);
+        await ModelSyncLiveSeed.NewKeyAsync(_fixture, user.Id, AiProvider.Claude, ProviderKey + "1");
+        await ModelSyncLiveSeed.NewKeyAsync(_fixture, user.Id, AiProvider.Gpt, ProviderKey + "2", KeyStatus.Invalid);
+        await ModelSyncLiveSeed.NewKeyAsync(_fixture, other.Id, AiProvider.Grok, ProviderKey + "3");
+        var (provider, _, _) = Build();
+        await using var _ = provider;
+        var keys = provider.GetRequiredService<IKeyService>();
+
+        Assert.Equal([AiProvider.Claude], await keys.ValidProvidersAsync(user.Id, Ct));
+        Assert.Equal([AiProvider.Grok], await keys.ValidProvidersAsync(other.Id, Ct));
+        Assert.Empty(await keys.ValidProvidersAsync(Guid.NewGuid(), Ct));
+        await KeysLiveSeed.DeleteUsersAsync(_fixture, Ct, user.Id, other.Id);
     }
 
     private async Task StartAsync()

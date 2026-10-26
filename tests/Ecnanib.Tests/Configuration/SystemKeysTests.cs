@@ -1,4 +1,3 @@
-using System.Xml.Linq;
 using Ecnanib.Configuration;
 using Ecnanib.Tests.Support;
 using Microsoft.AspNetCore.DataProtection;
@@ -48,15 +47,6 @@ public class SystemKeysTests
         // The same mechanism PersistKeysToDbContext uses, against memory instead of the database.
         services.Configure<KeyManagementOptions>(o => o.XmlRepository = repository);
         return new FakeHost(services.BuildServiceProvider());
-    }
-
-    private sealed class InMemoryXmlRepository : IXmlRepository
-    {
-        public List<XElement> Elements { get; } = [];
-
-        public IReadOnlyCollection<XElement> GetAllElements() => Elements.Select(e => new XElement(e)).ToList();
-
-        public void StoreElement(XElement element, string friendlyName) => Elements.Add(new XElement(element));
     }
 
     private sealed class FakeHost(ServiceProvider services) : IHost
