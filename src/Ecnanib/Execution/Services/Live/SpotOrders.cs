@@ -11,8 +11,9 @@ namespace Ecnanib.Execution.Services.Live;
 /// Binance Spot mechanics (FR-EXE-01, FR-AGT-12): limit or market buys; per protection unit one OCO (a limit-maker
 /// take-profit and a stop-loss-limit leg whose limit sits <c>Execution:SpotStopLimitOffsetPercent</c> under the stop)
 /// or a plain stop-loss-limit for a unit without target; when the symbol's algo-order headroom cannot take one order
-/// per unit, one OCO at the final target covers the whole size. Spot locks the quantity of an open sell, so an exit
-/// cancels the protection it needs first (the caller re-protects what stays).
+/// per unit, one OCO at the final target covers the whole size. Protection places only the units no open row covers
+/// yet (NFR-REL-02). Spot locks the quantity of an open sell, so an exit or a replacement cancels the protection it
+/// needs first, tolerantly, and the caller re-protects what was freed (NFR-REL-03).
 /// </summary>
 internal sealed class SpotOrders
 {
@@ -34,14 +35,33 @@ internal sealed class SpotOrders
             new OrderRequest(account.Agent.Symbol, row.Side, row.Type, row.ClientOrderId, row.Quantity, row.Price,
                 TimeInForce: row.Type == OrderType.Limit ? TimeInForce.GoodTillCanceled : null), ct), cancellationToken);
 
-    /// <summary>Places the protection of a long position (FR-EXE-01); returns the rows placed. Units beyond the headroom collapse into one at the final target.</summary>
+    /// <summary>
+    /// Places the protection of a long position (FR-EXE-01) for the units no open row covers yet (NFR-REL-02); returns the
+    /// rows placed, or the standing ones when nothing was missing. Units beyond the headroom collapse into one at the final target.
+    /// </summary>
     public async Task<IReadOnlyList<Order>> ProtectAsync(LiveAccount account, Trade trade, IReadOnlyList<ProtectionUnit> units, decimal stop, CancellationToken cancellationToken)
     {
         var agent = account.Agent;
         var filters = account.Symbol.Filters;
         var stopPrice = filters.RoundPriceDownToTick(stop);
         var stopLimit = filters.RoundPriceDownToTick(stopPrice * (1m - _options.Value.SpotStopLimitOffsetRate));
-        var plan = await FitHeadroomAsync(account, trade, units, cancellationToken).ConfigureAwait(false);
+        var open = await _ledger.OpenRowsAsync(trade.Id, cancellationToken).ConfigureAwait(false);
+        var standing = open.Where(OrderRows.IsProtective).ToList();
+        // Asked for the whole position while it is already protected at this stop (a collapsed OCO, or every unit's own): nothing to
+        // place. A partial set (an uncovered or freed unit) is matched unit by unit instead.
+        var total = filters.RoundQuantityDownToStep(units.Sum(u => u.Quantity));
+        var wholePosition = total >= filters.RoundQuantityDownToStep(TradeMath.OpenSize(trade));
+        var coveredAtStop = standing.Where(o => o.Purpose == OrderPurpose.StopLoss && o.StopPrice == stopPrice).Sum(o => o.Quantity);
+        var missing = wholePosition && coveredAtStop >= total ? [] : OrderRows.Missing(units, open, stopPrice, filters, isLong: true, futures: false);
+        if (missing.Count == 0)
+        {
+            _logger.LogInformation("Trade {TradeId} of agent {AgentId}: its protection at {Stop} already stands; nothing is placed again", trade.Id, agent.Id, stopPrice);
+            return standing;
+        }
+
+        if (missing.Count < units.Count)
+            _logger.LogInformation("Trade {TradeId} of agent {AgentId}: {Covered} unit(s) already protected at {Stop}; only the missing ones are placed", trade.Id, agent.Id, units.Count - missing.Count, stopPrice);
+        var plan = await FitHeadroomAsync(account, trade, missing, cancellationToken).ConfigureAwait(false);
         var tpSequence = await _ledger.CountRowsAsync(trade.Id, OrderPurpose.TakeProfit, cancellationToken).ConfigureAwait(false);
         var slSequence = await _ledger.CountRowsAsync(trade.Id, OrderPurpose.StopLoss, cancellationToken).ConfigureAwait(false);
         var placed = new List<Order>();
@@ -102,6 +122,35 @@ internal sealed class SpotOrders
     public Task<SentOrder> PlaceExitAsync(LiveAccount account, Order row, CancellationToken cancellationToken) =>
         _rows.SendAsync(row, account, ct => account.Spot!.PlaceOrderAsync(
             new OrderRequest(account.Agent.Symbol, OrderSide.Sell, OrderType.Market, row.ClientOrderId, row.Quantity), ct), cancellationToken);
+
+    /// <summary>
+    /// Cancels protective groups (an OCO list or a lone stop-loss row) and reports the ones the exchange kept: a failure
+    /// other than UnknownOrder is logged and the group's rows stay open, so the caller protects what was freed and never
+    /// leaves a unit uncovered (NFR-REL-03).
+    /// </summary>
+    public async Task<(IReadOnlyList<Order> Cancelled, IReadOnlyList<Order> Kept)> CancelProtectionAsync(LiveAccount account, IReadOnlyList<Order> rows, IReadOnlyList<Order> openRows, CancellationToken cancellationToken)
+    {
+        var cancelled = new List<Order>();
+        var kept = new List<Order>();
+        foreach (var row in rows.DistinctBy(o => o.ListClientOrderId ?? o.ClientOrderId))
+        {
+            try
+            {
+                cancelled.AddRange(await CancelAsync(account, row, openRows, cancellationToken).ConfigureAwait(false));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Protective order {ClientOrderId} of agent {AgentId} could not be cancelled; it keeps protecting its unit at the previous stop (NFR-REL-03)", row.ClientOrderId, account.Agent.Id);
+                kept.AddRange(row.ListClientOrderId is { } list ? openRows.Where(o => o.ListClientOrderId == list) : [row]);
+            }
+        }
+
+        return (cancelled, kept);
+    }
 
     /// <summary>Cancels a protective row (and its OCO sibling) or an entry; an order the exchange no longer knows counts as gone. Returns the rows marked cancelled.</summary>
     public async Task<IReadOnlyList<Order>> CancelAsync(LiveAccount account, Order row, IReadOnlyList<Order> openRows, CancellationToken cancellationToken)

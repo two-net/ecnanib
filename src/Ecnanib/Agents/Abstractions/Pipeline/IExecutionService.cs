@@ -8,10 +8,11 @@ namespace Ecnanib.Agents.Abstractions;
 /// <summary>
 /// Everything the execution stages need (FR-AGT-10, FR-AI-11, FR-EXE-03..06, FR-EXE-08): the agent as evaluated, the
 /// evaluation row, the pinned strategy with its resolved parameters, the engine output and the market snapshot of this
-/// candle, the open trades and orders as last loaded, the risk caps, the venue for the agent's mode, whether an
-/// evaluation of this agent was cut short by a restart (so the exchange state must be checked before any new action,
-/// NFR-REL-01), the resolved key of a live agent (null for paper), whether new entries are allowed (FR-AGT-05) and the
-/// evaluation deadline (NFR-PERF-01).
+/// candle, the open trades and orders as last loaded, the risk caps, the venue for the agent's mode, the resolved key
+/// of a live agent (null for paper), whether new entries are allowed (FR-AGT-05; also false once the management step
+/// blocked them, NFR-REL-03) and the evaluation deadline (NFR-PERF-01). A live agent's exchange state is verified by
+/// the execution module itself before its first action in the process (NFR-REL-01), so nothing here says whether a
+/// restart cut an evaluation short.
 /// </summary>
 public sealed record ExecutionRequest(
     Agent Agent,
@@ -24,7 +25,6 @@ public sealed record ExecutionRequest(
     IReadOnlyList<Order> OpenOrders,
     RiskCapsOptions Caps,
     IOrderVenue Venue,
-    bool InterruptedPreviously,
     ExchangeKeyHandle? ExchangeKey,
     bool EntriesAllowed,
     DateTimeOffset DeadlineAt)
@@ -38,9 +38,11 @@ public sealed record ExecutionRequest(
 /// <see cref="Fault"/> names a cause the agent cannot trade with (hedge mode on the account, FR-EXE-11): the pipeline
 /// moves the agent to Error with it once the evaluation is recorded. <see cref="EntryPlaced"/> is true when the
 /// management step placed an entry itself (the market fallback of FR-EXE-03), so the council is not asked to propose
-/// the same setup again in this evaluation.
+/// the same setup again in this evaluation. <see cref="EntriesBlockedReason"/> says why no new entry may open this
+/// candle (the exchange state could not be verified after a restart, a management step failed or ran out of its
+/// budget: NFR-REL-01, NFR-REL-03); null when entries are allowed.
 /// </summary>
-public sealed record ExecutionResult(IReadOnlyList<Order> Orders, string? Note, string? Fault = null, bool EntryPlaced = false)
+public sealed record ExecutionResult(IReadOnlyList<Order> Orders, string? Note, string? Fault = null, bool EntryPlaced = false, string? EntriesBlockedReason = null)
 {
     public static ExecutionResult Nothing(string? note = null) => new([], note);
 }
@@ -52,11 +54,12 @@ public sealed record ExecutionResult(IReadOnlyList<Order> Orders, string? Note, 
 public interface IExecutionService
 {
     /// <summary>
-    /// The housekeeping of every evaluation with open orders or trades, run before the council (FR-EXE-06): reconcile
-    /// with the exchange after a restart (FR-EXE-08), expire entries past their timeout with the optional market
-    /// fallback (FR-EXE-03), and apply the strategy's breakeven and trailing rules at this candle close. Reads run on
-    /// <paramref name="cancellable"/> within the service's own budget; an order already decided is placed on
-    /// <paramref name="stopping"/>, because a cancelled token does not recall it.
+    /// The housekeeping of every evaluation with open orders or trades, run before the council (FR-EXE-06): verify a
+    /// live agent's exchange state once per process before anything else (NFR-REL-01, FR-EXE-08), expire entries past
+    /// their timeout with the optional market fallback (FR-EXE-03), and apply the strategy's breakeven and trailing
+    /// rules at this candle close. A failed verification skips everything and blocks new entries; a failed step blocks
+    /// new entries too (NFR-REL-03). Reads run on <paramref name="cancellable"/> within the service's own budget; an
+    /// order already decided is placed on <paramref name="stopping"/>, because a cancelled token does not recall it.
     /// </summary>
     Task<ExecutionResult> ManageAsync(ExecutionRequest request, CancellationToken cancellable, CancellationToken stopping);
 

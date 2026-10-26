@@ -58,6 +58,16 @@ public interface IOrderVenue
     /// <summary>Cancels every open order of the agent; returns how many.</summary>
     Task<int> CancelOpenOrdersAsync(Agent agent, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Cancels the agent's open entry orders only; returns how many. The kill switch cancels what could open a position
+    /// first, then closes the positions while every protective order still stands, then cancels the protection
+    /// (FR-AGT-06, FR-EXE-10, NFR-REL-03).
+    /// </summary>
+    Task<int> CancelEntryOrdersAsync(Agent agent, CancellationToken cancellationToken);
+
+    /// <summary>Cancels the agent's open stop-loss and take-profit orders only; returns how many. The kill switch's last step, once the close of every position is placed.</summary>
+    Task<int> CancelProtectiveOrdersAsync(Agent agent, CancellationToken cancellationToken);
+
     /// <summary>Places a market close for every open position of the agent; returns how many.</summary>
     Task<int> ClosePositionsAtMarketAsync(Agent agent, CancellationToken cancellationToken);
 

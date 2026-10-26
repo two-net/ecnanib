@@ -22,6 +22,8 @@ public sealed class ExecutionOptionsValidator : IValidateOptions<ExecutionOption
             failures.Add($"{prefix}:ReconcileAfterSeconds must be between 5 and 600.");
         if (options.FillTrackerStartDelaySeconds is < 0 or > 3600)
             failures.Add($"{prefix}:FillTrackerStartDelaySeconds must be between 0 and 3600.");
+        if (options.LostAnswerLookupSeconds is < 1 or > 60)
+            failures.Add($"{prefix}:LostAnswerLookupSeconds must be between 1 and 60.");
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }

@@ -58,7 +58,8 @@ Rules the module enforces:
   each recorded in `decisions.limits_check` as pass, clamped or fail. An entry must have entries allowed (Running,
   not paused), no active no-entry window, a strategy setup on its side or discretionary mode, a long side on Spot, no
   daily-loss pause, room under min(agent, `RiskCaps`) open positions counting pending entry orders, a stop on the
-  losing side within the strategy's `maxStopDistanceAtr` (when the ATR and the bound are known), risk per trade at
+  losing side within the strategy's `maxStopDistanceAtr` (an entry with a bound but no ATR to check it against is
+  refused, NFR-REL-03; a strategy without a bound leaves the distance unchecked), risk per trade at
   most min(agent limit, `RiskCaps:MaxRiskPerTradePercent`) (clamped, or the agent's limit when not given) and
   leverage within the cap; targets on the wrong side are dropped. Any failure records the decision as no-trade with
   the rationale prefixed by the limits that failed, the Risk Manager's proposal staying on its role row. With a

@@ -3,7 +3,8 @@ namespace Ecnanib.Execution.Configuration;
 /// <summary>
 /// The <c>Execution</c> section (beyond Appendix D): how protective orders are retried before a position is flattened
 /// (FR-EXE-05), the spot stop-limit offset, the budget of the candle-close management step, the age a row must have
-/// before reconciliation touches it (FR-EXE-08) and the fill tracker's start delay.
+/// before reconciliation touches it (FR-EXE-08), how long a lost order answer may be read back (NFR-REL-02) and the
+/// fill tracker's start delay.
 /// </summary>
 public sealed class ExecutionOptions
 {
@@ -26,6 +27,9 @@ public sealed class ExecutionOptions
     /// <summary>Staggered after the other hosted jobs.</summary>
     public int FillTrackerStartDelaySeconds { get; set; } = 6;
 
+    /// <summary>How long the exchange is asked whether it has an order whose answer was lost before the row is left to reconciliation (NFR-REL-02).</summary>
+    public int LostAnswerLookupSeconds { get; set; } = 10;
+
     public TimeSpan ProtectiveOrderRetryDelay => TimeSpan.FromMilliseconds(ProtectiveOrderRetryDelayMs);
 
     public decimal SpotStopLimitOffsetRate => SpotStopLimitOffsetPercent / 100m;
@@ -35,4 +39,6 @@ public sealed class ExecutionOptions
     public TimeSpan ReconcileAfter => TimeSpan.FromSeconds(ReconcileAfterSeconds);
 
     public TimeSpan FillTrackerStartDelay => TimeSpan.FromSeconds(FillTrackerStartDelaySeconds);
+
+    public TimeSpan LostAnswerLookup => TimeSpan.FromSeconds(LostAnswerLookupSeconds);
 }

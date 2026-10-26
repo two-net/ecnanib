@@ -88,7 +88,7 @@ internal static partial class BinanceErrorTranslator
             return new ExchangeUnavailableException(text, kind, code, error.Exception);
         }
 
-        return new ExchangeRequestException(text, MapKind(error.ErrorType, code), code, error.IsTransient, error.Exception);
+        return new ExchangeRequestException(text, MapKind(error.ErrorType, code, text), code, error.IsTransient, error.Exception);
     }
 
     /// <summary>
@@ -123,7 +123,11 @@ internal static partial class BinanceErrorTranslator
         code is >= 500 and <= 599 ||
         code is -1001 or -1007 or -1008 or -1016;
 
-    private static ExchangeErrorKind MapKind(ErrorType type, int? code) => type switch
+    /// <summary>
+    /// The library's own classification first; then Binance's codes, among them the two duplicate-client-id answers the
+    /// row-first placement adopts instead of retrying (NFR-REL-02): futures -4116 and spot -2010 with "Duplicate order sent".
+    /// </summary>
+    private static ExchangeErrorKind MapKind(ErrorType type, int? code, string detail) => type switch
     {
         ErrorType.UnknownOrder => ExchangeErrorKind.UnknownOrder,
         ErrorType.DuplicateClientOrderId => ExchangeErrorKind.DuplicateClientOrderId,
@@ -141,7 +145,8 @@ internal static partial class BinanceErrorTranslator
         _ => code switch
         {
             -2013 or -2011 => ExchangeErrorKind.UnknownOrder,
-            -2010 => ExchangeErrorKind.RejectedOrder,
+            -4116 => ExchangeErrorKind.DuplicateClientOrderId,
+            -2010 => detail.Contains("Duplicate order sent", StringComparison.OrdinalIgnoreCase) ? ExchangeErrorKind.DuplicateClientOrderId : ExchangeErrorKind.RejectedOrder,
             -2019 => ExchangeErrorKind.InsufficientBalance,
             -2022 => ExchangeErrorKind.NoPosition,
             -1021 => ExchangeErrorKind.InvalidTimestamp,

@@ -98,7 +98,7 @@ public class BinanceErrorTranslatorTests
     [InlineData(ErrorType.InsufficientBalance, -2019, ExchangeErrorKind.InsufficientBalance)]
     [InlineData(ErrorType.InvalidStopParameters, -2021, ExchangeErrorKind.InvalidStop)]
     [InlineData(ErrorType.NoPosition, -2022, ExchangeErrorKind.NoPosition)]
-    [InlineData(ErrorType.DuplicateClientOrderId, -2026, ExchangeErrorKind.DuplicateClientOrderId)]
+    [InlineData(ErrorType.DuplicateClientOrderId, -4116, ExchangeErrorKind.DuplicateClientOrderId)]
     [InlineData(ErrorType.Unknown, -2011, ExchangeErrorKind.UnknownOrder)]
     [InlineData(ErrorType.Unknown, -4061, ExchangeErrorKind.IncorrectState)]
     [InlineData(ErrorType.Unknown, -9999, ExchangeErrorKind.Unknown)]
@@ -111,6 +111,22 @@ public class BinanceErrorTranslatorTests
         Assert.Equal(kind, ex.Kind);
         Assert.Equal(code, ex.ExchangeCode);
         Assert.False(ex.IsTransient);
+    }
+
+    /// <summary>NFR-REL-02: a duplicate client id is recognised through the library's classification and, should that change, through Binance's own code and text.</summary>
+    [Theory]
+    [InlineData(ErrorType.DuplicateClientOrderId, -4116, "ClientOrderId is duplicated.", MarketType.UsdFutures, ExchangeErrorKind.DuplicateClientOrderId)]
+    [InlineData(ErrorType.Unknown, -4116, "ClientOrderId is duplicated.", MarketType.UsdFutures, ExchangeErrorKind.DuplicateClientOrderId)]
+    [InlineData(ErrorType.Unknown, -2010, "Duplicate order sent.", MarketType.Spot, ExchangeErrorKind.DuplicateClientOrderId)]
+    [InlineData(ErrorType.Unknown, -2010, "Account has insufficient balance for requested action.", MarketType.Spot, ExchangeErrorKind.RejectedOrder)]
+    public void DuplicateClientIdsAreRecognisedByTypeOrByCodeAndMessage(ErrorType type, int code, string message, MarketType market, ExchangeErrorKind kind)
+    {
+        var error = new ServerError(code, new ErrorInfo(type, message), null);
+
+        var ex = Assert.IsType<ExchangeRequestException>(BinanceErrorTranslator.Translate(error, "place order", market, Now));
+
+        Assert.Equal(kind, ex.Kind);
+        Assert.Equal(code, ex.ExchangeCode);
     }
 
     [Fact]

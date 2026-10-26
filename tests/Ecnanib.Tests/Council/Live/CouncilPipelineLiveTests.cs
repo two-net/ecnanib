@@ -11,6 +11,7 @@ using Ecnanib.Tests.Database.Live;
 using Ecnanib.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Ecnanib.Tests.Council.Live;
 
@@ -98,7 +99,7 @@ public class CouncilPipelineLiveTests : IClassFixture<DatabaseLiveFixture>
         var user = await AgentsLiveSeed.NewUserAsync(_fixture, "council-decided@example.com");
         var agent = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "BTC", AgentState.Running, discretionary: true);
         var ai = CouncilTestHost.Answering(CouncilTestHost.FinalJson("open_long", "limit", 100m, 96m, [108m], risk: 5m, rationale: "Discretionary long."));
-        var (provider, logs, _, _, streams) = CouncilLiveHost.Build(_fixture, ai);
+        var (provider, logs, _, _, streams) = CouncilLiveHost.Build(_fixture, ai, configure: s => s.Replace(ServiceDescriptor.Singleton<IStrategyEngine>(new AtrOnlyEngine())));
         await using var _ = provider;
         await AgentsLiveSeed.AddProviderKeysAsync(provider.GetRequiredService<IKeyService>(), user.Id, AiProvider.Gpt, AiProvider.Grok, AiProvider.Gemini, AiProvider.Claude);
         var scheduler = provider.GetRequiredService<AgentScheduler>();
@@ -162,6 +163,7 @@ public class CouncilPipelineLiveTests : IClassFixture<DatabaseLiveFixture>
         await streams.PushCandleAsync(AgentsLiveSeed.SpotBtc, CandleInterval.OneHour, FakeMarketStreams.ClosedCandle("BTCUSDT", CandleInterval.OneHour, LastOpen));
         await Wait.UntilAsync(() => Outcome(agent.Id, LastOpen) is not null, "evaluated");
         await Wait.UntilAsync(() => !scheduler.IsTracked(agent.Id), "untracked");
+        await Wait.UntilAsync(() => State(agent.Id) == AgentState.Error, "in Error");
 
         Assert.Equal(EvaluationOutcome.Failed, Outcome(agent.Id, LastOpen));
         Assert.StartsWith("No decision: the Risk Manager skipped: the council stopped: The Market Analyst role's model 'test-model' was rejected by GPT", Detail(agent.Id, LastOpen));
@@ -180,6 +182,12 @@ public class CouncilPipelineLiveTests : IClassFixture<DatabaseLiveFixture>
     {
         using var db = _fixture.CreateContext();
         return db.Evaluations.AsNoTracking().Where(e => e.AgentId == agentId && e.CandleOpenTime == candleOpen && e.FinishedAt != null).Select(e => (EvaluationOutcome?)e.Outcome).SingleOrDefault();
+    }
+
+    private AgentState State(Guid agentId)
+    {
+        using var db = _fixture.CreateContext();
+        return db.Agents.AsNoTracking().Where(a => a.Id == agentId).Select(a => a.State).Single();
     }
 
     private string? Detail(Guid agentId, DateTimeOffset candleOpen)

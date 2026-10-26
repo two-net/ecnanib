@@ -48,7 +48,7 @@ Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 | Appendix D | Section | Settings | Owner |
 |---|---|---|---|
 | server | `Server` | `BindAddress`, `Port`, `PublicUrl` | this module |
-| database | `Database` | connection string (the only credential), command timeout, retries | database (#3) |
+| database | `Database` | connection string (the only credential), command timeout, retries, `InstanceLockWaitSeconds` (how long a start waits for the previous instance to release the database, NFR-REL-04) | database (#3) |
 | logging | `Logging` | `Console:MinimumLevel`, `Database:MinimumLevel`, `LogLevel` (levels per category prefix, shared by both sinks); log retention is `Retention:LogDays` | logging (#15) |
 | exchange | `Exchange` | endpoints, request timeout, reconciliation interval, streams, retry | exchange (#1) |
 | providers | `Providers` | endpoints per provider, model sync interval, miss threshold, call timeout, max output tokens | AI (#2); the sync interval and miss threshold are read by model sync (#10) |
@@ -70,6 +70,15 @@ every default):
 Development: copy `ecnanib.json` to `ecnanib.local.json` (git-ignored, never built or published), set the connection
 string and `dotnet run`; the launch profile passes `--config ecnanib.local.json`. `dotnet run --no-launch-profile`
 uses the committed file and refuses to start on the empty connection string, which is FR-CFG-06 at work.
+
+Running one instance (NFR-REL-04, NFR-ARCH-01): exactly one process serves a database. On start the process migrates
+the schema, takes the database's instance lock and only then starts its jobs; on a restart it records the evaluations
+the stop cut short as failed, resumes every Running and Paused agent and verifies each live agent against the exchange
+before doing anything to it (NFR-REL-01). A second process pointed at the same database waits
+`Database:InstanceLockWaitSeconds` (30 by default) for the first to let go, which covers a restart whose old process is
+still shutting down, then prints `Another Ecnanib instance holds database … (backend N); this instance will not start`
+at Critical and exits with code 1 without binding its port. The status page shows the lock, the restart sweep and the
+exchange reconciliation. High availability is out of scope.
 
 Tests: `dotnet test` runs offline (argument parsing, file errors with line numbers, duplicate keys, unknown sections,
 the single configuration source, environment variables ignored, `Server` validation, Kestrel registration, key-ring

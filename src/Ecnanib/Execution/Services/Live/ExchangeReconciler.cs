@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
 
 namespace Ecnanib.Execution.Services.Live;
 
@@ -16,15 +17,28 @@ namespace Ecnanib.Execution.Services.Live;
 internal sealed record AccountView(IReadOnlyList<ExchangeOrder> Orders, IReadOnlyList<ConditionalOrder> Conditional, IReadOnlyList<FuturesPosition> Positions, IReadOnlyList<AssetBalance> Balances);
 
 /// <summary>
+/// The outcome of a live agent's once-per-process check against the exchange (NFR-REL-01). <see cref="Performed"/> is
+/// false when nothing had to be done (a paper agent, or an agent verified earlier in this process); <see cref="Reason"/>
+/// says why the agent is not verified; <see cref="Adoptions"/> counts what the check adopted from the exchange.
+/// </summary>
+internal sealed record RestartCheck(bool Verified, bool Performed, string? Reason, int Adoptions)
+{
+    public static readonly RestartCheck NotNeeded = new(true, false, null, 0);
+}
+
+/// <summary>
 /// FR-EXE-08: local orders and trades against the exchange at start, every <c>Exchange:ReconciliationIntervalSeconds</c>
 /// and when a stream restores or a polling snapshot arrives. One read per key and market per round; each agent is
-/// compared under a try-lock on its gate (an agent with an evaluation in flight waits for the next round; it reconciles
-/// inline when it was interrupted). The exchange is the truth and every adoption is a Warning: a filled order is
-/// processed as a fill, a vanished order marked, a vanished futures position or a sold spot holding closes the trade
-/// as External with the exchange's fills, a smaller position shrinks the trade and re-sizes its stop, a trade without
-/// protection is protected again, and orders or positions the system never placed are reported only.
+/// compared under a try-lock on its gate (an agent with an evaluation in flight waits for the next round). The exchange
+/// is the truth and every adoption is a Warning: a filled order is processed as a fill, a vanished order marked, a
+/// vanished futures position or a sold spot holding closes the trade as External with the exchange's fills, a smaller
+/// position shrinks the trade and re-sizes its stop, a trade without protection is protected again, and orders or
+/// positions the system never placed are reported only. NFR-REL-01: the execution service calls
+/// <see cref="EnsureCheckedAsync"/> before a live agent's first action in this process, which compares every row and
+/// trade written before the process started whatever its age; a check that fails blocks the action. The rounds and the
+/// checks report through <see cref="IReconciliationStatus"/> (NFR-OBS-01).
 /// </summary>
-internal sealed class ExchangeReconciler : BackgroundService
+internal sealed class ExchangeReconciler : BackgroundService, IReconciliationStatus
 {
     internal static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(10);
 
@@ -43,6 +57,21 @@ internal sealed class ExchangeReconciler : BackgroundService
     private readonly ILogger<ExchangeReconciler> _logger;
     private readonly SemaphoreSlim _requests = new(0, int.MaxValue);
     private IAgentGates? _gates;
+
+    // NFR-REL-01: the live agents compared with the exchange since this process started, and the checks that failed with when.
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _verified = new();
+    private readonly ConcurrentDictionary<Guid, (DateTimeOffset At, string Reason)> _failedChecks = new();
+
+    // NFR-OBS-01: written by the rounds and the checks, read by the status page.
+    private readonly Lock _statusLock = new();
+    private DateTimeOffset? _lastRoundAt;
+    private int _lastRoundAgents;
+    private int _lastRoundFailures;
+    private int _awaitingCheck;
+    private int _adoptions;
+    private DateTimeOffset? _lastAdoptionAt;
+    private string? _lastError;
+    private DateTimeOffset? _lastErrorAt;
 
     /// <summary>The scheduler's gates, resolved on first use: the scheduler's pipeline depends on the execution service, which depends on this reconciler.</summary>
     private IAgentGates Gates => _gates ??= _services.GetRequiredService<IAgentGates>();
@@ -64,6 +93,49 @@ internal sealed class ExchangeReconciler : BackgroundService
         _options = options;
         _time = time;
         _logger = logger;
+        StartedAt = time.GetUtcNow();
+    }
+
+    /// <summary>When this process's execution module came up: every row and trade written before it belongs to a finished or dead evaluation (NFR-REL-01).</summary>
+    internal DateTimeOffset StartedAt { get; }
+
+    // --- IReconciliationStatus -------------------------------------------------------------------------------------
+
+    public ReconciliationStatus GetStatus()
+    {
+        lock (_statusLock)
+            return new ReconciliationStatus(true, StartedAt, _lastRoundAt, _lastRoundAgents, _lastRoundFailures, _verified.Count, _awaitingCheck, _adoptions, _lastAdoptionAt, _lastError, _lastErrorAt);
+    }
+
+    private void RecordRound(int compared, int failures, int awaiting)
+    {
+        lock (_statusLock)
+        {
+            _lastRoundAt = _time.GetUtcNow();
+            _lastRoundAgents = compared;
+            _lastRoundFailures = failures;
+            _awaitingCheck = awaiting;
+        }
+    }
+
+    private void RecordAdoptions(int count)
+    {
+        if (count <= 0)
+            return;
+        lock (_statusLock)
+        {
+            _adoptions += count;
+            _lastAdoptionAt = _time.GetUtcNow();
+        }
+    }
+
+    private void RecordError(string message)
+    {
+        lock (_statusLock)
+        {
+            _lastError = message;
+            _lastErrorAt = _time.GetUtcNow();
+        }
     }
 
     /// <summary>A stream restored or a snapshot arrived for a key: the next round starts now.</summary>
@@ -92,6 +164,7 @@ internal sealed class ExchangeReconciler : BackgroundService
             }
             catch (Exception ex)
             {
+                RecordError(ex.Message);
                 _logger.LogWarning(ex, "The reconciliation round failed; next attempt in {Interval}", _exchangeOptions.Value.ReconciliationInterval);
             }
 
@@ -111,6 +184,8 @@ internal sealed class ExchangeReconciler : BackgroundService
     {
         var agents = await CandidatesAsync(null, cancellationToken).ConfigureAwait(false);
         var compared = 0;
+        var failures = 0;
+        var cutoff = _time.GetUtcNow() - _options.Value.ReconcileAfter;
         foreach (var group in agents.GroupBy(a => (a.ExchangeKeyId!.Value, a.MarketType)))
         {
             LiveAccount first;
@@ -126,6 +201,8 @@ internal sealed class ExchangeReconciler : BackgroundService
             }
             catch (Exception ex)
             {
+                failures++;
+                RecordError($"key {group.Key.Item1} on {group.Key.MarketType}: {ex.Message}");
                 _logger.LogWarning(ex, "Key {KeyId} on {Market} could not be read for reconciliation", group.Key.Item1, group.Key.MarketType);
                 continue;
             }
@@ -142,7 +219,11 @@ internal sealed class ExchangeReconciler : BackgroundService
                 try
                 {
                     var account = agent.Id == first.Agent.Id ? first : await _exchange.ForAsync(agent, first.Key, cancellationToken).ConfigureAwait(false);
-                    await CompareAsync(account, view, cancellationToken).ConfigureAwait(false);
+                    // A round compares what is older than ReconcileAfter; an agent not yet verified in this process gets its whole history too.
+                    var since = _verified.ContainsKey(agent.Id) ? cutoff : Max(cutoff, StartedAt);
+                    await CompareAsync(account, view, since, cancellationToken).ConfigureAwait(false);
+                    _verified.TryAdd(agent.Id, _time.GetUtcNow());
+                    _failedChecks.TryRemove(agent.Id, out _);
                     compared++;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -151,26 +232,59 @@ internal sealed class ExchangeReconciler : BackgroundService
                 }
                 catch (Exception ex)
                 {
+                    failures++;
+                    RecordError($"agent {agent.Id}: {ex.Message}");
                     _logger.LogWarning(ex, "Agent {AgentId} could not be reconciled", agent.Id);
                 }
             }
         }
 
+        RecordRound(compared, failures, agents.Count(a => !_verified.ContainsKey(a.Id)));
         if (compared > 0)
             _logger.LogDebug("Reconciled {Agents} agent(s)", compared);
         return compared;
     }
 
-    /// <summary>Inline reconciliation of one agent by the pipeline (NFR-REL-01); the caller holds the agent's gate.</summary>
-    public async Task ReconcileAgentAsync(Agent agent, ExchangeKeyHandle? handle, CancellationToken cancellationToken)
+    /// <summary>
+    /// NFR-REL-01: a live agent is compared with the exchange once per process before its first action, every row and
+    /// trade written before this process started included, whatever its age; a periodic round that compared the agent
+    /// counts as that check. A check that fails is remembered for <c>Execution:ReconcileAfterSeconds</c>, so each candle
+    /// tries once, and the caller places nothing. The caller holds the agent's gate; a paper agent needs no check.
+    /// </summary>
+    public async Task<RestartCheck> EnsureCheckedAsync(Agent agent, ExchangeKeyHandle? handle, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(agent);
-        if (agent.Mode != AgentMode.Live)
-            return;
-        var account = await _exchange.ForAsync(agent, handle, cancellationToken).ConfigureAwait(false);
-        var view = await ReadAsync(account, cancellationToken).ConfigureAwait(false);
-        await CompareAsync(account, view, cancellationToken).ConfigureAwait(false);
+        if (agent.Mode != AgentMode.Live || _verified.ContainsKey(agent.Id))
+            return RestartCheck.NotNeeded;
+        var now = _time.GetUtcNow();
+        if (_failedChecks.TryGetValue(agent.Id, out var failed) && now - failed.At < _options.Value.ReconcileAfter)
+            return new RestartCheck(false, false, failed.Reason, 0);
+
+        try
+        {
+            var account = await _exchange.ForAsync(agent, handle, cancellationToken).ConfigureAwait(false);
+            var view = await ReadAsync(account, cancellationToken).ConfigureAwait(false);
+            var adoptions = await CompareAsync(account, view, StartedAt, cancellationToken).ConfigureAwait(false);
+            _verified.TryAdd(agent.Id, _time.GetUtcNow());
+            _failedChecks.TryRemove(agent.Id, out _);
+            _logger.LogInformation("Agent {AgentId}: exchange state verified after the restart with {Adoptions} adoption(s) (NFR-REL-01)", agent.Id, adoptions);
+            return new RestartCheck(true, true, null, adoptions);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var reason = $"the exchange state could not be verified after the restart ({ex.Message})";
+            _failedChecks[agent.Id] = (now, reason);
+            RecordError($"agent {agent.Id}: {reason}");
+            _logger.LogWarning(ex, "Agent {AgentId}: the exchange state could not be verified after the restart; nothing is placed this candle (NFR-REL-01, NFR-REL-03)", agent.Id);
+            return new RestartCheck(false, true, reason, 0);
+        }
     }
+
+    private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a >= b ? a : b;
 
     private async Task<List<Agent>> CandidatesAsync(Guid? agentId, CancellationToken cancellationToken)
     {
@@ -197,29 +311,38 @@ internal sealed class ExchangeReconciler : BackgroundService
         return new AccountView(orders, [], [], balances);
     }
 
-    private async Task CompareAsync(LiveAccount account, AccountView view, CancellationToken cancellationToken)
+    /// <summary>Compares the agent's rows and trades written before <paramref name="cutoff"/> with the exchange; returns how many times the exchange's state was adopted.</summary>
+    private async Task<int> CompareAsync(LiveAccount account, AccountView view, DateTimeOffset cutoff, CancellationToken cancellationToken)
     {
         var agent = account.Agent;
         var now = _time.GetUtcNow();
-        var cutoff = now - _options.Value.ReconcileAfter;
+        var adoptions = 0;
 
         // Orders: a filled one becomes a fill, a vanished one is marked, a different state is adopted.
         var rows = await _ledger.OpenRowsOfAgentAsync(agent.Id, cancellationToken).ConfigureAwait(false);
-        foreach (var row in rows.Where(r => r.CreatedAt <= cutoff))
+        foreach (var row in rows.Where(r => r.CreatedAt < cutoff))
         {
             var open = view.Orders.FirstOrDefault(o => o.ClientOrderId == row.ClientOrderId);
             var conditional = view.Conditional.FirstOrDefault(o => o.ClientAlgoId == row.ClientOrderId);
             if (open is not null)
             {
                 if (open.FilledQuantity > row.FilledQuantity || open.OrderId != row.ExchangeOrderId)
+                {
                     await _fills.ApplyAsync(account, row, OrderRows.ToRemote(open), null, cancellationToken).ConfigureAwait(false);
+                    adoptions++;
+                }
+
                 continue;
             }
 
             if (conditional is not null)
             {
                 if (conditional.AlgoId != row.ExchangeAlgoId || conditional.ActualOrderId != row.ExchangeOrderId)
+                {
                     await _fills.ApplyAsync(account, row, OrderRows.ToRemote(conditional), null, cancellationToken).ConfigureAwait(false);
+                    adoptions++;
+                }
+
                 continue;
             }
 
@@ -231,6 +354,7 @@ internal sealed class ExchangeReconciler : BackgroundService
                 _logger.LogWarning("Order {ClientOrderId} of agent {AgentId} is unknown to the exchange; it is recorded as cancelled (FR-EXE-08)", row.ClientOrderId, agent.Id);
                 await _ledger.UpdateOrderAsync(row.Id, o => o.Status = OrderStatus.Canceled, cancellationToken).ConfigureAwait(false);
                 _ledger.Publish(new OrderChanged(agent.Id, agent.UserId, now, row.Id, OrderStatus.Canceled));
+                adoptions++;
                 continue;
             }
 
@@ -238,12 +362,13 @@ internal sealed class ExchangeReconciler : BackgroundService
             {
                 _logger.LogWarning("Order {ClientOrderId} of agent {AgentId} is {Status} on the exchange ({Filled} filled) while recorded {Local}; the exchange state is adopted (FR-EXE-08)", row.ClientOrderId, agent.Id, remote.Status, remote.FilledQuantity, row.Status);
                 await _fills.ApplyAsync(account, row, remote, null, cancellationToken).ConfigureAwait(false);
+                adoptions++;
             }
         }
 
         // Trades: the exchange's position or holding is the truth.
         var trades = await _ledger.OpenTradesOfAgentAsync(agent.Id, cancellationToken).ConfigureAwait(false);
-        foreach (var trade in trades.Where(t => !t.IsUnmanaged && t.OpenedAt <= cutoff))
+        foreach (var trade in trades.Where(t => !t.IsUnmanaged && t.OpenedAt < cutoff))
         {
             var current = await _ledger.TradeAsync(trade.Id, cancellationToken).ConfigureAwait(false);
             if (current is null || current.ClosedAt is not null)
@@ -263,6 +388,7 @@ internal sealed class ExchangeReconciler : BackgroundService
             if (remaining < step)
             {
                 await CloseExternallyAsync(account, current, cancellationToken).ConfigureAwait(false);
+                adoptions++;
                 continue;
             }
 
@@ -274,35 +400,47 @@ internal sealed class ExchangeReconciler : BackgroundService
                 var updated = await _ledger.AdoptExternalAsync(trade.Id, agent, adopted, exitPrice, fees, realized, 0m, now, cancellationToken).ConfigureAwait(false);
                 if (updated is not null && account.IsFutures)
                     await _fills.ResizeStopAsync(account, updated, cancellationToken).ConfigureAwait(false);
+                adoptions++;
                 continue;
             }
 
             if (remaining > local + step / 2)
                 _logger.LogWarning("Trade {TradeId} of agent {AgentId}: the exchange holds {Remaining} {Symbol}, more than the {Local} recorded; the excess is not the agent's and stays unmanaged", trade.Id, agent.Id, remaining, agent.Symbol, local);
 
-            // The stop is the protection: a trade without an open stop row is protected again (futures: the stop alone beside the
-            // targets still there; spot: whatever OCO legs remain are cancelled and the units placed afresh).
+            // The stop is the protection: a trade whose open stop rows cover less than its size is protected again for the rest
+            // (futures: the stop re-sized new-before-old, or placed when none stands; spot: take-profit legs whose OCO lost its stop
+            // leg are cancelled, then the uncovered quantity is placed; the OCOs still whole are left alone, NFR-REL-03).
             var stillOpen = await _ledger.OpenRowsAsync(trade.Id, cancellationToken).ConfigureAwait(false);
-            if (!stillOpen.Any(o => o.Purpose == OrderPurpose.StopLoss) && current.CurrentStop is { } stop && !stillOpen.Any(o => o.Purpose is OrderPurpose.Close))
+            var stops = stillOpen.Where(o => o.Purpose == OrderPurpose.StopLoss).ToList();
+            var covered = stops.Sum(o => o.Quantity);
+            if (covered < local - step / 2 && current.CurrentStop is { } stop && !stillOpen.Any(o => o.Purpose is OrderPurpose.Close))
             {
-                _logger.LogWarning("Trade {TradeId} of agent {AgentId} has no stop on the exchange; it is protected again at {Stop} (FR-EXE-08, NFR-REL-03)", trade.Id, agent.Id, stop);
+                if (covered <= 0)
+                    _logger.LogWarning("Trade {TradeId} of agent {AgentId} has no stop on the exchange; it is protected again at {Stop} (FR-EXE-08, NFR-REL-03)", trade.Id, agent.Id, stop);
+                else
+                    _logger.LogWarning("Trade {TradeId} of agent {AgentId} is protected for {Covered} of {Local} {Symbol}; the rest is protected again at {Stop} (FR-EXE-08, NFR-REL-03)", trade.Id, agent.Id, covered, local, agent.Symbol, stop);
+                adoptions++;
                 try
                 {
                     if (account.IsFutures)
                     {
-                        await _placer.PlaceStopAsync(account, current, stop, local, flattenOnFailure: true, cancellationToken).ConfigureAwait(false);
+                        if (stops.Count == 0)
+                            await _placer.PlaceStopAsync(account, current, stop, local, flattenOnFailure: true, cancellationToken).ConfigureAwait(false);
+                        else
+                            await _fills.ResizeStopAsync(account, current, cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
-                        var leftovers = stillOpen.Where(o => o.Purpose == OrderPurpose.TakeProfit).ToList();
-                        foreach (var row in leftovers.DistinctBy(o => o.ListClientOrderId ?? o.ClientOrderId))
-                            await _spot.CancelAsync(account, row, stillOpen, cancellationToken).ConfigureAwait(false);
-                        // Untouched, the position is split into its units afresh; once a target or a partial took its share, what is left is one unit at the final target still ahead.
+                        var orphans = stillOpen.Where(o => o.Purpose == OrderPurpose.TakeProfit && !stops.Any(s => s.ListClientOrderId == o.ListClientOrderId)).ToList();
+                        if (orphans.Count > 0)
+                            await _spot.CancelProtectionAsync(account, orphans, stillOpen, cancellationToken).ConfigureAwait(false);
+                        // Untouched, the position is split into its units afresh; once a target or a partial took its share, or part of it is
+                        // still protected, what is left is one unit at the final target still ahead.
                         var targets = TradeJson.Targets(current.Targets);
                         var taken = await _ledger.CountFilledRowsAsync(trade.Id, OrderPurpose.TakeProfit, cancellationToken).ConfigureAwait(false);
-                        IReadOnlyList<ProtectionUnit> units = taken == 0 && local >= current.Size
+                        IReadOnlyList<ProtectionUnit> units = covered <= 0 && taken == 0 && local >= current.Size
                             ? ProtectionUnits.Split(local, targets, ProtectionUnits.PartialFraction(await ParametersAsync(agent, cancellationToken).ConfigureAwait(false)), account.Symbol.Filters.StepSize, account.Symbol.Filters.MinQuantity)
-                            : [new ProtectionUnit(local, taken < targets.Count ? targets[^1] : null)];
+                            : [new ProtectionUnit(local - covered, taken < targets.Count ? targets[^1] : null)];
                         await _placer.ProtectAsync(account, current, units, stop, cancellationToken).ConfigureAwait(false);
                     }
                 }
@@ -319,6 +457,9 @@ internal sealed class ExchangeReconciler : BackgroundService
             + view.Conditional.Where(o => string.Equals(o.Symbol, agent.Symbol, StringComparison.OrdinalIgnoreCase) && o.ClientAlgoId.StartsWith(ClientOrderIds.LivePrefix, StringComparison.Ordinal) && !known.Contains(o.ClientAlgoId)).Count();
         if (strangers > 0)
             _logger.LogWarning("{Count} open order(s) on {Symbol} carry the system's prefix but match no row of agent {AgentId}; they are left alone", strangers, agent.Symbol, agent.Id);
+
+        RecordAdoptions(adoptions);
+        return adoptions;
     }
 
     private async Task CloseExternallyAsync(LiveAccount account, Trade trade, CancellationToken cancellationToken)

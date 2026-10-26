@@ -16,7 +16,7 @@ using Candle = Ecnanib.Exchange.Abstractions.Candle;
 namespace Ecnanib.Agents.Services;
 
 /// <summary>One candle close to evaluate. <see cref="DeadlineAt"/> is measured from the close (NFR-PERF-01).</summary>
-internal sealed record EvaluationRun(AgentTrackingInfo Agent, Candle Candle, DateTimeOffset DeadlineAt, bool InterruptedPreviously);
+internal sealed record EvaluationRun(AgentTrackingInfo Agent, Candle Candle, DateTimeOffset DeadlineAt);
 
 /// <summary>
 /// What a run did: nothing (the agent is gone, cannot be evaluated as configured, or another run owns the candle), an
@@ -176,6 +176,7 @@ internal sealed class EvaluationPipeline
         MarketSnapshot? market = null;
         StrategyOutput? output = null;
         string? managementNote = null;
+        string? entriesBlocked = null;
         try
         {
             market = await _loader.LoadAsync(agent, strategy, run.Agent.Key, candle, cancellable).ConfigureAwait(false);
@@ -189,24 +190,37 @@ internal sealed class EvaluationPipeline
             // takes the setup off the table for this candle.
             if (openTrades.Count > 0 || openOrders.Count > 0)
             {
-                var request = new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, openTrades, openOrders, _caps.Value, venue, run.InterruptedPreviously, exchangeKey, entriesAllowed, run.DeadlineAt);
+                var request = new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, openTrades, openOrders, _caps.Value, venue, exchangeKey, entriesAllowed, run.DeadlineAt);
                 var managed = await ManageAsync(request, cancellable, stopping).ConfigureAwait(false);
-                if (managed is not null)
+                if (managed is null)
+                {
+                    // NFR-REL-03: the open state could not be managed, so nothing new opens this candle.
+                    entriesBlocked = "Position management failed; see the log.";
+                    entriesAllowed = false;
+                }
+                else
                 {
                     managementNote = managed.Note;
                     fault ??= managed.Fault;
                     if (managed.EntryPlaced)
                         entriesAllowed = false;
+                    if (managed.EntriesBlockedReason is { } blocked)
+                    {
+                        entriesBlocked = blocked;
+                        entriesAllowed = false;
+                    }
+
                     (openTrades, openOrders) = await LoadOpenAsync(agentId, cancellable).ConfigureAwait(false);
                 }
             }
 
-            // FR-AI-08, FR-AGT-05: a Paused agent opens nothing, so only an open position makes the council worth its cost.
+            // FR-AI-08, FR-AGT-05, NFR-REL-03: a Paused agent, or one whose open state could not be managed, opens nothing,
+            // so only an open position makes the council worth its cost.
             var councilNeeded = (output.Setup is not null && entriesAllowed) || openTrades.Count > 0 || (agent.Discretionary && entriesAllowed);
             if (!councilNeeded)
             {
                 outcome = EvaluationOutcome.NoAction;
-                detail = Join(managementNote, output.Note ?? (entriesAllowed ? "No setup and no open position." : agent.State == AgentState.Running ? "No setup; the open entry is managed." : "Paused: no open position to manage."));
+                detail = Join(managementNote, output.Note ?? (entriesAllowed ? "No setup and no open position." : entriesBlocked is not null ? "No new entry this candle." : agent.State == AgentState.Running ? "No setup; the open entry is managed." : "Paused: no open position to manage."));
             }
             else
             {
@@ -269,7 +283,7 @@ internal sealed class EvaluationPipeline
                     }
                     else
                     {
-                        var request = new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, openTrades, openOrders, _caps.Value, venue, run.InterruptedPreviously, exchangeKey, entriesAllowed, run.DeadlineAt);
+                        var request = new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, openTrades, openOrders, _caps.Value, venue, exchangeKey, entriesAllowed, run.DeadlineAt);
                         var result = await _execution.ExecuteAsync(request, decision, protective ? stopping : cancellable, stopping).ConfigureAwait(false);
                         outcome = EvaluationOutcome.Decided;
                         detail = Join(managementNote, result.Note);
@@ -327,7 +341,7 @@ internal sealed class EvaluationPipeline
         return (trades, orders);
     }
 
-    /// <summary>The management step; a failure is logged and leaves protection as it is (NFR-REL-03), the evaluation goes on.</summary>
+    /// <summary>The management step; a failure is logged and leaves protection as it is, the evaluation goes on with new entries blocked (NFR-REL-03).</summary>
     private async Task<ExecutionResult?> ManageAsync(ExecutionRequest request, CancellationToken cancellable, CancellationToken stopping)
     {
         try

@@ -69,6 +69,7 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal(SchedulerPhase.Running, status.Phase);
         Assert.Equal(AgentsLiveSeed.Now, status.StartedAt);
         Assert.Equal(2, status.TrackedAgents);
+        Assert.Equal(1, status.InterruptedAtStart);
         Assert.Null(status.LastError);
         Assert.False(scheduler.IsTracked(stopped.Id));
         Assert.False(scheduler.IsTracked(error.Id));
@@ -87,6 +88,39 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Contains(logs.Entries, e => e.Message.Contains("were in flight at the last stop", StringComparison.Ordinal));
         await scheduler.StopAsync(Ct);
         Assert.Equal(0, streams.CandleSubscriptions);
+        await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
+    }
+
+    /// <summary>NFR-REL-03: an Error agent is not evaluated, so its pending entries are cancelled best effort and its protection stays.</summary>
+    [Fact]
+    public async Task ErrorCancelsThePendingEntriesAndKeepsTheProtection()
+    {
+        await StartAsync();
+        var user = await AgentsLiveSeed.NewUserAsync(_fixture, "error-entries@example.com");
+        var agent = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "BTC", AgentState.Running);
+        var decision = await AgentsLiveSeed.NewDecisionAsync(_fixture, agent, LastOpen.AddHours(-5));
+        var trade = await AgentsLiveSeed.NewOpenTradeAsync(_fixture, agent, decision);
+        var pending = await AgentsLiveSeed.NewOpenEntryAsync(_fixture, agent, decision);
+        var (provider, logs, _, _, _) = AgentsLiveSeed.Build(_fixture);
+        await using var _ = provider;
+        var scheduler = provider.GetRequiredService<AgentScheduler>();
+        await scheduler.StartAsync(Ct);
+        await Wait.UntilAsync(() => scheduler.IsTracked(agent.Id), "tracked");
+
+        Assert.True(await ((IAgentRuntime)scheduler).FailAsync(agent.Id, "the strategy is gone", Ct));
+
+        Assert.False(scheduler.IsTracked(agent.Id));
+        // The cancellation runs under the agent's gate once the state is recorded, so it follows the call.
+        await Wait.UntilAsync(() => OrderStatusOf(pending.Id) == OrderStatus.Expired, "entry cancelled");
+        await using (var db = _fixture.CreateContext())
+        {
+            Assert.Equal(AgentState.Error, (await db.Agents.AsNoTracking().SingleAsync(a => a.Id == agent.Id, Ct)).State);
+            var orders = await db.Orders.AsNoTracking().Where(o => o.AgentId == agent.Id).ToListAsync(Ct);
+            Assert.Equal(2, orders.Count(o => o.TradeId == trade.Id && o.Status == OrderStatus.New));
+        }
+
+        Assert.Contains(logs.Entries, e => e.Message.Contains("1 of 1 pending entry order(s) cancelled"));
+        await scheduler.StopAsync(Ct);
         await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
     }
 
@@ -404,6 +438,12 @@ public class AgentSchedulerLiveTests : IClassFixture<DatabaseLiveFixture>
     {
         using var db = _fixture.CreateContext();
         return db.Evaluations.AsNoTracking().Where(e => e.AgentId == agentId && e.CandleOpenTime == candleOpen).Select(e => e.OutcomeDetail).SingleOrDefault();
+    }
+
+    private OrderStatus OrderStatusOf(Guid orderId)
+    {
+        using var db = _fixture.CreateContext();
+        return db.Orders.AsNoTracking().Where(o => o.Id == orderId).Select(o => o.Status).Single();
     }
 
     private async Task StartAsync()

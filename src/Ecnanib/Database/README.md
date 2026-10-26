@@ -14,6 +14,7 @@ rather than `Abstractions` because the shared types here are the persisted model
 | The system's own keys (FR-CFG-05, A-01) | the Data Protection key ring is persisted in `data_protection_keys`; other internal keys go in `SystemKey` by purpose |
 | Idempotent evaluation per candle (FR-AGT-09) | the unique index on `evaluations (agent_id, candle_open_time)`; catch `DbUpdateException` on the duplicate |
 | Never duplicate an order (FR-EXE-07, NFR-REL-02) | the unique index on `orders (client_order_id)` |
+| Run exactly one instance per database (NFR-REL-04) | `await app.AcquireInstanceLockAsync()` in `Program.cs`, right after `MigrateDatabaseAsync()`; `IInstanceLockStatus.GetStatus()` for the status page |
 | Concurrent edits of an agent, order or trade | `Version` (PostgreSQL `xmin`) raises `DbUpdateConcurrencyException` on a stale update |
 | A save that lost a unique-key race | `DbUpdateExceptions.IsUniqueViolation(ex)`, then read the row that won |
 
@@ -23,6 +24,16 @@ Rules the module enforces:
   database knows a migration the build does not, when the model has changes no migration covers, when the server is
   older than PostgreSQL 15, or when a migration fails; the cause is logged at Critical and the process exits
   (NFR-ARCH-03, FR-LOG-04). Every migration's `Down` throws.
+- One process per database (NFR-REL-04): `InstanceLock` takes a PostgreSQL session advisory lock on the key
+  `0x65636E616E6962` (the ASCII bytes of "ecnanib", 28538298379954530) through one context whose connection stays open
+  for the process's lifetime, so the lock goes when the process does, cleanly or not. It is taken after the migrations
+  and before any hosted service runs; a second instance waits `Database:InstanceLockWaitSeconds` for the previous one to
+  release it (a restart), then logs the holding backend at Critical and exits 1. The lock's hosted service asks
+  `pg_locks` every 30 s whether its own backend still holds the key (a connection the retrying strategy reopened answers
+  a plain query and holds nothing), takes the lock again on a new connection when it was lost, and stops the host when
+  another instance holds it by then. `SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND classid = 6644590 AND objid =
+  1634625890 AND granted` names the holder; a backend left behind by a dead process can be ended with
+  `pg_terminate_backend(pid)`.
 - No table is partitioned (DB-03). Retention is scheduled deletion: `RetentionSweeper` runs every
   `Retention:SweepIntervalMinutes`, deleting expired log entries, candles and deliberation transcripts in batches of
   `Retention:DeleteBatchSize` through the ORM (NFR-DATA-02). Decisions, their compact role outputs, trades and
@@ -65,13 +76,16 @@ Rules the module enforces:
 Configuration (`Database` is the only section of the file that holds a credential, FR-CFG-03):
 
 ```json
-{ "Database": { "ConnectionString": "Host=localhost;Database=ecnanib;Username=ecnanib;Password=...", "CommandTimeoutSeconds": 30, "RetryOnFailureCount": 3 },
+{ "Database": { "ConnectionString": "Host=localhost;Database=ecnanib;Username=ecnanib;Password=...", "CommandTimeoutSeconds": 30, "RetryOnFailureCount": 3, "InstanceLockWaitSeconds": 30 },
   "Retention": { "LogDays": 30, "CandleDays": 365, "DeliberationTranscriptDays": 90, "SweepIntervalMinutes": 60, "DeleteBatchSize": 5000 } }
 ```
 
-An empty connection string refuses to start (FR-CFG-06). PostgreSQL 15 or newer is required.
+An empty connection string refuses to start (FR-CFG-06). PostgreSQL 15 or newer is required. The start-up sequence is
+validate the configuration → migrate → take the instance lock → ensure the system keys → run.
 
-Tests: `dotnet test` runs offline (model snapshot, generated SQL, forward-only and convention checks). Live checks
+Tests: `dotnet test` runs offline (model snapshot, generated SQL, forward-only and convention checks, the lock's
+registration). Live checks (the schema, the sweeper, a second instance waiting then refusing and acquiring once the first
+stops, the lock taken again after a lost connection and the host stopped when another instance holds it)
 are opt-in through `tests/.database.json` (git-ignored):
 
 ```json

@@ -38,6 +38,8 @@ public sealed class DatabaseOptionsValidator : IValidateOptions<DatabaseOptions>
             failures.Add($"{prefix}:CommandTimeoutSeconds must be > 0.");
         if (options.RetryOnFailureCount < 0)
             failures.Add($"{prefix}:RetryOnFailureCount must be >= 0.");
+        if (options.InstanceLockWaitSeconds is < 0 or > 600)
+            failures.Add($"{prefix}:InstanceLockWaitSeconds must be between 0 and 600.");
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }

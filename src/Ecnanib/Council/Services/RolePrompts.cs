@@ -80,7 +80,7 @@ internal static class RolePrompts
         text.AppendLine(agent.MarketType == MarketType.Spot ? "- Direction: long only (Spot)." : "- Direction: long or short.");
         text.AppendLine(context.EntriesAllowed
             ? "- New entries: allowed."
-            : "- New entries: NOT allowed (the agent is paused): manage the open position only; never propose an entry.");
+            : "- New entries: NOT allowed this evaluation (the agent is paused, or its open state could not be managed): manage the open position only; never propose an entry.");
         text.AppendLine(agent.Discretionary
             ? "- Discretionary mode: ON. An entry may be proposed without a strategy setup; it must include a stop."
             : "- Discretionary mode: OFF. Entries are only taken on the strategy's setup.");

@@ -1,5 +1,6 @@
 using Ecnanib.Agents.Abstractions;
 using Ecnanib.Components.Health;
+using Ecnanib.Database;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Health.Abstractions;
 
@@ -60,5 +61,39 @@ public class HealthMessagesTests
 
         Assert.Equal("none", HealthMessages.DeadlineMisses(0, null, now));
         Assert.Equal("3 since start, last 2 min ago", HealthMessages.DeadlineMisses(3, now.AddMinutes(-2), now));
+    }
+
+    [Fact]
+    public void InterruptedAtStartReadsNoneOrACount()
+    {
+        Assert.Equal("none", HealthMessages.InterruptedAtStart(0));
+        Assert.Equal("2 recorded as failed at start", HealthMessages.InterruptedAtStart(2));
+    }
+
+    [Fact]
+    public void TheInstanceLockReadsItsState()
+    {
+        var held = new InstanceLockStatus(InstanceLockState.Held, Now.AddHours(-1), 4242, Now.AddSeconds(-20), null, null);
+
+        Assert.Equal("held since 2026-01-05 11:00:00 UTC (backend 4242), checked 20 s ago", HealthMessages.InstanceLock(held, Now));
+        Assert.Equal("status-healthy", HealthMessages.InstanceLockClass(InstanceLockState.Held));
+        Assert.Equal("re-acquiring: connection reset", HealthMessages.InstanceLock(held with { State = InstanceLockState.Reacquiring, LastError = "connection reset" }, Now));
+        Assert.Equal("status-degraded", HealthMessages.InstanceLockClass(InstanceLockState.Reacquiring));
+        Assert.Equal("lost: another instance holds it; this instance is stopping", HealthMessages.InstanceLock(held with { State = InstanceLockState.Lost }, Now));
+        Assert.Equal("status-unhealthy", HealthMessages.InstanceLockClass(InstanceLockState.Lost));
+        Assert.Equal("not held", HealthMessages.InstanceLock(InstanceLockStatus.NotHeld, Now));
+    }
+
+    [Fact]
+    public void ReconciliationReadsRoundsChecksAndAdoptions()
+    {
+        var status = new ReconciliationStatus(true, Now.AddHours(-1), Now.AddMinutes(-2), 3, 0, 2, 1, 4, Now.AddMinutes(-5), null, null);
+
+        Assert.Equal("2 min ago, 3 agent(s)", HealthMessages.LastRound(status, Now));
+        Assert.Equal("2 min ago, 3 agent(s), 1 failed", HealthMessages.LastRound(status with { LastRoundFailures = 1 }, Now));
+        Assert.Equal("2 agent(s) verified, 1 awaiting", HealthMessages.RestartChecks(status));
+        Assert.Equal("4 since start, last 5 min ago", HealthMessages.Adoptions(status, Now));
+        Assert.Equal("never", HealthMessages.LastRound(ReconciliationStatus.Unavailable, Now));
+        Assert.Equal("none", HealthMessages.Adoptions(ReconciliationStatus.Unavailable, Now));
     }
 }

@@ -17,7 +17,7 @@ public static class AgentsServiceCollectionExtensions
     /// <see cref="IKeyDependentAgents"/>; the <see cref="AgentScheduler"/> and <see cref="PaperFillSimulator"/> hosted
     /// services; and the seams (<see cref="IMarketDataLoader"/>, <see cref="ISymbolCatalog"/>, <see cref="ICouncil"/>,
     /// <see cref="IExecutionService"/>, <see cref="IExperienceTracker"/>, <see cref="ICouncilSuggestions"/>, the live
-    /// <see cref="IOrderVenue"/>) with their fail-safe defaults, which an implementation registered earlier replaces;
+    /// <see cref="IOrderVenue"/>, <see cref="IReconciliationStatus"/>) with their fail-safe defaults, which an implementation registered earlier replaces;
     /// <see cref="IAgentGates"/> and <see cref="IDailyLossLimit"/> for the execution module. Requires <c>AddDatabase</c>, <c>AddExchange</c>, <c>AddAccounts</c>
     /// and <c>AddStrategies</c> (the <see cref="IStrategyCatalog"/> and <see cref="IStrategyEngine"/>) before this
     /// call, and <c>AddKeys</c> after it, so the runtime's key handling is kept. Connects to nothing at registration.
@@ -57,6 +57,7 @@ public static class AgentsServiceCollectionExtensions
         services.TryAddSingleton<IExecutionService, PendingExecutionService>();
         services.TryAddSingleton<IExperienceTracker, NoExperienceTracker>();
         services.TryAddSingleton<ICouncilSuggestions, NoCouncilSuggestions>();
+        services.TryAddSingleton<IReconciliationStatus, NoReconciliationStatus>();
 
         services.TryAddSingleton<PaperFillSimulator>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PaperFillSimulator>(sp => sp.GetRequiredService<PaperFillSimulator>()));

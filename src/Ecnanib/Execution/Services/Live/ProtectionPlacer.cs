@@ -10,7 +10,10 @@ namespace Ecnanib.Execution.Services.Live;
 /// <summary>
 /// FR-EXE-05: a protective order that cannot be placed is retried <c>Execution:ProtectiveOrderAttempts</c> times with
 /// <c>ProtectiveOrderRetryDelayMs</c> between attempts; when it still fails the position is closed at market and the
-/// failure logged at Critical. A hedge-mode refusal is a fault instead (FR-EXE-11).
+/// failure logged at Critical. A hedge-mode refusal is a fault instead (FR-EXE-11). Every attempt places only what is
+/// still missing, and an attempt whose answer was lost and could not be read back is neither retried nor flattened:
+/// reconciliation settles it (NFR-REL-02). On spot, where an open sell locks its quantity, a replacement cancels the old
+/// protection first, tolerantly, and never leaves a unit uncovered (NFR-REL-03).
 /// </summary>
 internal sealed class ProtectionPlacer
 {
@@ -72,6 +75,11 @@ internal sealed class ProtectionPlacer
             {
                 throw;
             }
+            catch (OrderOutcomeUnknownException ex)
+            {
+                _logger.LogWarning(ex, "The {What} of trade {TradeId} of agent {AgentId}: the answer to order {ClientOrderId} was lost and could not be read back; nothing is retried or flattened until reconciliation resolves it (NFR-REL-02)", what, trade.Id, account.Agent.Id, ex.Row.ClientOrderId);
+                throw;
+            }
             catch (Exception ex) when (FuturesAccountSetup.IsHedgeModeError(ex))
             {
                 throw new ExecutionFaultException(FuturesAccountSetup.HedgeModeGuidance, ex);
@@ -96,7 +104,34 @@ internal sealed class ProtectionPlacer
         }
     }
 
-    /// <summary>Closes the whole remaining position at market after its protection could not be placed (FR-EXE-05); the open protective rows are cancelled first on futures.</summary>
+    /// <summary>
+    /// Spot only: an open sell locks its quantity, so a replacement cannot stand beside the old protection and the old
+    /// goes first. Every protective group among <paramref name="open"/> is cancelled tolerantly, the units it freed are
+    /// protected at <paramref name="stop"/> with the FR-EXE-05 retries, and a group the exchange would not cancel keeps
+    /// its previous protection and is reported through <see cref="ExecutionUnavailableException"/> once the rest is
+    /// protected, so no unit is ever left uncovered (NFR-REL-03). The freed units are the cancelled groups' own (a stop
+    /// move keeps the targets); <paramref name="units"/>, a new split for a grown position that no longer maps onto the
+    /// old groups, is placed instead, less what a kept group still locks, taken off the trailing remainder. Returns the
+    /// rows placed.
+    /// </summary>
+    public async Task<IReadOnlyList<Order>> ReplaceSpotProtectionAsync(LiveAccount account, Trade trade, IReadOnlyList<Order> open, IReadOnlyList<ProtectionUnit>? units, decimal stop, CancellationToken cancellationToken)
+    {
+        var (cancelled, kept) = await _spot.CancelProtectionAsync(account, open.Where(OrderRows.IsProtective).ToList(), open, cancellationToken).ConfigureAwait(false);
+        var freed = units is null
+            ? OrderRows.UnitsOf(cancelled, cancelled.Where(o => o.Purpose == OrderPurpose.StopLoss).Sum(o => o.Quantity))
+            : kept.Count == 0 ? units : OrderRows.Reduce(units, kept.Where(o => o.Purpose == OrderPurpose.StopLoss).Sum(o => o.Quantity));
+        var placed = freed.Count > 0 ? await ProtectAsync(account, trade, freed, stop, cancellationToken).ConfigureAwait(false) : [];
+        if (kept.Count > 0)
+            throw new ExecutionUnavailableException($"{kept.Count} protective order(s) of trade {trade.Id} could not be cancelled and keep the previous stop; the rest is protected at {stop}.");
+        return placed;
+    }
+
+    /// <summary>
+    /// Closes the whole remaining position at market after its protection could not be placed (FR-EXE-05). A close still
+    /// pending is returned instead of a second one (NFR-REL-02). On futures the reduce-only close is placed beside the stop
+    /// and the fill handler cancels what is left once the trade closes (NFR-REL-03); on spot the protection that locks the
+    /// quantity is cancelled first, tolerantly.
+    /// </summary>
     public async Task<Order?> FlattenAsync(LiveAccount account, Trade trade, CancellationToken cancellationToken)
     {
         try
@@ -106,19 +141,17 @@ internal sealed class ProtectionPlacer
             if (remaining <= 0)
                 return null;
             var open = await _ledger.OpenRowsAsync(trade.Id, cancellationToken).ConfigureAwait(false);
-            foreach (var row in open.Where(o => o.Purpose is OrderPurpose.StopLoss or OrderPurpose.TakeProfit))
+            if (open.FirstOrDefault(o => o.Purpose == OrderPurpose.Close) is { } pending)
             {
-                try
-                {
-                    if (account.IsFutures)
-                        await _futures.CancelAsync(account, row, cancellationToken).ConfigureAwait(false);
-                    else
-                        await _spot.CancelAsync(account, row, open, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.LogWarning(ex, "Protective order {ClientOrderId} could not be cancelled before flattening trade {TradeId}", row.ClientOrderId, trade.Id);
-                }
+                _logger.LogInformation("Trade {TradeId} of agent {AgentId} already has close {ClientOrderId} pending; no second one is placed", trade.Id, account.Agent.Id, pending.ClientOrderId);
+                return pending;
+            }
+
+            if (!account.IsFutures)
+            {
+                var (_, kept) = await _spot.CancelProtectionAsync(account, open.Where(OrderRows.IsProtective).ToList(), open, cancellationToken).ConfigureAwait(false);
+                if (kept.Count > 0)
+                    _logger.LogWarning("{Count} protective order(s) of trade {TradeId} could not be cancelled before flattening; the sell may be refused for the quantity they lock", kept.Count, trade.Id);
             }
 
             var agent = account.Agent;
@@ -137,6 +170,11 @@ internal sealed class ProtectionPlacer
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (OrderOutcomeUnknownException ex)
+        {
+            _logger.LogWarning(ex, "Trade {TradeId} of agent {AgentId}: the outcome of its market close is unknown; reconciliation resolves it and no second close is placed (NFR-REL-02)", trade.Id, account.Agent.Id);
+            return null;
         }
         catch (Exception ex)
         {
