@@ -25,26 +25,26 @@ internal static class ExecutionLiveSeed
     public static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public static (ServiceProvider Provider, TestLoggerProvider Logs, FakeTimeProvider Time, FakeExchangeClientFactory Exchange, FakeMarketStreams Streams) Build(
-        DatabaseLiveFixture fixture, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null)
+        DatabaseLiveFixture fixture, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null, FakeExchangeClientFactory? exchange = null)
     {
         var values = new Dictionary<string, string?> { ["Execution:FillTrackerStartDelaySeconds"] = "0", ["Execution:ProtectiveOrderRetryDelayMs"] = "100" };
         foreach (var (key, value) in config ?? [])
             values[key] = value;
-        var built = AgentsLiveSeed.Build(fixture, values, configure, now, marketData: false, execution: true);
+        var built = AgentsLiveSeed.Build(fixture, values, configure, now, marketData: false, execution: true, exchange);
         built.Exchange.OnPrice = _ => built.Exchange.Account("none", MarketType.Spot).MarketPrice;
         return built;
     }
 
     /// <summary>A live agent on a fresh Binance key of the user, validated through the fake exchange.</summary>
     public static async Task<Agent> LiveAgentAsync(DatabaseLiveFixture fixture, ServiceProvider provider, Guid userId, string name, MarketType market, string symbol = "BTCUSDT",
-        ExchangeEnvironment environment = ExchangeEnvironment.Testnet, AgentState state = AgentState.Running, int leverage = 3)
+        ExchangeEnvironment environment = ExchangeEnvironment.Testnet, AgentState state = AgentState.Running, int leverage = 3, bool discretionary = false)
     {
         // One key per agent, so each agent has its own scripted account book.
         var result = await provider.GetRequiredService<IKeyService>().AddExchangeKeyAsync(userId,
             new ExchangeKeyInput($"{name}-{Guid.NewGuid():N}"[..20], environment, true, true, AgentsLiveSeed.ExchangeApiKey, AgentsLiveSeed.ExchangeSecret), Ct);
         Assert.Equal(KeySaveStatus.Succeeded, result.Status);
         var keyId = result.KeyId!.Value;
-        var agent = await AgentsLiveSeed.NewAgentAsync(fixture, userId, name, state, AgentMode.Live, market, symbol, exchangeKeyId: keyId);
+        var agent = await AgentsLiveSeed.NewAgentAsync(fixture, userId, name, state, AgentMode.Live, market, symbol, exchangeKeyId: keyId, discretionary: discretionary);
         if (market == MarketType.UsdFutures && leverage != 3)
         {
             await using var db = fixture.CreateContext();
@@ -138,7 +138,7 @@ internal static class ExecutionLiveSeed
 
     /// <summary>An execution request for the evaluated candle, with the open state read fresh and the engine output built around <paramref name="setup"/>.</summary>
     public static async Task<ExecutionRequest> RequestAsync(DatabaseLiveFixture fixture, ServiceProvider provider, Agent agent, Evaluation evaluation, decimal close = 100m, StrategySetup? setup = null,
-        bool entriesAllowed = true, bool interrupted = false, IReadOnlyList<PriceLevel>? levels = null, decimal atr = 2m, Dictionary<string, JsonElement>? overrides = null)
+        bool entriesAllowed = true, IReadOnlyList<PriceLevel>? levels = null, decimal atr = 2m, Dictionary<string, JsonElement>? overrides = null)
     {
         var catalog = provider.GetRequiredService<IStrategyCatalog>();
         var strategy = catalog.Find(agent.StrategyId, agent.StrategyVersion)!;
@@ -158,7 +158,7 @@ internal static class ExecutionLiveSeed
 
         var venue = provider.GetRequiredService<IOrderVenues>().For(agent.Mode);
         var caps = provider.GetRequiredService<IOptions<RiskCapsOptions>>().Value;
-        return new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, trades, orders, caps, venue, interrupted, handle, entriesAllowed, LastClose.AddMinutes(3));
+        return new ExecutionRequest(agent, evaluation, strategy, parameters, output, market, trades, orders, caps, venue, handle, entriesAllowed, LastClose.AddMinutes(3));
     }
 
     /// <summary>Flat 1H candles closing at <paramref name="close"/>, the last one opening at <see cref="LastOpen"/>.</summary>

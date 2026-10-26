@@ -117,9 +117,23 @@ public class HardLimitsTests
         Assert.False(within.Rejected);
         Assert.Equal("3 ATR, at most 3", within.Checks.Single(c => c.Limit == LimitNames.StopDistance).Detail);
 
+        // NFR-REL-03: the strategy bounds the stop, so an entry without an ATR to check it against is refused, not waved through.
         var noAtr = HardLimits.Apply(Open(DecisionAction.OpenLong, 100m, 50m), CouncilTestHost.Context(output: CouncilTestHost.Output(CouncilTestHost.LongSetup(), atr: 0m)), Caps);
-        Assert.False(noAtr.Rejected);
-        Assert.StartsWith("not applicable", noAtr.Checks.Single(c => c.Limit == LimitNames.StopDistance).Detail);
+        AssertRejected(noAtr, LimitNames.StopDistance);
+        Assert.Equal("the strategy bounds the stop at 3 ATR but no ATR is available", noAtr.Checks.Single(c => c.Limit == LimitNames.StopDistance).Detail);
+    }
+
+    [Fact]
+    public void AStrategyWithoutAStopDistanceBoundLeavesTheDistanceUnchecked()
+    {
+        var unbounded = new StrategyDescriptor("free-stop", "Free Stop", CandleInterval.OneHour, 1, "No stop-distance bound.",
+            [StrategyParameter.Integer(StrategyParameters.AtrPeriod, "ATR period", 14, 2, 200)], [], []);
+        var context = CouncilTestHost.Context(descriptor: unbounded, output: CouncilTestHost.Output(CouncilTestHost.LongSetup(), atr: 0m));
+
+        var outcome = HardLimits.Apply(Open(DecisionAction.OpenLong, 100m, 50m), context, Caps);
+
+        Assert.False(outcome.Rejected);
+        Assert.Equal("not applicable: the strategy declares no stop-distance bound", outcome.Checks.Single(c => c.Limit == LimitNames.StopDistance).Detail);
     }
 
     [Fact]

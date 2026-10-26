@@ -8,7 +8,8 @@ namespace Ecnanib.Tests.Support;
 /// orders fill at once at <see cref="MarketPrice"/> (with <see cref="FeeRate"/> in the quote asset) unless
 /// <see cref="FillMarketOrders"/> is off; every other order waits for the test to <see cref="FillAsync"/> or
 /// <see cref="TriggerAsync"/> it, which also pushes the matching user-data event to the subscribers. Hooks script
-/// failures; every request is recorded.
+/// failures before an order is stored (a rejection) or after (an accepted order whose answer the caller never sees),
+/// on reads and on cancels; every request is recorded. Duplicate client ids are refused with Binance's own codes.
 /// </summary>
 internal sealed class FakeExchangeAccount
 {
@@ -76,6 +77,22 @@ internal sealed class FakeExchangeAccount
 
     public Func<OrderRef, Exception?>? OnCancel { get; set; }
 
+    /// <summary>Scripted by list client id: a failure cancelling an OCO list.</summary>
+    public Func<string, Exception?>? OnCancelOco { get; set; }
+
+    /// <summary>Return an exception to lose the answer to a placement the exchange accepted: the order is stored, the caller sees the exception.</summary>
+    public Func<ExchangeOrder, Exception?>? AfterPlaceOrder { get; set; }
+
+    public Func<OcoOrderList, Exception?>? AfterPlaceOco { get; set; }
+
+    public Func<ConditionalOrder, Exception?>? AfterPlaceConditional { get; set; }
+
+    /// <summary>Scripted by client (or list client) id: a failure reading one order back.</summary>
+    public Func<string, Exception?>? OnQuery { get; set; }
+
+    /// <summary>A failure reading the open orders, as reconciliation does first.</summary>
+    public Func<Exception?>? OnRead { get; set; }
+
     /// <summary>The leverage the exchange applies; defaults to the one asked for.</summary>
     public Func<string, int, int>? OnSetLeverage { get; set; }
 
@@ -108,7 +125,7 @@ internal sealed class FakeExchangeAccount
             if (OnPlaceOrder?.Invoke(request) is { } error)
                 throw error;
             if (Orders.Any(o => o.ClientOrderId == request.ClientOrderId))
-                throw new ExchangeRequestException($"Duplicate client order id {request.ClientOrderId}", ExchangeErrorKind.DuplicateClientOrderId, -2026);
+                throw Duplicate();
             var fills = request.Type == OrderType.Market && FillMarketOrders;
             var quantity = request.Quantity ?? 0m;
             var order = new ExchangeOrder(request.Symbol, _nextId++, request.ClientOrderId, request.Side, request.Type, fills ? OrderStatus.Filled : OrderStatus.New,
@@ -118,20 +135,35 @@ internal sealed class FakeExchangeAccount
             if (fills)
                 Trades.Add(new UserTrade(request.Symbol, _nextTradeId++, order.OrderId, MarketPrice, quantity, quantity * MarketPrice, quantity * MarketPrice * FeeRate, "USDT",
                     request.Side == OrderSide.Buy, false, Market == MarketType.UsdFutures ? 0m : null, Now));
+            if (AfterPlaceOrder?.Invoke(order) is { } lost)
+                throw lost;
             return order;
         }
     }
 
+    /// <summary>Binance's answer to a client id it already holds: -2010 "Duplicate order sent." on Spot, -4116 on futures.</summary>
+    private ExchangeRequestException Duplicate() => Market == MarketType.UsdFutures
+        ? new ExchangeRequestException("Binance USDⓈ-M place order failed: ClientOrderId is duplicated. (code -4116)", ExchangeErrorKind.DuplicateClientOrderId, -4116)
+        : new ExchangeRequestException("Binance Spot place order failed: Duplicate order sent. (code -2010)", ExchangeErrorKind.DuplicateClientOrderId, -2010);
+
     public ExchangeOrder Get(string symbol, OrderRef reference)
     {
         lock (_lock)
+        {
+            if (OnQuery?.Invoke(reference.ClientOrderId ?? reference.OrderId?.ToString() ?? "") is { } error)
+                throw error;
             return Find(reference) ?? throw new ExchangeRequestException($"Unknown order {reference}", ExchangeErrorKind.UnknownOrder, -2013);
+        }
     }
 
     public IReadOnlyList<ExchangeOrder> Open(string? symbol)
     {
         lock (_lock)
+        {
+            if (OnRead?.Invoke() is { } error)
+                throw error;
             return Orders.Where(o => o.Status.IsOpen() && (symbol is null || string.Equals(o.Symbol, symbol, StringComparison.OrdinalIgnoreCase))).ToList();
+        }
     }
 
     public ExchangeOrder Cancel(string symbol, OrderRef reference)
@@ -176,7 +208,7 @@ internal sealed class FakeExchangeAccount
             if (OnPlaceOco?.Invoke(request) is { } error)
                 throw error;
             if (OcoLists.Any(l => l.ListClientOrderId == request.ListClientOrderId) || Orders.Any(o => o.ClientOrderId == request.TakeProfitClientOrderId || o.ClientOrderId == request.StopClientOrderId))
-                throw new ExchangeRequestException($"Duplicate client order id {request.ListClientOrderId}", ExchangeErrorKind.DuplicateClientOrderId, -2026);
+                throw Duplicate();
             var listId = _nextId++;
             var tp = new ExchangeOrder(request.Symbol, _nextId++, request.TakeProfitClientOrderId, request.Side, OrderType.LimitMaker, OrderStatus.New, TimeInForce.GoodTillCanceled,
                 request.TakeProfitPrice, null, request.Quantity, 0m, 0m, null, false, listId, Now, Now);
@@ -186,6 +218,8 @@ internal sealed class FakeExchangeAccount
             Orders.Add(sl);
             var list = new OcoOrderList(listId, request.ListClientOrderId, request.Symbol, OcoListStatus.Executing, [new OrderRef(tp.OrderId, tp.ClientOrderId), new OrderRef(sl.OrderId, sl.ClientOrderId)], [tp, sl], Now);
             OcoLists.Add(list);
+            if (AfterPlaceOco?.Invoke(list) is { } lost)
+                throw lost;
             return list;
         }
     }
@@ -193,7 +227,11 @@ internal sealed class FakeExchangeAccount
     public OcoOrderList GetOco(string listClientOrderId)
     {
         lock (_lock)
+        {
+            if (OnQuery?.Invoke(listClientOrderId) is { } error)
+                throw error;
             return OcoLists.FirstOrDefault(l => l.ListClientOrderId == listClientOrderId) ?? throw new ExchangeRequestException($"Unknown OCO {listClientOrderId}", ExchangeErrorKind.UnknownOrder, -2013);
+        }
     }
 
     public OcoOrderList CancelOco(string symbol, string listClientOrderId)
@@ -201,6 +239,8 @@ internal sealed class FakeExchangeAccount
         lock (_lock)
         {
             CancelledOcos.Add(listClientOrderId);
+            if (OnCancelOco?.Invoke(listClientOrderId) is { } error)
+                throw error;
             var index = OcoLists.FindIndex(l => l.ListClientOrderId == listClientOrderId);
             if (index < 0)
                 throw new ExchangeRequestException($"Unknown OCO {listClientOrderId}", ExchangeErrorKind.UnknownOrder, -2011);
@@ -231,10 +271,12 @@ internal sealed class FakeExchangeAccount
             if (PositionMode == PositionMode.Hedge)
                 throw new ExchangeRequestException("Order's position side does not match user's setting.", ExchangeErrorKind.IncorrectState, -4061);
             if (Conditional.Any(o => o.ClientAlgoId == request.ClientAlgoId))
-                throw new ExchangeRequestException($"Duplicate client algo id {request.ClientAlgoId}", ExchangeErrorKind.DuplicateClientOrderId, -2026);
+                throw Duplicate();
             var order = new ConditionalOrder(request.Symbol, _nextId++, request.ClientAlgoId, request.Side, request.Type, ConditionalOrderStatus.New, request.TriggerPrice, request.Price,
                 request.Quantity, request.ReduceOnly, request.ClosePosition, null, null, null, Now, Now, null);
             Conditional.Add(order);
+            if (AfterPlaceConditional?.Invoke(order) is { } lost)
+                throw lost;
             return order;
         }
     }
@@ -242,7 +284,11 @@ internal sealed class FakeExchangeAccount
     public ConditionalOrder GetConditional(OrderRef reference)
     {
         lock (_lock)
+        {
+            if (OnQuery?.Invoke(reference.ClientOrderId ?? reference.OrderId?.ToString() ?? "") is { } error)
+                throw error;
             return FindConditional(reference) ?? throw new ExchangeRequestException($"Unknown conditional order {reference}", ExchangeErrorKind.UnknownOrder, -2013);
+        }
     }
 
     public ConditionalOrder CancelConditional(OrderRef reference)

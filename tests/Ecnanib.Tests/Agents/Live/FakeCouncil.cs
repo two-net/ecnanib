@@ -64,6 +64,12 @@ internal sealed class FakeCouncil : ICouncil
         RoleOutputs = [RiskManager(DecisionAction.Close)],
     };
 
+    public static Decision Hold(Guid? tradeId = null) => new()
+    {
+        FinalAction = DecisionAction.Hold, TradeId = tradeId, Rationale = "fake council: hold",
+        RoleOutputs = [RiskManager(DecisionAction.Hold)],
+    };
+
     private static DecisionRoleOutput RiskManager(DecisionAction action) =>
         new() { Role = CouncilRole.RiskManager, Sequence = 4, Provider = AiProvider.Claude, Model = "m", Status = RoleOutputStatus.Succeeded, ProposedAction = action };
 }

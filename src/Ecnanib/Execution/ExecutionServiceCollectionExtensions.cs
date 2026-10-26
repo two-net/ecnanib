@@ -15,7 +15,7 @@ public static class ExecutionServiceCollectionExtensions
     /// that sizes, enforces the venue-bound limits and manages positions at candle close (FR-EXE-03..06, FR-EXE-09);
     /// the live <see cref="IOrderVenue"/> on Binance (FR-EXE-01, FR-EXE-02, FR-EXE-07, FR-EXE-10..12); and two hosted
     /// services, the <see cref="LiveFillTracker"/> on the user-data streams and the <see cref="ExchangeReconciler"/>
-    /// (FR-EXE-08). Both replace the agents module's fail-safe defaults, so register it <b>before</b> <c>AddAgents</c>;
+    /// (FR-EXE-08), which also reports as <see cref="IReconciliationStatus"/> (NFR-OBS-01). Both replace the agents module's fail-safe defaults, so register it <b>before</b> <c>AddAgents</c>;
     /// it throws when <c>AddAgents</c> came first. Requires <c>AddExchange</c>, <c>AddDatabase</c> and, at call time,
     /// the keys module's resolver. Connects to nothing at registration.
     /// </summary>
@@ -45,6 +45,7 @@ public static class ExecutionServiceCollectionExtensions
         services.TryAddSingleton<TradeLedger>();
         services.TryAddSingleton<FillHandler>();
         services.TryAddSingleton<ExchangeReconciler>();
+        services.TryAddSingleton<IReconciliationStatus>(sp => sp.GetRequiredService<ExchangeReconciler>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, ExchangeReconciler>(sp => sp.GetRequiredService<ExchangeReconciler>()));
         services.TryAddSingleton<LiveFillTracker>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, LiveFillTracker>(sp => sp.GetRequiredService<LiveFillTracker>()));

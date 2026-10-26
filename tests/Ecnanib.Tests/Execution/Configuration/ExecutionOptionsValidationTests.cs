@@ -19,6 +19,7 @@ public class ExecutionOptionsValidationTests
         Assert.Equal(TimeSpan.FromSeconds(20), options.ManageBudget);
         Assert.Equal(TimeSpan.FromSeconds(30), options.ReconcileAfter);
         Assert.Equal(TimeSpan.FromSeconds(6), options.FillTrackerStartDelay);
+        Assert.Equal(TimeSpan.FromSeconds(10), options.LostAnswerLookup);
     }
 
     [Fact]
@@ -40,6 +41,7 @@ public class ExecutionOptionsValidationTests
     [InlineData("Execution:ManageBudgetSeconds", "4", "Execution:ManageBudgetSeconds must be between 5 and 60")]
     [InlineData("Execution:ReconcileAfterSeconds", "601", "Execution:ReconcileAfterSeconds must be between 5 and 600")]
     [InlineData("Execution:FillTrackerStartDelaySeconds", "-1", "Execution:FillTrackerStartDelaySeconds must be between 0 and 3600")]
+    [InlineData("Execution:LostAnswerLookupSeconds", "0", "Execution:LostAnswerLookupSeconds must be between 1 and 60")]
     public void InvalidValuesFailWithPropertyPath(string key, string value, string expectedFragment)
     {
         var ex = Assert.Throws<OptionsValidationException>(() => Resolve(new() { [key] = value }));

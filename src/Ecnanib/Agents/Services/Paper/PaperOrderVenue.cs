@@ -366,18 +366,29 @@ internal sealed class PaperOrderVenue : IOrderVenue
         return current;
     }
 
-    public async Task<int> CancelOpenOrdersAsync(Agent agent, CancellationToken cancellationToken)
+    public Task<int> CancelOpenOrdersAsync(Agent agent, CancellationToken cancellationToken) =>
+        CancelAsync(agent, null, cancellationToken);
+
+    /// <summary>The pending entries only; the book drops each of them and keeps everything else.</summary>
+    public Task<int> CancelEntryOrdersAsync(Agent agent, CancellationToken cancellationToken) =>
+        CancelAsync(agent, [OrderPurpose.Entry], cancellationToken);
+
+    /// <summary>The stop-loss and take-profit rows; the book keeps the positions with their pending close (which still fills) and strips their protection.</summary>
+    public Task<int> CancelProtectiveOrdersAsync(Agent agent, CancellationToken cancellationToken) =>
+        CancelAsync(agent, [OrderPurpose.StopLoss, OrderPurpose.TakeProfit], cancellationToken);
+
+    private async Task<int> CancelAsync(Agent agent, OrderPurpose[]? purposes, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(agent);
         var now = _time.GetUtcNow();
         await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var ids = await db.Orders
-            .Where(o => o.AgentId == agent.Id && o.IsPaper && (o.Status == OrderStatus.New || o.Status == OrderStatus.PartiallyFilled))
+            .Where(o => o.AgentId == agent.Id && o.IsPaper && (o.Status == OrderStatus.New || o.Status == OrderStatus.PartiallyFilled) && (purposes == null || purposes.Contains(o.Purpose)))
             .Select(o => o.Id)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         if (ids.Count == 0)
         {
-            _simulator.ClearAgent(agent.MarketType, agent.Symbol, agent.Id);
+            Unbook(agent, purposes, ids);
             return 0;
         }
 
@@ -385,11 +396,23 @@ internal sealed class PaperOrderVenue : IOrderVenue
             .Where(o => ids.Contains(o.Id) && (o.Status == OrderStatus.New || o.Status == OrderStatus.PartiallyFilled))
             .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, OrderStatus.Canceled).SetProperty(o => o.UpdatedAt, now), cancellationToken)
             .ConfigureAwait(false);
-        _simulator.ClearAgent(agent.MarketType, agent.Symbol, agent.Id);
+        Unbook(agent, purposes, ids);
         _logger.LogInformation("{Orders} paper order(s) of agent {AgentId} cancelled", rows, agent.Id);
         foreach (var id in ids)
             _events.Publish(new OrderChanged(agent.Id, agent.UserId, now, id, OrderStatus.Canceled));
         return rows;
+    }
+
+    /// <summary>Everything cancelled: the book forgets the agent's entries and exits; entries only: each one is dropped; protection only: the positions stay armed for their close.</summary>
+    private void Unbook(Agent agent, OrderPurpose[]? purposes, IReadOnlyList<Guid> ids)
+    {
+        if (purposes is null)
+            _simulator.ClearAgent(agent.MarketType, agent.Symbol, agent.Id);
+        else if (purposes.Contains(OrderPurpose.Entry))
+            foreach (var id in ids)
+                _simulator.RemoveEntry(agent.MarketType, agent.Symbol, id);
+        else
+            _simulator.StripProtection(agent.MarketType, agent.Symbol, agent.Id);
     }
 
     public async Task<int> ClosePositionsAtMarketAsync(Agent agent, CancellationToken cancellationToken)

@@ -14,7 +14,8 @@ public static class DatabaseServiceCollectionExtensions
     /// <summary>
     /// Registers the database module: validated <see cref="DatabaseOptions"/> and <see cref="RetentionOptions"/>,
     /// the <see cref="EcnanibDbContext"/> factory (plus a scoped context), the Data Protection key ring persisted
-    /// in the database (FR-CFG-05), the startup migrator and the retention sweeper. Nothing connects until
+    /// in the database (FR-CFG-05), the startup migrator, the retention sweeper and the instance lock that keeps the
+    /// database to one process (NFR-REL-04, also <see cref="IInstanceLockStatus"/>). Nothing connects until
     /// <see cref="MigrateDatabaseAsync"/> runs.
     /// </summary>
     public static IServiceCollection AddDatabase(this IServiceCollection services, IConfiguration configuration)
@@ -45,10 +46,25 @@ public static class DatabaseServiceCollectionExtensions
         services.AddDataProtection().PersistKeysToDbContext<EcnanibDbContext>();
 
         services.TryAddSingleton<DatabaseMigrator>();
+        services.TryAddSingleton<InstanceLock>();
+        services.TryAddSingleton<IInstanceLockStatus>(sp => sp.GetRequiredService<InstanceLock>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, InstanceLock>(sp => sp.GetRequiredService<InstanceLock>()));
         services.TryAddSingleton<RetentionSweeper>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RetentionSweeper>(sp => sp.GetRequiredService<RetentionSweeper>()));
 
         return services;
+    }
+
+    /// <summary>
+    /// Takes the database's instance lock (NFR-REL-04) after <see cref="MigrateDatabaseAsync"/> and before the host
+    /// starts, so no hosted service of a second instance ever runs against the same database. Waits
+    /// <c>Database:InstanceLockWaitSeconds</c> for a previous instance to release it, then throws
+    /// <see cref="InstanceLockException"/> after logging the cause at Critical; <c>Program</c> exits with code 1.
+    /// </summary>
+    public static Task AcquireInstanceLockAsync(this IHost host, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        return host.Services.GetRequiredService<InstanceLock>().AcquireAsync(cancellationToken);
     }
 
     /// <summary>

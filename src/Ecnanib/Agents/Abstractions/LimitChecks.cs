@@ -31,9 +31,10 @@ public static class LimitNames
     public const string PartialFraction = "partialFraction";
 }
 
-/// <summary>The checks execution appends at order time (FR-EXE-04): sizing against the filters, the notional cap, the balance and the daily loss.</summary>
+/// <summary>The checks execution appends at order time (FR-EXE-04): sizing against the filters, the notional cap, the balance, the daily loss and, after a restart, whether the exchange state could be verified (NFR-REL-01).</summary>
 public static class ExecutionLimitNames
 {
+    public const string ExchangeState = "exchangeState";
     public const string Size = "size";
     public const string Notional = "notional";
     public const string MaxQuantity = "maxQuantity";

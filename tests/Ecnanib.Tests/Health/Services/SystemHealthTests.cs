@@ -25,7 +25,7 @@ public class SystemHealthTests
     {
         var factory = new ThrowingDbContextFactory();
         var exchange = new FakeExchangeHealth { MarketStreams = [Stream("candles:production:spot:btcusdt:1h", StreamHealth.Connected)] };
-        var health = new SystemHealth(factory, exchange, new FakeSchedulerStatus(Running()), new FakeModelCatalog { Error = new TimeoutException("catalog down") }, new FakeTimeProvider(Now), NullLogger<SystemHealth>.Instance);
+        var health = new SystemHealth(factory, exchange, new FakeSchedulerStatus(Running()), new FakeModelCatalog { Error = new TimeoutException("catalog down") }, new FakeReconciliationStatus(Reconciled()), new FakeInstanceLockStatus(Held()), new FakeTimeProvider(Now), NullLogger<SystemHealth>.Instance);
 
         var report = await health.GetAsync(Ct);
 
@@ -39,13 +39,15 @@ public class SystemHealthTests
         Assert.Equal(SchedulerPhase.Running, report.Scheduler.Phase);
         Assert.Single(report.MarketStreams);
         Assert.Same(RateLimitSnapshot.Empty, report.RateLimits);
+        Assert.Equal(InstanceLockState.Held, report.InstanceLock.State);
+        Assert.Equal(2, report.Reconciliation.CheckedAgents);
     }
 
     [Fact]
     public async Task AProbeThatNeverAnswersTimesOutUnderTheFakeClock()
     {
         var time = new FakeTimeProvider(Now);
-        var health = new SystemHealth(new HangingDbContextFactory(), new FakeExchangeHealth(), new FakeSchedulerStatus(Running()), new FakeModelCatalog(), time, NullLogger<SystemHealth>.Instance);
+        var health = new SystemHealth(new HangingDbContextFactory(), new FakeExchangeHealth(), new FakeSchedulerStatus(Running()), new FakeModelCatalog(), new FakeReconciliationStatus(ReconciliationStatus.Unavailable), new FakeInstanceLockStatus(Held()), time, NullLogger<SystemHealth>.Instance);
 
         var probe = health.GetAsync(Ct);
         await Wait.SettleAsync();
@@ -78,6 +80,15 @@ public class SystemHealthTests
         { "rate-limited", HealthState.Degraded },
         { "rate-limit-over", HealthState.Healthy },
         { "database-unhealthy-beats-degraded", HealthState.Unhealthy },
+        { "reconciliation-unavailable", HealthState.Healthy },
+        { "reconciliation-last-round-failed", HealthState.Degraded },
+        { "reconciliation-whole-round-failed", HealthState.Degraded },
+        { "reconciliation-recovered", HealthState.Healthy },
+        { "restart-checks-pending-after-grace", HealthState.Degraded },
+        { "restart-checks-pending-fresh-start", HealthState.Healthy },
+        { "instance-lock-not-held", HealthState.Healthy },
+        { "instance-lock-reacquiring", HealthState.Degraded },
+        { "instance-lock-lost", HealthState.Unhealthy },
     };
 
     [Theory]
@@ -91,6 +102,8 @@ public class SystemHealthTests
         IReadOnlyList<ProviderSyncView> sync = [Sync(AiProvider.Claude, SyncStatus.Succeeded)];
         string? syncError = null;
         var limits = RateLimitSnapshot.Empty;
+        var reconciliation = Reconciled();
+        var instanceLock = Held();
 
         switch (scenario)
         {
@@ -140,12 +153,46 @@ public class SystemHealthTests
                 database = new DatabaseHealth(HealthState.Unhealthy, null, "down");
                 market = [Stream("candles:production:spot:btcusdt:1h", StreamHealth.Down)];
                 break;
+            case "reconciliation-unavailable":
+                reconciliation = ReconciliationStatus.Unavailable;
+                break;
+            case "reconciliation-last-round-failed":
+                // The round records its failures and then its own completion, so the failure count is what tells, not the timestamps.
+                reconciliation = reconciliation with { LastRoundFailures = 1, LastError = "key could not be read", LastErrorAt = Now.AddMinutes(-1).AddMilliseconds(-5) };
+                break;
+            case "reconciliation-whole-round-failed":
+                reconciliation = reconciliation with { LastError = "the database refused the candidates", LastErrorAt = Now.AddSeconds(-20) };
+                break;
+            case "reconciliation-recovered":
+                reconciliation = reconciliation with { LastError = "key could not be read", LastErrorAt = Now.AddMinutes(-5) };
+                break;
+            case "restart-checks-pending-after-grace":
+                reconciliation = reconciliation with { AwaitingCheck = 1 };
+                break;
+            case "restart-checks-pending-fresh-start":
+                scheduler = scheduler with { StartedAt = Now.AddMinutes(-1) };
+                reconciliation = reconciliation with { AwaitingCheck = 1 };
+                break;
+            case "instance-lock-not-held":
+                instanceLock = InstanceLockStatus.NotHeld;
+                break;
+            case "instance-lock-reacquiring":
+                instanceLock = instanceLock with { State = InstanceLockState.Reacquiring, LastError = "connection reset" };
+                break;
+            case "instance-lock-lost":
+                instanceLock = instanceLock with { State = InstanceLockState.Lost };
+                break;
         }
 
-        Assert.Equal(expected, SystemHealth.RollUp(database, scheduler, market, userData, sync, syncError, limits, Now));
+        Assert.Equal(expected, SystemHealth.RollUp(database, scheduler, market, userData, sync, syncError, limits, reconciliation, instanceLock, Now));
     }
 
-    private static SchedulerStatus Running() => new(SchedulerPhase.Running, Now.AddHours(-1), Now.AddSeconds(-30), 3, 1, 0, 10, null, null, 0, null);
+    private static SchedulerStatus Running() => new(SchedulerPhase.Running, Now.AddHours(-1), Now.AddSeconds(-30), 3, 1, 0, 10, null, null, 0, null, 0);
+
+    /// <summary>A reconciliation that ran a minute ago over two verified agents with nothing awaiting (NFR-REL-01).</summary>
+    private static ReconciliationStatus Reconciled() => new(true, Now.AddHours(-1), Now.AddMinutes(-1), 2, 0, 2, 0, 1, Now.AddMinutes(-30), null, null);
+
+    private static InstanceLockStatus Held() => new(InstanceLockState.Held, Now.AddHours(-1), 4242, Now.AddSeconds(-10), null, null);
 
     private static StreamStatus Stream(string name, StreamHealth health) => new(name, health, Now.AddSeconds(-2), Now.AddHours(-1), health == StreamHealth.Down ? "poll failed" : null);
 
@@ -155,6 +202,16 @@ public class SystemHealthTests
     private sealed class FakeSchedulerStatus(SchedulerStatus status) : ISchedulerStatus
     {
         public SchedulerStatus GetStatus() => status;
+    }
+
+    private sealed class FakeReconciliationStatus(ReconciliationStatus status) : IReconciliationStatus
+    {
+        public ReconciliationStatus GetStatus() => status;
+    }
+
+    private sealed class FakeInstanceLockStatus(InstanceLockStatus status) : IInstanceLockStatus
+    {
+        public InstanceLockStatus GetStatus() => status;
     }
 
     private sealed class FakeModelCatalog : IModelCatalog

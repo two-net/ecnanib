@@ -1,8 +1,11 @@
+using System.Runtime.ExceptionServices;
 using Ecnanib.Agents.Abstractions;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
+using Ecnanib.Execution.Configuration;
 using Ecnanib.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Ecnanib.Execution.Services.Live;
 
@@ -15,17 +18,28 @@ internal sealed record SentOrder(Order Row, RemoteOrder? Remote);
 /// <summary>
 /// The row-first pattern of every live placement (FR-EXE-07, NFR-REL-02): the row is written with status New, the
 /// request is sent once, and the row takes the exchange's ids and status. A client id the exchange already knows is
-/// adopted by reading the order back; a rejection marks the row Rejected; a transient failure leaves the row New for
-/// reconciliation, because the exchange may have accepted the order after all.
+/// adopted by reading the order back; a rejection marks the row Rejected. A lost answer (a timeout, a dropped
+/// connection, a cancelled token, an unclassified error) is resolved before anyone may retry: the exchange is asked for
+/// the order by its client id within <c>Execution:LostAnswerLookupSeconds</c>; found, it is adopted; unknown, the row is
+/// recorded as cancelled (it never reached the exchange, and still counts toward its purpose's sequence, so a retry
+/// takes a fresh id) and the failure rethrown; unreadable, the row stays New for reconciliation and
+/// <see cref="OrderOutcomeUnknownException"/> tells the caller to retry nothing.
 /// </summary>
 internal sealed class OrderRows
 {
+    /// <summary>Binance processes no request whose timestamp is older than its receive window (5 s by default), so an order still unknown this long after a lost answer never arrives.</summary>
+    internal static readonly TimeSpan ReadBackGrace = TimeSpan.FromSeconds(5);
+
     private readonly TradeLedger _ledger;
+    private readonly IOptions<ExecutionOptions> _options;
+    private readonly TimeProvider _time;
     private readonly ILogger<OrderRows> _logger;
 
-    public OrderRows(TradeLedger ledger, ILogger<OrderRows> logger)
+    public OrderRows(TradeLedger ledger, IOptions<ExecutionOptions> options, TimeProvider time, ILogger<OrderRows> logger)
     {
         _ledger = ledger;
+        _options = options;
+        _time = time;
         _logger = logger;
     }
 
@@ -83,6 +97,10 @@ internal sealed class OrderRows
             _logger.LogWarning("Order {ClientOrderId} of agent {AgentId} was rejected by the exchange: {Reason}", row.ClientOrderId, row.AgentId, ex.Message);
             throw;
         }
+        catch (Exception ex)
+        {
+            placed = await ResolveAsync(row, ex, "order", ct => account.Client.GetOrderAsync(account.Agent.Symbol, OrderRef.ByClientId(row.ClientOrderId), ct), [row.Id]).ConfigureAwait(false);
+        }
 
         _logger.LogInformation("Order {ClientOrderId} of agent {AgentId} accepted by the exchange as {ExchangeOrderId} with status {Status}", row.ClientOrderId, row.AgentId, placed.OrderId, placed.Status);
         var updated = await _ledger.UpdateOrderAsync(row.Id, o => Apply(o, placed), cancellationToken).ConfigureAwait(false) ?? row;
@@ -115,6 +133,10 @@ internal sealed class OrderRows
             await _ledger.UpdateOrderAsync(row.Id, o => o.Status = OrderStatus.Rejected, cancellationToken).ConfigureAwait(false);
             _logger.LogWarning("Conditional order {ClientOrderId} of agent {AgentId} was rejected by the exchange: {Reason}", row.ClientOrderId, row.AgentId, ex.Message);
             throw;
+        }
+        catch (Exception ex)
+        {
+            placed = await ResolveAsync(row, ex, "conditional order", ct => account.Futures!.GetConditionalOrderAsync(OrderRef.ByClientId(row.ClientOrderId), ct), [row.Id]).ConfigureAwait(false);
         }
 
         _logger.LogInformation("Conditional order {ClientOrderId} of agent {AgentId} accepted by the exchange as algo {AlgoId} with status {Status}", row.ClientOrderId, row.AgentId, placed.AlgoId, StatusOf(placed));
@@ -151,6 +173,10 @@ internal sealed class OrderRows
             _logger.LogWarning("OCO {ListClientOrderId} of agent {AgentId} was rejected by the exchange: {Reason}", takeProfit.ListClientOrderId, takeProfit.AgentId, ex.Message);
             throw;
         }
+        catch (Exception ex)
+        {
+            list = await ResolveAsync(takeProfit, ex, "OCO", ct => account.Spot!.GetOcoAsync(takeProfit.ListClientOrderId!, ct), [tp.Id, sl.Id]).ConfigureAwait(false);
+        }
 
         _logger.LogInformation("OCO {ListClientOrderId} of agent {AgentId} accepted by the exchange as list {OrderListId} with status {Status}", takeProfit.ListClientOrderId, takeProfit.AgentId, list.OrderListId, list.Status);
         var tpReport = list.OrderReports?.FirstOrDefault(o => o.ClientOrderId == tp.ClientOrderId);
@@ -174,6 +200,58 @@ internal sealed class OrderRows
                 o.ExchangeOrderId = id;
         }, cancellationToken).ConfigureAwait(false) ?? sl;
         return (tp, sl);
+    }
+
+    /// <summary>
+    /// NFR-REL-02: the answer to a request was lost, so before any retry the exchange is asked whether it has the order. The
+    /// lookup runs on its own bounded token, because the caller's may be the very token whose cancellation lost the answer.
+    /// </summary>
+    private async Task<T> ResolveAsync<T>(Order row, Exception failure, string what, Func<CancellationToken, Task<T>> readBack, IReadOnlyList<Guid> rowIds)
+    {
+        using var bounded = new CancellationTokenSource(_options.Value.LostAnswerLookup + ReadBackGrace, _time);
+        T found;
+        try
+        {
+            found = await ReadBackAsync(row, what, readBack, bounded.Token).ConfigureAwait(false);
+        }
+        catch (ExchangeException ex) when (ex.Kind == ExchangeErrorKind.UnknownOrder)
+        {
+            foreach (var id in rowIds)
+            {
+                await _ledger.UpdateOrderAsync(id, o =>
+                {
+                    if (o.Status.IsOpen())
+                        o.Status = OrderStatus.Canceled;
+                }, bounded.Token).ConfigureAwait(false);
+            }
+
+            _logger.LogWarning(failure, "The answer to {What} {ClientOrderId} of agent {AgentId} was lost and the exchange does not know it; the row is recorded as cancelled and a retry takes a fresh id (NFR-REL-02)", what, row.ClientOrderId, row.AgentId);
+            ExceptionDispatchInfo.Capture(failure).Throw();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "The answer to {What} {ClientOrderId} of agent {AgentId} was lost ({Failure}) and it could not be read back either; the row stays New for reconciliation and nothing is retried (NFR-REL-02)", what, row.ClientOrderId, row.AgentId, failure.Message);
+            throw new OrderOutcomeUnknownException(row, $"The answer to {what} {row.ClientOrderId} was lost ({failure.Message}) and it could not be read back ({ex.Message}); reconciliation will resolve it.", failure);
+        }
+
+        _logger.LogWarning(failure, "The answer to {What} {ClientOrderId} of agent {AgentId} was lost; the exchange has it and it is adopted (NFR-REL-02)", what, row.ClientOrderId, row.AgentId);
+        return found;
+    }
+
+    /// <summary>An order unknown right after a lost answer may still be in flight; it is asked for again once the exchange's receive window has passed, after which an unknown order never arrives.</summary>
+    private async Task<T> ReadBackAsync<T>(Order row, string what, Func<CancellationToken, Task<T>> readBack, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await readBack(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ExchangeException ex) when (ex.Kind == ExchangeErrorKind.UnknownOrder)
+        {
+            _logger.LogInformation("The exchange does not know {What} {ClientOrderId} of agent {AgentId} yet; the request may still be in flight, so it is asked again in {Grace}", what, row.ClientOrderId, row.AgentId, ReadBackGrace);
+            await Task.Delay(ReadBackGrace, _time, cancellationToken).ConfigureAwait(false);
+            return await readBack(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>FR-LOG-02: the placement's logs, and the exchange client's, name the agent, its user, the row and what it belongs to.</summary>
@@ -214,6 +292,67 @@ internal sealed class OrderRows
 
     public static RemoteOrder ToRemote(ConditionalOrder order) =>
         new(StatusOf(order), order.FilledQuantity ?? 0m, order.AverageFillPrice, order.ActualOrderId, order.AlgoId, order.Status is ConditionalOrderStatus.Triggered or ConditionalOrderStatus.Triggering or ConditionalOrderStatus.Finished);
+
+    public static bool IsProtective(Order row) => row.Purpose is OrderPurpose.StopLoss or OrderPurpose.TakeProfit;
+
+    /// <summary>
+    /// The units no open row protects yet, so a retry or a re-protection places only what is missing (NFR-REL-02). On
+    /// futures a unit with a target is covered by an open take-profit row of its quantity at its target (units without
+    /// target have nothing to place there; the stop is the caller's); on spot a unit with a target is covered by an OCO
+    /// whose take-profit leg has its quantity and target and whose stop leg sits at <paramref name="stopPrice"/>, a unit
+    /// without target by a lone stop-loss row of its quantity at <paramref name="stopPrice"/>. Each row covers one unit.
+    /// </summary>
+    public static IReadOnlyList<ProtectionUnit> Missing(IReadOnlyList<ProtectionUnit> units, IReadOnlyList<Order> open, decimal stopPrice, SymbolFilters filters, bool isLong, bool futures) =>
+        Match(units, open, stopPrice, filters, isLong, futures).Missing;
+
+    /// <summary>
+    /// <see cref="Missing"/> plus the open rows that cover a unit (an OCO's two legs together). Callers pass the trade's
+    /// whole desired set, never one unit of it: a unit a sibling's row happens to equal counts once, because every row
+    /// covers one unit, so the sibling keeps its row and the unit without one is the missing one.
+    /// </summary>
+    public static (IReadOnlyList<ProtectionUnit> Missing, IReadOnlyList<Order> Covering) Match(IReadOnlyList<ProtectionUnit> units, IReadOnlyList<Order> open, decimal stopPrice, SymbolFilters filters, bool isLong, bool futures)
+    {
+        var free = open.Where(o => o.Status.IsOpen()).ToList();
+        var missing = new List<ProtectionUnit>();
+        var covering = new List<Order>();
+        foreach (var unit in units)
+        {
+            var quantity = filters.RoundQuantityDownToStep(unit.Quantity, marketOrder: futures);
+            if (quantity <= 0)
+                continue;
+            Order? cover = null;
+            if (unit.Target is { } rawTarget)
+            {
+                var target = isLong ? filters.RoundPriceUpToTick(rawTarget) : filters.RoundPriceDownToTick(rawTarget);
+                cover = free.FirstOrDefault(o => o.Purpose == OrderPurpose.TakeProfit && o.Quantity == quantity && (o.Price ?? o.StopPrice) == target
+                    && (futures || o.ListClientOrderId is { } list && free.Any(s => s.Purpose == OrderPurpose.StopLoss && s.ListClientOrderId == list && s.StopPrice == stopPrice)));
+            }
+            else if (futures)
+            {
+                continue;
+            }
+            else
+            {
+                cover = free.FirstOrDefault(o => o.Purpose == OrderPurpose.StopLoss && o.ListClientOrderId is null && o.Quantity == quantity && o.StopPrice == stopPrice);
+            }
+
+            if (cover is null)
+            {
+                missing.Add(unit);
+                continue;
+            }
+
+            free.Remove(cover);
+            covering.Add(cover);
+            if (cover.ListClientOrderId is { } covered)
+            {
+                covering.AddRange(free.Where(o => o.ListClientOrderId == covered));
+                free.RemoveAll(o => o.ListClientOrderId == covered);
+            }
+        }
+
+        return (missing, covering);
+    }
 
     /// <summary>The units a trade is protected with, from its open rows: one per take-profit (an OCO or a reduce-only target), the rest as one unit without target.</summary>
     public static IReadOnlyList<ProtectionUnit> UnitsOf(IReadOnlyList<Order> openRows, decimal remaining)

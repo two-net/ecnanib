@@ -24,9 +24,12 @@ public class AddDatabaseTests
         await using var scope = provider.CreateAsyncScope();
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<EcnanibDbContext>());
 
-        // Data Protection registers a hosted service of its own; the module adds exactly the sweeper.
+        // Data Protection registers a hosted service of its own; the module adds the sweeper and the instance lock (NFR-REL-04).
         var hosted = Assert.Single(provider.GetServices<IHostedService>().OfType<RetentionSweeper>());
         Assert.Same(hosted, provider.GetRequiredService<RetentionSweeper>());
+        var instanceLock = Assert.Single(provider.GetServices<IHostedService>().OfType<InstanceLock>());
+        Assert.Same(instanceLock, provider.GetRequiredService<IInstanceLockStatus>());
+        Assert.Equal(InstanceLockState.NotHeld, instanceLock.GetStatus().State);
     }
 
     [Fact]

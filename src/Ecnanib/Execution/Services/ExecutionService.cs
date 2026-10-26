@@ -24,19 +24,21 @@ internal sealed class ExecutionService : IExecutionService
     private readonly ISymbolCatalog _symbols;
     private readonly IDailyLossLimit _dailyLoss;
     private readonly ExchangeReconciler _reconciler;
+    private readonly TradeLedger _ledger;
     private readonly IOptions<ExecutionOptions> _options;
     private readonly IOptions<AgentsOptions> _agents;
     private readonly TimeProvider _time;
     private readonly ILogger<ExecutionService> _logger;
 
     public ExecutionService(
-        IDbContextFactory<EcnanibDbContext> factory, ISymbolCatalog symbols, IDailyLossLimit dailyLoss, ExchangeReconciler reconciler,
+        IDbContextFactory<EcnanibDbContext> factory, ISymbolCatalog symbols, IDailyLossLimit dailyLoss, ExchangeReconciler reconciler, TradeLedger ledger,
         IOptions<ExecutionOptions> options, IOptions<AgentsOptions> agents, TimeProvider time, ILogger<ExecutionService> logger)
     {
         _factory = factory;
         _symbols = symbols;
         _dailyLoss = dailyLoss;
         _reconciler = reconciler;
+        _ledger = ledger;
         _options = options;
         _agents = agents;
         _time = time;
@@ -55,24 +57,23 @@ internal sealed class ExecutionService : IExecutionService
         string? fault = null;
         using var budget = new CancellationTokenSource(_options.Value.ManageBudget, _time);
         using var reads = CancellationTokenSource.CreateLinkedTokenSource(cancellable, budget.Token);
+        string? blocked = null;
         try
         {
-            if (request.InterruptedPreviously && agent.Mode == AgentMode.Live)
+            // NFR-REL-01: a live agent's exchange state is verified once per process before anything is done to it; a check
+            // that fails skips every step and blocks new entries this candle (NFR-REL-03). The steps act on what the check adopted.
+            var check = await _reconciler.EnsureCheckedAsync(agent, request.ExchangeKey, reads.Token).ConfigureAwait(false);
+            if (!check.Verified)
             {
-                try
-                {
-                    await _reconciler.ReconcileAgentAsync(agent, request.ExchangeKey, reads.Token).ConfigureAwait(false);
-                    notes.Add("Reconciled with the exchange after the restart.");
-                }
-                catch (OperationCanceledException) when (reads.Token.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Agent {AgentId} could not be reconciled after the restart; the open state stands", agent.Id);
-                    notes.Add("Reconciliation after the restart failed; see the log.");
-                }
+                _logger.LogWarning("Position management of agent {AgentId} skipped: {Reason}", agent.Id, check.Reason);
+                return new ExecutionResult([], $"Management skipped: {check.Reason}; protection is unchanged.", EntriesBlockedReason: check.Reason);
+            }
+
+            if (check.Performed)
+            {
+                notes.Add(check.Adoptions > 0 ? $"Reconciled with the exchange: {check.Adoptions} adoption(s)." : "Exchange state verified.");
+                if (check.Adoptions > 0)
+                    request = await ReloadOpenAsync(request, reads.Token).ConfigureAwait(false);
             }
 
             var filters = await FiltersAsync(request, reads.Token).ConfigureAwait(false);
@@ -146,24 +147,29 @@ internal sealed class ExecutionService : IExecutionService
         catch (OperationCanceledException) when (budget.IsCancellationRequested && !cancellable.IsCancellationRequested)
         {
             notes.Add("Management skipped: its time budget passed; protection is unchanged.");
+            blocked ??= "position management ran out of its time budget";
             _logger.LogWarning("Position management of agent {AgentId} ran out of its {Budget} budget", agent.Id, _options.Value.ManageBudget);
         }
         catch (ExecutionFaultException ex)
         {
             fault = ex.Message;
+            blocked ??= ex.Message;
         }
         catch (ExecutionUnavailableException ex)
         {
             notes.Add(ex.Message);
+            blocked ??= ex.Message;
             _logger.LogWarning("Position management of agent {AgentId}: {Reason}", agent.Id, ex.Message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             notes.Add("Management failed; see the log.");
+            blocked ??= "position management failed";
             _logger.LogWarning(ex, "Position management of agent {AgentId} failed; what was placed before stays in the result", agent.Id);
         }
 
-        return new ExecutionResult(orders, notes.Count == 0 ? null : string.Join(" ", notes), fault, entryPlaced);
+        // NFR-REL-03: a step that failed leaves the open state uncertain, so nothing new opens this candle.
+        return new ExecutionResult(orders, notes.Count == 0 ? null : string.Join(" ", notes), fault, entryPlaced, blocked);
 
         async Task StepAsync(string what, Func<Task> step)
         {
@@ -182,15 +188,25 @@ internal sealed class ExecutionService : IExecutionService
             catch (ExecutionUnavailableException ex)
             {
                 notes.Add(ex.Message);
+                blocked ??= $"{what.ToLowerInvariant()} failed ({ex.Message})";
                 _logger.LogWarning("Position management of agent {AgentId}, {What}: {Reason}", agent.Id, what.ToLowerInvariant(), ex.Message);
             }
             catch (Exception ex)
             {
                 notes.Add($"{what} failed; see the log.");
+                blocked ??= $"{what.ToLowerInvariant()} failed";
                 _logger.LogWarning(ex, "Position management of agent {AgentId}: {What} failed; protection is unchanged", agent.Id, what.ToLowerInvariant());
             }
         }
     }
+
+    /// <summary>The open state read again after the restart check adopted the exchange's (a live agent's, so the ledger's live rows), so the steps that follow never act on rows the check just changed.</summary>
+    private async Task<ExecutionRequest> ReloadOpenAsync(ExecutionRequest request, CancellationToken cancellationToken) =>
+        request with
+        {
+            OpenTrades = await _ledger.OpenTradesOfAgentAsync(request.Agent.Id, cancellationToken).ConfigureAwait(false),
+            OpenOrders = await _ledger.OpenRowsOfAgentAsync(request.Agent.Id, cancellationToken).ConfigureAwait(false),
+        };
 
     /// <summary>FR-EXE-03 market fallback: the time-dependent guards again (entries that expired this evaluation no longer count as open), the venue-bound checks at the last close with the decision's stop, then a market entry.</summary>
     private async Task<(Order? Order, string Note)> FallbackAsync(ExecutionRequest request, Order entry, IReadOnlySet<Guid> expired, Guid decisionId, SymbolFilters? filters, decimal lastClose, CancellationToken reads, CancellationToken stopping)
@@ -263,6 +279,28 @@ internal sealed class ExecutionService : IExecutionService
         ArgumentNullException.ThrowIfNull(decision);
         try
         {
+            var opens = decision.FinalAction is DecisionAction.OpenLong or DecisionAction.OpenShort;
+            var acts = opens || decision.FinalAction is DecisionAction.Close or DecisionAction.Modify;
+            // NFR-REL-03: the council's hard limits refuse an entry while entries are not allowed; this is the last guard.
+            if (opens && !request.EntriesAllowed)
+                return await RejectAsync(decision, [new LimitCheck(LimitNames.EntriesAllowed, LimitCheckStatus.Fail, "new entries are not allowed in this evaluation")], stopping).ConfigureAwait(false);
+
+            // NFR-REL-01: nothing is placed for a live agent before its exchange state was verified in this process.
+            if (acts)
+            {
+                var check = await _reconciler.EnsureCheckedAsync(request.Agent, request.ExchangeKey, cancellable).ConfigureAwait(false);
+                if (!check.Verified)
+                {
+                    _logger.LogWarning("Agent {AgentId} decision {DecisionId} not executed: {Reason}", request.Agent.Id, decision.Id, check.Reason);
+                    return opens
+                        ? await RejectAsync(decision, [new LimitCheck(ExecutionLimitNames.ExchangeState, LimitCheckStatus.Fail, check.Reason!)], stopping).ConfigureAwait(false)
+                        : ExecutionResult.Nothing($"Not executed: {check.Reason}; the position stands with its protection.");
+                }
+
+                if (check.Adoptions > 0)
+                    request = await ReloadOpenAsync(request, cancellable).ConfigureAwait(false);
+            }
+
             return decision.FinalAction switch
             {
                 DecisionAction.OpenLong or DecisionAction.OpenShort => await OpenAsync(request, decision, cancellable, stopping).ConfigureAwait(false),

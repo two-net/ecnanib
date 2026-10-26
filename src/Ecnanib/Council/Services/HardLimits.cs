@@ -59,7 +59,7 @@ internal static class HardLimits
         var last = context.Market.Latest?.Close;
         var entry = document.EntryType == OrderType.Market ? last : document.EntryPrice;
 
-        Add(checks, LimitNames.EntriesAllowed, context.EntriesAllowed, "new entries are allowed", "the agent opens nothing new while paused");
+        Add(checks, LimitNames.EntriesAllowed, context.EntriesAllowed, "new entries are allowed", "new entries are not allowed in this evaluation (the agent is paused, or its open state could not be managed)");
 
         var close = context.Evaluation.CandleOpenTime + agent.Timeframe.ToTimeSpan();
         var window = agent.EntryWindows.FirstOrDefault(w => EntryWindowSchedule.IsActive(w, close));
@@ -89,14 +89,19 @@ internal static class HardLimits
             var rightSide = side == PositionSide.Long ? s < e : s > e;
             Add(checks, LimitNames.StopSide, rightSide, $"stop {N(s)} is on the losing side of the entry {N(e)}", $"stop {N(s)} is not on the losing side of the entry {N(e)}");
 
-            if (context.Output.Indicators.TryGetValue("atr", out var atr) && atr > 0 && TryReadDecimal(context.Parameters, StrategyParameters.MaxStopDistanceAtr, out var maxAtr))
+            // NFR-REL-03: a strategy that bounds the stop distance needs the ATR to check it; without one the entry is refused, not waved through.
+            if (!TryReadDecimal(context.Parameters, StrategyParameters.MaxStopDistanceAtr, out var maxAtr))
             {
-                var distance = Math.Abs(e - s) / atr;
-                Add(checks, LimitNames.StopDistance, distance <= maxAtr, $"{N(Math.Round(distance, 2))} ATR, at most {N(maxAtr)}", $"{N(Math.Round(distance, 2))} ATR is beyond the strategy's bound of {N(maxAtr)} ATR");
+                checks.Add(new LimitCheck(LimitNames.StopDistance, LimitCheckStatus.Pass, "not applicable: the strategy declares no stop-distance bound"));
+            }
+            else if (!context.Output.Indicators.TryGetValue("atr", out var atr) || atr <= 0)
+            {
+                checks.Add(new LimitCheck(LimitNames.StopDistance, LimitCheckStatus.Fail, $"the strategy bounds the stop at {N(maxAtr)} ATR but no ATR is available"));
             }
             else
             {
-                checks.Add(new LimitCheck(LimitNames.StopDistance, LimitCheckStatus.Pass, "not applicable: no ATR or no strategy bound"));
+                var distance = Math.Abs(e - s) / atr;
+                Add(checks, LimitNames.StopDistance, distance <= maxAtr, $"{N(Math.Round(distance, 2))} ATR, at most {N(maxAtr)}", $"{N(Math.Round(distance, 2))} ATR is beyond the strategy's bound of {N(maxAtr)} ATR");
             }
         }
         else if (stop is not null)

@@ -1,4 +1,5 @@
 using Ecnanib.Agents.Abstractions;
+using Ecnanib.Database;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.ModelSync.Abstractions;
 
@@ -16,7 +17,7 @@ public enum HealthState
 /// <summary>The outcome of one connectivity probe; <see cref="Latency"/> is how long the answer took.</summary>
 public sealed record DatabaseHealth(HealthState State, TimeSpan? Latency, string? Error);
 
-/// <summary>The health status of NFR-OBS-01: database connectivity, exchange streams, the agent scheduler and the last model sync per provider.</summary>
+/// <summary>The health status of NFR-OBS-01: database connectivity and the instance lock, exchange streams, the agent scheduler, the exchange reconciliation and the last model sync per provider.</summary>
 public sealed record SystemHealthReport(
     DateTimeOffset At,
     HealthState Overall,
@@ -27,7 +28,11 @@ public sealed record SystemHealthReport(
     IReadOnlyList<ProviderSyncView> ModelSync,
     /// <summary>Why the sync states could not be read, when the database refused that query.</summary>
     string? ModelSyncError,
-    RateLimitSnapshot RateLimits);
+    RateLimitSnapshot RateLimits,
+    /// <summary>The execution module's reconciliation and restart checks (FR-EXE-08, NFR-REL-01); unavailable without it.</summary>
+    ReconciliationStatus Reconciliation,
+    /// <summary>The database's instance lock (NFR-REL-04).</summary>
+    InstanceLockStatus InstanceLock);
 
 /// <summary>Gathers the health report; never throws for a failing component, which is reported as such.</summary>
 public interface ISystemHealth

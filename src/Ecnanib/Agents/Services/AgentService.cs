@@ -932,14 +932,16 @@ internal sealed class AgentService : IAgentService
         if (!AgentStateMachine.CanStop(agent.State))
             return new AgentActionResult(AgentActionStatus.InvalidState, $"An agent in {agent.State} cannot be stopped.");
 
-        // FR-AGT-06: orders first; a failure here leaves the agent as it was and tells the user.
+        // FR-AGT-06: orders first; a failure here leaves the agent as it was and tells the user. NFR-REL-03 sets the order of
+        // operations: what could open a position goes first, the close is placed while the stop still stands (futures beside
+        // it; spot cancels only the OCO it needs and protects again on refusal), and the protection goes last.
         var venue = _venues.For(agent.Mode);
         int cancelled;
         var closed = 0;
         var unmanaged = 0;
         try
         {
-            cancelled = await venue.CancelOpenOrdersAsync(agent, cancellationToken).ConfigureAwait(false);
+            cancelled = await venue.CancelEntryOrdersAsync(agent, cancellationToken).ConfigureAwait(false);
             if (closePositions)
             {
                 closed = await venue.ClosePositionsAtMarketAsync(agent, cancellationToken).ConfigureAwait(false);
@@ -949,6 +951,8 @@ internal sealed class AgentService : IAgentService
                 unmanaged = await db.Trades.Where(t => t.AgentId == agentId && t.ClosedAt == null && !t.IsUnmanaged)
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.IsUnmanaged, true), cancellationToken).ConfigureAwait(false);
             }
+
+            cancelled += await venue.CancelProtectiveOrdersAsync(agent, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -45,6 +45,12 @@ internal sealed class PendingExecutionService : IExecutionService
         Task.FromResult(new ExecutionResult([], Note));
 }
 
+/// <summary>Reports no reconciliation until the execution module (FR-EXE-08) is registered before <c>AddAgents</c>.</summary>
+internal sealed class NoReconciliationStatus : IReconciliationStatus
+{
+    public ReconciliationStatus GetStatus() => ReconciliationStatus.Unavailable;
+}
+
 /// <summary>
 /// The live venue until the execution module is registered: it can confirm that a live agent has nothing open, which
 /// is all a Stop needs then, and refuses anything else.
@@ -84,6 +90,20 @@ internal sealed class PendingLiveOrderVenue : IOrderVenue
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var open = await db.Orders.CountAsync(o => o.AgentId == agent.Id && !o.IsPaper && (o.Status == OrderStatus.New || o.Status == OrderStatus.PartiallyFilled), cancellationToken).ConfigureAwait(false);
+        return open == 0 ? 0 : throw new NotSupportedException(NotAvailable);
+    }
+
+    public async Task<int> CancelEntryOrdersAsync(Agent agent, CancellationToken cancellationToken)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var open = await db.Orders.CountAsync(o => o.AgentId == agent.Id && !o.IsPaper && o.Purpose == OrderPurpose.Entry && (o.Status == OrderStatus.New || o.Status == OrderStatus.PartiallyFilled), cancellationToken).ConfigureAwait(false);
+        return open == 0 ? 0 : throw new NotSupportedException(NotAvailable);
+    }
+
+    public async Task<int> CancelProtectiveOrdersAsync(Agent agent, CancellationToken cancellationToken)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var open = await db.Orders.CountAsync(o => o.AgentId == agent.Id && !o.IsPaper && (o.Purpose == OrderPurpose.StopLoss || o.Purpose == OrderPurpose.TakeProfit) && (o.Status == OrderStatus.New || o.Status == OrderStatus.PartiallyFilled), cancellationToken).ConfigureAwait(false);
         return open == 0 ? 0 : throw new NotSupportedException(NotAvailable);
     }
 

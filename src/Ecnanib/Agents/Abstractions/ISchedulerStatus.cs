@@ -25,7 +25,9 @@ public sealed record SchedulerStatus(
     DateTimeOffset? LastErrorAt,
     /// <summary>Evaluations that missed their deadline since the scheduler started: runs that ended at or past it and candles too late to start (NFR-PERF-01).</summary>
     int DeadlineMisses,
-    DateTimeOffset? LastDeadlineMissAt);
+    DateTimeOffset? LastDeadlineMissAt,
+    /// <summary>Evaluations in flight at the last stop, recorded as failed by the start-up sweep (NFR-REL-01).</summary>
+    int InterruptedAtStart);
 
 public interface ISchedulerStatus
 {

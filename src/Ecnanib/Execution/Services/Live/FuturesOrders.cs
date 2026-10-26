@@ -8,9 +8,10 @@ namespace Ecnanib.Execution.Services.Live;
 /// <summary>
 /// Binance USDⓈ-M futures mechanics (FR-EXE-02, FR-EXE-11): limit or market entries in one-way mode; one reduce-only
 /// stop-market conditional order for the whole remaining size (never close-position, which would flatten a position
-/// the agent does not own) and one reduce-only take-profit-market conditional order per unit with a target; a stop
-/// is re-placed new-before-old, so the position is never without one (NFR-REL-03). Conditional rows carry the algo
-/// id and are cancelled and queried by client algo id; once triggered the actual order id takes over.
+/// the agent does not own) and one reduce-only take-profit-market conditional order per unit with a target; stops and
+/// targets are re-placed new-before-old, so the position is never without one (NFR-REL-03), and protection places only
+/// what no open row covers yet, so a retry never doubles an order (NFR-REL-02). Conditional rows carry the algo id and
+/// are cancelled and queried by client algo id; once triggered the actual order id takes over.
 /// </summary>
 internal sealed class FuturesOrders
 {
@@ -30,11 +31,27 @@ internal sealed class FuturesOrders
             new OrderRequest(account.Agent.Symbol, row.Side, row.Type, row.ClientOrderId, row.Quantity, row.Price,
                 TimeInForce: row.Type == OrderType.Limit ? TimeInForce.GoodTillCanceled : null), ct), cancellationToken);
 
-    /// <summary>The stop for the whole remaining size plus one take-profit per unit with a target; returns the rows placed.</summary>
+    /// <summary>The stop for the whole remaining size plus one take-profit per unit with a target, each only when no open row covers it yet (NFR-REL-02); returns the rows standing afterwards.</summary>
     public async Task<IReadOnlyList<Order>> ProtectAsync(LiveAccount account, Trade trade, IReadOnlyList<ProtectionUnit> units, decimal stop, CancellationToken cancellationToken)
     {
-        var placed = new List<Order> { await PlaceStopAsync(account, trade, stop, units.Sum(u => u.Quantity), cancellationToken).ConfigureAwait(false) };
-        placed.AddRange(await PlaceTargetsAsync(account, trade, units, cancellationToken).ConfigureAwait(false));
+        var filters = account.Symbol.Filters;
+        var isLong = trade.Side == PositionSide.Long;
+        var stopPrice = isLong ? filters.RoundPriceDownToTick(stop) : filters.RoundPriceUpToTick(stop);
+        var size = filters.RoundQuantityDownToStep(units.Sum(u => u.Quantity), marketOrder: true);
+        var open = await _ledger.OpenRowsAsync(trade.Id, cancellationToken).ConfigureAwait(false);
+        var standing = open.Where(o => o.Purpose == OrderPurpose.StopLoss && o.StopPrice == stopPrice && o.Quantity >= size).ToList();
+        var placed = new List<Order>();
+        if (standing.Count > 0)
+        {
+            _logger.LogInformation("Trade {TradeId} of agent {AgentId}: a stop of {Quantity} at {Stop} already stands; it is not placed again", trade.Id, account.Agent.Id, standing[0].Quantity, stopPrice);
+            placed.AddRange(standing);
+        }
+        else
+        {
+            placed.Add(await PlaceStopAsync(account, trade, stop, size, cancellationToken).ConfigureAwait(false));
+        }
+
+        placed.AddRange(await PlaceTargetsAsync(account, trade, units, open, cancellationToken).ConfigureAwait(false));
         _logger.LogInformation("Futures protection of trade {TradeId} of agent {AgentId} placed: {Units} unit(s), stop {Stop}", trade.Id, account.Agent.Id, units.Count, stop);
         return placed;
     }
@@ -55,14 +72,21 @@ internal sealed class FuturesOrders
         return (await _rows.SendConditionalAsync(row, account, ct => account.Futures!.PlaceConditionalOrderAsync(request, ct), cancellationToken).ConfigureAwait(false)).Row;
     }
 
-    public async Task<IReadOnlyList<Order>> PlaceTargetsAsync(LiveAccount account, Trade trade, IReadOnlyList<ProtectionUnit> units, CancellationToken cancellationToken)
+    /// <summary>One reduce-only take-profit per unit with a target that no open row covers yet; returns the rows placed. <paramref name="units"/> is the trade's whole desired set.</summary>
+    public async Task<IReadOnlyList<Order>> PlaceTargetsAsync(LiveAccount account, Trade trade, IReadOnlyList<ProtectionUnit> units, CancellationToken cancellationToken) =>
+        await PlaceTargetsAsync(account, trade, units, await _ledger.OpenRowsAsync(trade.Id, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+
+    private async Task<IReadOnlyList<Order>> PlaceTargetsAsync(LiveAccount account, Trade trade, IReadOnlyList<ProtectionUnit> units, IReadOnlyList<Order> open, CancellationToken cancellationToken)
     {
         var agent = account.Agent;
         var filters = account.Symbol.Filters;
         var isLong = trade.Side == PositionSide.Long;
+        var missing = OrderRows.Missing(units, open, 0m, filters, isLong, futures: true);
+        if (missing.Count < units.Count(u => u.Target is not null))
+            _logger.LogInformation("Trade {TradeId} of agent {AgentId}: {Covered} target(s) already stand; only the missing ones are placed", trade.Id, agent.Id, units.Count(u => u.Target is not null) - missing.Count);
         var sequence = await _ledger.CountRowsAsync(trade.Id, OrderPurpose.TakeProfit, cancellationToken).ConfigureAwait(false);
         var placed = new List<Order>();
-        foreach (var unit in units)
+        foreach (var unit in missing)
         {
             if (unit.Target is not { } rawTarget)
                 continue;

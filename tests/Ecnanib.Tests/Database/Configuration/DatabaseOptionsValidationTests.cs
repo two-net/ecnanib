@@ -14,6 +14,7 @@ public class DatabaseOptionsValidationTests
         Assert.Equal(DatabaseTestHost.OfflineConnectionString, options.ConnectionString);
         Assert.Equal(TimeSpan.FromSeconds(30), options.CommandTimeout);
         Assert.Equal(3, options.RetryOnFailureCount);
+        Assert.Equal(TimeSpan.FromSeconds(30), options.InstanceLockWait);
     }
 
     [Fact]
@@ -33,6 +34,7 @@ public class DatabaseOptionsValidationTests
     [InlineData("Database:CommandTimeoutSeconds", "0", "CommandTimeoutSeconds")]
     [InlineData("Database:CommandTimeoutSeconds", "601", "CommandTimeoutSeconds")]
     [InlineData("Database:RetryOnFailureCount", "-1", "RetryOnFailureCount")]
+    [InlineData("Database:InstanceLockWaitSeconds", "601", "InstanceLockWaitSeconds")]
     public void InvalidValuesFailWithPropertyPath(string key, string value, string expectedFragment)
     {
         var ex = Assert.Throws<OptionsValidationException>(() => Resolve(new() { [key] = value }));

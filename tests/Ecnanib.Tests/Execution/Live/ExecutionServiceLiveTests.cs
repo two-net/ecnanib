@@ -328,6 +328,14 @@ public class ExecutionServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("moving the stop failed"));
         Assert.Equal(90m, (await ExecutionLiveSeed.TradeOfAsync(_fixture, agent.Id))!.CurrentStop);
 
+        // NFR-REL-03: a step that failed leaves the open state uncertain, so this candle opens nothing new even if a decision arrives.
+        Assert.Equal("moving the stop failed", managed.EntriesBlockedReason);
+        var later = await ExecutionLiveSeed.NewDecisionAsync(_fixture, agent, ExecutionLiveSeed.LastOpen.AddHours(2));
+        var refused = await provider.GetRequiredService<IExecutionService>().ExecuteAsync(request with { EntriesAllowed = false }, later, Ct, Ct);
+        Assert.Empty(refused.Orders);
+        Assert.StartsWith("Rejected by execution limits: entriesAllowed:", refused.Note);
+        Assert.Equal(DecisionAction.NoTrade, (await ExecutionLiveSeed.DecisionAsync(_fixture, later.Id)).FinalAction);
+
         await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
     }
 
@@ -380,6 +388,10 @@ public class ExecutionServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         public Task<Order> ExpireEntryAsync(Agent agent, Order entry, CancellationToken cancellationToken) => inner.ExpireEntryAsync(agent, entry, cancellationToken);
 
         public Task<int> CancelOpenOrdersAsync(Agent agent, CancellationToken cancellationToken) => inner.CancelOpenOrdersAsync(agent, cancellationToken);
+
+        public Task<int> CancelEntryOrdersAsync(Agent agent, CancellationToken cancellationToken) => inner.CancelEntryOrdersAsync(agent, cancellationToken);
+
+        public Task<int> CancelProtectiveOrdersAsync(Agent agent, CancellationToken cancellationToken) => inner.CancelProtectiveOrdersAsync(agent, cancellationToken);
 
         public Task<int> ClosePositionsAtMarketAsync(Agent agent, CancellationToken cancellationToken) => inner.ClosePositionsAtMarketAsync(agent, cancellationToken);
 

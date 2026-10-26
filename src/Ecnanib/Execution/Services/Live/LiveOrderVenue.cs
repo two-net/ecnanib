@@ -72,11 +72,15 @@ internal sealed class LiveOrderVenue : IOrderVenue
             _setup.Invalidate(agent.Id);
             throw new ExecutionFaultException(FuturesAccountSetup.HedgeModeGuidance, ex);
         }
+        finally
+        {
+            // Also after a lost answer: a row left New is followed on the stream at once (NFR-REL-02).
+            _tracker.Watch(agent);
+        }
 
         var placed = sent.Row;
         _logger.LogInformation("Live {Type} {Side} entry placed for agent {AgentId}: {Quantity} {Symbol} at {Price} (stop {Stop}), {ClientOrderId}", placement.EntryType, placement.Side, agent.Id, quantity, agent.Symbol, price?.ToString() ?? "market", placement.Stop, placed.ClientOrderId);
         _ledger.Publish(new OrderChanged(agent.Id, agent.UserId, _time.GetUtcNow(), placed.Id, placed.Status));
-        _tracker.Watch(agent);
         await ApplyIfFilledAsync(account, sent, cancellationToken).ConfigureAwait(false);
         return await _ledger.OrderAsync(placed.Id, cancellationToken).ConfigureAwait(false) ?? placed;
     }
@@ -122,27 +126,63 @@ internal sealed class LiveOrderVenue : IOrderVenue
         return placed;
     }
 
-    /// <summary>Spot locks the quantity of its open sells, so the protection is cancelled first and what stays is protected again; futures exits are reduce-only beside the stop.</summary>
+    /// <summary>
+    /// Spot locks the quantity of its open sells, so the protection is cancelled first (tolerantly: a group the exchange kept
+    /// refuses the exit and what was freed is protected again, NFR-REL-03) and what stays after the sell is protected again; a
+    /// sell whose answer was lost is not protected again, because it may have executed (NFR-REL-02). Futures exits are
+    /// reduce-only beside the stop.
+    /// </summary>
     private async Task<Order> ExitAsync(LiveAccount account, Trade trade, Order row, List<Order> open, CancellationToken cancellationToken)
     {
         var agent = account.Agent;
         if (account.IsFutures)
         {
-            var sentExit = await _futures.PlaceExitAsync(account, row, cancellationToken).ConfigureAwait(false);
+            SentOrder sentExit;
+            try
+            {
+                sentExit = await _futures.PlaceExitAsync(account, row, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _tracker.Watch(agent);
+            }
+
             _ledger.Publish(new OrderChanged(agent.Id, agent.UserId, _time.GetUtcNow(), sentExit.Row.Id, sentExit.Row.Status));
-            _tracker.Watch(agent);
             await ApplyIfFilledAsync(account, sentExit, cancellationToken).ConfigureAwait(false);
             return await _ledger.OrderAsync(sentExit.Row.Id, cancellationToken).ConfigureAwait(false) ?? sentExit.Row;
         }
 
         var remaining = TradeMath.OpenSize(trade);
         var units = OrderRows.UnitsOf(open, remaining);
-        foreach (var protection in open.Where(o => o.Purpose is OrderPurpose.StopLoss or OrderPurpose.TakeProfit).DistinctBy(o => o.ListClientOrderId ?? o.ClientOrderId))
-            await _spot.CancelAsync(account, protection, open, cancellationToken).ConfigureAwait(false);
+        var (cancelled, kept) = await _spot.CancelProtectionAsync(account, open.Where(OrderRows.IsProtective).ToList(), open, cancellationToken).ConfigureAwait(false);
+        if (kept.Count > 0)
+        {
+            // The sell would be refused for the quantity the kept orders lock; the units that were freed get their protection back.
+            var freed = OrderRows.UnitsOf(cancelled, cancelled.Where(o => o.Purpose == OrderPurpose.StopLoss).Sum(o => o.Quantity));
+            if (freed.Count > 0 && trade.CurrentStop is { } previous)
+            {
+                try
+                {
+                    await _placer.ProtectAsync(account, trade, freed, previous, cancellationToken).ConfigureAwait(false);
+                }
+                catch (ExecutionUnavailableException ex)
+                {
+                    _logger.LogWarning("Trade {TradeId} of agent {AgentId}: {Reason}", trade.Id, agent.Id, ex.Message);
+                }
+            }
+
+            throw new ExecutionUnavailableException($"The exit of trade {trade.Id} cannot free the position: {kept.Count} protective order(s) could not be cancelled; it stays protected.");
+        }
+
         SentOrder sold;
         try
         {
             sold = await _spot.PlaceExitAsync(account, row, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OrderOutcomeUnknownException ex)
+        {
+            _logger.LogWarning(ex, "The exit of trade {TradeId} of agent {AgentId} may have executed; it is not protected again until reconciliation resolves it (NFR-REL-02)", trade.Id, agent.Id);
+            throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException && trade.CurrentStop is { } stop)
         {
@@ -150,9 +190,12 @@ internal sealed class LiveOrderVenue : IOrderVenue
             await _placer.ProtectAsync(account, trade, units, stop, cancellationToken).ConfigureAwait(false);
             throw;
         }
+        finally
+        {
+            _tracker.Watch(agent);
+        }
 
         _ledger.Publish(new OrderChanged(agent.Id, agent.UserId, _time.GetUtcNow(), sold.Row.Id, sold.Row.Status));
-        _tracker.Watch(agent);
         var left = OrderRows.Reduce(units, row.Quantity);
         if (left.Count > 0 && trade.CurrentStop is { } currentStop)
         {
@@ -196,10 +239,8 @@ internal sealed class LiveOrderVenue : IOrderVenue
         }
         else
         {
-            var units = OrderRows.UnitsOf(open, remaining);
-            foreach (var protection in open.Where(o => o.Purpose is OrderPurpose.StopLoss or OrderPurpose.TakeProfit).DistinctBy(o => o.ListClientOrderId ?? o.ClientOrderId))
-                await _spot.CancelAsync(account, protection, open, cancellationToken).ConfigureAwait(false);
-            placed = await _placer.ProtectAsync(account, current, units, stop, cancellationToken).ConfigureAwait(false);
+            // A kept group throws here, before the stop is recorded, so the next candle's management retries the move (NFR-REL-03).
+            placed = await _placer.ReplaceSpotProtectionAsync(account, current, open, null, stop, cancellationToken).ConfigureAwait(false);
         }
 
         var at = _time.GetUtcNow();
@@ -222,25 +263,57 @@ internal sealed class LiveOrderVenue : IOrderVenue
         var account = await _exchange.ForAsync(agent, null, cancellationToken).ConfigureAwait(false);
         var current = await _ledger.TradeAsync(trade.Id, cancellationToken).ConfigureAwait(false) ?? trade;
         var open = await _ledger.OpenRowsAsync(trade.Id, cancellationToken).ConfigureAwait(false);
+        var filters = account.Symbol.Filters;
+        var isLong = current.Side == PositionSide.Long;
         var takeProfits = open.Where(o => o.Purpose == OrderPurpose.TakeProfit).OrderBy(o => o.CreatedAt).ThenBy(o => o.Id).ToList();
+        // The whole desired set: the i-th open unit takes targets[i], the rest keep theirs. Placing is always asked for the whole set, so a
+        // unit whose new target equals a sibling's is not mistaken for already covered (NFR-REL-02/03).
+        var desired = takeProfits.Select((row, i) => new ProtectionUnit(row.Quantity, i < targets.Count ? (isLong ? filters.RoundPriceUpToTick(targets[i]) : filters.RoundPriceDownToTick(targets[i])) : row.Price ?? row.StopPrice)).ToList();
+        var changed = Enumerable.Range(0, takeProfits.Count).Where(i => (takeProfits[i].Price ?? takeProfits[i].StopPrice) != desired[i].Target).ToList();
+        if (changed.Count == 0)
+            return [];
         var placed = new List<Order>();
-        for (var i = 0; i < takeProfits.Count && i < targets.Count; i++)
+        if (account.IsFutures)
         {
-            var row = takeProfits[i];
-            var target = current.Side == PositionSide.Long ? account.Symbol.Filters.RoundPriceUpToTick(targets[i]) : account.Symbol.Filters.RoundPriceDownToTick(targets[i]);
-            if ((row.Price ?? row.StopPrice) == target)
-                continue;
-            var unit = new ProtectionUnit(row.Quantity, target);
-            if (account.IsFutures)
+            // New before old (NFR-REL-03): the missing targets go on first (a conditional order is not held against the position until it
+            // triggers), then every changed row that covers no desired unit any more goes.
+            placed.AddRange(await _placer.PlaceTargetsAsync(account, current, desired, cancellationToken).ConfigureAwait(false));
+            var (_, covering) = OrderRows.Match(desired, await _ledger.OpenRowsAsync(trade.Id, cancellationToken).ConfigureAwait(false), 0m, filters, isLong, futures: true);
+            foreach (var i in changed.Where(i => !covering.Any(c => c.Id == takeProfits[i].Id)))
+                await _futures.CancelAsync(account, takeProfits[i], cancellationToken).ConfigureAwait(false);
+        }
+        else if (current.CurrentStop is { } stop)
+        {
+            // Spot: only the changed rows no desired unit needs any more go, one OCO at a time and tolerantly (a group the exchange keeps
+            // keeps its target, which puts its old unit back into the desired set and may make another row obsolete, hence the second
+            // pass); then the whole desired set is protected again, each unit only where no row covers it.
+            var kept = 0;
+            var stopPrice = filters.RoundPriceDownToTick(stop);
+            for (var pass = 0; pass < 2; pass++)
             {
-                await _futures.CancelAsync(account, row, cancellationToken).ConfigureAwait(false);
-                placed.AddRange(await _placer.PlaceTargetsAsync(account, current, [unit], cancellationToken).ConfigureAwait(false));
+                var openNow = pass == 0 ? open : await _ledger.OpenRowsAsync(trade.Id, cancellationToken).ConfigureAwait(false);
+                var (_, covering) = OrderRows.Match(desired, openNow, stopPrice, filters, isLong: true, futures: false);
+                var obsolete = changed.Where(i => openNow.Any(o => o.Id == takeProfits[i].Id) && !covering.Any(c => c.Id == takeProfits[i].Id)).ToList();
+                var keptThisPass = 0;
+                foreach (var i in obsolete)
+                {
+                    var row = takeProfits[i];
+                    var group = openNow.Where(o => o.Id == row.Id || row.ListClientOrderId is not null && o.ListClientOrderId == row.ListClientOrderId).ToList();
+                    var (_, keptRows) = await _spot.CancelProtectionAsync(account, group, openNow, cancellationToken).ConfigureAwait(false);
+                    if (keptRows.Count == 0)
+                        continue;
+                    desired[i] = new ProtectionUnit(row.Quantity, row.Price ?? row.StopPrice);
+                    keptThisPass++;
+                }
+
+                kept += keptThisPass;
+                if (keptThisPass == 0)
+                    break;
             }
-            else if (current.CurrentStop is { } stop)
-            {
-                await _spot.CancelAsync(account, row, open, cancellationToken).ConfigureAwait(false);
-                placed.AddRange(await _placer.ProtectAsync(account, current, [unit], stop, cancellationToken).ConfigureAwait(false));
-            }
+
+            placed.AddRange(await _placer.ProtectAsync(account, current, desired, stop, cancellationToken).ConfigureAwait(false));
+            if (kept > 0)
+                throw new ExecutionUnavailableException($"{kept} take-profit order(s) of trade {trade.Id} could not be cancelled and keep their target; the rest was replaced.");
         }
 
         if (placed.Count == 0)
@@ -285,16 +358,26 @@ internal sealed class LiveOrderVenue : IOrderVenue
         return ended;
     }
 
-    public async Task<int> CancelOpenOrdersAsync(Agent agent, CancellationToken cancellationToken)
+    public Task<int> CancelOpenOrdersAsync(Agent agent, CancellationToken cancellationToken) =>
+        CancelAsync(agent, _ => true, cancellationToken);
+
+    public Task<int> CancelEntryOrdersAsync(Agent agent, CancellationToken cancellationToken) =>
+        CancelAsync(agent, o => o.Purpose == OrderPurpose.Entry, cancellationToken);
+
+    public Task<int> CancelProtectiveOrdersAsync(Agent agent, CancellationToken cancellationToken) =>
+        CancelAsync(agent, OrderRows.IsProtective, cancellationToken);
+
+    private async Task<int> CancelAsync(Agent agent, Func<Order, bool> which, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(agent);
         var open = await _ledger.OpenRowsOfAgentAsync(agent.Id, cancellationToken).ConfigureAwait(false);
-        if (open.Count == 0)
+        var chosen = open.Where(which).ToList();
+        if (chosen.Count == 0)
             return 0;
         var account = await _exchange.ForAsync(agent, null, cancellationToken).ConfigureAwait(false);
         var cancelled = 0;
         var at = _time.GetUtcNow();
-        foreach (var row in open.DistinctBy(o => o.ListClientOrderId ?? o.ClientOrderId))
+        foreach (var row in chosen.DistinctBy(o => o.ListClientOrderId ?? o.ClientOrderId))
         {
             var rows = account.IsFutures
                 ? await _futures.CancelAsync(account, row, cancellationToken).ConfigureAwait(false)

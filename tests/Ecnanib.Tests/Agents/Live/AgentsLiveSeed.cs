@@ -145,6 +145,20 @@ internal static class AgentsLiveSeed
         return trade;
     }
 
+    /// <summary>A pending paper limit entry of the agent, as the venue would have left it.</summary>
+    public static async Task<Order> NewOpenEntryAsync(DatabaseLiveFixture fixture, Agent agent, Decision decision, decimal price = 98m, decimal stop = 90m)
+    {
+        await using var db = fixture.CreateContext();
+        var order = new Order
+        {
+            AgentId = agent.Id, DecisionId = decision.Id, ClientOrderId = "seed-en-" + Guid.NewGuid().ToString("N")[..20], Purpose = OrderPurpose.Entry, Type = OrderType.Limit, Side = OrderSide.Buy,
+            Price = price, StopPrice = stop, Quantity = 0.1m, Status = OrderStatus.New, IsPaper = true, ExpiresAt = Now.AddHours(2), CreatedAt = Now, UpdatedAt = Now,
+        };
+        db.Add(order);
+        await db.SaveChangesAsync(Ct);
+        return order;
+    }
+
     public static async Task<Agent> AgentAsync(DatabaseLiveFixture fixture, Guid agentId)
     {
         await using var db = fixture.CreateContext();
@@ -199,17 +213,20 @@ internal static class AgentsLiveSeed
         return result.KeyId!.Value;
     }
 
-    /// <summary>The modules the agents module needs, against the fixture's database, with the exchange listing BTCUSDT and ETHUSDT on every market; <paramref name="marketData"/> adds the market-data module before <c>AddAgents</c>.</summary>
+    /// <summary>
+    /// The modules the agents module needs, against the fixture's database, with the exchange listing BTCUSDT and ETHUSDT on every market;
+    /// <paramref name="marketData"/> adds the market-data module before <c>AddAgents</c>. A second host built on the first one's
+    /// <paramref name="exchange"/> sees the same scripted books, as a restarted process sees the same exchange.
+    /// </summary>
     public static (ServiceProvider Provider, TestLoggerProvider Logs, FakeTimeProvider Time, FakeExchangeClientFactory Exchange, FakeMarketStreams Streams) Build(
-        DatabaseLiveFixture fixture, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null, bool marketData = false, bool execution = false)
+        DatabaseLiveFixture fixture, Dictionary<string, string?>? config = null, Action<IServiceCollection>? configure = null, DateTimeOffset? now = null, bool marketData = false, bool execution = false,
+        FakeExchangeClientFactory? exchange = null)
     {
         var logs = new TestLoggerProvider();
         var time = new FakeTimeProvider(now ?? Now);
-        var exchange = new FakeExchangeClientFactory
-        {
-            OnExchangeInfo = (_, _) => FakeExchangeClientFactory.Listing("BTCUSDT", "ETHUSDT"),
-            OnRecentCandles = (symbol, interval, count) => RecentCandles(symbol, interval, count, time.GetUtcNow()),
-        };
+        exchange ??= new FakeExchangeClientFactory();
+        exchange.OnExchangeInfo = (_, _) => FakeExchangeClientFactory.Listing("BTCUSDT", "ETHUSDT");
+        exchange.OnRecentCandles = (symbol, interval, count) => RecentCandles(symbol, interval, count, time.GetUtcNow());
         var streams = new FakeMarketStreams();
         var provider = AgentsTestHost.BuildServices(fixture.ConnectionString, logs, config, time, exchange, new FakeAiClientFactory(), streams, configure, marketData: marketData, execution: execution);
         return (provider, logs, time, exchange, streams);

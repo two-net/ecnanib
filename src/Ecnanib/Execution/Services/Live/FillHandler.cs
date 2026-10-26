@@ -191,9 +191,7 @@ internal sealed class FillHandler
             return;
         }
 
-        foreach (var row in open.Where(o => o.Purpose is OrderPurpose.StopLoss or OrderPurpose.TakeProfit).DistinctBy(o => o.ListClientOrderId ?? o.ClientOrderId))
-            await _spot.CancelAsync(account, row, open, cancellationToken).ConfigureAwait(false);
-        await _placer.ProtectAsync(account, trade, units, stop, cancellationToken).ConfigureAwait(false);
+        await _placer.ReplaceSpotProtectionAsync(account, trade, open, units, stop, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>After a close the exchange has cancelled or will cancel the siblings; whatever the rows still show open is cancelled explicitly so nothing lingers.</summary>

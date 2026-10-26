@@ -16,16 +16,16 @@ scheduler, pipeline and paper simulator never leave this folder. `AddAgents` req
 | Pin and upgrade the strategy version (FR-STR-06) | `AgentDetail.StrategyVersion` / `LatestStrategyVersion`, `IAgentService.UpgradeStrategyAsync` |
 | "No new entry" windows (FR-STR-05) | `IAgentService.AddEntryWindowAsync(EntryWindowInput)` / `RemoveEntryWindowAsync`, `AgentDetail.EntryWindows` → `EntryWindowView`; `EntryWindowSchedule.IsActive` is the one implementation of their semantics |
 | One agent's state, open positions and orders, or recent evaluations, for the live islands (FR-UI-04) | `IAgentService.GetStatusAsync` → `AgentStatusView`, `GetOpenAsync` → `AgentOpenView`, `ListEvaluationsAsync(userId, agentId, count)`; `AgentSummary` carries the environment and the evaluation in flight (`InFlightEvaluationId`, `InFlightCandleOpenTime`) |
-| The scheduler's own state, for the status page (NFR-OBS-01) | `ISchedulerStatus.GetStatus()` → `SchedulerStatus` (phase, started, last tick, tracked agents, evaluations in flight and queued, deadline misses since start, the last error) |
+| The scheduler's own state, for the status page (NFR-OBS-01) | `ISchedulerStatus.GetStatus()` → `SchedulerStatus` (phase, started, last tick, tracked agents, evaluations in flight and queued, deadline misses since start, evaluations the last stop left in flight, the last error) |
 | Warn about a council model the catalog deprecated (FR-SYNC-03) | `CouncilAssignmentView.CatalogStatus` (null for a model the catalog never listed), `AgentSummary.HasDeprecatedModel` (an enabled role only) |
 | React to agent events in the UI (FR-AGT-10, FR-UI-04) | `IAgentEvents.Subscribe(userId, handler)` → `AgentStateChanged`, `EvaluationStarted`, `CouncilRoleStarted` / `CouncilRoleFinished` (published by the council module), `DecisionRecorded`, `EvaluationFinished`, `OrderChanged`, `TradeChanged` (also on a stop or target move); every event is published after its row is committed and carries ids only, so a page re-reads what it shows |
-| Provide a pipeline stage (council, market data, execution, experience, live venue) or the symbol listing | implement `ICouncil`, `IMarketDataLoader` (`Track`, `Untrack`, `LoadAsync`), `ISymbolCatalog`, `IExecutionService` (`ManageAsync` before the council, `ExecuteAsync(request, decision, cancellable, stopping)` for the decision), `IExperienceTracker` or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
+| Provide a pipeline stage (council, market data, execution, experience, live venue) or the symbol listing | implement `ICouncil`, `IMarketDataLoader` (`Track`, `Untrack`, `LoadAsync`), `ISymbolCatalog`, `IExecutionService` (`ManageAsync` before the council, whose `EntriesBlockedReason` keeps this candle from opening anything new, `ExecuteAsync(request, decision, cancellable, stopping)` for the decision), `IExperienceTracker`, `IReconciliationStatus` (what the execution module's reconciliation reports for the status page) or an `IOrderVenue` and register it **before** `AddAgents`; the fail-safe default is replaced |
 | The per-agent gate and the daily loss limit, for the execution module (FR-EXE-08, FR-EXE-09) | `IAgentGates.LockAsync` / `TryLock` (the scheduler's gate); `IDailyLossLimit.CheckAsync(agentId)` (gate-free, pauses a Running agent until the next UTC day when today's realized loss reaches the limit) |
 | Client order ids, protection units and the trade JSON shapes shared by both venues (FR-EXE-07, FR-EXE-06, FR-EXP-02) | `ClientOrderIds.For(prefix, agentId, scope, purpose, sequence)`; `ProtectionUnits.Split(quantity, targets, partialFraction, stepSize, minQuantity)` and `ProtectionUnits.PartialFraction(parameters)`; `TradeJson.Targets` / `StopHistory` / `StopHistoryEntries` (typed, for the timeline and the chart) / `AppendStop` / `InitialStop` for `trades.targets` and `trades.stop_history` |
 | Suggest a council from experience at creation (FR-EXP-08) | implement `ICouncilSuggestions` and register it **before** `AddAgents`; the default suggests nothing, so every role gets its Appendix B default |
 | The council roles, their order and Appendix B defaults | `CouncilRoles` (`Order`, `DefaultProvider`, `Display`, `Responsibility`) |
 | Council presets (FR-AI-04) | `IAgentService.ResetCouncilToDefaultsAsync` (defaults by strength with each provider's newest catalog model), `UseSingleModelAsync` (one model for every role); both save through `UpdateCouncilAsync` |
-| Place, cancel, close or manage simulated or real orders (FR-AGT-06, FR-AGT-11, FR-EXE-06) | `IOrderVenues.For(mode)` → `IOrderVenue` (`PlaceEntryAsync` with a mandatory stop and the targets, `PlaceCloseAsync`, `PlacePartialCloseAsync`, `ReplaceStopAsync`, `ReplaceTargetsAsync`, `ExpireEntryAsync`, `CancelOpenOrdersAsync`, `ClosePositionsAtMarketAsync`, `GetEquityAsync`, `GetAvailableAsync`) |
+| Place, cancel, close or manage simulated or real orders (FR-AGT-06, FR-AGT-11, FR-EXE-06) | `IOrderVenues.For(mode)` → `IOrderVenue` (`PlaceEntryAsync` with a mandatory stop and the targets, `PlaceCloseAsync`, `PlacePartialCloseAsync`, `ReplaceStopAsync`, `ReplaceTargetsAsync`, `ExpireEntryAsync`, `CancelOpenOrdersAsync`, `CancelEntryOrdersAsync`, `CancelProtectiveOrdersAsync`, `ClosePositionsAtMarketAsync`, `GetEquityAsync`, `GetAvailableAsync`) |
 | "Stop all my agents" (FR-EXE-10) | `IAgentService.StopAllAsync(userId, closePositions)` → `AgentBulkActionResult` |
 | The candle boundary arithmetic (FR-AGT-09) | `CandleIntervalExtensions.OpenTimeOf` / `NextCloseAfter` in the exchange abstractions |
 
@@ -59,11 +59,15 @@ Rules the module enforces:
   version with parameters that still validate, the risk caps, a model per enabled role, a Valid provider key for every enabled role's provider (FR-KEY-08) and, for live
   mode, the accepted risk disclaimer (FR-ACC-08), a Valid exchange key allowed for the market and no other Running, Paused or Error live agent of the user on the same
   key, market and symbol (one position per key, market and symbol belongs to one agent, FR-EXE-08). Pause keeps the agent
-  evaluated but opens nothing (FR-AGT-05). Stop cancels the agent's open orders first and then either closes its
-  positions at market or leaves them flagged unmanaged (FR-AGT-06); if the orders cannot be cancelled the state is
-  unchanged and the user is told. Delete needs Draft or Stopped. Error is entered by the runtime only: an unknown
+  evaluated but opens nothing (FR-AGT-05). Stop cancels the agent's pending entries first, then either closes its
+  positions at market while their protection still stands (futures place the reduce-only close beside the stop; spot
+  cancels only the OCO it needs and protects again on refusal) or leaves them flagged unmanaged, and cancels the
+  protective orders last (FR-AGT-06, NFR-REL-03); if the orders cannot be cancelled the state is unchanged and the user
+  is told. Delete needs Draft or Stopped. Error is entered by the runtime only: an unknown
   strategy or version, parameters no longer valid, a live agent whose key is gone or no longer resolves (which also covers a start that raced a key
-  deletion), or a key the keys module found invalid; the agent is untracked until the user fixes the cause and starts it.
+  deletion), or a key the keys module found invalid; the agent is untracked, its pending entry orders are cancelled best
+  effort under its gate once the evaluation that raised the fault has finished (protection stays; a venue that cannot be
+  reached is logged, NFR-REL-03) and it stays so until the user fixes the cause and starts it.
 - The scheduler hands each tracked agent's needs (its key, timeframe and pinned strategy) to the market-data loader
   and then follows one candle stream per agent, so on a shared stream the loader's handler runs ahead of the
   scheduler's; untracking releases the loader's series too. It evaluates under a per-agent gate that lifecycle
@@ -77,14 +81,16 @@ Rules the module enforces:
   more than a minute before the agent was tracked is ignored, one older than the newest seen on its stream is recorded
   as Skipped (superseded), and one whose deadline has already passed is recorded as Skipped (too late). The evaluation
   row is inserted first with `InProgress`; its unique (agent, candle) index makes any second run of the same candle a
-  no-op (FR-AGT-09). On start the scheduler records every evaluation left unfinished by the last stop as failed, resumes
-  every Running and Paused agent (NFR-REL-01) and passes "interrupted previously" to the execution stage; once a minute it
-  lifts daily-loss pauses whose time has come (FR-EXE-09) and finalises evaluation rows nobody will finish.
+  no-op (FR-AGT-09). On start the scheduler records every evaluation left unfinished by the last stop as failed (the
+  count is on the status page) and resumes every Running and Paused agent (NFR-REL-01); the execution module verifies
+  every live agent's exchange state before its first action in the process, so the scheduler keeps no per-agent flag;
+  once a minute it lifts daily-loss pauses whose time has come (FR-EXE-09) and finalises evaluation rows nobody will finish.
 - The pipeline is FR-AGT-10 in order: load market data → strategy engine → with open orders or trades the execution
-  module's management step (`IExecutionService.ManageAsync`: expiry and market fallback, breakeven and trailing,
-  reconciliation after a restart; a failure is logged and leaves protection as it is, a fallback entry placed there takes
-  the setup off the table for this candle) → council when a setup exists and the agent is
-  Running, a position is open, or discretionary mode is on and the agent is Running (FR-AI-08) → execute → persist →
+  module's management step (`IExecutionService.ManageAsync`: the restart check of a live agent, expiry and market
+  fallback, breakeven and trailing; a failed check or step is logged, leaves protection as it is and blocks new entries
+  for this candle, NFR-REL-03, so the council is told entries are off and is not asked when nothing is open; a fallback
+  entry placed there takes the setup off the table for this candle) → council when a setup exists and entries are
+  allowed, a position is open, or discretionary mode is on and entries are allowed (FR-AI-08) → execute → persist →
   log → notify. The council receives the pinned strategy with its resolved parameters, the engine output, the
   snapshot, the open position and orders and the evaluation deadline; its decision graph is persisted whenever it
   returns one, also when the Risk Manager produced no decision, in which case the evaluation is Failed and nothing is
@@ -166,12 +172,14 @@ missing one both answer not found.
 
 Known gaps: `Order.WorkingType` has no column, so paper futures stops are last-price only. Paper excursions are
 tracked per tick in memory and lost on a restart. A decision the deadline or a Stop kept from executing leaves neither a
-trade nor a shadow outcome.
+trade nor a shadow outcome, and a candle whose management failed opens nothing and leaves no shadow outcome either, like
+a Paused one.
 
 Tests: `dotnet test` runs offline (options, registration and placeholder replacement, the Appendix E table and edit
 rules, parameter parsing, input rules including windows, the window schedule, change sets, events, the scheduler's
 staleness rules and plumbing, the default loader's alignment, the paper book's fill rules with units and partials). Live checks (the scheduler end to
 end; the deadline cutting a council and refusing a late entry while a late close still executes, the concurrency cap
-with shorter timeframes first and a hundred running agents, NFR-PERF-01/02) run against PostgreSQL through the same git-ignored
+with shorter timeframes first and a hundred running agents, NFR-PERF-01/02; an agent entering Error cancelling its pending
+entries and keeping its protection, NFR-REL-03) run against PostgreSQL through the same git-ignored
 `tests/.database.json` as the database module, with the exchange, providers and streams faked:
 `dotnet test -- --filter-trait "Category=Live"`.

@@ -74,10 +74,14 @@ try
     // DB-02, NFR-ARCH-03: bring the schema up to date before anything else runs; every configured section is
     // validated first (FR-CFG-06). The cause was logged at Critical, so the process exits without a stack trace.
     await app.MigrateDatabaseAsync();
+    // NFR-REL-04: exactly one process per database. The lock is taken once the schema is in place and before any hosted
+    // service runs, held by the host for its lifetime and released when it stops; a second instance waits
+    // Database:InstanceLockWaitSeconds for the previous one to let go, then exits 1 with the cause logged at Critical.
+    await app.AcquireInstanceLockAsync();
     // FR-CFG-05: the key ring that signs sessions exists after the first start, not after the first request.
     app.EnsureSystemKeys();
 }
-catch (Exception ex) when (ex is OptionsValidationException or DatabaseMigrationException
+catch (Exception ex) when (ex is OptionsValidationException or DatabaseMigrationException or InstanceLockException
                            || ex is AggregateException aggregate && aggregate.InnerExceptions.All(e => e is OptionsValidationException))
 {
     return 1;

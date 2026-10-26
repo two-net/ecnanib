@@ -13,6 +13,7 @@ using Ecnanib.Tests.Database.Live;
 using Ecnanib.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Ecnanib.Tests.Execution.Live;
 
@@ -38,7 +39,8 @@ public class ExecutionPipelineLiveTests : IClassFixture<DatabaseLiveFixture>
         var user = await AgentsLiveSeed.NewUserAsync(_fixture, "pipeline-exec@example.com");
         var agent = await AgentsLiveSeed.NewAgentAsync(_fixture, user.Id, "BTC", AgentState.Running, discretionary: true);
         var ai = CouncilTestHost.Answering(CouncilTestHost.FinalJson("open_long", "limit", 100m, 96m, [104m, 108m], risk: 1m, rationale: "Discretionary long."));
-        var (provider, logs, _, _, streams) = CouncilLiveHost.Build(_fixture, ai, new() { ["Execution:FillTrackerStartDelaySeconds"] = "0" }, execution: true);
+        var (provider, logs, _, _, streams) = CouncilLiveHost.Build(_fixture, ai, new() { ["Execution:FillTrackerStartDelaySeconds"] = "0" }, execution: true,
+            configure: s => s.Replace(ServiceDescriptor.Singleton<IStrategyEngine>(new AtrOnlyEngine())));
         await using var _ = provider;
         await AgentsLiveSeed.AddProviderKeysAsync(provider.GetRequiredService<IKeyService>(), user.Id, AiProvider.Gpt, AiProvider.Grok, AiProvider.Gemini, AiProvider.Claude);
         var scheduler = provider.GetRequiredService<AgentScheduler>();

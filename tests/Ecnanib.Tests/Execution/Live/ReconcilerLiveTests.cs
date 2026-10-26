@@ -48,6 +48,13 @@ public class ReconcilerLiveTests : IClassFixture<DatabaseLiveFixture>
         // The units come from the decision's targets ([110, 130] seeded), one OCO each.
         Assert.Equal(2, account.PlacedOcos.Count);
         Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("is Filled on the exchange") && e.Message.Contains("the exchange state is adopted"));
+        // NFR-OBS-01: the rounds report themselves; the agent counted as verified from the first round on (NFR-REL-01).
+        var status = provider.GetRequiredService<IReconciliationStatus>().GetStatus();
+        Assert.True(status.Available);
+        Assert.Equal((1, 0, 1, 0, 1), (status.LastRoundAgents, status.LastRoundFailures, status.CheckedAgents, status.AwaitingCheck, status.Adoptions));
+        Assert.NotNull(status.LastRoundAt);
+        Assert.NotNull(status.LastAdoptionAt);
+        Assert.Null(status.LastError);
 
         await AgentsLiveSeed.DeleteUsersAsync(_fixture, user.Id);
     }

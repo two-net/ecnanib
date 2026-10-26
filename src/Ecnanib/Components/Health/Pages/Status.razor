@@ -1,6 +1,7 @@
 @page "/status"
 @attribute [Authorize]
 @using Ecnanib.Agents.Abstractions
+@using Ecnanib.Database
 @using Ecnanib.Database.Entities
 @using Ecnanib.Exchange.Abstractions
 @using Ecnanib.Health.Abstractions
@@ -32,6 +33,8 @@
             <dd><span class="status @HealthMessages.StateClass(report.Database.State)">@HealthMessages.Describe(report.Database.State)</span> @if (report.Database.Error is not null) { <span class="muted">@report.Database.Error</span> }</dd>
             <dt>Latency</dt>
             <dd>@HealthMessages.Latency(report.Database.Latency)</dd>
+            <dt>Instance lock</dt>
+            <dd><span class="status @HealthMessages.InstanceLockClass(report.InstanceLock.State)">@HealthMessages.InstanceLock(report.InstanceLock, report.At)</span></dd>
         </dl>
     </section>
 
@@ -50,12 +53,38 @@
             <dd>@report.Scheduler.InFlightEvaluations in flight of @report.Scheduler.MaxConcurrentEvaluations at most, @report.Scheduler.QueuedEvaluations queued</dd>
             <dt>Deadline misses</dt>
             <dd>@HealthMessages.DeadlineMisses(report.Scheduler.DeadlineMisses, report.Scheduler.LastDeadlineMissAt, report.At)</dd>
+            <dt>Interrupted at start</dt>
+            <dd>@HealthMessages.InterruptedAtStart(report.Scheduler.InterruptedAtStart)</dd>
             @if (report.Scheduler.LastError is not null)
             {
                 <dt>Last error</dt>
                 <dd><span class="error">@report.Scheduler.LastError</span> <span class="muted">@HealthMessages.Age(report.Scheduler.LastErrorAt, report.At)</span></dd>
             }
         </dl>
+    </section>
+
+    <section class="card" aria-labelledby="reconciliation-title">
+        <h2 id="reconciliation-title">Exchange reconciliation</h2>
+        @if (!report.Reconciliation.Available)
+        {
+            <p>@HealthMessages.ReconciliationUnavailable</p>
+        }
+        else
+        {
+            <dl class="details">
+                <dt>Last round</dt>
+                <dd>@HealthMessages.LastRound(report.Reconciliation, report.At)</dd>
+                <dt>Restart checks</dt>
+                <dd>@HealthMessages.RestartChecks(report.Reconciliation)</dd>
+                <dt>Adoptions</dt>
+                <dd>@HealthMessages.Adoptions(report.Reconciliation, report.At)</dd>
+                @if (report.Reconciliation.LastError is not null)
+                {
+                    <dt>Last error</dt>
+                    <dd><span class="error">@report.Reconciliation.LastError</span> <span class="muted">@HealthMessages.Age(report.Reconciliation.LastErrorAt, report.At)</span></dd>
+                }
+            </dl>
+        }
     </section>
 
     <section class="card" aria-labelledby="streams-title">

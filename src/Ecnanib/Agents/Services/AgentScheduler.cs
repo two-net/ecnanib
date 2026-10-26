@@ -33,6 +33,9 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
 
     internal static readonly TimeSpan StartupRetry = TimeSpan.FromSeconds(30);
 
+    /// <summary>How long an agent entering Error gets to cancel its pending entries (NFR-REL-03); the venue may be the reason it failed.</summary>
+    internal static readonly TimeSpan EntryCancelTimeout = TimeSpan.FromSeconds(30);
+
     internal const string InterruptedByRestart = "Interrupted by a restart.";
 
     internal const string DidNotFinish = "The evaluation did not finish.";
@@ -47,6 +50,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     private readonly IMarketDataLoader _loader;
     private readonly IStrategyCatalog _catalog;
     private readonly IAgentEvents _events;
+    private readonly IOrderVenues _venues;
     private readonly IOptions<AgentsOptions> _options;
     private readonly TimeProvider _time;
     private readonly ILogger<AgentScheduler> _logger;
@@ -55,7 +59,6 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     private readonly ConcurrentDictionary<Guid, TrackedAgent> _tracked = new();
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _inFlight = new();
     private readonly ConcurrentDictionary<(MarketKey Key, CandleInterval Interval), DateTimeOffset> _latestOpen = new();
-    private readonly ConcurrentDictionary<Guid, byte> _interrupted = new();
     private readonly Channel<CandleArrival> _intake = Channel.CreateUnbounded<CandleArrival>(new UnboundedChannelOptions { SingleReader = true });
     private readonly Dictionary<CandleInterval, Channel<CandleArrival>> _queues = Priority.ToDictionary(t => t, _ => Channel.CreateUnbounded<CandleArrival>());
     private readonly SemaphoreSlim _available = new(0);
@@ -70,6 +73,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
     private string? _lastError;
     private int _deadlineMisses;
     private DateTimeOffset? _lastDeadlineMissAt;
+    private int _interruptedAtStart;
 
     public AgentScheduler(
         IDbContextFactory<EcnanibDbContext> factory,
@@ -78,6 +82,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         IMarketDataLoader loader,
         IStrategyCatalog catalog,
         IAgentEvents events,
+        IOrderVenues venues,
         IOptions<AgentsOptions> options,
         TimeProvider time,
         ILogger<AgentScheduler> logger)
@@ -88,6 +93,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         _loader = loader;
         _catalog = catalog;
         _events = events;
+        _venues = venues;
         _options = options;
         _time = time;
         _logger = logger;
@@ -104,7 +110,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         SchedulerPhase phase;
         DateTimeOffset? startedAt, lastTickAt, lastErrorAt, lastDeadlineMissAt;
         string? lastError;
-        int deadlineMisses;
+        int deadlineMisses, interruptedAtStart;
         lock (_statusLock)
         {
             phase = _phase;
@@ -114,10 +120,11 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             lastError = _lastError;
             deadlineMisses = _deadlineMisses;
             lastDeadlineMissAt = _lastDeadlineMissAt;
+            interruptedAtStart = _interruptedAtStart;
         }
 
         var queued = _queues.Values.Sum(q => q.Reader.CanCount ? q.Reader.Count : 0);
-        return new SchedulerStatus(phase, startedAt, lastTickAt, _tracked.Count, _inFlight.Count, queued, _options.Value.MaxConcurrentEvaluations, lastError, lastErrorAt, deadlineMisses, lastDeadlineMissAt);
+        return new SchedulerStatus(phase, startedAt, lastTickAt, _tracked.Count, _inFlight.Count, queued, _options.Value.MaxConcurrentEvaluations, lastError, lastErrorAt, deadlineMisses, lastDeadlineMissAt, interruptedAtStart);
     }
 
     private void SetPhase(SchedulerPhase phase)
@@ -275,7 +282,72 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogWarning("Agent {AgentId} entered Error: {Reason}", agentId, text);
         _events.Publish(new AgentStateChanged(agentId, agent.UserId, now, AgentState.Error, text));
+        _ = CancelPendingEntriesUnderGateAsync(agentId);
         return true;
+    }
+
+    /// <summary>
+    /// NFR-REL-03: an Error agent is not evaluated, so nothing would expire its pending entries and one could fill into a
+    /// position nobody manages; they are cancelled best effort once the state is recorded (the venue may be the very
+    /// reason for the Error), under the agent's gate so this never runs beside an evaluation's own placements: the
+    /// pipeline raises a fault from inside one, which releases the gate right after, and the key checks raise one from
+    /// outside at any time. Protective orders stay.
+    /// </summary>
+    private async Task CancelPendingEntriesUnderGateAsync(Guid agentId)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(EntryCancelTimeout, _time);
+            using var gate = await LockAsync(agentId, timeout.Token).ConfigureAwait(false);
+            await CancelPendingEntriesAsync(agentId, timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Agent {AgentId} entered Error but its pending entries could not be cancelled within {Timeout}; stop the agent to cancel them", agentId, EntryCancelTimeout);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Agent {AgentId} entered Error but its pending entries could not be cancelled; stop the agent to cancel them", agentId);
+        }
+    }
+
+    private async Task CancelPendingEntriesAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        List<Order> entries;
+        Agent? agent;
+        await using (var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            entries = await db.Orders.AsNoTracking()
+                .Where(o => o.AgentId == agentId && o.Purpose == OrderPurpose.Entry && (o.Status == OrderStatus.New || o.Status == OrderStatus.PartiallyFilled))
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            agent = entries.Count == 0 ? null : await db.Agents.AsNoTracking().SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (entries.Count == 0 || agent is null)
+            return;
+        var venue = _venues.For(agent.Mode);
+        var cancelled = 0;
+        foreach (var entry in entries)
+        {
+            try
+            {
+                var ended = await venue.ExpireEntryAsync(agent, entry, cancellationToken).ConfigureAwait(false);
+                if (ended.Status is OrderStatus.Canceled or OrderStatus.Expired)
+                    cancelled++;
+                else
+                    _logger.LogWarning("Pending entry {OrderId} of agent {AgentId} filled while the agent entered Error; its trade is protected by the fill handler and stays unmanaged until the agent is started again", entry.Id, agent.Id);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Agent {AgentId} entered Error but its pending entry {OrderId} could not be cancelled; stop the agent to cancel it", agent.Id, entry.Id);
+            }
+        }
+
+        _logger.LogInformation("Agent {AgentId} entered Error: {Cancelled} of {Entries} pending entry order(s) cancelled (NFR-REL-03)", agent.Id, cancelled, entries.Count);
     }
 
     // --- Hosted service -------------------------------------------------------------------------------------------
@@ -358,14 +430,16 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             .Select(e => new { e.Id, e.AgentId, e.Agent.UserId, e.CandleOpenTime })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var agentIds = orphans.Select(o => o.AgentId).Distinct().ToList();
-        foreach (var id in agentIds)
-            _interrupted[id] = 0;
         var rows = await db.Evaluations.Where(e => e.FinishedAt == null)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(e => e.Outcome, EvaluationOutcome.Failed)
                 .SetProperty(e => e.OutcomeDetail, InterruptedByRestart)
                 .SetProperty(e => e.FinishedAt, now), cancellationToken)
             .ConfigureAwait(false);
+        // NFR-OBS-01: the status page shows how many runs the last stop cut short; the execution module verifies every
+        // live agent's exchange state before its first action in this process, so no per-agent flag is kept here (NFR-REL-01).
+        lock (_statusLock)
+            _interruptedAtStart = rows;
         if (rows > 0)
             _logger.LogWarning("{Evaluations} evaluation(s) of {Agents} agent(s) were in flight at the last stop and are recorded as failed", rows, agentIds.Count);
         // FR-UI-04: a page showing one of these as "evaluating" learns that it ended.
@@ -495,8 +569,7 @@ internal sealed class AgentScheduler : BackgroundService, IAgentRuntime, IEvalua
             var result = EvaluationRunResult.NotEvaluated;
             try
             {
-                var interrupted = _interrupted.TryRemove(info.AgentId, out _);
-                result = await _pipeline.RunAsync(new EvaluationRun(info, candle, deadlineAt, interrupted), this, linked.Token, stoppingToken).ConfigureAwait(false);
+                result = await _pipeline.RunAsync(new EvaluationRun(info, candle, deadlineAt), this, linked.Token, stoppingToken).ConfigureAwait(false);
             }
             finally
             {

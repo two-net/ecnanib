@@ -144,6 +144,21 @@ internal sealed class PaperBook
 
     public bool RemovePosition(Guid tradeId) => _positions.RemoveAll(p => p.TradeId == tradeId) > 0;
 
+    /// <summary>Strips the stop and the targets off the agent's positions and leaves their pending exits armed: the kill switch cancels the protection once the close is placed (FR-AGT-06, NFR-REL-03).</summary>
+    public void StripProtection(Guid agentId)
+    {
+        foreach (var position in _positions.Where(p => p.AgentId == agentId))
+        {
+            position.Stop = null;
+            position.StopOrderId = null;
+            foreach (var unit in position.Units)
+            {
+                unit.Target = null;
+                unit.TargetOrderId = null;
+            }
+        }
+    }
+
     /// <summary>Removes the agent's pending entries and exits and strips the protection off its positions (the orders were cancelled, FR-AGT-06).</summary>
     public int ClearAgent(Guid agentId)
     {

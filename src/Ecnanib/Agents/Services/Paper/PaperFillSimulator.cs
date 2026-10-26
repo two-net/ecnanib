@@ -153,6 +153,16 @@ internal sealed class PaperFillSimulator : BackgroundService
         }
     }
 
+    /// <summary>The positions keep their pending close or partial; only the stop and the targets go (the kill switch's last step).</summary>
+    public void StripProtection(MarketType market, string symbol, Guid agentId)
+    {
+        lock (_lock)
+        {
+            if (_books.TryGetValue((market, symbol.ToUpperInvariant()), out var state))
+                state.Book.StripProtection(agentId);
+        }
+    }
+
     public void ClearAgent(MarketType market, string symbol, Guid agentId)
     {
         lock (_lock)
