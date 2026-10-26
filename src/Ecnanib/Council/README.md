@@ -73,7 +73,7 @@ Rules the module enforces:
   latency and tokens, one line for the final action and the limits that were not passed; never prompt text or key
   material. The AI module logs each attempt.
 
-Configuration (`Council` section; the defaults are in `src/Ecnanib/ecnanib.json`):
+Configuration (`Council` section; the defaults are in `src/Ecnanib/appsettings.json`):
 
 ```json
 { "Council": { "RoleTimeoutSeconds": 60, "RiskManagerReserveSeconds": 45, "MinimumRoleBudgetSeconds": 5, "ExecutionReserveSeconds": 10,

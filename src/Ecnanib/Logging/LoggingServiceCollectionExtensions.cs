@@ -27,7 +27,9 @@ public static class LoggingServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<LoggingOptions>, LoggingOptionsValidator>());
 
-        services.AddLogging();
+        // C-08: the console and the database sink are the only log outputs, so the providers the default host builder
+        // registers (console, debug, event source) are removed; Serilog below is the one logger factory.
+        services.AddLogging(logging => logging.ClearProviders());
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ILogEntryStore, DatabaseLogEntryStore>();
         services.TryAddSingleton<DatabaseLogSink>();

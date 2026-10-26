@@ -19,7 +19,7 @@ Binance Spot and USDⓈ-M Futures gateway (SRS §3.1.2, EX-01..06). Other module
 
 Rules the module enforces:
 
-- Environment is fixed per key (`ExchangeKeyHandle.Environment`); endpoints come from the `Exchange` section of `ecnanib.json`
+- Environment is fixed per key (`ExchangeKeyHandle.Environment`); endpoints come from the `Exchange` section of `appsettings.json`
   and must be hosts under `binance.com` or `binance.vision`, which startup validation enforces (NFR-SEC-04).
   Testnet maps to the Spot testnet and the USDⓈ-M **demo** environment.
 - Rate limits: Binance.Net's client-side gate waits on the published limits; 429/418 become `ExchangeRateLimitedException`
@@ -27,7 +27,7 @@ Rules the module enforces:
 - Secrets: `ExchangeCredentials.ApiKey` and `ApiSecret` are internal; `BinanceClientRegistry` reads them to build
   clients and the keys module to store them, nothing else, and no public property or serialiser reaches them.
   `ExchangeCredentials.Scrub` removes both from exchange text before a reason is stored or shown. Logs and exception
-  messages carry the key id and the masked key only. Library log categories are capped at Warning in `ecnanib.json`.
+  messages carry the key id and the masked key only. Library log categories are capped at Warning in `appsettings.json`.
   A stream's last error, which the status page shows, is the failure's kind (`ErrorSummary.Describe`), never the message.
 - Futures orders always use one-way mode (`positionSide=BOTH`). A stop or take-profit type sent to `PlaceOrderAsync`
   is refused before anything is sent: Binance answers `-4120` for them (`ExchangeErrorKind.ConditionalOrderRequired`)

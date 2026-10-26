@@ -53,6 +53,22 @@ public class AddLogSinksTests
         Assert.Contains("Logging:LogLevel:Default is not used", ex.Message);
     }
 
+    /// <summary>C-08: the providers the default host builder registers (console, debug, event source) go; the console and the database sink are the only outputs.</summary>
+    [Fact]
+    public void RemovesTheProvidersRegisteredBeforeIt()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.AddDebug());
+        Assert.Contains(services, d => d.ServiceType == typeof(ILoggerProvider));
+
+        services.AddLogSinks(configuration);
+
+        Assert.DoesNotContain(services, d => d.ServiceType == typeof(ILoggerProvider));
+        using var provider = services.BuildServiceProvider();
+        Assert.IsType<SerilogLoggerFactory>(provider.GetRequiredService<ILoggerFactory>());
+    }
+
     private static ServiceProvider Build(Dictionary<string, string?>? values = null, ThrowingDbContextFactory? factory = null)
     {
         var all = new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString };

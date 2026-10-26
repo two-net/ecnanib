@@ -13,27 +13,26 @@ namespace Ecnanib.Tests.Configuration;
 public class AddServerTests
 {
     [Fact]
-    public void RegistersTheOptionsTheValidatorAndTheKestrelEndpoint()
+    public void RegistersTheOptionsAndTheValidatorAndLeavesTheEndpointsToKestrel()
     {
-        var services = Build(new() { ["Server:Port"] = "6001" });
+        var services = Build(new() { ["Server:PublicUrl"] = "https://ecnanib.example.com" });
         using var provider = services.BuildServiceProvider();
 
-        Assert.Equal(6001, provider.GetRequiredService<IOptions<ServerOptions>>().Value.Port);
+        Assert.Equal("https://ecnanib.example.com", provider.GetRequiredService<IOptions<ServerOptions>>().Value.PublicUrl);
         Assert.Contains(provider.GetServices<IValidateOptions<ServerOptions>>(), v => v is ServerOptionsValidator);
-        Assert.Contains(services, d => d.ServiceType == typeof(IConfigureOptions<KestrelServerOptions>));
-        // Listen(IPEndPoint) needs no server; resolving the options proves the endpoint configures without error.
-        _ = provider.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
+        // Where Kestrel listens is the framework's Kestrel section, read by Kestrel itself: nothing here configures the server.
+        Assert.DoesNotContain(services, d => d.ServiceType == typeof(IConfigureOptions<KestrelServerOptions>));
     }
 
     [Fact]
     public void AnInvalidSectionFailsAtStartupValidation()
     {
-        using var provider = Build(new() { ["Server:Port"] = "0" }).BuildServiceProvider();
+        using var provider = Build(new() { ["Server:PublicUrl"] = "ftp://ecnanib.example.com" }).BuildServiceProvider();
 
         // One failing section is rethrown as is; several are wrapped in an AggregateException (both handled by Program).
         var ex = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IStartupValidator>().Validate());
 
-        Assert.Contains("Server:Port must be between 1 and 65535.", ex.Message);
+        Assert.Contains("Server:PublicUrl must be an absolute http or https URL", ex.Message);
     }
 
     /// <summary>NFR-SEC-01/02: the forwarded headers read behind the proxy, from loopback and the configured proxies only.</summary>

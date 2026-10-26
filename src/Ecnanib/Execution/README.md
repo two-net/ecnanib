@@ -135,7 +135,7 @@ Rules the module enforces:
   several placements (stop, targets, partial) are finished once started. The pipeline does not call it for an entry
   decided after the deadline; a late Close or Modify is executed with the deadline waived.
 
-Configuration (`Execution` section; the defaults are in `src/Ecnanib/ecnanib.json`):
+Configuration (`Execution` section; the defaults are in `src/Ecnanib/appsettings.json`):
 
 ```json
 { "Execution": { "ProtectiveOrderAttempts": 3, "ProtectiveOrderRetryDelayMs": 1000, "SpotStopLimitOffsetPercent": 0.5, "ManageBudgetSeconds": 20, "ReconcileAfterSeconds": 30, "FillTrackerStartDelaySeconds": 6, "LostAnswerLookupSeconds": 10 } }

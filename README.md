@@ -9,14 +9,18 @@ keys. The requirements are in [SRS.md](SRS.md); this file is the map of the code
 
 One process and one PostgreSQL 15+ database, nothing else (SRS NFR-ARCH-01, C-10).
 
-1. Copy `src/Ecnanib/ecnanib.json` to `src/Ecnanib/ecnanib.local.json` (git-ignored, never built or published) and set
-   `Database:ConnectionString`. It is the only credential the file holds, and the file is the only configuration source:
-   no environment variables, no other files, no secret manager (FR-CFG-01..04, C-11).
-2. `dotnet run --project src/Ecnanib`; the launch profile passes `--config ecnanib.local.json`. A published build runs as
-   `ecnanib --config <path>`, or reads `ecnanib.json` from the current directory when `--config` is absent.
+1. Create `src/Ecnanib/appsettings.Development.json` (git-ignored, never built or published) with
+   `Database:ConnectionString`; everything else comes from `src/Ecnanib/appsettings.json`, the reference file with every
+   default. The connection string is the only credential the files hold (FR-CFG-03). Configuration is the ASP.NET Core
+   standard (FR-CFG-01/02, C-11): `appsettings.json` and `appsettings.{Environment}.json` in the working directory, then
+   environment variables (`Database__ConnectionString=…`), then the command line (`--Database:ConnectionString=…`).
+2. `dotnet run --project src/Ecnanib`; the launch profile selects the Development environment. A published build runs as
+   `ecnanib` from the directory that holds its `appsettings.json`, with `ASPNETCORE_ENVIRONMENT` naming an overlay when
+   one is wanted.
 3. The process validates every section of the file, creates the database when it is missing, applies the pending
    migrations, takes the database's instance lock, makes sure its own keys exist, and only then starts its jobs and
-   listens on `Server:BindAddress:Port`, plain HTTP behind a reverse proxy that terminates TLS at `Server:PublicUrl`.
+   listens where the `Kestrel` section says (`http://127.0.0.1:5207` by default), plain HTTP behind a reverse proxy that
+   terminates TLS at `Server:PublicUrl`.
    Anything that fails on that path, from a misspelt section to a migration that does not apply, ends the process with
    exit code 1 and the reason on the console, with no port bound and no job started (FR-CFG-06, NFR-ARCH-03). A second
    process on the same database waits `Database:InstanceLockWaitSeconds` for the first to let go, then exits 1 the same way
@@ -101,8 +105,9 @@ with the forward-only throw; the database README has the details.
 - `dotnet test` runs offline: every module's unit tests, the architecture rules above, the accessibility, design and
   culture contracts (the structural checker over the anonymous pages, the contrast of every colour pair, the motion
   rules, the invariant culture; NFR-USE-01..03), and the start-up contract on the built application as a child process
-  (`Category=Process`: an unknown argument, a missing file, an empty connection string and an unreachable database each
-  end with exit code 1 and the reason on the console). `dotnet test -- --filter-not-trait "Category=Process"` leaves the
+  (`Category=Process`: a malformed file, an unknown section, a missing file or connection string, an override from the
+  environment and from the command line, an unparseable listen URL and an unreachable database each end with exit code 1
+  and the reason on the console). `dotnet test -- --filter-not-trait "Category=Process"` leaves the
   child processes out.
 - `dotnet test -- --filter-trait "Category=Live"` runs against PostgreSQL through the git-ignored `tests/.database.json`
   (a role allowed to `CREATE DATABASE`; every test class gets its own `ecnanib_test_*` database and drops it): the schema,

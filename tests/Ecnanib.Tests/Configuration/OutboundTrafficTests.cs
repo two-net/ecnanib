@@ -52,17 +52,16 @@ public class OutboundTrafficTests
     [Fact]
     public void TheReferenceFileNamesOnlyAllowedHosts()
     {
-        var configuration = new ConfigurationManager();
-        ConfigurationFile.Load(configuration, Path.Combine(AppContext.BaseDirectory, ConfigurationFile.DefaultFileName));
+        var configuration = ReferenceConfiguration.Load();
         var urls = configuration.AsEnumerable().Where(pair => pair.Value is not null && Url.IsMatch(pair.Value)).ToList();
 
         Assert.NotEmpty(urls);
         foreach (var (key, value) in urls)
         {
             var host = new Uri(value!).Host;
-            if (key.StartsWith("Server:", StringComparison.Ordinal))
+            if (key.StartsWith("Server:", StringComparison.Ordinal) || key.StartsWith("Kestrel:", StringComparison.Ordinal))
             {
-                Assert.True(new Uri(value!).IsLoopback, $"{key} is the public origin and must stay local in the reference file.");
+                Assert.True(new Uri(value!).IsLoopback, $"{key} is this host's own origin or endpoint and must stay local in the reference file.");
                 continue;
             }
 

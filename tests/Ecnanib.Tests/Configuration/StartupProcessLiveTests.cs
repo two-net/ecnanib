@@ -62,7 +62,8 @@ public class StartupProcessLiveTests : IClassFixture<DatabaseLiveFixture>
             // A table the first migration also creates makes it fail part-way; the transaction rolls everything back.
             await db.Database.ExecuteSqlRawAsync("CREATE TABLE users (id uuid PRIMARY KEY)", Ct);
             var port = FreePort.Next();
-            await using var app = ApplicationProcess.Start(dir.Path, "--config", StartupConfig.Write(dir, port, applicationConnectionString));
+            StartupConfig.Write(dir, port, applicationConnectionString);
+            await using var app = ApplicationProcess.Start(dir.Path);
 
             Assert.Equal(1, await app.WaitForExitAsync(ApplicationProcess.StartTimeout));
 
@@ -93,9 +94,10 @@ public class StartupProcessLiveTests : IClassFixture<DatabaseLiveFixture>
         {
             var port = FreePort.Next();
             var secondPort = FreePort.Next();
-            first = ApplicationProcess.Start(dir.Path, "--config", StartupConfig.Write(dir, port, applicationConnectionString));
+            StartupConfig.Write(dir, port, applicationConnectionString);
+            first = ApplicationProcess.Start(dir.Path);
 
-            await first.WaitForLineAsync(new Regex($@"Ecnanib \S+ started; listening on 127\.0\.0\.1:{port}$"), ApplicationProcess.StartTimeout);
+            await first.WaitForLineAsync(new Regex($@"Ecnanib \S+ started; listening on http://127\.0\.0\.1:{port}$"), ApplicationProcess.StartTimeout);
 
             // Created, migrated, locked, keyed: the start-up sequence of the database and configuration READMEs.
             Assert.Contains(first.StandardOutput, line => line.Contains("does not exist; creating it", StringComparison.Ordinal));
@@ -133,7 +135,8 @@ public class StartupProcessLiveTests : IClassFixture<DatabaseLiveFixture>
             }
 
             // NFR-ARCH-01, NFR-REL-04: a second process on the same database is refused before it binds its port.
-            second = ApplicationProcess.Start(secondDir.Path, "--config", StartupConfig.Write(secondDir, secondPort, applicationConnectionString));
+            StartupConfig.Write(secondDir, secondPort, applicationConnectionString);
+            second = ApplicationProcess.Start(secondDir.Path);
             Assert.Equal(1, await second.WaitForExitAsync(ApplicationProcess.StartTimeout));
             Assert.Contains(second.StandardOutput, line => line.Contains("Database schema is up to date", StringComparison.Ordinal));
             var refusal = Assert.Single(second.StandardOutput, line => line.Contains(Critical, StringComparison.Ordinal));

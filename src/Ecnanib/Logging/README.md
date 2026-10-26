@@ -58,7 +58,7 @@ Rules the module enforces:
 - Nothing here deletes a log entry. Retention is the database module's `RetentionSweeper` (`Retention:LogDays`) and
   account deletion removes a user's rows (`AccountService.DeleteAccountAsync`).
 
-Configuration (`Logging`; `src/Ecnanib/ecnanib.json` has the defaults):
+Configuration (`Logging`; `src/Ecnanib/appsettings.json` has the defaults):
 
 ```json
 { "Logging": { "Console": { "MinimumLevel": "Information" }, "Database": { "MinimumLevel": "Information" },

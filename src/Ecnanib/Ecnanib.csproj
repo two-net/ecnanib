@@ -29,8 +29,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- FR-CFG: the developer's local configuration file is never built, copied or published. -->
-    <Content Remove="ecnanib.local.json" />
+    <!-- FR-CFG: the developer's local overlay (the connection string) is never built, copied or published. -->
+    <Content Remove="appsettings.Development.json" />
   </ItemGroup>
 
 </Project>

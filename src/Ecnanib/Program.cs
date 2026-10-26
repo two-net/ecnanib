@@ -6,12 +6,13 @@ using Ecnanib.Logging;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Options;
 
-// FR-CFG-01/02/06: the one configuration file, from --config or ./ecnanib.json, is the only source. A bad file ends
+// FR-CFG-01/02/06: the standard configuration sources (appsettings.json and the environment's overlay in the working
+// directory, environment variables, the command line). A file that cannot be loaded or names an unknown section ends
 // here with its reason on the console and exit code 1; no logger exists yet, so the message goes straight to stderr.
 WebApplicationBuilder builder;
 try
 {
-    builder = EcnanibHost.CreateBuilder(ConfigurationFile.ResolvePath(args));
+    builder = EcnanibHost.CreateBuilder(args);
 }
 catch (ConfigurationException ex)
 {
@@ -27,17 +28,15 @@ builder.Services.AddRazorComponents()
 builder.Services.AddLogSinks(builder.Configuration);
 builder.Services.AddEcnanibModules(builder.Configuration);
 
-// Kestrel reads the Server section while the host is built, before any logger exists: an invalid Server section (a
-// plain-http public URL that is not loopback, NFR-SEC-02; an unparseable trusted proxy) ends here, on stderr, with exit
-// code 1 like any other invalid setting (FR-CFG-06). Every other section is validated inside MigrateDatabaseAsync below.
-await using var app = TryBuild(builder);
-if (app is null)
-    return 1;
+await using var app = builder.Build();
 
 try
 {
+    // FR-CFG-06: the Kestrel section first, then every module section inside MigrateDatabaseAsync; each failure is
+    // logged at Critical, so the process exits without a stack trace.
+    app.ValidateListenEndpoints();
     // DB-02, NFR-ARCH-03: bring the schema up to date before anything else runs; every configured section is
-    // validated first (FR-CFG-06). The cause was logged at Critical, so the process exits without a stack trace.
+    // validated first (FR-CFG-06).
     await app.MigrateDatabaseAsync();
     // NFR-REL-04: exactly one process per database. The lock is taken once the schema is in place and before any hosted
     // service runs, held by the host for its lifetime and released when it stops; a second instance waits
@@ -46,7 +45,7 @@ try
     // FR-CFG-05: the key ring that signs sessions exists after the first start, not after the first request.
     app.EnsureSystemKeys();
 }
-catch (Exception ex) when (ex is OptionsValidationException or DatabaseMigrationException or InstanceLockException
+catch (Exception ex) when (ex is ConfigurationException or OptionsValidationException or DatabaseMigrationException or InstanceLockException
                            || ex is AggregateException aggregate && aggregate.InnerExceptions.All(e => e is OptionsValidationException))
 {
     return 1;
@@ -57,12 +56,15 @@ catch (Exception ex) when (ex is OptionsValidationException or DatabaseMigration
 // the same pipeline in memory; the explicit order replaces WebApplication's automatic insertion.
 app.UseEcnanibPipeline();
 
-// Resolved before RunAsync, which disposes the host on its way out, including when the server fails to start.
-var endPoint = app.Services.GetRequiredService<IOptions<ServerOptions>>().Value.ToEndPoint();
+// The endpoints the Kestrel section names (else the host's urls), for the message when none of them can be bound;
+// resolved before RunAsync, which disposes the host on its way out, including when the server fails to start.
+var configured = app.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Select(endpoint => endpoint["Url"]).OfType<string>().ToList();
+var endpoints = string.Join(", ", configured.Count > 0 ? configured : app.Urls);
 // FR-LOG-04: the application's own start and stop events, beside the framework's lifetime messages. Stopping fires
-// before the hosted services stop, so the database log writer still has it when its turn comes.
+// before the hosted services stop, so the database log writer still has it when its turn comes. By the time the
+// application has started, Kestrel has replaced app.Urls with the addresses it bound.
 var version = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
-app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation("Ecnanib {Version} started; listening on {EndPoint}", version, endPoint));
+app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation("Ecnanib {Version} started; listening on {Addresses}", version, string.Join(", ", app.Urls)));
 app.Lifetime.ApplicationStopping.Register(() => app.Logger.LogInformation("Ecnanib is stopping"));
 try
 {
@@ -70,23 +72,9 @@ try
 }
 catch (Exception ex) when (ex is IOException { InnerException: AddressInUseException } or SocketException)
 {
-    // The Server section names an endpoint this host cannot bind; the same clear exit as any other invalid setting.
-    app.Logger.LogCritical("Cannot listen on {EndPoint}; the application will not start: {Reason}", endPoint, ex.Message);
+    // The Kestrel section names an endpoint this host cannot bind; the same clear exit as any other invalid setting.
+    app.Logger.LogCritical("Cannot listen on {Endpoints}; the application will not start: {Reason}", endpoints, ex.Message);
     return 1;
 }
 
 return 0;
-
-static WebApplication? TryBuild(WebApplicationBuilder builder)
-{
-    try
-    {
-        return builder.Build();
-    }
-    catch (OptionsValidationException ex)
-    {
-        foreach (var failure in ex.Failures)
-            Console.Error.WriteLine(failure);
-        return null;
-    }
-}

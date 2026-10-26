@@ -30,8 +30,6 @@ internal sealed class PipelineTestHost : IAsyncDisposable
 
     public const string Host = "ecnanib.test";
 
-    private static readonly string ReferenceFile = Path.Combine(AppContext.BaseDirectory, ConfigurationFile.DefaultFileName);
-
     private readonly WebApplication _app;
 
     private PipelineTestHost(WebApplication app, HttpClient client)
@@ -56,7 +54,7 @@ internal sealed class PipelineTestHost : IAsyncDisposable
 
         // Under the application's own name, MapStaticAssets and UseStaticWebAssets find the Ecnanib manifests copied beside the test assembly.
         var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions { ApplicationName = "Ecnanib" });
-        ConfigurationFile.Load(builder.Configuration, ReferenceFile);
+        builder.Configuration.AddJsonFile(ReferenceConfiguration.Path, optional: false, reloadOnChange: false);
         builder.Configuration.AddInMemoryCollection(values);
         builder.WebHost.UseTestServer();
         builder.WebHost.UseStaticWebAssets();

@@ -1,4 +1,3 @@
-using System.Net;
 using Microsoft.Extensions.Options;
 
 namespace Ecnanib.Configuration;
@@ -10,12 +9,6 @@ public sealed class ServerOptionsValidator : IValidateOptions<ServerOptions>
     {
         var failures = new List<string>();
         var prefix = ServerOptions.SectionName;
-
-        if (string.IsNullOrWhiteSpace(options.BindAddress) || !IPAddress.TryParse(options.BindAddress, out _))
-            failures.Add($"{prefix}:BindAddress must be an IP address such as 127.0.0.1, ::1, 0.0.0.0 or :: (not a host name).");
-
-        if (options.Port is < 1 or > 65535)
-            failures.Add($"{prefix}:Port must be between 1 and 65535.");
 
         var uri = options.PublicUri;
         if (uri is null

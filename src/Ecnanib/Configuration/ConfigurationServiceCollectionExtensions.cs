@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.HttpsPolicy;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -12,10 +11,10 @@ public static class ConfigurationServiceCollectionExtensions
     public static readonly TimeSpan HstsMaxAge = TimeSpan.FromDays(365);
 
     /// <summary>
-    /// Registers the validated <see cref="ServerOptions"/>, points Kestrel at <c>Server:BindAddress:Port</c> over plain
-    /// HTTP and configures what <see cref="EcnanibPipeline"/> runs behind the reverse proxy: which forwarded headers are
-    /// read and from whom, and the HSTS policy. The section is validated with every other one before the host starts
-    /// (FR-CFG-06), so an invalid address never reaches Kestrel.
+    /// Registers the validated <see cref="ServerOptions"/> and configures what <see cref="EcnanibPipeline"/> runs behind
+    /// the reverse proxy: which forwarded headers are read and from whom, and the HSTS policy. Where Kestrel listens is
+    /// the framework's <c>Kestrel</c> section, read by Kestrel itself. The section is validated with every other one
+    /// before the host starts (FR-CFG-06).
     /// </summary>
     public static IServiceCollection AddServer(this IServiceCollection services, IConfiguration configuration)
     {
@@ -28,13 +27,10 @@ public static class ConfigurationServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<ServerOptions>, ServerOptionsValidator>());
 
-        services.AddOptions<KestrelServerOptions>()
-            .Configure<IOptions<ServerOptions>>((kestrel, server) => kestrel.Listen(server.Value.ToEndPoint()));
-
         // NFR-SEC-01/02: behind a trusted proxy the client address (sign-in throttle) and the scheme (Secure cookies,
-        // HSTS, redirection) are the forwarded ones. The empty host has no ForwardedHeaders_Enabled filter, so the headers
-        // to read are named here; Host is not forwarded because absolute URLs come from Server:PublicUrl. Loopback is
-        // trusted by default; Server:TrustedProxies adds a proxy on another machine.
+        // HSTS, redirection) are the forwarded ones. The headers to read are named here, so ASPNETCORE_FORWARDEDHEADERS_ENABLED
+        // is not needed; Host is not forwarded because absolute URLs come from Server:PublicUrl. Loopback is trusted by
+        // default; Server:TrustedProxies adds a proxy on another machine.
         services.AddOptions<ForwardedHeadersOptions>()
             .Configure<IOptions<ServerOptions>>((forwarded, server) =>
             {

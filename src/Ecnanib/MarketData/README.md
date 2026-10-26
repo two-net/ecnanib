@@ -58,7 +58,7 @@ Rules the module enforces:
 - **Logging** (FR-LOG-04): series followed and released, backfill and repair results, listing loads and refreshes,
   every failure at Warning; keys (environment, market, symbol), intervals and ids only.
 
-Configuration (`MarketData` section; the defaults are in `src/Ecnanib/ecnanib.json`):
+Configuration (`MarketData` section; the defaults are in `src/Ecnanib/appsettings.json`):
 
 ```json
 { "MarketData": { "BackfillCandles": { "15m": 500, "1H": 500, "4H": 500, "1D": 400, "1W": 200 }, "SymbolRefreshIntervalMinutes": 360 } }

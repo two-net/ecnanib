@@ -70,7 +70,7 @@ Rules the module enforces:
   (another user's agent and a missing one both answer null), while system rows are shared by design. The prompt
   summary names no agent, user, symbol or key; logs carry ids only.
 
-Configuration (`Experience` section; the defaults are in `src/Ecnanib/ecnanib.json`):
+Configuration (`Experience` section; the defaults are in `src/Ecnanib/appsettings.json`):
 
 ```json
 { "Experience": { "RefreshIntervalMinutes": 15, "ShadowHorizonCandles": 30, "RecentOutcomes": 5, "MinimumTradesForSuggestion": 10 } }

@@ -32,7 +32,7 @@ It is written for the product owner, designers, developers and testers and is in
 - Paper and live trading, with Binance testnet support.
 - A web user interface with dark/light/system theme and purposeful animation.
 - Logging to console and database.
-- A single system configuration file.
+- Configuration through the hosting framework's standard sources: one configuration file with an optional environment overlay, environment variables and the command line.
 
 **Out of scope (v1)**
 
@@ -135,7 +135,7 @@ All calls to Binance and to the AI providers are made with the keys of the user 
 | C-08 | Logging goes to console **and** database. |
 | C-09 | Database is PostgreSQL; schema migrations are applied automatically at startup; no table partitioning; all data access goes through an ORM. |
 | C-10 | Simple architecture: one deployable application and one database; no message brokers, queues, caches or separate services. |
-| C-11 | One system configuration file. No environment variables, no secrets held by the system, no vault or secret manager. |
+| C-11 | Configuration through the hosting framework's standard sources: a configuration file at a documented default path, an optional environment overlay, environment variables and the command line. No secrets held by the system, no vault or secret manager. |
 | C-12 | Free software-as-a-service: no subscriptions, no billing, no tenants; there are users. |
 | C-13 | This SRS does not prescribe a technology stack beyond C-09. |
 
@@ -216,8 +216,8 @@ All calls to Binance and to the AI providers are made with the keys of the user 
 
 #### FR-CFG — System Configuration
 
-- FR-CFG-01 All system configuration SHALL reside in a single configuration file, located at a documented default path or at a path given when the application is launched.
-- FR-CFG-02 The system SHALL NOT read configuration from environment variables.
+- FR-CFG-01 All system configuration SHALL reside in the hosting framework's standard configuration file, `appsettings.json` in the working directory, optionally overlaid by `appsettings.{Environment}.json`.
+- FR-CFG-02 The system SHALL read configuration only through the hosting framework's standard sources and in its standard precedence (the file, the environment overlay, environment variables, command-line arguments) and SHALL add no source of its own.
 - FR-CFG-03 The configuration file SHALL contain no API keys, tokens or other credentials except the database connection.
 - FR-CFG-04 The system SHALL NOT integrate with any external secret manager or vault.
 - FR-CFG-05 Any key the system needs for its own operation (e.g., session signing) SHALL be generated automatically on first start and stored in the database.
@@ -484,7 +484,7 @@ Defaults reflect tendencies observed in public comparisons (conservative risk ha
 
 | Section | Settings |
 |---|---|
-| server | bind address, port, public URL |
+| server | public URL, trusted proxies (the listen endpoint is the hosting framework's `Kestrel` section) |
 | database | connection details (the only credential in the file) |
 | logging | console minimum level, database minimum level, retention days |
 | exchange | production and testnet base endpoints, streaming endpoints, request timeout, reconciliation interval |

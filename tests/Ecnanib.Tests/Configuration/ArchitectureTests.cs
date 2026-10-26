@@ -328,8 +328,7 @@ public class ArchitectureTests
     /// <summary>Both log sinks and every module over the reference file, as <c>Program.cs</c> registers them (see <see cref="ReferenceFileTests"/>).</summary>
     private static ServiceCollection Register()
     {
-        var configuration = new ConfigurationManager();
-        ConfigurationFile.Load(configuration, Path.Combine(AppContext.BaseDirectory, ConfigurationFile.DefaultFileName));
+        var configuration = ReferenceConfiguration.Load();
         configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString });
         var services = new ServiceCollection();
         services.AddLogSinks(configuration);

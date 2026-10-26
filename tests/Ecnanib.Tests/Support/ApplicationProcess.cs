@@ -8,8 +8,9 @@ namespace Ecnanib.Tests.Support;
 /// <summary>
 /// The built application started as a child process, the way an operator runs it: <c>dotnet exec Ecnanib.dll …</c> on
 /// the runtime the tests run on, from the working directory the test chooses, with both output streams captured line
-/// by line. The application reads no environment variable (FR-CFG-02), so the test's environment is passed through
-/// untouched. Dispose kills whatever is still running.
+/// by line. The application reads the standard configuration sources (FR-CFG-02), so the runner's own hosting variables
+/// (<c>ASPNETCORE_*</c>, the <c>DOTNET_</c> hosting keys) are not passed on, the environment is Production unless the test
+/// says otherwise, and a test can add variables of its own. Dispose kills whatever is still running.
 /// </summary>
 internal sealed class ApplicationProcess : IAsyncDisposable
 {
@@ -22,6 +23,9 @@ internal sealed class ApplicationProcess : IAsyncDisposable
     public const string SkipMessage = "Process test: Ecnanib.dll is not beside the test assembly (build the solution) or no dotnet host was found.";
 
     private const int SigTerm = 15;
+
+    /// <summary>The generic host's own settings read from <c>DOTNET_</c> variables; the runtime's (<c>DOTNET_ROOT</c>, <c>DOTNET_HOST_PATH</c>) stay.</summary>
+    private static readonly HashSet<string> HostingKeys = new(StringComparer.OrdinalIgnoreCase) { "DOTNET_ENVIRONMENT", "DOTNET_URLS", "DOTNET_CONTENTROOT", "DOTNET_WEBROOT", "DOTNET_APPLICATIONNAME" };
 
     private readonly Process _process;
     private readonly List<(bool Error, string Line)> _lines = [];
@@ -52,7 +56,10 @@ internal sealed class ApplicationProcess : IAsyncDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public static ApplicationProcess Start(string workingDirectory, params string[] args)
+    public static ApplicationProcess Start(string workingDirectory, params string[] args) => Start(workingDirectory, null, args);
+
+    /// <summary>Starts the application with <paramref name="environment"/> added to (or, for a null value, removed from) the scrubbed environment.</summary>
+    public static ApplicationProcess Start(string workingDirectory, IReadOnlyDictionary<string, string?>? environment, params string[] args)
     {
         var info = new ProcessStartInfo(DotnetHost() ?? throw new InvalidOperationException(SkipMessage))
         {
@@ -61,6 +68,17 @@ internal sealed class ApplicationProcess : IAsyncDisposable
             RedirectStandardError = true,
             UseShellExecute = false,
         };
+        foreach (var key in info.Environment.Keys.Where(k => k.StartsWith("ASPNETCORE_", StringComparison.OrdinalIgnoreCase) || HostingKeys.Contains(k)).ToList())
+            info.Environment.Remove(key);
+        info.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
+        foreach (var (key, value) in environment ?? new Dictionary<string, string?>())
+        {
+            if (value is null)
+                info.Environment.Remove(key);
+            else
+                info.Environment[key] = value;
+        }
+
         info.ArgumentList.Add("exec");
         info.ArgumentList.Add(ApplicationDll);
         foreach (var arg in args)

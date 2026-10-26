@@ -59,7 +59,7 @@ Rules the module enforces:
   clears the reference before it deletes a key (FR-KEY-06), and deleting a user still cascades to keys and agents in one
   statement because the check runs at its end.
 - Keys and secrets are stored plain per A-02 and masked everywhere else (FR-KEY-04). EF and Npgsql log categories are
-  capped at Warning in the configuration file (`ecnanib.json`) and the connection string never appears in a validation message.
+  capped at Warning in the configuration file (`appsettings.json`) and the connection string never appears in a validation message.
 - `Database:RetryOnFailureCount` enables Npgsql's retrying execution strategy; code that opens its own transaction
   must run it through `Database.CreateExecutionStrategy().ExecuteAsync(...)`.
 - Paper equity (FR-AGT-11, FR-EXE-04) is derived from the configured starting balance (`Paper:StartingBalance`) and the agent's own paper trades' realized P&L;
