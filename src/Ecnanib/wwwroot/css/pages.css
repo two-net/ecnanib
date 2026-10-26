@@ -17,7 +17,8 @@ table.council td input {
     width: 100%;
 }
 
-table.council .other {
+table.council .other,
+form .other {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;

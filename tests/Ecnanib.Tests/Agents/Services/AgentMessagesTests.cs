@@ -50,11 +50,23 @@ public class AgentMessagesTests
     [InlineData("started", null, null)]
     public void TheSetupNoticeFollowsTheSaveStatus(string? status, string? detail, string? expected) => Assert.Equal(expected, AgentMessages.SetupNotice(status, detail));
 
+    /// <summary>NFR-USE-03: the stamp is the UTC instant in the invariant culture, whatever offset the value carries.</summary>
     [Fact]
     public void StampsAreUtcToTheMinuteAndNeverForNull()
     {
         Assert.Equal("2026-01-05 00:00 UTC", AgentMessages.Stamp(Now));
+        Assert.Equal("2026-01-05 00:00 UTC", AgentMessages.Stamp(new DateTimeOffset(2026, 1, 5, 2, 0, 0, TimeSpan.FromHours(2))));
         Assert.Equal("never", AgentMessages.Stamp(null));
+    }
+
+    [Fact]
+    public void WindowsReadInUtcWithAColonWhateverTheHost()
+    {
+        var recurring = new EntryWindowView(1, EntryWindowKind.Recurring, null, null, DayOfWeek.Friday, new TimeOnly(21, 0), DayOfWeek.Monday, new TimeOnly(1, 0));
+        var oneOff = new EntryWindowView(2, EntryWindowKind.OneOff, new DateTimeOffset(2026, 11, 5, 14, 0, 0, TimeSpan.FromHours(2)), new DateTimeOffset(2026, 11, 5, 16, 0, 0, TimeSpan.Zero), null, null, null, null);
+
+        Assert.Equal("Every Friday 21:00 → Monday 01:00 UTC", AgentMessages.Describe(recurring));
+        Assert.Equal("2026-11-05 12:00 → 2026-11-05 16:00 UTC", AgentMessages.Describe(oneOff));
     }
 
     [Fact]

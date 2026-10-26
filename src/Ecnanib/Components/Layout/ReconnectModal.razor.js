@@ -8,6 +8,20 @@ retryButton.addEventListener("click", retry);
 const resumeButton = document.getElementById("components-resume-button");
 resumeButton.addEventListener("click", resume);
 
+// The dialog is modal because the page behind it is dead until the circuit is back: Escape must not close it and leave a
+// page that answers nothing (NFR-USE-01, 4.1.3: the state text is the live region; the button is focused when it appears).
+reconnectModal.addEventListener("cancel", event => event.preventDefault());
+new MutationObserver(focusVisibleButton).observe(reconnectModal, { attributes: true, attributeFilter: ["class"] });
+
+function focusVisibleButton() {
+    const focusInside = reconnectModal.contains(document.activeElement) && document.activeElement !== reconnectModal;
+    if (!reconnectModal.open || focusInside) {
+        return;
+    }
+
+    [retryButton, resumeButton].find(button => getComputedStyle(button).display !== "none")?.focus();
+}
+
 function handleReconnectStateChanged(event) {
     if (event.detail.state === "show") {
         reconnectModal.showModal();

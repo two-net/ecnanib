@@ -9,7 +9,7 @@
 @inject ILogReader Logs
 @inject NavigationManager Navigation
 
-<PageTitle>Agent</PageTitle>
+<PageTitle>@(_agent?.Name ?? "Agent")</PageTitle>
 
 @if (_agent is { } agent)
 {
@@ -131,7 +131,7 @@
                     }
                 </ul>
             </dd>
-            <dt>Risk</dt><dd>@agent.RiskLimits.RiskPerTradePercent% per trade, at most @agent.RiskLimits.MaxOpenPositions open, @agent.RiskLimits.DailyLossLimitPercent% daily loss@(agent.RiskLimits.MaxNotional is { } cap ? $", notional cap {cap}" : "")</dd>
+            <dt>Risk</dt><dd>@ExperienceMessages.Price(agent.RiskLimits.RiskPerTradePercent)% per trade, at most @agent.RiskLimits.MaxOpenPositions open, @ExperienceMessages.Price(agent.RiskLimits.DailyLossLimitPercent)% daily loss@(agent.RiskLimits.MaxNotional is { } cap ? $", notional cap {ExperienceMessages.Price(cap)}" : "")</dd>
             <dt>No-entry windows</dt><dd>@(agent.EntryWindows.Count == 0 ? "none" : string.Join("; ", agent.EntryWindows.Select(AgentMessages.Describe)))</dd>
             @if (agent.Discretionary)
             {
@@ -175,7 +175,7 @@
         {
             <p class="hint">Computed @AgentMessages.Stamp(_experience.ComputedAt). <a href="/providers">Leaderboard</a>.</p>
             <div class="table-wrap">
-                <table class="agents leaderboard">
+                <table class="agents leaderboard" aria-labelledby="experience-title">
                     <thead><tr><th scope="col">Role</th><th scope="col">Provider</th><th scope="col">Model</th><th scope="col">Timeframe</th><th scope="col">Market</th><MetricHeaders /></tr></thead>
                     <tbody>
                         @foreach (var row in _experience.Roles)
@@ -193,7 +193,7 @@
                 </table>
             </div>
         }
-        <h3 id="trades-title">Closed trades</h3>
+        <h3 id="closed-trades-title">Closed trades</h3>
         @if (_experience is null || _experience.RecentTrades.Count == 0)
         {
             <p>@ExperienceMessages.NoTrades</p>
@@ -201,8 +201,8 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents leaderboard">
-                    <thead><tr><th scope="col">Opened</th><th scope="col">Closed</th><th scope="col">Duration</th><th scope="col">Side</th><th scope="col">Entry</th><th scope="col">Exit</th><th scope="col">Size</th><th scope="col">R</th><th scope="col">P&amp;L</th><th scope="col">Fees</th><th scope="col">Funding</th><th scope="col">MAE</th><th scope="col">MFE</th><th scope="col">Exit</th><th scope="col">Decisions</th><th scope="col"></th></tr></thead>
+                <table class="agents leaderboard" aria-labelledby="closed-trades-title">
+                    <thead><tr><th scope="col">Opened</th><th scope="col">Closed</th><th scope="col">Duration</th><th scope="col">Side</th><th scope="col">Entry</th><th scope="col">Exit price</th><th scope="col">Size</th><th scope="col"><abbr title="Result in multiples of the risk taken at entry">R</abbr></th><th scope="col">P&amp;L</th><th scope="col">Fees</th><th scope="col">Funding</th><th scope="col"><abbr title="Maximum adverse excursion">MAE</abbr></th><th scope="col"><abbr title="Maximum favorable excursion">MFE</abbr></th><th scope="col">Exit reason</th><th scope="col">Decisions</th><th scope="col"><span class="visually-hidden">Deliberation</span></th></tr></thead>
                     <tbody>
                         @foreach (var trade in _experience.RecentTrades)
                         {
@@ -240,7 +240,7 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents data stack">
+                <table class="agents data stack" aria-labelledby="history-title">
                     <thead><tr><th scope="col">When</th><th scope="col">Field</th><th scope="col">From</th><th scope="col">To</th></tr></thead>
                     <tbody>
                         @foreach (var change in agent.RecentChanges)

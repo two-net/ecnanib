@@ -6,7 +6,7 @@
 @inject IKeyService Keys
 @inject NavigationManager Navigation
 
-<PageTitle>Binance key</PageTitle>
+<PageTitle>@(_key is { } titleKey ? $"Binance key “{titleKey.Label}”" : "Binance key")</PageTitle>
 
 @if (_key is { } key)
 {
@@ -32,8 +32,8 @@
                         <span class="muted">@key.LastValidationError</span>
                     }
                 </dd>
-                <dt>Last checked</dt><dd>@Stamp(key.LastValidatedAt)</dd>
-                <dt>Added</dt><dd>@Stamp(key.CreatedAt)</dd>
+                <dt>Last checked</dt><dd>@UtcStamp.Minute(key.LastValidatedAt)</dd>
+                <dt>Added</dt><dd>@UtcStamp.Minute(key.CreatedAt)</dd>
                 <dt>Running or paused agents using it</dt><dd>@key.ActiveAgents</dd>
             </dl>
             <h3>Permissions reported by Binance</h3>
@@ -47,7 +47,7 @@
                     <li>IP restricted: @YesNo(p.IpRestricted)</li>
                     @if (p.CreatedAt is { } created)
                     {
-                        <li>Created: @Stamp(created)</li>
+                        <li>Created: @UtcStamp.Minute(created)</li>
                     }
                 </ul>
                 @if ((key.AllowSpot && !p.EnableSpotTrading) || (key.AllowFutures && !p.EnableFutures))
@@ -228,8 +228,6 @@
     };
 
     private static string YesNo(bool value) => value ? "yes" : "no";
-
-    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
 
     private sealed class ReplaceInput
     {

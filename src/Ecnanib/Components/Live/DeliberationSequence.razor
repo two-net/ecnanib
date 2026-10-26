@@ -10,7 +10,7 @@
             var step = Steps.GetValueOrDefault(slot.Role);
             <li class="role role-@StageClass(slot, step)" @key="slot.Role">
                 <span class="role-name">@CouncilRoles.Display(slot.Role)</span>
-                <span class="role-state @(step?.Status is { } status ? CouncilMessages.StatusClass(status) : "")">@LiveMessages.RoleState(slot, step)</span>
+                <span class="role-state anim-loop @(step?.Status is { } status ? CouncilMessages.StatusClass(status) : "")">@LiveMessages.RoleState(slot, step)</span>
                 @if (step?.Proposed is { } proposed)
                 {
                     <span class="role-proposal muted">@CouncilMessages.Action(proposed)</span>

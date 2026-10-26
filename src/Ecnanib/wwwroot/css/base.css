@@ -1,4 +1,5 @@
-/* Base styles: reset, typography, page layout and focus (UI-02, NFR-USE-01). */
+/* Base styles: reset, typography, page layout and focus (UI-02, NFR-USE-01). The :focus-visible ring below is the only
+   focus indicator and nothing removes it (DesignContractTests): state is shown with borders and shadows, never the outline. */
 *,
 *::before,
 *::after {
@@ -133,13 +134,13 @@ hr {
     margin: 1.5rem 0;
 }
 
-/* Framework form validation classes. */
+/* Framework form validation classes: an inset shadow, so the focus ring (the outline) stays visible on an invalid field. */
 .valid.modified:not([type=checkbox]) {
-    outline: 1px solid var(--ok);
+    box-shadow: inset 0 0 0 1px var(--ok);
 }
 
 .invalid {
-    outline: 1px solid var(--danger);
+    box-shadow: inset 0 0 0 1px var(--danger);
 }
 
 .validation-message {

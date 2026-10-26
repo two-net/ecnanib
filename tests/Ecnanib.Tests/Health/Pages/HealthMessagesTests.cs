@@ -56,6 +56,16 @@ public class HealthMessagesTests
         Assert.Equal("never", HealthMessages.Stamp(null));
     }
 
+    /// <summary>WCAG 2.2.1: the status page reloads only when asked, and says which state it is in.</summary>
+    [Fact]
+    public void TheReloadTextsNameBothStates()
+    {
+        Assert.Equal("This page does not reload by itself.", HealthMessages.ReloadHint);
+        Assert.Equal("This page reloads every minute.", HealthMessages.ReloadingHint);
+        Assert.Equal("Reload every minute", HealthMessages.StartReloading);
+        Assert.Equal("Stop reloading", HealthMessages.StopReloading);
+    }
+
     [Fact]
     public void DeadlineMissesReadNoneOrACountWithTheLastAge()
     {

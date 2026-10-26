@@ -41,8 +41,9 @@
     <p>Ecnanib is software, not financial advice. Trading cryptocurrencies, and leveraged futures in particular, can lose your entire balance. <a href="/#risk-disclaimer-title">Risk disclaimer</a></p>
 </footer>
 
-<div id="blazor-error-ui" data-nosnippet>
+@* blazor.web.js shows this bar and wires .reload and .dismiss; the bar is an alert and the dismiss a named button (NFR-USE-01). *@
+<div id="blazor-error-ui" role="alert" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <button type="button" class="dismiss" aria-label="Dismiss">🗙</button>
 </div>

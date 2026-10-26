@@ -10,7 +10,7 @@
 @inject IExperienceReader Experience
 @inject NavigationManager Navigation
 
-<PageTitle>Deliberation</PageTitle>
+<PageTitle>@(_view is { } titleView ? $"Evaluation of {titleView.AgentName}, {Stamp(titleView.CandleOpenTime)} candle" : "Deliberation")</PageTitle>
 
 @if (_view is { } view)
 {
@@ -153,7 +153,7 @@
                     @ExperienceMessages.Shadow(shadow)
                 </p>
             }
-            <h3>Limits check</h3>
+            <h3 id="limits-title">Limits check</h3>
             @if (decision.Limits.Count == 0)
             {
                 <p>No limit applied to this decision.</p>
@@ -161,7 +161,7 @@
             else
             {
                 <div class="table-wrap">
-                    <table class="data agents limits">
+                    <table class="data agents limits" aria-labelledby="limits-title">
                         <thead><tr><th scope="col">Limit</th><th scope="col">Result</th><th scope="col">Detail</th></tr></thead>
                         <tbody>
                             @foreach (var limit in decision.Limits)
@@ -178,10 +178,10 @@
             }
             @if (decision.ExecutionChecks.Count > 0)
             {
-                <h3>Execution check</h3>
+                <h3 id="execution-title">Execution check</h3>
                 <p class="hint">What execution found at order time: the size from equity, risk and stop distance, the notional and quantity caps, the minimum notional, the free balance and the daily loss.</p>
                 <div class="table-wrap">
-                    <table class="data agents limits">
+                    <table class="data agents limits" aria-labelledby="execution-title">
                         <thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col">Detail</th></tr></thead>
                         <tbody>
                             @foreach (var check in decision.ExecutionChecks)
@@ -231,7 +231,7 @@
         _shadow = await Experience.GetShadowOutcomeAsync(UserId, EvaluationId, HttpContext.RequestAborted);
     }
 
-    private static string Stamp(DateTimeOffset? at) => at is { } value ? value.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) : "";
+    private static string Stamp(DateTimeOffset? at) => at is { } value ? UtcStamp.Second(value) : "";
 
     private static string Number(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
 

@@ -12,9 +12,14 @@
 @inject IOptions<ServerOptions> Server
 
 <PageTitle>System status</PageTitle>
-<HeadContent>
-    <meta http-equiv="refresh" content="60" />
-</HeadContent>
+@* Reloading is the reader's choice (WCAG 2.2.1): the page sits still until "Reload every minute" is followed, and that
+   link's opposite stops it. *@
+@if (_reload)
+{
+    <HeadContent>
+        <meta http-equiv="refresh" content="@($"60;url={ReloadHref}")" />
+    </HeadContent>
+}
 
 <div class="page-head">
     <div>
@@ -109,7 +114,7 @@
         {
             <p class="hint">@HealthMessages.MarketStreamsNote</p>
             <div class="table-wrap">
-                <table class="agents data stack">
+                <table class="agents data stack" aria-labelledby="streams-title">
                     <thead><tr><th scope="col">Streams</th><th scope="col">Open</th><th scope="col">Health</th><th scope="col">Last message</th><th scope="col">Since</th><th scope="col">Last error</th></tr></thead>
                     <tbody>
                         @foreach (var group in HealthMessages.GroupStreams(report.MarketStreams))
@@ -141,7 +146,7 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents data stack">
+                <table class="agents data stack" aria-labelledby="sync-title">
                     <thead><tr><th scope="col">Provider</th><th scope="col">Last sync</th><th scope="col">Result</th><th scope="col">Trigger</th><th scope="col">Models</th><th scope="col">Deprecated</th></tr></thead>
                     <tbody>
                         @foreach (var state in report.ModelSync)
@@ -177,7 +182,7 @@
         else
         {
             <div class="table-wrap">
-                <table class="agents data stack">
+                <table class="agents data stack" aria-labelledby="limits-title">
                     <thead><tr><th scope="col">Limit</th><th scope="col">Used</th><th scope="col">Window</th></tr></thead>
                     <tbody>
                         @foreach (var usage in report.RateLimits.Usages)
@@ -198,14 +203,27 @@
         }
     </section>
 
-    <p class="hint">@HealthMessages.RefreshHint <a href="/status">Refresh now</a>.</p>
+    <p class="hint">@(_reload ? HealthMessages.ReloadingHint : HealthMessages.ReloadHint) <a href="@(_reload ? ReloadHref : Self)">Refresh now</a>. <a href="@(_reload ? Self : ReloadHref)">@(_reload ? HealthMessages.StopReloading : HealthMessages.StartReloading)</a></p>
 }
 
 @code {
+    private const string Self = "/status";
+
+    private const string ReloadHref = "/status?reload=1";
+
     private SystemHealthReport? _report;
+    private bool _reload;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
-    protected override async Task OnInitializedAsync() => _report = await Health.GetAsync(HttpContext.RequestAborted);
+    // Bound as text: a hand-edited value must not turn the page into an error.
+    [SupplyParameterFromQuery(Name = "reload")]
+    private string? Reload { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _reload = Reload == "1";
+        _report = await Health.GetAsync(HttpContext.RequestAborted);
+    }
 }

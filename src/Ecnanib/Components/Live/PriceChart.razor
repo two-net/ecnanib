@@ -1,6 +1,9 @@
 @* The price chart with trade markers (FR-UI-03 c): closed candles from the candle reader, the forming candle from the
    shared stream, markers from the trade timelines, re-read on order and trade events. A new marker is announced in a
-   badge, because canvas markers cannot be styled or animated by CSS; the trades section below says the same in words. *@
+   badge, because canvas markers cannot be styled or animated by CSS; the trades section below says the same in words.
+   The canvas cannot be read by assistive technology, so it is hidden from it (NFR-USE-01; the library's attribution link
+   inside it leaves the tab order) and a hidden sentence says what it shows and where the same is in words: the legend below
+   (symbol, timeframe, candles, last price, markers) and the trades section, which lists every marker. *@
 @rendermode InteractiveServer
 @inherits LiveComponentBase
 @using Ecnanib.Database.Entities
@@ -14,26 +17,31 @@
 @inject IMarketStreams Streams
 @inject IJSRuntime JS
 
-<div class="chart" aria-label="@(_status is { } s ? $"Price chart of {s.Symbol}, {AgentMessages.Timeframe(s.Timeframe)} candles" : "Price chart")">
-    <div class="chart-canvas" @ref="_element"></div>
-    @if (_badge is { } badge)
-    {
-        <div class="chart-badge" role="status" @key="_badgeTick">@badge</div>
-    }
-    @if (!_ready)
-    {
-        <p class="chart-placeholder hint">@(_status is not null && _bars.Count == 0 && _loaded ? "No candles yet." : LiveMessages.Loading)</p>
-    }
-</div>
-<p class="chart-legend">
-    @if (_status is { } status)
-    {
-        <span>@status.Symbol · @AgentMessages.Timeframe(status.Timeframe) · @_bars.Count candles</span>
-    }
-    <span>Last: <strong>@LiveMessages.Price(_last)</strong></span>
-    <span>@LiveMessages.Count(_markers.Count) trade markers</span>
-    <span class="muted">▲ long entry · ▼ short entry · ● exit · ■ stop move</span>
-</p>
+<figure class="chart-figure">
+    <div class="chart">
+        <p class="visually-hidden">@(_status is { } s ? $"Price chart of {s.Symbol}, {AgentMessages.Timeframe(s.Timeframe)} candles; the legend below gives the last price and the counts, and the trades section lists every marker." : "Price chart.")</p>
+        <div class="chart-canvas" @ref="_element" aria-hidden="true"></div>
+        <div class="chart-badge-region" role="status">
+            @if (_badge is { } badge)
+            {
+                <span class="chart-badge" @key="_badgeTick">@badge</span>
+            }
+        </div>
+        @if (!_ready)
+        {
+            <p class="chart-placeholder hint">@(_status is not null && _bars.Count == 0 && _loaded ? "No candles yet." : LiveMessages.Loading)</p>
+        }
+    </div>
+    <figcaption class="chart-legend">
+        @if (_status is { } status)
+        {
+            <span>@status.Symbol · @AgentMessages.Timeframe(status.Timeframe) · @_bars.Count candles</span>
+        }
+        <span>Last: <strong>@LiveMessages.Price(_last)</strong></span>
+        <span>@LiveMessages.Count(_markers.Count) trade markers</span>
+        <span class="muted">hollow candle up · filled candle down · ▲ long entry · ▼ short entry · ● exit · ■ stop move</span>
+    </figcaption>
+</figure>
 
 @code {
     private static readonly TimeSpan UpdateThrottle = TimeSpan.FromSeconds(1);

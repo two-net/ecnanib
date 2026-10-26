@@ -1,4 +1,4 @@
-using System.Globalization;
+using Ecnanib.Ui.Abstractions;
 using Microsoft.Extensions.Logging;
 
 namespace Ecnanib.Components.Logging;
@@ -37,5 +37,5 @@ internal static class LogMessages
         return dot < 0 || dot == component.Length - 1 ? component : component[(dot + 1)..];
     }
 
-    public static string Stamp(DateTimeOffset at) => at.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture);
+    public static string Stamp(DateTimeOffset at) => UtcStamp.Second(at);
 }

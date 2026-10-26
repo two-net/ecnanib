@@ -1,10 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
-using Ecnanib.Accounts.Abstractions;
-using Ecnanib.Database.Entities;
 using Ecnanib.Tests.Database.Live;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.Configuration;
 
@@ -16,7 +13,6 @@ namespace Ecnanib.Tests.Configuration;
 [Trait("Category", "Live")]
 public class PipelineLiveTests : IClassFixture<DatabaseLiveFixture>
 {
-    private const string Password = "correct horse battery staple";
     private readonly DatabaseLiveFixture _fixture;
 
     public PipelineLiveTests(DatabaseLiveFixture fixture)
@@ -32,10 +28,10 @@ public class PipelineLiveTests : IClassFixture<DatabaseLiveFixture>
         await StartAsync();
         await using var host = await PipelineTestHost.StartAsync(connectionString: _fixture.ConnectionString);
 
-        var (html, antiforgery) = await PageAsync(host, "/sign-up");
+        var (html, antiforgery) = await PipelineSession.PageAsync(host, "/sign-up");
         var response = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Post, "/sign-up", cookies: [antiforgery],
             content: PipelineTestHost.Form(("_handler", "sign-up"), ("__RequestVerificationToken", PipelineTestHost.AntiforgeryToken(html)),
-                ("Input.Email", "pipeline-signup@example.com"), ("Input.Password", Password), ("Input.ConfirmPassword", Password))), Ct);
+                ("Input.Email", "pipeline-signup@example.com"), ("Input.Password", PipelineSession.Password), ("Input.ConfirmPassword", PipelineSession.Password))), Ct);
 
         Assert.True(response.StatusCode is HttpStatusCode.Found or HttpStatusCode.SeeOther, response.StatusCode.ToString());
         Assert.Equal("/", new Uri(host.Client.BaseAddress!, response.Headers.Location!).AbsolutePath);
@@ -57,13 +53,13 @@ public class PipelineLiveTests : IClassFixture<DatabaseLiveFixture>
     {
         await StartAsync();
         await using var host = await PipelineTestHost.StartAsync(connectionString: _fixture.ConnectionString);
-        await RegisterAsync(host, "pipeline-fixation@example.com");
+        await PipelineSession.RegisterAsync(host, "pipeline-fixation@example.com");
         var planted = "ecnanib.session=" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(96)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
 
-        var (html, antiforgery) = await PageAsync(host, "/sign-in", planted);
+        var (html, antiforgery) = await PipelineSession.PageAsync(host, "/sign-in", planted);
         Assert.Contains("_handler", PipelineTestHost.Inputs(html).Keys);
         var signedIn = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Post, "/sign-in", cookies: [planted, antiforgery],
-            content: PipelineTestHost.Form(("_handler", "sign-in"), ("__RequestVerificationToken", PipelineTestHost.AntiforgeryToken(html)), ("Input.Email", "pipeline-fixation@example.com"), ("Input.Password", Password))), Ct);
+            content: PipelineTestHost.Form(("_handler", "sign-in"), ("__RequestVerificationToken", PipelineTestHost.AntiforgeryToken(html)), ("Input.Email", "pipeline-fixation@example.com"), ("Input.Password", PipelineSession.Password))), Ct);
 
         Assert.True(signedIn.StatusCode is HttpStatusCode.Found or HttpStatusCode.SeeOther, signedIn.StatusCode.ToString());
         var fresh = PipelineTestHost.CookiePair(signedIn, "ecnanib.session");
@@ -94,8 +90,8 @@ public class PipelineLiveTests : IClassFixture<DatabaseLiveFixture>
     {
         await StartAsync();
         await using var host = await PipelineTestHost.StartAsync(connectionString: _fixture.ConnectionString);
-        var owner = await RegisterAsync(host, "pipeline-owner@example.com");
-        await RegisterAsync(host, "pipeline-intruder@example.com");
+        var owner = await PipelineSession.RegisterAsync(host, "pipeline-owner@example.com");
+        await PipelineSession.RegisterAsync(host, "pipeline-intruder@example.com");
         Guid agentId;
         await using (var db = _fixture.CreateContext())
         {
@@ -105,8 +101,8 @@ public class PipelineLiveTests : IClassFixture<DatabaseLiveFixture>
             agentId = agent.Id;
         }
 
-        var ownerSession = await SignInAsync(host, "pipeline-owner@example.com");
-        var intruderSession = await SignInAsync(host, "pipeline-intruder@example.com");
+        var ownerSession = await PipelineSession.SignInAsync(host, "pipeline-owner@example.com");
+        var intruderSession = await PipelineSession.SignInAsync(host, "pipeline-intruder@example.com");
 
         Assert.Equal(HttpStatusCode.OK, (await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Get, $"/agents/{agentId}", cookies: [ownerSession]), Ct)).StatusCode);
         foreach (var path in new[] { $"/agents/{agentId}", $"/agents/{agentId}/log", $"/agents/{agentId}/setup" })
@@ -127,33 +123,6 @@ public class PipelineLiveTests : IClassFixture<DatabaseLiveFixture>
     {
         _fixture.Require();
         await _fixture.MigrateAsync();
-    }
-
-    private static async Task<(string Html, string Antiforgery)> PageAsync(PipelineTestHost host, string path, params string[] cookies)
-    {
-        var page = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Get, path, cookies: cookies), Ct);
-        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
-        var antiforgery = PipelineTestHost.CookiePair(page, "ecnanib.antiforgery") ?? cookies.FirstOrDefault(c => c.StartsWith("ecnanib.antiforgery=", StringComparison.Ordinal));
-        Assert.NotNull(antiforgery);
-        return (await page.Content.ReadAsStringAsync(Ct), antiforgery);
-    }
-
-    private static async Task<User> RegisterAsync(PipelineTestHost host, string email)
-    {
-        var result = await host.Services.GetRequiredService<IAccountService>().RegisterAsync(email, Password, "127.0.0.1", Ct);
-        Assert.Equal(RegistrationStatus.Succeeded, result.Status);
-        return result.User!;
-    }
-
-    /// <summary>Signs in through the form and returns the session cookie pair.</summary>
-    private static async Task<string> SignInAsync(PipelineTestHost host, string email)
-    {
-        var (html, antiforgery) = await PageAsync(host, "/sign-in");
-        var response = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Post, "/sign-in", cookies: [antiforgery],
-            content: PipelineTestHost.Form(("_handler", "sign-in"), ("__RequestVerificationToken", PipelineTestHost.AntiforgeryToken(html)), ("Input.Email", email), ("Input.Password", Password))), Ct);
-        var session = PipelineTestHost.CookiePair(response, "ecnanib.session");
-        Assert.NotNull(session);
-        return session;
     }
 
     private async Task DeleteUsersAsync(params string[] emails)

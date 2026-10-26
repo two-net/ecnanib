@@ -1,5 +1,7 @@
 /* Design tokens (FR-UI-02, FR-UI-03, NFR-USE-01). Every colour is a light-dark() pair: with color-scheme "light dark"
-   the page follows the operating system live and without a script; data-theme on <html> pins one scheme instead. */
+   the page follows the operating system live and without a script; data-theme on <html> pins one scheme instead. Every
+   colour the stylesheets use is a token here (DesignContractTests pins it and the contrast of every pair in both
+   schemes): text on its backgrounds at 4.5:1 or better, the focus ring, control borders and chart colours at 3:1 or better. */
 :root {
     color-scheme: light dark;
 
@@ -9,7 +11,8 @@
     --text: light-dark(#161a20, #e6ebf1);
     --text-muted: light-dark(#5a6472, #9aa6b4);
     --border: light-dark(#d5dbe2, #2b343f);
-    --border-strong: light-dark(#b9c2cc, #3b4652);
+    /* The boundary of inputs and buttons: 3:1 against --surface and --bg in both schemes (WCAG 1.4.11). */
+    --border-strong: light-dark(#7f8a96, #66727f);
 
     --accent: light-dark(#1d5fd1, #78a9ff);
     --accent-hover: light-dark(#174db0, #9dbfff);
@@ -22,6 +25,7 @@
     --warn-bg: light-dark(#fdf1d6, #3a2b08);
     --danger: light-dark(#a11d1d, #f49b9b);
     --danger-bg: light-dark(#fbe6e6, #3b1515);
+    --danger-text: light-dark(#ffffff, #0e1116);
     --info: var(--accent);
     --info-bg: var(--accent-bg);
     --focus: light-dark(#1d5fd1, #ffd166);
@@ -43,6 +47,7 @@
     --radius-sm: 0.3rem;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 1px rgb(0 0 0 / 0.04);
     --shadow-raised: 0 6px 24px rgb(0 0 0 / 0.14);
+    --backdrop: rgb(0 0 0 / 0.45);
 
     --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -61,15 +66,52 @@
     color-scheme: dark;
 }
 
+/* Without light-dark() (before Baseline 2024) every token above would be invalid and the page colourless, the focus ring
+   included; these are the light values, so an older browser sees the light palette. */
+@supports not (color: light-dark(#000, #fff)) {
+    :root {
+        --bg: #f4f6f8;
+        --surface: #ffffff;
+        --surface-2: #eef1f4;
+        --text: #161a20;
+        --text-muted: #5a6472;
+        --border: #d5dbe2;
+        --border-strong: #7f8a96;
+        --accent: #1d5fd1;
+        --accent-hover: #174db0;
+        --accent-text: #ffffff;
+        --accent-bg: #e4ecfb;
+        --ok: #146c3a;
+        --ok-bg: #e2f5e9;
+        --warn: #7a5200;
+        --warn-bg: #fdf1d6;
+        --danger: #a11d1d;
+        --danger-bg: #fbe6e6;
+        --danger-text: #ffffff;
+        --focus: #1d5fd1;
+        --chart-grid: #e8ecf0;
+        --chart-up: #1f9d55;
+        --chart-down: #d64545;
+        --chart-marker-exit: #1d5fd1;
+        --chart-marker-stop: #7a5200;
+    }
+}
+
 /* NFR-USE-02: the operating system's preference and the in-app toggle both reduce; neither can force motion back on.
-   Transitions collapse to zero; decorative loops (.anim-loop) stop and show their resting state, which is their final frame. */
+   Transitions collapse to zero; decorative loops (.anim-loop, their descendants and their ::before/::after pseudo-elements)
+   stop and show their resting state, which is their final frame. This is the one mechanism: every transition and every
+   finite animation reads --ui-duration, every infinite one lives under an .anim-loop element. */
 @media (prefers-reduced-motion: reduce) {
     :root {
         --ui-duration: 0ms;
     }
 
     .anim-loop,
-    .anim-loop * {
+    .anim-loop *,
+    .anim-loop::before,
+    .anim-loop::after,
+    .anim-loop *::before,
+    .anim-loop *::after {
         animation: none !important;
     }
 }
@@ -79,6 +121,10 @@
 }
 
 :root[data-motion="reduced"] .anim-loop,
-:root[data-motion="reduced"] .anim-loop * {
+:root[data-motion="reduced"] .anim-loop *,
+:root[data-motion="reduced"] .anim-loop::before,
+:root[data-motion="reduced"] .anim-loop::after,
+:root[data-motion="reduced"] .anim-loop *::before,
+:root[data-motion="reduced"] .anim-loop *::after {
     animation: none !important;
 }

@@ -98,12 +98,15 @@ with the forward-only throw; the database README has the details.
 
 `tests/Ecnanib.Tests` (xunit v3 on Microsoft.Testing.Platform) mirrors the module folders.
 
-- `dotnet test` runs offline: every module's unit tests, the architecture rules above, and the start-up contract on the
-  built application as a child process (`Category=Process`: an unknown argument, a missing file, an empty connection string
-  and an unreachable database each end with exit code 1 and the reason on the console).
-  `dotnet test -- --filter-not-trait "Category=Process"` leaves the child processes out.
+- `dotnet test` runs offline: every module's unit tests, the architecture rules above, the accessibility, design and
+  culture contracts (the structural checker over the anonymous pages, the contrast of every colour pair, the motion
+  rules, the invariant culture; NFR-USE-01..03), and the start-up contract on the built application as a child process
+  (`Category=Process`: an unknown argument, a missing file, an empty connection string and an unreachable database each
+  end with exit code 1 and the reason on the console). `dotnet test -- --filter-not-trait "Category=Process"` leaves the
+  child processes out.
 - `dotnet test -- --filter-trait "Category=Live"` runs against PostgreSQL through the git-ignored `tests/.database.json`
   (a role allowed to `CREATE DATABASE`; every test class gets its own `ecnanib_test_*` database and drops it): the schema,
-  the instance lock, the request pipeline, the modules against real tables, and the application process itself creating and
-  migrating a database, taking the lock, serving `/`, refusing a second process and stopping cleanly on SIGTERM. The exchange
-  and provider live checks need `tests/.exchange-keys.json` and `tests/.ai-keys.json` as the exchange and AI READMEs describe.
+  the instance lock, the request pipeline, the modules against real tables, a tour of every signed-in page with seeded
+  content through the accessibility checker, and the application process itself creating and migrating a database, taking
+  the lock, serving `/`, refusing a second process and stopping cleanly on SIGTERM. The exchange and provider live checks
+  need `tests/.exchange-keys.json` and `tests/.ai-keys.json` as the exchange and AI READMEs describe.

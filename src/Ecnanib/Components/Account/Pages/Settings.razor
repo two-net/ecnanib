@@ -2,7 +2,6 @@
 @attribute [Authorize]
 @using Ecnanib.Accounts.Configuration
 @using Ecnanib.Database.Entities
-@using Ecnanib.Ui.Abstractions
 @using Microsoft.Extensions.Options
 @inject IAccountService Accounts
 @inject NavigationManager Navigation
@@ -62,16 +61,16 @@
         <h2 id="disclaimer-title">Risk disclaimer</h2>
         @if (_disclaimer is { IsAccepted: true })
         {
-            <p>You accepted version @_disclaimer.CurrentVersion on @_disclaimer.CurrentVersionAcceptedAt!.Value.ToString("yyyy-MM-dd HH:mm 'UTC'").</p>
+            <p>You accepted version @_disclaimer.CurrentVersion on @UtcStamp.Minute(_disclaimer.CurrentVersionAcceptedAt).</p>
         }
         else if (_disclaimer is not null)
         {
             @if (_disclaimer.LastAcceptedAt is { } last)
             {
-                <p>The disclaimer has changed since you accepted it on @last.ToString("yyyy-MM-dd HH:mm 'UTC'"); please read and accept it again.</p>
+                <p>The disclaimer has changed since you accepted it on @UtcStamp.Minute(last); please read and accept it again.</p>
             }
             <p>You must read and accept the risk disclaimer before your first live-mode agent can start.</p>
-            <RiskDisclaimerNotice />
+            <RiskDisclaimerNotice Level="3" />
             <EditForm Model="Disclaimer" FormName="accept-disclaimer" OnValidSubmit="AcceptDisclaimerAsync" method="post">
                 <DataAnnotationsValidator />
                 <ValidationSummary />

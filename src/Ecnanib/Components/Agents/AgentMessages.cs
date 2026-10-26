@@ -1,9 +1,11 @@
+using System.Globalization;
 using Ecnanib.Agents.Abstractions;
 using Ecnanib.Agents.Configuration;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Keys.Abstractions;
 using Ecnanib.ModelSync.Abstractions;
+using Ecnanib.Ui.Abstractions;
 
 namespace Ecnanib.Components.Agents;
 
@@ -43,7 +45,8 @@ internal static class AgentMessages
         _ => null,
     };
 
-    public static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
+    /// <summary>The pages' UTC stamp to the minute (NFR-USE-03): <see cref="UtcStamp.Minute(DateTimeOffset?)"/>.</summary>
+    public static string Stamp(DateTimeOffset? at) => UtcStamp.Minute(at);
 
     public static string Markets(ExchangeKeyView key) => (key.AllowSpot, key.AllowFutures) switch
     {
@@ -124,10 +127,14 @@ internal static class AgentMessages
 
     public static string Plural(int count, string one, string many) => $"{count} {(count == 1 ? one : many)}";
 
-    /// <summary>"Every Friday 21:00 → Monday 01:00 UTC" or "2026-11-05 12:00 → 2026-11-05 16:00 UTC".</summary>
+    /// <summary>"Every Friday 21:00 → Monday 01:00 UTC" or "2026-11-05 12:00 → 2026-11-05 16:00 UTC"; invariant and UTC whatever the host (NFR-USE-03).</summary>
     public static string Describe(EntryWindowView window) => window.Kind == EntryWindowKind.Recurring
-        ? $"Every {window.StartDay} {window.StartTime:HH\\:mm} → {window.EndDay} {window.EndTime:HH\\:mm} UTC"
-        : $"{window.StartAt:yyyy-MM-dd HH:mm} → {window.EndAt:yyyy-MM-dd HH:mm} UTC";
+        ? $"Every {window.StartDay} {Clock(window.StartTime)} → {window.EndDay} {Clock(window.EndTime)} UTC"
+        : $"{Minute(window.StartAt)} → {Minute(window.EndAt)} UTC";
+
+    private static string Clock(TimeOnly? time) => time?.ToString("HH\\:mm", CultureInfo.InvariantCulture) ?? "";
+
+    private static string Minute(DateTimeOffset? at) => at?.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) ?? "";
 
     public static string Kind(EntryWindowKind kind) => kind == EntryWindowKind.Recurring ? "Every week" : "One-off";
 

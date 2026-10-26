@@ -27,6 +27,7 @@ else
     <p class="hint">Since @AgentMessages.Stamp(_usage.Since). Provider costs are yours under BYOK; the output tokens per call are capped by the configuration.</p>
     <div class="table-wrap">
         <table class="agents data">
+            <caption class="visually-hidden">Council calls and tokens by role</caption>
             <thead><tr><th scope="col">Role</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input tokens</th><th scope="col" class="num">Output tokens</th></tr></thead>
             <tbody>
                 @foreach (var role in _usage.ByRole)

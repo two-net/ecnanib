@@ -1,5 +1,6 @@
 @page "/providers"
 @attribute [Authorize]
+@using System.Globalization
 @using Ecnanib.Ai.Abstractions
 @using Ecnanib.Database.Entities
 @using Ecnanib.Experience.Abstractions
@@ -29,7 +30,7 @@
     <form method="post" @formname="sync-provider" @onsubmit="SyncAsync" class="inline">
         <AntiforgeryToken />
         <div class="table-wrap">
-            <table class="data stack keys">
+            <table class="data stack keys" aria-labelledby="sync-title">
                 <thead>
                     <tr><th scope="col">Provider</th><th scope="col">Last sync</th><th scope="col">Result</th><th scope="col">Trigger</th><th scope="col">Models</th><th scope="col">Deprecated</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
                 </thead>
@@ -38,7 +39,7 @@
                     {
                         <tr>
                             <td data-label="Provider">@ProviderNames.Display(state.Provider)</td>
-                            <td data-label="Last sync">@Stamp(state.LastSyncAt)</td>
+                            <td data-label="Last sync">@UtcStamp.Minute(state.LastSyncAt)</td>
                             <td data-label="Result">
                                 <span class="status @ProviderMessages.StatusClass(state.LastStatus)">@state.LastStatus</span>
                                 @if (state.LastStatus == SyncStatus.Failed && state.LastError is not null)
@@ -72,7 +73,7 @@
     <h2 id="leaderboard-title">Leaderboard</h2>
     <p>@ExperienceMessages.LeaderboardIntro</p>
     <FilterForm Filter="_filter" Action="/providers" />
-    <p class="hint">Showing @ExperienceFilters.Describe(_filter). @(_leaderboard?.ComputedAt is { } computed ? $"Computed {Stamp(computed)}." : ExperienceMessages.NoStatistics)</p>
+    <p class="hint">Showing @ExperienceFilters.Describe(_filter). @(_leaderboard?.ComputedAt is { } computed ? $"Computed {UtcStamp.Minute(computed)}." : ExperienceMessages.NoStatistics)</p>
     <h3 id="leaderboard-mine-title">Your agents</h3>
     @if (_leaderboard is null || _leaderboard.Mine.Count == 0)
     {
@@ -81,7 +82,7 @@
     else
     {
         <div class="table-wrap">
-            <table class="data agents leaderboard">
+            <table class="data agents leaderboard" aria-labelledby="leaderboard-mine-title">
                 <thead><tr><th scope="col">#</th><th scope="col">Provider</th><th scope="col">Model</th><MetricHeaders /></tr></thead>
                 <tbody>
                     @foreach (var (row, rank) in _leaderboard.Mine.Select((r, i) => (r, i + 1)))
@@ -105,7 +106,7 @@
     else
     {
         <div class="table-wrap">
-            <table class="data agents leaderboard">
+            <table class="data agents leaderboard" aria-labelledby="leaderboard-all-title">
                 <thead><tr><th scope="col">#</th><th scope="col">Provider</th><th scope="col">Model</th><MetricHeaders /></tr></thead>
                 <tbody>
                     @foreach (var (row, rank) in _leaderboard.SystemWide.Select((r, i) => (r, i + 1)))
@@ -138,6 +139,7 @@
             {
                 <div class="table-wrap">
                     <table class="data stack keys">
+                        <caption class="visually-hidden">@ProviderNames.Display(state.Provider) catalog</caption>
                         <thead><tr><th scope="col">Model</th><th scope="col">Status</th><th scope="col">First seen</th><th scope="col">Last seen</th></tr></thead>
                         <tbody>
                             @foreach (var model in models)
@@ -151,8 +153,8 @@
                                         }
                                     </td>
                                     <td data-label="Status"><span class="status @ProviderMessages.StatusClass(model.Status)">@model.Status</span></td>
-                                    <td data-label="First seen">@Stamp(model.FirstSeenAt)</td>
-                                    <td data-label="Last seen">@Stamp(model.LastSeenAt)</td>
+                                    <td data-label="First seen">@UtcStamp.Minute(model.FirstSeenAt)</td>
+                                    <td data-label="Last seen">@UtcStamp.Minute(model.LastSeenAt)</td>
                                 </tr>
                             }
                         </tbody>
@@ -250,7 +252,5 @@
         return "/providers/" + ProviderNames.Route(provider) + (query.Length == 0 ? "" : "?" + query);
     }
 
-    private static int Count(string? value) => int.TryParse(value, out var count) && count >= 0 ? count : 0;
-
-    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
+    private static int Count(string? value) => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) && count >= 0 ? count : 0;
 }

@@ -4,7 +4,7 @@
 @inject ILogReader Logs
 @inject NavigationManager Navigation
 
-<PageTitle>Agent log</PageTitle>
+<PageTitle>@(_result is { } titleResult ? $"Log of {titleResult.AgentName}" : "Agent log")</PageTitle>
 
 @if (_result is { } result)
 {

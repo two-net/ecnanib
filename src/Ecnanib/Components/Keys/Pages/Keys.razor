@@ -26,7 +26,7 @@
     else
     {
         <div class="table-wrap">
-            <table class="data stack keys">
+            <table class="data stack keys" aria-labelledby="exchange-title">
                 <thead>
                     <tr><th scope="col">Label</th><th scope="col">Environment</th><th scope="col">Markets</th><th scope="col">Key</th><th scope="col">Status</th><th scope="col">Checked</th><th scope="col">Agents</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
                 </thead>
@@ -45,7 +45,7 @@
                                     <span class="muted">@key.LastValidationError</span>
                                 }
                             </td>
-                            <td data-label="Checked">@Stamp(key.LastValidatedAt)</td>
+                            <td data-label="Checked">@UtcStamp.Minute(key.LastValidatedAt)</td>
                             <td data-label="Agents">@key.ActiveAgents</td>
                             <td><a href="/keys/exchange/@key.Id">Manage</a></td>
                         </tr>
@@ -105,7 +105,7 @@
     @if (_overview is not null)
     {
         <div class="table-wrap">
-            <table class="data stack keys">
+            <table class="data stack keys" aria-labelledby="providers-title">
                 <thead>
                     <tr><th scope="col">Provider</th><th scope="col">Key</th><th scope="col">Status</th><th scope="col">Checked</th><th scope="col">Agents</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
                 </thead>
@@ -124,7 +124,7 @@
                                         <span class="muted">@key.LastValidationError</span>
                                     }
                                 </td>
-                                <td data-label="Checked">@Stamp(key.LastValidatedAt)</td>
+                                <td data-label="Checked">@UtcStamp.Minute(key.LastValidatedAt)</td>
                                 <td data-label="Agents">@slot.ActiveAgents</td>
                                 <td><a href="/keys/providers/@ProviderNames.Route(slot.Provider)">Manage</a></td>
                             }
@@ -225,8 +225,6 @@
         KeyStatus.Invalid => "status-invalid",
         _ => "status-unvalidated",
     };
-
-    private static string Stamp(DateTimeOffset? at) => at?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never";
 
     private sealed class AddExchangeKeyInput : IValidatableObject
     {
