@@ -3,6 +3,7 @@ using Ecnanib.Components.Health;
 using Ecnanib.Database;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Health.Abstractions;
+using Ecnanib.ModelSync.Abstractions;
 using System.Net;
 using Ecnanib.Configuration;
 
@@ -21,6 +22,31 @@ public class HealthMessagesTests
     [InlineData(2 * 86400 + 60, "2 d ago")]
     public void AgesReadNaturally(int? secondsAgo, string expected) =>
         Assert.Equal(expected, HealthMessages.Age(secondsAgo is { } s ? Now.AddSeconds(-s) : null, Now));
+
+    [Theory]
+    [InlineData(null, "not scheduled")]
+    [InlineData(5, "due now")]
+    [InlineData(-5, "due now")]
+    [InlineData(45, "in 45 s")]
+    [InlineData(4 * 3600 + 30, "in 4 h")]
+    [InlineData(-300, "overdue by 5 min")]
+    [InlineData(-3 * 86400, "overdue by 3 d")]
+    public void DueTimesReadNaturally(int? secondsAhead, string expected) =>
+        Assert.Equal(expected, HealthMessages.Due(secondsAhead is { } s ? Now.AddSeconds(s) : null, Now));
+
+    /// <summary>FR-SYNC-02, NFR-OBS-01: the scheduled sync's line follows the job's life, the last error as a kind.</summary>
+    [Fact]
+    public void TheModelSyncJobLineReadsItsLife()
+    {
+        Assert.Equal("not started", HealthMessages.ModelSyncJob(ModelSyncJobStatus.NotStarted, Now));
+        var started = new ModelSyncJobStatus(Now.AddMinutes(-2), null, null, Now.AddMinutes(1), 0, 0, 0, 0, null, null);
+        Assert.Equal("started 2 min ago, first run in 1 min", HealthMessages.ModelSyncJob(started, Now));
+        Assert.Equal("running for 20 s", HealthMessages.ModelSyncJob(started with { RunningSince = Now.AddSeconds(-20) }, Now));
+        var ran = new ModelSyncJobStatus(Now.AddHours(-3), null, Now.AddHours(-2), Now.AddHours(4), 3, 1, 0, 0, null, null);
+        Assert.Equal("last run 2 h ago (3 synced, 1 without a key, 0 failed, 0 failure(s)), next run in 4 h", HealthMessages.ModelSyncJob(ran, Now));
+        var failed = ran with { LastRunFailures = 4, LastError = "InvalidOperationException", LastErrorAt = Now.AddHours(-2), NextRunAt = Now.AddMinutes(-5) };
+        Assert.Equal("last run 2 h ago (3 synced, 1 without a key, 0 failed, 4 failure(s)), next run overdue by 5 min; last error InvalidOperationException 2 h ago", HealthMessages.ModelSyncJob(failed, Now));
+    }
 
     [Theory]
     [InlineData(null, "—")]

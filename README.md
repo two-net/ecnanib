@@ -71,7 +71,7 @@ registers them in the order their defaults and replacements require, and `Progra
 | — | [`Ai`](src/Ecnanib/Ai/README.md) | the four providers' REST APIs |
 | — | [`Database`](src/Ecnanib/Database/README.md) | the context, the entities, the migrations, retention, the instance lock |
 | — | [`Exchange`](src/Ecnanib/Exchange/README.md) | Binance Spot and Futures: REST, streams, rate limits |
-| — | [`Health`](src/Ecnanib/Health/README.md) | the health report and the status page (NFR-OBS-01) |
+| — | [`Health`](src/Ecnanib/Health/README.md) | the health report, the anonymous `/health` document and the status page (NFR-OBS-01) |
 
 ### Module boundaries
 

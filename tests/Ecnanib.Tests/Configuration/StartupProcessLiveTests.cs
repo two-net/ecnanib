@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ecnanib.Database;
 using Ecnanib.Database.Migrations;
@@ -32,6 +33,21 @@ public class StartupProcessLiveTests : IClassFixture<DatabaseLiveFixture>
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    /// <summary>Polls <c>/health</c> until the whole is healthy or the deadline passes, and returns the last answer either way.</summary>
+    private static async Task<(HttpStatusCode Status, string Json)> HealthAsync(HttpClient http, int port)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            using var response = await http.GetAsync($"http://127.0.0.1:{port}/health", Ct);
+            var json = await response.Content.ReadAsStringAsync(Ct);
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.GetProperty("status").GetString() == "healthy" || DateTime.UtcNow > deadline)
+                return (response.StatusCode, json);
+            await Task.Delay(200, Ct);
+        }
+    }
 
     [Fact]
     public async Task AFailingMigrationRefusesToStartLeavesNoHistoryAndNeverListens()
@@ -98,6 +114,22 @@ public class StartupProcessLiveTests : IClassFixture<DatabaseLiveFixture>
             {
                 Assert.Equal(HttpStatusCode.OK, landing.StatusCode);
                 Assert.Contains("Ecnanib", await landing.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
+            }
+
+            // NFR-OBS-01: the started process answers the health document anonymously, 200 and healthy once the agent
+            // scheduler's start-up sweep is through (the listening line comes while it may still be Starting).
+            var (healthStatus, healthJson) = await HealthAsync(http, port);
+            using (var health = JsonDocument.Parse(healthJson))
+            {
+                var root = health.RootElement;
+                Assert.Equal(HttpStatusCode.OK, healthStatus);
+                Assert.Equal("healthy", root.GetProperty("status").GetString());
+                Assert.Equal("running", root.GetProperty("scheduler").GetProperty("phase").GetString());
+                Assert.Equal("held", root.GetProperty("instanceLock").GetProperty("state").GetString());
+                Assert.True(root.GetProperty("reconciliation").GetProperty("available").GetBoolean());
+                Assert.True(root.GetProperty("modelSync").GetProperty("job").GetProperty("nextRunAt").GetDateTimeOffset() > DateTimeOffset.UtcNow);
+                Assert.Equal(4, root.GetProperty("modelSync").GetProperty("providers").GetArrayLength());
+                Assert.True(root.GetProperty("database").GetProperty("latencyMs").GetInt32() >= 0);
             }
 
             // NFR-ARCH-01, NFR-REL-04: a second process on the same database is refused before it binds its port.

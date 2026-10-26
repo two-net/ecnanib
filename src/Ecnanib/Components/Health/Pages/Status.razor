@@ -35,7 +35,7 @@
 @if (_report is { } report)
 {
     <section class="card" aria-labelledby="database-title">
-        <h2 id="database-title">Database</h2>
+        <h2 id="database-title">Database @Badge(SystemHealthStates.Worst(report.States.Database, report.States.InstanceLock))</h2>
         <dl class="details">
             <dt>Connectivity</dt>
             <dd><span class="status @HealthMessages.StateClass(report.Database.State)">@HealthMessages.Describe(report.Database.State)</span> @if (report.Database.Error is not null) { <span class="muted">@report.Database.Error</span> }</dd>
@@ -59,7 +59,7 @@
     </section>
 
     <section class="card" aria-labelledby="scheduler-title">
-        <h2 id="scheduler-title">Agent scheduler</h2>
+        <h2 id="scheduler-title">Agent scheduler @Badge(report.States.Scheduler)</h2>
         <dl class="details">
             <dt>Phase</dt>
             <dd><span class="status @HealthMessages.PhaseClass(report.Scheduler.Phase)">@HealthMessages.Phase(report.Scheduler.Phase)</span></dd>
@@ -84,7 +84,7 @@
     </section>
 
     <section class="card" aria-labelledby="reconciliation-title">
-        <h2 id="reconciliation-title">Exchange reconciliation</h2>
+        <h2 id="reconciliation-title">Exchange reconciliation @Badge(report.States.Reconciliation)</h2>
         @if (!report.Reconciliation.Available)
         {
             <p>@HealthMessages.ReconciliationUnavailable</p>
@@ -108,7 +108,7 @@
     </section>
 
     <section class="card" aria-labelledby="streams-title">
-        <h2 id="streams-title">Market streams</h2>
+        <h2 id="streams-title">Market streams @Badge(report.States.MarketStreams)</h2>
         <p class="hint">@HealthMessages.Streams(report.MarketStreams)</p>
         @if (report.MarketStreams.Count > 0)
         {
@@ -132,13 +132,17 @@
                 </table>
             </div>
         }
-        <h3>Account streams</h3>
+        <h3>Account streams @Badge(report.States.UserDataStreams)</h3>
         <p class="hint">@HealthMessages.UserDataNote</p>
         <p>@HealthMessages.Streams(report.UserDataStreams)@(report.UserDataStreams.Select(s => s.LastError).LastOrDefault(e => e is not null) is { } error ? $". Last error: {error}" : "")</p>
     </section>
 
     <section class="card" aria-labelledby="sync-title">
-        <h2 id="sync-title">Model catalog sync</h2>
+        <h2 id="sync-title">Model catalog sync @Badge(report.States.ModelSync)</h2>
+        <dl class="details">
+            <dt>Scheduled sync</dt>
+            <dd>@HealthMessages.ModelSyncJob(report.ModelSyncJob, report.At)</dd>
+        </dl>
         @if (report.ModelSyncError is not null)
         {
             <p class="error" role="alert">The sync states could not be read: @report.ModelSyncError</p>
@@ -174,7 +178,7 @@
     </section>
 
     <section class="card" aria-labelledby="limits-title">
-        <h2 id="limits-title">Exchange rate limits</h2>
+        <h2 id="limits-title">Exchange rate limits @Badge(report.States.RateLimits)</h2>
         @if (report.RateLimits.Usages.Count == 0)
         {
             <p>No request weight has been used yet.</p>
@@ -212,6 +216,9 @@
     private const string ReloadHref = "/status?reload=1";
 
     private SystemHealthReport? _report;
+
+    /// <summary>The part's own state beside its heading, so the card that degrades the whole is found at a glance and its accessible name says so.</summary>
+    private static RenderFragment Badge(HealthState state) => @<span class="status @HealthMessages.StateClass(state)">@HealthMessages.Describe(state)</span>;
     private bool _reload;
 
     [CascadingParameter]

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Ecnanib.Tests.Database.Live;
 using Microsoft.EntityFrameworkCore;
 
@@ -117,6 +118,27 @@ public class PipelineLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.DoesNotContain(agentId.ToString(), statusHtml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("BTCUSDT", statusHtml, StringComparison.OrdinalIgnoreCase);
         await DeleteUsersAsync("pipeline-owner@example.com", "pipeline-intruder@example.com");
+    }
+
+    /// <summary>NFR-OBS-01 against PostgreSQL: the document sees the database and every provider; with no job running the scheduler is not started, so the whole is still unhealthy.</summary>
+    [Fact]
+    public async Task TheHealthDocumentSeesTheDatabaseAndEveryProviderAndStillSaysUnhealthyWithoutTheScheduler()
+    {
+        await StartAsync();
+        await using var host = await PipelineTestHost.StartAsync(connectionString: _fixture.ConnectionString);
+
+        var response = await host.Client.SendAsync(PipelineTestHost.Request(HttpMethod.Get, "/health"), Ct);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        var root = document.RootElement;
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("unhealthy", root.GetProperty("status").GetString());
+        Assert.Equal("healthy", root.GetProperty("database").GetProperty("status").GetString());
+        Assert.True(root.GetProperty("database").GetProperty("latencyMs").GetInt32() >= 0);
+        Assert.Equal("notStarted", root.GetProperty("scheduler").GetProperty("phase").GetString());
+        Assert.Equal("healthy", root.GetProperty("modelSync").GetProperty("status").GetString());
+        Assert.Equal(["claude", "gemini", "gpt", "grok"], root.GetProperty("modelSync").GetProperty("providers").EnumerateArray().Select(p => p.GetProperty("provider").GetString()));
+        Assert.All(root.GetProperty("modelSync").GetProperty("providers").EnumerateArray(), p => Assert.Equal("never", p.GetProperty("status").GetString()));
     }
 
     private async Task StartAsync()

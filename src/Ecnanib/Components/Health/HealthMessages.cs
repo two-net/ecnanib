@@ -5,6 +5,7 @@ using Ecnanib.Configuration;
 using Ecnanib.Database;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Health.Abstractions;
+using Ecnanib.ModelSync.Abstractions;
 using Ecnanib.Ui.Abstractions;
 
 namespace Ecnanib.Components.Health;
@@ -74,13 +75,49 @@ internal static class HealthMessages
         var elapsed = now - when;
         if (elapsed < TimeSpan.FromSeconds(10))
             return "just now";
-        if (elapsed < TimeSpan.FromMinutes(1))
-            return $"{(int)elapsed.TotalSeconds} s ago";
-        if (elapsed < TimeSpan.FromHours(1))
-            return $"{(int)elapsed.TotalMinutes} min ago";
-        if (elapsed < TimeSpan.FromDays(1))
-            return $"{(int)elapsed.TotalHours} h ago";
-        return $"{(int)elapsed.TotalDays} d ago";
+        return Span(elapsed) + " ago";
+    }
+
+    /// <summary>"42 s", "2 min", "3 h" or "2 d".</summary>
+    public static string Span(TimeSpan span)
+    {
+        if (span < TimeSpan.FromMinutes(1))
+            return $"{(int)span.TotalSeconds} s";
+        if (span < TimeSpan.FromHours(1))
+            return $"{(int)span.TotalMinutes} min";
+        if (span < TimeSpan.FromDays(1))
+            return $"{(int)span.TotalHours} h";
+        return $"{(int)span.TotalDays} d";
+    }
+
+    /// <summary>"not scheduled", "in 4 h", "due now" (within ten seconds either way) or "overdue by 5 min".</summary>
+    public static string Due(DateTimeOffset? at, DateTimeOffset now)
+    {
+        if (at is not { } due)
+            return "not scheduled";
+        var left = due - now;
+        if (left.Duration() < TimeSpan.FromSeconds(10))
+            return "due now";
+        return left > TimeSpan.Zero ? $"in {Span(left)}" : $"overdue by {Span(-left)}";
+    }
+
+    /// <summary>
+    /// The scheduled sync's heartbeat (FR-SYNC-02, NFR-OBS-01): "not started"; "started 2 min ago, first run in 1 min";
+    /// "running for 20 s"; or "last run 2 h ago (3 synced, 1 without a key, 0 failed, 0 failure(s)), next run in 4 h";
+    /// with "; last error TimeoutException 2 h ago" while one is kept.
+    /// </summary>
+    public static string ModelSyncJob(ModelSyncJobStatus job, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        if (job.StartedAt is null)
+            return "not started";
+        var text = job switch
+        {
+            { RunningSince: { } running } => $"running for {Span(now - running)}",
+            { LastRunAt: { } last } => $"last run {Age(last, now)} ({job.LastRunSynced} synced, {job.LastRunWithoutKey} without a key, {job.LastRunFailed} failed, {job.LastRunFailures} failure(s)), next run {Due(job.NextRunAt, now)}",
+            _ => $"started {Age(job.StartedAt, now)}, first run {Due(job.NextRunAt, now)}",
+        };
+        return job.LastError is { } error ? $"{text}; last error {error} {Age(job.LastErrorAt, now)}" : text;
     }
 
     /// <summary>"none" or "3 since start, last 2 min ago" (NFR-PERF-01).</summary>
