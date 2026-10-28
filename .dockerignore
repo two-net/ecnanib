@@ -1,0 +1,3 @@
+# Only the publish output enters the image.
+*
+!publish
