@@ -27,7 +27,7 @@ public class OwnershipConstraintLiveTests : IClassFixture<DatabaseLiveFixture>
         {
             var owner = LiveSeed.NewUser("fk-owner@example.com");
             var intruder = LiveSeed.NewUser("fk-intruder@example.com");
-            var key = new ExchangeKey { User = owner, Label = "main", Environment = Ecnanib.Exchange.Abstractions.ExchangeEnvironment.Production, AllowSpot = true, AllowFutures = true, ApiKey = "fk-key", ApiSecret = "fk-secret", Status = KeyStatus.Valid, CreatedAt = LiveSeed.Now };
+            var key = StoredKeySeed.Protect(new ExchangeKey { User = owner, Label = "main", Environment = Ecnanib.Exchange.Abstractions.ExchangeEnvironment.Production, AllowSpot = true, AllowFutures = true, ProtectedApiKey = [], ProtectedApiSecret = [], Status = KeyStatus.Valid, CreatedAt = LiveSeed.Now }, "fk-key", "fk-secret");
             db.AddRange(owner, intruder, key);
             await db.SaveChangesAsync(Ct);
             (ownerId, intruderId, keyId) = (owner.Id, intruder.Id, key.Id);

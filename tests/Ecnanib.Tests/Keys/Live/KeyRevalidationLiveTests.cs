@@ -1,4 +1,5 @@
 using Ecnanib.Ai.Abstractions;
+using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Keys.Abstractions;
@@ -154,7 +155,7 @@ public class KeyRevalidationLiveTests : IClassFixture<DatabaseLiveFixture>
         {
             // The user replaces the credentials while the old ones are being checked.
             await using var db = _fixture.CreateContext();
-            await db.ExchangeKeys.Where(k => k.Id == keyId).ExecuteUpdateAsync(s => s.SetProperty(k => k.ApiKey, "REPLACEDKEYREPLACEDKEYREPLACEDKEY000000"), ct);
+            await db.ExchangeKeys.Where(k => k.Id == keyId).ExecuteUpdateAsync(s => s.SetProperty(k => k.ProtectedApiKey, StoredKeySeed.Protector.Protect(StoredKeyColumn.ExchangeApiKey, keyId, "REPLACEDKEYREPLACEDKEYREPLACEDKEY000000")), ct);
             throw new ExchangeAuthException("Binance spot account info failed: Invalid API-key (code -2015)", -2015);
         };
 

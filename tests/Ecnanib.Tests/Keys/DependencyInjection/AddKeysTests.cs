@@ -41,7 +41,7 @@ public class AddKeysTests
     [Fact]
     public async Task AnAgentsImplementationRegisteredFirstIsKept()
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString }).Build();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(DatabaseTestHost.OfflineConfiguration()).Build();
         var agents = new FakeKeyDependentAgents();
         var services = new ServiceCollection();
         services.AddDatabase(configuration);

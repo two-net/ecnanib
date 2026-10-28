@@ -35,13 +35,14 @@ public class MigrationLiveTests : IClassFixture<DatabaseLiveFixture>
         await migrator.MigrateAsync(Ct);
 
         Assert.Contains(logs.Entries, e => e.Message.StartsWith("Connected to PostgreSQL"));
-        Assert.Contains(logs.Entries, e => e.Message.StartsWith("Applying 6 database migration"));
+        Assert.Contains(logs.Entries, e => e.Message.StartsWith("Applying 7 database migration"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("InitialSchema"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("AddDecisionPartialFraction"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("ExtendExperienceMetrics"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("AddExecutionColumns"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("AddExchangeKeyOwnerConstraint"));
         Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("AddRoleOutputAttempts"));
+        Assert.Contains(logs.Entries, e => e.Message.Contains("Applied database migration") && e.Message.Contains("ProtectStoredKeys"));
 
         await using var db = _fixture.CreateContext();
         Assert.Empty(await db.Database.GetPendingMigrationsAsync(Ct));
@@ -51,6 +52,10 @@ public class MigrationLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal("text", await _fixture.ScalarAsync<string>("SELECT data_type FROM information_schema.columns WHERE table_name = 'agents' AND column_name = 'state'"));
         Assert.Equal("jsonb", await _fixture.ScalarAsync<string>("SELECT data_type FROM information_schema.columns WHERE table_name = 'agents' AND column_name = 'parameters'"));
         Assert.Equal("timestamp with time zone", await _fixture.ScalarAsync<string>("SELECT data_type FROM information_schema.columns WHERE table_name = 'agents' AND column_name = 'created_at'"));
+        // FR-KEY-04: the users' keys are bytea, and a row's cipher marker defaults to the format an earlier version wrote.
+        Assert.Equal("bytea", await _fixture.ScalarAsync<string>("SELECT data_type FROM information_schema.columns WHERE table_name = 'exchange_keys' AND column_name = 'api_secret'"));
+        Assert.Equal("bytea", await _fixture.ScalarAsync<string>("SELECT data_type FROM information_schema.columns WHERE table_name = 'provider_keys' AND column_name = 'api_key'"));
+        Assert.Equal("'Plain'::text", await _fixture.ScalarAsync<string>("SELECT column_default FROM information_schema.columns WHERE table_name = 'exchange_keys' AND column_name = 'cipher'"));
 
         var before = logs.Entries.Count;
         await migrator.MigrateAsync(Ct);

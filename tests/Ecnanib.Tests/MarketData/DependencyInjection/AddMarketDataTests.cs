@@ -47,6 +47,7 @@ public class AddMarketDataTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString,
+ ["Database:EncryptionKey"] = DatabaseTestHost.EncryptionKey,
             ["MarketData:BackfillCandles:4H"] = "321",
             ["Retention:CandleDays"] = "42",
         }).Build();

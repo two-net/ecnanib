@@ -127,6 +127,31 @@ public class StartupProcessTests
         await AssertRefusedAsync(port);
     }
 
+    /// <summary>
+    /// FR-CFG-03, FR-CFG-06, FR-KEY-04: the key that encrypts the users' stored keys is required and must be 32 bytes in
+    /// base64; either failure is refused at Critical before anything connects, without a stack trace.
+    /// </summary>
+    [Theory]
+    [InlineData("", "Database:EncryptionKey is required: the base64 encoding of 32 random bytes (openssl rand -base64 32).")]
+    [InlineData("not-a-key", "Database:EncryptionKey must be the base64 encoding of exactly 32 bytes.")]
+    public async Task AMissingOrMalformedEncryptionKeyIsRefusedAtCriticalAndExits1(string key, string expected)
+    {
+        Require();
+        using var dir = new TempDirectory();
+        StartupConfig.Write(dir, FreePort.Next(), UnusedConnectionString, encryptionKey: key);
+        await using var app = ApplicationProcess.Start(dir.Path);
+
+        Assert.Equal(1, await app.WaitForExitAsync(ApplicationProcess.StartTimeout));
+
+        var refusal = Assert.Single(app.StandardOutput, line => line.Contains(Critical, StringComparison.Ordinal));
+        Assert.Contains($"{Critical} {Migrator}: Configuration is invalid; the application will not start: ", refusal, StringComparison.Ordinal);
+        Assert.Contains(expected, refusal, StringComparison.Ordinal);
+        if (key.Length > 0)
+            Assert.DoesNotContain(key, refusal, StringComparison.Ordinal);
+        AssertNeverListened(app);
+        Assert.DoesNotContain(app.Output, line => line.StartsWith("   at ", StringComparison.Ordinal));
+    }
+
     internal static void Require()
     {
         if (!ApplicationProcess.IsAvailable)

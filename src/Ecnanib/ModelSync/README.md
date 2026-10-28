@@ -33,8 +33,9 @@ Rules the module enforces:
 - Key choice for a fetch: a manual sync uses the requester's own Valid key and nobody else's (NFR-SEC-03: a user's
   action never spends another user's key); the scheduled sync, which has no requester, takes the provider's Valid keys
   most recently validated first and tries at most three. A key the provider rejects is skipped with its id
-  logged and is never marked: FR-KEY-07 belongs to the keys module's re-validation. A malformed stored value is
-  skipped the same way. Any other provider failure, every tried key rejected, or an empty list ends the sync as
+  logged and is never marked: FR-KEY-07 belongs to the keys module's re-validation. A malformed stored value, or one that
+  does not open under the database module's protector, is skipped the same way. Any other provider failure, every tried
+  key rejected, or an empty list ends the sync as
   `Failed`: the reason is recorded as the provider's last result and the catalog is left untouched, so no miss is
   counted. An empty answer is refused on purpose: one restricted key must not count every model missing. No valid key
   at all is `NoValidKey`: nothing is called and nothing is recorded.

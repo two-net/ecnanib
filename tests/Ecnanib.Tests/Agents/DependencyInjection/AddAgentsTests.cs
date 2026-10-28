@@ -58,7 +58,7 @@ public class AddAgentsTests
     [Fact]
     public async Task AStageRegisteredFirstReplacesThePlaceholderAndTheStrategiesEngine()
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = Database.DatabaseTestHost.OfflineConnectionString }).Build();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(Database.DatabaseTestHost.OfflineConfiguration()).Build();
         var engine = new FakeStrategyEngine();
         var loader = new FakeMarketDataLoader();
         var tracker = new FakeExperienceTracker();
@@ -83,7 +83,7 @@ public class AddAgentsTests
     [Fact]
     public void AddAgentsNeedsTheStrategiesModuleFirst()
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = Database.DatabaseTestHost.OfflineConnectionString }).Build();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(Database.DatabaseTestHost.OfflineConfiguration()).Build();
         var services = new ServiceCollection();
         services.AddDatabase(configuration);
 

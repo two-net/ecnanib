@@ -1,8 +1,10 @@
 using Ecnanib.Ai.Abstractions;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Keys.Abstractions;
+using Ecnanib.Keys.Services;
 using Ecnanib.Tests.Database.Live;
 using Ecnanib.Tests.Support;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.Keys.Live;
@@ -71,5 +73,38 @@ public class KeyResolverLiveTests : IClassFixture<DatabaseLiveFixture>
         Assert.Equal(KeyResolutionStatus.Missing, (await resolver.ResolveProviderKeyAsync(user.Id, AiProvider.Grok, Ct)).Status);
 
         await KeysLiveSeed.DeleteUsersAsync(_fixture, Ct, user.Id, other.Id);
+    }
+
+    /// <summary>
+    /// FR-KEY-04: a stored value that no longer opens (a byte changed in the database) resolves as Invalid with the
+    /// malformed-key reason, never as a handle and never as a crash, and the page lists the key without its mask.
+    /// </summary>
+    [Fact]
+    public async Task ATamperedStoredValueResolvesAsInvalid()
+    {
+        _fixture.Require();
+        await _fixture.MigrateAsync();
+        var user = await KeysLiveSeed.NewUserAsync(_fixture, "resolve-tampered@example.com", Ct);
+        await using var provider = KeysTestHost.BuildServices(_fixture.ConnectionString, time: new FakeTimeProvider(LiveSeed.Now), exchange: new FakeExchangeClientFactory());
+        var keys = provider.GetRequiredService<IKeyService>();
+        var resolver = provider.GetRequiredService<IKeyResolver>();
+        var keyId = (await keys.AddExchangeKeyAsync(user.Id, new ExchangeKeyInput("tampered", ExchangeEnvironment.Testnet, true, false, ApiKey, Secret), Ct)).KeyId!.Value;
+        await using (var db = _fixture.CreateContext())
+        {
+            var row = await db.ExchangeKeys.SingleAsync(k => k.Id == keyId, Ct);
+            var bytes = (byte[])row.ProtectedApiSecret.Clone();
+            bytes[^1] ^= 0x01;
+            row.ProtectedApiSecret = bytes;
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var resolved = await resolver.ResolveExchangeKeyAsync(user.Id, keyId, MarketType.Spot, Ct);
+
+        Assert.Equal(KeyResolutionStatus.Invalid, resolved.Status);
+        Assert.Null(resolved.Handle);
+        Assert.Equal(KeyReasons.MalformedStoredKey, resolved.Reason);
+        var view = Assert.Single((await keys.GetOverviewAsync(user.Id, Ct)).ExchangeKeys);
+        Assert.Equal("…", view.MaskedApiKey);
+        await KeysLiveSeed.DeleteUsersAsync(_fixture, Ct, user.Id);
     }
 }

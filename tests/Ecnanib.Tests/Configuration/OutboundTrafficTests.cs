@@ -102,7 +102,7 @@ public class OutboundTrafficTests
     [Fact]
     public void TheNamedClientsFollowNoRedirect()
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString }).Build();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(DatabaseTestHost.OfflineConfiguration()).Build();
         using var provider = new ServiceCollection().AddEcnanibModules(configuration).BuildServiceProvider();
         var factory = provider.GetRequiredService<IHttpMessageHandlerFactory>();
 

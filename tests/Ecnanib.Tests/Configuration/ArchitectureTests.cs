@@ -329,7 +329,7 @@ public class ArchitectureTests
     private static ServiceCollection Register()
     {
         var configuration = ReferenceConfiguration.Load();
-        configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString });
+        configuration.AddInMemoryCollection(DatabaseTestHost.OfflineConfiguration());
         var services = new ServiceCollection();
         services.AddLogSinks(configuration);
         services.AddEcnanibModules(configuration);

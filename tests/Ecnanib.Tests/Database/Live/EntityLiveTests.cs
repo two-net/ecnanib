@@ -1,4 +1,5 @@
 using Ecnanib.Ai.Abstractions;
+using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
 using Microsoft.EntityFrameworkCore;
@@ -42,7 +43,9 @@ public class EntityLiveTests : IClassFixture<DatabaseLiveFixture>
             Assert.Equal(AgentState.Draft, agent.State);
             Assert.Equal(2, agent.CouncilAssignments.Count);
             Assert.Contains(agent.EntryWindows, w => w.Kind == EntryWindowKind.Recurring && w.StartDay == DayOfWeek.Saturday && w.EndTime == new TimeOnly(23, 59));
-            Assert.Equal("s3cr3tvalue", agent.ExchangeKey!.ApiSecret);
+            // FR-KEY-04: encrypted at rest, opened through the protector under the row's id.
+            Assert.Equal(StoredKeyCipher.AesGcm, agent.ExchangeKey!.Cipher);
+            Assert.Equal("s3cr3tvalue", StoredKeySeed.Protector.Unprotect(agent.ExchangeKey).ApiSecret);
             Assert.False(agent.ExchangeKey.PermissionsSnapshot!.Value.GetProperty("enableWithdrawals").GetBoolean());
 
             var decision = await db.Decisions.Include(d => d.RoleOutputs).Include(d => d.Transcripts).Include(d => d.ShadowOutcome)
@@ -114,7 +117,7 @@ public class EntityLiveTests : IClassFixture<DatabaseLiveFixture>
         {
             var user = LiveSeed.NewUser("unique@example.com");
             var agent = LiveSeed.NewAgent(user, "unique");
-            db.AddRange(user, agent, new ProviderKey { User = user, Provider = AiProvider.Gpt, ApiKey = "sk-1", CreatedAt = LiveSeed.Now });
+            db.AddRange(user, agent, StoredKeySeed.Protect(new ProviderKey { User = user, Provider = AiProvider.Gpt, ProtectedApiKey = [], CreatedAt = LiveSeed.Now }, "sk-1"));
             db.Add(LiveSeed.NewEvaluation(agent, LiveSeed.Now));
             db.Add(new Order { Agent = agent, ClientOrderId = "dup-1", Purpose = OrderPurpose.Entry, Type = OrderType.Market, Side = OrderSide.Buy, Quantity = 1m, Status = OrderStatus.New, CreatedAt = LiveSeed.Now, UpdatedAt = LiveSeed.Now });
             await db.SaveChangesAsync(Ct);
@@ -129,7 +132,7 @@ public class EntityLiveTests : IClassFixture<DatabaseLiveFixture>
         // FR-EXP-05: a system-scope statistic must not carry an owner.
         await AssertRejectedAsync(db => db.Add(new ExperienceStat { Scope = StatScope.System, UserId = userId, Provider = AiProvider.Gpt, Model = "m", Role = CouncilRole.RiskManager, Timeframe = CandleInterval.OneHour, MarketType = MarketType.Spot, ComputedAt = LiveSeed.Now }));
         // FR-KEY-03: one key per provider per user.
-        await AssertRejectedAsync(db => db.Add(new ProviderKey { UserId = userId, Provider = AiProvider.Gpt, ApiKey = "sk-2", CreatedAt = LiveSeed.Now }));
+        await AssertRejectedAsync(db => db.Add(StoredKeySeed.Protect(new ProviderKey { UserId = userId, Provider = AiProvider.Gpt, ProtectedApiKey = [], CreatedAt = LiveSeed.Now }, "sk-2")));
         // FR-AI-05: the Risk Manager cannot be disabled.
         await AssertRejectedAsync(db => db.Add(new CouncilAssignment { AgentId = agentId, Role = CouncilRole.RiskManager, Provider = AiProvider.Claude, Model = "m", Enabled = false }));
         // A one-off window must not carry recurring fields.

@@ -634,15 +634,12 @@ namespace Ecnanib.Database.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("allow_spot");
 
-                    b.Property<string>("ApiKey")
+                    b.Property<string>("Cipher")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("text")
-                        .HasColumnName("api_key");
-
-                    b.Property<string>("ApiSecret")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("api_secret");
+                        .HasDefaultValue("Plain")
+                        .HasColumnName("cipher");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -670,6 +667,16 @@ namespace Ecnanib.Database.Migrations
                     b.Property<JsonElement?>("PermissionsSnapshot")
                         .HasColumnType("jsonb")
                         .HasColumnName("permissions_snapshot");
+
+                    b.Property<byte[]>("ProtectedApiKey")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("api_key");
+
+                    b.Property<byte[]>("ProtectedApiSecret")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("api_secret");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -985,10 +992,12 @@ namespace Ecnanib.Database.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<string>("ApiKey")
+                    b.Property<string>("Cipher")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("text")
-                        .HasColumnName("api_key");
+                        .HasDefaultValue("Plain")
+                        .HasColumnName("cipher");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1001,6 +1010,11 @@ namespace Ecnanib.Database.Migrations
                     b.Property<string>("LastValidationError")
                         .HasColumnType("text")
                         .HasColumnName("last_validation_error");
+
+                    b.Property<byte[]>("ProtectedApiKey")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("api_key");
 
                     b.Property<string>("Provider")
                         .IsRequired()

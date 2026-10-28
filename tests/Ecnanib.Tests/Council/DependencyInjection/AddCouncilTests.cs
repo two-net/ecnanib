@@ -33,7 +33,7 @@ public class AddCouncilTests
     [Fact]
     public async Task AnExperienceImplementationRegisteredFirstIsKept()
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString }).Build();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(DatabaseTestHost.OfflineConfiguration()).Build();
         var experience = new FakeExperienceSummaries();
         var services = new ServiceCollection();
         services.AddDatabase(configuration);

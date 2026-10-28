@@ -2,9 +2,11 @@
 
 The one PostgreSQL database, reached only through EF Core (SRS §3.1.4, DB-01..03; NFR-DATA-01..03; NFR-ARCH-03;
 C-09). Other modules depend on `EcnanibDbContext`, the entities in `Ecnanib.Database.Entities`, `RetentionOptions`
-(the market-data module reads the candle retention), `DbUpdateExceptions`, `IInstanceLockStatus` (the health module) and
-`AddDatabase(...)`; `Program.cs` also calls `MigrateDatabaseAsync()` and `AcquireInstanceLockAsync()` and catches
-`DatabaseMigrationException` and `InstanceLockException`. There is no repository layer because the ORM is the boundary.
+(the market-data module reads the candle retention), `DbUpdateExceptions`, `IInstanceLockStatus` (the health module),
+`IStoredKeyProtector` (the keys and model-sync modules) and `AddDatabase(...)`; `Program.cs` also calls
+`MigrateDatabaseAsync()`, `AcquireInstanceLockAsync()` and `ProtectStoredKeysAsync()` and catches
+`DatabaseMigrationException`, `InstanceLockException` and `StoredKeyProtectionException`. There is no repository layer
+because the ORM is the boundary.
 The folder is named `Entities`
 rather than `Abstractions` because the shared types here are the persisted model itself.
 
@@ -14,7 +16,8 @@ rather than `Abstractions` because the shared types here are the persisted model
 | Bring the schema up to date before the host runs (DB-02, NFR-ARCH-03) | `await app.MigrateDatabaseAsync()` in `Program.cs`, right after `builder.Build()` |
 | Add or change a table | edit the entity and its `IEntityTypeConfiguration<T>`, then `dotnet tool restore` once and `dotnet ef migrations add <Name> --project src/Ecnanib --output-dir Database/Migrations`; replace the generated `Down` with the forward-only throw (the tests enforce both) |
 | Retention periods (NFR-DATA-03, FR-LOG-06, FR-DATA-05) | `Retention:LogDays`, `Retention:CandleDays`, `Retention:DeliberationTranscriptDays` in the configuration file |
-| The system's own keys (FR-CFG-05, A-01) | the Data Protection key ring is persisted in `data_protection_keys`; other internal keys go in `SystemKey` by purpose |
+| The system's own keys (FR-CFG-05, A-01) | the Data Protection key ring is persisted in `data_protection_keys`; `SystemKey` holds other internal keys by purpose, today the check value that proves `Database:EncryptionKey` |
+| Read or write a user's exchange or provider key (FR-KEY-04) | `IStoredKeyProtector`: `Protect(key, apiKey, apiSecret)` / `Protect(key, apiKey)` on the entity before the save, `Unprotect(key)` after the read; the row holds nonce, tag and ciphertext bound to its own id and column, and `StoredKeyProtectionException` means the value does not open |
 | Idempotent evaluation per candle (FR-AGT-09) | the unique index on `evaluations (agent_id, candle_open_time)`; catch `DbUpdateException` on the duplicate |
 | Never duplicate an order (FR-EXE-07, NFR-REL-02) | the unique index on `orders (client_order_id)` |
 | Run exactly one instance per database (NFR-REL-04) | `await app.AcquireInstanceLockAsync()` in `Program.cs`, right after `MigrateDatabaseAsync()`; `IInstanceLockStatus.GetStatus()` for the status page |
@@ -58,7 +61,17 @@ Rules the module enforces:
   own user (NFR-SEC-03); the constraint is NO ACTION (a composite SET NULL would null `user_id` too), so the keys module
   clears the reference before it deletes a key (FR-KEY-06), and deleting a user still cascades to keys and agents in one
   statement because the check runs at its end.
-- Keys and secrets are stored plain per A-02 and masked everywhere else (FR-KEY-04). EF and Npgsql log categories are
+- Keys and secrets are encrypted at rest (A-02, FR-KEY-04): AES-256-GCM under `Database:EncryptionKey`, a fresh nonce per
+  write and the table, column and row id as the authenticated data, through `IStoredKeyProtector`, so a value opens only
+  in its own cell; the row's `cipher` column says what it holds, `Plain` only between the `ProtectStoredKeys` migration
+  and the start that encrypts it, which every reader refuses. The start-up step (`ProtectStoredKeysAsync`, after the
+  instance lock, one transaction) keeps a check value in `system_keys` that proves the key: created on the first start,
+  opened on every later one. A key that opens it only through `Database:PreviousEncryptionKey` re-encrypts every row
+  and the check value under the current key (a rotation, logged at Warning with the count); a key that opens nothing
+  refuses the start at Critical and changes no byte; a check value missing beside encrypted rows is recreated only
+  when every row opens; rows an earlier version stored plain are encrypted on the same start. Masked everywhere else
+  (FR-KEY-04), and the two keys are the only credentials beside the connection string, never logged or echoed. EF and
+  Npgsql log categories are
   capped at Warning in the configuration file (`appsettings.json`) and the connection string never appears in a validation message.
 - `Database:RetryOnFailureCount` enables Npgsql's retrying execution strategy; code that opens its own transaction
   must run it through `Database.CreateExecutionStrategy().ExecuteAsync(...)`.
@@ -82,22 +95,33 @@ Rules the module enforces:
 - `Ecnanib.Database.Entities.Candle` shares its name with the exchange module's `Candle`; alias one of them where
   both are in scope.
 
-Configuration (`Database` is the only section of the file that holds a credential, FR-CFG-03):
+Configuration (`Database` is the only section of the file that holds credentials: the connection string and the stored-key
+encryption keys, FR-CFG-03):
 
 ```json
-{ "Database": { "ConnectionString": "Host=localhost;Database=ecnanib;Username=ecnanib;Password=...", "CommandTimeoutSeconds": 30, "RetryOnFailureCount": 3, "InstanceLockWaitSeconds": 30 },
+{ "Database": { "ConnectionString": "Host=localhost;Database=ecnanib;Username=ecnanib;Password=...", "EncryptionKey": "<base64 of 32 random bytes>", "PreviousEncryptionKey": "", "CommandTimeoutSeconds": 30, "RetryOnFailureCount": 3, "InstanceLockWaitSeconds": 30 },
   "Retention": { "LogDays": 30, "CandleDays": 365, "DeliberationTranscriptDays": 90, "SweepIntervalMinutes": 60, "DeleteBatchSize": 5000 } }
 ```
 
-An empty connection string refuses to start (FR-CFG-06). PostgreSQL 15 or newer is required. The start-up sequence is
-validate the configuration → migrate → take the instance lock → ensure the system keys → run.
+An empty connection string or encryption key refuses to start (FR-CFG-06); `openssl rand -base64 32` makes a key, and
+losing it loses every stored key (the users enter them again). To rotate, set the old key as
+`Database:PreviousEncryptionKey` beside the new `Database:EncryptionKey`, start once (the log says what was re-encrypted
+and asks for the old key to be removed), then remove it; a backup taken before the keys were encrypted still holds them
+plain. PostgreSQL 15 or newer is required. The start-up sequence is validate the configuration → migrate → take the
+instance lock → ensure the system keys → protect the stored keys → run.
 
 Tests: `dotnet test` runs offline (model snapshot, generated SQL, forward-only and convention checks, the lock's
-registration). The start-up path is checked end to end on the built application as a child process (the configuration
-module's `StartupProcessTests` and `StartupProcessLiveTests`): an empty connection string, an unreachable database and a
-failing migration each end with exit code 1, the cause at Critical and no port bound; a fresh database is created,
-migrated and locked by the process, and a second process on it is refused. Live checks (the schema, the sweeper, a second instance waiting then refusing and acquiring once the first
-stops, the lock taken again after a lost connection and the host stopped when another instance holds it)
+registration, the protector: a value opens in its own cell under its own key only, a changed byte or a plain row is
+refused and a refusal names neither value nor key, the key rules of the options). The start-up path is checked end to
+end on the built application as a child process (the configuration module's `StartupProcessTests` and
+`StartupProcessLiveTests`): an empty connection string or encryption key, an unreachable database and a failing
+migration each end with exit code 1, the cause at Critical and no port bound; a fresh database is created, migrated and
+locked by the process with its check value written, a second process on it is refused, and a process with a key that
+does not open the stored keys is refused. Live checks (the schema, the sweeper, a second instance waiting then refusing
+and acquiring once the first stops, the lock taken again after a lost connection and the host stopped when another
+instance holds it, the stored-key step: plain rows encrypted on the first start, the check value found on the next, a
+rotation, a wrong key refused with nothing changed, and a database an earlier version filled with plain text converted
+in place by the migration and encrypted by the step)
 are opt-in through `tests/.database.json` (git-ignored):
 
 ```json

@@ -15,17 +15,17 @@ internal static class ModelSyncLiveSeed
     public static async Task<ProviderKey> NewKeyAsync(DatabaseLiveFixture fixture, Guid userId, AiProvider provider, string apiKey, KeyStatus status = KeyStatus.Valid, DateTimeOffset? lastValidatedAt = null)
     {
         await using var db = fixture.CreateContext();
-        var key = new ProviderKey
+        var key = StoredKeySeed.Protect(new ProviderKey
         {
             Id = Guid.CreateVersion7(),
             UserId = userId,
             Provider = provider,
-            ApiKey = apiKey,
+            ProtectedApiKey = [],
             Status = status,
             LastValidatedAt = lastValidatedAt ?? (status == KeyStatus.Unvalidated ? null : LiveSeed.Now),
             LastValidationError = status == KeyStatus.Invalid ? "revoked" : null,
             CreatedAt = LiveSeed.Now,
-        };
+        }, apiKey);
         db.Add(key);
         await db.SaveChangesAsync(Ct);
         return key;

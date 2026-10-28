@@ -7,14 +7,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.Keys.Services;
 
-/// <summary>Reads a stored key into a handle for the exchange or AI module; stored keys use their entity id as the handle id.</summary>
+/// <summary>
+/// Reads a stored key into a handle for the exchange or AI module; stored keys use their entity id as the handle id.
+/// The values are decrypted through the database module's protector (FR-KEY-04); a stored value that does not open
+/// resolves as Invalid with the malformed-key reason, like a value its own constructor refuses.
+/// </summary>
 internal sealed class KeyResolver : IKeyResolver
 {
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
+    private readonly IStoredKeyProtector _protector;
 
-    public KeyResolver(IDbContextFactory<EcnanibDbContext> factory)
+    public KeyResolver(IDbContextFactory<EcnanibDbContext> factory, IStoredKeyProtector protector)
     {
         _factory = factory;
+        _protector = protector;
     }
 
     public async Task<KeyResolution<ExchangeKeyHandle>> ResolveExchangeKeyAsync(Guid userId, Guid keyId, MarketType market, CancellationToken cancellationToken)
@@ -22,7 +28,7 @@ internal sealed class KeyResolver : IKeyResolver
         await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var key = await db.ExchangeKeys.AsNoTracking()
             .Where(k => k.Id == keyId && k.UserId == userId)
-            .Select(k => new { k.Label, k.Environment, k.AllowSpot, k.AllowFutures, k.ApiKey, k.ApiSecret, k.Status, k.LastValidationError })
+            .Select(k => new { k.Label, k.Environment, k.AllowSpot, k.AllowFutures, k.ProtectedApiKey, k.ProtectedApiSecret, k.Cipher, k.Status, k.LastValidationError })
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         if (key is null)
@@ -42,9 +48,11 @@ internal sealed class KeyResolver : IKeyResolver
         ExchangeCredentials credentials;
         try
         {
-            credentials = new ExchangeCredentials(key.ApiKey, key.ApiSecret);
+            credentials = new ExchangeCredentials(
+                _protector.Unprotect(StoredKeyColumn.ExchangeApiKey, keyId, key.Cipher, key.ProtectedApiKey),
+                _protector.Unprotect(StoredKeyColumn.ExchangeApiSecret, keyId, key.Cipher, key.ProtectedApiSecret));
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or StoredKeyProtectionException)
         {
             return new KeyResolution<ExchangeKeyHandle>(KeyResolutionStatus.Invalid, Reason: KeyReasons.MalformedStoredKey);
         }
@@ -57,7 +65,7 @@ internal sealed class KeyResolver : IKeyResolver
         await using var db = await _factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var key = await db.ProviderKeys.AsNoTracking()
             .Where(k => k.UserId == userId && k.Provider == provider)
-            .Select(k => new { k.Id, k.ApiKey, k.Status, k.LastValidationError })
+            .Select(k => new { k.Id, k.ProtectedApiKey, k.Cipher, k.Status, k.LastValidationError })
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         if (key is null)
@@ -68,9 +76,9 @@ internal sealed class KeyResolver : IKeyResolver
         AiCredentials credentials;
         try
         {
-            credentials = new AiCredentials(key.ApiKey);
+            credentials = new AiCredentials(_protector.Unprotect(StoredKeyColumn.ProviderApiKey, key.Id, key.Cipher, key.ProtectedApiKey));
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or StoredKeyProtectionException)
         {
             return new KeyResolution<AiKeyHandle>(KeyResolutionStatus.Invalid, Reason: KeyReasons.MalformedStoredKey);
         }

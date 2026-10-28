@@ -46,7 +46,7 @@ internal sealed class PipelineTestHost : IAsyncDisposable
 
     public static async Task<PipelineTestHost> StartAsync(Dictionary<string, string?>? config = null, string? connectionString = DatabaseTestHost.OfflineConnectionString, TestLoggerProvider? logs = null, Action<WebApplication>? map = null)
     {
-        var values = new Dictionary<string, string?>();
+        var values = new Dictionary<string, string?> { ["Database:EncryptionKey"] = DatabaseTestHost.EncryptionKey };
         if (connectionString is not null)
             values["Database:ConnectionString"] = connectionString;
         foreach (var (key, value) in config ?? [])

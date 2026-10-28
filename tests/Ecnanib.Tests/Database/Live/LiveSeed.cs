@@ -119,13 +119,13 @@ internal static class LiveSeed
     public static async Task<(User User, Agent Agent, Decision Decision, Trade Trade)> SeedEverythingAsync(EcnanibDbContext db, CancellationToken ct)
     {
         var user = NewUser();
-        var exchangeKey = new ExchangeKey
+        var exchangeKey = StoredKeySeed.Protect(new ExchangeKey
         {
             User = user, Label = "testnet", Environment = ExchangeEnvironment.Testnet, AllowSpot = true, AllowFutures = true,
-            ApiKey = "abcdefgh12345", ApiSecret = "s3cr3tvalue", PermissionsSnapshot = Json("""{"enableWithdrawals":false}"""),
+            ProtectedApiKey = [], ProtectedApiSecret = [], PermissionsSnapshot = Json("""{"enableWithdrawals":false}"""),
             Status = KeyStatus.Valid, LastValidatedAt = Now, CreatedAt = Now,
-        };
-        var providerKey = new ProviderKey { User = user, Provider = AiProvider.Claude, ApiKey = "sk-ant-test", Status = KeyStatus.Valid, LastValidatedAt = Now, CreatedAt = Now };
+        }, "abcdefgh12345", "s3cr3tvalue");
+        var providerKey = StoredKeySeed.Protect(new ProviderKey { User = user, Provider = AiProvider.Claude, ProtectedApiKey = [], Status = KeyStatus.Valid, LastValidatedAt = Now, CreatedAt = Now }, "sk-ant-test");
         var agent = NewAgent(user);
         agent.ExchangeKey = exchangeKey;
         agent.Mode = AgentMode.Live;

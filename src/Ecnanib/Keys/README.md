@@ -52,7 +52,12 @@ Rules the module enforces:
   from the exchange and AI modules and are scrubbed of the key (and, for an exchange key, of the secret) before they
   are kept, and a label (the user's own text) is never logged and never part of a reason. The pages
   blank the key and secret fields before a failed form is rendered again, so a value never comes back in the page.
-- Keys are stored plain (A-02, Appendix F #1): protection is database access control, transport security, masking,
+- Keys are encrypted at rest (FR-KEY-04, A-02, Appendix F #1) by the database module's `IStoredKeyProtector`, each value
+  under the row's own id, so a stored value opens only in its own cell and only under `Database:EncryptionKey`: the
+  service protects on every save, the resolver, the re-validation and the views decrypt on every read, and a value that
+  does not open (a changed byte, a row moved by hand) resolves and re-validates with the malformed-key reason and is
+  listed without its mask, with the key id logged. The re-validation's guard compares the stored bytes that were checked,
+  which every save changes. The rest of the protection is database access control, transport security, masking,
   non-logging and the refusal of withdrawal permission.
 
 Configuration (the `Keys` section goes beyond Appendix D's minimum, FR-CFG-08):
@@ -72,5 +77,6 @@ they linger in memory until restart. Deletion requires every agent Stopped or Dr
 
 Tests: `dotnet test` runs offline (options, registration, both validators with faked exchange and provider factories,
 input rules, the job's schedule and failure handling). Live checks run against PostgreSQL through the same git-ignored
-`tests/.database.json` as the database module, with the exchange and providers still faked:
+`tests/.database.json` as the database module, with the exchange and providers still faked, every stored row encrypted
+and a tampered one refused:
 `dotnet test -- --filter-trait "Category=Live"`.

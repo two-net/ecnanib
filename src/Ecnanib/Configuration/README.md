@@ -20,7 +20,7 @@ architecture overview: the SRS modules mapped to the folders, the dependency rul
 | Cookies, HSTS and redirection | with an https `Server:PublicUrl` the session and antiforgery cookies carry the Secure flag, every request Kestrel sees as plain http is redirected to the same path on the public origin (except `/health`, the health module's anonymous document, which a proxy's upstream check reaches over plain http) and `Strict-Transport-Security` (one year) is sent; with a loopback http public URL none of that happens |
 | Register every module | `services.AddEcnanibModules(configuration)`, in `Program.cs` after `AddLogSinks` (C-08) and in the tests' in-memory server |
 | The request pipeline | `app.UseEcnanibPipeline()` in `Program.cs`: forwarded headers, error pages, redirection and HSTS, the security headers, authentication, authorization, antiforgery and the endpoints, in that order; the tests run the same method on an in-memory server |
-| The system's own keys (FR-CFG-05) | `EnsureSystemKeys()` after `MigrateDatabaseAsync()`: the Data Protection key ring that protects session tickets and antiforgery tokens is created on the first start and persisted in `data_protection_keys`. `SystemKey` stays reserved for other internal keys by purpose |
+| The system's own keys (FR-CFG-05) | `EnsureSystemKeys()` after `MigrateDatabaseAsync()`: the Data Protection key ring that protects session tickets and antiforgery tokens is created on the first start and persisted in `data_protection_keys`; then the database module's `ProtectStoredKeysAsync()` proves `Database:EncryptionKey` against its check value in `system_keys` and encrypts or re-encrypts the users' stored keys as needed (FR-KEY-04) |
 | Apply a change (FR-CFG-07) | restart; the framework watches the files, but every setting is bound once into `IOptions<T>` when the process starts |
 | What a bad file does (FR-CFG-06) | the process writes the reason to the console and exits with code 1 before anything else runs |
 
@@ -44,9 +44,10 @@ Rules the module enforces:
   `Kestrel` section is loaded just before that (`ValidateListenEndpoints`): an endpoint URL Kestrel cannot parse is
   refused the same way instead of failing at bind time. An endpoint this host cannot bind (a port in use, an address that
   is not local) ends the same way when the server starts.
-- The files hold no credential except `Database:ConnectionString` (FR-CFG-03, A-01) and the system talks to no secret
-  manager or vault (FR-CFG-04). The committed `appsettings.json` ships with an empty connection string and refuses to
-  start until one is supplied; a test checks the file for credential-like names.
+- The files hold no credential except `Database:ConnectionString` and the stored-key encryption keys
+  `Database:EncryptionKey` and `Database:PreviousEncryptionKey` (FR-CFG-03, A-01), and the system talks to no secret
+  manager or vault (FR-CFG-04). The committed `appsettings.json` ships with those three empty and refuses to start until
+  the connection string and the key are supplied; a test checks the file for credential-like names.
 - Kestrel serves plain HTTP: TLS terminates at a reverse proxy, so keep the endpoint on `127.0.0.1` when the proxy is on
   the same host and set `PublicUrl` to the https origin. The `Kestrel` section is the framework's and could name a
   certificate, but a private key on disk would be a credential held outside the database (FR-CFG-03, C-11), so that is
@@ -87,7 +88,8 @@ Rules the module enforces:
 - `Logging` is the logging module's section (#15): `Console:MinimumLevel`, `Database:MinimumLevel` and the `LogLevel`
   category levels both sinks share, validated like every other section (`LogLevel:Default`, a per-sink `LogLevel`
   table or an exchange category below Information refuses to start). Data Protection logs one warning on the first
-  start that the key is stored unencrypted; that is A-02 by design, because no key may live outside the database.
+  start that its key ring is stored unencrypted: the users' keys are encrypted under `Database:EncryptionKey` (A-02), the
+  ring that signs sessions is not yet, a known gap.
 
 Appendix D coverage (FR-CFG-08), with the issue that reads each section:
 
@@ -115,8 +117,8 @@ complete reference file with every default):
 ```
 
 Development: create `appsettings.Development.json` next to `appsettings.json` (git-ignored, never built or published)
-holding what differs from the reference file, which is the connection string, and `dotnet run`; the launch profile
-selects the Development environment, so the overlay is read. `dotnet run --no-launch-profile` runs as Production, reads
+holding what differs from the reference file, which is the connection string and the encryption key, and `dotnet run`;
+the launch profile selects the Development environment, so the overlay is read. `dotnet run --no-launch-profile` runs as Production, reads
 the committed file alone and refuses to start on the empty connection string, which is FR-CFG-06 at work.
 
 One culture (NFR-USE-03): the project sets `InvariantGlobalization`, so the process formats and parses numbers and dates
@@ -147,8 +149,8 @@ hosted services in registration order and connecting to nothing when constructed
 registrations and READMEs, the contract-only dependency rule, the visibility split, the folder-derived namespaces and the
 root README naming every module and job. `StartupProcessTests` (in the default run under `Category=Process`; exclude them
 with `-- --filter-not-trait "Category=Process"`) start the built application as a child process from a directory holding
-its `appsettings.json`: a malformed file and an unknown section are reported on standard error; a missing file or
-connection string, an override from the environment and from the command line, an unparseable listen URL and an
+its `appsettings.json`: a malformed file and an unknown section are reported on standard error; a missing file, connection
+string or encryption key, an override from the environment and from the command line, an unparseable listen URL and an
 unreachable database at Critical; each with exit code 1 and no port bound. Live checks sign up, sign in, sign out and read
 another user's agent through the same pipeline against PostgreSQL, and `StartupProcessLiveTests` (both `Live` and
 `Process`) run the application process itself (above).

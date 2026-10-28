@@ -17,7 +17,7 @@ internal static class AccountsTestHost
 
     public static ServiceProvider BuildServices(string? connectionString = DatabaseTestHost.OfflineConnectionString, TestLoggerProvider? logs = null, Dictionary<string, string?>? config = null, TimeProvider? time = null, Action<IServiceCollection>? configure = null)
     {
-        var values = new Dictionary<string, string?>();
+        var values = new Dictionary<string, string?> { ["Database:EncryptionKey"] = DatabaseTestHost.EncryptionKey };
         if (connectionString is not null)
             values["Database:ConnectionString"] = connectionString;
         foreach (var (key, value) in config ?? [])

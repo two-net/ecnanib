@@ -42,6 +42,7 @@ public class AddExperienceTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString,
+ ["Database:EncryptionKey"] = DatabaseTestHost.EncryptionKey,
             ["Experience:ShadowHorizonCandles"] = "12",
         }).Build();
         var services = new ServiceCollection();

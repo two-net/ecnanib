@@ -46,6 +46,9 @@ public static class DatabaseServiceCollectionExtensions
         services.AddDataProtection().PersistKeysToDbContext<EcnanibDbContext>();
 
         services.TryAddSingleton<DatabaseMigrator>();
+        services.TryAddSingleton<StoredKeyProtector>();
+        services.TryAddSingleton<IStoredKeyProtector>(sp => sp.GetRequiredService<StoredKeyProtector>());
+        services.TryAddSingleton<StoredKeyProtection>();
         services.TryAddSingleton<InstanceLock>();
         services.TryAddSingleton<IInstanceLockStatus>(sp => sp.GetRequiredService<InstanceLock>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, InstanceLock>(sp => sp.GetRequiredService<InstanceLock>()));
@@ -65,6 +68,19 @@ public static class DatabaseServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(host);
         return host.Services.GetRequiredService<InstanceLock>().AcquireAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// FR-KEY-04: the users' stored API keys are encrypted at rest. Runs after <see cref="AcquireInstanceLockAsync"/> and
+    /// before the host starts, in one transaction: proves <c>Database:EncryptionKey</c> against the check value in
+    /// <c>system_keys</c> (created on the first start; a key that opens it only through <c>Database:PreviousEncryptionKey</c>
+    /// re-encrypts every row), then encrypts every row the <c>ProtectStoredKeys</c> migration left plain. Throws
+    /// <see cref="StoredKeyProtectionException"/> after logging the cause at Critical; <c>Program</c> exits with code 1.
+    /// </summary>
+    public static Task ProtectStoredKeysAsync(this IHost host, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        return host.Services.GetRequiredService<StoredKeyProtection>().ProtectAsync(cancellationToken);
     }
 
     /// <summary>

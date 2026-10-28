@@ -160,13 +160,13 @@ public class AccessibilityLiveTests : IClassFixture<DatabaseLiveFixture>
         var keyId = Guid.CreateVersion7();
         await using (var db = _fixture.CreateContext())
         {
-            db.Add(new ExchangeKey
+            db.Add(StoredKeySeed.Protect(new ExchangeKey
             {
                 Id = keyId, UserId = userId, Label = "testnet", Environment = ExchangeEnvironment.Production, AllowSpot = true, AllowFutures = true,
-                ApiKey = AgentsLiveSeed.ExchangeApiKey, ApiSecret = AgentsLiveSeed.ExchangeSecret,
+                ProtectedApiKey = [], ProtectedApiSecret = [],
                 PermissionsSnapshot = JsonSerializer.SerializeToElement(new ApiKeyPermissions(true, true, true, true, false, true, Now), JsonSerializerOptions.Web),
                 Status = KeyStatus.Valid, LastValidatedAt = Now, CreatedAt = Now,
-            });
+            }, AgentsLiveSeed.ExchangeApiKey, AgentsLiveSeed.ExchangeSecret));
             db.Add(new ProviderSyncState { Provider = AiProvider.Claude, LastSyncAt = Now, LastStatus = SyncStatus.Succeeded, ModelCount = 2, Trigger = SyncTrigger.KeyValidation });
             db.Add(new ProviderSyncState { Provider = AiProvider.Gemini, LastSyncAt = Now, LastStatus = SyncStatus.Failed, LastError = "401 Unauthorized", Trigger = SyncTrigger.Scheduled });
             db.AddRange(Enumerable.Range(1, 300).Select(i => LiveSeed.NewCandle(Now.AddHours(-i))));

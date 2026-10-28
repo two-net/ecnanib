@@ -11,8 +11,9 @@ namespace Ecnanib.Keys.Services;
 
 /// <summary>
 /// The user's keys over the database (FR-KEY-01..09). Every key is proven with its own service before it is stored
-/// and only a Valid key is ever written. Logs carry the user id, key id, environment or provider and the outcome:
-/// never a key value and never a label, which is the user's own text (FR-LOG-04, FR-LOG-05).
+/// and only a Valid key is ever written, encrypted under the row's own id through the database module's protector
+/// (FR-KEY-04). Logs carry the user id, key id, environment or provider and the outcome: never a key value and never a
+/// label, which is the user's own text (FR-LOG-04, FR-LOG-05).
 /// </summary>
 internal sealed class KeyService : IKeyService
 {
@@ -22,6 +23,7 @@ internal sealed class KeyService : IKeyService
     internal const int DeleteAttempts = 3;
 
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
+    private readonly IStoredKeyProtector _protector;
     private readonly IExchangeClientFactory _exchange;
     private readonly ExchangeKeyValidator _exchangeValidator;
     private readonly ProviderKeyValidator _providerValidator;
@@ -32,6 +34,7 @@ internal sealed class KeyService : IKeyService
 
     public KeyService(
         IDbContextFactory<EcnanibDbContext> factory,
+        IStoredKeyProtector protector,
         IExchangeClientFactory exchange,
         ExchangeKeyValidator exchangeValidator,
         ProviderKeyValidator providerValidator,
@@ -41,6 +44,7 @@ internal sealed class KeyService : IKeyService
         ILogger<KeyService> logger)
     {
         _factory = factory;
+        _protector = protector;
         _exchange = exchange;
         _exchangeValidator = exchangeValidator;
         _providerValidator = providerValidator;
@@ -126,16 +130,19 @@ internal sealed class KeyService : IKeyService
             return Refused(userId, "Exchange", validation.Verdict, validation.WithdrawalEnabled, validation.Reason);
 
         var now = _time.GetUtcNow();
+        // The ciphertext is bound to the row id, so the id exists before the values are protected.
+        var id = Guid.CreateVersion7();
         var key = new ExchangeKey
         {
-            Id = Guid.CreateVersion7(),
+            Id = id,
             UserId = userId,
             Label = label,
             Environment = input.Environment,
             AllowSpot = input.AllowSpot,
             AllowFutures = input.AllowFutures,
-            ApiKey = credentials.ApiKey,
-            ApiSecret = credentials.ApiSecret,
+            ProtectedApiKey = _protector.Protect(StoredKeyColumn.ExchangeApiKey, id, credentials.ApiKey),
+            ProtectedApiSecret = _protector.Protect(StoredKeyColumn.ExchangeApiSecret, id, credentials.ApiSecret),
+            Cipher = StoredKeyCipher.AesGcm,
             PermissionsSnapshot = PermissionsSnapshot.Serialize(validation.Permissions!),
             Status = KeyStatus.Valid,
             LastValidatedAt = now,
@@ -172,8 +179,7 @@ internal sealed class KeyService : IKeyService
         if (validation.Verdict != ValidationVerdict.Valid)
             return Refused(userId, "Exchange", validation.Verdict, validation.WithdrawalEnabled, validation.Reason);
 
-        key.ApiKey = credentials.ApiKey;
-        key.ApiSecret = credentials.ApiSecret;
+        _protector.Protect(key, credentials.ApiKey, credentials.ApiSecret);
         key.PermissionsSnapshot = PermissionsSnapshot.Serialize(validation.Permissions!);
         key.Status = KeyStatus.Valid;
         key.LastValidatedAt = _time.GetUtcNow();
@@ -271,7 +277,7 @@ internal sealed class KeyService : IKeyService
         var replaced = key is not null;
         if (key is null)
         {
-            key = new ProviderKey { Id = Guid.CreateVersion7(), UserId = userId, Provider = provider, ApiKey = credentials.ApiKey, CreatedAt = now };
+            key = new ProviderKey { Id = Guid.CreateVersion7(), UserId = userId, Provider = provider, ProtectedApiKey = [], CreatedAt = now };
             db.ProviderKeys.Add(key);
         }
 
@@ -295,9 +301,10 @@ internal sealed class KeyService : IKeyService
         var synced = await _revalidation.SyncCatalogAsync(provider, models, cancellationToken).ConfigureAwait(false);
         return new KeySaveResult(KeySaveStatus.Succeeded, key.Id, ModelCount: models.Count, CatalogSynced: synced);
 
-        static void Apply(ProviderKey key, AiCredentials credentials, DateTimeOffset now)
+        // Protects under the id of the row it is applied to: after a lost race that is the row that won.
+        void Apply(ProviderKey key, AiCredentials credentials, DateTimeOffset now)
         {
-            key.ApiKey = credentials.ApiKey;
+            _protector.Protect(key, credentials.ApiKey);
             key.Status = KeyStatus.Valid;
             key.LastValidatedAt = now;
             key.LastValidationError = null;
@@ -392,12 +399,39 @@ internal sealed class KeyService : IKeyService
         }
     }
 
-    private static ExchangeKeyView ToView(ExchangeKey key, int activeAgents) => new(
-        key.Id, key.Label, key.Environment, key.AllowSpot, key.AllowFutures, ExchangeCredentials.Mask(key.ApiKey), key.Status,
+    private ExchangeKeyView ToView(ExchangeKey key, int activeAgents) => new(
+        key.Id, key.Label, key.Environment, key.AllowSpot, key.AllowFutures, ExchangeCredentials.Mask(MaskSource(key)), key.Status,
         key.LastValidatedAt, key.LastValidationError, PermissionsSnapshot.Deserialize(key.PermissionsSnapshot), activeAgents, key.CreatedAt);
 
-    private static ProviderKeyView ToView(ProviderKey key) => new(
-        key.Id, key.Provider, AiCredentials.Mask(key.ApiKey), key.Status, key.LastValidatedAt, key.LastValidationError, key.CreatedAt);
+    private ProviderKeyView ToView(ProviderKey key) => new(
+        key.Id, key.Provider, AiCredentials.Mask(MaskSource(key)), key.Status, key.LastValidatedAt, key.LastValidationError, key.CreatedAt);
+
+    /// <summary>The value the view's mask is cut from (FR-KEY-04); a stored value that does not open masks to "…" and is logged by id.</summary>
+    private string MaskSource(ExchangeKey key)
+    {
+        try
+        {
+            return _protector.Unprotect(key).ApiKey;
+        }
+        catch (StoredKeyProtectionException ex)
+        {
+            _logger.LogWarning(ex, "Exchange key {KeyId} of user {UserId} does not open; shown without its mask", key.Id, key.UserId);
+            return string.Empty;
+        }
+    }
+
+    private string MaskSource(ProviderKey key)
+    {
+        try
+        {
+            return _protector.Unprotect(key);
+        }
+        catch (StoredKeyProtectionException ex)
+        {
+            _logger.LogWarning(ex, "{Provider} key {KeyId} of user {UserId} does not open; shown without its mask", key.Provider, key.Id, key.UserId);
+            return string.Empty;
+        }
+    }
 
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };

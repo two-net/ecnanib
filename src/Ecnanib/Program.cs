@@ -44,8 +44,11 @@ try
     await app.AcquireInstanceLockAsync();
     // FR-CFG-05: the key ring that signs sessions exists after the first start, not after the first request.
     app.EnsureSystemKeys();
+    // FR-KEY-04: the users' stored API keys are encrypted at rest. The configured key is proven against the database (a
+    // rotation re-encrypts every row) and the rows an earlier version stored plain are encrypted, before any job reads them.
+    await app.ProtectStoredKeysAsync();
 }
-catch (Exception ex) when (ex is ConfigurationException or OptionsValidationException or DatabaseMigrationException or InstanceLockException
+catch (Exception ex) when (ex is ConfigurationException or OptionsValidationException or DatabaseMigrationException or InstanceLockException or StoredKeyProtectionException
                            || ex is AggregateException aggregate && aggregate.InnerExceptions.All(e => e is OptionsValidationException))
 {
     return 1;

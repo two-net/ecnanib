@@ -143,8 +143,8 @@ All calls to Binance and to the AI providers are made with the keys of the user 
 
 | ID | Assumption / interpretation |
 |---|---|
-| A-01 | "No secret" means the system owns no API keys or tokens. The configuration file contains no credentials other than the database connection. Any key the system needs internally (e.g., for signing sessions) is generated on first start and stored in the database. |
-| A-02 | User-supplied keys are stored in the database. Because C-11 forbids an external key store, encryption at rest with a key held outside the database is not provided; protection relies on database access control, transport security, masking and strict non-logging (see FR-KEY, NFR-SEC). This is a deliberate owner decision and is recorded as a risk in Appendix F. |
+| A-01 | "No secret" means the system owns no API keys or tokens. The configuration file contains no credentials other than the database connection and the key under which the users' stored keys are encrypted (FR-CFG-03), which is the operator's, supplied like the connection, and a key to no service. Any other key the system needs internally (e.g., for signing sessions) is generated on first start and stored in the database. |
+| A-02 | User-supplied keys are stored in the database encrypted at rest (AES-256-GCM, each value bound to its own row) under a key the configuration supplies beside the database connection (FR-CFG-03). C-11 still forbids a vault or key store, so that key is the operator's to keep: losing it means every user enters their keys again, and rotating it is one start with the old key beside the new one. Protection further relies on database access control, transport security, masking and strict non-logging (see FR-KEY, NFR-SEC). This is a deliberate owner decision; Appendix F records the residual risk. |
 | A-03 | "Provider models syncing" means fetching each provider's list of available models through its API and keeping a catalog current. |
 | A-04 | "Providers trading experience" means recording decisions and outcomes per provider/model/role and feeding that history back into both the UI and the models' prompts. |
 | A-05 | "Work together role by strength" means a sequential council with default role assignments based on observed tendencies (Appendix B). Defaults are editable; they are starting points, not guarantees of performance. |
@@ -207,7 +207,7 @@ All calls to Binance and to the AI providers are made with the keys of the user 
 - FR-KEY-01 The system SHALL allow a user to add one or more Binance API key pairs, each with a label, an environment (production or testnet) and the markets it may be used for (spot, futures, or both).
 - FR-KEY-02 On save, the system SHALL validate a Binance key by making an authenticated request and SHALL read the key's permissions. The system SHALL refuse to store a key that has withdrawal permission enabled and SHALL tell the user why.
 - FR-KEY-03 The system SHALL allow a user to add one key per AI provider (Claude, Gemini, GPT, Grok). On save, the system SHALL validate the key by listing the provider's models.
-- FR-KEY-04 Keys SHALL be stored in the database bound to the owning user. The UI SHALL display keys masked (at most the last four characters). Key values SHALL never be written to logs, error messages, prompts or the UI after entry.
+- FR-KEY-04 Keys SHALL be stored in the database bound to the owning user and encrypted at rest under the key FR-CFG-03 names, each value bound to its own row; a stored value that does not open SHALL be treated as invalid and never used. The UI SHALL display keys masked (at most the last four characters). Key values SHALL never be written to logs, error messages, prompts or the UI after entry.
 - FR-KEY-05 A key SHALL be transmitted only to the service it belongs to (Binance, or the specific provider). Keys SHALL never be included in prompts sent to any provider.
 - FR-KEY-06 The system SHALL allow a user to replace or delete a key. Deleting a key in use by a Running or Paused agent SHALL require the user to stop that agent first, or SHALL stop it as part of a confirmed cascade.
 - FR-KEY-07 The system SHALL periodically re-validate stored keys. If a key becomes invalid, agents using it SHALL enter the Error state, SHALL not open new positions, and the UI SHALL show the cause.
@@ -218,9 +218,9 @@ All calls to Binance and to the AI providers are made with the keys of the user 
 
 - FR-CFG-01 All system configuration SHALL reside in the hosting framework's standard configuration file, `appsettings.json` in the working directory, optionally overlaid by `appsettings.{Environment}.json`.
 - FR-CFG-02 The system SHALL read configuration only through the hosting framework's standard sources and in its standard precedence (the file, the environment overlay, environment variables, command-line arguments) and SHALL add no source of its own.
-- FR-CFG-03 The configuration file SHALL contain no API keys, tokens or other credentials except the database connection.
+- FR-CFG-03 The configuration file SHALL contain no API keys, tokens or other credentials except the database connection and the key under which the users' stored keys are encrypted (FR-KEY-04), with its predecessor beside it for the one start that rotates them.
 - FR-CFG-04 The system SHALL NOT integrate with any external secret manager or vault.
-- FR-CFG-05 Any key the system needs for its own operation (e.g., session signing) SHALL be generated automatically on first start and stored in the database.
+- FR-CFG-05 Any key the system needs for its own operation (e.g., session signing) SHALL be generated automatically on first start and stored in the database. The encryption key of FR-CFG-03 is the one exception, supplied by the operator; the first start SHALL store a check value that proves it on every later start, and a start whose key does not open the stored keys SHALL be refused.
 - FR-CFG-06 The system SHALL validate the configuration file at startup and SHALL refuse to start with a clear console error if it is invalid.
 - FR-CFG-07 Configuration changes SHALL take effect on restart. Hot reload MAY be supported.
 - FR-CFG-08 The configuration file SHALL cover at least the sections listed in Appendix D.
@@ -393,8 +393,8 @@ All calls to Binance and to the AI providers are made with the keys of the user 
 | Entity | Key attributes |
 |---|---|
 | User | id, email, password hash, theme preference, reduced-motion preference, disclaimer accepted at, created at |
-| ExchangeKey | id, user, label, environment, markets allowed, key (masked in UI), secret, permissions snapshot, status, last validated |
-| ProviderKey | id, user, provider, key, status, last validated |
+| ExchangeKey | id, user, label, environment, markets allowed, key (encrypted at rest, masked in UI), secret (encrypted at rest), cipher, permissions snapshot, status, last validated |
+| ProviderKey | id, user, provider, key (encrypted at rest, masked in UI), cipher, status, last validated |
 | ProviderModel | id, provider, model id, display name, capabilities, first seen, last seen, status |
 | Agent | id, user, name, market type, symbol, timeframe, strategy, strategy version, parameters, mode, exchange key, leverage, margin mode, risk limits, discretionary flag, state, created/updated |
 | CouncilAssignment | agent, role, provider, model, enabled |
@@ -408,7 +408,7 @@ All calls to Binance and to the AI providers are made with the keys of the user 
 | ShadowOutcome | decision, hypothetical result |
 | ExperienceStat | scope (agent/user/system), provider, model, role, timeframe, market type, metrics, computed at |
 | LogEntry | timestamp, level, component, message, user, agent, decision, order, context |
-| SystemKey | purpose, value, created at (system-generated internal keys, FR-CFG-05) |
+| SystemKey | purpose, value, created at (system-generated internal keys and the stored-key check value, FR-CFG-05) |
 | DisclaimerAcceptance | user, version, accepted at |
 
 ---
@@ -485,7 +485,7 @@ Defaults reflect tendencies observed in public comparisons (conservative risk ha
 | Section | Settings |
 |---|---|
 | server | public URL, trusted proxies (the listen endpoint is the hosting framework's `Kestrel` section) |
-| database | connection details (the only credential in the file) |
+| database | connection details and the stored-key encryption key (the only credentials in the file) |
 | logging | console minimum level, database minimum level, retention days |
 | exchange | production and testnet base endpoints, streaming endpoints, request timeout, reconciliation interval |
 | providers | base endpoints per provider, model sync interval, consecutive-miss threshold for deprecation, call timeout, max output tokens |
@@ -521,7 +521,7 @@ stateDiagram-v2
 
 | # | Item | Notes |
 |---|---|---|
-| 1 | Encryption of user keys at rest | Excluded by C-11 (A-02). Risk: database compromise exposes keys. Mitigations in place: no withdrawal permission, masking, non-logging, DB access control. Owner to confirm. |
+| 1 | Encryption of user keys at rest | Provided (A-02, FR-KEY-04): AES-256-GCM under the operator's `Database:EncryptionKey`, rotated through `Database:PreviousEncryptionKey`. Residual risk: the operator must keep the key (losing it means users enter their keys again) and rotate it when it leaks, and a backup taken before this version holds the keys plain. Mitigations still in place: no withdrawal permission, masking, non-logging, DB access control. |
 | 2 | Regional availability | Binance and provider availability vary by country. The system cannot enforce this; disclaimer places responsibility on the user. |
 | 3 | System-wide experience aggregate | Confirm that an anonymized cross-user aggregate is desired, or restrict experience to per-user scope. |
 | 4 | Symbol universe | Any exchange-listed symbol vs. a curated liquid list. Default proposal: any symbol, with the 1D liquidity filter. |

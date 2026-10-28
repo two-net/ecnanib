@@ -5,7 +5,7 @@ namespace Ecnanib.Database.Configuration;
 
 /// <summary>
 /// Validates the <c>Database</c> section at startup so an invalid file refuses to start (FR-CFG-06). Failure
-/// messages never echo the connection string, which carries the database password.
+/// messages never echo the connection string, which carries the database password, nor either encryption key.
 /// </summary>
 public sealed class DatabaseOptionsValidator : IValidateOptions<DatabaseOptions>
 {
@@ -32,6 +32,19 @@ public sealed class DatabaseOptionsValidator : IValidateOptions<DatabaseOptions>
             {
                 failures.Add($"{prefix}:ConnectionString is not a valid PostgreSQL connection string: {ex.Message}");
             }
+        }
+
+        if (string.IsNullOrWhiteSpace(options.EncryptionKey))
+            failures.Add($"{prefix}:EncryptionKey is required: the base64 encoding of 32 random bytes (openssl rand -base64 32).");
+        else if (!StoredKeyProtector.TryParseKey(options.EncryptionKey, out _))
+            failures.Add($"{prefix}:EncryptionKey must be the base64 encoding of exactly {StoredKeyProtector.KeySize} bytes.");
+
+        if (!string.IsNullOrWhiteSpace(options.PreviousEncryptionKey))
+        {
+            if (!StoredKeyProtector.TryParseKey(options.PreviousEncryptionKey, out _))
+                failures.Add($"{prefix}:PreviousEncryptionKey must be the base64 encoding of exactly {StoredKeyProtector.KeySize} bytes.");
+            else if (string.Equals(options.PreviousEncryptionKey.Trim(), options.EncryptionKey?.Trim(), StringComparison.Ordinal))
+                failures.Add($"{prefix}:PreviousEncryptionKey must differ from {prefix}:EncryptionKey; remove it once the rotation has run.");
         }
 
         if (options.CommandTimeoutSeconds <= 0)

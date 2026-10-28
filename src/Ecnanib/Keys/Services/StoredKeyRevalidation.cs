@@ -11,13 +11,16 @@ namespace Ecnanib.Keys.Services;
 
 /// <summary>
 /// Re-validates one stored key (FR-KEY-07), shared by "validate now" and the scheduled job. Outcomes are written with
-/// an update guarded by the key value that was checked: when a replacement landed meanwhile the update matches nothing
-/// and the agents are left alone. An invalid key moves the Running and Paused agents using it to Error with the
-/// cause; a key that recovers goes back to Valid while those agents stay in Error until the user starts them.
+/// an update guarded by the stored bytes that were checked (every write of a key draws a fresh nonce, so a replacement
+/// always changes them): when a replacement landed meanwhile the update matches nothing and the agents are left alone.
+/// An invalid key moves the Running and Paused agents using it to Error with the cause; a key that recovers goes back
+/// to Valid while those agents stay in Error until the user starts them. A stored value that does not open is checked
+/// as malformed, like a value its own constructor refuses.
 /// </summary>
 internal sealed class StoredKeyRevalidation
 {
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
+    private readonly IStoredKeyProtector _protector;
     private readonly ExchangeKeyValidator _exchangeValidator;
     private readonly ProviderKeyValidator _providerValidator;
     private readonly IKeyDependentAgents _agents;
@@ -27,6 +30,7 @@ internal sealed class StoredKeyRevalidation
 
     public StoredKeyRevalidation(
         IDbContextFactory<EcnanibDbContext> factory,
+        IStoredKeyProtector protector,
         ExchangeKeyValidator exchangeValidator,
         ProviderKeyValidator providerValidator,
         IKeyDependentAgents agents,
@@ -35,6 +39,7 @@ internal sealed class StoredKeyRevalidation
         ILogger<StoredKeyRevalidation> logger)
     {
         _factory = factory;
+        _protector = protector;
         _exchangeValidator = exchangeValidator;
         _providerValidator = providerValidator;
         _agents = agents;
@@ -54,9 +59,10 @@ internal sealed class StoredKeyRevalidation
         ExchangeCredentials? credentials = null;
         try
         {
-            credentials = new ExchangeCredentials(key.ApiKey, key.ApiSecret);
+            var (apiKey, apiSecret) = _protector.Unprotect(key);
+            credentials = new ExchangeCredentials(apiKey, apiSecret);
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or StoredKeyProtectionException)
         {
         }
 
@@ -65,14 +71,14 @@ internal sealed class StoredKeyRevalidation
             : await _exchangeValidator.ValidateAsync(key.Environment, credentials, key.AllowSpot, key.AllowFutures, cancellationToken).ConfigureAwait(false);
 
         var now = _time.GetUtcNow();
-        var checkedKey = key.ApiKey;
+        var checkedKey = key.ProtectedApiKey;
         switch (validation.Verdict)
         {
             case ValidationVerdict.Valid:
             {
                 var snapshot = PermissionsSnapshot.Serialize(validation.Permissions!);
                 var rows = await db.ExchangeKeys
-                    .Where(k => k.Id == keyId && k.ApiKey == checkedKey)
+                    .Where(k => k.Id == keyId && k.ProtectedApiKey == checkedKey)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(k => k.Status, KeyStatus.Valid)
                         .SetProperty(k => k.LastValidatedAt, now)
@@ -90,7 +96,7 @@ internal sealed class StoredKeyRevalidation
             {
                 var reason = validation.Reason ?? "The exchange refused the key.";
                 var rows = await db.ExchangeKeys
-                    .Where(k => k.Id == keyId && k.ApiKey == checkedKey)
+                    .Where(k => k.Id == keyId && k.ProtectedApiKey == checkedKey)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(k => k.Status, KeyStatus.Invalid)
                         .SetProperty(k => k.LastValidatedAt, now)
@@ -123,9 +129,9 @@ internal sealed class StoredKeyRevalidation
         AiCredentials? credentials = null;
         try
         {
-            credentials = new AiCredentials(key.ApiKey);
+            credentials = new AiCredentials(_protector.Unprotect(key));
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or StoredKeyProtectionException)
         {
         }
 
@@ -134,13 +140,13 @@ internal sealed class StoredKeyRevalidation
             : await _providerValidator.ValidateAsync(key.Provider, credentials, cancellationToken).ConfigureAwait(false);
 
         var now = _time.GetUtcNow();
-        var checkedKey = key.ApiKey;
+        var checkedKey = key.ProtectedApiKey;
         switch (validation.Verdict)
         {
             case ValidationVerdict.Valid:
             {
                 var rows = await db.ProviderKeys
-                    .Where(k => k.Id == keyId && k.ApiKey == checkedKey)
+                    .Where(k => k.Id == keyId && k.ProtectedApiKey == checkedKey)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(k => k.Status, KeyStatus.Valid)
                         .SetProperty(k => k.LastValidatedAt, now)
@@ -159,7 +165,7 @@ internal sealed class StoredKeyRevalidation
             {
                 var reason = validation.Reason ?? "The provider refused the key.";
                 var rows = await db.ProviderKeys
-                    .Where(k => k.Id == keyId && k.ApiKey == checkedKey)
+                    .Where(k => k.Id == keyId && k.ProtectedApiKey == checkedKey)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(k => k.Status, KeyStatus.Invalid)
                         .SetProperty(k => k.LastValidatedAt, now)

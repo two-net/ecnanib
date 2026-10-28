@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ecnanib.Database;
 using Ecnanib.Database.Migrations;
+using Ecnanib.Tests.Database;
 using Ecnanib.Tests.Database.Live;
 using Ecnanib.Tests.Support;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,8 @@ namespace Ecnanib.Tests.Configuration;
 /// <summary>
 /// NFR-ARCH-01 and NFR-ARCH-03 against PostgreSQL on the built application as a child process: a migration that fails
 /// ends the start with exit code 1 and nothing bound; a start that succeeds creates and migrates the database, takes
-/// its instance lock, serves, refuses a second process on the same database and stops cleanly on SIGTERM. Each test
+/// its instance lock, serves, refuses a second process on the same database and stops cleanly on SIGTERM, and a process
+/// whose encryption key does not open the stored keys is refused (FR-KEY-04). Each test
 /// uses a throwaway database of its own and drops it afterwards. Both <c>Live</c> and <c>Process</c>, so
 /// <c>--filter-not-trait "Category=Process"</c> spawns no child process at all.
 /// </summary>
@@ -90,6 +92,7 @@ public class StartupProcessLiveTests : IClassFixture<DatabaseLiveFixture>
         await using var db = EcnanibDbContextDesignTimeFactory.Create(testConnectionString);
         ApplicationProcess? first = null;
         ApplicationProcess? second = null;
+        ApplicationProcess? third = null;
         try
         {
             var port = FreePort.Next();
@@ -106,6 +109,9 @@ public class StartupProcessLiveTests : IClassFixture<DatabaseLiveFixture>
             var locked = Assert.Single(first.StandardOutput, line => line.Contains("Instance lock on database", StringComparison.Ordinal) && line.Contains("acquired as backend", StringComparison.Ordinal));
             var backend = int.Parse(Regex.Match(locked, @"acquired as backend (\d+)").Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
             Assert.Contains(first.StandardOutput, line => line.Contains("Generated the Data Protection key and stored it in the database (FR-CFG-05)", StringComparison.Ordinal));
+            // FR-KEY-04: the stored-key check value is created under the configured key, and nothing is plain on a fresh database.
+            Assert.Contains(first.StandardOutput, line => line.Contains("Stored key protection check value created (first start under this Database:EncryptionKey, FR-CFG-05)", StringComparison.Ordinal));
+            Assert.Contains(first.StandardOutput, line => line.Contains("Stored keys protected: 0 plain row(s) encrypted (FR-KEY-04)", StringComparison.Ordinal));
             Assert.DoesNotContain(first.Output, line => line.Contains(Critical, StringComparison.Ordinal));
             Assert.Equal(db.Database.GetMigrations().Order(StringComparer.Ordinal), (await db.Database.GetAppliedMigrationsAsync(Ct)).Order(StringComparer.Ordinal));
             Assert.Equal(1, await HeldLocksAsync(name));
@@ -161,6 +167,21 @@ public class StartupProcessLiveTests : IClassFixture<DatabaseLiveFixture>
                 await Task.Delay(100, Ct);
             Assert.Equal(0, await HeldLocksAsync(name));
             await StartupProcessTests.AssertRefusedAsync(port);
+
+            // FR-KEY-04: a key that does not open the stored keys is refused at Critical, after the lock and before the port.
+            StartupConfig.Write(secondDir, secondPort, applicationConnectionString, encryptionKey: DatabaseTestHost.OtherEncryptionKey);
+            third = ApplicationProcess.Start(secondDir.Path);
+            Assert.Equal(1, await third.WaitForExitAsync(ApplicationProcess.StartTimeout));
+            Assert.Contains(third.StandardOutput, line => line.Contains("Data Protection key ring loaded from the database", StringComparison.Ordinal));
+            var wrongKey = Assert.Single(third.StandardOutput, line => line.Contains(Critical, StringComparison.Ordinal));
+            Assert.Contains($"{Critical} Ecnanib.Database.StoredKeyProtection: Stored key protection failed; the application will not start: The stored API keys were encrypted under a key that is neither Database:EncryptionKey nor Database:PreviousEncryptionKey; this instance will not start.", wrongKey, StringComparison.Ordinal);
+            Assert.DoesNotContain(third.Output, line => line.StartsWith("   at ", StringComparison.Ordinal));
+            StartupProcessTests.AssertNeverListened(third);
+            await StartupProcessTests.AssertRefusedAsync(secondPort);
+            deadline = DateTime.UtcNow.AddSeconds(5);
+            while (await HeldLocksAsync(name) > 0 && DateTime.UtcNow < deadline)
+                await Task.Delay(100, Ct);
+            Assert.Equal(0, await HeldLocksAsync(name));
         }
         finally
         {
@@ -168,6 +189,8 @@ public class StartupProcessLiveTests : IClassFixture<DatabaseLiveFixture>
                 await first.DisposeAsync();
             if (second is not null)
                 await second.DisposeAsync();
+            if (third is not null)
+                await third.DisposeAsync();
             await db.Database.EnsureDeletedAsync(Ct);
         }
     }

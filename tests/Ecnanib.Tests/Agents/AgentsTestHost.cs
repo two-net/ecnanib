@@ -36,7 +36,7 @@ internal static class AgentsTestHost
         bool marketData = false,
         bool execution = false)
     {
-        var values = new Dictionary<string, string?>();
+        var values = new Dictionary<string, string?> { ["Database:EncryptionKey"] = DatabaseTestHost.EncryptionKey };
         if (connectionString is not null)
             values["Database:ConnectionString"] = connectionString;
         foreach (var (key, value) in config ?? [])

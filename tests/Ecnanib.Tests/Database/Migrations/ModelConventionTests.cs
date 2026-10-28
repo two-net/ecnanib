@@ -76,6 +76,21 @@ public class ModelConventionTests
         Assert.Equal("text", db.Model.FindEntityType(typeof(Agent))!.FindProperty(nameof(Agent.State))!.GetColumnType());
     }
 
+    /// <summary>FR-KEY-04: the re-validation guards its update with the stored ciphertext, so byte[] equality must reach the database as a bytea comparison.</summary>
+    [Fact]
+    public void StoredKeyBytesCompareInTheDatabase()
+    {
+        using var db = EcnanibDbContextDesignTimeFactory.Create();
+        var checkedKey = new byte[] { 1, 2, 3 };
+
+        var sql = db.ExchangeKeys.Where(k => k.ProtectedApiKey == checkedKey).ToQueryString();
+
+        Assert.Contains("e.api_key = @checkedKey", sql);
+        Assert.Equal("bytea", db.Model.FindEntityType(typeof(ExchangeKey))!.FindProperty(nameof(ExchangeKey.ProtectedApiKey))!.GetColumnType());
+        Assert.Equal("bytea", db.Model.FindEntityType(typeof(ProviderKey))!.FindProperty(nameof(ProviderKey.ProtectedApiKey))!.GetColumnType());
+        Assert.Equal("text", db.Model.FindEntityType(typeof(ProviderKey))!.FindProperty(nameof(ProviderKey.Cipher))!.GetColumnType());
+    }
+
     [Fact]
     public void LogEntriesHaveNoForeignKeys()
     {

@@ -55,7 +55,7 @@ public class AddAccountsTests
     [Fact]
     public async Task TheModuleProviderWinsEvenWhenRazorComponentsAreRegisteredFirst()
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString }).Build();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(DatabaseTestHost.OfflineConfiguration()).Build();
         var services = new ServiceCollection();
         services.AddRazorComponents().AddInteractiveServerComponents();
         services.AddServer(configuration);

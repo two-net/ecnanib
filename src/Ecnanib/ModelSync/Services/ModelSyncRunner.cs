@@ -21,15 +21,17 @@ internal sealed class ModelSyncRunner : IModelSyncService
     internal const int MaxKeysPerSync = 3;
 
     private readonly IDbContextFactory<EcnanibDbContext> _factory;
+    private readonly IStoredKeyProtector _protector;
     private readonly IAiClientFactory _ai;
     private readonly IProviderCatalogSync _catalog;
     private readonly ILogger<ModelSyncRunner> _logger;
     private readonly IReadOnlyDictionary<AiProvider, SemaphoreSlim> _gates =
         Enum.GetValues<AiProvider>().ToDictionary(provider => provider, _ => new SemaphoreSlim(1, 1));
 
-    public ModelSyncRunner(IDbContextFactory<EcnanibDbContext> factory, IAiClientFactory ai, IProviderCatalogSync catalog, ILogger<ModelSyncRunner> logger)
+    public ModelSyncRunner(IDbContextFactory<EcnanibDbContext> factory, IStoredKeyProtector protector, IAiClientFactory ai, IProviderCatalogSync catalog, ILogger<ModelSyncRunner> logger)
     {
         _factory = factory;
+        _protector = protector;
         _ai = ai;
         _catalog = catalog;
         _logger = logger;
@@ -114,9 +116,10 @@ internal sealed class ModelSyncRunner : IModelSyncService
     }
 
     /// <summary>
-    /// Valid keys of the provider, at most <see cref="MaxKeysPerSync"/>. A manual sync uses the requester's own key and
-    /// nothing else (NFR-SEC-03: one user's action never spends another user's key); the scheduled sync, which has no
-    /// requester, takes the most recently validated ones.
+    /// Valid keys of the provider, at most <see cref="MaxKeysPerSync"/>, decrypted through the database module's protector
+    /// (FR-KEY-04). A manual sync uses the requester's own key and nothing else (NFR-SEC-03: one user's action never spends
+    /// another user's key); the scheduled sync, which has no requester, takes the most recently validated ones. A stored
+    /// value that does not open is skipped with its id logged, like a malformed one.
     /// </summary>
     private async Task<List<(Guid Id, string ApiKey)>> CandidateKeysAsync(AiProvider provider, Guid? requestedBy, CancellationToken cancellationToken)
     {
@@ -126,9 +129,22 @@ internal sealed class ModelSyncRunner : IModelSyncService
             valid = valid.Where(k => k.UserId == user);
         var ordered = valid.OrderByDescending(k => k.LastValidatedAt ?? DateTimeOffset.MinValue).ThenBy(k => k.Id);
         var rows = await ordered.Take(MaxKeysPerSync)
-            .Select(k => new { k.Id, k.ApiKey })
+            .Select(k => new { k.Id, k.ProtectedApiKey, k.Cipher })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
-        return rows.Select(k => (k.Id, k.ApiKey)).ToList();
+        var keys = new List<(Guid Id, string ApiKey)>(rows.Count);
+        foreach (var row in rows)
+        {
+            try
+            {
+                keys.Add((row.Id, _protector.Unprotect(StoredKeyColumn.ProviderApiKey, row.Id, row.Cipher, row.ProtectedApiKey)));
+            }
+            catch (StoredKeyProtectionException)
+            {
+                _logger.LogWarning("Catalog sync for {Provider} skipped key {KeyId}: the stored value does not open", provider, row.Id);
+            }
+        }
+
+        return keys;
     }
 
     private async Task<ModelSyncOutcome> FailAsync(AiProvider provider, SyncTrigger trigger, string error, CancellationToken cancellationToken)

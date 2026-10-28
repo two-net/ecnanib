@@ -30,6 +30,20 @@ public class AddDatabaseTests
         var instanceLock = Assert.Single(provider.GetServices<IHostedService>().OfType<InstanceLock>());
         Assert.Same(instanceLock, provider.GetRequiredService<IInstanceLockStatus>());
         Assert.Equal(InstanceLockState.NotHeld, instanceLock.GetStatus().State);
+
+        // FR-KEY-04: the protector behind the users' stored keys and the start-up step that proves the key.
+        Assert.IsType<StoredKeyProtector>(provider.GetRequiredService<IStoredKeyProtector>());
+        Assert.NotNull(provider.GetRequiredService<StoredKeyProtection>());
+    }
+
+    [Fact]
+    public async Task MissingEncryptionKeyRefusesToCreateAContext()
+    {
+        await using var provider = DatabaseTestHost.BuildServices(config: new() { ["Database:EncryptionKey"] = "" });
+
+        var ex = Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IDbContextFactory<EcnanibDbContext>>().CreateDbContext());
+
+        Assert.Contains("Database:EncryptionKey is required", ex.Message);
     }
 
     [Fact]

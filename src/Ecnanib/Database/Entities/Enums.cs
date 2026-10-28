@@ -16,6 +16,13 @@ public enum KeyStatus
     Invalid = 3,
 }
 
+/// <summary>How a stored exchange or provider key is held at rest (FR-KEY-04): <see cref="Plain"/> is the format an earlier version wrote, which the first start of this one encrypts.</summary>
+public enum StoredKeyCipher
+{
+    Plain = 1,
+    AesGcm = 2,
+}
+
 /// <summary>Catalog status of a provider model (FR-SYNC-01, FR-SYNC-03).</summary>
 public enum ModelStatus
 {

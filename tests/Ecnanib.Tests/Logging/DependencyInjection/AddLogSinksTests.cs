@@ -57,7 +57,7 @@ public class AddLogSinksTests
     [Fact]
     public void RemovesTheProvidersRegisteredBeforeIt()
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString }).Build();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(DatabaseTestHost.OfflineConfiguration()).Build();
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.AddDebug());
         Assert.Contains(services, d => d.ServiceType == typeof(ILoggerProvider));
@@ -71,7 +71,7 @@ public class AddLogSinksTests
 
     private static ServiceProvider Build(Dictionary<string, string?>? values = null, ThrowingDbContextFactory? factory = null)
     {
-        var all = new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString };
+        var all = DatabaseTestHost.OfflineConfiguration();
         foreach (var (key, value) in values ?? [])
             all[key] = value;
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(all).Build();

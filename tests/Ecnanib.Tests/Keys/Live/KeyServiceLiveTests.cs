@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Ecnanib.Ai.Abstractions;
+using Ecnanib.Database;
 using Ecnanib.Database.Entities;
 using Ecnanib.Exchange.Abstractions;
 using Ecnanib.Keys.Abstractions;
@@ -58,9 +59,11 @@ public class KeyServiceLiveTests : IClassFixture<DatabaseLiveFixture>
             Assert.Equal(LiveSeed.Now, row.LastValidatedAt);
             Assert.Equal(LiveSeed.Now, row.CreatedAt);
             Assert.Null(row.LastValidationError);
-            // A-02: stored plain; masked everywhere else.
-            Assert.Equal(ApiKey, row.ApiKey);
-            Assert.Equal(Secret, row.ApiSecret);
+            // FR-KEY-04, A-02: encrypted at rest under the row's own id and opened through the protector only; masked everywhere else.
+            Assert.Equal(StoredKeyCipher.AesGcm, row.Cipher);
+            Assert.Equal((ApiKey, Secret), StoredKeySeed.Protector.Unprotect(row));
+            StoredKeySeed.AssertHidden(row.ProtectedApiKey, ApiKey);
+            StoredKeySeed.AssertHidden(row.ProtectedApiSecret, Secret);
             Assert.True(row.PermissionsSnapshot!.Value.GetProperty("verified").GetBoolean());
             Assert.False(row.PermissionsSnapshot.Value.GetProperty("enableWithdrawals").GetBoolean());
         }
@@ -165,7 +168,7 @@ public class KeyServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         await using (var db = _fixture.CreateContext())
         {
             var row = await db.ExchangeKeys.SingleAsync(k => k.Id == keyId, Ct);
-            Assert.Equal(ApiKey, row.ApiKey);
+            Assert.Equal(ApiKey, StoredKeySeed.Protector.Unprotect(row).ApiKey);
             Assert.Equal(LiveSeed.Now, row.LastValidatedAt);
         }
 
@@ -181,8 +184,7 @@ public class KeyServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         await using (var db = _fixture.CreateContext())
         {
             var row = await db.ExchangeKeys.SingleAsync(k => k.Id == keyId, Ct);
-            Assert.Equal(newKey, row.ApiKey);
-            Assert.Equal("new-secret-0001", row.ApiSecret);
+            Assert.Equal((newKey, "new-secret-0001"), StoredKeySeed.Protector.Unprotect(row));
             Assert.Equal(KeyStatus.Valid, row.Status);
             Assert.Equal(LiveSeed.Now.AddHours(1), row.LastValidatedAt);
             Assert.Equal(keyId, (await db.Agents.SingleAsync(a => a.Id == agent.Id, Ct)).ExchangeKeyId);
@@ -273,7 +275,9 @@ public class KeyServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         {
             var row = await db.ProviderKeys.SingleAsync(k => k.UserId == user.Id, Ct);
             Assert.Equal(added.KeyId, row.Id);
-            Assert.Equal(ProviderKey, row.ApiKey);
+            Assert.Equal(StoredKeyCipher.AesGcm, row.Cipher);
+            Assert.Equal(ProviderKey, StoredKeySeed.Protector.Unprotect(row));
+            StoredKeySeed.AssertHidden(row.ProtectedApiKey, ProviderKey);
             Assert.Equal(KeyStatus.Valid, row.Status);
             Assert.Equal(LiveSeed.Now, row.LastValidatedAt);
             Assert.Equal(["claude-large", "claude-small"], await db.ProviderModels.Where(m => m.Provider == AiProvider.Claude).OrderBy(m => m.ModelId).Select(m => m.ModelId).ToListAsync(Ct));
@@ -290,7 +294,7 @@ public class KeyServiceLiveTests : IClassFixture<DatabaseLiveFixture>
         await using (var db = _fixture.CreateContext())
         {
             var row = await db.ProviderKeys.SingleAsync(k => k.UserId == user.Id, Ct);
-            Assert.Equal(second, row.ApiKey);
+            Assert.Equal(second, StoredKeySeed.Protector.Unprotect(row));
         }
 
         var slot = await keys.GetProviderSlotAsync(user.Id, AiProvider.Claude, Ct);

@@ -1,3 +1,4 @@
+using Ecnanib.Tests.Database;
 using System.Text.Json;
 using Ecnanib.Database;
 using Ecnanib.Database.Entities;
@@ -37,6 +38,7 @@ public class DatabaseLogSinkLiveTests : IClassFixture<DatabaseLiveFixture>
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Database:ConnectionString"] = _fixture.ConnectionString,
+ ["Database:EncryptionKey"] = DatabaseTestHost.EncryptionKey,
             ["Logging:Console:MinimumLevel"] = "Warning",
             ["Logging:Database:MinimumLevel"] = "Debug",
             // EF at Debug: the sink's own inserts would feed the sink forever if they were not suppressed.

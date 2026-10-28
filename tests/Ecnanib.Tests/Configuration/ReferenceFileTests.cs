@@ -12,7 +12,8 @@ namespace Ecnanib.Tests.Configuration;
 
 /// <summary>
 /// The committed <c>appsettings.json</c> is the documented reference file (FR-CFG-01, FR-CFG-08): every section it has
-/// is known, every module's section is in it, it holds no credential (FR-CFG-03) and every module binds and validates it.
+/// is known, every module's section is in it, it holds no credential (FR-CFG-03: the connection string and the stored-key encryption
+/// keys ship empty) and every module binds and validates it.
 /// </summary>
 public class ReferenceFileTests
 {
@@ -36,10 +37,12 @@ public class ReferenceFileTests
         // Names that end like a credential; MinPasswordLength and MaxOutputTokens are settings about credentials, not credentials.
         var keyLike = new Regex("(key|secret|password|passwd|pwd|credential|token|bearer)$", RegexOptions.IgnoreCase);
 
-        Assert.Equal(string.Empty, configuration["Database:ConnectionString"]);
+        // FR-CFG-03: the settings that are credentials ship empty: the connection string, the key that encrypts the users' stored keys and its predecessor for a rotation.
+        string[] credentials = ["Database:ConnectionString", "Database:EncryptionKey", "Database:PreviousEncryptionKey"];
+        Assert.All(credentials, setting => Assert.Equal(string.Empty, configuration[setting]));
         foreach (var (key, value) in configuration.AsEnumerable().Where(pair => pair.Value is not null))
         {
-            if (key == "Database:ConnectionString")
+            if (credentials.Contains(key, StringComparer.OrdinalIgnoreCase))
                 continue;
             Assert.False(keyLike.IsMatch(key.Split(':')[^1]), $"{key} looks like a credential.");
             Assert.DoesNotMatch("(?i)(password|pwd)=", value);
@@ -57,7 +60,7 @@ public class ReferenceFileTests
         }
 
         // Test-only layering: the operator edits the file, an overlay, the environment or the command line instead.
-        configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Database:ConnectionString"] = DatabaseTestHost.OfflineConnectionString });
+        configuration.AddInMemoryCollection(DatabaseTestHost.OfflineConfiguration());
         using (var provider = Register(configuration).BuildServiceProvider())
         {
             provider.GetRequiredService<IStartupValidator>().Validate();
