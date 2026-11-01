@@ -169,14 +169,19 @@ public sealed class HealthEndpointTests(PostgresFixture postgres)
         await LoggedApp.UntilAsync(() => ValueTask.FromResult(silent.Commands == 1));
 
         var waitingCaller = client.GetAsync(Ready, Cancellation);
-        await leaving.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => leavingCaller);
 
+        // Time for it to join the probe. A late one runs its own, which proves less but can't fail.
+        await Task.Delay(TimeSpan.FromMilliseconds(200), Cancellation);
+
+        await leaving.CancelAsync();
         silent.Release();
 
         using var response = await waitingCaller;
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Only now: the check ignores its caller, so the leaving one can't finish before the probe.
+        await Record.ExceptionAsync(() => leavingCaller);
     }
 
     /// <summary>Masking only guards log sinks. What explains a failure must reach the log, and only the log.</summary>
@@ -206,7 +211,11 @@ public sealed class HealthEndpointTests(PostgresFixture postgres)
         Assert.Equal("""{"status":"Unhealthy","database":"connected","migrations":"pending"}""", pending);
         Assert.Equal("""{"status":"Unhealthy","database":"unreachable","migrations":"unknown"}""", unreachable);
         Assert.Contains(migration, app.FileText(), StringComparison.Ordinal);
-        Assert.Contains("is not currently accepting connections", app.FileText(), StringComparison.Ordinal);
+        Assert.Contains(
+            app.FileEvents(),
+            entry => entry.GetProperty("RenderedMessage").GetString()!.Contains("The database probe failed", StringComparison.Ordinal)
+                && entry.TryGetProperty("Exception", out var exception)
+                && exception.GetString()!.Contains("Npgsql", StringComparison.Ordinal));
         Assert.DoesNotContain(postgres.Password, app.FileText(), StringComparison.Ordinal);
     }
 
