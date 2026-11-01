@@ -2,7 +2,7 @@
 
 AI cryptocurrency trading agents. Ecnanib is a planned free, multi-user web application where users create agents that trade on Binance Spot and Binance USDⓈ-M Futures. Each agent is driven by a council of AI models from Anthropic (Claude), Google (Gemini), OpenAI (GPT) and xAI (Grok), using the user's own API keys.
 
-> **Status: early scaffold.** The repository currently contains an empty Blazor Server app and the requirements. None of the product features described below are implemented yet.
+> **Status: early scaffold.** The repository currently contains the requirements and a Blazor Server app with empty modules, tests and a CI pipeline. None of the product features described below are implemented yet.
 
 > **Disclaimer.** Ecnanib is not affiliated with or endorsed by Binance. Nothing it produces is financial advice. Automated cryptocurrency trading can lose money, including through AI decisions that look reasonable.
 
@@ -52,7 +52,7 @@ Users can change the provider and model per role, per agent. A single provider c
 
 ## Getting started
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). From the repository root:
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), version 10.0.402 or later. From the repository root:
 
 ```sh
 dotnet run --project src/Ecnanib
@@ -66,6 +66,14 @@ dotnet run --project src/Ecnanib --launch-profile https
 
 If the browser warns about the certificate, trust the local development certificate with `dotnet dev-certs https --trust`.
 
+To run the tests:
+
+```sh
+dotnet test
+```
+
+They include the architecture tests that enforce the module boundaries in [docs/architecture.md](docs/architecture.md).
+
 ## Technology
 
 | Concern | Choice | State |
@@ -74,8 +82,12 @@ If the browser warns about the certificate, trust the local development certific
 | Database | PostgreSQL | Required, not added yet |
 | Persistence | Code-first ORM, with migrations applied at startup and no table partitioning | Required, not chosen yet |
 | Logging | Structured logging library comparable to Serilog | Required, not chosen yet |
+| Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries | In place |
+| Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
 
-The architecture is a single deployable modular monolith, with no microservices, message brokers, distributed caches or separate job servers.
+The architecture is a single deployable modular monolith, with no microservices, message brokers, distributed caches or separate job servers. Modules live in one project and talk through defined interfaces. See [docs/architecture.md](docs/architecture.md) for the boundaries and rules.
+
+Every `dotnet restore` audits direct and transitive packages for known vulnerabilities. CI fails on an advisory of any severity, and on any compiler warning. It also re-scans weekly, because new advisories appear without code changes.
 
 ## Configuration
 
@@ -92,14 +104,20 @@ The scaffold doesn't meet this yet:
 
 ```text
 .
-├── SRS.md               Software Requirements Specification (v1.0 draft)
-└── src/Ecnanib/         Blazor Server application
-    ├── Components/      Root component, routes, layout and pages
-    ├── Properties/      Local launch profiles
-    ├── wwwroot/         Static assets
-    └── Program.cs       Application startup
+├── SRS.md                  Software Requirements Specification (v1.0 draft)
+├── docs/architecture.md    Module boundaries and rules
+├── Directory.Build.props   Shared build settings and vulnerability scan rules
+├── .github/workflows/      CI pipeline
+├── src/Ecnanib/            Blazor Server application
+│   ├── Components/         Root component, routes, layout and pages
+│   ├── Modules/            One folder per module, each with a public Contracts namespace
+│   ├── Platform/           Cross-cutting services
+│   ├── Properties/         Local launch profiles
+│   ├── wwwroot/            Static assets
+│   └── Program.cs          Application startup and module registration
+└── tests/Ecnanib.Tests/    Architecture and smoke tests
 ```
 
 ## Documentation
 
-[SRS.md](SRS.md) is the source of truth for requirements, including the risk rules, data model, acceptance criteria and open questions.
+[SRS.md](SRS.md) is the source of truth for requirements, including the risk rules, data model, acceptance criteria and open questions. [docs/architecture.md](docs/architecture.md) maps its logical architecture onto the code.
