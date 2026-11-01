@@ -1,4 +1,5 @@
 using Ecnanib.Components;
+using Ecnanib.Endpoints;
 using Ecnanib.Modules.Administration;
 using Ecnanib.Modules.Agents;
 using Ecnanib.Modules.AiAdapters;
@@ -52,6 +53,7 @@ builder.Services
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+app.UseCorrelation();
 app.UseRequestLogging();
 
 if (!app.Environment.IsDevelopment())
@@ -66,6 +68,7 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.MapHealthEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

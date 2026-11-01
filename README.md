@@ -98,6 +98,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Database | PostgreSQL | In place |
 | Persistence | Entity Framework Core 10 with Npgsql, code-first, with migrations applied at startup and no table partitioning | In place |
 | Logging | Serilog, with console, rolling file and PostgreSQL sinks, and masking in front of all of them | In place |
+| Health | ASP.NET Core health checks, on `/health/live` and `/health/ready` | In place |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
 
@@ -137,23 +138,51 @@ The file sink writes one JSON event per line, with every property. The console s
 
 A few framework categories can't be set below a fixed level, because their debug events can carry form input or raw URLs. See [Masking](docs/architecture.md#masking).
 
+Every response carries an `X-Correlation-ID` header, and each log event from that request holds the same value as `CorrelationId`. To trace a request, search the log files for it, or `log_events.correlation_id` in the database. A value sent in a request is ignored.
+
+## Health
+
+Neither endpoint needs a sign-in, so block them at your reverse proxy if they shouldn't be public.
+
+| Endpoint | Meaning | Answers |
+|---|---|---|
+| `/health/live` | The process is running. It doesn't touch the database, so an outage can't cause a restart | Always 200 |
+| `/health/ready` | The application can serve requests | 200 when ready, otherwise 503 |
+
+```json
+{"status":"Unhealthy","database":"connected","migrations":"pending"}
+```
+
+| Field | Values |
+|---|---|
+| `status` | `Healthy` or `Unhealthy` |
+| `database` | `connected` or `unreachable` |
+| `migrations` | `current`, `pending`, `ahead` (the database has a migration this build doesn't include) or `unknown` |
+
+The reason for a failure is in the logs, not the response. A readiness probe answers within about 4 seconds, even if the database has stopped responding.
+
+If the application terminates TLS itself, probe over HTTPS. On plain HTTP these endpoints answer with a 307 redirect like everything else, and `curl -f` counts that as success without reaching the check. Behind a reverse proxy that terminates TLS there's no redirect.
+
+While migrations run at startup the port isn't open yet, so a probe gets connection refused rather than a 503.
+
 ## Repository layout
 
 ```text
 .
 ├── SRS.md                  Software Requirements Specification (v1.0 draft)
-├── docs/architecture.md    Module boundaries, persistence, logging and rules
+├── docs/architecture.md    Module boundaries, persistence, logging, health and rules
 ├── Directory.Build.props   Shared build settings and vulnerability scan rules
 ├── .config/                Pinned .NET tools, including dotnet-ef
 ├── .github/workflows/      CI pipeline
 ├── src/Ecnanib/            Blazor Server application
 │   ├── Components/         Root component, routes, layout and pages
+│   ├── Endpoints/          HTTP that isn't a page, such as the health endpoints
 │   ├── Modules/            One folder per module, each with a public Contracts namespace
-│   ├── Platform/           Cross-cutting services, including logging, persistence and migrations
+│   ├── Platform/           Cross-cutting services, including logging, correlation, persistence and migrations
 │   ├── Properties/         Local launch profiles
 │   ├── wwwroot/            Static assets
 │   └── Program.cs          Application startup and module registration
-└── tests/Ecnanib.Tests/    Architecture, persistence, logging and smoke tests
+└── tests/Ecnanib.Tests/    Architecture, persistence, logging, health and smoke tests
 ```
 
 ## Documentation

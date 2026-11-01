@@ -15,7 +15,8 @@ public class AppFactory(
     string? connectionString,
     Action<IServiceCollection>? configureServices = null,
     IEnumerable<KeyValuePair<string, string?>>? settings = null,
-    Action<IConfigurationBuilder>? configure = null)
+    Action<IConfigurationBuilder>? configure = null,
+    string? environment = null)
     : WebApplicationFactory<Program>
 {
     /// <summary>Starts the application, which throws if startup fails.</summary>
@@ -23,6 +24,12 @@ public class AppFactory(
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Development by default, and only other environments run the exception handler.
+        if (environment is not null)
+        {
+            builder.UseEnvironment(environment);
+        }
+
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
             configuration.Sources.Clear();

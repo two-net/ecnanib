@@ -7,6 +7,7 @@ namespace Ecnanib.Platform.Contracts;
 /// </summary>
 public static class LogProperties
 {
+    /// <summary>Set by <see cref="ICorrelationContext.Begin"/>. A scope of your own would leave its CurrentId unset.</summary>
     public const string CorrelationId = nameof(CorrelationId);
 
     public const string UserId = nameof(UserId);

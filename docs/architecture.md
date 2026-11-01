@@ -42,7 +42,7 @@ Trade Approval (3.11) belongs to `DecisionCycle`, because an approval hangs off 
 5. `Kernel` holds only vocabulary that the SRS fixes, that at least two modules use, and that has no behaviour, such as `Market`, `Timeframe` and typed IDs. Moving a type there to escape a cycle is the wrong fix: use a port or event instead.
 6. Razor components stay in `Components/`, because pages such as agent detail span several modules (FR-UI-01).
 
-The Web UI may use neither adapter nor `Platform`, so it can't reach secrets or place orders directly (2.4, FR-ADM-01, FR-KEY-09).
+The Web UI may use neither adapter nor `Platform`, so it can't reach secrets or place orders directly (2.4, FR-ADM-01, FR-KEY-09). `Endpoints/` counts as Web UI, so it reaches `Platform` only through framework abstractions, as the health endpoints do with the checks `Platform` registers.
 
 ### Adding a dependency
 
@@ -76,7 +76,7 @@ In-process events are lost on a crash, so each one needs a recovery path, such a
 
 "API" in SRS 2.2 is not a separate module. Pages run on Blazor Server and reach services directly, and the SRS defines no public HTTP API or consumer of one. Module `Contracts` are the application's API, and `Endpoints/` holds the HTTP that really is needed, such as sign-in cookies (NFR-SEC-06), health (NFR-OBS-01) and exports (FR-DATA-03).
 
-**After page load, a Blazor circuit doesn't pass through HTTP middleware.** Access rules therefore can't live there: ownership checks (NFR-SEC-04) belong behind module contracts. Rate limiting (NFR-SEC-07), correlation IDs (NFR-OBS-02) and audit fields such as IP address need a plan for circuit traffic too. Request logging doesn't: FR-LOG-06 covers HTTP, so a circuit logs one `/_blazor` request, and activity inside it is logged where it happens, behind module contracts.
+**After page load, a Blazor circuit doesn't pass through HTTP middleware.** Access rules therefore can't live there: ownership checks (NFR-SEC-04) belong behind module contracts. Rate limiting (NFR-SEC-07) and audit fields such as IP address need a plan for circuit traffic too. [Correlation IDs](#correlation-ids) have one. Request logging doesn't: FR-LOG-06 covers HTTP, so a circuit logs one `/_blazor` request, and activity inside it is logged where it happens, behind module contracts.
 
 ## Persistence
 
@@ -91,7 +91,7 @@ In-process events are lost on a crash, so each one needs a recovery path, such a
 
 ### Startup
 
-`DatabaseStartup` is a hosted service that runs before the web server opens a port. It applies pending migrations, then runs the seeders. Any failure is logged and stops the process with a non-zero exit code (NFR-DEP-03).
+`DatabaseStartup` is a hosted service that runs before the web server opens a port. It applies pending migrations, then runs the seeders. Any failure is logged and stops the process with a non-zero exit code (NFR-DEP-03). There's no "starting" state to report, so a health probe during a long migration gets connection refused rather than a 503.
 
 - A failed migration rolls back. Earlier ones stay committed, and the next start resumes from there.
 - A failed seeder saves nothing. The migrations stay applied, and the next start seeds again.
@@ -141,7 +141,7 @@ ILogger<T>
 
 - Use a constant template with named properties. CA2254 is a build error under `src/`, so an interpolated message doesn't compile.
 - Never log a request or response body, or a prompt (FR-LOG-07).
-- Set the ambient fields with a scope, using the names in `LogProperties`. Scopes flow with the async call, so code further down inherits them, including the adapters, which can't reference `Platform`:
+- Set the ambient fields with a scope, using the names in `LogProperties`, except for the correlation ID: use [`ICorrelationContext`](#correlation-ids), because a scope of your own would leave `CurrentId` unset. Scopes flow with the async call, so code further down inherits them, including the adapters, which can't reference `Platform`:
 
 ```csharp
 using (logger.BeginScope(new Dictionary<string, object?> { [LogProperties.AgentId] = agent.Id }))
@@ -189,19 +189,64 @@ A change to the `Logging` section applies without a restart, for levels, overrid
 
 `log_events` is an ordinary entity, so the code-first model owns it. `DatabaseLogSink` builds its own context options with no logger factory, because EF logging its writes would feed the next batch. It starts once `DatabaseStartup` has migrated, since it would only fail before that. Purging is #50's job, which the index on `timestamp` is there for.
 
+## Correlation IDs
+
+`ICorrelationContext` in `Platform/Contracts` holds the current ID (NFR-OBS-02). `Begin()` starts a new one, which flows with the async call. Log events carry it as `LogProperties.CorrelationId`, so it reaches the file sink and `log_events.correlation_id`, which is indexed.
+
+| Work | What calls `Begin()` |
+|---|---|
+| HTTP request | `CorrelationMiddleware`, which also returns the ID as `X-Correlation-ID` |
+| Action on a circuit | `CorrelationCircuitHandler`, once per inbound activity |
+| Cycle or job | The code that runs it |
+
+- **IDs are always generated here.** An inbound `X-Correlation-ID` is ignored: a client-chosen value could forge links between audit records, and a long one could fail a batch of log rows on the index. `TraceId` isn't used either, because a `traceparent` header sets it.
+- **`UseCorrelation` comes first in the pipeline.** Request logging needs the ID, and the exception handler and status pages run everything after them again, which would give a request two IDs.
+- **The header is set in `Response.OnStarting`**, because the exception handler clears headers, and a failure is when the ID matters most. The callback uses a captured ID, because a bodyless response can start after the scope has ended.
+- **A circuit gets one ID per action, not per connection.** Without the handler, circuit logs would still carry an ID, but it would be the `/_blazor` request's, shared by everything until the user disconnects. An action links to its own logs and audit records, and nothing links actions to each other.
+- **The adapters don't need it.** They can't reference `Platform`, and they inherit the scope, so events under the `Exchange` and `AiCouncil` categories are linked already. An `AiCall` row links through its cycle.
+- **The ID doesn't cross a queue.** It follows the async call, so work picked up from a queue or timer must call `Begin()` itself. `Begin()` always creates a new ID for the same reason: a timer started during a request captures that request's ID.
+
+The tests run the circuit handler directly, because opening a real circuit needs a browser or Blazor's internal protocol. Add an end-to-end test with the first audited action.
+
+## Health
+
+`/health/live` and `/health/ready` are public, so they answer with fixed values only (NFR-OBS-01):
+
+| Route | Runs | Answers |
+|---|---|---|
+| `/health/live` | No checks | Always 200 `{"status":"Healthy"}` |
+| `/health/ready` | Every registered check | 200 when healthy, otherwise 503 |
+
+```json
+{"status":"Unhealthy","database":"connected","migrations":"pending"}
+```
+
+`database` is `connected` or `unreachable`. `migrations` is `current`, `pending`, `ahead` or `unknown`, where `ahead` means the database has a migration this build doesn't include, which `DatabaseStartup` would refuse. The application is healthy only when they're `connected` and `current`.
+
+- **Liveness runs no checks.** A database outage must not get the process restarted: a start needs the database, so it would crash-loop.
+- **Only `status` and each check's `Data` reach the response.** Masking guards log sinks, not responses, and the framework copies an exception's message into `Description`, so `HealthEndpoints` must never write `Description` or `Exception`. Those reach the framework's log event instead, which is where migration names and connection errors belong. Version and migration IDs are for the system health page (#49).
+- **`DatabaseHealthCheck` runs one probe at a time, whoever asks.** The endpoint is public, and it shares a connection pool with cycles and the log sink, so a burst of callers must not become a burst of connections. It must stay a singleton, because `AddCheck<T>` otherwise creates an instance per run.
+- **Its deadlines don't depend on cancellation.** The probe cancels itself after 3 seconds, which reports how far it got. Each caller stops waiting after 4 seconds, because Npgsql's cancellation can itself wait on a server that has stopped answering. A stuck probe stays in flight, and later callers join it. It ignores the caller's token, so one client leaving doesn't cancel it for the others.
+- **`SELECT 1` runs before the migration history is read**, because that read treats a missing database or table as no migrations applied. Pending and unknown migrations are both computed here, because `GetPendingMigrationsAsync` ignores unknown rows.
+- **Probes go through the normal pipeline**, so each has an `Http` event and a correlation ID, as FR-LOG-06 and NFR-OBS-02 require. That's one Information event per probe, and during an outage several Errors per probe. Outages are rare and an error per probe is accurate, so this is accepted.
+
+The framework's health events hold the check's name, status and description, and any exception, so they carry nothing from the request and need no [level floor](#masking).
+
 ## Constraints for later issues
 
-- **Correlation IDs (#5):** set `LogProperties.CorrelationId` in a scope. `log_events.correlation_id` is already there and indexed.
-- **Audit (#11):** must sit below every module that writes to it, and take the caller's context. See [Persistence](#persistence).
+- **Job runner (#6):** call `ICorrelationContext.Begin()` around each run. See [Correlation IDs](#correlation-ids).
+- **Web security (#7):** probes pass through the pipeline, so don't let rate limiting throttle them below an operator's probe interval.
+- **Authentication (#9):** call `UseAuthentication` and `UseAuthorization` explicitly, after `UseCorrelation`. Otherwise `WebApplication` inserts them before user middleware, and their events have no correlation ID.
+- **Audit (#11):** must sit below every module that writes to it, and take the caller's context. See [Persistence](#persistence). Store `ICorrelationContext.CurrentId`, which is null outside a request, circuit action, cycle or job.
 - **Sign-in and email links (#9, #13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Set `LogProperties.UserId` in a scope.
 - **Secrets (#12):** must sit below Identity and Credentials, and keep secret access separate from credential metadata (#20). Wrap decrypted secrets in a type that doesn't render its value: see [Masking](#masking).
 - **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category.
 - **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category.
 - **Risk Engine (#27):** see rule 4.
-- **Decision cycles (#30, #31):** set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope around each cycle.
+- **Decision cycles (#30, #31):** call `ICorrelationContext.Begin()` around each cycle, and set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope.
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and the persistence and logging contracts in `Platform/Contracts`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and the persistence, logging and correlation contracts in `Platform/Contracts`.
 
 ## What the boundary tests can't see
 

@@ -41,4 +41,33 @@ public sealed class PostgresFixture : IAsyncLifetime
 
         return connectionString;
     }
+
+    /// <summary>
+    /// An outage of one database. The server is shared, so never stop or pause the container: that
+    /// would take every concurrent test down with it.
+    /// </summary>
+    public async Task RefuseConnectionsAsync(string connectionString, CancellationToken cancellationToken)
+    {
+        var name = new NpgsqlConnectionStringBuilder(connectionString).Database;
+        var server = _container.GetConnectionString();
+
+        await Sql.ExecuteAsync(server, $"""ALTER DATABASE "{name}" ALLOW_CONNECTIONS false""", cancellationToken);
+        await Sql.ExecuteAsync(
+            server,
+            $"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{name}'",
+            cancellationToken);
+    }
+
+    /// <summary>Ends an outage started by <see cref="RefuseConnectionsAsync"/>.</summary>
+    public Task AllowConnectionsAsync(string connectionString, CancellationToken cancellationToken) =>
+        Sql.ExecuteAsync(
+            _container.GetConnectionString(),
+            $"""ALTER DATABASE "{new NpgsqlConnectionStringBuilder(connectionString).Database}" ALLOW_CONNECTIONS true""",
+            cancellationToken);
+
+    public Task DropDatabaseAsync(string connectionString, CancellationToken cancellationToken) =>
+        Sql.ExecuteAsync(
+            _container.GetConnectionString(),
+            $"""DROP DATABASE "{new NpgsqlConnectionStringBuilder(connectionString).Database}" WITH (FORCE)""",
+            cancellationToken);
 }

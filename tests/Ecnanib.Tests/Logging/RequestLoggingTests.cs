@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using Ecnanib.Tests.Persistence;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpsPolicy;
@@ -49,8 +48,8 @@ public sealed class RequestLoggingTests(PostgresFixture postgres)
 
         Assert.Equal(
             [
-                "ApplicationVersion", "DurationMs", "MachineName", "Method", "ParentId", "RequestId", "Route",
-                "SourceContext", "SpanId", "StatusCode", "TraceId",
+                "ApplicationVersion", "CorrelationId", "DurationMs", "MachineName", "Method", "ParentId", "RequestId",
+                "Route", "SourceContext", "SpanId", "StatusCode", "TraceId",
             ],
             names.Order(StringComparer.Ordinal));
     }
@@ -86,6 +85,7 @@ public sealed class RequestLoggingTests(PostgresFixture postgres)
         request.Headers.TryAddWithoutValidation("X-Api-Key", canary);
         request.Headers.TryAddWithoutValidation("Cookie", $"session={canary}");
         request.Headers.TryAddWithoutValidation("X-Innocent", canary);
+        request.Headers.TryAddWithoutValidation("X-Correlation-ID", canary);
 
         using var response = await client.SendAsync(request, Cancellation);
         await app.StopAsync();
@@ -157,14 +157,4 @@ public sealed class RequestLoggingTests(PostgresFixture postgres)
                 && entry.GetProperty("Properties").GetProperty("Method").GetString() == method);
 
     private sealed class UnhandledFailure(string message) : Exception(message);
-
-    /// <summary>Added behind the application's own pipeline, so request logging wraps it as it wraps an endpoint.</summary>
-    private sealed class TerminalMiddleware(RequestDelegate terminal) : IStartupFilter
-    {
-        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => builder =>
-        {
-            next(builder);
-            builder.Run(terminal);
-        };
-    }
 }

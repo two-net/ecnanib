@@ -1,6 +1,8 @@
 using Ecnanib.Platform.Contracts;
+using Ecnanib.Platform.Correlation;
 using Ecnanib.Platform.Logging;
 using Ecnanib.Platform.Persistence;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog.Extensions.Logging;
@@ -12,6 +14,9 @@ public static class PlatformModule
     public static IServiceCollection AddPlatform(this IServiceCollection services)
     {
         AddStructuredLogging(services);
+
+        services.AddSingleton<ICorrelationContext, CorrelationContext>();
+        services.AddScoped<CircuitHandler, CorrelationCircuitHandler>();
 
         services.AddDbContextFactory<EcnanibDbContext>((provider, options) =>
         {
@@ -38,10 +43,20 @@ public static class PlatformModule
         // web server's own hosted service is always added last.
         services.AddHostedService<DatabaseStartup>();
 
+        services.AddSingleton<DatabaseHealthCheck>();
+        services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
+
         return services;
     }
 
-    /// <summary>Logs each HTTP request. Call it first, so it sees the final status.</summary>
+    /// <summary>
+    /// Gives each HTTP request a correlation ID. Call it first: request logging needs the ID, and
+    /// anything after the exception handler or status pages runs twice when they re-execute.
+    /// </summary>
+    public static IApplicationBuilder UseCorrelation(this IApplicationBuilder app) =>
+        app.UseMiddleware<CorrelationMiddleware>();
+
+    /// <summary>Logs each HTTP request. Call it straight after UseCorrelation, so it sees the final status.</summary>
     public static IApplicationBuilder UseRequestLogging(this IApplicationBuilder app) =>
         app.UseMiddleware<RequestLoggingMiddleware>();
 
