@@ -11,7 +11,11 @@ namespace Ecnanib.Tests.Persistence;
 /// WebApplicationFactory, which runs as Development: it would load a developer's
 /// appsettings.Development.json and migrate the database that file points to.
 /// </summary>
-public class AppFactory(string? connectionString, Action<IServiceCollection>? configureServices = null)
+public class AppFactory(
+    string? connectionString,
+    Action<IServiceCollection>? configureServices = null,
+    IEnumerable<KeyValuePair<string, string?>>? settings = null,
+    Action<IConfigurationBuilder>? configure = null)
     : WebApplicationFactory<Program>
 {
     /// <summary>Starts the application, which throws if startup fails.</summary>
@@ -25,7 +29,15 @@ public class AppFactory(string? connectionString, Action<IServiceCollection>? co
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Default"] = connectionString,
+                ["Logging:MinimumLevel"] = "Information",
             });
+
+            if (settings is not null)
+            {
+                configuration.AddInMemoryCollection(settings);
+            }
+
+            configure?.Invoke(configuration);
         });
 
         if (configureServices is not null)

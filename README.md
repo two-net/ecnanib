@@ -97,7 +97,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Web app | ASP.NET Core Blazor Server on .NET 10, interactive across the whole app | In place |
 | Database | PostgreSQL | In place |
 | Persistence | Entity Framework Core 10 with Npgsql, code-first, with migrations applied at startup and no table partitioning | In place |
-| Logging | Structured logging library comparable to Serilog | Required, not chosen yet |
+| Logging | Serilog, with console, rolling file and PostgreSQL sinks, and masking in front of all of them | In place |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
 
@@ -116,23 +116,44 @@ The scaffold doesn't meet this yet:
 - `appsettings.Development.json` is a second configuration file.
 - `launchSettings.json` sets `ASPNETCORE_ENVIRONMENT`, and the default host builder in `Program.cs` reads environment variables.
 
+### Logging
+
+The `Logging` section follows [SRS 7.3](SRS.md#73-example-placeholders-only), not the framework's `Logging:LogLevel`. Changes to it apply without a restart. A value that isn't valid stops startup, and on a running application it's refused with an error in the log, which leaves the previous settings in place.
+
+| Setting | Meaning |
+|---|---|
+| `MinimumLevel` | Required. `Verbose`, `Debug`, `Information`, `Warning`, `Error` or `Fatal` |
+| `Overrides` | Logger name prefix to level, such as `"Microsoft.AspNetCore": "Warning"`. `Http` is the request log |
+| `Sinks:Console:Enabled` | Defaults to `true` |
+| `Sinks:File:Enabled` | Defaults to `false` |
+| `Sinks:File:Path` | Required when enabled. Relative paths start at the content root |
+| `Sinks:File:RollingInterval` | `Day` by default, or `Size` |
+| `Sinks:File:FileSizeLimitBytes` | The size a file rolls at, under either interval. Defaults to 1 GiB |
+| `Sinks:File:RetainedFileCount` | Required when enabled |
+| `Sinks:Database:Enabled` | Defaults to `false`. Writes to the `log_events` table |
+| `Sinks:Database:MinimumLevel` | Defaults to `Warning` |
+
+The file sink writes one JSON event per line, with every property. The console shows timestamp, level, category and message.
+
+A few framework categories can't be set below a fixed level, because their debug events can carry form input or raw URLs. See [Masking](docs/architecture.md#masking).
+
 ## Repository layout
 
 ```text
 .
 ├── SRS.md                  Software Requirements Specification (v1.0 draft)
-├── docs/architecture.md    Module boundaries, persistence and rules
+├── docs/architecture.md    Module boundaries, persistence, logging and rules
 ├── Directory.Build.props   Shared build settings and vulnerability scan rules
 ├── .config/                Pinned .NET tools, including dotnet-ef
 ├── .github/workflows/      CI pipeline
 ├── src/Ecnanib/            Blazor Server application
 │   ├── Components/         Root component, routes, layout and pages
 │   ├── Modules/            One folder per module, each with a public Contracts namespace
-│   ├── Platform/           Cross-cutting services, including persistence and migrations
+│   ├── Platform/           Cross-cutting services, including logging, persistence and migrations
 │   ├── Properties/         Local launch profiles
 │   ├── wwwroot/            Static assets
 │   └── Program.cs          Application startup and module registration
-└── tests/Ecnanib.Tests/    Architecture, persistence and smoke tests
+└── tests/Ecnanib.Tests/    Architecture, persistence, logging and smoke tests
 ```
 
 ## Documentation

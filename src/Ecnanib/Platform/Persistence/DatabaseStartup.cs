@@ -1,4 +1,5 @@
 using Ecnanib.Platform.Contracts;
+using Ecnanib.Platform.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -14,6 +15,7 @@ namespace Ecnanib.Platform.Persistence;
 /// </summary>
 internal sealed class DatabaseStartup(
     IDbContextFactory<EcnanibDbContext> contextFactory,
+    LoggingPipeline logging,
     ILogger<DatabaseStartup> logger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -30,6 +32,8 @@ internal sealed class DatabaseStartup(
 
             // Also runs the seeders, even with no migration pending. See PlatformModule.
             await context.Database.MigrateAsync(cancellationToken);
+
+            logging.AttachDatabase();
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

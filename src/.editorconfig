@@ -1,0 +1,4 @@
+# A log message must be a constant template with named properties (FR-LOG-01). An interpolated
+# message would put values, and any secret among them, into the template itself (FR-LOG-05).
+[*.cs]
+dotnet_diagnostic.CA2254.severity = error
