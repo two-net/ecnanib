@@ -14,8 +14,15 @@ public sealed class PostgresFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _container;
 
+    /// <summary>
+    /// Each test's database has its own connection pool, which stays open until it idles out, so the
+    /// whole run adds up to far more than the server's default limit of 100.
+    /// </summary>
     public PostgresFixture() =>
-        _container = new PostgreSqlBuilder("postgres:18-alpine").WithPassword(Password).Build();
+        _container = new PostgreSqlBuilder("postgres:18-alpine")
+            .WithPassword(Password)
+            .WithCommand("-c", "max_connections=500")
+            .Build();
 
     /// <summary>Unique, so a test can prove it never reaches a log.</summary>
     public string Password { get; } = $"canary-{Guid.NewGuid():N}";

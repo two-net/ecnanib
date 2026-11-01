@@ -99,6 +99,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Persistence | Entity Framework Core 10 with Npgsql, code-first, with migrations applied at startup and no table partitioning | In place |
 | Logging | Serilog, with console, rolling file and PostgreSQL sinks, and masking in front of all of them | In place |
 | Health | ASP.NET Core health checks, on `/health/live` and `/health/ready` | In place |
+| Background jobs | An in-process runner, with its history and schedules in PostgreSQL | In place |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
 
@@ -165,12 +166,30 @@ If the application terminates TLS itself, probe over HTTPS. On plain HTTP these 
 
 While migrations run at startup the port isn't open yet, so a probe gets connection refused rather than a 503.
 
+## Background jobs
+
+Scheduled and background work runs inside the application, so there's no job server to deploy. Each run is a row in the `job_runs` table:
+
+| Status | Meaning |
+|---|---|
+| `Running` | In progress |
+| `Succeeded` | Finished |
+| `Failed` | Threw an exception. `details` has its type |
+| `TimedOut` | Passed its time limit |
+| `Interrupted` | A shutdown or crash ended it before it finished |
+
+`details` never holds the error text. To see that, search the logs for the row's `correlation_id`.
+
+**Stopping takes up to 45 seconds.** A job finishing an exchange call gets 30 seconds, and the rest is for writing down what happened. Give your process supervisor a stop timeout of at least 60 seconds, which includes the final log flush. systemd's default of 90 is enough, but Docker's 10 and Kubernetes' 30 aren't. A process killed before then behaves as if it had crashed: the next start marks its unfinished runs `Interrupted`.
+
+Schedules are read from `job_runs`, so restarting doesn't reset them. See [Jobs](docs/architecture.md#jobs).
+
 ## Repository layout
 
 ```text
 .
 ├── SRS.md                  Software Requirements Specification (v1.0 draft)
-├── docs/architecture.md    Module boundaries, persistence, logging, health and rules
+├── docs/architecture.md    Module boundaries, persistence, logging, health, jobs and rules
 ├── Directory.Build.props   Shared build settings and vulnerability scan rules
 ├── .config/                Pinned .NET tools, including dotnet-ef
 ├── .github/workflows/      CI pipeline
@@ -178,11 +197,11 @@ While migrations run at startup the port isn't open yet, so a probe gets connect
 │   ├── Components/         Root component, routes, layout and pages
 │   ├── Endpoints/          HTTP that isn't a page, such as the health endpoints
 │   ├── Modules/            One folder per module, each with a public Contracts namespace
-│   ├── Platform/           Cross-cutting services, including logging, correlation, persistence and migrations
+│   ├── Platform/           Cross-cutting services, including logging, correlation, jobs, persistence and migrations
 │   ├── Properties/         Local launch profiles
 │   ├── wwwroot/            Static assets
 │   └── Program.cs          Application startup and module registration
-└── tests/Ecnanib.Tests/    Architecture, persistence, logging, health and smoke tests
+└── tests/Ecnanib.Tests/    Architecture, persistence, logging, health, job and smoke tests
 ```
 
 ## Documentation

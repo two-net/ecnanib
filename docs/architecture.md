@@ -197,7 +197,8 @@ A change to the `Logging` section applies without a restart, for levels, overrid
 |---|---|
 | HTTP request | `CorrelationMiddleware`, which also returns the ID as `X-Correlation-ID` |
 | Action on a circuit | `CorrelationCircuitHandler`, once per inbound activity |
-| Cycle or job | The code that runs it |
+| Job run | `JobRunner`, once per run, so `job_runs.correlation_id` matches its logs |
+| Cycle | The code that runs it |
 
 - **IDs are always generated here.** An inbound `X-Correlation-ID` is ignored: a client-chosen value could forge links between audit records, and a long one could fail a batch of log rows on the index. `TraceId` isn't used either, because a `traceparent` header sets it.
 - **`UseCorrelation` comes first in the pipeline.** Request logging needs the ID, and the exception handler and status pages run everything after them again, which would give a request two IDs.
@@ -232,21 +233,107 @@ The tests run the circuit handler directly, because opening a real circuit needs
 
 The framework's health events hold the check's name, status and description, and any exception, so they carry nothing from the request and need no [level floor](#masking).
 
+## Jobs
+
+`Platform/Jobs` runs background work inside the process, because CON-08 rules out a job server. `job_runs` holds the history and the schedules, so a restart loses neither.
+
+There are two ways in, and one way through. Every run gets its own correlation ID, a row, an error boundary and a place in the shutdown drain.
+
+- **Work on a schedule:** implement `IRecurringJob` and register it as a singleton in `Add<Module>()`, like a seeder. Each job gets its own loop, so it never overlaps itself and can't hold up another.
+- **Any other work:** call `IJobRunner.RunAsync`, which makes one recorded run now. It never throws for a job's failure, so a discarded task is safe. It's for work a recurring job can't express, such as a run for one credential.
+
+```csharp
+internal sealed class CatalogSyncJob(ICatalogSync sync) : IRecurringJob
+{
+    public string Name => "catalog-sync";
+
+    public JobSchedule Schedule { get; } = JobSchedule.Every(TimeSpan.FromHours(12));
+
+    public TimeSpan Timeout { get; } = TimeSpan.FromMinutes(30);
+
+    public async Task RunAsync(JobContext context, CancellationToken cancellationToken) =>
+        context.Details = $"{await sync.RunAsync(cancellationToken)} models";
+}
+```
+
+A job can inject `IDbContextFactory<EcnanibDbContext>`, like anything else. It's a singleton, so it can't inject a scoped service.
+
+### The two signals
+
+**A run has two signals, so that the token it naturally passes along is the safe one.** With a single token, shutdown would cancel an exchange call as soon as it began, which NFR-REL-04 forbids.
+
+| Signal | Fires | Use |
+|---|---|---|
+| `cancellationToken` | At the run's timeout, or when the drain window ends | Pass it anywhere, including to exchange calls |
+| `context.Stopping` | When shutdown begins, and whenever `cancellationToken` fires | Check it between steps, and start nothing new once it has fired. Pass it only to work that's safe to abandon, such as an AI call or a purge batch. Never to an exchange call |
+
+**Returning means the run finished,** so a run that stops early must throw. `context.Stopping.ThrowIfCancellationRequested()` records it as `Interrupted`.
+
+### Shutdown
+
+The clock starts at `ApplicationStopping`, which SIGTERM fires. The numbers come from `JobRunner.ShutdownTimeout`, which `AddPlatform` gives the host in place of its 30-second default. The drain window is two-thirds of it.
+
+| Time | What happens |
+|---|---|
+| T+0 | `Stopping` fires. Loops stop, and `RunAsync` returns `NotStarted`. The web server begins to stop |
+| T+0 to T+30 | Runs finish, and each records its outcome |
+| T+30 | `cancellationToken` fires for anything still running, which ends as `Interrupted` |
+| T+33 | A run that hasn't responded is recorded anyway, with an Error, and its task is left running |
+| T+45 | `StopAsync` logs an Error naming any runs still going, and returns |
+
+- **The clock doesn't start in `StopAsync`.** Services stop one at a time, and the web server goes first with the same token, so it could spend all of it. For the same reason, `StopAsync` ignores the token it's given.
+- **The host doesn't enforce its own timeout.** It awaits each service, so an unbounded wait here would hold the process until a supervisor killed it.
+- **`StopAsync` never throws.** The host rethrows from `app.Run()`, so a throw would turn a clean stop into a non-zero exit.
+- **`StopAsync` returns one shared task.** A test host calls it twice at once, and a second caller returning early would dispose the services mid-drain.
+- **The final write uses no job token.** It would probably have fired, and then the record of a finished run would be lost. Each attempt has its own limit, enforced with `WaitAsync`, because Npgsql's cancellation can wait on a silent server. It keeps trying until the time runs out.
+- **Only one thing is left to a crash.** A SIGKILL or a power cut behaves the same as a run that outlives T+45, and the next start closes the row.
+
+**The runner supplies the time and the signals, but it can't finish NFR-REL-04 by itself.** "No trade left half-recorded" also needs the write order in Execution (#34): see the [constraints](#constraints-for-later-issues).
+
+### Schedules
+
+- **`job_runs` is the schedule's memory.** A loop reads its job's latest `started_at` once, when it starts, and tracks the rest in memory. A timer would never fire if the process restarted more often than its interval.
+- **Any start counts, whatever its outcome.** A failed job waits for its next tick, so one that fails instantly can't spin. An interrupted job waits too, so one that kills the process can't crash-loop it. An interrupted daily job therefore waits a day. A job that can't accept that retries within itself.
+- **Missed ticks collapse into one run.** There's no backfill.
+- **Nothing runs before `ApplicationStarted`,** so a failed start runs nothing, and any hosted service's `StartAsync` finishes before the first scheduled run. `RunAsync` works by then.
+- **A candle schedule belongs to #30.** `JobSchedule` is abstract so that `Modules/Scheduler` can derive one.
+- **Queued work isn't durable.** There's no queue. Anything `RunAsync` would have done is recovered by a schedule, as [Inversions](#inversions) requires of events.
+
+`Running` rows at start belong to a process that's gone, because there's one instance (ASM-06). `StartAsync` marks them `Interrupted` before anything runs, and a failure there stops startup. Their `finished_at` stays null, because a sweep time would overstate how long they ran. Running several instances would need a rethink.
+
+### Failures
+
+| Failure | What contains it |
+|---|---|
+| A job throws | The run's boundary. It's `Failed`, with an Error, and the loop carries on |
+| A job hangs | Its own loop. It stalls only itself, and the timeout gives `TimedOut` |
+| A job ignores its token or blocks a thread | Each run is on its own task. 3 seconds after its token fires the outcome is recorded with an Error, so a stall is never silent. The job keeps its place until its task ends, because two concurrent reconcilers are worse than a stalled one (NFR-REL-03) |
+| The database is down when a run starts | The work isn't invoked, because a run nobody recorded must not trade. It's `NotStarted`, and a loop retries within 30 seconds |
+| The database is down when a run ends | The write retries until it lands, and the job keeps its place meanwhile. An unclosed row would otherwise read as interrupted for good |
+
+- **An `OperationCanceledException` only counts as cancellation if one of the runner's tokens fired,** so a job's own `HttpClient` timeout is `Failed`.
+- **The runner isolates runs, not agents.** A failure in one agent reaches only the others in the same run if the job lets it. NFR-REL-05 needs per-item handling in anything that loops over agents or credentials, or one `RunAsync` per item.
+- **`details` never holds exception text.** This table has no `SanitizingSink`, and #49 will show it to administrators. Scrubbing isn't enough: it can't recognise an unmarked secret, and a provider's error can echo a prompt, which FR-ADM-01 keeps from them. A failure stores the exception's type name, and the text goes to the log under the same correlation ID. `context.Details` goes through `SecretRules.Scrub`. Keep it to counts and IDs, because account deletion doesn't reach this table.
+
 ## Constraints for later issues
 
-- **Job runner (#6):** call `ICorrelationContext.Begin()` around each run. See [Correlation IDs](#correlation-ids).
 - **Web security (#7):** probes pass through the pipeline, so don't let rate limiting throttle them below an operator's probe interval.
 - **Authentication (#9):** call `UseAuthentication` and `UseAuthorization` explicitly, after `UseCorrelation`. Otherwise `WebApplication` inserts them before user middleware, and their events have no correlation ID.
 - **Audit (#11):** must sit below every module that writes to it, and take the caller's context. See [Persistence](#persistence). Store `ICorrelationContext.CurrentId`, which is null outside a request, circuit action, cycle or job.
 - **Sign-in and email links (#9, #13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Set `LogProperties.UserId` in a scope.
 - **Secrets (#12):** must sit below Identity and Credentials, and keep secret access separate from credential metadata (#20). Wrap decrypted secrets in a type that doesn't render its value: see [Masking](#masking).
-- **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category.
+- **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds.
 - **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category.
+- **The first real job:** a job with no history is due at once, so every application start in every test will run it. `AppFactory` will need to remove real jobs by default.
+- **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
 - **Risk Engine (#27):** see rule 4.
-- **Decision cycles (#30, #31):** call `ICorrelationContext.Begin()` around each cycle, and set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope.
-- **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require.
+- **Decision cycles (#30, #31):** call `ICorrelationContext.Begin()` around each cycle, and set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope. Decide between one `job_runs` row per tick and one per cycle, which costs about 19,000 rows a day at 200 agents on 15m. `RunAsync` stays pending while hung work keeps its place, so a concurrency limit must bound its wait.
+- **Order execution (#34):** pass `cancellationToken`, not `Stopping`, to exchange calls. Persist the intent before sending, or a cut send can't be recovered (FR-EXE-05, FR-EXE-08). Once an order is placed, save with a deadline of its own, or the end of the drain window could cancel the write.
+- **Reconciliation (#35):** run the startup pass from a hosted service's `StartAsync`, through `IJobRunner`, so it finishes before any scheduled cycle (FR-EXE-08).
+- **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
+- **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and the persistence, logging and correlation contracts in `Platform/Contracts`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and the persistence, logging, correlation and job contracts in `Platform/Contracts`.
 
 ## What the boundary tests can't see
 

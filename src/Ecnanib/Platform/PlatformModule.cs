@@ -1,5 +1,6 @@
 using Ecnanib.Platform.Contracts;
 using Ecnanib.Platform.Correlation;
+using Ecnanib.Platform.Jobs;
 using Ecnanib.Platform.Logging;
 using Ecnanib.Platform.Persistence;
 using Microsoft.AspNetCore.Components.Server.Circuits;
@@ -43,6 +44,8 @@ public static class PlatformModule
         // web server's own hosted service is always added last.
         services.AddHostedService<DatabaseStartup>();
 
+        AddJobs(services);
+
         services.AddSingleton<DatabaseHealthCheck>();
         services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
 
@@ -78,6 +81,17 @@ public static class PlatformModule
         {
             throw new MaskedException(masked);
         }
+    }
+
+    /// <summary>Registered straight after DatabaseStartup, because the runner reads and writes job_runs as it starts.</summary>
+    private static void AddJobs(IServiceCollection services)
+    {
+        services.Configure<HostOptions>(options => options.ShutdownTimeout = JobRunner.ShutdownTimeout);
+
+        services.AddSingleton<JobRunStore>();
+        services.AddSingleton<JobRunner>();
+        services.AddSingleton<IJobRunner>(provider => provider.GetRequiredService<JobRunner>());
+        services.AddHostedService(provider => provider.GetRequiredService<JobRunner>());
     }
 
     private static void AddStructuredLogging(IServiceCollection services)
