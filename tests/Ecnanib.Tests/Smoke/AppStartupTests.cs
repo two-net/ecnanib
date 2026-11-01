@@ -1,11 +1,11 @@
 using System.Net;
 using Ecnanib.Modules.Administration.Contracts;
-using Microsoft.AspNetCore.Mvc.Testing;
+using Ecnanib.Tests.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.Smoke;
 
-public sealed class AppStartupTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+public sealed class AppStartupTests(SharedApp factory) : IClassFixture<SharedApp>
 {
     [Fact]
     public async Task Home_page_is_served()

@@ -78,16 +78,59 @@ In-process events are lost on a crash, so each one needs a recovery path, such a
 
 **After page load, a Blazor circuit doesn't pass through HTTP middleware.** Access rules therefore can't live there: ownership checks (NFR-SEC-04) belong behind module contracts. Rate limiting (NFR-SEC-07), request logging, correlation IDs (NFR-OBS-02) and audit fields such as IP address need a plan for circuit traffic too.
 
+## Persistence
+
+`EcnanibDbContext` in `Platform/Contracts` is the one context, with one linear migration chain, because the SRS has one database and one migration version (FR-ADM-04). The code-first model owns the schema, so nobody changes it by hand (DATA-R-05).
+
+- **Modules own their entities.** A module keeps its entities and their `IEntityTypeConfiguration` internal, and reaches them with `Set<T>()`, so the boundary tests cover them. The context finds configurations with `ApplyConfigurationsFromAssembly`. This is the one exception to "no module scanning" in rule 3: contributing the model through DI would leave `dotnet ef` with an empty model at design time, and it would generate drops.
+- **Reference another module's rows by ID only**, with no navigations. Whether a foreign key constraint can cross modules isn't decided: `HasOne<OtherModuleEntity>()` fails the boundary tests, so the first issue that needs one decides.
+- **Contexts are short-lived.** A Blazor circuit keeps its scope for as long as the user stays connected, so the context isn't in DI, and a service that injects it fails at startup. Inject `IDbContextFactory<EcnanibDbContext>`, and dispose each context when the operation ends.
+- **The caller owns the context, which keeps writes atomic.** Anything that must commit with a caller's change, such as an audit record (#11), takes the caller's context, adds to it and doesn't save. One `SaveChangesAsync` then commits both (FR-AGT-04, NFR-REL-04). Across several saves, use one transaction on that context. Never hold a transaction open across an exchange call. Leave `EnableRetryOnFailure` off: it rejects transactions started this way.
+- **Money and time follow SRS 6.2.** Store amounts as `decimal` next to their asset or currency code, and timestamps as `DateTime` or `DateTimeOffset` in UTC. `SchemaRulesTests` rejects binary floating point and timestamps without a time zone on any mapped column. It can't check that an amount has a code column, so check that in review.
+- **Seeders add reference data (NFR-DEP-02).** Implement `IReferenceDataSeeder` and register it in `Add<Module>()`. Seeders run in registration order on every start, so they add only what's missing, and they don't save.
+
+### Startup
+
+`DatabaseStartup` is a hosted service that runs before the web server opens a port. It applies pending migrations, then runs the seeders. Any failure is logged and stops the process with a non-zero exit code (NFR-DEP-03).
+
+- A failed migration rolls back. Earlier ones stay committed, and the next start resumes from there.
+- A failed seeder saves nothing. The migrations stay applied, and the next start seeds again.
+- A database with a migration this build doesn't know is refused, because an old build must not run on a newer schema.
+
+Each migration commits separately, so seeding holds neither the migration lock nor a transaction after migrations were applied. That's safe with one instance (ASM-06). Running several instances would need a rethink.
+
+### Adding a migration
+
+```sh
+dotnet tool restore
+dotnet ef migrations add <Name> --project src/Ecnanib --output-dir Platform/Persistence/Migrations
+```
+
+Then, in the generated `<timestamp>_<Name>.cs`, change the class to `internal` and delete `Down`. The tests fail if you skip either step. `dotnet ef` generates both, but the first breaks rule 1, and `Migration.Down` throws unless a migration overrides it, so deleting it makes rollback impossible.
+
+Migrations are forward-only (NFR-MNT-05). Never edit or delete a released migration: fix forward with a new one.
+
+### Before a release
+
+Test pending migrations against a copy of the production schema (NFR-MNT-05). This is a manual step until there's a release process. Dump the schema and the migration history, because a schema-only dump leaves the history table empty, and the new build would then try to reapply every migration. Restore the dump into a scratch database, then start the new build against it:
+
+```sh
+pg_dump --schema-only --no-owner "$PRODUCTION" > schema.sql
+pg_dump --data-only --table='"__EFMigrationsHistory"' "$PRODUCTION" >> schema.sql
+psql "$SCRATCH" --file=schema.sql
+```
+
+The application should start and log the migrations it applied. Don't run this against production.
+
 ## Constraints for later issues
 
-- **Persistence (#3):** start from one DbContext and one linear migration chain, because the SRS has one database and one migration version (FR-ADM-04). A long-lived circuit scope needs short-lived contexts, and #3 has to decide how a state change and its audit record stay atomic (FR-AGT-04, NFR-REL-04).
-- **Audit (#11):** must sit below every module that writes to it.
+- **Audit (#11):** must sit below every module that writes to it, and take the caller's context. See [Persistence](#persistence).
 - **Secrets (#12):** must sit below Identity and Credentials, and keep secret access separate from credential metadata (#20).
 - **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09).
 - **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02.
 - **Risk Engine (#27):** see rule 4.
 
-Other interfaces are defined by the issue that needs them. `ISystemInfo` in `Modules/Administration/Contracts` is the only contract so far: part of FR-ADM-04, for #49 to build on.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and the persistence contracts in `Platform/Contracts`.
 
 ## What the boundary tests can't see
 
@@ -99,3 +142,4 @@ These leave no reference to scan, so **check them in review**:
 - `nameof` on another module's type
 - A forbidden type used only as the generic argument of a static field access, such as `Holder<Forbidden>.Value`
 - Reflection, or calling something by name in a string
+- SQL against another module's tables

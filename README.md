@@ -2,7 +2,7 @@
 
 AI cryptocurrency trading agents. Ecnanib is a planned free, multi-user web application where users create agents that trade on Binance Spot and Binance USDⓈ-M Futures. Each agent is driven by a council of AI models from Anthropic (Claude), Google (Gemini), OpenAI (GPT) and xAI (Grok), using the user's own API keys.
 
-> **Status: early scaffold.** The repository currently contains the requirements and a Blazor Server app with empty modules, tests and a CI pipeline. None of the product features described below are implemented yet.
+> **Status: early scaffold.** The repository currently contains the requirements and a Blazor Server app with mostly empty modules, PostgreSQL persistence, tests and a CI pipeline. None of the product features described below are implemented yet.
 
 > **Disclaimer.** Ecnanib is not affiliated with or endorsed by Binance. Nothing it produces is financial advice. Automated cryptocurrency trading can lose money, including through AI decisions that look reasonable.
 
@@ -52,7 +52,21 @@ Users can change the provider and model per role, per agent. A single provider c
 
 ## Getting started
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), version 10.0.402 or later. From the repository root:
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), version 10.0.402 or later, and a PostgreSQL server on a currently supported major version.
+
+`appsettings.json` holds the default connection string, without a password because git tracks that file. Put your full connection string in `src/Ecnanib/appsettings.Development.json`, which git ignores and which overrides the default:
+
+```json
+{
+  "ConnectionStrings": {
+    "Default": "Host=localhost;Database=ecnanib;Username=postgres;Password=<password>"
+  }
+}
+```
+
+The app creates the database, schema and seed data on first start, and applies new migrations on every later start. If the database doesn't exist yet, the PostgreSQL role needs permission to create it. If a migration fails, the app logs the error and exits.
+
+From the repository root:
 
 ```sh
 dotnet run --project src/Ecnanib
@@ -72,17 +86,19 @@ To run the tests:
 dotnet test
 ```
 
-They include the architecture tests that enforce the module boundaries in [docs/architecture.md](docs/architecture.md).
+They need Docker, because they start their own PostgreSQL in a container. They never use the database in your settings files. They include the architecture tests that enforce the module boundaries in [docs/architecture.md](docs/architecture.md).
+
+To add a migration, run `dotnet tool restore` once, then follow [Adding a migration](docs/architecture.md#adding-a-migration).
 
 ## Technology
 
 | Concern | Choice | State |
 |---|---|---|
 | Web app | ASP.NET Core Blazor Server on .NET 10, interactive across the whole app | In place |
-| Database | PostgreSQL | Required, not added yet |
-| Persistence | Code-first ORM, with migrations applied at startup and no table partitioning | Required, not chosen yet |
+| Database | PostgreSQL | In place |
+| Persistence | Entity Framework Core 10 with Npgsql, code-first, with migrations applied at startup and no table partitioning | In place |
 | Logging | Structured logging library comparable to Serilog | Required, not chosen yet |
-| Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries | In place |
+| Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
 
 The architecture is a single deployable modular monolith, with no microservices, message brokers, distributed caches or separate job servers. Modules live in one project and talk through defined interfaces. See [docs/architecture.md](docs/architecture.md) for the boundaries and rules.
@@ -105,17 +121,18 @@ The scaffold doesn't meet this yet:
 ```text
 .
 ├── SRS.md                  Software Requirements Specification (v1.0 draft)
-├── docs/architecture.md    Module boundaries and rules
+├── docs/architecture.md    Module boundaries, persistence and rules
 ├── Directory.Build.props   Shared build settings and vulnerability scan rules
+├── .config/                Pinned .NET tools, including dotnet-ef
 ├── .github/workflows/      CI pipeline
 ├── src/Ecnanib/            Blazor Server application
 │   ├── Components/         Root component, routes, layout and pages
 │   ├── Modules/            One folder per module, each with a public Contracts namespace
-│   ├── Platform/           Cross-cutting services
+│   ├── Platform/           Cross-cutting services, including persistence and migrations
 │   ├── Properties/         Local launch profiles
 │   ├── wwwroot/            Static assets
 │   └── Program.cs          Application startup and module registration
-└── tests/Ecnanib.Tests/    Architecture and smoke tests
+└── tests/Ecnanib.Tests/    Architecture, persistence and smoke tests
 ```
 
 ## Documentation
