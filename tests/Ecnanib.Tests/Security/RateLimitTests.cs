@@ -280,7 +280,7 @@ public sealed class RateLimitTests(PostgresFixture postgres)
         using var response = await client.GetAsync(Missing, Cancellation);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Contains("An error occurred", await response.Content.ReadAsStringAsync(Cancellation), StringComparison.Ordinal);
+        Assert.Contains("The server hit an error", await response.Content.ReadAsStringAsync(Cancellation), StringComparison.Ordinal);
     }
 
     /// <summary>Request logging records a 5xx as an Error, so the default of 503 would put a flood in the database.</summary>

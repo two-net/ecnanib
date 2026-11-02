@@ -1,0 +1,148 @@
+﻿@page "/"
+@using Ecnanib.Components.Notices
+
+<PageTitle>@Strings.LandingPageTitle</PageTitle>
+
+<div class="page hero">
+    <div class="hero-thesis">
+        <h1>@Strings.LandingHeadline</h1>
+        <p class="hero-intro">@Strings.LandingIntro</p>
+    </div>
+
+    <figure class="record">
+        <figcaption class="record-caption">@Strings.RecordCaption</figcaption>
+        <p class="record-subject">@Strings.RecordSubject</p>
+        <dl class="record-entries">
+            <div>
+                <dt>@Strings.RoleTechnicalAnalyst</dt>
+                <dd>@Strings.RecordTechnical</dd>
+            </div>
+            <div>
+                <dt>@Strings.RoleSentimentAnalyst</dt>
+                <dd>@Strings.RecordSentiment</dd>
+            </div>
+            <div>
+                <dt>@Strings.RoleStrategist</dt>
+                <dd>@Strings.RecordStrategist</dd>
+            </div>
+            <div>
+                <dt>@Strings.RoleRiskCritic</dt>
+                <dd>@Strings.RecordRiskCritic</dd>
+            </div>
+            <div>
+                <dt>@Strings.RiskEngineName</dt>
+                <dd>@Strings.RecordRiskEngine</dd>
+            </div>
+        </dl>
+        <div class="record-outcome">
+            <p class="verdict">@Strings.RecordVerdict</p>
+            <p>@Strings.RecordOutcome</p>
+        </div>
+    </figure>
+</div>
+
+<section id="notices" class="band" tabindex="-1">
+    <div class="page">
+        <MandatoryNotices />
+    </div>
+</section>
+
+<section id="how-it-works" class="page section steps-section" tabindex="-1">
+    <div>
+        <h2>@Strings.StepsHeading</h2>
+        <p class="section-intro">@Strings.StepsIntro</p>
+    </div>
+    <ol class="steps">
+        <li>
+            <h3>@Strings.StepReconcile</h3>
+            <p>@Strings.StepReconcileBody</p>
+        </li>
+        <li>
+            <h3>@Strings.StepCollect</h3>
+            <p>@Strings.StepCollectBody</p>
+        </li>
+        <li>
+            <h3>@Strings.StepAnalyze</h3>
+            <p>@Strings.StepAnalyzeBody</p>
+        </li>
+        <li>
+            <h3>@Strings.StepPropose</h3>
+            <p>@Strings.StepProposeBody</p>
+        </li>
+        <li>
+            <h3>@Strings.StepChallenge</h3>
+            <p>@Strings.StepChallengeBody</p>
+        </li>
+        <li class="step-decisive">
+            <h3>@Strings.StepEnforce</h3>
+            <p>@Strings.StepEnforceBody</p>
+        </li>
+        <li>
+            <h3>@Strings.StepExecute</h3>
+            <p>@Strings.StepExecuteBody</p>
+        </li>
+    </ol>
+</section>
+
+<section class="page section">
+    <h2>@Strings.RolesHeading</h2>
+    <p class="section-intro">@Strings.RolesIntro</p>
+    <table class="roles">
+        <thead>
+            <tr>
+                <th scope="col">@Strings.RolesColumnRole</th>
+                <th scope="col">@Strings.RolesColumnJob</th>
+                <th scope="col">@Strings.RolesColumnProvider</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <th scope="row">@Strings.RoleTechnicalAnalyst</th>
+                <td>@Strings.RoleTechnicalAnalystJob</td>
+                <td>@Strings.ProviderGoogle</td>
+            </tr>
+            <tr>
+                <th scope="row">@Strings.RoleSentimentAnalyst</th>
+                <td>@Strings.RoleSentimentAnalystJob</td>
+                <td>@Strings.ProviderXai</td>
+            </tr>
+            <tr>
+                <th scope="row">@Strings.RoleStrategist</th>
+                <td>@Strings.RoleStrategistJob</td>
+                <td>@Strings.ProviderOpenAi</td>
+            </tr>
+            <tr>
+                <th scope="row">@Strings.RoleRiskCritic</th>
+                <td>@Strings.RoleRiskCriticJob</td>
+                <td>@Strings.ProviderAnthropic</td>
+            </tr>
+            <tr>
+                <th scope="row">@Strings.RoleReviewer</th>
+                <td>@Strings.RoleReviewerJob</td>
+                <td>@Strings.ProviderGoogle</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="page section">
+    <h2>@Strings.PrinciplesHeading</h2>
+    <ul class="principles">
+        <li>
+            <h3>@Strings.PrincipleStops</h3>
+            <p>@Strings.PrincipleStopsBody</p>
+        </li>
+        <li>
+            <h3>@Strings.PrincipleDemo</h3>
+            <p>@Strings.PrincipleDemoBody</p>
+        </li>
+        <li>
+            <h3>@Strings.PrincipleTrace</h3>
+            <p>@Strings.PrincipleTraceBody</p>
+        </li>
+        <li>
+            <h3>@Strings.PrincipleKeys</h3>
+            <p>@Strings.PrincipleKeysBody</p>
+        </li>
+    </ul>
+</section>

@@ -1,12 +1,16 @@
 ﻿@using Ecnanib.Endpoints.Security
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="@Strings.HtmlLanguage">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @* Before the stylesheet loads, so the browser's first paint doesn't flash the wrong theme (FR-PREF-03). *@
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="@Strings.MetaDescription" />
     <base href="/" />
+    <link rel="icon" type="image/svg+xml" href="@Assets["brand/mark.svg"]" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Ecnanib.styles.css"]" />
@@ -18,6 +22,7 @@
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script type="module" src="@Assets["shell.js"]"></script>
 </body>
 
 </html>

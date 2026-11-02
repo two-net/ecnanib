@@ -4,6 +4,17 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
+  <!-- EXT-UI-02. Generates the Strings class at build time, so a missing key doesn't compile. -->
+  <ItemGroup>
+    <EmbeddedResource Update="Components\Strings.resx">
+      <StronglyTypedLanguage>CSharp</StronglyTypedLanguage>
+      <StronglyTypedNamespace>Ecnanib.Components</StronglyTypedNamespace>
+      <StronglyTypedManifestPrefix>Ecnanib.Components</StronglyTypedManifestPrefix>
+      <StronglyTypedClassName>Strings</StronglyTypedClassName>
+      <StronglyTypedFileName>$(IntermediateOutputPath)Strings.g.cs</StronglyTypedFileName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14">

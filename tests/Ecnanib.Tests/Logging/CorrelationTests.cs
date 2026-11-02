@@ -109,7 +109,7 @@ public sealed class CorrelationTests(PostgresFixture postgres)
         var handlerEvent = Assert.Single(app.FileEvents(), entry => CategoryOf(entry).EndsWith("ExceptionHandlerMiddleware", StringComparison.Ordinal));
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Contains("An error occurred", await response.Content.ReadAsStringAsync(Cancellation), StringComparison.Ordinal);
+        Assert.Contains("The server hit an error", await response.Content.ReadAsStringAsync(Cancellation), StringComparison.Ordinal);
         Assert.Equal(id, CorrelationIdOf(RequestEvent(app)));
         Assert.Equal(id, CorrelationIdOf(handlerEvent));
     }

@@ -1,0 +1,65 @@
+.nav-toggle {
+    padding: 0.5rem 0.875rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: none;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+
+/* Fixed by the browser, so it opens below the header rather than in the middle of the window. */
+.nav {
+    inset: 4.5rem var(--gutter) auto auto;
+    min-width: 12rem;
+    margin: 0;
+    padding: 0.5rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+    color: var(--text);
+}
+
+    .nav:popover-open {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .nav a {
+        padding: 0.625rem 0.75rem;
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        text-decoration: none;
+    }
+
+        .nav a:hover {
+            color: var(--accent);
+            text-decoration: underline;
+        }
+
+/* An ordinary row of links. Every popover property is reset, so the attribute has no effect here. */
+@media (min-width: 1024px) {
+    .nav-toggle {
+        display: none;
+    }
+
+    .nav {
+        display: flex;
+        position: static;
+        flex-wrap: wrap;
+        gap: 0.25rem 1.5rem;
+        width: auto;
+        min-width: 0;
+        height: auto;
+        padding: 0;
+        border: 0;
+        overflow: visible;
+        background: none;
+    }
+
+        .nav a {
+            padding: 0.25rem 0;
+        }
+}

@@ -1,0 +1,20 @@
+.notices-heading {
+    margin-block-end: 1.5rem;
+}
+
+.notices {
+    display: grid;
+    gap: 1.5rem;
+}
+
+    .notices h3 {
+        margin-block-end: 0.5rem;
+        color: var(--caution);
+    }
+
+@media (min-width: 1024px) {
+    .notices {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 3rem;
+    }
+}

@@ -7,25 +7,33 @@
             <div></div>
         </div>
         <p class="components-reconnect-first-attempt-visible">
-            Rejoining the server...
+            @Strings.ReconnectFirstAttempt
         </p>
         <p class="components-reconnect-repeated-attempt-visible">
-            Rejoin failed... trying again in <span id="components-seconds-to-next-attempt"></span> seconds.
+            @_retrying[0]<span id="components-seconds-to-next-attempt"></span>@_retrying[1]
         </p>
         <p class="components-reconnect-failed-visible">
-            Failed to rejoin.<br />Please retry or reload the page.
+            @Strings.ReconnectFailed
         </p>
         <button id="components-reconnect-button" class="components-reconnect-failed-visible">
-            Retry
+            @Strings.ReconnectRetry
         </button>
         <p class="components-pause-visible">
-            The session has been paused by the server.
+            @Strings.ReconnectPaused
         </p>
         <p class="components-resume-failed-visible">
-            Failed to resume the session.<br />Please retry or reload the page.
+            @Strings.ReconnectResumeFailed
         </p>
         <button id="components-resume-button" class="components-pause-visible components-resume-failed-visible">
-            Resume
+            @Strings.ReconnectResume
         </button>
     </div>
 </dialog>
+
+@code {
+    /// <summary>
+    /// One value, so that a translation can move the number. It splits around {0} because blazor.web.js
+    /// writes the countdown into the span by its ID.
+    /// </summary>
+    private readonly string[] _retrying = Strings.ReconnectRetrying.Split("{0}");
+}

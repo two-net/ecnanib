@@ -355,17 +355,18 @@ TLS can end at a reverse proxy (NFR-SEC-01). `X-Forwarded-For` and `X-Forwarded-
 `SecurityHeadersMiddleware` sets these on every response that reaches it, including static assets, 404, 429, redirects and the error page:
 
 ```text
-Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{n}'; style-src 'self'; img-src 'self' data:;
+Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{n}'; style-src 'self'; img-src 'self';
                          connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 X-Frame-Options: DENY
 X-Content-Type-Options: nosniff
 Referrer-Policy: same-origin
 ```
 
-- **`script-src`:** `'self'` covers `blazor.web.js` and the reconnect module. The nonce is for the inline import map `<ImportMap />` renders. An inline script of your own needs `nonce="@SecurityHeadersMiddleware.NonceOf(HttpContext)"`, which only works in `App.razor`, because an interactive component has no `HttpContext`. `strict-dynamic` isn't an option: it turns off `'self'`.
+- **`script-src`:** `'self'` covers `blazor.web.js`, the reconnect module and `shell.js`. The nonce is for the inline import map `<ImportMap />` renders. An inline script of your own needs `nonce="@SecurityHeadersMiddleware.NonceOf(HttpContext)"`, which only works in `App.razor`, because an interactive component has no `HttpContext`. `strict-dynamic` isn't an option: it turns off `'self'`.
 - **`connect-src 'self'`** covers the SignalR WebSocket: under CSP 3 `'self'` matches `wss:` on the same origin. Development adds `ws://localhost:*` and `wss://localhost:*`, for `dotnet watch`.
 - **`style-src 'self'`** blocks `<style>` blocks and `style=` attributes. CSS isolation and `.style.x = ...` from a script still work. See [the constraint](#constraints-for-later-issues) for `Virtualize`.
-- **`img-src data:`** is for the image in `app.css`. `base-uri 'self'` rather than `'none'`, because `App.razor` has a `<base>`.
+- **`default-src 'self'`** also covers fonts, so they have to be self-hosted.
+- **`base-uri 'self'`** rather than `'none'`, because `App.razor` has a `<base>`.
 - **Headers are assigned, not appended.** That replaces the `frame-ancestors 'self'` policy interactive rendering adds, and the `X-Frame-Options: SAMEORIGIN` antiforgery adds. A browser enforces every policy it receives, so two would be harmless but misleading.
 - **`same-origin`** stops a `token=` link leaking to another site. `no-referrer` would also do that, but it makes a browser send `Origin: null` on a form POST.
 - **The nonce is in `HttpContext.Items`, not a scoped service,** because the error and status pages run in a new scope.
@@ -429,10 +430,73 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 
 `DatabaseHealthCheck` uses the interpolated form so that the ban has no exceptions.
 
+## Web UI
+
+`Components/` holds the interface, and every page renders inside `Layout/MainLayout`: a skip link, a header with the wordmark and `NavMenu`, `<main>`, and a footer. There's one layout because nothing needs a second yet. The first signed-in page decides whether one does.
+
+### Adding a page
+
+1. Add the component to `Components/Pages`, with a `<PageTitle>` and an `<h1>`, which is where focus lands after navigating.
+2. Put each section in `.page`, which sets the width and gutters. Everything else goes in the component's isolated CSS.
+3. Put its text in `Components/Strings.resx`, and write `@Strings.Key`.
+4. Add its link to `Layout/NavMenu.razor`. Link only to pages that exist, so a link appears in the same change as its page.
+
+### Text
+
+All user-facing text is in `Strings.resx` (EXT-UI-02). The build generates the `Strings` class from it, so a missing key doesn't compile, where `IStringLocalizer` would show the key to the user. A translation is a `Strings.<culture>.resx` beside it, plus a way to choose the culture, which version 1 doesn't need. `lang` on `<html>` comes from the same file, so it follows the text.
+
+- **A sentence with an element inside it is one value,** with `{0}` where the element goes, so a translation can move it. Split it around `{0}`, as `ReconnectModal` does, because `MarkupString` is banned.
+- **A key can't be named `Culture` or `ResourceManager`.** Those are the generated class's own members, so the key is skipped with a warning, which fails CI.
+- **Razor encodes everything outside ASCII, and apostrophes,** so a test that reads a page has to decode it first.
+
+`UserFacingText` scans compiled components, as [`BannedApis`](#owasp) does, and `UserFacingTextGuardTests` proves it against broken fixtures. It reads literal text in markup and child content, and `aria-label`, `title`, `alt` and `placeholder` on elements and components. **It can't see these, so check them in review:**
+
+- A CSS `content:` value. That's why the template's `.blazor-error-boundary` rule was removed, so an `ErrorBoundary` now shows nothing until you give it `ErrorContent`.
+- A string passed to any other component parameter, because most of those are routes, classes and selectors.
+- Text in a field, a helper method or a script.
+
+### Notices
+
+`Notices/MandatoryNotices.razor` holds the three EXT-UI-03 notices. The landing page shows them directly below the hero, and the footer repeats the short form on every page, which is what CON-14 asks for. `LandingPageTests` and `ShellTests` check the exact phrases, so rewording one fails a test. Their wording is a draft until the legal review (#58).
+
+CON-14 also rules out imitating Binance's trade dress, which no test can judge, so **check it in review**: the name stays in title case, nothing uses yellow, gold or amber, and no mark uses diamonds or rotated squares.
+
+### Theme and layout
+
+`wwwroot/app.css` holds the tokens. Each color is `light-dark(light, dark)`, so the side follows `color-scheme`, and the operating system's theme applies live with no script (FR-PREF-01, FR-PREF-02). The `color-scheme` meta tag in `App.razor` covers the moment before the stylesheet loads.
+
+- **Use a token, never a color.** A fixed background under a dark `color-scheme` leaves light text on it, which is what the template's reconnect modal did.
+- **Keep green and red free** for profit and loss, and don't use color alone for direction (FR-ANI-03).
+- **Breakpoints are phone under 600px, tablet from 600px and desktop from 1024px.** A media query can't read a variable, so each stylesheet repeats them.
+- **Fonts are in `wwwroot/fonts` with their OFL licences:** Zilla Slab for headings and IBM Plex Mono for records and data. Body text uses `system-ui`. Add a weight only when a page needs it, because each is a download.
+
+### Links and focus
+
+Blazor's events can't drive the shell's links: `@onclick` does nothing until the circuit connects, and the error page never has a circuit. So `wwwroot/shell.js` has one click listener, in the capture phase, which runs before `blazor.web.js`. A link in an open popover closes it. A link to an element on the current page focuses that element, because `blazor.web.js` only scrolls to it, and focus would stay behind.
+
+- **`<base href="/">` makes `#x` mean the landing page.** The script treats a bare `#x` as the current page, so use that only for something on every page, such as `#main`. Write `/#x` for a section of the landing page.
+- **A link target needs `tabindex="-1"`,** or it can't take focus.
+- **The menu is a native popover,** which brings Esc, click-outside and focus return. From 1024px, CSS undoes the popover and shows it as a row. A menu opened before the circuit connects closes when it connects, because Blazor replaces the prerendered DOM. That window is short, so this is accepted.
+- **`FocusOnNavigate` is only rendered after the first page change,** because it would otherwise pull focus past the skip link when the circuit connects.
+
+### What was checked by hand
+
+Layout and focus need a browser, and CI doesn't have one. These were checked in Chromium and WebKit, in Development and in a published build over TLS:
+
+- No horizontal scroll at 375, 768 and 1280px, in both themes, with no console errors
+- The skip link, the menu, and links from another page, including with `blazor.web.js` blocked, which is how the error page behaves
+- The theme following the operating system live, and the fonts loading under the CSP
+
+The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
+
 ## Constraints for later issues
 
-- **The UI (#8, #15, #41, #42, #52, #53):** no inline scripts, `<style>` blocks, `style=` attributes or `onclick=` handlers: the [CSP](#headers) blocks them all, and the failure is a console message and a silently broken page. Use classes, isolated CSS and script files. A theme applied before first paint (FR-PREF-03) can be an attribute that `App.razor` renders on `<html>`, plus a media query for System, with no script at all. `Virtualize` renders `style=` attributes, so the first change that uses it adds `style-src-attr 'unsafe-inline'`, which is narrower than loosening `style-src`.
-- **Authentication (#9):** call `UseAuthentication` and `UseAuthorization` explicitly, after `UseCorrelation`, in the slots in [Pipeline order](#pipeline-order). Otherwise `WebApplication` inserts them before user middleware, and their events have no correlation ID, and the limiter can't see the account. Use `ClaimTypes.NameIdentifier`. Put `.RequireRateLimiting(RateLimits.Authentication)` on the sign-in and registration endpoints. Post them as forms, or `CsrfTests` fails. Set a fallback authorization policy, so a new page is private by default. Keep `RateLimitTests` honest with one test through the real sign-in: its account tests use a stand-in principal.
+- **The UI (#15, #41, #42, #52, #53):** no inline scripts, `<style>` blocks, `style=` attributes or `onclick=` handlers: the [CSP](#headers) blocks them all, and the failure is a console message and a silently broken page. Use classes, isolated CSS and script files. `Virtualize` renders `style=` attributes, so the first change that uses it adds `style-src-attr 'unsafe-inline'`, which is narrower than loosening `style-src`.
+- **Theme preferences (#15):** render `data-theme` on `<html>` from the preference, and add a rule in `app.css` that sets `color-scheme` to match. The tokens follow, with no script. Render the [`color-scheme` meta tag](#theme-and-layout) from the preference too, or Light can flash dark before the stylesheet loads.
+- **Animation (#52):** the reconnect modal's animations are the only motion so far, and they ignore the preference and the operating system's reduced motion setting (AC-06).
+- **Authentication (#9):** call `UseAuthentication` and `UseAuthorization` explicitly, after `UseCorrelation`, in the slots in [Pipeline order](#pipeline-order). Otherwise `WebApplication` inserts them before user middleware, and their events have no correlation ID, and the limiter can't see the account. Use `ClaimTypes.NameIdentifier`. Put `.RequireRateLimiting(RateLimits.Authentication)` on the sign-in and registration endpoints. Post them as forms, or `CsrfTests` fails. Set a fallback authorization policy, so a new page is private by default. Keep `RateLimitTests` honest with one test through the real sign-in: its account tests use a stand-in principal. Render `MandatoryNotices` on the registration page: EXT-UI-03 requires it, though #9 doesn't list it. Add the sign-in and registration links to `NavMenu` and the landing page, which has no call to action until then.
+- **Switching to Live (#39):** render `MandatoryNotices` in the flow (EXT-UI-03).
+- **Legal review (#58):** review the notices in `Strings.resx`, which are drafts. If you change a phrase that EXT-UI-03 quotes, change the tests that check it.
 - **Sessions and two-factor (#10, #14):** a password or TOTP code checked on a circuit needs its own [per-account throttle](#circuits). The HTTP limiter can't see it.
 - **Audit (#11):** must sit below every module that writes to it, and take the caller's context. See [Persistence](#persistence). Store `ICorrelationContext.CurrentId`, which is null outside a request, circuit action, cycle or job. `RemoteIpAddress` is the client's address once `UseForwardedHeaders` has run, but a circuit has no request to read it from, so FR-AUD-02 needs it captured when the circuit starts.
 - **Sign-in and email links (#9, #13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Set `LogProperties.UserId` in a scope. Build links from `App:PublicBaseUrl`, never from `Host`, which a client chooses. Throttle reset requests per address too, because the limiter only sees the sender's IP.

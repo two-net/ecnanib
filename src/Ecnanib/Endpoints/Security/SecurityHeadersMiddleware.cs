@@ -52,7 +52,7 @@ internal sealed class SecurityHeadersMiddleware(RequestDelegate next, IHostEnvir
         "default-src 'self'; "
         + $"script-src 'self' 'nonce-{nonce}'; "
         + "style-src 'self'; "
-        + "img-src 'self' data:; "
+        + "img-src 'self'; "
         + $"connect-src {_connectSources}; "
         + "object-src 'none'; "
         + "base-uri 'self'; "

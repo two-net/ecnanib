@@ -156,7 +156,7 @@ public sealed partial class SecurityHeaderTests(PostgresFixture postgres)
     private static void AssertHeaders(HttpResponseMessage response)
     {
         Assert.Equal(
-            $"default-src 'self'; script-src 'self' 'nonce-{NonceOf(response)}'; style-src 'self'; img-src 'self' data:; "
+            $"default-src 'self'; script-src 'self' 'nonce-{NonceOf(response)}'; style-src 'self'; img-src 'self'; "
                 + "connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
             PolicyOf(response));
         Assert.Equal("DENY", Assert.Single(response.Headers.GetValues("X-Frame-Options")));

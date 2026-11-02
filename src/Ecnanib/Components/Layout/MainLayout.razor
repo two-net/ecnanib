@@ -1,9 +1,29 @@
 ﻿@inherits LayoutComponentBase
 
-@Body
+<div class="shell">
+    <a class="skip-link" href="#main">@Strings.ShellSkipToContent</a>
+
+    <header class="shell-header">
+        <div class="page shell-bar">
+            <a class="wordmark" href="/" aria-label="@Strings.ShellHomeLink">@Strings.ProductName</a>
+            <NavMenu />
+        </div>
+    </header>
+
+    <main id="main" tabindex="-1">
+        @Body
+    </main>
+
+    <footer class="shell-footer">
+        <p class="page">
+            @Strings.FooterNotice
+            <a href="/#notices">@Strings.FooterRisksLink</a>
+        </p>
+    </footer>
+</div>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <p>@Strings.AppErrorMessage</p>
+    <a href="." class="reload">@Strings.AppErrorReload</a>
+    <button type="button" class="dismiss">@Strings.AppErrorDismiss</button>
 </div>

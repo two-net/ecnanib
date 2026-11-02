@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="HtmlLanguage" xml:space="preserve">
+    <value>en</value>
+    <comment>The language of this file, as an HTML lang value. A translation changes it too.</comment>
+  </data>
+  <data name="ProductName" xml:space="preserve">
+    <value>Ecnanib</value>
+    <comment>CON-14: title case, never capitals.</comment>
+  </data>
+  <data name="MetaDescription" xml:space="preserve">
+    <value>Ecnanib runs AI trading agents on Binance. AI models propose each trade, and deterministic rules decide whether an order is sent.</value>
+  </data>
+  <data name="GoHome" xml:space="preserve">
+    <value>Go to the home page</value>
+  </data>
+
+  <data name="ShellSkipToContent" xml:space="preserve">
+    <value>Skip to content</value>
+  </data>
+  <data name="ShellHomeLink" xml:space="preserve">
+    <value>Ecnanib home page</value>
+  </data>
+  <data name="NavLabel" xml:space="preserve">
+    <value>Main</value>
+    <comment>Screen readers announce this as the name of the navigation landmark.</comment>
+  </data>
+  <data name="NavMenu" xml:space="preserve">
+    <value>Menu</value>
+  </data>
+  <data name="NavHowItWorks" xml:space="preserve">
+    <value>How it works</value>
+  </data>
+  <data name="NavRisks" xml:space="preserve">
+    <value>Risks</value>
+  </data>
+  <data name="FooterNotice" xml:space="preserve">
+    <value>Ecnanib is not financial advice, and it is not affiliated with or endorsed by Binance. Automated trading can lose money.</value>
+    <comment>EXT-UI-03 and CON-14, on every page. Keep the phrases "not financial advice" and "not affiliated with or endorsed by Binance". Pending legal review in #58.</comment>
+  </data>
+  <data name="FooterRisksLink" xml:space="preserve">
+    <value>Read the risks</value>
+  </data>
+
+  <data name="AppErrorMessage" xml:space="preserve">
+    <value>This page stopped working. Reload it to continue.</value>
+  </data>
+  <data name="AppErrorReload" xml:space="preserve">
+    <value>Reload</value>
+  </data>
+  <data name="AppErrorDismiss" xml:space="preserve">
+    <value>Dismiss</value>
+  </data>
+
+  <data name="ReconnectFirstAttempt" xml:space="preserve">
+    <value>Reconnecting to the server…</value>
+  </data>
+  <data name="ReconnectRetrying" xml:space="preserve">
+    <value>Couldn't reconnect. Trying again in {0} seconds.</value>
+    <comment>{0} is the number of seconds, which updates as it counts down.</comment>
+  </data>
+  <data name="ReconnectFailed" xml:space="preserve">
+    <value>Couldn't reconnect. Retry, or reload the page.</value>
+  </data>
+  <data name="ReconnectRetry" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="ReconnectPaused" xml:space="preserve">
+    <value>The server paused this session.</value>
+  </data>
+  <data name="ReconnectResumeFailed" xml:space="preserve">
+    <value>Couldn't resume the session. Resume again, or reload the page.</value>
+  </data>
+  <data name="ReconnectResume" xml:space="preserve">
+    <value>Resume</value>
+  </data>
+
+  <data name="NotFoundPageTitle" xml:space="preserve">
+    <value>Page not found – Ecnanib</value>
+  </data>
+  <data name="NotFoundHeading" xml:space="preserve">
+    <value>Page not found</value>
+  </data>
+  <data name="NotFoundMessage" xml:space="preserve">
+    <value>This address doesn't match any page. Check it, or start from the home page.</value>
+  </data>
+
+  <data name="ErrorPageTitle" xml:space="preserve">
+    <value>Error – Ecnanib</value>
+  </data>
+  <data name="ErrorHeading" xml:space="preserve">
+    <value>This page couldn't load</value>
+  </data>
+  <data name="ErrorMessage" xml:space="preserve">
+    <value>The server hit an error while handling this request. Try again, or start from the home page.</value>
+  </data>
+  <data name="ErrorRequestId" xml:space="preserve">
+    <value>Request ID:</value>
+  </data>
+
+  <data name="LandingPageTitle" xml:space="preserve">
+    <value>Ecnanib – AI proposes, rules decide</value>
+  </data>
+  <data name="LandingHeadline" xml:space="preserve">
+    <value>AI proposes. Rules decide.</value>
+  </data>
+  <data name="LandingIntro" xml:space="preserve">
+    <value>Ecnanib runs trading agents on Binance Spot and USDⓈ-M Futures. A council of AI models works through each decision, using your own API keys. Deterministic rules then decide whether an order is sent.</value>
+  </data>
+
+  <data name="RecordCaption" xml:space="preserve">
+    <value>An example, not a real trade.</value>
+  </data>
+  <data name="RecordSubject" xml:space="preserve">
+    <value>BTCUSDT · Futures · 1H · Demo</value>
+  </data>
+  <data name="RecordTechnical" xml:space="preserve">
+    <value>The long is below entry. Support is holding.</value>
+  </data>
+  <data name="RecordSentiment" xml:space="preserve">
+    <value>Neutral. No major news.</value>
+  </data>
+  <data name="RecordStrategist" xml:space="preserve">
+    <value>Add to the long at support.</value>
+  </data>
+  <data name="RecordRiskCritic" xml:space="preserve">
+    <value>Approved, at half size.</value>
+  </data>
+  <data name="RecordRiskEngine" xml:space="preserve">
+    <value>Rejected. Adding to a position at a loss isn't allowed.</value>
+  </data>
+  <data name="RecordVerdict" xml:space="preserve">
+    <value>Blocked by Risk Engine</value>
+  </data>
+  <data name="RecordOutcome" xml:space="preserve">
+    <value>No order sent.</value>
+  </data>
+
+  <data name="NoticesHeading" xml:space="preserve">
+    <value>Before you trade</value>
+  </data>
+  <data name="NoticeRiskHeading" xml:space="preserve">
+    <value>Risk disclosure</value>
+    <comment>EXT-UI-03. Pending legal review in #58.</comment>
+  </data>
+  <data name="NoticeRiskBody" xml:space="preserve">
+    <value>Automated cryptocurrency trading can lose money, including all the capital you give an agent. AI models can make decisions that look reasonable and still lose. Past results don't predict future ones, and Demo results don't predict Live ones.</value>
+    <comment>EXT-UI-03. Pending legal review in #58.</comment>
+  </data>
+  <data name="NoticeAdviceHeading" xml:space="preserve">
+    <value>Not financial advice</value>
+    <comment>EXT-UI-03. Pending legal review in #58.</comment>
+  </data>
+  <data name="NoticeAdviceBody" xml:space="preserve">
+    <value>Ecnanib is not financial advice, and neither is anything an agent or AI model produces. You decide whether to trade, and you're responsible for the outcome.</value>
+    <comment>EXT-UI-03. Keep the phrase "not financial advice". Pending legal review in #58.</comment>
+  </data>
+  <data name="NoticeAffiliationHeading" xml:space="preserve">
+    <value>Not affiliated with Binance</value>
+    <comment>EXT-UI-03 and CON-14. Pending legal review in #58.</comment>
+  </data>
+  <data name="NoticeAffiliationBody" xml:space="preserve">
+    <value>Ecnanib is not affiliated with or endorsed by Binance. It connects to Binance through API keys you create in your own account.</value>
+    <comment>EXT-UI-03 and CON-14. Keep the phrase "not affiliated with or endorsed by Binance". Pending legal review in #58.</comment>
+  </data>
+
+  <data name="StepsHeading" xml:space="preserve">
+    <value>How a decision is made</value>
+  </data>
+  <data name="StepsIntro" xml:space="preserve">
+    <value>A cycle runs each time a candle closes on the agent's timeframe.</value>
+  </data>
+  <data name="StepReconcile" xml:space="preserve">
+    <value>Reconcile</value>
+  </data>
+  <data name="StepReconcileBody" xml:space="preserve">
+    <value>The agent checks its positions and orders against Binance.</value>
+  </data>
+  <data name="StepCollect" xml:space="preserve">
+    <value>Collect</value>
+  </data>
+  <data name="StepCollectBody" xml:space="preserve">
+    <value>It gathers market data and computes indicators.</value>
+  </data>
+  <data name="StepAnalyze" xml:space="preserve">
+    <value>Analyze</value>
+  </data>
+  <data name="StepAnalyzeBody" xml:space="preserve">
+    <value>The Technical Analyst and Sentiment Analyst work in parallel.</value>
+  </data>
+  <data name="StepPropose" xml:space="preserve">
+    <value>Propose</value>
+  </data>
+  <data name="StepProposeBody" xml:space="preserve">
+    <value>The Strategist turns both analyses into a trade, or holds.</value>
+  </data>
+  <data name="StepChallenge" xml:space="preserve">
+    <value>Challenge</value>
+  </data>
+  <data name="StepChallengeBody" xml:space="preserve">
+    <value>The Risk Critic approves, modifies or rejects the proposal.</value>
+  </data>
+  <data name="StepEnforce" xml:space="preserve">
+    <value>Enforce</value>
+  </data>
+  <data name="StepEnforceBody" xml:space="preserve">
+    <value>The Risk Engine sizes the order and applies hard limits. AI output can't bypass it.</value>
+  </data>
+  <data name="StepExecute" xml:space="preserve">
+    <value>Execute</value>
+  </data>
+  <data name="StepExecuteBody" xml:space="preserve">
+    <value>The order goes to Binance, or waits for your approval in Confirm mode.</value>
+  </data>
+
+  <data name="RolesHeading" xml:space="preserve">
+    <value>The council</value>
+  </data>
+  <data name="RolesIntro" xml:space="preserve">
+    <value>You choose the provider and model for each role, per agent. One provider can fill every role.</value>
+  </data>
+  <data name="RolesColumnRole" xml:space="preserve">
+    <value>Role</value>
+  </data>
+  <data name="RolesColumnJob" xml:space="preserve">
+    <value>What it does</value>
+  </data>
+  <data name="RolesColumnProvider" xml:space="preserve">
+    <value>Default provider</value>
+  </data>
+  <data name="RoleTechnicalAnalyst" xml:space="preserve">
+    <value>Technical Analyst</value>
+  </data>
+  <data name="RoleTechnicalAnalystJob" xml:space="preserve">
+    <value>Analyzes price action, indicators and higher-timeframe structure</value>
+  </data>
+  <data name="RoleSentimentAnalyst" xml:space="preserve">
+    <value>Sentiment Analyst</value>
+  </data>
+  <data name="RoleSentimentAnalystJob" xml:space="preserve">
+    <value>Assesses current news and social sentiment</value>
+  </data>
+  <data name="RoleStrategist" xml:space="preserve">
+    <value>Strategist</value>
+  </data>
+  <data name="RoleStrategistJob" xml:space="preserve">
+    <value>Combines the analyses into a trade proposal</value>
+  </data>
+  <data name="RoleRiskCritic" xml:space="preserve">
+    <value>Risk Critic</value>
+  </data>
+  <data name="RoleRiskCriticJob" xml:space="preserve">
+    <value>Challenges the proposal</value>
+  </data>
+  <data name="RoleReviewer" xml:space="preserve">
+    <value>Reviewer</value>
+  </data>
+  <data name="RoleReviewerJob" xml:space="preserve">
+    <value>Writes a lesson after each trade closes</value>
+  </data>
+  <data name="RiskEngineName" xml:space="preserve">
+    <value>Risk Engine</value>
+  </data>
+  <data name="ProviderGoogle" xml:space="preserve">
+    <value>Google Gemini</value>
+  </data>
+  <data name="ProviderXai" xml:space="preserve">
+    <value>xAI Grok</value>
+  </data>
+  <data name="ProviderOpenAi" xml:space="preserve">
+    <value>OpenAI GPT</value>
+  </data>
+  <data name="ProviderAnthropic" xml:space="preserve">
+    <value>Anthropic Claude</value>
+  </data>
+
+  <data name="PrinciplesHeading" xml:space="preserve">
+    <value>Ground rules</value>
+  </data>
+  <data name="PrincipleStops" xml:space="preserve">
+    <value>Stops live on the exchange</value>
+  </data>
+  <data name="PrincipleStopsBody" xml:space="preserve">
+    <value>Every open position has a stop resting on Binance, so an Ecnanib outage doesn't leave it unprotected.</value>
+  </data>
+  <data name="PrincipleDemo" xml:space="preserve">
+    <value>Demo comes first</value>
+  </data>
+  <data name="PrincipleDemoBody" xml:space="preserve">
+    <value>New agents start in Demo. Going Live takes an explicit opt-in.</value>
+  </data>
+  <data name="PrincipleTrace" xml:space="preserve">
+    <value>Every decision is traceable</value>
+  </data>
+  <data name="PrincipleTraceBody" xml:space="preserve">
+    <value>You can read the inputs, prompts, responses, risk checks and orders behind any cycle.</value>
+  </data>
+  <data name="PrincipleKeys" xml:space="preserve">
+    <value>Your keys, least privilege</value>
+  </data>
+  <data name="PrincipleKeysBody" xml:space="preserve">
+    <value>You bring your own API keys, encrypted at rest. Binance keys that can withdraw funds are rejected.</value>
+  </data>
+</root>

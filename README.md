@@ -2,7 +2,7 @@
 
 AI cryptocurrency trading agents. Ecnanib is a planned free, multi-user web application where users create agents that trade on Binance Spot and Binance USDⓈ-M Futures. Each agent is driven by a council of AI models from Anthropic (Claude), Google (Gemini), OpenAI (GPT) and xAI (Grok), using the user's own API keys.
 
-> **Status: early scaffold.** The repository currently contains the requirements and a Blazor Server app with mostly empty modules, PostgreSQL persistence, tests and a CI pipeline. None of the product features described below are implemented yet.
+> **Status: early scaffold.** The repository currently contains the requirements and a Blazor Server app with a landing page, mostly empty modules, PostgreSQL persistence, tests and a CI pipeline. None of the product features described below are implemented yet.
 
 > **Disclaimer.** Ecnanib is not affiliated with or endorsed by Binance. Nothing it produces is financial advice. Automated cryptocurrency trading can lose money, including through AI decisions that look reasonable.
 
@@ -95,6 +95,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Concern | Choice | State |
 |---|---|---|
 | Web app | ASP.NET Core Blazor Server on .NET 10, interactive across the whole app | In place |
+| Interface | Hand-written CSS with no component library, self-hosted fonts, a System theme, and all text in a resource file | In place |
 | Database | PostgreSQL | In place |
 | Persistence | Entity Framework Core 10 with Npgsql, code-first, with migrations applied at startup and no table partitioning | In place |
 | Logging | Serilog, with console, rolling file and PostgreSQL sinks, and masking in front of all of them | In place |
@@ -235,14 +236,14 @@ Schedules are read from `job_runs`, so restarting doesn't reset them. See [Jobs]
 ├── .config/                Pinned .NET tools, including dotnet-ef
 ├── .github/workflows/      CI pipeline
 ├── src/Ecnanib/            Blazor Server application
-│   ├── Components/         Root component, routes, layout and pages
+│   ├── Components/         Root component, routes, layout, notices, pages and interface text
 │   ├── Endpoints/          HTTP that isn't a page, such as the health endpoints and the security pipeline
 │   ├── Modules/            One folder per module, each with a public Contracts namespace
 │   ├── Platform/           Cross-cutting services, including logging, correlation, jobs, persistence and migrations
 │   ├── Properties/         Local launch profiles
 │   ├── wwwroot/            Static assets
 │   └── Program.cs          Application startup and module registration
-└── tests/Ecnanib.Tests/    Architecture, persistence, logging, health, job, security and smoke tests
+└── tests/Ecnanib.Tests/    Architecture, persistence, logging, health, job, security, UI and smoke tests
 ```
 
 ## Documentation

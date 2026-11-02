@@ -1,6 +1,26 @@
 ﻿<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
         <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        @if (HasChangedPage(routeData.PageType))
+        {
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        }
     </Found>
 </Router>
+
+@code {
+    private Type? _firstPage;
+    private bool _pageChanged;
+
+    /// <summary>
+    /// FocusOnNavigate also fires on the first render, which would pull focus past the skip link and
+    /// the navigation as soon as the circuit connects.
+    /// </summary>
+    private bool HasChangedPage(Type page)
+    {
+        _firstPage ??= page;
+        _pageChanged |= page != _firstPage;
+
+        return _pageChanged;
+    }
+}

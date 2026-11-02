@@ -1,5 +1,10 @@
 ﻿@page "/not-found"
 @layout MainLayout
 
-<h3>Not Found</h3>
-<p>Sorry, the content you are looking for does not exist.</p>
+<PageTitle>@Strings.NotFoundPageTitle</PageTitle>
+
+<div class="page message-page">
+    <h1>@Strings.NotFoundHeading</h1>
+    <p>@Strings.NotFoundMessage</p>
+    <p><a href="/">@Strings.GoHome</a></p>
+</div>
