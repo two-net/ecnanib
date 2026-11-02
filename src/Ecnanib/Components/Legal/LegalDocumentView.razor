@@ -1,0 +1,21 @@
+@using System.Globalization
+
+<article class="page form-page legal-document">
+    <h1>@Title</h1>
+    <p class="field-hint">@VersionLine</p>
+    <p class="form-notice">@Strings.LegalDraftNotice</p>
+    @ChildContent
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public string Version { get; set; } = default!;
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private string VersionLine => string.Format(CultureInfo.CurrentCulture, Strings.LegalVersion, Version);
+}

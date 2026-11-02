@@ -21,6 +21,7 @@ public sealed class LogFloorTests(PostgresFixture postgres)
     [InlineData("Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware", LogLevel.Debug, LogLevel.Information)]
     [InlineData("Microsoft.AspNetCore.HttpOverrides.ForwardedHeadersMiddleware", LogLevel.Debug, LogLevel.Information)]
     [InlineData("Microsoft.AspNetCore.WebSockets.WebSocketMiddleware", LogLevel.Debug, LogLevel.Information)]
+    [InlineData("Microsoft.AspNetCore.Http.RequestDelegateFactory", LogLevel.Debug, LogLevel.Information)]
     public async Task Configuration_cant_lower_a_category_below_its_floor(string category, LogLevel below, LogLevel at)
     {
         await using var app = new LoggedApp(

@@ -36,9 +36,10 @@ internal static class TestNetwork
         string? peer = null,
         string? account = null,
         string? forwardedFor = null,
-        string? forwardedProto = null)
+        string? forwardedProto = null,
+        HttpMethod? method = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        using var request = new HttpRequestMessage(method ?? HttpMethod.Get, path);
 
         Add(PeerHeader, peer);
         Add(AccountHeader, account);

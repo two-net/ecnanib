@@ -1,3 +1,4 @@
+using Ecnanib.Tests.Identity;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -8,8 +9,8 @@ using Microsoft.Extensions.Hosting;
 namespace Ecnanib.Tests.Security;
 
 /// <summary>
-/// NFR-SEC-06. The session cookie arrives with #9, so these set cookies of their own. The policy
-/// applies to every cookie, which is what protects that one too.
+/// NFR-SEC-06. Most of these set cookies of their own, because the policy applies to every cookie.
+/// The session cookie is the one that matters, so it has a test through a real sign-in as well.
 /// </summary>
 public sealed class CookieTests(PostgresFixture postgres)
 {
@@ -73,6 +74,25 @@ public sealed class CookieTests(PostgresFixture postgres)
         Assert.Contains("secure", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("samesite=strict", cookie, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>No Expires, so it goes with the browser session, and the server decides how long it lasts.</summary>
+    [Fact]
+    public async Task The_session_cookie_is_secure_and_only_lasts_the_session()
+    {
+        await using var app = AccountApp.Create(postgres, environment: Environments.Production);
+        using var visitor = Visitor.ToPublic(app);
+        var email = Visitor.NewEmail();
+
+        (await visitor.RegisterAsync(email)).Dispose();
+        using var response = await visitor.SignInAsync(email);
+
+        var cookie = Cookie(response, "ecnanib.session");
+
+        Assert.Contains("secure", cookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("samesite=lax", cookie, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("expires", cookie, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

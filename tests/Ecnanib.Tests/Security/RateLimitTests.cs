@@ -1,26 +1,26 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
+using Ecnanib.Tests.Identity;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Ecnanib.Tests.Security;
 
 /// <summary>
-/// NFR-SEC-07. Authentication doesn't exist yet, so these use a stand-in principal and a stand-in
-/// sign-in endpoint. #9 needs a test through the real ones: see docs/architecture.md.
+/// NFR-SEC-07. Most account tests use a stand-in principal, so that each can choose its account. The
+/// two at the end go through a real session and the real sign-in form.
 /// </summary>
 public sealed class RateLimitTests(PostgresFixture postgres)
 {
     private const string RequestsPerMinute = "Security:RateLimits:RequestsPerMinute";
     private const string AuthenticationRequestsPerMinute = "Security:RateLimits:AuthenticationRequestsPerMinute";
     private const string Missing = "/nothing-here";
-    private const string SignIn = "/sign-in-stand-in";
+    private const string SignIn = "/sign-in";
     private const string Negotiate = "/_blazor/negotiate?negotiateVersion=1";
     private const string ClientA = "203.0.113.1";
     private const string ClientB = "203.0.113.2";
@@ -180,36 +180,78 @@ public sealed class RateLimitTests(PostgresFixture postgres)
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
     }
 
-    /// <summary>The stand-in is an endpoint with the metadata RequireRateLimiting would give it.</summary>
+    /// <summary>
+    /// A post without a token still costs a permit, because the limiter runs first. A post is an attempt,
+    /// and viewing the form isn't, or a page view would spend what the form then needs.
+    /// </summary>
     [Fact]
-    public async Task The_authentication_policy_is_stricter_and_applies_per_address()
+    public async Task The_authentication_policy_is_stricter_applies_per_address_and_counts_attempts_only()
     {
         await using var app = new AppFactory(
             postgres.NewConnectionString(),
-            services =>
-            {
-                services.AddTestNetwork();
-                services.AddTransient<IStartupFilter>(_ => new OuterMiddleware(context =>
-                {
-                    if (context.Request.Path == SignIn)
-                    {
-                        context.SetEndpoint(StandInSignIn());
-                    }
-                }));
-            },
+            services => services.AddTestNetwork(),
             new Dictionary<string, string?> { [RequestsPerMinute] = "100", [AuthenticationRequestsPerMinute] = "2" });
         using var client = app.CreateClient();
 
-        (await client.SendFromAsync(SignIn, ClientA)).Dispose();
-        (await client.SendFromAsync(SignIn, ClientA)).Dispose();
+        (await client.SendFromAsync(SignIn, ClientA, method: HttpMethod.Post)).Dispose();
+        (await client.SendFromAsync(SignIn, ClientA, method: HttpMethod.Post)).Dispose();
 
-        using var rejected = await client.SendFromAsync(SignIn, ClientA);
+        using var rejected = await client.SendFromAsync(SignIn, ClientA, method: HttpMethod.Post);
+        using var form = await client.SendFromAsync(SignIn, ClientA);
         using var elsewhere = await client.SendFromAsync(Missing, ClientA);
-        using var other = await client.SendFromAsync(SignIn, ClientB);
+        using var other = await client.SendFromAsync(SignIn, ClientB, method: HttpMethod.Post);
 
         Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, form.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, elsewhere.StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, other.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, other.StatusCode);
+    }
+
+    /// <summary>FR-AUTH-04: a person sent this form, so they get a message rather than a blank page.</summary>
+    [Fact]
+    public async Task A_rejected_attempt_says_why()
+    {
+        await using var app = new AppFactory(
+            postgres.NewConnectionString(),
+            settings: new Dictionary<string, string?> { [AuthenticationRequestsPerMinute] = "1" });
+        using var client = app.CreateClient();
+
+        (await client.PostAsync(SignIn, null, Cancellation)).Dispose();
+        using var rejected = await client.PostAsync(SignIn, null, Cancellation);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.Contains("Too many attempts", await rejected.Content.ReadAsStringAsync(Cancellation), StringComparison.Ordinal);
+    }
+
+    /// <summary>Through a real session, so this fails if the cookie stops carrying the claim the limiter reads.</summary>
+    [Fact]
+    public async Task A_real_session_has_one_limit_across_addresses()
+    {
+        const int Limit = 40;
+
+        await using var app = new AppFactory(
+            postgres.NewConnectionString(),
+            services => services.AddTestNetwork(),
+            new Dictionary<string, string?>
+            {
+                [RequestsPerMinute] = $"{Limit}",
+                [AuthenticationRequestsPerMinute] = "100",
+            });
+        using var visitor = Visitor.To(app);
+        var cookies = visitor.Client;
+
+        await visitor.SignUpAsync();
+
+        var last = HttpStatusCode.OK;
+
+        for (var request = 0; request < Limit + 1 && last != HttpStatusCode.TooManyRequests; request++)
+        {
+            using var response = await cookies.SendFromAsync(Missing, $"203.0.113.{request + 10}");
+
+            last = response.StatusCode;
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, last);
     }
 
     /// <summary>
@@ -305,16 +347,6 @@ public sealed class RateLimitTests(PostgresFixture postgres)
     private static bool IsRejection(JsonElement entry) =>
         entry.GetProperty("Properties").TryGetProperty("StatusCode", out var status)
         && status.GetInt32() == StatusCodes.Status429TooManyRequests;
-
-    private static Endpoint StandInSignIn() =>
-        new(
-            context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status204NoContent;
-                return Task.CompletedTask;
-            },
-            new EndpointMetadataCollection(new EnableRateLimitingAttribute("authentication")),
-            "Stand-in sign-in");
 
     private AppFactory Limited(int requestsPerMinute, Dictionary<string, string?>? settings = null) =>
         new(

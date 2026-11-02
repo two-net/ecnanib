@@ -1,0 +1,80 @@
+@page "/sign-in"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [EnableRateLimiting(RateLimits.Authentication)]
+@inject IAccounts Accounts
+@inject NavigationManager Navigation
+
+<PageTitle>@Strings.SignInPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.SignInHeading</h1>
+
+    @if (Registered == "true")
+    {
+        <p class="form-notice" role="status">@Strings.SignInAfterRegistering</p>
+    }
+
+    @if (_refused)
+    {
+        <p class="form-error" role="alert">@Strings.SignInRefused</p>
+    }
+
+    <EditForm Model="Input" FormName="sign-in" OnSubmit="SubmitAsync" class="form">
+        <div class="field">
+            <label for="email">@Strings.FieldEmail</label>
+            <InputText id="email" type="email" autocomplete="username" required @bind-Value="Input.Email" />
+        </div>
+
+        <div class="field">
+            <label for="password">@Strings.FieldPassword</label>
+            @* Not InputText, which would write the password back into the page after a refusal. *@
+            <input id="password" name="Input.Password" type="password" autocomplete="current-password" required />
+        </div>
+
+        <button type="submit" class="button">@Strings.SignInSubmit</button>
+    </EditForm>
+
+    <p>@Strings.SignInNoAccount <a href="/register">@Strings.SignInRegisterLink</a></p>
+</div>
+
+@code {
+    private bool _refused;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private SignInForm Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    /// <summary>A string, because a bool makes any other value a 500, and anyone can write this query.</summary>
+    [SupplyParameterFromQuery]
+    private string? Registered { get; set; }
+
+    protected override void OnInitialized() => Input ??= new SignInForm();
+
+    private async Task SubmitAsync()
+    {
+        var principal = await Accounts.SignInAsync(Input.Email, Input.Password, HttpContext.RequestAborted);
+
+        if (principal is null)
+        {
+            _refused = true;
+            return;
+        }
+
+        await HttpContext.SignInAsync(principal);
+
+        Navigation.NavigateTo(LocalUrl.Or(ReturnUrl, "/account"));
+    }
+
+    private sealed class SignInForm
+    {
+        public string Email { get; set; } = string.Empty;
+
+        public string Password { get; set; } = string.Empty;
+    }
+}

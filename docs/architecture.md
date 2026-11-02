@@ -74,7 +74,7 @@ In-process events are lost on a crash, so each one needs a recovery path, such a
 
 ## The API
 
-"API" in SRS 2.2 is not a separate module. Pages run on Blazor Server and reach services directly, and the SRS defines no public HTTP API or consumer of one. Module `Contracts` are the application's API, and `Endpoints/` holds the HTTP that really is needed, such as sign-in cookies (NFR-SEC-06), health (NFR-OBS-01) and exports (FR-DATA-03).
+"API" in SRS 2.2 is not a separate module. Pages run on Blazor Server and reach services directly, and the SRS defines no public HTTP API or consumer of one. Module `Contracts` are the application's API, and `Endpoints/` holds the HTTP that really is needed, such as sign-out, health (NFR-OBS-01) and exports (FR-DATA-03). Forms that take a secret are static pages, which are HTTP too: see [Forms that take a secret](#forms-that-take-a-secret).
 
 **After page load, a Blazor circuit doesn't pass through HTTP middleware.** Access rules therefore can't live there: ownership checks (NFR-SEC-04) belong behind module contracts. [Correlation IDs](#correlation-ids) and [rate limiting](#circuits) each have a plan for circuit traffic, and audit fields such as IP address still need one (#11). Request logging doesn't: FR-LOG-06 covers HTTP, so a circuit logs one `/_blazor` request, and activity inside it is logged where it happens, behind module contracts.
 
@@ -172,6 +172,7 @@ Text is matched by name (`password=`), by shape (`Bearer`, `sk-`, 64 alphanumeri
 | `Microsoft.AspNetCore.StaticAssets`, `Microsoft.AspNetCore.StaticFiles` | Information | Log the raw path at Debug |
 | `Microsoft.AspNetCore.HttpOverrides` | Information | Logs a raw `X-Forwarded-For` entry at Debug, which a client chooses |
 | `Microsoft.AspNetCore.WebSockets` | Information | Logs a raw `Origin` at Debug, which a client chooses |
+| `Microsoft.AspNetCore.Http.RequestDelegateFactory` | Information | Logs a raw form or query value at Debug when an endpoint can't bind it |
 
 The list comes from the framework's own log templates, for the features this application uses, so it needs rechecking in two cases. After an ASP.NET Core upgrade, look for new events that carry raw request content. When adding a framework feature, check its events first: `UseHttpLogging` and MVC, for example, log bodies and action arguments, and they aren't on this list because neither is in use. `RequestPath`, which ASP.NET adds to every event in a request, is removed for the same reason.
 
@@ -334,11 +335,11 @@ Anything outside the exception handler runs once per request, so it has to survi
 | `UseWebSockets` | Checks `Origin` on a WebSocket before it reaches the hub |
 | `UseExceptionHandler` | Doesn't run in Development |
 | `UseHsts` | Inside the handler on purpose. It sets the header directly, so outside it the error page would lose the header |
-| `UseAuthentication` (#9) | Goes here. The limiter needs the account, and the handler has to catch a failed session lookup |
+| `UseAuthentication`, through `UseAccountAuthentication` | Goes here. The limiter needs the account, and the handler has to catch a failed session lookup |
 | `UseRateLimiter` | Outside status pages, so a 404 costs one permit, and a 429 with no body doesn't render the 404 page |
 | `UseStatusCodePagesWithReExecute` | |
 | HTTPS redirect, except `/health` | |
-| `UseAuthorization` (#9), `UseAntiforgery` | Inside status pages, so a 401 or 403 renders one. Antiforgery tokens bind to the identity, so it goes after authentication |
+| `UseAuthorization`, `UseAntiforgery` | Inside status pages, so a 403 renders one. Antiforgery tokens bind to the identity, so it goes after authentication |
 
 ### HTTPS
 
@@ -388,7 +389,7 @@ The limiter is global, so a new endpoint is covered without doing anything (NFR-
 | Traffic | Limit |
 |---|---|
 | Anything else, including pages and 404s | `RequestsPerMinute`, per IP address and per account. They're chained, so signing in can't escape the limit per address |
-| Endpoints with `.RequireRateLimiting(RateLimits.Authentication)` | `AuthenticationRequestsPerMinute` per IP address, on top of the above |
+| POSTs to anything marked `[EnableRateLimiting(RateLimits.Authentication)]` | `AuthenticationRequestsPerMinute` per IP address, on top of the above. A static page takes GET and POST on one endpoint, and showing a form isn't an attempt, so only POSTs count. A rejection has a short body, because a person sent it |
 | `/_blazor/negotiate` and any WebSocket upgrade | `RequestsPerMinute`. SignalR accepts a WebSocket that skips negotiation, so counting only negotiation would leave a way around it |
 | Other hub requests | None. Long polling makes one per message on a connection that's already admitted, so a limit would end live sessions |
 | The error page | None. The request was counted already, and a limit here would replace the page with an empty 429 |
@@ -401,7 +402,7 @@ The limiter is global, so a new endpoint is covered without doing anything (NFR-
 - **A rejection is a 429 with `Retry-After` and no log line of its own.** The `Http` event records it at Information. The default of 503 would log an Error per request, and a Warning would still turn a flood into database rows.
 - **It limits rate, not concurrency.** It doesn't cap how many circuits one address holds open.
 
-The sign-in account is in the request body, and a partitioner can't read that. The account limit on sign-in is therefore FR-AUTH-04's lockout (#9), which also survives a restart.
+The sign-in account is in the request body, and a partitioner can't read that. The account limit on sign-in is therefore FR-AUTH-04's [lockout](#lockout), which also survives a restart.
 
 ### Circuits
 
@@ -419,10 +420,10 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 |---|---|---|
 | Injection | EF Core parameterises. Raw SQL APIs are banned, and the interpolated forms parameterise | `BannedApis` |
 | Cross-site scripting | Razor encodes. `MarkupString` is banned, because AI output and user input reach the UI. The CSP has no `unsafe-inline` or `unsafe-eval` | `BannedApis`, `SecurityHeaderTests` |
-| Cross-site request forgery | Antiforgery, SameSite and `form-action 'self'`. Every state-changing endpoint must require a token, and `DisableAntiforgery` is banned. The WebSocket `Origin` check covers the hub | `CsrfTests`, `BannedApis`, `WebSocketTests` |
+| Cross-site request forgery | Antiforgery, SameSite and `form-action 'self'`. Every state-changing endpoint must require a token, proved by posting without one, and `DisableAntiforgery` is banned. The WebSocket `Origin` check covers the hub | `CsrfTests`, `BannedApis`, `WebSocketTests` |
 | Server-side request forgery | Only the adapters may use `HttpClient`, and base URLs come only from the configuration file (NFR-SEC-10) | `BannedApis`, then #17, #18 |
-| Broken access control | Ownership checks behind module contracts, which HTTP can't enforce on a circuit | #9, #55 |
-| Authentication failures | Lockout, password hashing and sessions | #9, #10, #14 |
+| Broken access control | Pages are [private by default](#access-control). Ownership checks go behind module contracts, which HTTP can't enforce on a circuit | `AccessTests`, then #55 |
+| Authentication failures | [Lockout](#lockout), [password hashing](#passwords) and sessions | `LockoutTests`, `PasswordHasherTests`, then #10, #14 |
 | Cryptographic failures | HTTPS, HSTS, Secure cookies. Secrets at rest are #12 | `HttpsTests`, `CookieTests`, #12 |
 | Security misconfiguration | Startup refuses a missing or `http` public address, and validates these settings. `AllowedHosts` is the operator's to set | `WebSecuritySettingsTests`, #57 |
 | Vulnerable components | The dependency scan (NFR-SEC-09) | CI |
@@ -430,13 +431,100 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 
 `DatabaseHealthCheck` uses the interpolated form so that the ban has no exceptions.
 
+## Accounts
+
+`Modules/Identity` owns users, passwords, legal acceptance and who counts as an administrator. It also registers cookie authentication and the authorization policies. The Web UI reaches all of it through `Modules/Identity/Contracts`, which return typed results, because Identity can't use `Strings`.
+
+### Forms that take a secret
+
+**A form that takes a password or other secret is a static page that posts to itself.** That's sign-in, registration and the bootstrap secret. The other ways of hosting one all lose something:
+
+| Approach | Why not |
+|---|---|
+| An interactive `EditForm` | The password crosses the circuit, there's no HTTP response to set a cookie on, and hub traffic never reaches the limiter |
+| A plain form on an interactive page | The first interactive render empties the prerendered page, which clears whatever the user has typed |
+| A static page that posts to `Endpoints/` | Showing an error means redirecting, so the address and the other fields need a second channel: a query string would put them in proxy logs |
+
+To add one:
+
+1. Mark the page `[ExcludeFromInteractiveRouting]`, which `App.razor` reads to leave it static, and `[EnableRateLimiting(RateLimits.Authentication)]`.
+2. Use `EditForm` with a `FormName`, without `Enhance`, so the post is a real browser POST. It renders the token and the framework checks it.
+3. **Write secret fields as a raw `<input type="password" name="Input.Password">`.** `InputText` writes its value into the page, so it would send the password back after a refusal. The framework's own sample does this, so don't copy it.
+4. In the handler, call the contract, then `HttpContext.SignInAsync`, then `NavigateTo`, then `return`. `BlazorDisableThrowNavigationException` is on, so execution carries on past `NavigateTo`.
+5. Link to it with a plain `<a>`. From a circuit, `NavigateTo` needs `forceLoad: true`, or it renders Not Found.
+
+Use a plain `<select>` rather than `InputSelect`. A generic component passes its attributes through a helper, and `UserFacingText` then reads them as text.
+
+**Sign-out is the exception.** The interactive menu submits it, so it's `POST /sign-out` in `Endpoints/`. An endpoint like that must bind `[FromForm]` or `IFormCollection`: `UseAntiforgery` only records its result, and the form reader is what refuses a bad token. Without a form parameter, the endpoint passes the metadata check and enforces nothing, which is why `CsrfTests` also posts without a token.
+
+The framework appends encrypted state to every page, so a search of the HTML can't prove that a secret isn't there. It holds only the antiforgery token and a service registry, and `SignInTests` decrypts it to check. Don't put `[PersistentState]` on a form model.
+
+### Access control
+
+**Every page is private by default**, through `@attribute [Authorize]` in `Components/_Imports.razor`. One attribute covers both paths: it becomes endpoint metadata that `UseAuthorization` reads on HTTP, and it's what `AuthorizeRouteView` reads in a circuit. A public page adds `[AllowAnonymous]`, and `AccessTests` holds the list of those. On a component that isn't a page, the attribute does nothing.
+
+There's no `FallbackPolicy`. It never reaches a circuit, because `AuthorizeRouteView` treats a page without attributes as public. It also applies to requests with no endpoint, so unknown URLs would redirect rather than 404, and it would need exceptions for assets, health and the hub.
+
+- **Never chain `.AllowAnonymous()` on `MapRazorComponents`.** That builder's conventions reach every page, and the hub, so it would make all of them public. `.RequireAuthorization()` there would do the reverse, and lock visitors out of the hub the landing page needs.
+- **An endpoint mapped in code gets no attribute**, so it has to say `.AllowAnonymous()` or `.RequireAuthorization()`. `AccessTests` fails on one that doesn't. Assets and health are anonymous this way.
+- **Attributes on one page combine as AND.** A page can't relax the default policy by naming another, so a page reachable without it has to be `[AllowAnonymous]`, and check `User` itself. `/legal/accept` does this, because it exists to satisfy that policy.
+- **`AuthorizeView` applies the default policy too**, so a user with a document to accept counts as not authorized. Use `AccountPolicies.SignedIn` for what such a user still needs, as the menu does for sign-out.
+
+The two paths need one rule each for a failure. `AccountAuthorizationResultHandler` covers HTTP and `Components/Account/AccessGate.razor` covers a circuit: a visitor goes to sign-in, a user with a document to accept goes to accept it, and anyone else gets the status page. A challenge is a 302, so a 401 never renders. A 403 renders the not-found page's text under its own status, so the status still shows that the page exists, as a visitor's 302 does.
+
+### Lockout
+
+`users.failed_sign_ins` and `users.locked_until` hold the state, so that a lock survives a restart. An attempt is **charged before the hash runs, in one `UPDATE`**, guarded by the lock. A row lock queues concurrent attempts, and each then sees the last one's result, so a lock window allows `MaxFailedSignIns` verifications however they arrive. Checking first and charging after would let every parallel guess through a slow hash.
+
+An unknown address, a malformed one, a wrong password and a locked account return one message, and each costs one hash, through `IPasswordHasher.SpendAsync` where there's nothing to verify. A wrong password also commits an `UPDATE` that an unknown address skips, which a hash this slow should hide, but nothing measures it. A lock isn't extended by further attempts, and a correct password doesn't sign in during one.
+
+**An attacker can keep an account locked**, which is the accepted cost of FR-AUTH-04 for now. Five wrong passwords whenever a lock ends is enough, and the owner only gets in during the gap, so one address at the 10-a-minute limit can hold about 30 accounts. With email off, that includes an administrator, who is the only way to reset a password. Counting failures per account and client network would close it, because an attacker's failures then wouldn't lock out the owner's network.
+
+A refusal logs at Information, because at Warning anonymous visitors could write a database row per attempt.
+
+### Registration
+
+**Registering never signs in**, and it gets the same answer whether or not the address is taken, so the answer alone doesn't show which it was. Someone who registers again with a new password gets a failed sign-in, which is the cost of that.
+
+This raises the price of a lookup and doesn't remove it. Registering an address with a fresh password and then signing in with it shows whether the address was free: a success also leaves the attacker holding that address. With email off there's nothing to close this with, so it's an accepted limit, and #13 should decide whether unverified accounts can sign in at all.
+
+It inserts with `ON CONFLICT DO NOTHING` rather than catching an exception, because EF logs a failed save as an Error, and a taken address would then write a database row for anyone who asks. This also settles a race between two registrations.
+
+Refusals that depend only on what was submitted, such as a short password or a blocked country, are shown directly. `EmailAddresses.IsValid` refuses anything further down can't take, because a failure there is a 500 and a database log row that a visitor chose to write. For the same reason, a query parameter that a page reads is a string: binding one to a `bool` makes any other value a 500.
+
+The country field appears only when `Legal:BlockedCountries` isn't empty. The answer is checked and not stored (NFR-LEG-03), so a country blocked later doesn't affect existing users. `Modules/Identity/Countries.resx` is the one list, for the form and for validating the setting: its codes are ISO 3166-1 alpha-2, plus `XK` for Kosovo.
+
+### Legal documents
+
+A document's version is a constant in `LegalDocuments`, in the same build as its text in `Strings.resx`, so a user can't be shown one and recorded against another. `legal_acceptances` only gains rows, and each is the history of what a user agreed to and when.
+
+The default policy carries the requirement, so plain `[Authorize]` enforces NFR-LEG-01 on HTTP and in a circuit, with no database call per navigation: it compares a claim, set at sign-in, with the compiled value. A new version needs a new build, so a restart ends every circuit, and the next request fails and goes to accept. Forms carry the versions they showed, so a deployment can't record one nobody saw.
+
+**A material change needs a new version, and a typo doesn't.** Only a person can tell which, so `LegalDocumentTests` pins the rendered words of each document to its version, and any edit stops there until someone decides.
+
+### Administrators
+
+An administrator is an account whose verified address is in `Admin:AdminEmails` (FR-AUTH-10). **Nothing stores the answer**, as a column or a claim, because a cookie outlives a change to the configuration. `IAdministrators` works it out from the address and `email_verified_at`, and the `Administrator` policy calls it on each check, so removing an address and restarting takes effect at once. A circuit bypasses middleware, so check behind contracts too (#47).
+
+With email off, nothing can verify an address, yet FR-AUTH-06 needs an administrator to issue resets. Treating a listed address as verified would give the rights to whoever registers it first, and those rights can take over any account. So the proof comes from the one channel only the operator controls: `Admin:BootstrapSecret`, entered at `/account/administrator` by a signed-in user with a listed address, sets `email_verified_at`. A stranger who registers a listed address stays an ordinary account, though they hold that address until #47, so the operator lists another. Someone can tell whether an address they've registered is listed, because the account page offers them the link.
+
+With email on, the secret does nothing. Only #13 verifies an address, so no administrator exists until then, which fails closed.
+
+### Passwords
+
+Argon2id through NSec.Cryptography, which wraps libsodium, so its 64 MiB stays off the managed heap of the process that runs trading cycles. The parameters are m=64 MiB, t=3, p=1, and at most four hashes run at once, which caps the memory at 256 MiB. A verification took about 85 ms on an Apple Silicon laptop, so measure it on the real host before relying on that.
+
+The queue for those four is unbounded, and sign-in and registration share it. The limit is per /64, so a /56 has 256 buckets, which at 10 a minute each is about 42 hashes a second. At 85 ms that's close to capacity, and a slower host would stall legitimate sign-ins, so measure it there too.
+
+Hashes are PHC strings with their own parameters, so these can be raised later. **Pass bytes to `DeriveBytes`.** Its overload that takes a string hashes UTF-16, which no other Argon2 implementation would, and `PasswordHasherTests` checks against hashes made by another one.
+
 ## Web UI
 
-`Components/` holds the interface, and every page renders inside `Layout/MainLayout`: a skip link, a header with the wordmark and `NavMenu`, `<main>`, and a footer. There's one layout because nothing needs a second yet. The first signed-in page decides whether one does.
+`Components/` holds the interface, and every page renders inside `Layout/MainLayout`: a skip link, a header with the wordmark and `NavMenu`, `<main>`, and a footer. There's one layout because nothing needs a second yet, including `/account`, the first signed-in page.
 
 ### Adding a page
 
-1. Add the component to `Components/Pages`, with a `<PageTitle>` and an `<h1>`, which is where focus lands after navigating.
+1. Add the component to `Components/Pages`, with a `<PageTitle>` and an `<h1>`, which is where focus lands after navigating. It's [private by default](#access-control), so a page for visitors adds `[AllowAnonymous]`, and goes on the list in `AccessTests`.
 2. Put each section in `.page`, which sets the width and gutters. Everything else goes in the component's isolated CSS.
 3. Put its text in `Components/Strings.resx`, and write `@Strings.Key`.
 4. Add its link to `Layout/NavMenu.razor`. Link only to pages that exist, so a link appears in the same change as its page.
@@ -487,6 +575,16 @@ Layout and focus need a browser, and CI doesn't have one. These were checked in 
 - The skip link, the menu, and links from another page, including with `blazor.web.js` blocked, which is how the error page behaves
 - The theme following the operating system live, and the fonts loading under the CSP
 
+Accounts were checked in Chromium and WebKit in Development, over plain HTTP rather than a published build over TLS. `CookieTests` covers the Production cookie flags:
+
+- Registering, signing in, and signing out from a live circuit and from the phone menu, whose antiforgery token reaches the page through the circuit
+- A link from a circuit to a static page, a static page back to an interactive one, and typing on a form page
+- A circuit refusing a private page for a visitor, and sending a user with a document to accept to the right page
+- Lockout, re-acceptance and the bootstrap secret end to end
+- No horizontal scroll on the account pages at 375, 768 and 1280px, in both themes, with no console errors
+
+Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Neither is a fault in the application.
+
 The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
 
 ## Constraints for later issues
@@ -494,12 +592,13 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **The UI (#15, #41, #42, #52, #53):** no inline scripts, `<style>` blocks, `style=` attributes or `onclick=` handlers: the [CSP](#headers) blocks them all, and the failure is a console message and a silently broken page. Use classes, isolated CSS and script files. `Virtualize` renders `style=` attributes, so the first change that uses it adds `style-src-attr 'unsafe-inline'`, which is narrower than loosening `style-src`.
 - **Theme preferences (#15):** render `data-theme` on `<html>` from the preference, and add a rule in `app.css` that sets `color-scheme` to match. The tokens follow, with no script. Render the [`color-scheme` meta tag](#theme-and-layout) from the preference too, or Light can flash dark before the stylesheet loads.
 - **Animation (#52):** the reconnect modal's animations are the only motion so far, and they ignore the preference and the operating system's reduced motion setting (AC-06).
-- **Authentication (#9):** call `UseAuthentication` and `UseAuthorization` explicitly, after `UseCorrelation`, in the slots in [Pipeline order](#pipeline-order). Otherwise `WebApplication` inserts them before user middleware, and their events have no correlation ID, and the limiter can't see the account. Use `ClaimTypes.NameIdentifier`. Put `.RequireRateLimiting(RateLimits.Authentication)` on the sign-in and registration endpoints. Post them as forms, or `CsrfTests` fails. Set a fallback authorization policy, so a new page is private by default. Keep `RateLimitTests` honest with one test through the real sign-in: its account tests use a stand-in principal. Render `MandatoryNotices` on the registration page: EXT-UI-03 requires it, though #9 doesn't list it. Add the sign-in and registration links to `NavMenu` and the landing page, which has no call to action until then.
 - **Switching to Live (#39):** render `MandatoryNotices` in the flow (EXT-UI-03).
-- **Legal review (#58):** review the notices in `Strings.resx`, which are drafts. If you change a phrase that EXT-UI-03 quotes, change the tests that check it.
-- **Sessions and two-factor (#10, #14):** a password or TOTP code checked on a circuit needs its own [per-account throttle](#circuits). The HTTP limiter can't see it.
-- **Audit (#11):** must sit below every module that writes to it, and take the caller's context. See [Persistence](#persistence). Store `ICorrelationContext.CurrentId`, which is null outside a request, circuit action, cycle or job. `RemoteIpAddress` is the client's address once `UseForwardedHeaders` has run, but a circuit has no request to read it from, so FR-AUD-02 needs it captured when the circuit starts.
-- **Sign-in and email links (#9, #13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Set `LogProperties.UserId` in a scope. Build links from `App:PublicBaseUrl`, never from `Host`, which a client chooses. Throttle reset requests per address too, because the limiter only sees the sender's IP.
+- **Legal review (#58):** review the notices in `Strings.resx`, which are drafts. If you change a phrase that EXT-UI-03 quotes, change the tests that check it. Replace the placeholder documents and `LegalDraftNotice`, set both versions in `LegalDocuments` to `1`, and update the digests in `LegalDocumentTests`. Everyone then accepts again, which is right, because nobody has seen the real text. Rule on whether agents keep trading for a user who hasn't re-accepted, and on keeping proof of acceptance after account deletion, which FR-AUTH-09 would remove.
+- **Sessions and two-factor (#10, #14):** a password or TOTP code checked on a circuit needs its own [per-account throttle](#circuits). The HTTP limiter can't see it. The cookie only slides on `Security:SessionIdleTimeoutMinutes`, and circuit activity doesn't slide it, so #10 adds the absolute limit. A circuit keeps the user it started with, so another tab stays signed in after sign-out until #10 ends live circuits.
+- **Email (#13):** set `email_verified_at` from the emailed link. Nothing sets it when email is on until then, so no [administrator](#administrators) can exist in that mode. **Mind accounts from before email was on:** if a stranger registered an address and its real owner later clicks the link, the stranger's password then controls a verified account, which is an administrator if the address is listed. Verifying has to replace the password, or the first verification has to come from whoever set it.
+- **User administration (#47):** use `IAdministrators` and `AccountPolicies.Administrator`, behind contracts as well as on pages. Add a way to remove an account, because a stranger who registers a listed address holds it until then.
+- **Audit (#11):** must sit below every module that writes to it, and take the caller's context. `Accounts` and `Administrators` log the sign-in and bootstrap events that FR-AUD-01 needs as records. See [Persistence](#persistence). Store `ICorrelationContext.CurrentId`, which is null outside a request, circuit action, cycle or job. `RemoteIpAddress` is the client's address once `UseForwardedHeaders` has run, but a circuit has no request to read it from, so FR-AUD-02 needs it captured when the circuit starts.
+- **Email links (#13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Build links from `App:PublicBaseUrl`, never from `Host`, which a client chooses. A redirect is different: it goes back to whoever asked, and `NavigateTo` and the cookie handler both build one from the request, which is what `AllowedHosts` limits. Throttle reset requests per address too, because the limiter only sees the sender's IP.
 - **Secrets (#12):** must sit below Identity and Credentials, and keep secret access separate from credential metadata (#20). Wrap decrypted secrets in a type that doesn't render its value: see [Masking](#masking). Antiforgery and session cookies are protected by Data Protection keys, which sit unencrypted in the user's profile by default: decide where they live.
 - **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds. Base URLs come from the configuration file only (NFR-SEC-10), and clients don't follow redirects, or a response could send a signed request somewhere else.
 - **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category. Base URLs and redirects follow the same rule as the exchange adapter.

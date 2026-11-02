@@ -39,6 +39,28 @@
             text-decoration: underline;
         }
 
+.nav-form {
+    display: flex;
+}
+
+/* Sign-out has to be a button, because it posts. It looks like the links beside it. */
+.nav-action {
+    flex: 1;
+    padding: 0.625rem 0.75rem;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    text-align: start;
+    cursor: pointer;
+}
+
+    .nav-action:hover {
+        color: var(--accent);
+        text-decoration: underline;
+    }
+
 /* An ordinary row of links. Every popover property is reset, so the attribute has no effect here. */
 @media (min-width: 1024px) {
     .nav-toggle {
@@ -59,7 +81,8 @@
         background: none;
     }
 
-        .nav a {
+        .nav a,
+        .nav-action {
             padding: 0.25rem 0;
         }
 }

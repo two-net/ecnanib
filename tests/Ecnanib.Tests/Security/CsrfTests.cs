@@ -1,14 +1,16 @@
+using System.Net;
 using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.Security;
 
 /// <summary>
-/// NFR-SEC-03. Nothing here posts a form yet, so this proves the rule that #9's endpoints will meet:
-/// each state-changing endpoint needs a token, and a new JSON POST fails here until someone decides.
+/// NFR-SEC-03. Each state-changing endpoint needs a token, and a new JSON POST fails here until someone
+/// decides. Metadata only says that a token is expected, so the theory below proves one is enforced.
 /// </summary>
 public sealed class CsrfTests(SharedApp factory) : IClassFixture<SharedApp>
 {
@@ -34,6 +36,23 @@ public sealed class CsrfTests(SharedApp factory) : IClassFixture<SharedApp>
             select endpoint.DisplayName;
 
         Assert.Empty(unprotected);
+    }
+
+    /// <summary>UseAntiforgery only records its result, so an endpoint that reads no form would pass the test above.</summary>
+    [Theory]
+    [InlineData("/sign-in")]
+    [InlineData("/register")]
+    [InlineData("/sign-out")]
+    [InlineData("/legal/accept")]
+    public async Task A_post_without_a_token_is_refused(string path)
+    {
+        var cancellation = TestContext.Current.CancellationToken;
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var form = new FormUrlEncodedContent([new("Input.Email", "someone@example.test")]);
+
+        using var response = await client.PostAsync(path, form, cancellation);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     private static bool ChangesState(RouteEndpoint endpoint) =>

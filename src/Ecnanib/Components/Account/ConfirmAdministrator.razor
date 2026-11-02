@@ -1,0 +1,68 @@
+@page "/account/administrator"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [EnableRateLimiting(RateLimits.Authentication)]
+@inject IAdministrators Administrators
+@inject NavigationManager Navigation
+
+<PageTitle>@Strings.ConfirmAdministratorPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.ConfirmAdministratorHeading</h1>
+    <p>@Strings.ConfirmAdministratorIntro</p>
+
+    @if (_refused)
+    {
+        <p class="form-error" role="alert">@Strings.ConfirmAdministratorRefused</p>
+    }
+
+    <EditForm Model="Input" FormName="confirm-administrator" OnSubmit="SubmitAsync" class="form">
+        <div class="field">
+            <label for="secret">@Strings.FieldBootstrapSecret</label>
+            @* Not InputText, which would write the secret back into the page after a refusal. *@
+            <input id="secret" name="Input.Secret" type="password" autocomplete="off" required />
+        </div>
+
+        <button type="submit" class="button">@Strings.ConfirmAdministratorSubmit</button>
+    </EditForm>
+</div>
+
+@code {
+    private bool _refused;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private ConfirmationForm Input { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new ConfirmationForm();
+
+        if (HttpMethods.IsGet(HttpContext.Request.Method) && !await CanConfirmAsync())
+        {
+            Navigation.NavigateTo("/account");
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (AccountClaims.UserId(HttpContext.User) is not { } userId
+            || !await Administrators.ConfirmAsync(userId, Input.Secret, HttpContext.RequestAborted))
+        {
+            _refused = true;
+            return;
+        }
+
+        Navigation.NavigateTo("/account");
+    }
+
+    private async Task<bool> CanConfirmAsync() =>
+        AccountClaims.UserId(HttpContext.User) is { } userId
+            && await Administrators.CanConfirmAsync(userId, HttpContext.RequestAborted);
+
+    private sealed class ConfirmationForm
+    {
+        public string Secret { get; set; } = string.Empty;
+    }
+}

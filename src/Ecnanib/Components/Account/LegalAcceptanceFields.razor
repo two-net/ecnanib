@@ -1,0 +1,37 @@
+@* FR-AUTH-02, inside a form whose model is called Input. The versions travel with the form, so what's recorded
+   is what this page showed, even if a deployment changes a document before it's submitted. They always hold
+   the current versions, so a form shown again after a change offers the new ones. Links open a new tab, so
+   reading doesn't lose the form. Plain inputs, because InputCheckbox names a field after its own expression,
+   which in a child component isn't the form's. *@
+
+<input type="hidden" name="Input.TermsOfUseVersion" value="@LegalDocuments.TermsOfUseVersion" />
+<input type="hidden" name="Input.RiskDisclosureVersion" value="@LegalDocuments.RiskDisclosureVersion" />
+
+<fieldset class="field checks" aria-describedby="documents-error">
+    <legend>@Strings.LegalAcceptanceLegend</legend>
+
+    <div class="check">
+        <input id="accept-terms" name="Input.AcceptTermsOfUse" type="checkbox" value="true" checked="@TermsOfUse" required />
+        <label for="accept-terms">@Strings.LegalAcceptTermsOfUse</label>
+        <a href="/legal/terms" target="_blank" rel="noopener">@Strings.LegalReadTermsOfUse</a>
+    </div>
+
+    <div class="check">
+        <input id="accept-risk" name="Input.AcceptRiskDisclosure" type="checkbox" value="true" checked="@RiskDisclosure" required />
+        <label for="accept-risk">@Strings.LegalAcceptRiskDisclosure</label>
+        <a href="/legal/risk-disclosure" target="_blank" rel="noopener">@Strings.LegalReadRiskDisclosure</a>
+    </div>
+
+    <FieldError Id="documents-error" Message="@Error" />
+</fieldset>
+
+@code {
+    [Parameter]
+    public bool TermsOfUse { get; set; }
+
+    [Parameter]
+    public bool RiskDisclosure { get; set; }
+
+    [Parameter]
+    public string? Error { get; set; }
+}

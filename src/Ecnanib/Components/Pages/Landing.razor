@@ -1,4 +1,5 @@
 ﻿@page "/"
+@attribute [AllowAnonymous]
 @using Ecnanib.Components.Notices
 
 <PageTitle>@Strings.LandingPageTitle</PageTitle>
@@ -7,6 +8,17 @@
     <div class="hero-thesis">
         <h1>@Strings.LandingHeadline</h1>
         <p class="hero-intro">@Strings.LandingIntro</p>
+        <p class="hero-actions">
+            <AuthorizeView Policy="@AccountPolicies.SignedIn">
+                <Authorized>
+                    <a class="button" href="/account">@Strings.LandingOpenAccount</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="button" href="/register">@Strings.LandingRegister</a>
+                    <a href="/sign-in">@Strings.LandingSignIn</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </p>
     </div>
 
     <figure class="record">

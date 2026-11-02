@@ -13,15 +13,18 @@ internal static class HealthEndpoints
 
     /// <summary>
     /// Not rate limited, so a limit can't fail a probe. DatabaseHealthCheck already runs one database
-    /// probe at a time, whoever asks.
+    /// probe at a time, whoever asks. Anonymous, because a probe has no account, and the answers are
+    /// fixed values.
     /// </summary>
     public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints
             .MapHealthChecks($"{Prefix}/live", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = WriteAsync })
+            .AllowAnonymous()
             .DisableRateLimiting();
         endpoints
             .MapHealthChecks($"{Prefix}/ready", new HealthCheckOptions { ResponseWriter = WriteAsync })
+            .AllowAnonymous()
             .DisableRateLimiting();
 
         return endpoints;

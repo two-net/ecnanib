@@ -1,0 +1,88 @@
+@page "/legal/accept"
+@* Anonymous, and it checks the user itself. [Authorize] would apply the default policy, which is the one
+   this page exists to satisfy, so anyone sent here would be sent here again for ever. *@
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@inject IAccounts Accounts
+@inject NavigationManager Navigation
+
+<PageTitle>@Strings.AcceptPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.AcceptHeading</h1>
+    <p>@Strings.AcceptIntro</p>
+
+    <EditForm Model="Input" FormName="accept-documents" OnSubmit="SubmitAsync" class="form">
+        <LegalAcceptanceFields TermsOfUse="Input.AcceptTermsOfUse" RiskDisclosure="Input.AcceptRiskDisclosure" Error="@_error" />
+
+        <button type="submit" class="button">@Strings.AcceptSubmit</button>
+    </EditForm>
+</div>
+
+@code {
+    private string? _error;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private AcceptanceForm Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string Target => LocalUrl.Or(ReturnUrl, "/account");
+
+    protected override void OnInitialized()
+    {
+        Input ??= new AcceptanceForm();
+
+        if (AccountClaims.UserId(HttpContext.User) is null)
+        {
+            Navigation.NavigateTo("/sign-in?returnUrl=%2Flegal%2Faccept");
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (AccountClaims.UserId(HttpContext.User) is not { } userId)
+        {
+            return;
+        }
+
+        if (!Input.AcceptTermsOfUse || !Input.AcceptRiskDisclosure)
+        {
+            _error = Strings.LegalDocumentsNotAccepted;
+            return;
+        }
+
+        var principal = await Accounts.AcceptLegalDocumentsAsync(
+            userId,
+            Input.TermsOfUseVersion,
+            Input.RiskDisclosureVersion,
+            HttpContext.RequestAborted);
+
+        if (principal is null)
+        {
+            _error = Strings.LegalDocumentsChanged;
+            Input.AcceptTermsOfUse = false;
+            Input.AcceptRiskDisclosure = false;
+            return;
+        }
+
+        await HttpContext.SignInAsync(principal);
+
+        Navigation.NavigateTo(Target);
+    }
+
+    private sealed class AcceptanceForm
+    {
+        public bool AcceptTermsOfUse { get; set; }
+
+        public bool AcceptRiskDisclosure { get; set; }
+
+        public string? TermsOfUseVersion { get; set; }
+
+        public string? RiskDisclosureVersion { get; set; }
+    }
+}

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
+using Ecnanib.Components;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.RateLimiting;
@@ -16,7 +17,10 @@ namespace Ecnanib.Endpoints.Security;
 /// </summary>
 internal static class RateLimits
 {
-    /// <summary>The policy for sign-in and anything else that checks a secret over HTTP.</summary>
+    /// <summary>
+    /// The policy for sign-in and anything else that checks a secret over HTTP. It counts POSTs only,
+    /// because a static page takes GET and POST on one endpoint, and showing a form isn't an attempt.
+    /// </summary>
     public const string Authentication = "authentication";
 
     private const string UnknownClient = "unknown";
@@ -40,7 +44,9 @@ internal static class RateLimits
                 !IsExempt(context) && AccountOf(context) is { } account ? PerMinute(account, settings.RequestsPerMinute) : NoLimit));
 
         options.AddPolicy(Authentication, context =>
-            PerMinute(ClientKey(context.Connection.RemoteIpAddress), settings.AuthenticationRequestsPerMinute));
+            HttpMethods.IsPost(context.Request.Method)
+                ? PerMinute(ClientKey(context.Connection.RemoteIpAddress), settings.AuthenticationRequestsPerMinute)
+                : NoLimit);
     }
 
     /// <summary>
@@ -108,14 +114,22 @@ internal static class RateLimits
             && !context.WebSockets.IsWebSocketRequest;
     }
 
-    private static ValueTask WriteRetryAfterAsync(OnRejectedContext context, CancellationToken cancellationToken)
+    /// <summary>
+    /// Anywhere else nobody reads the body, so a 429 stays empty. A person submitted this form, and
+    /// FR-AUTH-04 owes them an error rather than a blank page from the browser.
+    /// </summary>
+    private static async ValueTask WriteRetryAfterAsync(OnRejectedContext context, CancellationToken cancellationToken)
     {
+        var response = context.HttpContext.Response;
+
         if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
         {
-            context.HttpContext.Response.Headers.RetryAfter =
-                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+            response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
         }
 
-        return ValueTask.CompletedTask;
+        if (context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName == Authentication)
+        {
+            await response.WriteAsync(Strings.TooManyAttempts, cancellationToken);
+        }
     }
 }

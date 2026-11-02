@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.CookiePolicy;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.HttpsPolicy;
@@ -46,6 +47,8 @@ internal static class WebSecurity
         services.AddRateLimiter();
         services.AddOptions<RateLimiterOptions>().Configure<WebSecuritySettings>(
             (options, settings) => RateLimits.Configure(options, settings.RateLimits));
+
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, AccountAuthorizationResultHandler>();
 
         return services;
     }

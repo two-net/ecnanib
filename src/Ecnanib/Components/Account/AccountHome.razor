@@ -1,0 +1,63 @@
+@page "/account"
+@using System.Globalization
+@inject IAccounts Accounts
+@inject IAdministrators Administrators
+
+<PageTitle>@Strings.AccountPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.AccountHeading</h1>
+
+    @if (_overview is { } overview)
+    {
+        <dl class="facts">
+            <dt>@Strings.FieldEmail</dt>
+            <dd>@overview.Email</dd>
+            <dt>@Strings.AccountRole</dt>
+            <dd>@(_isAdministrator ? Strings.AccountRoleAdministrator : Strings.AccountRoleUser)</dd>
+        </dl>
+
+        @if (_canConfirm)
+        {
+            <p><a href="/account/administrator">@Strings.AccountConfirmAdministratorLink</a></p>
+        }
+
+        <h2>@Strings.AccountDocumentsHeading</h2>
+
+        <ul class="facts-list">
+            @foreach (var acceptance in overview.Acceptances)
+            {
+                <li>@Describe(acceptance)</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private AccountOverview? _overview;
+    private bool _isAdministrator;
+    private bool _canConfirm;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AccountClaims.UserId((await AuthenticationState).User) is not { } userId)
+        {
+            return;
+        }
+
+        _overview = await Accounts.FindAsync(userId, CancellationToken.None);
+        _isAdministrator = await Administrators.IsAdministratorAsync(userId, CancellationToken.None);
+        _canConfirm = await Administrators.CanConfirmAsync(userId, CancellationToken.None);
+    }
+
+    private static string Describe(LegalAcceptanceRecord acceptance) =>
+        string.Format(
+            CultureInfo.CurrentCulture,
+            Strings.AccountDocumentAccepted,
+            acceptance.Document == LegalDocument.TermsOfUse ? Strings.LegalTermsOfUseTitle : Strings.LegalRiskDisclosureTitle,
+            acceptance.Version,
+            acceptance.AcceptedAt.UtcDateTime);
+}

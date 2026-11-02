@@ -1,0 +1,47 @@
+@using System.Net
+@inject NavigationManager Navigation
+
+@* The same rules as AccountAuthorizationResultHandler, for navigation inside a circuit, which never reaches
+   middleware. It forces a load because the pages it goes to are static. Someone who just lacks access gets
+   the status page's text, as they would on HTTP. *@
+
+@if (_denied)
+{
+    <div class="page message-page">
+        <h1>@Strings.NotFoundHeading</h1>
+        <p>@Strings.NotFoundMessage</p>
+        <p><a href="/">@Strings.GoHome</a></p>
+    </div>
+}
+
+@code {
+    private bool _denied;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        if (user.Identity?.IsAuthenticated != true)
+        {
+            Send("/sign-in");
+        }
+        else if (!user.HasClaim(AccountClaims.LegalDocuments, LegalDocuments.Current))
+        {
+            Send("/legal/accept");
+        }
+        else
+        {
+            _denied = true;
+        }
+    }
+
+    private void Send(string page)
+    {
+        var here = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+
+        Navigation.NavigateTo($"{page}?returnUrl={WebUtility.UrlEncode(here)}", forceLoad: true);
+    }
+}

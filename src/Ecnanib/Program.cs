@@ -31,6 +31,7 @@ builder.Host.UseDefaultServiceProvider(options =>
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddCascadingAuthenticationState();
 
 builder.Services.AddWebSecurity();
 
@@ -67,17 +68,24 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-// Authentication (#9) goes here, or the limiter can't see the account.
+// Before the limiter, or it can't see the account.
+app.UseAccountAuthentication();
 // Before status pages, so a 404 costs one permit and a 429 isn't sent through the 404 page.
 app.UseRateLimiter();
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirectionExceptHealth();
 
+// Inside status pages, so a 403 renders one. Antiforgery tokens bind to the identity, so it comes after.
+app.UseAuthorization();
 app.UseAntiforgery();
 
 // A page load fetches several assets, and they cost almost nothing to serve.
-app.MapStaticAssets().DisableRateLimiting();
+app.MapStaticAssets().AllowAnonymous().DisableRateLimiting();
 app.MapHealthEndpoints();
+app.MapAccountEndpoints();
+
+// Pages are private through [Authorize] in Components/_Imports.razor. Never chain AllowAnonymous here:
+// this builder's conventions reach every page, so it would make all of them public.
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

@@ -1,0 +1,11 @@
+@* Stays in the page while empty, because an input's aria-describedby names this ID whether or not there's an error. *@
+
+<p id="@Id" class="field-error">@Message</p>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Id { get; set; } = default!;
+
+    [Parameter]
+    public string? Message { get; set; }
+}

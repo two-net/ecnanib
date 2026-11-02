@@ -102,6 +102,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Health | ASP.NET Core health checks, on `/health/live` and `/health/ready` | In place |
 | Web security | HTTPS and HSTS, content security policy, secure cookies and rate limiting, in the application itself | In place |
 | Background jobs | An in-process runner, with its history and schedules in PostgreSQL | In place |
+| Accounts | Email and password with Argon2id, a session cookie, lockout, recorded acceptance of the legal documents, and administrators from the configuration file | In place. Sessions, email and two-factor come later |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
 
@@ -160,9 +161,32 @@ Outside Development the application won't start until it knows its public addres
 | `App:PublicBaseUrl` | Required outside Development. Sets where plain HTTP redirects to, and the only origin allowed to open a WebSocket |
 | `Security:TrustedProxies` | IP addresses or CIDR networks, such as `"10.0.0.0/8"`, whose `X-Forwarded-*` headers are believed. Loopback is always trusted. Defaults to none |
 | `Security:RateLimits:RequestsPerMinute` | Limit per IP address, and separately per account. Defaults to 300 |
-| `Security:RateLimits:AuthenticationRequestsPerMinute` | Limit per IP address on sign-in, on top of the above. Defaults to 10 |
+| `Security:RateLimits:AuthenticationRequestsPerMinute` | Limit per IP address on sign-in, registration and the administrator secret, on top of the above. It counts submissions, not page views. Defaults to 10 |
 
 A value that isn't valid stops startup. Set `AllowedHosts` to your public host too, plus any host a local probe uses, because the shipped `*` accepts any `Host` header.
+
+### Accounts
+
+| Setting | Meaning |
+|---|---|
+| `Security:PasswordMinLength` | Shortest password allowed. It can't go below 12. Defaults to 12 |
+| `Security:MaxFailedSignIns` | Failed attempts before an account locks. Defaults to 5 |
+| `Security:LockoutMinutes` | How long a lock lasts. Defaults to 15 |
+| `Security:SessionIdleTimeoutMinutes` | How long a session can last without a request. It renews once it's past half this, so an idle session can end after little more than half. Defaults to 60 |
+| `Admin:AdminEmails` | Addresses that get administrator rights once verified. Defaults to none |
+| `Admin:BootstrapSecret` | At least 32 random characters. Required when an address is listed and `Email:Enabled` is false |
+| `Email:Enabled` | Defaults to `false`. Sending email arrives with #13, so leave this off until then |
+| `Legal:BlockedCountries` | ISO 3166-1 alpha-2 codes, such as `"GB"`, that can't register. Registration asks for a country only when this has entries. Defaults to none |
+
+To make yourself an administrator with email off:
+
+1. Add your address to `Admin:AdminEmails`, set `Admin:BootstrapSecret`, and restart.
+2. Register that address as normal, and sign in.
+3. On your account page, choose **Confirm you are an administrator**, and enter the secret.
+
+Registering a listed address doesn't grant anything by itself, so a stranger who registers it first gets an ordinary account. If that happens, list a different address. Removing an address and restarting ends its rights at once.
+
+The Terms of Use and Risk Disclosure are placeholders until the [legal review](https://github.com/two-net/ecnanib/issues/58). Sign-in keeps its session key in ASP.NET Data Protection, so if that key store doesn't persist, each restart signs everyone out.
 
 ### Behind a reverse proxy
 

@@ -314,4 +314,221 @@
   <data name="PrincipleKeysBody" xml:space="preserve">
     <value>You bring your own API keys, encrypted at rest. Binance keys that can withdraw funds are rejected.</value>
   </data>
+
+  <!-- Sign-in and registration. FR-AUTH-04: refusals stay generic. -->
+  <data name="TooManyAttempts" xml:space="preserve">
+    <value>Too many attempts. Wait a minute, then try again.</value>
+    <comment>Plain text, sent with a 429 from the sign-in and registration forms.</comment>
+  </data>
+  <data name="AuthorizingMessage" xml:space="preserve">
+    <value>Checking your access.</value>
+  </data>
+  <data name="FieldEmail" xml:space="preserve">
+    <value>Email</value>
+  </data>
+  <data name="FieldPassword" xml:space="preserve">
+    <value>Password</value>
+  </data>
+  <data name="FieldConfirmPassword" xml:space="preserve">
+    <value>Confirm password</value>
+  </data>
+  <data name="FieldCountry" xml:space="preserve">
+    <value>Country of residence</value>
+  </data>
+  <data name="FieldCountryChoose" xml:space="preserve">
+    <value>Choose a country</value>
+  </data>
+  <data name="FieldBootstrapSecret" xml:space="preserve">
+    <value>Administrator secret</value>
+  </data>
+  <data name="NavAccount" xml:space="preserve">
+    <value>Account</value>
+  </data>
+  <data name="NavSignIn" xml:space="preserve">
+    <value>Sign in</value>
+  </data>
+  <data name="NavRegister" xml:space="preserve">
+    <value>Register</value>
+  </data>
+  <data name="NavSignOut" xml:space="preserve">
+    <value>Sign out</value>
+  </data>
+  <data name="LandingRegister" xml:space="preserve">
+    <value>Create an account</value>
+  </data>
+  <data name="LandingSignIn" xml:space="preserve">
+    <value>Sign in</value>
+  </data>
+  <data name="LandingOpenAccount" xml:space="preserve">
+    <value>Open your account</value>
+  </data>
+  <data name="SignInPageTitle" xml:space="preserve">
+    <value>Sign in | Ecnanib</value>
+  </data>
+  <data name="SignInHeading" xml:space="preserve">
+    <value>Sign in</value>
+  </data>
+  <data name="SignInSubmit" xml:space="preserve">
+    <value>Sign in</value>
+  </data>
+  <data name="SignInRefused" xml:space="preserve">
+    <value>We couldn't sign you in. Check your email and password. After several failed attempts, sign-in pauses for a while, so wait before trying again.</value>
+    <comment>One message for a wrong password, an unknown address and a locked account, so it mustn't tell them apart.</comment>
+  </data>
+  <data name="SignInAfterRegistering" xml:space="preserve">
+    <value>Registration received. Sign in to continue. If you already have an account with this address, use its existing password.</value>
+    <comment>The same for a new address and a taken one, so it mustn't tell them apart.</comment>
+  </data>
+  <data name="SignInNoAccount" xml:space="preserve">
+    <value>No account yet?</value>
+  </data>
+  <data name="SignInRegisterLink" xml:space="preserve">
+    <value>Register</value>
+  </data>
+  <data name="RegisterPageTitle" xml:space="preserve">
+    <value>Register | Ecnanib</value>
+  </data>
+  <data name="RegisterHeading" xml:space="preserve">
+    <value>Create an account</value>
+  </data>
+  <data name="RegisterSubmit" xml:space="preserve">
+    <value>Register</value>
+  </data>
+  <data name="RegisterHaveAccount" xml:space="preserve">
+    <value>Already registered?</value>
+  </data>
+  <data name="RegisterSignInLink" xml:space="preserve">
+    <value>Sign in</value>
+  </data>
+  <data name="RegisterPasswordHint" xml:space="preserve">
+    <value>Use at least {0} characters.</value>
+    <comment>{0} is the shortest password allowed.</comment>
+  </data>
+  <data name="RegisterEmailInvalid" xml:space="preserve">
+    <value>Enter a valid email address.</value>
+  </data>
+  <data name="RegisterPasswordTooLong" xml:space="preserve">
+    <value>That password is too long.</value>
+  </data>
+  <data name="RegisterPasswordsDiffer" xml:space="preserve">
+    <value>The passwords don't match.</value>
+  </data>
+  <data name="RegisterCountryMissing" xml:space="preserve">
+    <value>Choose your country of residence.</value>
+  </data>
+  <data name="RegisterCountryBlocked" xml:space="preserve">
+    <value>Ecnanib isn't available in that country.</value>
+  </data>
+  <data name="AccountPageTitle" xml:space="preserve">
+    <value>Account | Ecnanib</value>
+  </data>
+  <data name="AccountHeading" xml:space="preserve">
+    <value>Your account</value>
+  </data>
+  <data name="AccountRole" xml:space="preserve">
+    <value>Role</value>
+  </data>
+  <data name="AccountRoleUser" xml:space="preserve">
+    <value>User</value>
+  </data>
+  <data name="AccountRoleAdministrator" xml:space="preserve">
+    <value>Administrator</value>
+  </data>
+  <data name="AccountConfirmAdministratorLink" xml:space="preserve">
+    <value>Confirm you are an administrator</value>
+  </data>
+  <data name="AccountDocumentsHeading" xml:space="preserve">
+    <value>Accepted documents</value>
+  </data>
+  <data name="AccountDocumentAccepted" xml:space="preserve">
+    <value>{0}, version {1}, accepted {2:yyyy-MM-dd HH:mm} UTC</value>
+    <comment>{0} is a document title, {1} its version and {2} a time in UTC.</comment>
+  </data>
+  <data name="ConfirmAdministratorPageTitle" xml:space="preserve">
+    <value>Confirm administrator | Ecnanib</value>
+  </data>
+  <data name="ConfirmAdministratorHeading" xml:space="preserve">
+    <value>Confirm administrator</value>
+  </data>
+  <data name="ConfirmAdministratorIntro" xml:space="preserve">
+    <value>Your address is on the administrator list, but email is off, so nothing can verify it. Enter the secret from the configuration file to confirm it.</value>
+  </data>
+  <data name="ConfirmAdministratorSubmit" xml:space="preserve">
+    <value>Confirm</value>
+  </data>
+  <data name="ConfirmAdministratorRefused" xml:space="preserve">
+    <value>That secret is not correct.</value>
+  </data>
+  <data name="AcceptPageTitle" xml:space="preserve">
+    <value>Accept documents | Ecnanib</value>
+  </data>
+  <data name="AcceptHeading" xml:space="preserve">
+    <value>Review the updated documents</value>
+  </data>
+  <data name="AcceptIntro" xml:space="preserve">
+    <value>To keep using Ecnanib, read and accept the current documents.</value>
+  </data>
+  <data name="AcceptSubmit" xml:space="preserve">
+    <value>Accept and continue</value>
+  </data>
+  <data name="LegalAcceptanceLegend" xml:space="preserve">
+    <value>Legal documents</value>
+  </data>
+  <data name="LegalAcceptTermsOfUse" xml:space="preserve">
+    <value>I accept the Terms of Use.</value>
+  </data>
+  <data name="LegalAcceptRiskDisclosure" xml:space="preserve">
+    <value>I accept the Risk Disclosure.</value>
+  </data>
+  <data name="LegalReadTermsOfUse" xml:space="preserve">
+    <value>Read the Terms of Use (opens in a new tab)</value>
+  </data>
+  <data name="LegalReadRiskDisclosure" xml:space="preserve">
+    <value>Read the Risk Disclosure (opens in a new tab)</value>
+  </data>
+  <data name="LegalDocumentsNotAccepted" xml:space="preserve">
+    <value>Accept both documents to continue.</value>
+  </data>
+  <data name="LegalDocumentsChanged" xml:space="preserve">
+    <value>These documents have changed since this page loaded. Read them again, then accept them.</value>
+  </data>
+  <data name="LegalVersion" xml:space="preserve">
+    <value>Version {0}</value>
+    <comment>{0} is the document version.</comment>
+  </data>
+  <data name="LegalDraftNotice" xml:space="preserve">
+    <value>Draft. This text has not had legal review, and it will be replaced before public launch.</value>
+    <comment>Remove with the placeholder text below (#58).</comment>
+  </data>
+  <!-- Placeholder legal text until #58. LegalDocumentTests pins this text to its version: a material change needs a new version in LegalDocuments.cs, and everyone then accepts again. -->
+  <data name="LegalTermsOfUseTitle" xml:space="preserve">
+    <value>Terms of Use</value>
+  </data>
+  <data name="TermsOfUseService" xml:space="preserve">
+    <value>Ecnanib is a free tool for running automated trading agents on your own Binance account. It is offered as is, and it may change or stop at any time.</value>
+  </data>
+  <data name="TermsOfUseResponsibility" xml:space="preserve">
+    <value>You are responsible for your agents and for every order they place. You are also responsible for being eligible to use Binance where you live, and Ecnanib does not check this.</value>
+  </data>
+  <data name="TermsOfUseCredentials" xml:space="preserve">
+    <value>You bring your own exchange and AI provider keys, and you pay those providers for what you use. Your exchange keys must not have withdrawal permission.</value>
+  </data>
+  <data name="TermsOfUseChanges" xml:space="preserve">
+    <value>If these terms change in a way that matters, you will be asked to accept them again before you continue.</value>
+  </data>
+  <data name="LegalRiskDisclosureTitle" xml:space="preserve">
+    <value>Risk Disclosure</value>
+  </data>
+  <data name="RiskDisclosureLoss" xml:space="preserve">
+    <value>Trading crypto assets can lose you some or all of your money, and leverage can lose it faster. Only trade what you can afford to lose.</value>
+  </data>
+  <data name="RiskDisclosureAutomation" xml:space="preserve">
+    <value>AI models make mistakes, and rule checks limit losses without preventing them. Markets, exchanges and this service can all fail at the worst moment.</value>
+  </data>
+  <data name="RiskDisclosureNoAdvice" xml:space="preserve">
+    <value>Nothing in Ecnanib is financial advice, and Ecnanib is not affiliated with or endorsed by Binance.</value>
+  </data>
+  <data name="RiskDisclosureDemo" xml:space="preserve">
+    <value>Results in Demo differ from live trading, and past results do not predict future ones.</value>
+  </data>
 </root>

@@ -38,6 +38,80 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("providers", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Identity.LegalAcceptance", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Document")
+                        .HasColumnType("text")
+                        .HasColumnName("document");
+
+                    b.Property<string>("Version")
+                        .HasColumnType("text")
+                        .HasColumnName("version");
+
+                    b.Property<DateTimeOffset>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at");
+
+                    b.HasKey("UserId", "Document", "Version")
+                        .HasName("pk_legal_acceptances");
+
+                    b.ToTable("legal_acceptances", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Identity.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)")
+                        .HasColumnName("email");
+
+                    b.Property<DateTimeOffset?>("EmailVerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("email_verified_at");
+
+                    b.Property<int>("FailedSignIns")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_sign_ins");
+
+                    b.Property<DateTimeOffset?>("LockedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("locked_until");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)")
+                        .HasColumnName("normalized_email");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
+
+                    b.HasKey("Id")
+                        .HasName("pk_users");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_normalized_email");
+
+                    b.ToTable("users", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Platform.Jobs.JobRun", b =>
                 {
                     b.Property<long>("Id")
@@ -132,6 +206,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasDatabaseName("ix_log_events_timestamp");
 
                     b.ToTable("log_events", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Identity.LegalAcceptance", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_legal_acceptances_user_user_id");
                 });
 #pragma warning restore 612, 618
         }

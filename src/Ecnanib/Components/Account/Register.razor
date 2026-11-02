@@ -1,0 +1,159 @@
+@page "/register"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [EnableRateLimiting(RateLimits.Authentication)]
+@using System.Globalization
+@using Ecnanib.Components.Notices
+@inject IAccounts Accounts
+@inject NavigationManager Navigation
+
+<PageTitle>@Strings.RegisterPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.RegisterHeading</h1>
+
+    <EditForm Model="Input" FormName="register" OnSubmit="SubmitAsync" class="form">
+        <div class="field">
+            <label for="email">@Strings.FieldEmail</label>
+            <InputText id="email" type="email" autocomplete="username" required
+                       aria-invalid="@Invalid(EmailError)" aria-describedby="email-error" @bind-Value="Input.Email" />
+            <FieldError Id="email-error" Message="@EmailError" />
+        </div>
+
+        <div class="field">
+            <label for="password">@Strings.FieldPassword</label>
+            @* Not InputText, which would write the password back into the page after a refusal. *@
+            <input id="password" name="Input.Password" type="password" autocomplete="new-password" required
+                   minlength="@Rules.PasswordMinLength" maxlength="@Rules.PasswordMaxLength"
+                   aria-invalid="@Invalid(PasswordError)" aria-describedby="password-hint password-error" />
+            <p id="password-hint" class="field-hint">@PasswordHint</p>
+            <FieldError Id="password-error" Message="@PasswordError" />
+        </div>
+
+        <div class="field">
+            <label for="confirm-password">@Strings.FieldConfirmPassword</label>
+            <input id="confirm-password" name="Input.ConfirmPassword" type="password" autocomplete="new-password" required
+                   aria-invalid="@Invalid(ConfirmPasswordError)" aria-describedby="confirm-password-error" />
+            <FieldError Id="confirm-password-error" Message="@ConfirmPasswordError" />
+        </div>
+
+        @if (Rules.AsksForCountry)
+        {
+            <div class="field">
+                <label for="country">@Strings.FieldCountry</label>
+                <select id="country" name="Input.Country" required
+                        aria-invalid="@Invalid(CountryError)" aria-describedby="country-error">
+                    <option value="">@Strings.FieldCountryChoose</option>
+                    @foreach (var country in Countries.All)
+                    {
+                        <option value="@country.Code" selected="@(country.Code == Input.Country)">@country.Name</option>
+                    }
+                </select>
+                <FieldError Id="country-error" Message="@CountryError" />
+            </div>
+        }
+
+        <LegalAcceptanceFields TermsOfUse="Input.AcceptTermsOfUse" RiskDisclosure="Input.AcceptRiskDisclosure" Error="@DocumentsError" />
+
+        <button type="submit" class="button">@Strings.RegisterSubmit</button>
+    </EditForm>
+
+    <p>@Strings.RegisterHaveAccount <a href="/sign-in">@Strings.RegisterSignInLink</a></p>
+
+    <div class="form-notices">
+        <MandatoryNotices />
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<RegistrationProblem> _problems = [];
+    private bool _passwordsDiffer;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private RegistrationForm Input { get; set; } = default!;
+
+    private RegistrationRules Rules => Accounts.RegistrationRules;
+
+    private string PasswordHint => string.Format(CultureInfo.CurrentCulture, Strings.RegisterPasswordHint, Rules.PasswordMinLength);
+
+    private string? EmailError => Has(RegistrationProblem.InvalidEmail) ? Strings.RegisterEmailInvalid : null;
+
+    private string? PasswordError =>
+        Has(RegistrationProblem.PasswordTooShort) ? PasswordHint
+        : Has(RegistrationProblem.PasswordTooLong) ? Strings.RegisterPasswordTooLong
+        : null;
+
+    private string? ConfirmPasswordError => _passwordsDiffer ? Strings.RegisterPasswordsDiffer : null;
+
+    private string? CountryError =>
+        Has(RegistrationProblem.CountryBlocked) ? Strings.RegisterCountryBlocked
+        : Has(RegistrationProblem.CountryMissing) ? Strings.RegisterCountryMissing
+        : null;
+
+    private string? DocumentsError =>
+        Has(RegistrationProblem.DocumentsChanged) ? Strings.LegalDocumentsChanged
+        : Has(RegistrationProblem.DocumentsNotAccepted) ? Strings.LegalDocumentsNotAccepted
+        : null;
+
+    protected override void OnInitialized() => Input ??= new RegistrationForm();
+
+    private bool Has(RegistrationProblem problem) => _problems.Contains(problem);
+
+    private static string? Invalid(string? error) => error is null ? null : "true";
+
+    private async Task SubmitAsync()
+    {
+        if (Input.Password != Input.ConfirmPassword)
+        {
+            _passwordsDiffer = true;
+            return;
+        }
+
+        _problems = await Accounts.RegisterAsync(
+            new Registration
+            {
+                Email = Input.Email,
+                Password = Input.Password,
+                Country = Input.Country,
+                TermsOfUseVersion = Input.AcceptTermsOfUse ? Input.TermsOfUseVersion : null,
+                RiskDisclosureVersion = Input.AcceptRiskDisclosure ? Input.RiskDisclosureVersion : null,
+            },
+            HttpContext.RequestAborted);
+
+        if (_problems.Count == 0)
+        {
+            // The same for a new address and a taken one, so this answer doesn't say which it was.
+            Navigation.NavigateTo("/sign-in?registered=true");
+            return;
+        }
+
+        if (Has(RegistrationProblem.DocumentsChanged))
+        {
+            // What they accepted isn't what's there now, so they have to read and tick again.
+            Input.AcceptTermsOfUse = false;
+            Input.AcceptRiskDisclosure = false;
+        }
+    }
+
+    private sealed class RegistrationForm
+    {
+        public string Email { get; set; } = string.Empty;
+
+        public string Password { get; set; } = string.Empty;
+
+        public string ConfirmPassword { get; set; } = string.Empty;
+
+        public string? Country { get; set; }
+
+        public bool AcceptTermsOfUse { get; set; }
+
+        public bool AcceptRiskDisclosure { get; set; }
+
+        public string? TermsOfUseVersion { get; set; }
+
+        public string? RiskDisclosureVersion { get; set; }
+    }
+}

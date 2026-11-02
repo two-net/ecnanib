@@ -40,6 +40,9 @@ internal sealed class SanitizingSink(ILogEventSink inner, SecretRules rules) : I
         ("Microsoft.AspNetCore.StaticAssets", LogEventLevel.Information),
         ("Microsoft.AspNetCore.StaticFiles", LogEventLevel.Information),
 
+        // Logs a raw form or query value at Debug when an endpoint can't bind it.
+        ("Microsoft.AspNetCore.Http.RequestDelegateFactory", LogEventLevel.Information),
+
         // These log a raw X-Forwarded-For entry and a raw Origin at Debug, and a client chooses both.
         ("Microsoft.AspNetCore.HttpOverrides", LogEventLevel.Information),
         ("Microsoft.AspNetCore.WebSockets", LogEventLevel.Information),

@@ -1,5 +1,7 @@
 ﻿@using System.Net.Http
 @using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Web
@@ -8,4 +10,15 @@
 @using Microsoft.JSInterop
 @using Ecnanib
 @using Ecnanib.Components
+@using Ecnanib.Components.Account
 @using Ecnanib.Components.Layout
+@using Ecnanib.Components.Legal
+@using Ecnanib.Endpoints.Security
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.RateLimiting
+@using Ecnanib.Modules.Identity.Contracts
+
+@* Every page is private unless it says otherwise, on HTTP and in a circuit alike. A page that visitors
+   need adds [AllowAnonymous], and AccessTests holds the list of those. On a component that isn't a page
+   this does nothing. See Access control in docs/architecture.md. *@
+@attribute [Authorize]

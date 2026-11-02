@@ -5,4 +5,19 @@
 <nav id="site-nav" class="nav" popover aria-label="@Strings.NavLabel">
     <a href="/#how-it-works">@Strings.NavHowItWorks</a>
     <a href="/#notices">@Strings.NavRisks</a>
+    @* Not the default policy, which would hide sign-out from someone with a document to accept. *@
+    <AuthorizeView Policy="@AccountPolicies.SignedIn">
+        <Authorized>
+            <a href="/account">@Strings.NavAccount</a>
+            @* A plain post, because a circuit can't clear a cookie. *@
+            <form method="post" action="/sign-out" class="nav-form">
+                <AntiforgeryToken />
+                <button type="submit" class="nav-action">@Strings.NavSignOut</button>
+            </form>
+        </Authorized>
+        <NotAuthorized>
+            <a href="/sign-in">@Strings.NavSignIn</a>
+            <a href="/register">@Strings.NavRegister</a>
+        </NotAuthorized>
+    </AuthorizeView>
 </nav>

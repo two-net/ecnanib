@@ -246,7 +246,7 @@ There are no tenants. Every user is an independent account, and no data is share
 - **FR-AUTH-07** Sessions shall expire after configurable idle and absolute timeouts. Users shall be able to list and revoke their active sessions.
 - **FR-AUTH-08** Changing the password shall require the current password and shall revoke all other sessions.
 - **FR-AUTH-09** Users shall be able to delete their account. The system shall first stop all agents, letting the user choose whether to close or keep open positions, and then permanently delete credentials and personal data. Audit records shall be retained with the user identity anonymized.
-- **FR-AUTH-10** Administrator rights shall be granted to accounts whose verified email address appears in the configuration file's administrator list.
+- **FR-AUTH-10** Administrator rights shall be granted to accounts whose verified email address appears in the configuration file's administrator list. When email is disabled, nothing can verify an address, so a signed-in user with a listed address shall verify it by entering the bootstrap secret from the configuration file. Registering a listed address shall not by itself grant any rights.
 
 ### 3.2 User Preferences and Theme (PREF)
 
@@ -564,7 +564,7 @@ There are no tenants. Every user is an independent account, and no data is share
 
 ### 4.4 Email (Optional)
 
-- **EXT-EML-01** SMTP settings shall come from the configuration file. When email is disabled, verification is skipped (Live activation then does not require it), password resets are issued by administrators, and only in-app notifications are sent.
+- **EXT-EML-01** SMTP settings shall come from the configuration file. When email is disabled, verification is skipped (Live activation then does not require it) except for administrators (FR-AUTH-10), password resets are issued by administrators, and only in-app notifications are sent.
 
 ### 4.5 Database
 
@@ -648,7 +648,8 @@ There are no tenants. Every user is an independent account, and no data is share
 
 | Entity | Key attributes |
 |---|---|
-| User | Email, password hash, email verified, encrypted TOTP secret, administrator flag, status, accepted document versions, created |
+| User | Email, password hash, email verified, failed sign-ins, locked until, encrypted TOTP secret, status, created. Administrator rights are worked out from the configuration file (FR-AUTH-10), not stored |
+| LegalAcceptance | User, document, version, accepted at |
 | UserPreference | Theme, animation level, timezone, notification settings |
 | Session | User, created, last seen, expires, IP address, user agent |
 | Credential | User, provider, environment, label, ciphertext, encryption key ID, last four, status, permissions, last validated, last used |
@@ -705,8 +706,9 @@ There are no tenants. Every user is an independent account, and no data is share
 | `App` | Public base URL; server egress IP addresses (shown to users for key whitelisting) |
 | `Database` | PostgreSQL connection string, auto-migrate flag, command timeout |
 | `Security` | Encryption master keys (ID, key, active flag), session signing key, session timeouts, password policy, lockout, two-factor requirement for Live, credential revalidation interval |
-| `Admin` | Administrator email addresses |
+| `Admin` | Administrator email addresses; bootstrap secret, required when an address is listed and email is disabled (FR-AUTH-10) |
 | `Email` | Enabled flag and SMTP settings |
+| `Legal` | Blocked countries as ISO 3166-1 alpha-2 codes (NFR-LEG-04) |
 | `Logging` | Minimum level, per-category overrides, sinks (console, rolling file, database) and their options |
 | `Binance` | Live and Demo base URLs per market, market-data URL, receive window, request-weight headroom, exchange-info refresh, reconciliation interval |
 | `AiProviders` | Per provider: enabled, base URL, timeout, retries, concurrency per credential |
@@ -745,7 +747,11 @@ There are no tenants. Every user is an independent account, and no data is share
     "CredentialRevalidationHours": 24
   },
   "Admin": {
-    "AdminEmails": [ "admin@example.com" ]
+    "AdminEmails": [ "admin@example.com" ],
+    "BootstrapSecret": "<random secret of at least 32 characters>"
+  },
+  "Legal": {
+    "BlockedCountries": []
   },
   "Email": {
     "Enabled": false,

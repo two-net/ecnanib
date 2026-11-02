@@ -15,11 +15,11 @@
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Ecnanib.styles.css"]" />
     <ImportMap nonce="@SecurityHeadersMiddleware.NonceOf(HttpContext)" />
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <Routes @rendermode="PageRenderMode" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script type="module" src="@Assets["shell.js"]"></script>
@@ -30,4 +30,10 @@
 @code {
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
+
+    /// <summary>
+    /// A page marked ExcludeFromInteractiveRouting stays static, because it collects a secret: a
+    /// circuit would carry it through the hub, and the first interactive render clears what's typed.
+    /// </summary>
+    private IComponentRenderMode? PageRenderMode => HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
 }
