@@ -100,7 +100,7 @@ public sealed class CorrelationTests(PostgresFixture postgres)
             configureServices: services => services.AddTransient<IStartupFilter>(
                 _ => new TerminalMiddleware(_ => throw new CorrelatedFailure())),
             environment: Environments.Production);
-        using var client = app.App.CreateClient();
+        using var client = app.App.CreatePublicClient();
 
         using var response = await client.GetAsync("/nothing-here", Cancellation);
         await app.StopAsync();

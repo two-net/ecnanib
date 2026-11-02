@@ -1,0 +1,60 @@
+using Mono.Cecil;
+using ReflectionAssembly = System.Reflection.Assembly;
+
+namespace Ecnanib.Tests.Security;
+
+/// <summary>A reference in a method body that a rule forbids there.</summary>
+internal sealed record BannedUse(string Source, string Member, string Risk)
+{
+    public override string ToString() => $"{Source} -> {Member}: {Risk}";
+}
+
+/// <summary>
+/// NFR-SEC-03. Most of what these protect doesn't exist yet, so each is a rule the feature has to
+/// meet when it lands. It reads method bodies, so it sees Razor markup, lambdas and async methods. It
+/// takes the assembly and root namespace as parameters so that BannedApiGuardTests can prove it
+/// catches real uses. See docs/architecture.md.
+/// </summary>
+internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespace)
+{
+    private const string Xss = "renders text as HTML, and AI output and user input reach the UI";
+    private const string Injection = "builds SQL from a string. Use the interpolated form, which parameterises";
+    private const string Csrf = "turns off cross-site request forgery protection";
+    private const string Ssrf = "reaches the network, which only the adapters may do, using URLs from the configuration file";
+
+    private static readonly string[] NoExceptions = [];
+    private static readonly string[] Adapters = ["Modules.ExchangeAdapter.", "Modules.AiAdapters."];
+
+    private static readonly (string Reference, string Risk, string[] AllowedIn)[] Rules =
+    [
+        ("Microsoft.AspNetCore.Components.MarkupString", Xss, NoExceptions),
+        ("::FromSqlRaw", Injection, NoExceptions),
+        ("::ExecuteSqlRaw", Injection, NoExceptions),
+        ("::SqlQueryRaw", Injection, NoExceptions),
+        ("::DisableAntiforgery", Csrf, NoExceptions),
+        ("System.Net.Http.HttpClient", Ssrf, Adapters),
+        ("System.Net.Http.IHttpClientFactory", Ssrf, Adapters),
+    ];
+
+    private readonly string _prefix = rootNamespace + ".";
+
+    public List<BannedUse> FindUses()
+    {
+        using var module = ModuleDefinition.ReadModule(assembly.Location);
+
+        return
+        [
+            .. (from type in module.GetTypes()
+                where type.FullName.StartsWith(_prefix, StringComparison.Ordinal)
+                from method in type.Methods
+                where method.HasBody
+                from instruction in method.Body.Instructions
+                where instruction.Operand is MemberReference
+                let member = ((MemberReference)instruction.Operand).FullName
+                from rule in Rules
+                where member.Contains(rule.Reference, StringComparison.Ordinal)
+                    && !rule.AllowedIn.Any(allowed => type.FullName.StartsWith(_prefix + allowed, StringComparison.Ordinal))
+                select new BannedUse(type.FullName, member, rule.Risk)).Distinct(),
+        ];
+    }
+}

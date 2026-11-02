@@ -1,4 +1,6 @@
-﻿<!DOCTYPE html>
+﻿@using Ecnanib.Endpoints.Security
+
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -8,7 +10,7 @@
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["Ecnanib.styles.css"]" />
-    <ImportMap />
+    <ImportMap nonce="@SecurityHeadersMiddleware.NonceOf(HttpContext)" />
     <HeadOutlet @rendermode="InteractiveServer" />
 </head>
 
@@ -19,3 +21,8 @@
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+}

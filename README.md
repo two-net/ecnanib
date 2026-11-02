@@ -99,6 +99,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Persistence | Entity Framework Core 10 with Npgsql, code-first, with migrations applied at startup and no table partitioning | In place |
 | Logging | Serilog, with console, rolling file and PostgreSQL sinks, and masking in front of all of them | In place |
 | Health | ASP.NET Core health checks, on `/health/live` and `/health/ready` | In place |
+| Web security | HTTPS and HSTS, content security policy, secure cookies and rate limiting, in the application itself | In place |
 | Background jobs | An in-process runner, with its history and schedules in PostgreSQL | In place |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
@@ -141,6 +142,46 @@ A few framework categories can't be set below a fixed level, because their debug
 
 Every response carries an `X-Correlation-ID` header, and each log event from that request holds the same value as `CorrelationId`. To trace a request, search the log files for it, or `log_events.correlation_id` in the database. A value sent in a request is ignored.
 
+## Security
+
+Outside Development the application won't start until it knows its public address. It must use `https`:
+
+```json
+{
+  "App": {
+    "PublicBaseUrl": "https://ecnanib.example.com"
+  }
+}
+```
+
+| Setting | Meaning |
+|---|---|
+| `App:PublicBaseUrl` | Required outside Development. Sets where plain HTTP redirects to, and the only origin allowed to open a WebSocket |
+| `Security:TrustedProxies` | IP addresses or CIDR networks, such as `"10.0.0.0/8"`, whose `X-Forwarded-*` headers are believed. Loopback is always trusted. Defaults to none |
+| `Security:RateLimits:RequestsPerMinute` | Limit per IP address, and separately per account. Defaults to 300 |
+| `Security:RateLimits:AuthenticationRequestsPerMinute` | Limit per IP address on sign-in, on top of the above. Defaults to 10 |
+
+A value that isn't valid stops startup. Set `AllowedHosts` to your public host too, plus any host a local probe uses, because the shipped `*` accepts any `Host` header.
+
+### Behind a reverse proxy
+
+TLS can end at a reverse proxy. The proxy has to pass WebSocket upgrades and say who the client is. With nginx:
+
+```nginx
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $connection_upgrade;
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+If the proxy isn't on the same host, add its address to `Security:TrustedProxies`. **A redirect loop means it's missing:** the application isn't believing the proxy, so it thinks every request is plain HTTP. If you've worked around that some other way, every user will share one rate limit.
+
+### Rate limits
+
+A request over the limit gets a 429 with a `Retry-After` header. A page load costs about 4 requests, and moving between pages costs none. Health endpoints and static files aren't limited. Limits are held in memory, so a restart clears them.
+
 ## Health
 
 Neither endpoint needs a sign-in, so block them at your reverse proxy if they shouldn't be public.
@@ -162,7 +203,7 @@ Neither endpoint needs a sign-in, so block them at your reverse proxy if they sh
 
 The reason for a failure is in the logs, not the response. A readiness probe answers within about 4 seconds, even if the database has stopped responding.
 
-If the application terminates TLS itself, probe over HTTPS. On plain HTTP these endpoints answer with a 307 redirect like everything else, and `curl -f` counts that as success without reaching the check. Behind a reverse proxy that terminates TLS there's no redirect.
+These endpoints answer on plain HTTP as well as HTTPS, so a probe can reach the application directly behind a reverse proxy. They're the only ones that do: anything else on plain HTTP gets a 307 redirect. They're also never rate limited.
 
 While migrations run at startup the port isn't open yet, so a probe gets connection refused rather than a 503.
 
@@ -189,19 +230,19 @@ Schedules are read from `job_runs`, so restarting doesn't reset them. See [Jobs]
 ```text
 .
 ├── SRS.md                  Software Requirements Specification (v1.0 draft)
-├── docs/architecture.md    Module boundaries, persistence, logging, health, jobs and rules
+├── docs/architecture.md    Module boundaries, persistence, logging, health, jobs, web security and rules
 ├── Directory.Build.props   Shared build settings and vulnerability scan rules
 ├── .config/                Pinned .NET tools, including dotnet-ef
 ├── .github/workflows/      CI pipeline
 ├── src/Ecnanib/            Blazor Server application
 │   ├── Components/         Root component, routes, layout and pages
-│   ├── Endpoints/          HTTP that isn't a page, such as the health endpoints
+│   ├── Endpoints/          HTTP that isn't a page, such as the health endpoints and the security pipeline
 │   ├── Modules/            One folder per module, each with a public Contracts namespace
 │   ├── Platform/           Cross-cutting services, including logging, correlation, jobs, persistence and migrations
 │   ├── Properties/         Local launch profiles
 │   ├── wwwroot/            Static assets
 │   └── Program.cs          Application startup and module registration
-└── tests/Ecnanib.Tests/    Architecture, persistence, logging, health, job and smoke tests
+└── tests/Ecnanib.Tests/    Architecture, persistence, logging, health, job, security and smoke tests
 ```
 
 ## Documentation

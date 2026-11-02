@@ -42,7 +42,7 @@ Trade Approval (3.11) belongs to `DecisionCycle`, because an approval hangs off 
 5. `Kernel` holds only vocabulary that the SRS fixes, that at least two modules use, and that has no behaviour, such as `Market`, `Timeframe` and typed IDs. Moving a type there to escape a cycle is the wrong fix: use a port or event instead.
 6. Razor components stay in `Components/`, because pages such as agent detail span several modules (FR-UI-01).
 
-The Web UI may use neither adapter nor `Platform`, so it can't reach secrets or place orders directly (2.4, FR-ADM-01, FR-KEY-09). `Endpoints/` counts as Web UI, so it reaches `Platform` only through framework abstractions, as the health endpoints do with the checks `Platform` registers.
+The Web UI may use neither adapter nor `Platform`, so it can't reach secrets or place orders directly (2.4, FR-ADM-01, FR-KEY-09). `Endpoints/` counts as Web UI, so it reaches `Platform` only through framework abstractions, as the health endpoints do with the checks `Platform` registers. That's also why the [HTTP security code](#web-security) lives in `Endpoints/Security`: pages need its nonce and endpoints need its policy names.
 
 ### Adding a dependency
 
@@ -76,7 +76,7 @@ In-process events are lost on a crash, so each one needs a recovery path, such a
 
 "API" in SRS 2.2 is not a separate module. Pages run on Blazor Server and reach services directly, and the SRS defines no public HTTP API or consumer of one. Module `Contracts` are the application's API, and `Endpoints/` holds the HTTP that really is needed, such as sign-in cookies (NFR-SEC-06), health (NFR-OBS-01) and exports (FR-DATA-03).
 
-**After page load, a Blazor circuit doesn't pass through HTTP middleware.** Access rules therefore can't live there: ownership checks (NFR-SEC-04) belong behind module contracts. Rate limiting (NFR-SEC-07) and audit fields such as IP address need a plan for circuit traffic too. [Correlation IDs](#correlation-ids) have one. Request logging doesn't: FR-LOG-06 covers HTTP, so a circuit logs one `/_blazor` request, and activity inside it is logged where it happens, behind module contracts.
+**After page load, a Blazor circuit doesn't pass through HTTP middleware.** Access rules therefore can't live there: ownership checks (NFR-SEC-04) belong behind module contracts. [Correlation IDs](#correlation-ids) and [rate limiting](#circuits) each have a plan for circuit traffic, and audit fields such as IP address still need one (#11). Request logging doesn't: FR-LOG-06 covers HTTP, so a circuit logs one `/_blazor` request, and activity inside it is logged where it happens, behind module contracts.
 
 ## Persistence
 
@@ -170,6 +170,8 @@ Text is matched by name (`password=`), by shape (`Bearer`, `sk-`, 64 alphanumeri
 | `Microsoft.AspNetCore.Routing`, `Microsoft.AspNetCore.Components.Routing` | Information | Log the raw path at Debug |
 | `Microsoft.AspNetCore.HttpsPolicy` | Information | Logs the whole redirect URL at Debug |
 | `Microsoft.AspNetCore.StaticAssets`, `Microsoft.AspNetCore.StaticFiles` | Information | Log the raw path at Debug |
+| `Microsoft.AspNetCore.HttpOverrides` | Information | Logs a raw `X-Forwarded-For` entry at Debug, which a client chooses |
+| `Microsoft.AspNetCore.WebSockets` | Information | Logs a raw `Origin` at Debug, which a client chooses |
 
 The list comes from the framework's own log templates, for the features this application uses, so it needs rechecking in two cases. After an ASP.NET Core upgrade, look for new events that carry raw request content. When adding a framework feature, check its events first: `UseHttpLogging` and MVC, for example, log bodies and action arguments, and they aren't on this list because neither is in use. `RequestPath`, which ASP.NET adds to every event in a request, is removed for the same reason.
 
@@ -315,15 +317,128 @@ The clock starts at `ApplicationStopping`, which SIGTERM fires. The numbers come
 - **The runner isolates runs, not agents.** A failure in one agent reaches only the others in the same run if the job lets it. NFR-REL-05 needs per-item handling in anything that loops over agents or credentials, or one `RunAsync` per item.
 - **`details` never holds exception text.** This table has no `SanitizingSink`, and #49 will show it to administrators. Scrubbing isn't enough: it can't recognise an unmarked secret, and a provider's error can echo a prompt, which FR-ADM-01 keeps from them. A failure stores the exception's type name, and the text goes to the log under the same correlation ID. `context.Details` goes through `SecretRules.Scrub`. Keep it to counts and IDs, because account deletion doesn't reach this table.
 
+## Web security
+
+`Endpoints/Security` holds the HTTP edge: NFR-SEC-01, NFR-SEC-03, NFR-SEC-06 and NFR-SEC-07. Nothing in it needs `Platform`, and it sits in the Web UI unit because `App.razor` needs the nonce and endpoints need the rate limit policy names.
+
+### Pipeline order
+
+Anything outside the exception handler runs once per request, so it has to survive the handler clearing the response. Anything inside runs again when the handler or status pages re-execute, so it has to be safe to repeat. Most of the order follows from that, so **a change here needs the tests in `tests/Ecnanib.Tests/Security`**.
+
+| Step | Why it's here |
+|---|---|
+| `UseCorrelation`, `UseRequestLogging` | [First](#correlation-ids), so they see everything. Neither reads the scheme or address |
+| `UseForwardedHeaders` | Before anything reads the scheme or address. Outside re-execute, because it consumes the headers it reads |
+| `SecurityHeadersMiddleware` | Outside re-execute, so a request has one nonce. Its headers are assigned in `OnStarting`, because the handler clears headers and `OnStarting` survives that |
+| `UseCookiePolicy` | Before anything can set a cookie |
+| `UseWebSockets` | Checks `Origin` on a WebSocket before it reaches the hub |
+| `UseExceptionHandler` | Doesn't run in Development |
+| `UseHsts` | Inside the handler on purpose. It sets the header directly, so outside it the error page would lose the header |
+| `UseAuthentication` (#9) | Goes here. The limiter needs the account, and the handler has to catch a failed session lookup |
+| `UseRateLimiter` | Outside status pages, so a 404 costs one permit, and a 429 with no body doesn't render the 404 page |
+| `UseStatusCodePagesWithReExecute` | |
+| HTTPS redirect, except `/health` | |
+| `UseAuthorization` (#9), `UseAntiforgery` | Inside status pages, so a 401 or 403 renders one. Antiforgery tokens bind to the identity, so it goes after authentication |
+
+### HTTPS
+
+`App:PublicBaseUrl` is required outside Development and must be `https`. It sets the HTTPS port and the origin below, and nothing else reads the scheme. Without a port, `UseHttpsRedirection` quietly serves plain HTTP and logs one warning.
+
+TLS can end at a reverse proxy (NFR-SEC-01). `X-Forwarded-For` and `X-Forwarded-Proto` are honoured from loopback and from `Security:TrustedProxies`, and ignored from anyone else, because a client can send either. `X-Forwarded-Host` isn't honoured at all. `ForwardLimit` is null, so a chain of proxies is walked back to the first address that isn't trusted.
+
+- **A proxy that isn't trusted fails loudly.** The application sees plain HTTP and redirects, so the browser gets a redirect loop rather than silently losing HSTS and sharing one rate limit among all users.
+- **Health is the one exception to the redirect.** Behind a proxy, a probe reaches the application directly, and a 307 would count as success under `curl -f` without running the check. It answers fixed values only.
+- **HSTS has no `includeSubDomains`,** which could lock an operator's unrelated sites to HTTPS for a year. There's no preload either: that's the operator's decision.
+
+### Headers
+
+`SecurityHeadersMiddleware` sets these on every response that reaches it, including static assets, 404, 429, redirects and the error page:
+
+```text
+Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{n}'; style-src 'self'; img-src 'self' data:;
+                         connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Referrer-Policy: same-origin
+```
+
+- **`script-src`:** `'self'` covers `blazor.web.js` and the reconnect module. The nonce is for the inline import map `<ImportMap />` renders. An inline script of your own needs `nonce="@SecurityHeadersMiddleware.NonceOf(HttpContext)"`, which only works in `App.razor`, because an interactive component has no `HttpContext`. `strict-dynamic` isn't an option: it turns off `'self'`.
+- **`connect-src 'self'`** covers the SignalR WebSocket: under CSP 3 `'self'` matches `wss:` on the same origin. Development adds `ws://localhost:*` and `wss://localhost:*`, for `dotnet watch`.
+- **`style-src 'self'`** blocks `<style>` blocks and `style=` attributes. CSS isolation and `.style.x = ...` from a script still work. See [the constraint](#constraints-for-later-issues) for `Virtualize`.
+- **`img-src data:`** is for the image in `app.css`. `base-uri 'self'` rather than `'none'`, because `App.razor` has a `<base>`.
+- **Headers are assigned, not appended.** That replaces the `frame-ancestors 'self'` policy interactive rendering adds, and the `X-Frame-Options: SAMEORIGIN` antiforgery adds. A browser enforces every policy it receives, so two would be harmless but misleading.
+- **`same-origin`** stops a `token=` link leaking to another site. `no-referrer` would also do that, but it makes a browser send `Origin: null` on a form POST.
+- **The nonce is in `HttpContext.Items`, not a scoped service,** because the error and status pages run in a new scope.
+
+The Development exception page has inline styles, so this policy strips its styling. It's still readable, and this is accepted.
+
+The tests stop at "the HTML doesn't contradict the policy", because a browser enforces it. The WebSocket and the import map were checked by hand in Chromium and WebKit, in Development and in a published build over TLS, and an injected inline script was blocked in each. The reconnect modal was checked in the published build. A change to the policy, or to how a page loads scripts, needs that check again until there's a browser test.
+
+### Cookies
+
+`UseCookiePolicy` applies to every cookie, so a later issue can't forget: HttpOnly, at least SameSite=Lax, and Secure outside Development (NFR-SEC-06). Lax is the minimum rather than Strict so that following an email link keeps a session. Antiforgery keeps its own Strict.
+
+**Don't set `Cookie.SecurePolicy = Always` on antiforgery.** It throws on any request that isn't HTTPS, and on a page load that happens inside a callback the framework catches: the page answers 200 and only an Error in the log shows it. The cookie policy adds `Secure` without reading the scheme.
+
+### Rate limiting
+
+The limiter is global, so a new endpoint is covered without doing anything (NFR-SEC-07). It's in memory, because there's one instance (ASM-06, CON-08), so a restart clears it. A fixed one-minute window can let through twice the limit across its edge, which is accepted.
+
+| Traffic | Limit |
+|---|---|
+| Anything else, including pages and 404s | `RequestsPerMinute`, per IP address and per account. They're chained, so signing in can't escape the limit per address |
+| Endpoints with `.RequireRateLimiting(RateLimits.Authentication)` | `AuthenticationRequestsPerMinute` per IP address, on top of the above |
+| `/_blazor/negotiate` and any WebSocket upgrade | `RequestsPerMinute`. SignalR accepts a WebSocket that skips negotiation, so counting only negotiation would leave a way around it |
+| Other hub requests | None. Long polling makes one per message on a connection that's already admitted, so a limit would end live sessions |
+| The error page | None. The request was counted already, and a limit here would replace the page with an empty 429 |
+| `/health/*` | None. A limit must not fail a probe, and `DatabaseHealthCheck` runs one probe at a time anyway |
+| Static assets | None. One page load fetches several, and they cost almost nothing |
+
+- **A page load costs about 4 permits,** so 300 is 75 page loads a minute from one address, which leaves room for an office behind one IP. Navigating inside a circuit costs nothing.
+- **An address is grouped by what one subscriber holds.** IPv6 is cut to /64, or a subscriber could rotate through endless buckets, and IPv4-mapped addresses become IPv4. A null address (a Unix socket) shares one bucket.
+- **An account is `ClaimTypes.NameIdentifier`.** A signed-in user without it throws rather than falling back, because a claim that didn't match would otherwise leave every account limited only by address, and nothing would show it.
+- **A rejection is a 429 with `Retry-After` and no log line of its own.** The `Http` event records it at Information. The default of 503 would log an Error per request, and a Warning would still turn a flood into database rows.
+- **It limits rate, not concurrency.** It doesn't cap how many circuits one address holds open.
+
+The sign-in account is in the request body, and a partitioner can't read that. The account limit on sign-in is therefore FR-AUTH-04's lockout (#9), which also survives a restart.
+
+### Circuits
+
+Negotiating and connecting are HTTP, so they're limited like anything else. After that, **hub traffic never reaches the limiter**, and that's fine for NFR-SEC-07, which covers authentication and API endpoints, because both stay on HTTP: only HTTP can set a cookie, and [the API](#the-api) is `Endpoints/`.
+
+The gap is a secret checked on a circuit, such as a current password (#10) or a TOTP code for a sensitive action (#14). Nothing limits those attempts, so each needs a per-account throttle behind its module contract, and a refusal is a typed result rather than a 429. Don't limit inside `CircuitHandler`: inbound activity includes render acknowledgements, and refusing one breaks the circuit.
+
+The WebSocket `Origin` is checked against `App:PublicBaseUrl`, because CORS doesn't cover WebSockets and SameSite doesn't stop a sibling subdomain. The check is skipped when a client sends no `Origin`: only a browser can carry someone else's cookies, and a browser always sends one.
+
+### OWASP
+
+Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk relies on, and who finishes it. `BannedApis` scans compiled code, including Razor, lambdas and async methods, and `BannedApiGuardTests` proves it against broken fixtures.
+
+| Risk | What covers it | Test or owner |
+|---|---|---|
+| Injection | EF Core parameterises. Raw SQL APIs are banned, and the interpolated forms parameterise | `BannedApis` |
+| Cross-site scripting | Razor encodes. `MarkupString` is banned, because AI output and user input reach the UI. The CSP has no `unsafe-inline` or `unsafe-eval` | `BannedApis`, `SecurityHeaderTests` |
+| Cross-site request forgery | Antiforgery, SameSite and `form-action 'self'`. Every state-changing endpoint must require a token, and `DisableAntiforgery` is banned. The WebSocket `Origin` check covers the hub | `CsrfTests`, `BannedApis`, `WebSocketTests` |
+| Server-side request forgery | Only the adapters may use `HttpClient`, and base URLs come only from the configuration file (NFR-SEC-10) | `BannedApis`, then #17, #18 |
+| Broken access control | Ownership checks behind module contracts, which HTTP can't enforce on a circuit | #9, #55 |
+| Authentication failures | Lockout, password hashing and sessions | #9, #10, #14 |
+| Cryptographic failures | HTTPS, HSTS, Secure cookies. Secrets at rest are #12 | `HttpsTests`, `CookieTests`, #12 |
+| Security misconfiguration | Startup refuses a missing or `http` public address, and validates these settings. `AllowedHosts` is the operator's to set | `WebSecuritySettingsTests`, #57 |
+| Vulnerable components | The dependency scan (NFR-SEC-09) | CI |
+| Logging failures | [Logging](#logging) and masking, and the audit trail | `CanaryScanTests`, #11 |
+
+`DatabaseHealthCheck` uses the interpolated form so that the ban has no exceptions.
+
 ## Constraints for later issues
 
-- **Web security (#7):** probes pass through the pipeline, so don't let rate limiting throttle them below an operator's probe interval.
-- **Authentication (#9):** call `UseAuthentication` and `UseAuthorization` explicitly, after `UseCorrelation`. Otherwise `WebApplication` inserts them before user middleware, and their events have no correlation ID.
-- **Audit (#11):** must sit below every module that writes to it, and take the caller's context. See [Persistence](#persistence). Store `ICorrelationContext.CurrentId`, which is null outside a request, circuit action, cycle or job.
-- **Sign-in and email links (#9, #13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Set `LogProperties.UserId` in a scope.
-- **Secrets (#12):** must sit below Identity and Credentials, and keep secret access separate from credential metadata (#20). Wrap decrypted secrets in a type that doesn't render its value: see [Masking](#masking).
-- **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds.
-- **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category.
+- **The UI (#8, #15, #41, #42, #52, #53):** no inline scripts, `<style>` blocks, `style=` attributes or `onclick=` handlers: the [CSP](#headers) blocks them all, and the failure is a console message and a silently broken page. Use classes, isolated CSS and script files. A theme applied before first paint (FR-PREF-03) can be an attribute that `App.razor` renders on `<html>`, plus a media query for System, with no script at all. `Virtualize` renders `style=` attributes, so the first change that uses it adds `style-src-attr 'unsafe-inline'`, which is narrower than loosening `style-src`.
+- **Authentication (#9):** call `UseAuthentication` and `UseAuthorization` explicitly, after `UseCorrelation`, in the slots in [Pipeline order](#pipeline-order). Otherwise `WebApplication` inserts them before user middleware, and their events have no correlation ID, and the limiter can't see the account. Use `ClaimTypes.NameIdentifier`. Put `.RequireRateLimiting(RateLimits.Authentication)` on the sign-in and registration endpoints. Post them as forms, or `CsrfTests` fails. Set a fallback authorization policy, so a new page is private by default. Keep `RateLimitTests` honest with one test through the real sign-in: its account tests use a stand-in principal.
+- **Sessions and two-factor (#10, #14):** a password or TOTP code checked on a circuit needs its own [per-account throttle](#circuits). The HTTP limiter can't see it.
+- **Audit (#11):** must sit below every module that writes to it, and take the caller's context. See [Persistence](#persistence). Store `ICorrelationContext.CurrentId`, which is null outside a request, circuit action, cycle or job. `RemoteIpAddress` is the client's address once `UseForwardedHeaders` has run, but a circuit has no request to read it from, so FR-AUD-02 needs it captured when the circuit starts.
+- **Sign-in and email links (#9, #13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Set `LogProperties.UserId` in a scope. Build links from `App:PublicBaseUrl`, never from `Host`, which a client chooses. Throttle reset requests per address too, because the limiter only sees the sender's IP.
+- **Secrets (#12):** must sit below Identity and Credentials, and keep secret access separate from credential metadata (#20). Wrap decrypted secrets in a type that doesn't render its value: see [Masking](#masking). Antiforgery and session cookies are protected by Data Protection keys, which sit unencrypted in the user's profile by default: decide where they live.
+- **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds. Base URLs come from the configuration file only (NFR-SEC-10), and clients don't follow redirects, or a response could send a signed request somewhere else.
+- **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category. Base URLs and redirects follow the same rule as the exchange adapter.
 - **The first real job:** a job with no history is due at once, so every application start in every test will run it. `AppFactory` will need to remove real jobs by default.
 - **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
 - **Risk Engine (#27):** see rule 4.
@@ -331,7 +446,7 @@ The clock starts at `ApplicationStopping`, which SIGTERM fires. The numbers come
 - **Order execution (#34):** pass `cancellationToken`, not `Stopping`, to exchange calls. Persist the intent before sending, or a cut send can't be recovered (FR-EXE-05, FR-EXE-08). Once an order is placed, save with a deadline of its own, or the end of the drain window could cancel the write.
 - **Reconciliation (#35):** run the startup pass from a hosted service's `StartAsync`, through `IJobRunner`, so it finishes before any scheduled cycle (FR-EXE-08).
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
-- **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash.
+- **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses.
 
 Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and the persistence, logging, correlation and job contracts in `Platform/Contracts`.
 

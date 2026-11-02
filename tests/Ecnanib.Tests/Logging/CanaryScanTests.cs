@@ -31,7 +31,8 @@ public sealed class CanaryScan(PostgresFixture postgres) : IAsyncLifetime
     {
         var original = System.Console.Out;
         using var console = new StringWriter();
-        System.Console.SetOut(TextWriter.Synchronized(console));
+        var synchronized = TextWriter.Synchronized(console);
+        System.Console.SetOut(synchronized);
 
         try
         {
@@ -60,7 +61,13 @@ public sealed class CanaryScan(PostgresFixture postgres) : IAsyncLifetime
 
             _output[File] = app.FileText();
             _output[Table] = await app.TableTextAsync(TestContext.Current.CancellationToken);
-            _output[Console] = console.ToString();
+
+            // Console.Out is shared, so applications in concurrent tests are still writing to it.
+            // A synchronized writer locks on itself, and reading the text unlocked can throw.
+            lock (synchronized)
+            {
+                _output[Console] = console.ToString();
+            }
         }
         finally
         {

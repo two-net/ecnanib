@@ -19,8 +19,15 @@ public class AppFactory(
     string? environment = null)
     : WebApplicationFactory<Program>
 {
+    /// <summary>App:PublicBaseUrl when a test names an environment, because outside Development it's required.</summary>
+    public const string PublicBaseUrl = "https://ecnanib.test";
+
     /// <summary>Starts the application, which throws if startup fails.</summary>
     public void Start() => _ = Server;
+
+    /// <summary>A client on the public address, over HTTPS. HSTS skips localhost, so only this one can see it.</summary>
+    public HttpClient CreatePublicClient() =>
+        CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri(PublicBaseUrl), AllowAutoRedirect = false });
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -37,6 +44,7 @@ public class AppFactory(
             {
                 ["ConnectionStrings:Default"] = connectionString,
                 ["Logging:MinimumLevel"] = "Information",
+                ["App:PublicBaseUrl"] = environment is null ? null : PublicBaseUrl,
             });
 
             if (settings is not null)

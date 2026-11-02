@@ -1,5 +1,6 @@
 using Ecnanib.Components;
 using Ecnanib.Endpoints;
+using Ecnanib.Endpoints.Security;
 using Ecnanib.Modules.Administration;
 using Ecnanib.Modules.Agents;
 using Ecnanib.Modules.AiAdapters;
@@ -31,6 +32,8 @@ builder.Host.UseDefaultServiceProvider(options =>
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+builder.Services.AddWebSecurity();
+
 // Modules, lowest level first. See docs/architecture.md.
 builder.Services
     .AddPlatform()
@@ -52,22 +55,28 @@ builder.Services
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Configure the HTTP request pipeline. The order matters: see Web security in docs/architecture.md.
 app.UseCorrelation();
 app.UseRequestLogging();
+app.UseWebSecurity();
 
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    // After the exception handler, because it sets the header directly and the handler clears it.
     app.UseHsts();
 }
+
+// Authentication (#9) goes here, or the limiter can't see the account.
+// Before status pages, so a 404 costs one permit and a 429 isn't sent through the 404 page.
+app.UseRateLimiter();
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
+app.UseHttpsRedirectionExceptHealth();
 
 app.UseAntiforgery();
 
-app.MapStaticAssets();
+// A page load fetches several assets, and they cost almost nothing to serve.
+app.MapStaticAssets().DisableRateLimiting();
 app.MapHealthEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

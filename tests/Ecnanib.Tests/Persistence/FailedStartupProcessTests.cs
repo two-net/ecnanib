@@ -120,6 +120,7 @@ public sealed partial class FailedStartupProcessTests(PostgresFixture postgres)
                     typeof(Program).Assembly.Location,
                     $"--ConnectionStrings:Default={connectionString}",
                     "--Logging:MinimumLevel=Information",
+                    $"--App:PublicBaseUrl={AppFactory.PublicBaseUrl}",
                     "--urls=http://127.0.0.1:0",
                 },
                 Environment = { ["ASPNETCORE_ENVIRONMENT"] = "Production" },

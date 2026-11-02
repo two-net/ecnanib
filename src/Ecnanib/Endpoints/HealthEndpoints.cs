@@ -9,10 +9,20 @@ namespace Ecnanib.Endpoints;
 /// </summary>
 internal static class HealthEndpoints
 {
+    public const string Prefix = "/health";
+
+    /// <summary>
+    /// Not rate limited, so a limit can't fail a probe. DatabaseHealthCheck already runs one database
+    /// probe at a time, whoever asks.
+    /// </summary>
     public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = WriteAsync });
-        endpoints.MapHealthChecks("/health/ready", new HealthCheckOptions { ResponseWriter = WriteAsync });
+        endpoints
+            .MapHealthChecks($"{Prefix}/live", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = WriteAsync })
+            .DisableRateLimiting();
+        endpoints
+            .MapHealthChecks($"{Prefix}/ready", new HealthCheckOptions { ResponseWriter = WriteAsync })
+            .DisableRateLimiting();
 
         return endpoints;
     }

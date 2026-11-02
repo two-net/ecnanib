@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Ecnanib.Tests.Persistence;
+using Ecnanib.Tests.Security;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpsPolicy;
@@ -71,6 +72,10 @@ public sealed class RequestLoggingTests(PostgresFixture postgres)
             },
             services =>
             {
+                // Forwarded headers are only parsed from a trusted peer, and a test host has no peer at all.
+                services.AddTransient<IStartupFilter>(
+                    _ => new OuterMiddleware(context => context.Connection.RemoteIpAddress = IPAddress.Loopback));
+
                 if (redirected)
                 {
                     services.Configure<HttpsRedirectionOptions>(options => options.HttpsPort = 443);
@@ -86,6 +91,7 @@ public sealed class RequestLoggingTests(PostgresFixture postgres)
         request.Headers.TryAddWithoutValidation("Cookie", $"session={canary}");
         request.Headers.TryAddWithoutValidation("X-Innocent", canary);
         request.Headers.TryAddWithoutValidation("X-Correlation-ID", canary);
+        request.Headers.TryAddWithoutValidation("X-Forwarded-For", canary);
 
         using var response = await client.SendAsync(request, Cancellation);
         await app.StopAsync();

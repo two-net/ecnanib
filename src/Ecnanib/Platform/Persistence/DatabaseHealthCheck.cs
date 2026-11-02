@@ -60,7 +60,7 @@ internal sealed class DatabaseHealthCheck(IDbContextFactory<EcnanibDbContext> co
             await using var context = await contextFactory.CreateDbContextAsync(deadline.Token);
 
             // First, because reading the history treats a missing database as no migrations applied.
-            await context.Database.ExecuteSqlRawAsync("SELECT 1", deadline.Token);
+            await context.Database.ExecuteSqlAsync($"SELECT 1", deadline.Token);
             database = Connected;
 
             var applied = (await context.Database.GetAppliedMigrationsAsync(deadline.Token)).ToList();

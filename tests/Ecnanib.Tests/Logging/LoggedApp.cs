@@ -103,9 +103,16 @@ internal sealed class LoggedApp : IAsyncDisposable
 
         foreach (var file in Files())
         {
-            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var reader = new StreamReader(stream);
-            text.AppendLine(reader.ReadToEnd());
+            try
+            {
+                using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(stream);
+                text.AppendLine(reader.ReadToEnd());
+            }
+            catch (FileNotFoundException)
+            {
+                // The sink deletes old files as it rolls, so one can go after it was listed.
+            }
         }
 
         return text.ToString();
