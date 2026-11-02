@@ -1,7 +1,10 @@
 using Ecnanib.Modules.Identity.Contracts;
+using Ecnanib.Platform.Contracts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Ecnanib.Modules.Identity;
 
@@ -14,21 +17,28 @@ public static class IdentityModule
         services.AddSingleton(provider => IdentitySettings.Read(provider.GetRequiredService<IConfiguration>()));
         services.AddSingleton<IPasswordHasher, Argon2PasswordHasher>();
         services.AddSingleton<IAccounts, Accounts>();
+        services.AddSingleton<SessionConnections>();
+        services.AddSingleton<Sessions>();
+        services.AddSingleton<ISessions>(provider => provider.GetRequiredService<Sessions>());
+        services.AddSingleton<IRecurringJob, SessionExpiryJob>();
         services.AddSingleton<IAdministrators, Administrators>();
         services.AddSingleton<IAuthorizationHandler, LegalAcceptedHandler>();
         services.AddSingleton<IAuthorizationHandler, AdministratorHandler>();
 
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie();
         services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
-            .Configure<IdentitySettings>((options, settings) =>
+            .Configure<IdentitySettings, Sessions>((options, settings, sessions) =>
             {
                 options.Cookie.Name = SessionCookie;
                 options.LoginPath = "/sign-in";
                 options.ReturnUrlParameter = "returnUrl";
 
-                // #10 adds the absolute limit, revocation and listing on top of this.
-                options.ExpireTimeSpan = settings.SessionIdleTimeout;
-                options.SlidingExpiration = true;
+                // A backstop. The row in sessions decides, so the idle timeout needs no sliding cookie,
+                // and a circuit can count as activity even though it can't reissue one.
+                options.ExpireTimeSpan = settings.SessionAbsoluteTimeout;
+                options.SlidingExpiration = false;
+
+                options.Events.OnValidatePrincipal = context => ValidateSessionAsync(context, sessions);
 
                 // The default redirects to a page that doesn't exist. The status page answers this instead.
                 options.Events.OnRedirectToAccessDenied = context =>
@@ -37,6 +47,9 @@ public static class IdentityModule
                     return Task.CompletedTask;
                 };
             });
+
+        services.AddSingleton<SessionHubFilter>();
+        services.Configure<HubOptions>(options => options.AddFilter<SessionHubFilter>());
 
         // Attributes on one page combine as AND, and everything here sits behind plain [Authorize].
         services.AddAuthorizationBuilder()
@@ -62,5 +75,35 @@ public static class IdentityModule
         app.UseAuthentication();
 
         return app;
+    }
+
+    /// <summary>
+    /// Runs on every request with a cookie, so that revoking or expiring a session applies to the next
+    /// one. A hub request doesn't count as activity, because long polling makes one per poll, which
+    /// would keep an idle tab alive.
+    /// </summary>
+    private static async Task ValidateSessionAsync(CookieValidatePrincipalContext context, Sessions sessions)
+    {
+        var http = context.HttpContext;
+
+        // The exception handler runs this again to render the error page, and a lookup that failed
+        // would fail again, leaving an empty 500. The cookie stays, because the session may be fine.
+        if (http.Features.Get<IExceptionHandlerFeature>() is not null)
+        {
+            context.RejectPrincipal();
+            return;
+        }
+
+        var activity = http.GetEndpoint()?.Metadata.GetMetadata<HubMetadata>() is null;
+
+        if (context.Principal is { } user
+            && AccountClaims.SessionId(user) is { } sessionId
+            && await sessions.SeenAsync(sessionId, activity, http.RequestAborted))
+        {
+            return;
+        }
+
+        context.RejectPrincipal();
+        await http.SignOutAsync();
     }
 }

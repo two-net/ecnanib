@@ -13,6 +13,7 @@ public sealed class AccountLoggingTests(PostgresFixture postgres)
     private const string PasswordCanary = "canary-password-1234";
     private const string WrongCanary = "canary-wrong-password-5678";
     private const string SecretCanary = "canary bootstrap secret of plenty of characters";
+    private const string NewPasswordCanary = "canary-new-password-9012";
 
     [Fact]
     public async Task Passwords_addresses_and_the_secret_stay_out_of_the_logs()
@@ -37,6 +38,8 @@ public sealed class AccountLoggingTests(PostgresFixture postgres)
         (await visitor.SignInAsync(email, PasswordCanary)).Dispose();
         (await visitor.SubmitAsync("/account/administrator", Visitor.ConfirmForm, ("Input.Secret", WrongCanary))).Dispose();
         (await visitor.SubmitAsync("/account/administrator", Visitor.ConfirmForm, ("Input.Secret", SecretCanary))).Dispose();
+        (await visitor.ChangePasswordAsync(WrongCanary, NewPasswordCanary)).Dispose();
+        (await visitor.ChangePasswordAsync(PasswordCanary, NewPasswordCanary)).Dispose();
         (await visitor.SignOutAsync()).Dispose();
 
         app.Logger("Ecnanib.Tests.Accounts").LogError("Logged by mistake: {Value}", SecretCanary);
@@ -46,7 +49,11 @@ public sealed class AccountLoggingTests(PostgresFixture postgres)
 
         Assert.Contains("Signed in", text, StringComparison.Ordinal);
         Assert.Contains("Confirmed an administrator", text, StringComparison.Ordinal);
+        Assert.Contains("Password changed", text, StringComparison.Ordinal);
+        Assert.Contains("Password change refused", text, StringComparison.Ordinal);
+        Assert.Contains("Revoked a session", text, StringComparison.Ordinal);
         Assert.DoesNotContain(PasswordCanary, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(NewPasswordCanary, text, StringComparison.Ordinal);
         Assert.DoesNotContain(WrongCanary, text, StringComparison.Ordinal);
         Assert.DoesNotContain(SecretCanary, text, StringComparison.Ordinal);
         Assert.DoesNotContain(email, text, StringComparison.Ordinal);

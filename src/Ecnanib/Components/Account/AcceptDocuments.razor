@@ -45,7 +45,7 @@
 
     private async Task SubmitAsync()
     {
-        if (AccountClaims.UserId(HttpContext.User) is not { } userId)
+        if (AccountClaims.UserId(HttpContext.User) is null)
         {
             return;
         }
@@ -57,7 +57,7 @@
         }
 
         var principal = await Accounts.AcceptLegalDocumentsAsync(
-            userId,
+            HttpContext.User,
             Input.TermsOfUseVersion,
             Input.RiskDisclosureVersion,
             HttpContext.RequestAborted);

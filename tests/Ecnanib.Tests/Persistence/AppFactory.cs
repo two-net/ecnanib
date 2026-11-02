@@ -1,22 +1,26 @@
+using Ecnanib.Platform.Contracts;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Ecnanib.Tests.Persistence;
 
 /// <summary>
 /// Hosts the real application against a test database. Use this instead of a bare
 /// WebApplicationFactory, which runs as Development: it would load a developer's
-/// appsettings.Development.json and migrate the database that file points to.
+/// appsettings.Development.json and migrate the database that file points to. Real jobs are removed
+/// unless a test asks for them: one with no history is due at once, so it would run on every start.
 /// </summary>
 public class AppFactory(
     string? connectionString,
     Action<IServiceCollection>? configureServices = null,
     IEnumerable<KeyValuePair<string, string?>>? settings = null,
     Action<IConfigurationBuilder>? configure = null,
-    string? environment = null)
+    string? environment = null,
+    bool realJobs = false)
     : WebApplicationFactory<Program>
 {
     /// <summary>App:PublicBaseUrl when a test names an environment, because outside Development it's required.</summary>
@@ -55,10 +59,15 @@ public class AppFactory(
             configure?.Invoke(configuration);
         });
 
-        if (configureServices is not null)
+        builder.ConfigureTestServices(services =>
         {
-            builder.ConfigureTestServices(configureServices);
-        }
+            if (!realJobs)
+            {
+                services.RemoveAll<IRecurringJob>();
+            }
+
+            configureServices?.Invoke(services);
+        });
     }
 }
 

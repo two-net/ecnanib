@@ -13,9 +13,16 @@ public static class AccountClaims
     /// <summary>The value of <see cref="Contracts.LegalDocuments.Current"/> when the session started.</summary>
     public const string LegalDocuments = "ecnanib:legal-documents";
 
+    /// <summary>The row in <c>sessions</c> behind this cookie. A cookie without one is refused.</summary>
+    public const string Session = "ecnanib:session";
+
     /// <summary>The signed-in user, or null for a visitor.</summary>
     public static Guid? UserId(ClaimsPrincipal user) =>
         Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), CultureInfo.InvariantCulture, out var id) ? id : null;
+
+    /// <summary>The session this principal belongs to, or null for a visitor.</summary>
+    public static Guid? SessionId(ClaimsPrincipal user) =>
+        Guid.TryParse(user.FindFirstValue(Session), CultureInfo.InvariantCulture, out var id) ? id : null;
 }
 
 public static class AccountPolicies

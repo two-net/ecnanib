@@ -22,7 +22,7 @@ public sealed partial class LockoutTests(PostgresFixture postgres)
         await using var app = App(hasher);
         var email = await RegisterAsync(app);
 
-        var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => Accounts(app).SignInAsync(email, Wrong, Cancellation)));
+        var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => Accounts(app).SignInAsync(email, Wrong, Visitor.AnyClient, Cancellation)));
 
         Assert.All(results, Assert.Null);
         Assert.Equal(Limit, hasher.Verifications);
@@ -37,7 +37,7 @@ public sealed partial class LockoutTests(PostgresFixture postgres)
 
         await FailAsync(app, email, Limit);
 
-        Assert.Null(await Accounts(app).SignInAsync(email, Visitor.Password, Cancellation));
+        Assert.Null(await Accounts(app).SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public sealed partial class LockoutTests(PostgresFixture postgres)
         await FailAsync(app, email, Limit);
         await Sql.ExecuteAsync(connectionString, "UPDATE users SET locked_until = now() - interval '1 second'", Cancellation);
 
-        Assert.NotNull(await Accounts(app).SignInAsync(email, Visitor.Password, Cancellation));
+        Assert.NotNull(await Accounts(app).SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
         Assert.Equal(1, await Sql.ScalarAsync<long>(connectionString, "SELECT count(*) FROM users WHERE locked_until IS NULL AND failed_sign_ins = 0", Cancellation));
     }
 
@@ -80,10 +80,10 @@ public sealed partial class LockoutTests(PostgresFixture postgres)
         var email = await RegisterAsync(app);
 
         await FailAsync(app, email, Limit - 1);
-        Assert.NotNull(await Accounts(app).SignInAsync(email, Visitor.Password, Cancellation));
+        Assert.NotNull(await Accounts(app).SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
 
         await FailAsync(app, email, Limit - 1);
-        Assert.NotNull(await Accounts(app).SignInAsync(email, Visitor.Password, Cancellation));
+        Assert.NotNull(await Accounts(app).SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
     }
 
     [Fact]
@@ -99,8 +99,9 @@ public sealed partial class LockoutTests(PostgresFixture postgres)
             "SELECT (extract(epoch FROM locked_until - now()) / 60)::float8 FROM users",
             Cancellation);
 
-        Assert.InRange(minutes, 89, 90);
-        Assert.Null(await Accounts(app).SignInAsync(email, Visitor.Password, Cancellation));
+        // Past 90 is possible, because the lock uses this host's clock and now() the database's.
+        Assert.InRange(minutes, 89, 91);
+        Assert.Null(await Accounts(app).SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
     }
 
     /// <summary>The answer and the work must both match, or either one would show which addresses exist.</summary>
@@ -143,7 +144,7 @@ public sealed partial class LockoutTests(PostgresFixture postgres)
     {
         for (var attempt = 0; attempt < times; attempt++)
         {
-            await Accounts(app).SignInAsync(email, Wrong, Cancellation);
+            await Accounts(app).SignInAsync(email, Wrong, Visitor.AnyClient, Cancellation);
         }
     }
 

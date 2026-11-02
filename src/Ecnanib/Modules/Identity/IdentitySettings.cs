@@ -24,6 +24,7 @@ internal sealed class IdentitySettings
     private const string MaxFailedSignInsKey = "Security:MaxFailedSignIns";
     private const string LockoutMinutesKey = "Security:LockoutMinutes";
     private const string SessionIdleTimeoutMinutesKey = "Security:SessionIdleTimeoutMinutes";
+    private const string SessionAbsoluteTimeoutHoursKey = "Security:SessionAbsoluteTimeoutHours";
     private const string AdminEmailsKey = "Admin:AdminEmails";
     private const string BootstrapSecretKey = "Admin:BootstrapSecret";
     private const string EmailEnabledKey = "Email:Enabled";
@@ -32,6 +33,10 @@ internal sealed class IdentitySettings
     private const int DefaultMaxFailedSignIns = 5;
     private const int DefaultLockoutMinutes = 15;
     private const int DefaultSessionIdleTimeoutMinutes = 60;
+    private const int DefaultSessionAbsoluteTimeoutHours = 24;
+
+    /// <summary>The most often a session's last-seen time is written, whatever the idle timeout.</summary>
+    private static readonly TimeSpan LongestSessionTouchInterval = TimeSpan.FromMinutes(1);
 
     private IdentitySettings()
     {
@@ -44,6 +49,12 @@ internal sealed class IdentitySettings
     public required TimeSpan Lockout { get; init; }
 
     public required TimeSpan SessionIdleTimeout { get; init; }
+
+    public required TimeSpan SessionAbsoluteTimeout { get; init; }
+
+    /// <summary>A fraction of the idle timeout, so that the shortest one allowed still works.</summary>
+    public TimeSpan SessionTouchInterval =>
+        SessionIdleTimeout / 10 < LongestSessionTouchInterval ? SessionIdleTimeout / 10 : LongestSessionTouchInterval;
 
     /// <summary>Normalized, so compare it with <see cref="EmailAddresses.Normalize"/>.</summary>
     public required IReadOnlySet<string> AdministratorEmails { get; init; }
@@ -62,6 +73,7 @@ internal sealed class IdentitySettings
         var maxFailedSignIns = configuration.GetValue(MaxFailedSignInsKey, DefaultMaxFailedSignIns);
         var lockoutMinutes = configuration.GetValue(LockoutMinutesKey, DefaultLockoutMinutes);
         var sessionIdleTimeoutMinutes = configuration.GetValue(SessionIdleTimeoutMinutesKey, DefaultSessionIdleTimeoutMinutes);
+        var sessionAbsoluteTimeoutHours = configuration.GetValue(SessionAbsoluteTimeoutHoursKey, DefaultSessionAbsoluteTimeoutHours);
         var emailEnabled = configuration.GetValue(EmailEnabledKey, false);
 
         Require(
@@ -70,6 +82,7 @@ internal sealed class IdentitySettings
         Require(maxFailedSignIns >= 1, $"{MaxFailedSignInsKey} must be at least 1.");
         Require(lockoutMinutes >= 1, $"{LockoutMinutesKey} must be at least 1.");
         Require(sessionIdleTimeoutMinutes >= 1, $"{SessionIdleTimeoutMinutesKey} must be at least 1.");
+        Require(sessionAbsoluteTimeoutHours >= 1, $"{SessionAbsoluteTimeoutHoursKey} must be at least 1.");
 
         var administrators = ReadAdministrators(configuration);
 
@@ -79,6 +92,7 @@ internal sealed class IdentitySettings
             MaxFailedSignIns = maxFailedSignIns,
             Lockout = TimeSpan.FromMinutes(lockoutMinutes),
             SessionIdleTimeout = TimeSpan.FromMinutes(sessionIdleTimeoutMinutes),
+            SessionAbsoluteTimeout = TimeSpan.FromHours(sessionAbsoluteTimeoutHours),
             AdministratorEmails = administrators,
             BootstrapSecret = !emailEnabled && administrators.Count > 0 ? ReadBootstrapSecret(configuration) : null,
             EmailEnabled = emailEnabled,

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -21,6 +22,13 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
 
     public const string ConfirmForm = "confirm-administrator";
 
+    public const string PasswordForm = "change-password";
+
+    private const string SessionCookieName = "ecnanib.session";
+
+    /// <summary>For a test that calls the contract and doesn't care who's asking.</summary>
+    public static readonly ClientDetails AnyClient = new(null, null);
+
     public static string NewEmail() => $"{Guid.NewGuid():N}@example.test";
 
     /// <summary>Where a redirect goes on this site. The framework writes some absolute and some relative.</summary>
@@ -35,10 +43,20 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
 
     public HttpClient Client => client;
 
+    /// <summary>The session cookie from the last sign-in, as a Cookie header would carry it.</summary>
+    public string? SessionCookie { get; private set; }
+
     public static Visitor To(AppFactory app) =>
         new(app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false }));
 
     public static Visitor ToPublic(AppFactory app) => new(app.CreatePublicClient());
+
+    /// <summary>
+    /// An application on Kestrel. Not the factory's client, whose option doesn't reach a real socket:
+    /// it would follow the redirect after signing in, and lose the cookie that came with it.
+    /// </summary>
+    public static Visitor ToAddress(Uri address) =>
+        new(new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }) { BaseAddress = address });
 
     public Task<HttpResponseMessage> GetAsync(string path) => client.GetAsync(path, Cancellation);
 
@@ -79,8 +97,28 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
                 .. fields,
             ]);
 
-    public Task<HttpResponseMessage> SignInAsync(string email, string password = Password, string page = "/sign-in") =>
-        SubmitAsync(page, SignInForm, ("Input.Email", email), ("Input.Password", password));
+    public async Task<HttpResponseMessage> SignInAsync(string email, string password = Password, string page = "/sign-in")
+    {
+        var response = await SubmitAsync(page, SignInForm, ("Input.Email", email), ("Input.Password", password));
+
+        if (response.Headers.TryGetValues("Set-Cookie", out var cookies))
+        {
+            SessionCookie = cookies
+                .Where(cookie => cookie.StartsWith(SessionCookieName + "=", StringComparison.Ordinal))
+                .Select(cookie => cookie.Split(';')[0])
+                .LastOrDefault() ?? SessionCookie;
+        }
+
+        return response;
+    }
+
+    public Task<HttpResponseMessage> ChangePasswordAsync(string current, string next, string? confirmation = null) =>
+        SubmitAsync(
+            "/account/password",
+            PasswordForm,
+            ("Input.CurrentPassword", current),
+            ("Input.NewPassword", next),
+            ("Input.ConfirmPassword", confirmation ?? next));
 
     /// <summary>Registers and signs in, leaving the session in this visitor's cookies.</summary>
     public async Task<string> SignUpAsync(string? email = null)
@@ -96,11 +134,16 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
     }
 
     /// <summary>Posts the menu's form from a page, as someone using that page would.</summary>
-    public async Task<HttpResponseMessage> SignOutAsync(string page = "/account")
-    {
-        var values = HiddenFields(await PageAsync(page), form: null);
+    public async Task<HttpResponseMessage> SignOutAsync(string page = "/account") =>
+        await PostSignOutAsync(await SignOutFormAsync(page));
 
-        using var content = new FormUrlEncodedContent(values);
+    /// <summary>What a page holds for its sign-out button, for a test that needs it to go stale first.</summary>
+    public async Task<Dictionary<string, string>> SignOutFormAsync(string page = "/account") =>
+        HiddenFields(await PageAsync(page), form: null);
+
+    public async Task<HttpResponseMessage> PostSignOutAsync(Dictionary<string, string> form)
+    {
+        using var content = new FormUrlEncodedContent(form);
 
         return await client.PostAsync("/sign-out", content, Cancellation);
     }
@@ -127,6 +170,32 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
 
     [GeneratedRegex("""<input\b[^>]*type="hidden"[^>]*name="(?<name>[^"]*)"[^>]*value="(?<value>[^"]*)"[^>]*>""")]
     private static partial Regex Hidden();
+}
+
+/// <summary>What the tests read and change in the sessions table.</summary>
+internal static class SessionRows
+{
+    /// <summary>A user's sessions, oldest first, so a test can tell them apart by sign-in order.</summary>
+    public static async Task<List<Guid>> OfAsync(string connectionString, string email, CancellationToken cancellationToken)
+    {
+        var id = await AccountRows.IdAsync(connectionString, email, cancellationToken);
+        var rows = await Sql.ColumnAsync(connectionString, $"SELECT id::text FROM sessions WHERE user_id = '{id}' ORDER BY created_at", cancellationToken);
+
+        return [.. rows.Select(Guid.Parse)];
+    }
+
+    public static Task SetLastSeenAsync(string connectionString, Guid sessionId, string age, CancellationToken cancellationToken) =>
+        Sql.ExecuteAsync(connectionString, $"UPDATE sessions SET last_seen_at = now() - interval '{age}' WHERE id = '{sessionId}'", cancellationToken);
+
+    public static Task SetExpiredAsync(string connectionString, Guid sessionId, CancellationToken cancellationToken) =>
+        Sql.ExecuteAsync(connectionString, $"UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = '{sessionId}'", cancellationToken);
+
+    /// <summary>Whether a session was seen just now. The server's clock isn't this host's, so it can read as slightly ahead.</summary>
+    public static async Task<bool> WasJustSeenAsync(string connectionString, Guid sessionId, CancellationToken cancellationToken) =>
+        Math.Abs(await SecondsSinceSeenAsync(connectionString, sessionId, cancellationToken)) < 10;
+
+    public static Task<double> SecondsSinceSeenAsync(string connectionString, Guid sessionId, CancellationToken cancellationToken) =>
+        Sql.ScalarAsync<double>(connectionString, $"SELECT extract(epoch FROM now() - last_seen_at)::float8 FROM sessions WHERE id = '{sessionId}'", cancellationToken);
 }
 
 /// <summary>What the tests read and change in a database, by address.</summary>

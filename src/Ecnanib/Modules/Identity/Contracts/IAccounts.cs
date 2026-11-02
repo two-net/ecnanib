@@ -20,18 +20,31 @@ public interface IAccounts
 
     /// <summary>
     /// The principal to sign in, or null. An unknown address, a wrong password and a locked account
-    /// are one result, and each spends one hash, so tell the user no more than that.
+    /// are one result, and each spends one hash, so tell the user no more than that. It starts a
+    /// session, which <paramref name="client"/> describes in the user's list of them.
     /// </summary>
-    Task<ClaimsPrincipal?> SignInAsync(string email, string password, CancellationToken cancellationToken);
+    Task<ClaimsPrincipal?> SignInAsync(string email, string password, ClientDetails client, CancellationToken cancellationToken);
 
     /// <summary>
     /// Records acceptance of the versions the user was shown. Null, recording nothing, unless both are
-    /// current. Otherwise the principal to sign in, which replaces the one in the cookie.
+    /// current. Otherwise the principal to sign in, which replaces the one in the cookie and keeps its
+    /// session.
     /// </summary>
     Task<ClaimsPrincipal?> AcceptLegalDocumentsAsync(
-        Guid userId,
+        ClaimsPrincipal user,
         string? termsOfUseVersion,
         string? riskDisclosureVersion,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// FR-AUTH-08. Revokes every session but <paramref name="user"/>'s own. A guess at the current
+    /// password counts towards the same lockout as a sign-in, and a locked account gets the answer a
+    /// wrong password gets. Check the new password's length here, not in the page.
+    /// </summary>
+    Task<PasswordChangeResult> ChangePasswordAsync(
+        ClaimsPrincipal user,
+        string currentPassword,
+        string newPassword,
         CancellationToken cancellationToken);
 
     /// <summary>Null when the account no longer exists.</summary>
@@ -71,6 +84,14 @@ public enum RegistrationProblem
 
     /// <summary>A document changed after the form was shown, so what was accepted isn't current.</summary>
     DocumentsChanged,
+}
+
+public enum PasswordChangeResult
+{
+    Changed,
+    CurrentPasswordWrong,
+    PasswordTooShort,
+    PasswordTooLong,
 }
 
 public sealed record AccountOverview(string Email, IReadOnlyList<LegalAcceptanceRecord> Acceptances);

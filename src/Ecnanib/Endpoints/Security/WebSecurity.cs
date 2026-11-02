@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.CookiePolicy;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.RateLimiting;
@@ -86,6 +87,33 @@ internal static class WebSecurity
 
         return app;
     }
+
+    /// <summary>
+    /// Call it straight after status pages. A re-execution keeps the request's method, so a post an
+    /// endpoint refused for its token would reach antiforgery a second time, and reading a form that
+    /// has already failed throws. That would turn a 400 into an empty 500, and an Error that anyone
+    /// could write. A status page only shows something, so it runs as a GET. The method goes back
+    /// afterwards, because request logging reads it.
+    /// </summary>
+    public static IApplicationBuilder UseStatusPagesAsGet(this IApplicationBuilder app) =>
+        app.Use(async (context, next) =>
+        {
+            var method = context.Request.Method;
+
+            if (context.Features.Get<IStatusCodeReExecuteFeature>() is not null)
+            {
+                context.Request.Method = HttpMethods.Get;
+            }
+
+            try
+            {
+                await next(context);
+            }
+            finally
+            {
+                context.Request.Method = method;
+            }
+        });
 
     /// <summary>
     /// A probe that reaches the application directly, behind a proxy, would get a 307, and curl -f

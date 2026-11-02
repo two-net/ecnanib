@@ -9,6 +9,7 @@ public sealed class IdentitySettingsTests(PostgresFixture postgres)
     private const string MaxFailedSignIns = "Security:MaxFailedSignIns";
     private const string LockoutMinutes = "Security:LockoutMinutes";
     private const string SessionIdleTimeoutMinutes = "Security:SessionIdleTimeoutMinutes";
+    private const string SessionAbsoluteTimeoutHours = "Security:SessionAbsoluteTimeoutHours";
     private const string AdminEmail = "Admin:AdminEmails:0";
     private const string BootstrapSecret = "Admin:BootstrapSecret";
     private const string EmailEnabled = "Email:Enabled";
@@ -25,6 +26,7 @@ public sealed class IdentitySettingsTests(PostgresFixture postgres)
         { MaxFailedSignIns, new() { [MaxFailedSignIns] = "0" } },
         { LockoutMinutes, new() { [LockoutMinutes] = "0" } },
         { SessionIdleTimeoutMinutes, new() { [SessionIdleTimeoutMinutes] = "0" } },
+        { SessionAbsoluteTimeoutHours, new() { [SessionAbsoluteTimeoutHours] = "0" } },
         { AdminEmail, new() { [AdminEmail] = "not an address", [BootstrapSecret] = GoodSecret } },
         { AdminEmail, new() { [AdminEmail] = "Sam <sam@example.test>", [BootstrapSecret] = GoodSecret } },
         { BootstrapSecret, new() { [AdminEmail] = Listed } },

@@ -8,6 +8,11 @@
 <div class="page form-page">
     <h1>@Strings.AccountHeading</h1>
 
+    @if (PasswordChanged == "true")
+    {
+        <p class="form-notice" role="status">@Strings.AccountPasswordChanged</p>
+    }
+
     @if (_overview is { } overview)
     {
         <dl class="facts">
@@ -22,6 +27,10 @@
             <p><a href="/account/administrator">@Strings.AccountConfirmAdministratorLink</a></p>
         }
 
+        <p><a href="/account/password">@Strings.AccountChangePasswordLink</a></p>
+
+        <SessionList UserId="_userId" CurrentSessionId="_sessionId" />
+
         <h2>@Strings.AccountDocumentsHeading</h2>
 
         <ul class="facts-list">
@@ -35,19 +44,29 @@
 
 @code {
     private AccountOverview? _overview;
+    private Guid _userId;
+    private Guid? _sessionId;
     private bool _isAdministrator;
     private bool _canConfirm;
 
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
+    /// <summary>A string, because a bool makes any other value a 500, and anyone can write this query.</summary>
+    [SupplyParameterFromQuery]
+    private string? PasswordChanged { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
-        if (AccountClaims.UserId((await AuthenticationState).User) is not { } userId)
+        var user = (await AuthenticationState).User;
+
+        if (AccountClaims.UserId(user) is not { } userId)
         {
             return;
         }
 
+        _userId = userId;
+        _sessionId = AccountClaims.SessionId(user);
         _overview = await Accounts.FindAsync(userId, CancellationToken.None);
         _isAdministrator = await Administrators.IsAdministratorAsync(userId, CancellationToken.None);
         _canConfirm = await Administrators.CanConfirmAsync(userId, CancellationToken.None);

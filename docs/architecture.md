@@ -338,6 +338,7 @@ Anything outside the exception handler runs once per request, so it has to survi
 | `UseAuthentication`, through `UseAccountAuthentication` | Goes here. The limiter needs the account, and the handler has to catch a failed session lookup |
 | `UseRateLimiter` | Outside status pages, so a 404 costs one permit, and a 429 with no body doesn't render the 404 page |
 | `UseStatusCodePagesWithReExecute` | |
+| `UseStatusPagesAsGet` | A re-execution keeps the method, so a post an endpoint refused for its token would reach antiforgery twice, and reading a form that has already failed throws. A status page only shows something, so it runs as a GET |
 | HTTPS redirect, except `/health` | |
 | `UseAuthorization`, `UseAntiforgery` | Inside status pages, so a 403 renders one. Antiforgery tokens bind to the identity, so it goes after authentication |
 
@@ -408,7 +409,7 @@ The sign-in account is in the request body, and a partitioner can't read that. T
 
 Negotiating and connecting are HTTP, so they're limited like anything else. After that, **hub traffic never reaches the limiter**, and that's fine for NFR-SEC-07, which covers authentication and API endpoints, because both stay on HTTP: only HTTP can set a cookie, and [the API](#the-api) is `Endpoints/`.
 
-The gap is a secret checked on a circuit, such as a current password (#10) or a TOTP code for a sensitive action (#14). Nothing limits those attempts, so each needs a per-account throttle behind its module contract, and a refusal is a typed result rather than a 429. Don't limit inside `CircuitHandler`: inbound activity includes render acknowledgements, and refusing one breaks the circuit.
+The gap is a secret checked on a circuit, such as a TOTP code for a sensitive action (#14). Nothing limits those attempts, so each needs a per-account throttle behind its module contract, and a refusal is a typed result rather than a 429. Don't limit inside `CircuitHandler`: inbound activity includes render acknowledgements, and refusing one breaks the circuit.
 
 The WebSocket `Origin` is checked against `App:PublicBaseUrl`, because CORS doesn't cover WebSockets and SameSite doesn't stop a sibling subdomain. The check is skipped when a client sends no `Origin`: only a browser can carry someone else's cookies, and a browser always sends one.
 
@@ -423,7 +424,7 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 | Cross-site request forgery | Antiforgery, SameSite and `form-action 'self'`. Every state-changing endpoint must require a token, proved by posting without one, and `DisableAntiforgery` is banned. The WebSocket `Origin` check covers the hub | `CsrfTests`, `BannedApis`, `WebSocketTests` |
 | Server-side request forgery | Only the adapters may use `HttpClient`, and base URLs come only from the configuration file (NFR-SEC-10) | `BannedApis`, then #17, #18 |
 | Broken access control | Pages are [private by default](#access-control). Ownership checks go behind module contracts, which HTTP can't enforce on a circuit | `AccessTests`, then #55 |
-| Authentication failures | [Lockout](#lockout), [password hashing](#passwords) and sessions | `LockoutTests`, `PasswordHasherTests`, then #10, #14 |
+| Authentication failures | [Lockout](#lockout), [password hashing](#passwords) and [sessions](#sessions) | `LockoutTests`, `PasswordHasherTests`, `SessionTests`, `CircuitAccessTests`, then #14 |
 | Cryptographic failures | HTTPS, HSTS, Secure cookies. Secrets at rest are #12 | `HttpsTests`, `CookieTests`, #12 |
 | Security misconfiguration | Startup refuses a missing or `http` public address, and validates these settings. `AllowedHosts` is the operator's to set | `WebSecuritySettingsTests`, #57 |
 | Vulnerable components | The dependency scan (NFR-SEC-09) | CI |
@@ -437,7 +438,7 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 
 ### Forms that take a secret
 
-**A form that takes a password or other secret is a static page that posts to itself.** That's sign-in, registration and the bootstrap secret. The other ways of hosting one all lose something:
+**A form that takes a password or other secret is a static page that posts to itself.** That's sign-in, registration, changing a password and the bootstrap secret. The other ways of hosting one all lose something:
 
 | Approach | Why not |
 |---|---|
@@ -481,6 +482,62 @@ An unknown address, a malformed one, a wrong password and a locked account retur
 **An attacker can keep an account locked**, which is the accepted cost of FR-AUTH-04 for now. Five wrong passwords whenever a lock ends is enough, and the owner only gets in during the gap, so one address at the 10-a-minute limit can hold about 30 accounts. With email off, that includes an administrator, who is the only way to reset a password. Counting failures per account and client network would close it, because an attacker's failures then wouldn't lock out the owner's network.
 
 A refusal logs at Information, because at Warning anonymous visitors could write a database row per attempt.
+
+### Sessions
+
+The cookie says which session it belongs to, and a row in `sessions` says whether that session is still allowed. **Revoking deletes the row**, because the audit trail (#11) keeps the history, not this table.
+
+| Limit | Where it comes from | What moves it |
+|---|---|---|
+| Idle | `last_seen_at` + `Security:SessionIdleTimeoutMinutes` | An HTTP request or a user action, written at most every minute, or a tenth of the timeout if that's shorter |
+| Absolute | `expires_at`, set at sign-in from `Security:SessionAbsoluteTimeoutHours` | Nothing |
+
+**The cookie doesn't slide.** Its ticket lasts the absolute timeout, so it's only a backstop. A circuit can't reissue a cookie, so a sliding one would sign out someone working in a page. A cookie with no session claim is refused, so anything from before this table signs in again.
+
+**HTTP checks the row on every request with a cookie**, through `OnValidatePrincipal`, so ending a session applies to the next request. A hub request is checked but doesn't count as activity, because long polling makes one per poll, which would keep an idle tab alive. The exception handler runs authentication again for the error page, and a lookup that just failed would fail again and leave an empty 500. So that pass rejects the principal for this request only, and leaves the cookie, because the session may be fine.
+
+#### Ending a circuit
+
+A circuit never passes through HTTP, and the framework has no public way to end one. `ConnectCircuit` attaches any connection that holds the circuit's secret, then gives the circuit that connection's user **without re-initializing its components**, so a page would keep the previous user's data and the IDs it captured. Closing a revoked session's connection therefore isn't enough on its own: someone who kept the secret could reconnect on another session and carry on working as the first user, or attach a session to a circuit that an anonymous connection started, where revoking the session wouldn't reach that first connection.
+
+So **a circuit can only be rejoined by the session that started it, and only while that session lives. Everyone else gets the `false` that makes a client reload the page.** A circuit's identity is then fixed for its whole life, so every connection that can drive a signed-in circuit carries that session's claim, and closing those ends all access.
+
+`SessionHubFilter` enforces this, and `SessionConnections` holds each session's connections and circuit secrets:
+
+| Hub event | What happens |
+|---|---|
+| Connected | The connection is added and then the session is checked, which closes the race with a revocation that ran after the cookie check |
+| `StartCircuit`, `ResumeCircuit` | The returned secret is recorded against the session |
+| `ConnectCircuit` | Refused unless this connection's session owns that secret |
+| `BeginInvokeDotNetFromJS`, `OnLocationChanged` | Counted as activity and checked, at the same throttle. A dead session is ended and the call refused |
+| Anything else, including render acknowledgements | Passes through |
+
+Ending a session deletes the row **first**, then closes its connections, so that a client reconnecting at once finds its cookie refused. In a browser, the connection closes, the client reconnects, `ConnectCircuit` says no, and the page reloads into sign-in. The framework evicts the circuit three minutes later.
+
+- **Nothing throws to refuse.** A throw from a hub filter or a `CircuitHandler` logs an Error, and from `OnConnectedAsync` it also skips `OnDisconnectedAsync`. An ended session is routine, so it mustn't write a `log_events` row. A failed check closes that one connection and logs a Warning, because the session may be fine and the client can rejoin.
+- **Don't gate on a render.** A client can stop acknowledging renders, and the renderer then stops at `MaxBufferedUnacknowledgedRenderBatches`, so nothing that relies on a re-render reaches it, while its events still dispatch. That's why this holds at the door rather than in a component.
+- **The method names aren't public API.** `HubMethodName` is the resolved method's name, so a client changing the case can't get past a check. `CircuitAccessTests` fails if an upgrade renames one or changes its signature, so read `SessionHubFilter` against the new `ComponentHub` then.
+- **Visitors aren't tracked,** so they can't grow the map, and an unknown secret is refused. A visitor's page reloads after a dropped connection rather than resuming. Those pages hold no input, so nothing is lost.
+- **Secrets stay until the session ends,** which the absolute timeout bounds. Forgetting them is safe, for the same reason.
+
+`SessionExpiryJob` deletes expired rows and closes their connections every 5 minutes. Nothing depends on it for a session to stop working: it moves tabs nobody is touching along, and keeps the table small.
+
+#### Idle means a user action
+
+A tab showing live data with nobody touching it times out, because acknowledging a render isn't something a person did. Someone watching a dashboard for an hour without clicking signs in again, and their agents carry on regardless. `BeginInvokeDotNetFromJS` also carries JS interop, so a component that calls .NET from a timer would count as activity.
+
+#### Changing a password
+
+`/account/password` is a [static page](#forms-that-take-a-secret), so the password never crosses a circuit. A guess is charged like a sign-in, so it counts towards the same [lockout](#lockout), and a locked account gets the answer a wrong password gets. Length is checked first, so a bad new password costs no hash and no attempt. The current session stays, as FR-AUTH-08 says.
+
+**A sign-in racing a change can't survive it.** Verifying takes long enough for a change to finish meanwhile, which would leave a session the change never saw. So the session is inserted by one statement, conditional on the hash that was verified, `FOR SHARE`, and the change updates the hash before deleting sessions. The explicit lock matters: the one the foreign key takes doesn't wait for an update to the hash.
+
+#### What this leaves
+
+- After a revocation, a circuit's memory lasts up to three minutes, with nothing able to reach it.
+- A silent tab can sit past its session until the next job run, showing what it last rendered.
+- Signing out from a tab in that window gets a 400, because its token is bound to a user the request no longer has. `SignOutAsync` already ran during validation, so the cookie still goes.
+- `Revoked a session` and `Password changed` are log events. #11 turns them into audit records.
 
 ### Registration
 
@@ -583,7 +640,16 @@ Accounts were checked in Chromium and WebKit in Development, over plain HTTP rat
 - Lockout, re-acceptance and the bootstrap secret end to end
 - No horizontal scroll on the account pages at 375, 768 and 1280px, in both themes, with no console errors
 
-Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Neither is a fault in the application.
+Sessions were checked in Chromium and WebKit in Development, with the rate limits as shipped. `CircuitAccessTests` covers what a client that isn't a browser can try:
+
+- Revoking a session sends its other device to sign-in with nobody touching it, and the list updates
+- Signing out sends another tab to sign-in, and a password change signs out the other device and keeps this one
+- A dropped connection rejoins a signed-in page without reloading it, and reloads a visitor's
+- With a 1-minute idle timeout, navigating inside a circuit keeps a session alive with no document requests, and a silent tab leaves by the next job run
+- No `Error` in the log through any of it
+- No horizontal scroll on `/account` and `/account/password` at 375, 768 and 1280px, in both themes, with the longest user agent that's stored
+
+Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Signing out does the same, more loudly in WebKit: it closes the session's connections, including that tab's, so the tab tries to reconnect while it's leaving. The reconnect modal wasn't open on a single frame in either browser. None of these is a fault in the application.
 
 The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
 
@@ -594,7 +660,9 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Animation (#52):** the reconnect modal's animations are the only motion so far, and they ignore the preference and the operating system's reduced motion setting (AC-06).
 - **Switching to Live (#39):** render `MandatoryNotices` in the flow (EXT-UI-03).
 - **Legal review (#58):** review the notices in `Strings.resx`, which are drafts. If you change a phrase that EXT-UI-03 quotes, change the tests that check it. Replace the placeholder documents and `LegalDraftNotice`, set both versions in `LegalDocuments` to `1`, and update the digests in `LegalDocumentTests`. Everyone then accepts again, which is right, because nobody has seen the real text. Rule on whether agents keep trading for a user who hasn't re-accepted, and on keeping proof of acceptance after account deletion, which FR-AUTH-09 would remove.
-- **Sessions and two-factor (#10, #14):** a password or TOTP code checked on a circuit needs its own [per-account throttle](#circuits). The HTTP limiter can't see it. The cookie only slides on `Security:SessionIdleTimeoutMinutes`, and circuit activity doesn't slide it, so #10 adds the absolute limit. A circuit keeps the user it started with, so another tab stays signed in after sign-out until #10 ends live circuits.
+- **Two-factor (#14):** a TOTP code checked on a circuit needs its own [per-account throttle](#circuits). The HTTP limiter can't see it.
+- **The dashboard (#41):** [idle means a user action](#idle-means-a-user-action), so a live page times out when nobody touches it. Don't call .NET from a timer in JS, because that would count as activity.
+- **Administrators and account deletion (#47, #51):** add a revoke-all to `ISessions` for FR-ADM-01, and call it before deleting a user. The foreign key removes the rows, but only `SessionConnections.End` closes live connections, and [a circuit's connection](#ending-a-circuit) would otherwise run until its next user action.
 - **Email (#13):** set `email_verified_at` from the emailed link. Nothing sets it when email is on until then, so no [administrator](#administrators) can exist in that mode. **Mind accounts from before email was on:** if a stranger registered an address and its real owner later clicks the link, the stranger's password then controls a verified account, which is an administrator if the address is listed. Verifying has to replace the password, or the first verification has to come from whoever set it.
 - **User administration (#47):** use `IAdministrators` and `AccountPolicies.Administrator`, behind contracts as well as on pages. Add a way to remove an account, because a stranger who registers a listed address holds it until then.
 - **Audit (#11):** must sit below every module that writes to it, and take the caller's context. `Accounts` and `Administrators` log the sign-in and bootstrap events that FR-AUD-01 needs as records. See [Persistence](#persistence). Store `ICorrelationContext.CurrentId`, which is null outside a request, circuit action, cycle or job. `RemoteIpAddress` is the client's address once `UseForwardedHeaders` has run, but a circuit has no request to read it from, so FR-AUD-02 needs it captured when the circuit starts.
@@ -602,7 +670,6 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Secrets (#12):** must sit below Identity and Credentials, and keep secret access separate from credential metadata (#20). Wrap decrypted secrets in a type that doesn't render its value: see [Masking](#masking). Antiforgery and session cookies are protected by Data Protection keys, which sit unencrypted in the user's profile by default: decide where they live.
 - **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds. Base URLs come from the configuration file only (NFR-SEC-10), and clients don't follow redirects, or a response could send a signed request somewhere else.
 - **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category. Base URLs and redirects follow the same rule as the exchange adapter.
-- **The first real job:** a job with no history is due at once, so every application start in every test will run it. `AppFactory` will need to remove real jobs by default.
 - **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
 - **Risk Engine (#27):** see rule 4.
 - **Decision cycles (#30, #31):** call `ICorrelationContext.Begin()` around each cycle, and set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope. Decide between one `job_runs` row per tick and one per cycle, which costs about 19,000 rows a day at 200 agents on 15m. `RunAsync` stays pending while hung work keeps its place, so a concurrency limit must bound its wait.

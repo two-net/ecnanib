@@ -98,6 +98,7 @@ public sealed class AccessTests(SharedApp app) : IClassFixture<SharedApp>
     [InlineData("/sign-in")]
     [InlineData("/register")]
     [InlineData("/account/administrator")]
+    [InlineData("/account/password")]
     public void A_page_that_takes_a_secret_stays_static_and_is_limited(string route)
     {
         app.Start();

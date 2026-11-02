@@ -13,6 +13,7 @@ namespace Ecnanib.Modules.Identity;
 internal sealed class Accounts(
     IDbContextFactory<EcnanibDbContext> contextFactory,
     IPasswordHasher hasher,
+    Sessions sessions,
     IdentitySettings settings,
     ILogger<Accounts> logger) : IAccounts
 {
@@ -60,7 +61,7 @@ internal sealed class Accounts(
         return [];
     }
 
-    public async Task<ClaimsPrincipal?> SignInAsync(string email, string password, CancellationToken cancellationToken)
+    public async Task<ClaimsPrincipal?> SignInAsync(string email, string password, ClientDetails client, CancellationToken cancellationToken)
     {
         if (!EmailAddresses.IsValid(email))
         {
@@ -83,41 +84,39 @@ internal sealed class Accounts(
 
         using var scope = logger.BeginScope(new Dictionary<string, object> { [LogProperties.UserId] = user.Id });
 
-        if (!await TryChargeAttemptAsync(context, user.Id, cancellationToken))
+        switch (await CheckPasswordAsync(context, user.Id, password, user.PasswordHash, cancellationToken))
         {
-            await hasher.SpendAsync(password, cancellationToken);
-            logger.LogInformation("Sign-in refused for a locked account");
+            case PasswordCheck.Locked:
+                logger.LogInformation("Sign-in refused for a locked account");
+                return null;
+
+            case PasswordCheck.Wrong:
+                logger.LogInformation("Sign-in refused for a wrong password");
+                return null;
+        }
+
+        if (await sessions.StartAsync(user.Id, user.PasswordHash, client, cancellationToken) is not { } sessionId)
+        {
+            logger.LogInformation("Sign-in refused because the password changed while it ran");
 
             return null;
         }
-
-        if (!await hasher.VerifyAsync(password, user.PasswordHash, cancellationToken))
-        {
-            logger.LogInformation("Sign-in refused for a wrong password");
-
-            return null;
-        }
-
-        await context.Set<User>()
-            .Where(candidate => candidate.Id == user.Id)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(candidate => candidate.FailedSignIns, 0)
-                    .SetProperty(candidate => candidate.LockedUntil, (DateTimeOffset?)null),
-                cancellationToken);
 
         logger.LogInformation("Signed in");
 
-        return Principal(user.Id, await HasAcceptedCurrentAsync(context, user.Id, cancellationToken));
+        return Principal(user.Id, sessionId, await HasAcceptedCurrentAsync(context, user.Id, cancellationToken));
     }
 
     public async Task<ClaimsPrincipal?> AcceptLegalDocumentsAsync(
-        Guid userId,
+        ClaimsPrincipal user,
         string? termsOfUseVersion,
         string? riskDisclosureVersion,
         CancellationToken cancellationToken)
     {
-        if (termsOfUseVersion != LegalDocuments.TermsOfUseVersion || riskDisclosureVersion != LegalDocuments.RiskDisclosureVersion)
+        if (AccountClaims.UserId(user) is not { } userId
+            || AccountClaims.SessionId(user) is not { } sessionId
+            || termsOfUseVersion != LegalDocuments.TermsOfUseVersion
+            || riskDisclosureVersion != LegalDocuments.RiskDisclosureVersion)
         {
             return null;
         }
@@ -128,7 +127,76 @@ internal sealed class Accounts(
         await RecordAcceptanceAsync(context, userId, DateTimeOffset.UtcNow, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return Principal(userId, legalDocumentsAccepted: true);
+        return Principal(userId, sessionId, legalDocumentsAccepted: true);
+    }
+
+    public async Task<PasswordChangeResult> ChangePasswordAsync(
+        ClaimsPrincipal user,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken)
+    {
+        if (newPassword.Length < settings.PasswordMinLength)
+        {
+            return PasswordChangeResult.PasswordTooShort;
+        }
+
+        if (newPassword.Length > IdentitySettings.PasswordMaxLength)
+        {
+            return PasswordChangeResult.PasswordTooLong;
+        }
+
+        if (AccountClaims.UserId(user) is not { } userId || AccountClaims.SessionId(user) is not { } sessionId)
+        {
+            return PasswordChangeResult.CurrentPasswordWrong;
+        }
+
+        using var scope = logger.BeginScope(new Dictionary<string, object> { [LogProperties.UserId] = userId });
+
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var verifiedHash = await context.Set<User>()
+            .Where(candidate => candidate.Id == userId)
+            .Select(candidate => candidate.PasswordHash)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (verifiedHash is null)
+        {
+            return PasswordChangeResult.CurrentPasswordWrong;
+        }
+
+        if (await CheckPasswordAsync(context, userId, currentPassword, verifiedHash, cancellationToken) != PasswordCheck.Right)
+        {
+            logger.LogInformation("Password change refused");
+
+            return PasswordChangeResult.CurrentPasswordWrong;
+        }
+
+        // Before the transaction, because a hash this slow mustn't hold one open.
+        var newHash = await hasher.HashAsync(newPassword, cancellationToken);
+
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        // The hash first: a sign-in waits on this row, so a session it starts can't miss the delete below.
+        var changed = await context.Set<User>()
+            .Where(candidate => candidate.Id == userId && candidate.PasswordHash == verifiedHash)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(candidate => candidate.PasswordHash, newHash), cancellationToken);
+
+        if (changed == 0)
+        {
+            logger.LogInformation("Password change refused because another finished first");
+
+            return PasswordChangeResult.CurrentPasswordWrong;
+        }
+
+        var revoked = await sessions.DeleteOthersAsync(context, userId, sessionId, cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        sessions.EndConnections(revoked);
+        logger.LogInformation("Password changed");
+
+        return PasswordChangeResult.Changed;
     }
 
     public async Task<AccountOverview?> FindAsync(Guid userId, CancellationToken cancellationToken)
@@ -160,6 +228,40 @@ internal sealed class Accounts(
         logger.LogInformation("Sign-in refused for an unknown address");
 
         return null;
+    }
+
+    /// <summary>
+    /// Everything that guards a password, for sign-in and for changing it. A locked account spends a
+    /// hash, so it takes as long as a wrong password. A right one clears the count.
+    /// </summary>
+    private async Task<PasswordCheck> CheckPasswordAsync(
+        EcnanibDbContext context,
+        Guid userId,
+        string password,
+        string hash,
+        CancellationToken cancellationToken)
+    {
+        if (!await TryChargeAttemptAsync(context, userId, cancellationToken))
+        {
+            await hasher.SpendAsync(password, cancellationToken);
+
+            return PasswordCheck.Locked;
+        }
+
+        if (!await hasher.VerifyAsync(password, hash, cancellationToken))
+        {
+            return PasswordCheck.Wrong;
+        }
+
+        await context.Set<User>()
+            .Where(candidate => candidate.Id == userId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(candidate => candidate.FailedSignIns, 0)
+                    .SetProperty(candidate => candidate.LockedUntil, (DateTimeOffset?)null),
+                cancellationToken);
+
+        return PasswordCheck.Right;
     }
 
     /// <summary>
@@ -269,9 +371,13 @@ internal sealed class Accounts(
         return accepted == 2;
     }
 
-    private static ClaimsPrincipal Principal(Guid userId, bool legalDocumentsAccepted)
+    private static ClaimsPrincipal Principal(Guid userId, Guid sessionId, bool legalDocumentsAccepted)
     {
-        var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, userId.ToString()) };
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(AccountClaims.Session, sessionId.ToString()),
+        };
 
         if (legalDocumentsAccepted)
         {
@@ -279,5 +385,12 @@ internal sealed class Accounts(
         }
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
+    }
+
+    private enum PasswordCheck
+    {
+        Right,
+        Wrong,
+        Locked,
     }
 }

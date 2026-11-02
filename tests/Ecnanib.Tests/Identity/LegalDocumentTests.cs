@@ -128,7 +128,7 @@ public sealed partial class LegalDocumentTests(SharedAccountApp app) : IClassFix
     [Fact]
     public async Task A_session_from_before_a_new_version_has_to_accept_it()
     {
-        using var client = ClientWithSession(LegalDocuments: "an older pair");
+        using var client = await ClientWithSessionAsync(LegalDocuments: "an older pair");
 
         using var response = await client.GetAsync("/account", Cancellation);
 
@@ -197,13 +197,22 @@ public sealed partial class LegalDocumentTests(SharedAccountApp app) : IClassFix
     }
 
     /// <summary>A session whose claim says what it says, made the way the cookie handler makes one.</summary>
-    private HttpClient ClientWithSession(string LegalDocuments)
+    private async Task<HttpClient> ClientWithSessionAsync(string LegalDocuments)
     {
         const string Scheme = CookieAuthenticationDefaults.AuthenticationScheme;
 
+        using var visitor = Visitor.To(app);
+        var email = await visitor.SignUpAsync();
+        var session = Assert.Single(await SessionRows.OfAsync(app.ConnectionString, email, Cancellation));
+        var id = await AccountRows.IdAsync(app.ConnectionString, email, Cancellation);
+
         var options = app.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>().Get(Scheme);
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()), new Claim(AccountClaims.LegalDocuments, LegalDocuments)],
+            [
+                new Claim(ClaimTypes.NameIdentifier, id.ToString()),
+                new Claim(AccountClaims.Session, session.ToString()),
+                new Claim(AccountClaims.LegalDocuments, LegalDocuments),
+            ],
             Scheme));
 
         var client = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = false });

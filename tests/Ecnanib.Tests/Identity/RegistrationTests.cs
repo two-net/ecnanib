@@ -78,8 +78,8 @@ public sealed class RegistrationTests(PostgresFixture postgres)
         Assert.Equal(first.Headers.Location, second.Headers.Location);
         Assert.Equal(1, await AccountRows.CountAsync(app.ConnectionString(), email, Cancellation));
 
-        Assert.NotNull(await Accounts(app).SignInAsync(email, Visitor.Password, Cancellation));
-        Assert.Null(await Accounts(app).SignInAsync(email, "a different password entirely", Cancellation));
+        Assert.NotNull(await Accounts(app).SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
+        Assert.Null(await Accounts(app).SignInAsync(email, "a different password entirely", Visitor.AnyClient, Cancellation));
     }
 
     /// <summary>EF logs a failed save as an Error, which would let visitors write a database row per attempt.</summary>

@@ -22,8 +22,9 @@ internal static class AccountApp
         Dictionary<string, string?>? settings = null,
         Action<IServiceCollection>? services = null,
         string? environment = null,
-        string? connectionString = null) =>
-        new(connectionString ?? postgres.NewConnectionString(), services, Settings(settings), environment: environment);
+        string? connectionString = null,
+        bool realJobs = false) =>
+        new(connectionString ?? postgres.NewConnectionString(), services, Settings(settings), environment: environment, realJobs: realJobs);
 
     public static string ConnectionString(this AppFactory app) =>
         app.Services.GetRequiredService<IConfiguration>()["ConnectionStrings:Default"]!;

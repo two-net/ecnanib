@@ -99,7 +99,7 @@ public sealed partial class SignInTests(SharedAccountApp app) : IClassFixture<Sh
     {
         var accounts = app.Services.GetRequiredService<IAccounts>();
 
-        Assert.True(await accounts.SignInAsync(email, Canary, Cancellation) is null, description);
+        Assert.True(await accounts.SignInAsync(email, Canary, Visitor.AnyClient, Cancellation) is null, description);
     }
 
     /// <summary>The form reader refuses NUL, so this never reaches PostgreSQL, which would refuse it with an Error.</summary>

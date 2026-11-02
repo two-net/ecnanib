@@ -73,6 +73,7 @@ app.UseAccountAuthentication();
 // Before status pages, so a 404 costs one permit and a 429 isn't sent through the 404 page.
 app.UseRateLimiter();
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseStatusPagesAsGet();
 app.UseHttpsRedirectionExceptHealth();
 
 // Inside status pages, so a 403 renders one. Antiforgery tokens bind to the identity, so it comes after.

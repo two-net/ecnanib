@@ -1,0 +1,59 @@
+@using System.Globalization
+@inject ISessions Sessions
+
+<h2>@Strings.AccountSessionsHeading</h2>
+
+<ul class="sessions">
+    @foreach (var session in _sessions)
+    {
+        <li class="session">
+            @* Anyone can write this header. Razor encodes it, so it's only text. *@
+            <p class="session-device">@(session.UserAgent ?? Strings.AccountSessionUnknownDevice)</p>
+            <p class="session-details">@Describe(session)</p>
+
+            @if (session.Id == CurrentSessionId)
+            {
+                <p class="session-current">@Strings.AccountSessionCurrent</p>
+            }
+            else
+            {
+                @* Not for this session: the menu's sign-out does that, and it can clear the cookie. *@
+                <button type="button" class="button" aria-label="@RevokeLabel(session)" @onclick="() => RevokeAsync(session.Id)">
+                    @Strings.AccountSessionRevoke
+                </button>
+            }
+        </li>
+    }
+</ul>
+
+@code {
+    private IReadOnlyList<SessionRecord> _sessions = [];
+
+    [Parameter, EditorRequired]
+    public Guid UserId { get; set; }
+
+    [Parameter, EditorRequired]
+    public Guid? CurrentSessionId { get; set; }
+
+    protected override async Task OnInitializedAsync() => _sessions = await Sessions.ListAsync(UserId, CancellationToken.None);
+
+    private static string Address(SessionRecord session) => session.IpAddress ?? Strings.AccountSessionUnknownAddress;
+
+    private static string Describe(SessionRecord session) =>
+        string.Format(
+            CultureInfo.CurrentCulture,
+            Strings.AccountSessionDetails,
+            Address(session),
+            session.CreatedAt.UtcDateTime,
+            session.LastSeenAt.UtcDateTime);
+
+    private static string RevokeLabel(SessionRecord session) =>
+        string.Format(CultureInfo.CurrentCulture, Strings.AccountSessionRevokeLabel, Address(session));
+
+    private async Task RevokeAsync(Guid sessionId)
+    {
+        await Sessions.RevokeAsync(UserId, sessionId, CancellationToken.None);
+
+        _sessions = await Sessions.ListAsync(UserId, CancellationToken.None);
+    }
+}

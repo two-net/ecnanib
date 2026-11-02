@@ -102,7 +102,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Health | ASP.NET Core health checks, on `/health/live` and `/health/ready` | In place |
 | Web security | HTTPS and HSTS, content security policy, secure cookies and rate limiting, in the application itself | In place |
 | Background jobs | An in-process runner, with its history and schedules in PostgreSQL | In place |
-| Accounts | Email and password with Argon2id, a session cookie, lockout, recorded acceptance of the legal documents, and administrators from the configuration file | In place. Sessions, email and two-factor come later |
+| Accounts | Email and password with Argon2id, sessions that users can list and revoke, password change, lockout, recorded acceptance of the legal documents, and administrators from the configuration file | In place. Email and two-factor come later |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
 
@@ -172,7 +172,8 @@ A value that isn't valid stops startup. Set `AllowedHosts` to your public host t
 | `Security:PasswordMinLength` | Shortest password allowed. It can't go below 12. Defaults to 12 |
 | `Security:MaxFailedSignIns` | Failed attempts before an account locks. Defaults to 5 |
 | `Security:LockoutMinutes` | How long a lock lasts. Defaults to 15 |
-| `Security:SessionIdleTimeoutMinutes` | How long a session can last without a request. It renews once it's past half this, so an idle session can end after little more than half. Defaults to 60 |
+| `Security:SessionIdleTimeoutMinutes` | How long a session can last without a request or a user action. A page that's only showing live data doesn't count. Defaults to 60 |
+| `Security:SessionAbsoluteTimeoutHours` | The longest a session can last, however active it is. Defaults to 24 |
 | `Admin:AdminEmails` | Addresses that get administrator rights once verified. Defaults to none |
 | `Admin:BootstrapSecret` | At least 32 random characters. Required when an address is listed and `Email:Enabled` is false |
 | `Email:Enabled` | Defaults to `false`. Sending email arrives with #13, so leave this off until then |

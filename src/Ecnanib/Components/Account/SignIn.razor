@@ -58,7 +58,8 @@
 
     private async Task SubmitAsync()
     {
-        var principal = await Accounts.SignInAsync(Input.Email, Input.Password, HttpContext.RequestAborted);
+        var client = new ClientDetails(HttpContext.Connection.RemoteIpAddress, HttpContext.Request.Headers.UserAgent);
+        var principal = await Accounts.SignInAsync(Input.Email, Input.Password, client, HttpContext.RequestAborted);
 
         if (principal is null)
         {

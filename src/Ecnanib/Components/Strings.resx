@@ -329,6 +329,12 @@
   <data name="FieldPassword" xml:space="preserve">
     <value>Password</value>
   </data>
+  <data name="FieldCurrentPassword" xml:space="preserve">
+    <value>Current password</value>
+  </data>
+  <data name="FieldNewPassword" xml:space="preserve">
+    <value>New password</value>
+  </data>
   <data name="FieldConfirmPassword" xml:space="preserve">
     <value>Confirm password</value>
   </data>
@@ -437,12 +443,56 @@
   <data name="AccountConfirmAdministratorLink" xml:space="preserve">
     <value>Confirm you are an administrator</value>
   </data>
+  <data name="AccountChangePasswordLink" xml:space="preserve">
+    <value>Change your password</value>
+  </data>
+  <data name="AccountPasswordChanged" xml:space="preserve">
+    <value>Your password has been changed, and your other sessions have been signed out.</value>
+  </data>
+  <data name="AccountSessionsHeading" xml:space="preserve">
+    <value>Active sessions</value>
+  </data>
+  <data name="AccountSessionUnknownDevice" xml:space="preserve">
+    <value>Unknown device</value>
+  </data>
+  <data name="AccountSessionUnknownAddress" xml:space="preserve">
+    <value>unknown address</value>
+  </data>
+  <data name="AccountSessionDetails" xml:space="preserve">
+    <value>From {0}, signed in {1:yyyy-MM-dd HH:mm} UTC, last active {2:yyyy-MM-dd HH:mm} UTC</value>
+    <comment>{0} is an IP address, {1} and {2} are times in UTC.</comment>
+  </data>
+  <data name="AccountSessionCurrent" xml:space="preserve">
+    <value>This session</value>
+  </data>
+  <data name="AccountSessionRevoke" xml:space="preserve">
+    <value>Revoke</value>
+  </data>
+  <data name="AccountSessionRevokeLabel" xml:space="preserve">
+    <value>Revoke the session from {0}</value>
+    <comment>{0} is an IP address.</comment>
+  </data>
   <data name="AccountDocumentsHeading" xml:space="preserve">
     <value>Accepted documents</value>
   </data>
   <data name="AccountDocumentAccepted" xml:space="preserve">
     <value>{0}, version {1}, accepted {2:yyyy-MM-dd HH:mm} UTC</value>
     <comment>{0} is a document title, {1} its version and {2} a time in UTC.</comment>
+  </data>
+  <data name="ChangePasswordPageTitle" xml:space="preserve">
+    <value>Change password | Ecnanib</value>
+  </data>
+  <data name="ChangePasswordHeading" xml:space="preserve">
+    <value>Change your password</value>
+  </data>
+  <data name="ChangePasswordIntro" xml:space="preserve">
+    <value>This signs out your other sessions. You'll stay signed in here.</value>
+  </data>
+  <data name="ChangePasswordRefused" xml:space="preserve">
+    <value>That isn't your current password.</value>
+  </data>
+  <data name="ChangePasswordSubmit" xml:space="preserve">
+    <value>Change password</value>
   </data>
   <data name="ConfirmAdministratorPageTitle" xml:space="preserve">
     <value>Confirm administrator | Ecnanib</value>

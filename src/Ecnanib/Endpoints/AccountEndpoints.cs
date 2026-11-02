@@ -1,3 +1,4 @@
+using Ecnanib.Modules.Identity.Contracts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,13 +15,19 @@ internal static class AccountEndpoints
     /// <summary>
     /// The form parameter is what enforces the token: UseAntiforgery only records its result, and the
     /// form reader rejects a bad one. Without it this would pass CsrfTests and check nothing. Anonymous,
-    /// so a user with a document to accept can still leave.
+    /// so a user with a document to accept can still leave. It revokes the session rather than only
+    /// clearing the cookie, which is what closes the user's other tabs.
     /// </summary>
     public static IEndpointRouteBuilder MapAccountEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints
-            .MapPost(SignOut, async (HttpContext context, [FromForm] SignOutForm _) =>
+            .MapPost(SignOut, async (HttpContext context, ISessions sessions, [FromForm] SignOutForm _) =>
             {
+                if (AccountClaims.UserId(context.User) is { } userId && AccountClaims.SessionId(context.User) is { } sessionId)
+                {
+                    await sessions.RevokeAsync(userId, sessionId, context.RequestAborted);
+                }
+
                 await context.SignOutAsync();
 
                 return Results.LocalRedirect("/");
