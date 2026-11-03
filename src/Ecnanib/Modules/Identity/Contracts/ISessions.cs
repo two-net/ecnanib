@@ -9,10 +9,16 @@ public interface ISessions
     Task<IReadOnlyList<SessionRecord>> ListAsync(Guid userId, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Ends a session and closes its connections, which ends its circuits. False, changing nothing,
-    /// when it isn't this user's or has already ended.
+    /// Ends one of the user's other sessions and closes its connections, which ends its circuits. False,
+    /// changing nothing, when it isn't this user's or has already ended.
     /// </summary>
     Task<bool> RevokeAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// <see cref="RevokeAsync"/> for the session the user is signing out of, which the audit trail
+    /// records as signing out. Clearing the cookie is the caller's job.
+    /// </summary>
+    Task<bool> SignOutAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken);
 }
 
 /// <param name="Id">Only useful with <see cref="ISessions.RevokeAsync"/>, which checks the owner.</param>

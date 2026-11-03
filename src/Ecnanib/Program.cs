@@ -60,6 +60,8 @@ var app = builder.Build();
 app.UseCorrelation();
 app.UseRequestLogging();
 app.UseWebSecurity();
+// After forwarded headers, which make the address the client's.
+app.UseClientOrigin();
 
 if (!app.Environment.IsDevelopment())
 {

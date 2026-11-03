@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Ecnanib.Kernel;
 using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -8,12 +9,14 @@ namespace Ecnanib.Modules.Identity;
 
 /// <summary>
 /// Logs user IDs and never addresses, which FR-LOG-05 doesn't mask. A refusal logs at Information,
-/// because at Warning anonymous visitors could write a database row per attempt.
+/// because at Warning anonymous visitors could write a database row per attempt. The audit trail
+/// records every sign-in attempt anyway (FR-AUD-01), which the sign-in rate limit bounds.
 /// </summary>
 internal sealed class Accounts(
     IDbContextFactory<EcnanibDbContext> contextFactory,
     IPasswordHasher hasher,
     Sessions sessions,
+    IAuditTrail audit,
     IdentitySettings settings,
     ILogger<Accounts> logger) : IAccounts
 {
@@ -88,14 +91,27 @@ internal sealed class Accounts(
         {
             case PasswordCheck.Locked:
                 logger.LogInformation("Sign-in refused for a locked account");
-                return null;
+                return await RefuseAsync(context, user.Id, cancellationToken);
 
             case PasswordCheck.Wrong:
                 logger.LogInformation("Sign-in refused for a wrong password");
-                return null;
+                return await RefuseAsync(context, user.Id, cancellationToken);
         }
 
-        if (await sessions.StartAsync(user.Id, user.PasswordHash, client, cancellationToken) is not { } sessionId)
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        var started = await sessions.StartAsync(context, user.Id, user.PasswordHash, client, cancellationToken);
+
+        audit.Add(
+            context,
+            started is { } newSession
+                ? AuditEntry.ByUser(AuditAction.SignedIn, user.Id) with { TargetType = Sessions.AuditTarget, TargetId = newSession.ToString() }
+                : SignInFailed(user.Id));
+
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        if (started is not { } sessionId)
         {
             logger.LogInformation("Sign-in refused because the password changed while it ran");
 
@@ -191,6 +207,8 @@ internal sealed class Accounts(
 
         var revoked = await sessions.DeleteOthersAsync(context, userId, sessionId, cancellationToken);
 
+        audit.Add(context, AuditEntry.ByUser(AuditAction.PasswordChanged, userId));
+        await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         sessions.EndConnections(revoked);
@@ -222,13 +240,35 @@ internal sealed class Accounts(
         return new AccountOverview(email, acceptances);
     }
 
+    /// <summary>
+    /// Recorded with no account, and without the address, which might be a password typed into the
+    /// wrong field. Writing a row here also brings this closer to what a wrong password costs.
+    /// </summary>
     private async Task<ClaimsPrincipal?> RefuseUnknownAddressAsync(string password, CancellationToken cancellationToken)
     {
         await hasher.SpendAsync(password, cancellationToken);
         logger.LogInformation("Sign-in refused for an unknown address");
 
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        return await RefuseAsync(context, userId: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Saved on its own, after the outcome is known, because the attempt was charged before the hash
+    /// ran, and that has to commit first. The reason is in the log, under the same correlation ID.
+    /// </summary>
+    private async Task<ClaimsPrincipal?> RefuseAsync(EcnanibDbContext context, Guid? userId, CancellationToken cancellationToken)
+    {
+        audit.Add(context, SignInFailed(userId));
+        await context.SaveChangesAsync(cancellationToken);
+
         return null;
     }
+
+    /// <summary>By a visitor, because a failed attempt proves nothing about who sent it.</summary>
+    private static AuditEntry SignInFailed(Guid? userId) =>
+        new() { Action = AuditAction.SignInFailed, ActorKind = AuditActorKind.Visitor, UserId = userId };
 
     /// <summary>
     /// Everything that guards a password, for sign-in and for changing it. A locked account spends a

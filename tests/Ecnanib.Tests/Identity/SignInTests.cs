@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using Ecnanib.Modules.Identity.Contracts;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
+using Ecnanib.Tests.Audit;
 
 namespace Ecnanib.Tests.Identity;
 
@@ -199,6 +200,57 @@ public sealed partial class SignInTests(SharedAccountApp app) : IClassFixture<Sh
         using var response = await visitor.SignInAsync(email, page: $"/sign-in?returnUrl={WebUtility.UrlEncode(returnUrl)}");
 
         Assert.Equal(new Uri(visitor.Client.BaseAddress!, "/account"), new Uri(visitor.Client.BaseAddress!, response.Headers.Location!));
+    }
+
+    [Fact]
+    public async Task Signing_in_is_audited_with_the_session_it_started()
+    {
+        using var visitor = Visitor.To(app);
+        var email = await visitor.SignUpAsync();
+        var userId = await AccountRows.IdAsync(app.ConnectionString, email, Cancellation);
+        var session = Assert.Single(await SessionRows.OfAsync(app.ConnectionString, email, Cancellation));
+
+        var row = Assert.Single(await AuditRows.OfUserAsync(app.ConnectionString, userId, Cancellation));
+
+        Assert.Equal(("SignedIn", "User", userId), (row.Action, row.ActorKind, row.ActorId));
+        Assert.Equal(("Session", session.ToString()), (row.TargetType, row.TargetId));
+    }
+
+    /// <summary>A failed attempt proves nothing about who sent it, so it isn't put on the account's user.</summary>
+    [Fact]
+    public async Task A_wrong_password_is_audited_against_the_account_as_a_visitor()
+    {
+        using var visitor = Visitor.To(app);
+        var email = Visitor.NewEmail();
+
+        (await visitor.RegisterAsync(email)).Dispose();
+        (await visitor.SignInAsync(email, Canary)).Dispose();
+
+        var userId = await AccountRows.IdAsync(app.ConnectionString, email, Cancellation);
+        var row = Assert.Single(await AuditRows.OfUserAsync(app.ConnectionString, userId, Cancellation));
+
+        Assert.Equal(("SignInFailed", "Visitor"), (row.Action, row.ActorKind));
+        Assert.Null(row.ActorId);
+        Assert.Equal(0, await AuditRows.CountHoldingAsync(app.ConnectionString, Canary, Cancellation));
+    }
+
+    /// <summary>What was typed as the address could be a password in the wrong field, so it isn't kept.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_sign_in_to_no_account_is_audited_without_the_address(bool malformed)
+    {
+        using var visitor = Visitor.To(app);
+        var marker = Guid.NewGuid().ToString("N");
+
+        using var response = await visitor.SignInAsync(malformed ? $"not an address {marker}" : $"{marker}@example.test", Canary);
+        var correlationId = Assert.Single(response.Headers.GetValues("X-Correlation-ID"));
+
+        var row = Assert.Single(await AuditRows.WithCorrelationAsync(app.ConnectionString, correlationId, Cancellation));
+
+        Assert.Equal(("SignInFailed", "Visitor"), (row.Action, row.ActorKind));
+        Assert.Null(row.UserId);
+        Assert.Equal(0, await AuditRows.CountHoldingAsync(app.ConnectionString, marker, Cancellation));
     }
 
     [GeneratedRegex("<!--Blazor-Server-Component-State:(?<state>[^-]+)-->")]

@@ -103,6 +103,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Web security | HTTPS and HSTS, content security policy, secure cookies and rate limiting, in the application itself | In place |
 | Background jobs | An in-process runner, with its history and schedules in PostgreSQL | In place |
 | Accounts | Email and password with Argon2id, sessions that users can list and revoke, password change, lockout, recorded acceptance of the legal documents, and administrators from the configuration file | In place. Email and two-factor come later |
+| Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
 
@@ -202,7 +203,7 @@ proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
-If the proxy isn't on the same host, add its address to `Security:TrustedProxies`. **A redirect loop means it's missing:** the application isn't believing the proxy, so it thinks every request is plain HTTP. If you've worked around that some other way, every user will share one rate limit.
+If the proxy isn't on the same host, add its address to `Security:TrustedProxies`. **A redirect loop means it's missing:** the application isn't believing the proxy, so it thinks every request is plain HTTP. If you've worked around that some other way, every user will share one rate limit, and the audit trail will record the proxy's address for everyone.
 
 ### Rate limits
 

@@ -154,6 +154,80 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Platform.Audit.AuditEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("action");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorKind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("actor_kind");
+
+                    b.Property<string>("CorrelationId")
+                        .HasColumnType("text")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("ip_address");
+
+                    b.Property<string>("Summary")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("summary");
+
+                    b.Property<string>("TargetId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("target_id");
+
+                    b.Property<string>("TargetType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("target_type");
+
+                    b.Property<DateTimeOffset>("Timestamp")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("timestamp");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_audit_events");
+
+                    b.HasIndex("CorrelationId")
+                        .HasDatabaseName("ix_audit_events_correlation_id");
+
+                    b.HasIndex("Timestamp")
+                        .HasDatabaseName("ix_audit_events_timestamp");
+
+                    b.HasIndex("UserId", "Id")
+                        .HasDatabaseName("ix_audit_events_user_id_id");
+
+                    b.ToTable("audit_events", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Platform.Jobs.JobRun", b =>
                 {
                     b.Property<long>("Id")

@@ -25,7 +25,7 @@ internal static class AccountEndpoints
             {
                 if (AccountClaims.UserId(context.User) is { } userId && AccountClaims.SessionId(context.User) is { } sessionId)
                 {
-                    await sessions.RevokeAsync(userId, sessionId, context.RequestAborted);
+                    await sessions.SignOutAsync(userId, sessionId, context.RequestAborted);
                 }
 
                 await context.SignOutAsync();

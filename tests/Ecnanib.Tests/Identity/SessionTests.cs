@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Ecnanib.Tests.Audit;
 
 namespace Ecnanib.Tests.Identity;
 
@@ -338,6 +339,30 @@ public sealed class SessionTests(SharedAccountApp app) : IClassFixture<SharedAcc
         (await visitor.SignOutAsync()).Dispose();
 
         Assert.Empty(await SessionRows.OfAsync(app.ConnectionString, email, Cancellation));
+    }
+
+    /// <summary>Sign-out ends a session too, but the user did something different, so the trail says so.</summary>
+    [Fact]
+    public async Task Revoking_and_signing_out_are_audited_apart()
+    {
+        using var here = Visitor.To(app);
+        using var there = Visitor.To(app);
+        var email = await here.SignUpAsync();
+
+        (await there.SignInAsync(email)).Dispose();
+
+        var sessions = await SessionRows.OfAsync(app.ConnectionString, email, Cancellation);
+        var userId = await UserIdAsync(email);
+
+        Assert.True(await Sessions.RevokeAsync(userId, sessions[0], Cancellation));
+        Assert.False(await Sessions.RevokeAsync(userId, sessions[0], Cancellation));
+        (await there.SignOutAsync()).Dispose();
+
+        var rows = await AuditRows.OfUserAsync(app.ConnectionString, userId, Cancellation);
+
+        Assert.Equal(
+            [("SignedIn", sessions[0].ToString()), ("SignedIn", sessions[1].ToString()), ("SessionRevoked", sessions[0].ToString()), ("SignedOut", sessions[1].ToString())],
+            rows.Select(row => (row.Action, row.TargetId!)));
     }
 
     /// <summary>The cookie is replaced here, and a principal without the claim would sign the user out.</summary>

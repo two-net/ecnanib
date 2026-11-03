@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Ecnanib.Platform.Audit;
 using Ecnanib.Platform.Contracts;
 using Ecnanib.Platform.Logging;
 using Microsoft.Extensions.Options;
@@ -14,6 +15,7 @@ internal sealed class JobRunner(
     IServiceProvider services,
     JobRunStore store,
     ICorrelationContext correlation,
+    ClientOriginContext clientOrigin,
     IHostApplicationLifetime lifetime,
     IOptions<HostOptions> hostOptions,
     IConfiguration configuration,
@@ -256,6 +258,9 @@ internal sealed class JobRunner(
         Func<JobContext, CancellationToken, Task> work)
     {
         using var run = correlation.Begin();
+
+        // A run acts for nobody, even when a request started it, so its audit records carry no client.
+        using var origin = clientOrigin.Clear();
 
         long id;
 

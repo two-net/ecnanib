@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Ecnanib.Kernel;
 using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,7 @@ namespace Ecnanib.Modules.Identity;
 
 internal sealed class Administrators(
     IDbContextFactory<EcnanibDbContext> contextFactory,
+    IAuditTrail audit,
     IdentitySettings settings,
     ILogger<Administrators> logger) : IAdministrators
 {
@@ -29,20 +31,29 @@ internal sealed class Administrators(
             return false;
         }
 
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
         if (!Matches(secret, expected))
         {
             logger.LogWarning("An attempt to confirm an administrator used the wrong secret");
 
+            audit.Add(context, AuditEntry.ByUser(AuditAction.AdministratorConfirmationFailed, userId));
+            await context.SaveChangesAsync(cancellationToken);
+
             return false;
         }
 
-        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
         await context.Set<User>()
             .Where(user => user.Id == userId)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(user => user.EmailVerifiedAt, DateTimeOffset.UtcNow),
                 cancellationToken);
+
+        audit.Add(context, AuditEntry.ByUser(AuditAction.AdministratorConfirmed, userId));
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         logger.LogWarning("Confirmed an administrator with the bootstrap secret");
 

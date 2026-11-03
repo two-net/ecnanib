@@ -1,3 +1,4 @@
+using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -9,11 +10,6 @@ namespace Ecnanib.Modules.Identity;
 /// </summary>
 internal sealed class Session
 {
-    /// <summary>Long enough for an IPv6 address with a scope.</summary>
-    public const int IpAddressMaxLength = 64;
-
-    public const int UserAgentMaxLength = 512;
-
     public Guid Id { get; init; }
 
     public required Guid UserId { get; init; }
@@ -39,8 +35,8 @@ internal sealed class SessionConfiguration : IEntityTypeConfiguration<Session>
     {
         builder.ToTable("sessions");
         builder.HasKey(session => session.Id);
-        builder.Property(session => session.IpAddress).HasMaxLength(Session.IpAddressMaxLength);
-        builder.Property(session => session.UserAgent).HasMaxLength(Session.UserAgentMaxLength);
+        builder.Property(session => session.IpAddress).HasMaxLength(ClientText.AddressMaxLength);
+        builder.Property(session => session.UserAgent).HasMaxLength(ClientText.UserAgentMaxLength);
         builder.HasOne<User>().WithMany().HasForeignKey(session => session.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

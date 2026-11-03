@@ -44,10 +44,14 @@ internal sealed class CircuitClient : IAsyncDisposable
     public bool IsConnected => _connection.State == HubConnectionState.Connected;
 
     /// <summary>Over long polling on the test host, which needs nothing but the application.</summary>
-    public static Task<CircuitClient> ConnectAsync(AppFactory app, string? sessionCookie = null) =>
+    public static Task<CircuitClient> ConnectAsync(
+        AppFactory app,
+        string? sessionCookie = null,
+        IReadOnlyDictionary<string, string>? headers = null) =>
         ConnectAsync(
             new Uri(app.Server.BaseAddress, "/_blazor"),
             sessionCookie,
+            headers,
             options =>
             {
                 options.Transports = HttpTransportType.LongPolling;
@@ -55,8 +59,11 @@ internal sealed class CircuitClient : IAsyncDisposable
             });
 
     /// <summary>Over a real WebSocket, as a browser connects. The application has to be on Kestrel.</summary>
-    public static Task<CircuitClient> ConnectOverWebSocketAsync(AppFactory app, string? sessionCookie = null) =>
-        ConnectAsync(new Uri(KestrelAddress(app), "/_blazor"), sessionCookie, options => options.Transports = HttpTransportType.WebSockets);
+    public static Task<CircuitClient> ConnectOverWebSocketAsync(
+        AppFactory app,
+        string? sessionCookie = null,
+        IReadOnlyDictionary<string, string>? headers = null) =>
+        ConnectAsync(new Uri(KestrelAddress(app), "/_blazor"), sessionCookie, headers, options => options.Transports = HttpTransportType.WebSockets);
 
     public static Uri KestrelAddress(AppFactory app) =>
         new(Assert.Single(app.Services.GetRequiredService<IServer>().Features.GetRequiredFeature<IServerAddressesFeature>().Addresses));
@@ -65,12 +72,38 @@ internal sealed class CircuitClient : IAsyncDisposable
     public async Task<string> StartCircuitAsync() =>
         (await _connection.InvokeAsync<string>("StartCircuit", _address, _address, "[]", string.Empty, Cancellation))!;
 
+    /// <summary>
+    /// Starts a circuit the way a browser does, which is StartCircuit and then a first UpdateRootComponents.
+    /// The framework only attaches the circuit's CircuitHandlers on that first update, so without it no
+    /// handler sees an action, and actions share whatever correlation ID the connection had.
+    /// </summary>
+    public async Task<string> OpenCircuitAsync()
+    {
+        var secret = await StartCircuitAsync();
+        var updated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using (_connection.On<long>("JS.EndUpdateRootComponents", _ => updated.TrySetResult()))
+        {
+            await _connection.SendAsync("UpdateRootComponents", """{"batchId":1,"operations":[]}""", string.Empty, Cancellation);
+            await updated.Task.WaitAsync(Deadline, Cancellation);
+        }
+
+        return secret;
+    }
+
     public Task<bool> ConnectCircuitAsync(string secret, string method = "ConnectCircuit") =>
         _connection.InvokeAsync<bool>(method, secret, Cancellation);
 
     /// <summary>A browser event, as far as the hub can tell. No such method exists, which doesn't matter here.</summary>
     public Task SendUserActionAsync() =>
         _connection.SendAsync("BeginInvokeDotNetFromJS", "1", "Ecnanib", "NoSuchMethod", 0L, "[]", Cancellation);
+
+    /// <summary>
+    /// Calls a static [JSInvokable] method on the circuit, the way a page's event handler runs. No call
+    /// ID, so the circuit sends nothing back: the method has to say when it's done.
+    /// </summary>
+    public Task InvokeDotNetAsync(string assembly, string method, string argumentsJson) =>
+        _connection.SendAsync("BeginInvokeDotNetFromJS", null, assembly, method, 0L, argumentsJson, Cancellation);
 
     public Task SendNavigationAsync() =>
         _connection.SendAsync("OnLocationChanged", _address, null, false, Cancellation);
@@ -88,7 +121,11 @@ internal sealed class CircuitClient : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _connection.DisposeAsync();
 
-    private static async Task<CircuitClient> ConnectAsync(Uri address, string? sessionCookie, Action<HttpConnectionOptions> configure)
+    private static async Task<CircuitClient> ConnectAsync(
+        Uri address,
+        string? sessionCookie,
+        IReadOnlyDictionary<string, string>? headers,
+        Action<HttpConnectionOptions> configure)
     {
         var builder = new HubConnectionBuilder().WithUrl(address, options =>
         {
@@ -97,6 +134,11 @@ internal sealed class CircuitClient : IAsyncDisposable
             if (sessionCookie is not null)
             {
                 options.Headers["Cookie"] = sessionCookie;
+            }
+
+            foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+            {
+                options.Headers[name] = value;
             }
         });
 

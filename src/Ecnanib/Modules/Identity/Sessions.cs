@@ -1,4 +1,4 @@
-using System.Net;
+using Ecnanib.Kernel;
 using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -12,9 +12,13 @@ namespace Ecnanib.Modules.Identity;
 internal sealed class Sessions(
     IDbContextFactory<EcnanibDbContext> contextFactory,
     SessionConnections connections,
+    IAuditTrail audit,
     IdentitySettings settings,
     ILogger<Sessions> logger) : ISessions
 {
+    /// <summary>What audit records name as their target when they're about one session.</summary>
+    public const string AuditTarget = "Session";
+
     public async Task<IReadOnlyList<SessionRecord>> ListAsync(Guid userId, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
@@ -33,19 +37,26 @@ internal sealed class Sessions(
     {
         using var scope = logger.BeginScope(new Dictionary<string, object> { [LogProperties.UserId] = userId });
 
-        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-
-        var revoked = await context.Set<Session>()
-            .Where(session => session.Id == sessionId && session.UserId == userId)
-            .ExecuteDeleteAsync(cancellationToken);
-
-        if (revoked == 0)
+        if (!await EndAsync(userId, sessionId, AuditAction.SessionRevoked, cancellationToken))
         {
             return false;
         }
 
-        connections.End([sessionId]);
         logger.LogInformation("Revoked a session");
+
+        return true;
+    }
+
+    public async Task<bool> SignOutAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken)
+    {
+        using var scope = logger.BeginScope(new Dictionary<string, object> { [LogProperties.UserId] = userId });
+
+        if (!await EndAsync(userId, sessionId, AuditAction.SignedOut, cancellationToken))
+        {
+            return false;
+        }
+
+        logger.LogInformation("Signed out");
 
         return true;
     }
@@ -54,17 +65,22 @@ internal sealed class Sessions(
     /// Null when the password is no longer <paramref name="verifiedHash"/>. One statement, under a row
     /// lock, because a sign-in takes long enough to verify that a password change can finish during it,
     /// and a session started after that would escape the change. It takes FOR SHARE explicitly, because
-    /// the lock the foreign key takes doesn't wait for an update to the hash.
+    /// the lock the foreign key takes doesn't wait for an update to the hash. Takes the caller's
+    /// context, so that the session commits with its audit record. In a transaction, the lock lasts
+    /// until that commits.
     /// </summary>
-    public async Task<Guid?> StartAsync(Guid userId, string verifiedHash, ClientDetails client, CancellationToken cancellationToken)
+    public async Task<Guid?> StartAsync(
+        EcnanibDbContext context,
+        Guid userId,
+        string verifiedHash,
+        ClientDetails client,
+        CancellationToken cancellationToken)
     {
         var sessionId = Guid.CreateVersion7();
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now + settings.SessionAbsoluteTimeout;
-        var ipAddress = AddressOf(client.Address);
-        var userAgent = Clean(client.UserAgent);
-
-        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var ipAddress = ClientText.Address(client.Address);
+        var userAgent = ClientText.UserAgent(client.UserAgent);
 
         var started = await context.Database.ExecuteSqlAsync(
             $"""
@@ -138,30 +154,31 @@ internal sealed class Sessions(
         return expired.Count;
     }
 
-    /// <summary>A dual-stack socket reports IPv4 clients in mapped form, which nobody would recognise.</summary>
-    private static string? AddressOf(IPAddress? address) =>
-        address is { IsIPv4MappedToIPv6: true } ? address.MapToIPv4().ToString() : address?.ToString();
-
     /// <summary>
-    /// A client writes this header, so it has to fit and be storable: PostgreSQL refuses a NUL, and half
-    /// a surrogate pair can't be encoded. Either would be a 500 and a database row a visitor chose to write.
+    /// Deletes the row and records why in one transaction, then closes the connections. The row goes
+    /// first, so that a client reconnecting at once finds its cookie refused. False, changing nothing,
+    /// when the session isn't this user's or has already ended.
     /// </summary>
-    private static string? Clean(string? userAgent)
+    private async Task<bool> EndAsync(Guid userId, Guid sessionId, AuditAction action, CancellationToken cancellationToken)
     {
-        var text = new string([.. (userAgent ?? string.Empty).Where(character => !char.IsControl(character))]).Trim();
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
-        if (text.Length == 0)
+        var ended = await context.Set<Session>()
+            .Where(session => session.Id == sessionId && session.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        if (ended == 0)
         {
-            return null;
+            return false;
         }
 
-        var length = Math.Min(text.Length, Session.UserAgentMaxLength);
+        audit.Add(context, AuditEntry.ByUser(action, userId) with { TargetType = AuditTarget, TargetId = sessionId.ToString() });
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
-        if (length < text.Length && char.IsHighSurrogate(text[length - 1]))
-        {
-            length--;
-        }
+        connections.End([sessionId]);
 
-        return text[..length];
+        return true;
     }
 }

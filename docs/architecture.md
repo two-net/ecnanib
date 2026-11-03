@@ -39,7 +39,7 @@ Trade Approval (3.11) belongs to `DecisionCycle`, because an approval hangs off 
 2. A unit may use only the `Contracts` of units listed for it in [`ModuleMap.cs`](../tests/Ecnanib.Tests/Architecture/ModuleMap.cs). That map is the single source of truth for dependencies, and it must stay free of cycles.
 3. `Program.cs` is the composition root. It calls every `Add<Module>()` explicitly, and is the only code allowed to use an entry class. There's no module scanning.
 4. The Risk Engine depends on `Kernel` only. It takes explicit inputs and returns results, which keeps it provably deterministic (FR-RISK-01). It defines its own intent type, so Appendix B types never reach it and AI output can't bypass it (NFR-SEC-08). This rule has its own test that doesn't read the map, so editing the map can't weaken it.
-5. `Kernel` holds only vocabulary that the SRS fixes, that at least two modules use, and that has no behaviour, such as `Market`, `Timeframe` and typed IDs. Moving a type there to escape a cycle is the wrong fix: use a port or event instead.
+5. `Kernel` holds only vocabulary that the SRS fixes, that at least two modules use, and that has no behaviour, such as `AuditAction`, `Market`, `Timeframe` and typed IDs. Moving a type there to escape a cycle is the wrong fix: use a port or event instead.
 6. Razor components stay in `Components/`, because pages such as agent detail span several modules (FR-UI-01).
 
 The Web UI may use neither adapter nor `Platform`, so it can't reach secrets or place orders directly (2.4, FR-ADM-01, FR-KEY-09). `Endpoints/` counts as Web UI, so it reaches `Platform` only through framework abstractions, as the health endpoints do with the checks `Platform` registers. That's also why the [HTTP security code](#web-security) lives in `Endpoints/Security`: pages need its nonce and endpoints need its policy names.
@@ -76,7 +76,7 @@ In-process events are lost on a crash, so each one needs a recovery path, such a
 
 "API" in SRS 2.2 is not a separate module. Pages run on Blazor Server and reach services directly, and the SRS defines no public HTTP API or consumer of one. Module `Contracts` are the application's API, and `Endpoints/` holds the HTTP that really is needed, such as sign-out, health (NFR-OBS-01) and exports (FR-DATA-03). Forms that take a secret are static pages, which are HTTP too: see [Forms that take a secret](#forms-that-take-a-secret).
 
-**After page load, a Blazor circuit doesn't pass through HTTP middleware.** Access rules therefore can't live there: ownership checks (NFR-SEC-04) belong behind module contracts. [Correlation IDs](#correlation-ids) and [rate limiting](#circuits) each have a plan for circuit traffic, and audit fields such as IP address still need one (#11). Request logging doesn't: FR-LOG-06 covers HTTP, so a circuit logs one `/_blazor` request, and activity inside it is logged where it happens, behind module contracts.
+**After page load, a Blazor circuit doesn't pass through HTTP middleware.** Access rules therefore can't live there: ownership checks (NFR-SEC-04) belong behind module contracts. [Correlation IDs](#correlation-ids), [rate limiting](#circuits) and the [audit trail's client details](#where-the-client-comes-from) each have a plan for circuit traffic. Request logging doesn't: FR-LOG-06 covers HTTP, so a circuit logs one `/_blazor` request, and activity inside it is logged where it happens, behind module contracts.
 
 ## Persistence
 
@@ -85,7 +85,7 @@ In-process events are lost on a crash, so each one needs a recovery path, such a
 - **Modules own their entities.** A module keeps its entities and their `IEntityTypeConfiguration` internal, and reaches them with `Set<T>()`, so the boundary tests cover them. The context finds configurations with `ApplyConfigurationsFromAssembly`. This is the one exception to "no module scanning" in rule 3: contributing the model through DI would leave `dotnet ef` with an empty model at design time, and it would generate drops.
 - **Reference another module's rows by ID only**, with no navigations. Whether a foreign key constraint can cross modules isn't decided: `HasOne<OtherModuleEntity>()` fails the boundary tests, so the first issue that needs one decides.
 - **Contexts are short-lived.** A Blazor circuit keeps its scope for as long as the user stays connected, so the context isn't in DI, and a service that injects it fails at startup. Inject `IDbContextFactory<EcnanibDbContext>`, and dispose each context when the operation ends.
-- **The caller owns the context, which keeps writes atomic.** Anything that must commit with a caller's change, such as an audit record (#11), takes the caller's context, adds to it and doesn't save. One `SaveChangesAsync` then commits both (FR-AGT-04, NFR-REL-04). Across several saves, use one transaction on that context. Never hold a transaction open across an exchange call. Leave `EnableRetryOnFailure` off: it rejects transactions started this way.
+- **The caller owns the context, which keeps writes atomic.** Anything that must commit with a caller's change, such as an [audit record](#audit), takes the caller's context, adds to it and doesn't save. One `SaveChangesAsync` then commits both (FR-AGT-04, NFR-REL-04). Across several saves, use one transaction on that context. Never hold a transaction open across an exchange call. Leave `EnableRetryOnFailure` off: it rejects transactions started this way.
 - **Money and time follow SRS 6.2.** Store amounts as `decimal` next to their asset or currency code, and timestamps as `DateTime` or `DateTimeOffset` in UTC. `SchemaRulesTests` rejects binary floating point and timestamps without a time zone on any mapped column. It can't check that an amount has a code column, so check that in review.
 - **Seeders add reference data (NFR-DEP-02).** Implement `IReferenceDataSeeder` and register it in `Add<Module>()`. Seeders run in registration order on every start, so they add only what's missing, and they don't save.
 
@@ -210,7 +210,7 @@ A change to the `Logging` section applies without a restart, for levels, overrid
 - **The adapters don't need it.** They can't reference `Platform`, and they inherit the scope, so events under the `Exchange` and `AiCouncil` categories are linked already. An `AiCall` row links through its cycle.
 - **The ID doesn't cross a queue.** It follows the async call, so work picked up from a queue or timer must call `Begin()` itself. `Begin()` always creates a new ID for the same reason: a timer started during a request captures that request's ID.
 
-The tests run the circuit handler directly, because opening a real circuit needs a browser or Blazor's internal protocol. Add an end-to-end test with the first audited action.
+`ClientOriginTests` proves end to end that each action on a circuit gets its own ID, through `CircuitClient` and a test `[JSInvokable]`. **The framework only attaches a circuit's handlers on its first `UpdateRootComponents`**, because in a Blazor Web App the root components arrive after the circuit starts. A browser always sends one, but a test client has to as well, or no handler sees anything: `CircuitClient.OpenCircuitAsync` does that.
 
 ## Health
 
@@ -318,6 +318,69 @@ The clock starts at `ApplicationStopping`, which SIGTERM fires. The numbers come
 - **The runner isolates runs, not agents.** A failure in one agent reaches only the others in the same run if the job lets it. NFR-REL-05 needs per-item handling in anything that loops over agents or credentials, or one `RunAsync` per item.
 - **`details` never holds exception text.** This table has no `SanitizingSink`, and #49 will show it to administrators. Scrubbing isn't enough: it can't recognise an unmarked secret, and a provider's error can echo a prompt, which FR-ADM-01 keeps from them. A failure stores the exception's type name, and the text goes to the log under the same correlation ID. `context.Details` goes through `SecretRules.Scrub`. Keep it to counts and IDs, because account deletion doesn't reach this table.
 
+## Audit
+
+`Platform/Audit` holds the audit trail: who did what, from where (FR-AUD-01, FR-AUD-02). `audit_events` is separate from `log_events`, has no `SanitizingSink`, and is append-only.
+
+### Writing a record
+
+The module that owns an action records it. **`IAuditTrail.Add` adds to the caller's context and doesn't save**, so the caller's save commits the record with the change it describes. Across several statements, put both in one transaction, so that neither can exist without the other (FR-AGT-04, NFR-REL-04):
+
+```csharp
+await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+await context.Set<Session>().Where(session => session.Id == sessionId).ExecuteDeleteAsync(cancellationToken);
+
+audit.Add(context, AuditEntry.ByUser(AuditAction.SessionRevoked, userId) with { TargetType = "Session", TargetId = sessionId.ToString() });
+await context.SaveChangesAsync(cancellationToken);
+await transaction.CommitAsync(cancellationToken);
+```
+
+- **Actions are `AuditAction` values in `Kernel`.** The SRS fixes the list, Platform stores them, and the Web UI gives each one its text, which it couldn't do through Platform. An issue that adds an action adds its text in `ActivityText` too, and `ActivityTests` fails until it does. Records store the name, so never rename a value.
+- **`UserId` is the account a record is about**, which decides whose history shows it. An administrator acting on someone sets that person. It's null for a platform-wide action.
+- **The actor is a `User`, an `Administrator`, the `System` or a `Visitor`.** FR-AUD-02 names the first three. A failed sign-in proves nothing about who sent it, so it's a visitor's, against the account it named.
+- **The trail stamps the rest:** the time, `ICorrelationContext.CurrentId`, and the [client's](#where-the-client-comes-from) address and user agent.
+- **`Changes` is the before/after summary,** as field names and values. A field whose name looks like a secret's has its values masked, and every other value goes through `SecretRules.Scrub`. That's a backstop with the same [limits](#masking) as the logs' masking, so never put a secret there.
+
+### Where the client comes from
+
+`ClientOriginContext` holds the address and user agent, and flows with the async call like the correlation ID. Both are stored as `ClientText` writes them, as sessions are, so the two always agree.
+
+| Work | What sets it |
+|---|---|
+| HTTP request | `UseClientOrigin`, straight after `UseForwardedHeaders`, so the address is the client's |
+| Action on a circuit | `ClientOriginHubFilter`, from the hub connection's request, around every hub call. The hub call starts the circuit's work, which carries it along |
+| Job run | Nothing: `JobRunner` clears it, because a run acts for nobody, even when a request started it |
+
+- **A circuit's address is its connection's.** That's the WebSocket's request, or long polling's first one. It can differ from the address the page loaded from, or the one the session signed in from.
+- **SignalR runs a connection's calls in the execution context of the request that opened it,** so the middleware's value would reach them without the filter. Nothing documents that, though, and `GetHttpContext` is the API for it, so the filter doesn't rely on it.
+- **With no peer address, as behind a Unix socket or on the test host, `X-Forwarded-For` is trusted.** That's the framework's rule: no address means a local proxy.
+
+### Append-only
+
+- **The contract only adds and reads,** and the entity is internal to `Platform/Audit`, so the boundary tests stop any other unit reaching it through EF.
+- **The table itself refuses `UPDATE` and `TRUNCATE`,** through a trigger the `AddAuditEvents` migration installs. The boundary tests can't see raw SQL, which Identity uses a lot. The trigger fires per statement, so even an update that matches nothing is refused.
+- **`DELETE` stays allowed,** for retention (#50).
+- **There's no foreign key to `users`,** because records outlive the account (FR-AUTH-09).
+
+### What's recorded so far
+
+| Action | Where | How |
+|---|---|---|
+| `SignedIn` | `Accounts.SignInAsync` | In the transaction that inserts the session, which is its target |
+| `SignInFailed` | `Accounts.SignInAsync` | By a visitor. Saved on its own once the outcome is known, because the attempt was charged before the hash ran. The reason is in the log, under the same correlation ID. An address with no account, or a malformed one, is recorded with no user and without the address, which could be a password typed into the wrong field |
+| `SignedOut`, `SessionRevoked` | `Sessions` | The row goes and the record arrives in one transaction, then the connections close. The session is the target |
+| `PasswordChanged` | `Accounts.ChangePasswordAsync` | In the transaction that changes the hash and ends the other sessions. A refused change isn't recorded, though its guess counts towards the lockout |
+| `AdministratorConfirmed`, `AdministratorConfirmationFailed` | `Administrators.ConfirmAsync` | The first in the transaction that verifies the address |
+
+**Visitors write `SignInFailed` rows,** one per attempt, whether or not the address has an account. FR-AUD-01 asks for them, and the sign-in [rate limit](#rate-limiting) bounds how fast they arrive.
+
+### A user's history
+
+`/account/activity` shows the records whose `UserId` is the user's, newest first and 50 at a time (FR-AUD-03). The Web UI can't use Platform, so it reads them through `IAccountActivity` in Identity. That leaves out actor IDs and correlation IDs, which are for administrators (FR-ADM-06), so an administrator's action shows only as "By an administrator". Nothing records `Changes` yet, so the page doesn't show them.
+
+"Show older activity" moves focus to the first record it adds, so focus isn't lost when the button goes after the last page.
+
 ## Web security
 
 `Endpoints/Security` holds the HTTP edge: NFR-SEC-01, NFR-SEC-03, NFR-SEC-06 and NFR-SEC-07. Nothing in it needs `Platform`, and it sits in the Web UI unit because `App.razor` needs the nonce and endpoints need the rate limit policy names.
@@ -333,6 +396,7 @@ Anything outside the exception handler runs once per request, so it has to survi
 | `SecurityHeadersMiddleware` | Outside re-execute, so a request has one nonce. Its headers are assigned in `OnStarting`, because the handler clears headers and `OnStarting` survives that |
 | `UseCookiePolicy` | Before anything can set a cookie |
 | `UseWebSockets` | Checks `Origin` on a WebSocket before it reaches the hub |
+| `UseClientOrigin` | After forwarded headers, so the [audit trail](#where-the-client-comes-from) gets the client's address. Outside re-execute, because a re-executed request comes from the same client |
 | `UseExceptionHandler` | Doesn't run in Development |
 | `UseHsts` | Inside the handler on purpose. It sets the header directly, so outside it the error page would lose the header |
 | `UseAuthentication`, through `UseAccountAuthentication` | Goes here. The limiter needs the account, and the handler has to catch a failed session lookup |
@@ -428,7 +492,7 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 | Cryptographic failures | HTTPS, HSTS, Secure cookies. Secrets at rest are #12 | `HttpsTests`, `CookieTests`, #12 |
 | Security misconfiguration | Startup refuses a missing or `http` public address, and validates these settings. `AllowedHosts` is the operator's to set | `WebSecuritySettingsTests`, #57 |
 | Vulnerable components | The dependency scan (NFR-SEC-09) | CI |
-| Logging failures | [Logging](#logging) and masking, and the audit trail | `CanaryScanTests`, #11 |
+| Logging failures | [Logging](#logging) and masking, and the [audit trail](#audit) | `CanaryScanTests`, `AuditTrailTests`, `ClientOriginTests` |
 
 `DatabaseHealthCheck` uses the interpolated form so that the ban has no exceptions.
 
@@ -477,15 +541,15 @@ The two paths need one rule each for a failure. `AccountAuthorizationResultHandl
 
 `users.failed_sign_ins` and `users.locked_until` hold the state, so that a lock survives a restart. An attempt is **charged before the hash runs, in one `UPDATE`**, guarded by the lock. A row lock queues concurrent attempts, and each then sees the last one's result, so a lock window allows `MaxFailedSignIns` verifications however they arrive. Checking first and charging after would let every parallel guess through a slow hash.
 
-An unknown address, a malformed one, a wrong password and a locked account return one message, and each costs one hash, through `IPasswordHasher.SpendAsync` where there's nothing to verify. A wrong password also commits an `UPDATE` that an unknown address skips, which a hash this slow should hide, but nothing measures it. A lock isn't extended by further attempts, and a correct password doesn't sign in during one.
+An unknown address, a malformed one, a wrong password and a locked account return one message, and each costs one hash, through `IPasswordHasher.SpendAsync` where there's nothing to verify. Each also writes an [audit record](#audit), but a wrong password commits an `UPDATE` too, which an unknown address skips. A hash this slow should hide that, but nothing measures it. A lock isn't extended by further attempts, and a correct password doesn't sign in during one.
 
 **An attacker can keep an account locked**, which is the accepted cost of FR-AUTH-04 for now. Five wrong passwords whenever a lock ends is enough, and the owner only gets in during the gap, so one address at the 10-a-minute limit can hold about 30 accounts. With email off, that includes an administrator, who is the only way to reset a password. Counting failures per account and client network would close it, because an attacker's failures then wouldn't lock out the owner's network.
 
-A refusal logs at Information, because at Warning anonymous visitors could write a database row per attempt.
+A refusal logs at Information, because at Warning anonymous visitors could write a database row per attempt. The audit record is that row anyway, because FR-AUD-01 asks for it, and the sign-in [rate limit](#rate-limiting) bounds how fast anyone can add them.
 
 ### Sessions
 
-The cookie says which session it belongs to, and a row in `sessions` says whether that session is still allowed. **Revoking deletes the row**, because the audit trail (#11) keeps the history, not this table.
+The cookie says which session it belongs to, and a row in `sessions` says whether that session is still allowed. **Revoking deletes the row**, because the [audit trail](#audit) keeps the history, not this table.
 
 | Limit | Where it comes from | What moves it |
 |---|---|---|
@@ -537,7 +601,6 @@ A tab showing live data with nobody touching it times out, because acknowledging
 - After a revocation, a circuit's memory lasts up to three minutes, with nothing able to reach it.
 - A silent tab can sit past its session until the next job run, showing what it last rendered.
 - Signing out from a tab in that window gets a 400, because its token is bound to a user the request no longer has. `SignOutAsync` already ran during validation, so the cookie still goes.
-- `Revoked a session` and `Password changed` are log events. #11 turns them into audit records.
 
 ### Registration
 
@@ -649,6 +712,13 @@ Sessions were checked in Chromium and WebKit in Development, with the rate limit
 - No `Error` in the log through any of it
 - No horizontal scroll on `/account` and `/account/password` at 375, 768 and 1280px, in both themes, with the longest user agent that's stored
 
+The audit trail was checked in Chromium and WebKit in Development, with two browsers on one account:
+
+- A failed sign-in, two sign-ins, revoking the other session from `/account`, changing the password and signing out each appear on `/account/activity`, newest first, with the device that did them. The revoke runs on a circuit, so that's the connection's address and user agent
+- "Show older activity" moves focus to the first record it adds, and goes after the last page
+- No horizontal scroll on `/account/activity` at 375, 768 and 1280px, in both themes, and no console errors beyond the noise below
+- `UPDATE` and `TRUNCATE` on `audit_events` are refused in psql
+
 Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Signing out does the same, more loudly in WebKit: it closes the session's connections, including that tab's, so the tab tries to reconnect while it's leaving. The reconnect modal wasn't open on a single frame in either browser. None of these is a fault in the application.
 
 The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
@@ -665,7 +735,10 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Administrators and account deletion (#47, #51):** add a revoke-all to `ISessions` for FR-ADM-01, and call it before deleting a user. The foreign key removes the rows, but only `SessionConnections.End` closes live connections, and [a circuit's connection](#ending-a-circuit) would otherwise run until its next user action.
 - **Email (#13):** set `email_verified_at` from the emailed link. Nothing sets it when email is on until then, so no [administrator](#administrators) can exist in that mode. **Mind accounts from before email was on:** if a stranger registered an address and its real owner later clicks the link, the stranger's password then controls a verified account, which is an administrator if the address is listed. Verifying has to replace the password, or the first verification has to come from whoever set it.
 - **User administration (#47):** use `IAdministrators` and `AccountPolicies.Administrator`, behind contracts as well as on pages. Add a way to remove an account, because a stranger who registers a listed address holds it until then.
-- **Audit (#11):** must sit below every module that writes to it, and take the caller's context. `Accounts` and `Administrators` log the sign-in and bootstrap events that FR-AUD-01 needs as records. See [Persistence](#persistence). Store `ICorrelationContext.CurrentId`, which is null outside a request, circuit action, cycle or job. `RemoteIpAddress` is the client's address once `UseForwardedHeaders` has run, but a circuit has no request to read it from, so FR-AUD-02 needs it captured when the circuit starts.
+- **Audited actions (#14, #20, #39, #47, and the agent, approval and emergency pause issues):** record each FR-AUD-01 action with `IAuditTrail.Add` on the context that makes the change, in the same transaction. Add its `AuditAction` value and its text in `ActivityText`. Set `UserId` to the account it's about, and the actor to whoever did it: an administrator acting on someone else's account, or the system for a job or a risk limit (FR-AGT-04). See [Audit](#audit).
+- **The first action with a before/after summary:** show `Changes` on the activity page, with each field name's text in `Strings.resx`. Nothing shows them yet.
+- **Account deletion (#51):** FR-AUTH-09 keeps audit records with the identity anonymized, and the [trigger](#append-only) refuses every `UPDATE`. Replace `audit_events_append_only()` in a new migration, so that an update can set `user_id`, `actor_id`, `ip_address` and `user_agent` to null and change nothing else, and add a test that it can't do more.
+- **Audit search (FR-ADM-06):** add a search to `IAuditTrail` and a page through Administration, which may use Platform. Show actor IDs and correlation IDs there, which `IAccountActivity` leaves out. Index whatever it filters on.
 - **Email links (#13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Build links from `App:PublicBaseUrl`, never from `Host`, which a client chooses. A redirect is different: it goes back to whoever asked, and `NavigateTo` and the cookie handler both build one from the request, which is what `AllowedHosts` limits. Throttle reset requests per address too, because the limiter only sees the sender's IP.
 - **Secrets (#12):** must sit below Identity and Credentials, and keep secret access separate from credential metadata (#20). Wrap decrypted secrets in a type that doesn't render its value: see [Masking](#masking). Antiforgery and session cookies are protected by Data Protection keys, which sit unencrypted in the user's profile by default: decide where they live.
 - **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds. Base URLs come from the configuration file only (NFR-SEC-10), and clients don't follow redirects, or a response could send a signed request somewhere else.
@@ -675,10 +748,10 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Decision cycles (#30, #31):** call `ICorrelationContext.Begin()` around each cycle, and set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope. Decide between one `job_runs` row per tick and one per cycle, which costs about 19,000 rows a day at 200 agents on 15m. `RunAsync` stays pending while hung work keeps its place, so a concurrency limit must bound its wait.
 - **Order execution (#34):** pass `cancellationToken`, not `Stopping`, to exchange calls. Persist the intent before sending, or a cut send can't be recovered (FR-EXE-05, FR-EXE-08). Once an order is placed, save with a deadline of its own, or the end of the drain window could cancel the write.
 - **Reconciliation (#35):** run the startup pass from a hosted service's `StartAsync`, through `IJobRunner`, so it finishes before any scheduled cycle (FR-EXE-08).
-- **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
+- **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and the persistence, logging, correlation and job contracts in `Platform/Contracts`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity` in `Modules/Identity/Contracts`, and the persistence, logging, correlation, job and audit contracts in `Platform/Contracts`.
 
 ## What the boundary tests can't see
 

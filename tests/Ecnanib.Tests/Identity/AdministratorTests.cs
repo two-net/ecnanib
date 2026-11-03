@@ -4,6 +4,7 @@ using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
+using Ecnanib.Tests.Audit;
 
 namespace Ecnanib.Tests.Identity;
 
@@ -150,6 +151,24 @@ public sealed class AdministratorTests(PostgresFixture postgres)
         removed.Start();
 
         Assert.False(await IsAdministratorAsync(removed, email));
+    }
+
+    [Fact]
+    public async Task Confirming_is_audited_whether_or_not_the_secret_was_right()
+    {
+        var email = Visitor.NewEmail();
+        await using var app = App(email);
+        using var visitor = Visitor.To(app);
+        await visitor.SignUpAsync(email);
+
+        (await ConfirmAsync(visitor, "not the bootstrap secret at all")).Dispose();
+        (await ConfirmAsync(visitor, Secret)).Dispose();
+
+        var userId = await AccountRows.IdAsync(app.ConnectionString(), email, Cancellation);
+        var rows = await AuditRows.OfUserAsync(app.ConnectionString(), userId, Cancellation);
+
+        Assert.Equal(["SignedIn", "AdministratorConfirmationFailed", "AdministratorConfirmed"], rows.Select(row => row.Action));
+        Assert.Equal(0, await AuditRows.CountHoldingAsync(app.ConnectionString(), Secret, Cancellation));
     }
 
     /// <summary>Verification belongs to the emailed link (#13) when there is email, and that fails closed until then.</summary>

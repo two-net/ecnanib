@@ -22,6 +22,7 @@ public static class IdentityModule
         services.AddSingleton<ISessions>(provider => provider.GetRequiredService<Sessions>());
         services.AddSingleton<IRecurringJob, SessionExpiryJob>();
         services.AddSingleton<IAdministrators, Administrators>();
+        services.AddSingleton<IAccountActivity, AccountActivity>();
         services.AddSingleton<IAuthorizationHandler, LegalAcceptedHandler>();
         services.AddSingleton<IAuthorizationHandler, AdministratorHandler>();
 

@@ -3,6 +3,7 @@ using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Tests.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Ecnanib.Tests.Audit;
 
 namespace Ecnanib.Tests.Identity;
 
@@ -126,6 +127,22 @@ public sealed partial class LockoutTests(PostgresFixture postgres)
         Assert.Equal(3, hasher.Total);
         Assert.Equal(wrong, unknown);
         Assert.Equal(wrong, whileLocked);
+    }
+
+    /// <summary>FR-AUD-01: an attempt refused during a lock is a failed sign-in too.</summary>
+    [Fact]
+    public async Task Every_refused_attempt_is_audited_including_during_a_lock()
+    {
+        await using var app = App(new CountingHasher());
+        var email = await RegisterAsync(app);
+
+        await FailAsync(app, email, Limit + 2);
+
+        var userId = await AccountRows.IdAsync(app.ConnectionString(), email, Cancellation);
+        var rows = await AuditRows.OfUserAsync(app.ConnectionString(), userId, Cancellation);
+
+        Assert.Equal(Limit + 2, rows.Count);
+        Assert.All(rows, row => Assert.Equal("SignInFailed", row.Action));
     }
 
     private static IAccounts Accounts(AppFactory app) => app.Services.GetRequiredService<IAccounts>();

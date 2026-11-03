@@ -446,6 +446,9 @@
   <data name="AccountChangePasswordLink" xml:space="preserve">
     <value>Change your password</value>
   </data>
+  <data name="AccountActivityLink" xml:space="preserve">
+    <value>See your account activity</value>
+  </data>
   <data name="AccountPasswordChanged" xml:space="preserve">
     <value>Your password has been changed, and your other sessions have been signed out.</value>
   </data>
@@ -478,6 +481,56 @@
   <data name="AccountDocumentAccepted" xml:space="preserve">
     <value>{0}, version {1}, accepted {2:yyyy-MM-dd HH:mm} UTC</value>
     <comment>{0} is a document title, {1} its version and {2} a time in UTC.</comment>
+  </data>
+  <data name="ActivityPageTitle" xml:space="preserve">
+    <value>Account activity | Ecnanib</value>
+  </data>
+  <data name="ActivityHeading" xml:space="preserve">
+    <value>Account activity</value>
+  </data>
+  <data name="ActivityIntro" xml:space="preserve">
+    <value>Sign-ins, password changes and other security events on your account, newest first. If you don't recognise one, change your password.</value>
+  </data>
+  <data name="ActivityEmpty" xml:space="preserve">
+    <value>Nothing has been recorded yet.</value>
+  </data>
+  <data name="ActivityTime" xml:space="preserve">
+    <value>{0:yyyy-MM-dd HH:mm} UTC</value>
+    <comment>{0} is a time in UTC.</comment>
+  </data>
+  <data name="ActivityTimeAndAddress" xml:space="preserve">
+    <value>{0:yyyy-MM-dd HH:mm} UTC, from {1}</value>
+    <comment>{0} is a time in UTC, {1} an IP address.</comment>
+  </data>
+  <data name="ActivityByAdministrator" xml:space="preserve">
+    <value>By an administrator</value>
+  </data>
+  <data name="ActivityBySystem" xml:space="preserve">
+    <value>By Ecnanib</value>
+  </data>
+  <data name="ActivityShowOlder" xml:space="preserve">
+    <value>Show older activity</value>
+  </data>
+  <data name="ActivityActionSignedIn" xml:space="preserve">
+    <value>Signed in</value>
+  </data>
+  <data name="ActivityActionSignInFailed" xml:space="preserve">
+    <value>Failed sign-in attempt</value>
+  </data>
+  <data name="ActivityActionSignedOut" xml:space="preserve">
+    <value>Signed out</value>
+  </data>
+  <data name="ActivityActionSessionRevoked" xml:space="preserve">
+    <value>Revoked another session</value>
+  </data>
+  <data name="ActivityActionPasswordChanged" xml:space="preserve">
+    <value>Changed the password</value>
+  </data>
+  <data name="ActivityActionAdministratorConfirmed" xml:space="preserve">
+    <value>Confirmed as an administrator</value>
+  </data>
+  <data name="ActivityActionAdministratorConfirmationFailed" xml:space="preserve">
+    <value>Failed attempt to confirm as an administrator</value>
   </data>
   <data name="ChangePasswordPageTitle" xml:space="preserve">
     <value>Change password | Ecnanib</value>

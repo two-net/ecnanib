@@ -1,9 +1,11 @@
+using Ecnanib.Platform.Audit;
 using Ecnanib.Platform.Contracts;
 using Ecnanib.Platform.Correlation;
 using Ecnanib.Platform.Jobs;
 using Ecnanib.Platform.Logging;
 using Ecnanib.Platform.Persistence;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog.Extensions.Logging;
@@ -45,6 +47,7 @@ public static class PlatformModule
         services.AddHostedService<DatabaseStartup>();
 
         AddJobs(services);
+        AddAudit(services);
 
         services.AddSingleton<DatabaseHealthCheck>();
         services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
@@ -62,6 +65,14 @@ public static class PlatformModule
     /// <summary>Logs each HTTP request. Call it straight after UseCorrelation, so it sees the final status.</summary>
     public static IApplicationBuilder UseRequestLogging(this IApplicationBuilder app) =>
         app.UseMiddleware<RequestLoggingMiddleware>();
+
+    /// <summary>
+    /// Records each HTTP request's address and user agent for the audit trail. Call it after
+    /// UseForwardedHeaders, which is what makes the address the client's, and outside the exception
+    /// handler, because a re-executed request comes from the same client.
+    /// </summary>
+    public static IApplicationBuilder UseClientOrigin(this IApplicationBuilder app) =>
+        app.UseMiddleware<ClientOriginMiddleware>();
 
     /// <summary>
     /// Runs the application. An exception that escapes is printed raw by the runtime, and stderr
@@ -92,6 +103,18 @@ public static class PlatformModule
         services.AddSingleton<JobRunner>();
         services.AddSingleton<IJobRunner>(provider => provider.GetRequiredService<JobRunner>());
         services.AddHostedService(provider => provider.GetRequiredService<JobRunner>());
+    }
+
+    /// <summary>
+    /// The hub filter is added here, before any module's, so it runs outside them and the client is
+    /// known by the time their filters and the circuit's work run.
+    /// </summary>
+    private static void AddAudit(IServiceCollection services)
+    {
+        services.AddSingleton<ClientOriginContext>();
+        services.AddSingleton<IAuditTrail, AuditTrail>();
+        services.AddSingleton<ClientOriginHubFilter>();
+        services.Configure<HubOptions>(options => options.AddFilter<ClientOriginHubFilter>());
     }
 
     private static void AddStructuredLogging(IServiceCollection services)

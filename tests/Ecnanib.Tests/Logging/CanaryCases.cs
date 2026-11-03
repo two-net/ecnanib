@@ -132,6 +132,12 @@ internal static class CanaryCases
         HttpRequestWithUnrecognisedHeader(),
     ];
 
+    /// <summary>Every name a secret goes by here, as a property and on the wire. The audit trail masks fields by these.</summary>
+    public static IReadOnlyList<string> SecretNames { get; } = [.. Classes.SelectMany(secret => new[] { secret.Property, secret.Wire })];
+
+    /// <summary>Secrets that only their shape gives away, each rendered around a canary.</summary>
+    public static IReadOnlyList<(string Name, Func<string, string> Render)> SecretShapes => Shapes;
+
     public static string NewCanary() => $"Z{Guid.NewGuid():N}";
 
     /// <summary>Binance keys and signatures are 64 characters with no marker at all.</summary>

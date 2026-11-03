@@ -1,0 +1,42 @@
+@using System.Globalization
+
+@* A link or focus target needs tabindex="-1". *@
+<li class="activity" tabindex="-1" @ref="_element">
+    <p class="activity-action">@ActivityText.Of(Record.Action)</p>
+    <p class="activity-details">@Details</p>
+
+    @if (Record.UserAgent is { } userAgent)
+    {
+        @* Anyone can write this header. Razor encodes it, so it's only text. *@
+        <p class="activity-device">@userAgent</p>
+    }
+
+    @if (ActivityText.ByWhom(Record.Actor) is { } byWhom)
+    {
+        <p class="activity-details">@byWhom</p>
+    }
+</li>
+
+@code {
+    private ElementReference _element;
+
+    [Parameter, EditorRequired]
+    public ActivityRecord Record { get; set; } = default!;
+
+    /// <summary>For the first record that "show older" added.</summary>
+    [Parameter]
+    public bool TakeFocus { get; set; }
+
+    private string Details =>
+        Record.IpAddress is { } address
+            ? string.Format(CultureInfo.CurrentCulture, Strings.ActivityTimeAndAddress, Record.Timestamp.UtcDateTime, address)
+            : string.Format(CultureInfo.CurrentCulture, Strings.ActivityTime, Record.Timestamp.UtcDateTime);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && TakeFocus)
+        {
+            await _element.FocusAsync();
+        }
+    }
+}

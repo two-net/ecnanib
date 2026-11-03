@@ -4,6 +4,7 @@ using Ecnanib.Tests.Jobs;
 using Ecnanib.Tests.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Ecnanib.Tests.Audit;
 
 namespace Ecnanib.Tests.Identity;
 
@@ -255,6 +256,22 @@ public sealed class PasswordChangeTests(SharedAccountApp app) : IClassFixture<Sh
         await visitor.SignUpAsync();
 
         Assert.Contains("href=\"/account/password\"", await visitor.PageAsync("/account"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Changing_the_password_is_audited_and_a_refusal_changes_nothing()
+    {
+        using var visitor = Visitor.To(app);
+        var email = await visitor.SignUpAsync();
+
+        (await visitor.ChangePasswordAsync(Wrong, NewPassword)).Dispose();
+        (await visitor.ChangePasswordAsync(Visitor.Password, NewPassword)).Dispose();
+
+        var userId = await AccountRows.IdAsync(app.ConnectionString, email, Cancellation);
+        var rows = await AuditRows.OfUserAsync(app.ConnectionString, userId, Cancellation);
+
+        Assert.Equal(["SignedIn", "PasswordChanged"], rows.Select(row => row.Action));
+        Assert.Equal(("User", userId), (rows[1].ActorKind, rows[1].ActorId));
     }
 }
 

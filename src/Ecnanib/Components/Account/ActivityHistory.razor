@@ -1,0 +1,72 @@
+@page "/account/activity"
+@inject IAccountActivity AccountActivity
+
+<PageTitle>@Strings.ActivityPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.ActivityHeading</h1>
+    <p>@Strings.ActivityIntro</p>
+
+    @if (_loaded && _records.Count == 0)
+    {
+        <p>@Strings.ActivityEmpty</p>
+    }
+    else
+    {
+        <ol class="activity-list">
+            @foreach (var record in _records)
+            {
+                <ActivityItem @key="record.Id" Record="record" TakeFocus="record.Id == _firstOfLastPage" />
+            }
+        </ol>
+    }
+
+    @if (_hasOlder)
+    {
+        @* Focus moves to the first record it adds, so it isn't lost when this button goes. *@
+        <button type="button" class="button" @onclick="ShowOlderAsync">@Strings.ActivityShowOlder</button>
+    }
+</div>
+
+@code {
+    private readonly List<ActivityRecord> _records = [];
+    private Guid? _userId;
+    private bool _loaded;
+    private bool _hasOlder;
+
+    /// <summary>Only set after showing older records, so the first page doesn't take focus from the heading.</summary>
+    private long? _firstOfLastPage;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = AccountClaims.UserId((await AuthenticationState).User);
+
+        await LoadAsync(before: null);
+    }
+
+    private async Task ShowOlderAsync()
+    {
+        var before = _records.Count > 0 ? _records[^1].Id : (long?)null;
+
+        await LoadAsync(before);
+
+        _firstOfLastPage = _records.FirstOrDefault(record => record.Id < before)?.Id;
+    }
+
+    private async Task LoadAsync(long? before)
+    {
+        if (_userId is not { } userId)
+        {
+            return;
+        }
+
+        var page = await AccountActivity.ListAsync(userId, before, CancellationToken.None);
+
+        _records.AddRange(page);
+        _hasOlder = page.Count == AccountActivity.PageSize;
+        _loaded = true;
+    }
+}

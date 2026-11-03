@@ -51,7 +51,7 @@ public sealed class AccountLoggingTests(PostgresFixture postgres)
         Assert.Contains("Confirmed an administrator", text, StringComparison.Ordinal);
         Assert.Contains("Password changed", text, StringComparison.Ordinal);
         Assert.Contains("Password change refused", text, StringComparison.Ordinal);
-        Assert.Contains("Revoked a session", text, StringComparison.Ordinal);
+        Assert.Contains("Signed out", text, StringComparison.Ordinal);
         Assert.DoesNotContain(PasswordCanary, text, StringComparison.Ordinal);
         Assert.DoesNotContain(NewPasswordCanary, text, StringComparison.Ordinal);
         Assert.DoesNotContain(WrongCanary, text, StringComparison.Ordinal);
