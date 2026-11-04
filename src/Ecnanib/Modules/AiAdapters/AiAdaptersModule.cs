@@ -44,7 +44,12 @@ public static class AiAdaptersModule
         services.AddSingleton<IAiProviders>(provider => provider.GetRequiredService<AiGateway>());
         services.AddSingleton<IAiCompletions>(provider => provider.GetRequiredService<AiGateway>());
 
-        // Each provider's adapter is registered here, as a singleton IAiProviderAdapter (#19).
+        // CON-13. Each needs its AiProviders section. They take nothing from the container, so a key can
+        // only arrive with a call, never from the configuration.
+        services.AddSingleton<IAiProviderAdapter, AnthropicAdapter>();
+        services.AddSingleton<IAiProviderAdapter, GoogleAdapter>();
+        services.AddSingleton<IAiProviderAdapter, OpenAiAdapter>();
+        services.AddSingleton<IAiProviderAdapter, XaiAdapter>();
 
         return services;
     }

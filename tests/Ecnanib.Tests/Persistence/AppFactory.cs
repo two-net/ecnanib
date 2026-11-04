@@ -1,4 +1,5 @@
 using Ecnanib.Platform.Contracts;
+using Ecnanib.Tests.Ai;
 using Ecnanib.Tests.Exchange;
 using Ecnanib.Tests.Secrets;
 using Microsoft.AspNetCore.Hosting;
@@ -69,8 +70,9 @@ public class AppFactory(
                 ["App:PublicBaseUrl"] = environment is null ? null : PublicBaseUrl,
             });
 
-            // Required, and on hosts that can't resolve, so nothing reaches Binance by accident.
+            // Required, and on hosts that can't resolve, so nothing reaches Binance or an AI provider by accident.
             configuration.AddInMemoryCollection(FakeBinance.Settings());
+            configuration.AddInMemoryCollection(ProviderSamples.Settings());
 
             if (settings?.Any(setting => setting.Key.StartsWith("Security:EncryptionKeys", StringComparison.OrdinalIgnoreCase)) != true)
             {

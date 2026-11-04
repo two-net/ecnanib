@@ -6,7 +6,9 @@ using System.Text.Json;
 namespace Ecnanib.Tests.Ai;
 
 /// <summary>A request the pipeline sent, as it went on the wire.</summary>
-public sealed record RecordedAiRequest(HttpMethod Method, Uri Uri, string? Key, string? Body)
+/// <param name="Key">The test adapter's key header, for telling credentials apart.</param>
+/// <param name="Headers">Every request header, comma-joined, by its lower-case name.</param>
+public sealed record RecordedAiRequest(HttpMethod Method, Uri Uri, string? Key, string? Body, IReadOnlyDictionary<string, string> Headers)
 {
     public string Host => Uri.Host;
 
@@ -97,7 +99,8 @@ public sealed class FakeAiProvider : HttpMessageHandler
     {
         var key = request.Headers.TryGetValues(KeyHeader, out var keys) ? keys.Single() : null;
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
-        var recorded = new RecordedAiRequest(request.Method, request.RequestUri!, key, body);
+        var headers = request.Headers.ToDictionary(header => header.Key.ToLowerInvariant(), header => string.Join(", ", header.Value));
+        var recorded = new RecordedAiRequest(request.Method, request.RequestUri!, key, body, headers);
         _requests.Enqueue(recorded);
 
         lock (_flight)

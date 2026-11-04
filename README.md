@@ -201,7 +201,7 @@ The `AiProviders` section has one entry per AI provider, under the provider's na
 | `RetryBackoffMs` | The first wait before a retry, which doubles each time, 0 to 60000. Defaults to `1000`. A provider's own `Retry-After` takes its place |
 | `MaxConcurrentPerCredential` | How many calls one user key may have in flight at once, 1 to 32. Defaults to `4` |
 
-Each URL is a server's address only, with no path, and must use https outside Development. See [AI adapters](docs/architecture.md#ai-adapters).
+Each URL is a server's address only, with no path, and must use https outside Development. `appsettings.json` ships the official servers of the four providers: `Anthropic`, `Google`, `OpenAI` and `xAI`. Nothing is stored at a provider, and keys come only from users' credentials, one call at a time. See [AI adapters](docs/architecture.md#ai-adapters), which also says how to check the adapters against the real APIs with your own keys.
 
 ## Security
 

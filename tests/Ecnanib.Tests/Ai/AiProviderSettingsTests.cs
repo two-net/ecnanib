@@ -2,7 +2,9 @@ using System.Text.Json;
 using Ecnanib.Modules.AiAdapters.Contracts;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
+using Microsoft.Extensions.Configuration.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Ecnanib.Tests.Ai;
 
@@ -119,13 +121,25 @@ public sealed class AiProviderSettingsTests(PostgresFixture postgres)
         Assert.Equal((AiFailure.Other, 0), (exception.Failure, exception.Attempts));
         Assert.Contains("disabled", exception.Message, StringComparison.Ordinal);
         Assert.Empty(ai.Provider.Requests);
-        Assert.Equal(new[] { new AiProviderInfo("Test", false), new AiProviderInfo("Second", true) }, ai.Providers.All);
+        Assert.Equal(new[] { new AiProviderInfo("Test", false), new AiProviderInfo("Second", true) }, ai.Providers.All.Skip(4));
     }
 
     [Fact]
     public async Task Without_adapters_no_section_is_needed()
     {
-        await using var app = new AppFactory(postgres.NewConnectionString());
+        await using var app = new AppFactory(
+            postgres.NewConnectionString(),
+            services => services.RemoveAll<IAiProviderAdapter>(),
+            configure: configuration =>
+            {
+                // AppFactory gives every application the four providers' sections, which this one goes without.
+                foreach (var source in configuration.Sources.OfType<MemoryConfigurationSource>()
+                    .Where(source => source.InitialData?.Any(setting => setting.Key.StartsWith("AiProviders:", StringComparison.Ordinal)) == true)
+                    .ToList())
+                {
+                    configuration.Sources.Remove(source);
+                }
+            });
         app.Start();
 
         Assert.Empty(app.Services.GetRequiredService<IAiProviders>().All);

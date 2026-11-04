@@ -16,7 +16,9 @@ public sealed class AiCallTests(PostgresFixture postgres)
     {
         await using var ai = new AiHarness(postgres);
 
-        Assert.Equal(new[] { new AiProviderInfo("Test", true), new AiProviderInfo("Second", true) }, ai.Providers.All);
+        Assert.Equal(
+            new[] { "Anthropic", "Google", "OpenAI", "xAI", "Test", "Second" }.Select(name => new AiProviderInfo(name, true)),
+            ai.Providers.All);
     }
 
     [Fact]

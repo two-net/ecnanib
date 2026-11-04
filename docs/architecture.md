@@ -617,9 +617,33 @@ The algo endpoint's own page couldn't be read, so its parameters come from Binan
 
 - **A provider is its adapter's `Name`**, such as `OpenAI`. That name is the key for its `AiProviders` section, the catalog's `providers` row and a credential's provider. There's no `AiProvider` enum, because one would break NFR-MNT-02. A name is letters and digits, and two adapters can't share one.
 - **Every adapter needs its section**, or startup stops, naming `AiProviders:<Name>:BaseUrl`. A section with no adapter is only a Warning: a misspelt name leaves the real adapter's section missing, and that stops startup anyway.
-- **Base URLs come only from the section** (NFR-SEC-10), with no defaults in code. A base URL is a server's address and nothing more, over https outside Development. Adapters own their paths, including the API version, and give them as relative URIs. `AiTransport` puts the base URL in front and refuses anything else before it's sent. It reads the path's original string, because on Unix `"/v1/models"` parses as an absolute file URI.
+- **Base URLs come only from the section** (NFR-SEC-10), with no defaults in code. A base URL is a server's address and nothing more, over https outside Development. Adapters own their paths, including the API version, and give them as relative URIs. `AiTransport` puts the base URL in front and refuses anything else before it's sent. It reads the path's original string, because on Unix `"/v1/models"` parses as an absolute file URI. `appsettings.json` ships each provider's official server.
 - **`Enabled: false` skips the rest of the section.** A call to a disabled provider fails as `Other` without being sent, with no attempts.
 - **The named client `AiProviders` follows no redirects**, keeps no cookies, buffers at most 32 MB, and has `RemoveAllLoggers()`, as the [exchange's](#servers) does.
+
+### The four providers
+
+Each adapter speaks its provider's current API, as its docs stood in November 2026 (#19). The SDKs aren't used, because an adapter only builds requests and reads answers, and `AiTransport` does the sending.
+
+| | Anthropic | Google | OpenAI | xAI |
+|---|---|---|---|---|
+| API | Messages, `POST /v1/messages` | Gemini, `POST /v1beta/models/{id}:generateContent` | Responses, `POST /v1/responses` | Responses, `POST /v1/responses` |
+| Key | `x-api-key`, with `anthropic-version: 2023-06-01` | `x-goog-api-key` | `Authorization: Bearer` | `Authorization: Bearer` |
+| Schema | `output_config.format` | `responseJsonSchema`, with a JSON answer | `text.format`, strict | `text.format` |
+| Live search | `web_search_20250305`, at most 5 searches a call | `googleSearch` | `web_search` | `web_search` and `x_search`, without inline citations |
+| Search and a schema | Search only | Search only | Both | Both |
+| Models | `GET /v1/models`, 1000 a page | `GET /v1beta/models`, 1000 a page, `generateContent` models only | `GET /v1/models`, one page | `GET /v1/language-models`, one page, text output only |
+| Output tokens | `output_tokens`, which includes thinking | `candidatesTokenCount` + `thoughtsTokenCount` | `output_tokens`, which includes reasoning | `output_tokens` + `reasoning_tokens` |
+
+- **Search beats a schema where a provider can't do both.** Anthropic's web search always carries citations, which its structured output refuses with a 400. Gemini takes both only from Gemini 3, as a preview. So those two send the search tool and no schema, and the instructions still describe the answer. The council validates every answer against its schema anyway (FR-PRM-08).
+- **Schemas stay in the subset every provider enforces.** Every object has `additionalProperties: false` and lists every property in `required`, and an optional property is a union with `null`. There's no `minLength`, `maxLength`, `minimum`, `maximum` or `pattern`, because Anthropic refuses them and Gemini drops some. OpenAI's schema is strict, so one outside the subset fails there as `InvalidRequest`. Nothing checks this in code: the council's contracts (Appendix B) must follow it.
+- **Images are PNG or JPEG**, because xAI documents no others, and `AiImage` refuses the rest. The model's own earlier turns are text only, because no provider takes an image from the model.
+- **Nothing is stored at a provider.** OpenAI and xAI keep a response for 30 days unless the request says `store: false`, and every request does.
+- **No thinking, temperature or sampling settings are sent**, so each model uses its own defaults. Several current models refuse them. A reasoning model's thinking counts towards `MaxOutputTokens` everywhere but xAI, so a tight limit can stop it before it writes.
+- **Model lists leave out what doesn't write text.** Where the provider describes a model, the adapter goes by that: Gemini's `supportedGenerationMethods` and xAI's `output_modalities`. Otherwise it goes by name. That covers OpenAI's embedding, speech, Whisper, image, moderation, realtime, audio, transcription and Sora models, and Gemini's TTS, image, live and audio ones. A new family that doesn't write text will be listed until it's added, and an administrator can hide it (FR-CAT-05).
+- **An answer is the model's final text.** For Anthropic, that's the text after the last search or thinking block, which drops a sentence written before a search. For the Responses API, it's the last message item. For Gemini, it leaves out thought parts.
+- **Truncated or refused.** These are truncated: Anthropic's `max_tokens` and `pause_turn`, Gemini's `MAX_TOKENS` and `CONTINUATION`, and an `incomplete` response. These are refused: Anthropic's `refusal`; Gemini's safety, recitation and blocklist reasons, and a blocked prompt; a `refusal` part; and `content_filter`.
+- **Gemini's `generateContent` is legacy** beside Google's newer Interactions API, but it's fully supported. Moving to Interactions would only take a new `GoogleAdapter`.
 
 ### Keys
 
@@ -642,6 +666,10 @@ An `AiKey` holds the provider, the credential ID and a `SecretValue`, and the ca
 
 - **A refusal is retried**, because FR-ROLE-06 lists it, and its tokens count, because they were billed.
 - **`Other` is retried only for a 5XX or a broken connection.** An adapter that maps something else to `Other`, such as OpenAI's `insufficient_quota`, gets no retry.
+- **Some adapters correct a misleading status.**
+  - Gemini sends an invalid key as 400 with the reason `API_KEY_INVALID`, and xAI sends one as 400 that only its message identifies. Both read as `Authentication`, which FR-KEY-04 relies on.
+  - Gemini's `RESOURCE_EXHAUSTED`, `UNAVAILABLE` and `DEADLINE_EXCEEDED` decide over their status, and so does Anthropic's `overloaded_error`.
+  - OpenAI's 429s for a key with no money left are `Other`: `insufficient_quota`, `credit_balance_exhausted` and the spend and usage limits.
 - **The caller cancelling throws `OperationCanceledException`**, which is never retried, and is logged as `Cancelled`.
 - **`AiException.Message` never holds the provider's own message**, which can quote the prompt, and whoever catches the exception may log it. That message is `ProviderMessage`, cut to 500 characters, for the decision trace. The provider's error code is kept only when it's a plain token, such as `rate_limit_error`. An answer the adapter can't read reports the exception's type, not its message, which could quote the answer.
 
@@ -672,6 +700,10 @@ Each attempt gets `TimeoutSeconds`, linked to the caller's token, and running ou
 ### Testing it
 
 `TestAdapter` in `tests/Ecnanib.Tests/Ai` is a provider with a format of its own, and `FakeAiProvider` speaks it. `AiHarness` gives each test its own application with two such providers, because credential slots are in memory. The redirect test runs against `LoopbackServer`, as the exchange's does, because only the real handler follows redirects.
+
+Each real adapter has tests of its own, which take it from `AddAiAdapters` without starting the application. They check the requests it builds, and how it reads bodies shaped like the provider's documented ones, in `ProviderSamples`. `ProviderPipelineTests` sends all four through the pipeline to the fake.
+
+`LiveProviderTests` calls the real providers at the shipped base URLs. Run it after changing an adapter, or when a provider changes its API. For each provider to check, set `ECNANIB_LIVE_<PROVIDER>_KEY` and `ECNANIB_LIVE_<PROVIDER>_MODEL`, such as `ECNANIB_LIVE_XAI_KEY` and `ECNANIB_LIVE_XAI_MODEL`. Then run `tests/Ecnanib.Tests/bin/Debug/net10.0/Ecnanib.Tests -class Ecnanib.Tests.Ai.LiveProviderTests`. A provider without both variables is skipped, so CI never calls one. A run costs a few cents a provider.
 
 ## Web security
 

@@ -43,7 +43,11 @@ public sealed class AiContractTests
         Assert.Throws<ArgumentException>(() => new AiRequest("m", AiRole.Strategist, "", [AiMessage.Assistant(Answer)], 100));
         Assert.Throws<ArgumentOutOfRangeException>(() => new AiRequest("m", AiRole.Strategist, "", [AiMessage.User(Prompt)], 0));
         Assert.Throws<ArgumentException>(() => new AiMessage(AiSpeaker.User, []));
+        Assert.Throws<ArgumentException>(() => new AiMessage(AiSpeaker.User, [null!]));
+        Assert.Throws<ArgumentException>(() => new AiMessage(AiSpeaker.Assistant, [new AiText(Answer), new AiImage("image/png", new byte[] { 1 })]));
         Assert.Throws<ArgumentException>(() => new AiImage("image/svg+xml", new byte[] { 1 }));
+        Assert.Throws<ArgumentException>(() => new AiImage("image/webp", new byte[] { 1 }));
+        Assert.Throws<ArgumentException>(() => new AiImage("image/gif", new byte[] { 1 }));
         Assert.Throws<ArgumentException>(() => new AiImage("image/png", ReadOnlyMemory<byte>.Empty));
         Assert.Throws<ArgumentException>(() => AiOutputSchema.Parse("has spaces", "{}"));
         Assert.Throws<ArgumentException>(() => AiOutputSchema.Parse("verdict", "[]"));

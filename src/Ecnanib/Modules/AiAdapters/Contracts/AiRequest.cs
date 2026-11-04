@@ -53,11 +53,17 @@ public enum AiSpeaker
 }
 
 /// <summary>One turn of the conversation. Its ToString shows no content.</summary>
+/// <param name="Content">Text and images from the user. The assistant's turns are text only, because no provider takes an image from the model.</param>
 public sealed record AiMessage(AiSpeaker Speaker, IReadOnlyList<AiContent> Content)
 {
-    public IReadOnlyList<AiContent> Content { get; init; } = Content is { Count: > 0 }
-        ? Content
-        : throw new ArgumentException("A message needs some content.", nameof(Content));
+    public IReadOnlyList<AiContent> Content { get; init; } = Content switch
+    {
+        null or { Count: 0 } => throw new ArgumentException("A message needs some content.", nameof(Content)),
+        _ when Content.Any(part => part is null) => throw new ArgumentException("A message's parts can't be null.", nameof(Content)),
+        _ when Speaker == AiSpeaker.Assistant && Content.Any(part => part is not AiText) =>
+            throw new ArgumentException("The assistant's turn is text only, because no provider takes an image from the model.", nameof(Content)),
+        _ => Content,
+    };
 
     public static AiMessage User(params AiContent[] content) => new(AiSpeaker.User, content);
 
@@ -81,10 +87,10 @@ public sealed record AiText(string Text) : AiContent
 }
 
 /// <summary>An image, such as a rendered chart for the Technical Analyst (EXT-AI-02).</summary>
-/// <param name="MediaType">image/png, image/jpeg, image/webp or image/gif, which every provider takes.</param>
+/// <param name="MediaType">image/png or image/jpeg, the only ones every provider takes. xAI documents no others.</param>
 public sealed record AiImage(string MediaType, ReadOnlyMemory<byte> Data) : AiContent
 {
-    private static readonly string[] MediaTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+    private static readonly string[] MediaTypes = ["image/png", "image/jpeg"];
 
     public string MediaType { get; init; } = MediaTypes.Contains(MediaType, StringComparer.Ordinal)
         ? MediaType
