@@ -150,7 +150,7 @@ using (logger.BeginScope(new Dictionary<string, object?> { [LogProperties.AgentI
 }
 ```
 
-A category is a logger name, and an override matches it by dotted prefix, so `Microsoft.AspNetCore` covers everything under it. SRS 7.3 names three categories that aren't code namespaces. Create those loggers by name with `ILoggerFactory.CreateLogger`: `Http` (in use), `Exchange` and `AiCouncil`.
+A category is a logger name, and an override matches it by dotted prefix, so `Microsoft.AspNetCore` covers everything under it. SRS 7.3 names three categories that aren't code namespaces. Create those loggers by name with `ILoggerFactory.CreateLogger`: `Http` and `Exchange` (in use), and `AiCouncil`.
 
 ### Masking
 
@@ -512,6 +512,96 @@ ASP.NET Data Protection protects the session cookie, antiforgery tokens and a ci
 - **Text is in `Modules/Notifications/Emails.resx`,** plain text, with times in UTC like the account emails. It's a second file named `Emails.resx`, so `Ecnanib.csproj` gives its generated class its own file name. The Web UI gives each type its own words in `Strings.resx`, through `NotificationText`.
 
 `IEmailRecipients` in Identity answers who gets what. It hands out other users' addresses, so `BannedApis` allows it only in Identity and Notifications.
+
+## Exchange adapter
+
+`Modules/ExchangeAdapter` is the only way to Binance: Spot and USDⓈ-M Futures, each in Live and Demo (CON-12, EXT-BIN-01, NFR-MNT-03). It may use `Kernel` only, so keys arrive as `SecretValue`s and bans leave through a port. Every call goes through `BinanceTransport`, which reserves request weight, signs, sends, logs once, and updates the server's limits from the response.
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `IExchangeMarketData` | Public data, with no keys. So far, exchange information | Market Data, Credentials, Execution |
+| `IExchangeAccount` | Signed reads: the account, and an order by its client order ID | Credentials, Execution |
+| `IExchangeTrading` | Placing and cancelling orders | **Execution only** (AC-01). The map lets four units use the adapter, so `BannedApis` enforces this |
+| `IExchangeUsage` | Each server's weight, limits, backoff, ban and clock offset | Administration, for the health page (#49) |
+| `IExchangeBanObserver` | A port the adapter calls when Binance bans this server's address | Execution implements it |
+
+### Servers
+
+There are five, each with its own base URL, weight budget, clock offset and bans, because Binance counts and bans an address per server: Spot Live, Spot Demo, Futures Live, Futures Demo, and Spot market data, which serves public Spot Live calls (EXT-BIN-02). Public Demo data comes from the Demo servers, because Demo prices aren't Live ones (EXT-BIN-08).
+
+- **Base URLs come only from the `Binance` section** (NFR-SEC-10), with no defaults in code. Each is a server's address and nothing more, over https outside Development. `appsettings.json` ships Binance's official ones.
+- **The named client `Binance` follows no redirects**, or a response could send a signed request somewhere else, and keeps no cookies. `RemoveAllLoggers()` drops `IHttpClientFactory`'s own logging, which would write each full URI, signature included.
+- **Every request other than a GET has an empty body.** .NET's handler sends a request with no body again, up to three times, when its connection drops before an answer, and the caller sees only the last attempt. For an order, that's a second order. A body, even an empty one, stops it. `RetryTests` proves both on a real socket, so a change in .NET would show.
+
+### Signing and the clock
+
+- **The signature covers exactly what's sent.** Values are percent-encoded with `Uri.EscapeDataString`, which Spot requires before signing since 2026-01-15, then `timestamp` and `recvWindow` follow, then the signature, last. Every parameter goes in the query, POST included.
+- **HMAC** is lower-case hex HMAC-SHA256, over the secret revealed as bytes. **Ed25519** imports the PKCS#8 PEM through NSec, signs, and sends percent-encoded base64. Binance documents Ed25519 for Spot only, and its Futures pages name HMAC and RSA, so check an Ed25519 key against Futures Demo before #20 accepts one there.
+- **`ExchangeKey` holds the secrets, and its caller disposes them.** The API key is revealed into the `X-MBX-APIKEY` header and the secret into the signer, and nothing keeps either.
+- **The offset is Binance's time minus the midpoint of a `time` request's round trip** (FR-EXE-10). A signed request syncs it when it's missing or older than 10 minutes, one sync per server at a time. A -1021 resyncs it and sends the request once more: Binance refused the first, so this is safe even for an order.
+- **A failed routine sync keeps the previous offset**, with a Warning, and isn't tried again for 30 seconds, so a failed time request can't stop a protective order. Clocks drift slowly, and a -1021 would catch real drift. With no offset yet, the request isn't sent, and fails as `Unavailable`. When the resync after a -1021 fails, the request is still `Rejected`, because Binance refused it.
+- **`Binance:RecvWindowMs` is at most 10000**, though Binance allows 60000, because an order with an unknown outcome stays open for its receive window. See [Outcomes](#outcomes).
+
+### Request weight and priority
+
+This is the request-weight model NFR-PERF-04 asks for. #56 measures it.
+
+- **Binance reports used weight on every response**, in `X-MBX-USED-WEIGHT-1M`. The adapter keeps the latest figure for the current minute and adds the weight of requests in flight. `BinanceEndpoint` gives each endpoint's weight. Those are estimates, never below 1, because Binance charges a failed request even where a successful one is free. The header is what counts.
+- **The limit comes from exchange information's `rateLimits`**, and until that loads, from Binance's published defaults: 6000 a minute on Spot, 2400 on Futures.
+- **Normal requests stop at `limit × (100 − Binance:WeightHeadroomPercent) / 100`. Protective ones may use the headroom** (FR-EXE-09). Placing or moving a stop, closing a position, and the reads those depend on are protective. A clock sync takes the priority of the request that needed it.
+- **Nothing waits.** A refused request throws `Throttled` with `RetryAfter`, and the caller decides what to do, because a cycle has a deadline.
+- **HTTP 429** backs the whole server off until `Retry-After`, or until the minute ends. **-1015**, too many orders, backs off only that key.
+- **Order counts** come from `X-MBX-ORDER-COUNT-*`, per key, against the `ORDERS` limits, with the same headroom rule. Binance counts orders per account, but the adapter only knows keys, so two keys on one account are counted apart.
+
+### Bans
+
+- **HTTP 418 halts only the server that sent it**, until the time in Binance's "banned until" message, or `Retry-After`, or two minutes. Binance's own time comes first, because it's the same for every request in flight. That's how EXT-BIN-04's "halt all exchange requests" is read: Binance bans an address per server, so a ban on Spot Demo leaves Futures Live free to protect positions. Everything to the banned server stops, protective requests included, because Binance would refuse them.
+- **Observers hear once per ban.** Requests in flight together each get a 418, a second or so apart, so a ban less than 10 seconds longer than the current one is the same ban. `ExchangeBanNotifier` in Execution raises `ExchangeRateLimitBan` for administrators in an `exchange-ban-notification` run, linking to `/admin/health`, which #49 adds.
+- **A ban isn't kept across a restart.** The first request afterwards gets a 418 again, which is reported again. That's the recovery path [Inversions](#inversions) asks of an event.
+
+### Outcomes
+
+| Response | `Failure` | `MayHaveExecuted` |
+|---|---|---|
+| 4XX with Binance's code | `Rejected`, with `Code` | No |
+| 429, or refused before sending | `Throttled`, with `RetryAfter` | No |
+| 418, or the server is banned | `Banned`, with `RetryAfter` | No |
+| The clock couldn't be synced, so it wasn't sent | `Unavailable` | No |
+| 5XX, 408, -1000, -1006, -1007, a duplicate client order ID, a timeout, a broken connection, anything else that goes wrong once it's sent, any other status such as a redirect, or a successful order whose body this version can't read | `Unknown`, with `SettlesAt` for an order | Yes |
+
+- **Every 5XX is unknown**, as EXT-BIN-05 says, even the 503s that Binance's Futures pages call certain failures. So are -1000, -1006 and -1007, which say Binance doesn't know either, whatever status they come with. So is a client order ID already in use (Futures -4116, Spot -2010 "Duplicate order sent."), which proves an order with it exists. The query by client order ID settles each (FR-EXE-05).
+- **An unknown order can still be accepted until its receive window has passed.** Binance checks the timestamp when a request arrives, so one held up on the way can arrive after the adapter gave up on it. `SettlesAt` is the timestamp plus the receive window, plus 5 seconds for clock error and Binance's queues, by this server's clock.
+- **`GetOrderAsync` returns null only for -2013**, Binance's "Order does not exist", and only after `SettlesAt` when this process sent the order with an unknown outcome. Before then it throws `Unknown` with the same `SettlesAt`. Null is what allows sending again, so nothing else returns it. The memory is per process, so Execution persists `SettlesAt` with the order to hold across a restart. The algo service's code for a missing order isn't documented, so a missing conditional order may throw `Rejected` instead, which is the safe direction.
+- **Messages hold the server, the path, and Binance's code and message**, never a URL, query, key or signature.
+
+### Timeouts and cancellation
+
+- **Reads** give up after 15 seconds, and follow the caller's token throughout.
+- **Placing and cancelling** check the caller's token only until the send begins. After that, only the adapter's own 10 seconds applies, and running out is `Unknown`. That fits the [drain window](#shutdown), so a shutdown can't cut an order off half way (NFR-REL-04). The client's own timeout is off.
+
+### Futures conditional orders
+
+Since 2025-12-09, Binance takes Futures `STOP_MARKET` and `TAKE_PROFIT_MARKET` only through its algo order service: `POST /fapi/v1/algoOrder` with `algoType=CONDITIONAL`, `triggerPrice` and `clientAlgoId`. `/fapi/v1/order` refuses them with -4120. So `OrderType.StopMarket` and `TakeProfitMarket` go there on Futures, and are read and cancelled there by client ID, which is why an `OrderReference` carries the type. Their statuses add `Triggered` and `Finished`, and `TriggeredOrderId` is the order a triggered one became. On Spot they're `STOP_LOSS` and `TAKE_PROFIT` on the ordinary endpoint.
+
+The algo endpoint's own page couldn't be read, so its parameters come from Binance's official generated connectors. Check them against Futures Demo before #34 relies on them.
+
+### Exchange information
+
+- **It's held in memory per market and environment**, loaded on first use, and refreshed once it's older than `Binance:ExchangeInfoRefreshHours` (EXT-BIN-06). It's lazy rather than a job, because the adapter can't use Platform. Market Data persists `ExchangeSymbol` (#22).
+- **A failed refresh keeps the last copy**, with a Warning, and waits a minute before trying again. With no copy, it throws.
+- **Callers share one refresh, which none of them can cancel.** One that stops waiting gets the last copy if there is one, and the refresh carries on for the next caller. The transport's read timeout bounds it.
+- **Spot asks for `showPermissionSets=false`**, which cuts the full body from about 18 MB to 7 MB.
+- **Each refresh updates its servers' limits.**
+
+### Logging
+
+- **One event per call under `Exchange`** (FR-LOG-08): the server, method, endpoint, status, latency, Binance's used weight and the limit, the client order ID, and Binance's error code. The endpoint is the path, never the query. Successes are Information. Rejections, 429s and refusals before sending are Warnings. Bans, server errors and unknown outcomes are Errors.
+- **Events carry the caller's scope**, so a cycle's correlation, agent and cycle IDs reach them.
+- **The query, key and signature are never logged.** `ExchangeLoggingTests` checks with canary keys too short for the shape rule. Masking also catches `X-MBX-APIKEY`, `signature=`, 64-character keys and HMAC signatures, and PEM private keys, as a backstop.
+
+### Testing it
+
+`FakeBinance` in `tests/Ecnanib.Tests/Exchange` replaces the named client's handler, and answers each method and path as a test says. `AppFactory` gives every application hosts under `.test`, which never resolve, so no test reaches Binance by accident. `ExchangeHarness` gives each test its own application, clock and fake, because the adapter's state is in memory. `RedirectTests` and `RetryTests` use `LoopbackServer`, a real socket, because redirects and retries happen inside the real handler, which the fake replaces.
 
 ## Web security
 
@@ -1014,16 +1104,20 @@ The reconnect modal was checked in the published build, by stopping the server. 
   - Execution (#34, #35, #36): `TradeOpened`, `TradeClosed` (including a close outside Ecnanib, FR-EXE-06) and `StopMoved`
   - Agents (#37): `KillSwitchExecuted`
   - DecisionCycle (#38): `ApprovalPending` and `ApprovalExpired`, linking to the approval page, which needs sign-in like every page (FR-APR-02)
-  - Execution (#17, #49): `ExchangeRateLimitBan`, through `RaiseForAdministratorsAsync`. Neither the adapter, Market Data nor Administration may use Notifications, so Execution raises it when the adapter reports a ban, or a new edge goes in the map with its reason
+  - Execution: `ExchangeRateLimitBan` is raised already, by `ExchangeBanNotifier`. See [Bans](#bans)
 - **Live updates (#41):** push a new notification to the menu's count and an open list. Today they only change on navigation.
 - **Retention (#50):** the SRS sets no period for `notifications`, so decide one, and purge in batches by `created_at`. With email on, the email job adds a `job_runs` row a minute, about 1,440 a day, plus a `send-email` row per message.
 - **Credentials' secrets (#20):** store each secret with `ISecretStore.Add` on the context that saves the row that owns it, and keep only its ID. Replacing a secret is `Add` and `RemoveAsync` in one transaction, and so is deleting its owner. Keep secret access separate from credential metadata, so that listing credentials (FR-KEY-03) never decrypts anything. Two-factor added no foreign key to `secrets`, and the boundary tests refuse `HasOne<Secret>()`, so one would have to be written into the migration by hand. See [Secrets](#secrets) and [Two-factor](#two-factor), which does this already.
-- **Adapters (#17, #18):** take a `SecretValue`, and reveal it at the last moment, when signing a request or setting a header. Prefer `RevealUtf8()` for an HMAC key. Never put a revealed key in a log scope, an exception or a field.
+- **AI adapters (#18):** take a `SecretValue`, and reveal it at the last moment, when setting a header, as the [exchange adapter](#signing-and-the-clock) does. Never put a revealed key in a log scope, an exception or a field.
 - **System health (#49):** show `IMasterKeyRotation` for FR-ADM-04's credential re-encryption progress.
 - **Account deletion (#51):** delete a user's secrets through the modules that own them, in the transaction that deletes the rows that refer to them. Nothing else can find them. That includes the TOTP key in `totp_authenticators.secret_id`: the row cascades with the user, but the secret doesn't.
 - **Data export (#51):** include the user's preferences from `IPreferences.GetAsync`, and their email choices from `IPreferences.GetEmailNotificationsAsync` (FR-DATA-03). Deleting the account deletes their row through its foreign key.
 - **Account deletion (#51):** delete the user's `notifications` through the port Identity declares, which Notifications implements. There's no foreign key to do it.
-- **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds. Base URLs come from the configuration file only (NFR-SEC-10), and clients don't follow redirects, or a response could send a signed request somewhere else.
+- **Exchange endpoints (#20, #22, #33, #35):** add each one to `BinanceEndpoint` with its weight, and call it through `BinanceTransport`, so it shares the budget, the clock, the outcomes and the logging. Put reads on `IExchangeAccount` or `IExchangeMarketData`, and anything that changes the account, such as leverage or margin mode (#33), on `IExchangeTrading`, which only Execution may use. See [Exchange adapter](#exchange-adapter).
+- **Credentials (#20):** validate a Binance key with `IExchangeAccount.GetAccountAsync` on the key's environment, and add `GET /sapi/v1/account/apiRestrictions` for FR-KEY-05. Before accepting an Ed25519 key for Futures, check that Futures Demo takes one. Build an `ExchangeKey` from `ISecretStore.RevealAsync` for each use, and dispose its secrets after.
+- **Market Data (#22):** persist `ExchangeSymbol` from `IExchangeMarketData.GetExchangeInfoAsync`, which refreshes itself. Candles and prices are normal priority.
+- **Order execution (#34):** derive client order IDs that match `^[.A-Z:/a-z0-9_-]{1,36}$` (FR-EXE-04). Use `RequestPriority.Protective` for stops, closes and their queries. On `MayHaveExecuted`, query with `IExchangeAccount.GetOrderAsync` before sending again: only null allows it. Persist `SettlesAt` with the order, and don't send it again before then, even after a restart, which the adapter's memory doesn't survive. Check the Futures algo order parameters against Demo first, and add Spot OCO if it's wanted.
+- **System health (#49):** show `IExchangeUsage.Current()` for FR-ADM-04's exchange usage and bans, at `/admin/health`, which ban notifications already link to.
 - **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category. Base URLs and redirects follow the same rule as the exchange adapter.
 - **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
 - **Risk Engine (#27):** see rule 4.
@@ -1033,7 +1127,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue` and `NotificationType` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market` and `TradingEnvironment` in `Kernel`.
 
 ## What the boundary tests can't see
 

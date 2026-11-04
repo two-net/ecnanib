@@ -789,8 +789,8 @@ There are no tenants. Every user is an independent account, and no data is share
       "DemoBaseUrl": "https://demo-api.binance.com"
     },
     "Futures": {
-      "LiveBaseUrl": "<USD-M futures live base URL>",
-      "DemoBaseUrl": "<USD-M futures demo base URL>"
+      "LiveBaseUrl": "https://fapi.binance.com",
+      "DemoBaseUrl": "https://demo-fapi.binance.com"
     },
     "MarketDataBaseUrl": "https://data-api.binance.vision",
     "RecvWindowMs": 5000,

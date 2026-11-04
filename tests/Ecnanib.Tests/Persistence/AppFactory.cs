@@ -1,4 +1,5 @@
 using Ecnanib.Platform.Contracts;
+using Ecnanib.Tests.Exchange;
 using Ecnanib.Tests.Secrets;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -67,6 +68,9 @@ public class AppFactory(
                 ["Logging:MinimumLevel"] = "Information",
                 ["App:PublicBaseUrl"] = environment is null ? null : PublicBaseUrl,
             });
+
+            // Required, and on hosts that can't resolve, so nothing reaches Binance by accident.
+            configuration.AddInMemoryCollection(FakeBinance.Settings());
 
             if (settings?.Any(setting => setting.Key.StartsWith("Security:EncryptionKeys", StringComparison.OrdinalIgnoreCase)) != true)
             {

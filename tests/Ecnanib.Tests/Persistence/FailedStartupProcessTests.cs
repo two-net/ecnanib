@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Ecnanib.Tests.Exchange;
 
 namespace Ecnanib.Tests.Persistence;
 
@@ -153,6 +154,11 @@ public sealed partial class FailedStartupProcessTests(PostgresFixture postgres)
                 RedirectStandardOutput = true,
                 WorkingDirectory = workingDirectory.FullName,
             };
+
+            foreach (var (key, value) in FakeBinance.Settings())
+            {
+                startInfo.ArgumentList.Add($"--{key}={value}");
+            }
 
             foreach (var argument in arguments)
             {

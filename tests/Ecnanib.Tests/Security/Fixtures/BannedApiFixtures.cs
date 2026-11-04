@@ -99,6 +99,16 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     {
         public static IDisposable Create() => new System.Net.Mail.SmtpClient();
     }
+
+    public static class OrdersOutsideExecution
+    {
+        public static Task PlaceAsync(Modules.ExchangeAdapter.Contracts.IExchangeTrading trading) => trading.PlaceOrderAsync("BTCUSDT");
+    }
+
+    public static class OrdersCancelledOutsideExecution
+    {
+        public static Task CancelAsync(Modules.ExchangeAdapter.Contracts.IExchangeTrading trading) => trading.CancelOrderAsync("BTCUSDT");
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Platform.Contracts
@@ -157,6 +167,25 @@ namespace Ecnanib.Tests.Security.Fixtures.Platform.Email
     public static class FrameworkSmtpClientInEmail
     {
         public static IDisposable Create() => new System.Net.Mail.SmtpClient();
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.ExchangeAdapter.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface IExchangeTrading
+    {
+        Task PlaceOrderAsync(string symbol);
+
+        Task CancelOrderAsync(string symbol);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Execution
+{
+    public static class TheExecutor
+    {
+        public static Task PlaceAsync(ExchangeAdapter.Contracts.IExchangeTrading trading) => trading.PlaceOrderAsync("BTCUSDT");
     }
 }
 

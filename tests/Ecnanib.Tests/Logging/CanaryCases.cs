@@ -109,6 +109,8 @@ internal static class CanaryCases
         ("QuotedWithSpaces", canary => $$"""{"secret":"correct horse {{canary}}"}"""),
         ("EscapedJson", canary => $$"""{\"token\":\"{{canary}}\"}"""),
         ("ReceiveWindowQuery", canary => $"timestamp=1&recvWindow=5000&signature={canary}&x=1"),
+        ("Ed25519PrivateKey", canary => $"-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEI{canary}\n-----END PRIVATE KEY-----"),
+        ("Ed25519PrivateKeyCutShort", canary => $"pasted -----BEGIN PRIVATE KEY----- MC4CAQAwBQYDK2VwBCIEI{canary}"),
         ("EmailedLink", canary => $"https://ecnanib.test/reset-password?token={canary}"),
         ("LinkThroughSignIn", canary => $"/sign-in?returnUrl=%2Faccount%2Fverify-email%3Ftoken%3D{canary}"),
         ("LinkThroughSignInLowercase", canary => $"/sign-in?returnUrl=%2faccount%2fverify-email%3ftoken%3d{canary}%26x%3d1"),

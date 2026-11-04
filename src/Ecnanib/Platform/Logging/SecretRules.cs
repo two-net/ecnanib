@@ -52,9 +52,12 @@ internal sealed class SecretRules
         $"""\[\s*(?<name>[\w.-]*(?:{SecretNames}|authorization|cookie)[\w.-]*)\s*,[^\]]*\]""",
         Options);
 
-    /// <summary>Secrets recognisable without a name: 64 alphanumerics covers Binance keys and signatures.</summary>
+    /// <summary>
+    /// Secrets recognisable without a name: 64 alphanumerics covers Binance keys and HMAC signatures, and
+    /// a PEM private key block covers Binance Ed25519 keys, with or without its end line.
+    /// </summary>
     private static readonly Regex Shapes = new(
-        """\bbearer\s+[\w\-.~+/]+=*|[a-z][a-z0-9+.-]*://[^\s/@]*:[^\s/@]*@|\bsk-[\w-]{16,}|\bxai-[\w-]{16,}|\baiza[\w-]{30,}|\beyj[\w-]+\.[\w-]+\.[\w-]*|\b[a-z0-9]{64,}\b""",
+        """\bbearer\s+[\w\-.~+/]+=*|[a-z][a-z0-9+.-]*://[^\s/@]*:[^\s/@]*@|\bsk-[\w-]{16,}|\bxai-[\w-]{16,}|\baiza[\w-]{30,}|\beyj[\w-]+\.[\w-]+\.[\w-]*|\b[a-z0-9]{64,}\b|-----begin [a-z ]*private key-----[a-z0-9+/=\s\\]*(?:-----end [a-z ]*private key-----)?""",
         Options);
 
     private readonly string[] _knownValues;

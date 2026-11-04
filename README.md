@@ -157,7 +157,7 @@ The `Logging` section follows [SRS 7.3](SRS.md#73-example-placeholders-only), no
 | Setting | Meaning |
 |---|---|
 | `MinimumLevel` | Required. `Verbose`, `Debug`, `Information`, `Warning`, `Error` or `Fatal` |
-| `Overrides` | Logger name prefix to level, such as `"Microsoft.AspNetCore": "Warning"`. `Http` is the request log |
+| `Overrides` | Logger name prefix to level, such as `"Microsoft.AspNetCore": "Warning"`. `Http` is the request log, and `Exchange` logs each Binance call |
 | `Sinks:Console:Enabled` | Defaults to `true` |
 | `Sinks:File:Enabled` | Defaults to `false` |
 | `Sinks:File:Path` | Required when enabled. Relative paths start at the content root |
@@ -172,6 +172,21 @@ The file sink writes one JSON event per line, with every property. The console s
 A few framework categories can't be set below a fixed level, because their debug events can carry form input or raw URLs. See [Masking](docs/architecture.md#masking).
 
 Every response carries an `X-Correlation-ID` header, and each log event from that request holds the same value as `CorrelationId`. To trace a request, search the log files for it, or `log_events.correlation_id` in the database. A value sent in a request is ignored.
+
+### Binance
+
+The `Binance` section names the servers the app calls. Users can't supply their own (NFR-SEC-10). `appsettings.json` ships Binance's official addresses, and an invalid value stops startup with a message that names it.
+
+| Setting | Meaning |
+|---|---|
+| `Spot:LiveBaseUrl`, `Spot:DemoBaseUrl` | Required. `https://api.binance.com` and `https://demo-api.binance.com` |
+| `Futures:LiveBaseUrl`, `Futures:DemoBaseUrl` | Required. `https://fapi.binance.com` and `https://demo-fapi.binance.com` |
+| `MarketDataBaseUrl` | Required. Public Spot Live data, `https://data-api.binance.vision` |
+| `RecvWindowMs` | How long a signed request stays valid, 1 to 10000. Defaults to `5000` |
+| `WeightHeadroomPercent` | The share of each server's request-weight limit kept for protective orders, 0 to 90. Defaults to `30` |
+| `ExchangeInfoRefreshHours` | How long symbols and their filters are kept before they're fetched again, 1 to 168. Defaults to `24` |
+
+Each URL is a server's address only, with no path, and must use https outside Development. Binance limits request weight per IP address, so every user shares the server's budget. If Binance bans the address from one of its servers, requests to that server stop until the ban ends, and administrators are notified. See [Exchange adapter](docs/architecture.md#exchange-adapter).
 
 ## Security
 
