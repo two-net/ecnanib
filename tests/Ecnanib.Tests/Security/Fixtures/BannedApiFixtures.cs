@@ -1,5 +1,5 @@
-// Deliberately broken code for BannedApiGuardTests. None of it ever runs. Each class hides one use
-// of a banned API in a different way, except the last two namespaces, which have to pass.
+// Deliberately broken code for BannedApiGuardTests. None of it ever runs. Each class in Banned hides
+// one use of a banned API in a different way. Everything outside Banned has to pass.
 
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Builder;
@@ -72,6 +72,35 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     public static class HttpClientPassedToAnExtension
     {
         public static Task<int> ReadAsync(HttpClient client, Uri url) => client.GetFromJsonAsync<int>(url);
+    }
+
+    public static class SecretRevealedOutsideItsOwners
+    {
+        public static Task<string> ReadAsync(Platform.Contracts.ISecretStore secrets, Guid id) => secrets.RevealAsync(id);
+    }
+
+    public static class SecretStoredOutsideItsOwners
+    {
+        public static Guid Store(Platform.Contracts.ISecretStore secrets, string value) => secrets.Add(value);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Platform.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface ISecretStore
+    {
+        Guid Add(string value);
+
+        Task<string> RevealAsync(Guid id);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Credentials
+{
+    public static class AnOwner
+    {
+        public static Task<string> ReadAsync(Platform.Contracts.ISecretStore secrets, Guid id) => secrets.RevealAsync(id);
     }
 }
 

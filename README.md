@@ -54,12 +54,17 @@ Users can change the provider and model per role, per agent. A single provider c
 
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), version 10.0.402 or later, and a PostgreSQL server on a currently supported major version.
 
-`appsettings.json` holds the default connection string, without a password because git tracks that file. Put your full connection string in `src/Ecnanib/appsettings.Development.json`, which git ignores and which overrides the default:
+`appsettings.json` holds the default connection string, without a password because git tracks that file. The app also needs a master key to encrypt secrets with, and won't start without one. Put your full connection string and a key in `src/Ecnanib/appsettings.Development.json`, which git ignores and which overrides the default. Generate the key with `openssl rand -base64 32`:
 
 ```json
 {
   "ConnectionStrings": {
     "Default": "Host=localhost;Database=ecnanib;Username=postgres;Password=<password>"
+  },
+  "Security": {
+    "EncryptionKeys": [
+      { "Id": "dev", "Key": "<output of openssl rand -base64 32>", "Active": true }
+    ]
   }
 }
 ```
@@ -103,6 +108,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Web security | HTTPS and HSTS, content security policy, secure cookies and rate limiting, in the application itself | In place |
 | Background jobs | An in-process runner, with its history and schedules in PostgreSQL | In place |
 | Accounts | Email and password with Argon2id, sessions that users can list and revoke, password change, lockout, recorded acceptance of the legal documents, and administrators from the configuration file | In place. Email and two-factor come later |
+| Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys live in PostgreSQL under the same keys | In place. Credentials and two-factor will store their secrets through it |
 | Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
@@ -121,6 +127,26 @@ The scaffold doesn't meet this yet:
 - There is no `appsettings.example.json` yet.
 - `appsettings.Development.json` is a second configuration file.
 - `launchSettings.json` sets `ASPNETCORE_ENVIRONMENT`, and the default host builder in `Program.cs` reads environment variables.
+
+Outside Development, the app refuses to start if anyone but the account it runs as can read or change a settings file, so restrict each one, for example with `chmod 600` (NFR-SEC-05).
+
+### Encryption keys
+
+`Security:EncryptionKeys` holds the master keys that encrypt users' secrets and the keys that protect cookies. It's required, and an invalid entry stops startup with a message that names it.
+
+| Setting | Meaning |
+|---|---|
+| `Id` | Required. 1 to 32 letters, digits, dots, hyphens or underscores, such as `2026-11`. It's stored with every secret, so never reuse one for a different key |
+| `Key` | Required. 32 random bytes in base64, from `openssl rand -base64 32`. The sample value from the SRS is refused |
+| `Active` | `true` for exactly one key, which encrypts everything new. The others only decrypt. Defaults to `false` |
+
+To rotate the master key:
+
+1. Add a new entry with `"Active": true`, set the current key's `Active` to `false`, and restart.
+2. The app re-encrypts every secret with the new key in the background, logging its progress, and keeps decrypting with the old key meanwhile.
+3. When the log says every secret uses the new key, remove the old entry and restart. The app refuses to start without a key that secrets still use, and names it.
+
+See [Secrets](docs/architecture.md#secrets) for how this works.
 
 ### Logging
 

@@ -324,6 +324,82 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("log_events", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Platform.Secrets.DataProtection.DataProtectionKeyRow", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("FriendlyName")
+                        .HasColumnType("text")
+                        .HasColumnName("friendly_name");
+
+                    b.Property<string>("Xml")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("xml");
+
+                    b.HasKey("Id")
+                        .HasName("pk_data_protection_keys");
+
+                    b.ToTable("data_protection_keys", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Platform.Secrets.MasterKeyActivation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("activated_at");
+
+                    b.Property<string>("KeyId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("key_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_master_key_activations");
+
+                    b.ToTable("master_key_activations", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Platform.Secrets.Secret", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("Ciphertext")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("ciphertext");
+
+                    b.Property<string>("KeyId")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("key_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_secrets");
+
+                    b.HasIndex("KeyId")
+                        .HasDatabaseName("ix_secrets_key_id");
+
+                    b.ToTable("secrets", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Identity.LegalAcceptance", b =>
                 {
                     b.HasOne("Ecnanib.Modules.Identity.User", null)

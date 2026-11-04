@@ -58,6 +58,28 @@ public sealed partial class FailedStartupProcessTests(PostgresFixture postgres)
     }
 
     /// <summary>
+    /// NFR-SEC-05 as an operator sees it. The message reaches stderr through the masking rules, which
+    /// would hide a key's path after "EncryptionKeys:", so this proves the setting is still named.
+    /// </summary>
+    [Fact]
+    public async Task The_sample_master_key_stops_the_process_before_any_migration_and_is_named()
+    {
+        var cancellation = TestContext.Current.CancellationToken;
+        var database = await postgres.CreateDatabaseAsync(cancellation);
+
+        var (exitCode, output) = await RunApplicationAsync(
+            database,
+            cancellation,
+            arguments: "--Security:EncryptionKeys:0:Key=<base64-encoded 256-bit key>");
+
+        Assert.NotEqual(0, exitCode);
+        Assert.Contains($"""Security:EncryptionKeys, entry 0 (Id "{AppFactory.TestKeyId}"), has the sample Key""", output, StringComparison.Ordinal);
+        Assert.Equal(
+            0,
+            await Sql.ScalarAsync<long>(database, "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'", cancellation));
+    }
+
+    /// <summary>
     /// CI probably runs in UTC, where a missing conversion wouldn't show, so the process gets a time
     /// zone of its own. Serilog stamps events with the local offset.
     /// </summary>
@@ -121,6 +143,9 @@ public sealed partial class FailedStartupProcessTests(PostgresFixture postgres)
                     $"--ConnectionStrings:Default={connectionString}",
                     "--Logging:MinimumLevel=Information",
                     $"--App:PublicBaseUrl={AppFactory.PublicBaseUrl}",
+                    $"--Security:EncryptionKeys:0:Id={AppFactory.TestKeyId}",
+                    $"--Security:EncryptionKeys:0:Key={AppFactory.TestKey}",
+                    "--Security:EncryptionKeys:0:Active=true",
                     "--urls=http://127.0.0.1:0",
                 },
                 Environment = { ["ASPNETCORE_ENVIRONMENT"] = "Production" },

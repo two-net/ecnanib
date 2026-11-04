@@ -21,9 +21,13 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     private const string Injection = "builds SQL from a string. Use the interpolated form, which parameterises";
     private const string Csrf = "turns off cross-site request forgery protection";
     private const string Ssrf = "reaches the network, which only the adapters may do, using URLs from the configuration file";
+    private const string SecretAccess = "stores or reveals a user's secret, which only Identity and Credentials may do (FR-KEY-09, FR-ADM-01)";
 
     private static readonly string[] NoExceptions = [];
     private static readonly string[] Adapters = ["Modules.ExchangeAdapter.", "Modules.AiAdapters."];
+
+    /// <summary>The secrets' owners, and Platform, which implements the store. Administration may use Platform, but not this.</summary>
+    private static readonly string[] SecretOwners = ["Modules.Identity.", "Modules.Credentials.", "Platform."];
 
     private static readonly (string Reference, string Risk, string[] AllowedIn)[] Rules =
     [
@@ -34,6 +38,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         ("::DisableAntiforgery", Csrf, NoExceptions),
         ("System.Net.Http.HttpClient", Ssrf, Adapters),
         ("System.Net.Http.IHttpClientFactory", Ssrf, Adapters),
+        (".Platform.Contracts.ISecretStore::", SecretAccess, SecretOwners),
     ];
 
     private readonly string _prefix = rootNamespace + ".";

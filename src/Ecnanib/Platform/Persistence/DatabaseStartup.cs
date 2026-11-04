@@ -12,13 +12,16 @@ namespace Ecnanib.Platform.Persistence;
 /// A failure here propagates out of app.Run(), so the process exits without opening a port.
 /// This is a hosted service because a top-level await in Program.cs would move the module
 /// registrations out of the entry point, where Program_registers_every_module reads them.
+/// It works in StartingAsync, which the host runs for every lifecycle service before any hosted
+/// service's StartAsync. So the schema is ready for all of them, whatever order they were registered
+/// in, including the framework's Data Protection service, which loads its keys from the database.
 /// </summary>
 internal sealed class DatabaseStartup(
     IDbContextFactory<EcnanibDbContext> contextFactory,
     LoggingPipeline logging,
-    ILogger<DatabaseStartup> logger) : IHostedService
+    ILogger<DatabaseStartup> logger) : IHostedLifecycleService
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartingAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -42,7 +45,15 @@ internal sealed class DatabaseStartup(
         }
     }
 
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>
     /// MigrateAsync would create both of these, but the Npgsql provider reads the migration history

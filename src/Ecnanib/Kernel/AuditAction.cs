@@ -24,4 +24,7 @@ public enum AuditAction
 
     /// <summary>Someone signed in with a listed address entered the wrong bootstrap secret.</summary>
     AdministratorConfirmationFailed,
+
+    /// <summary>The application started with a different active master key, and began re-encrypting secrets.</summary>
+    MasterKeyRotated,
 }

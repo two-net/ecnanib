@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Ecnanib.Platform.Secrets;
 using Npgsql;
 
 namespace Ecnanib.Platform.Logging;
@@ -123,6 +124,12 @@ internal sealed class SecretRules
                 continue;
             }
 
+            // A master key's ID is a label, which logs, audit records and the health page show.
+            if (IsMasterKeyId(key))
+            {
+                continue;
+            }
+
             if (key.StartsWith("ConnectionStrings:", StringComparison.OrdinalIgnoreCase)
                 && PasswordIn(value) is { Length: >= MinimumKnownValueLength } password)
             {
@@ -139,6 +146,10 @@ internal sealed class SecretRules
     /// <summary>The whole path counts, because the last segment of Security:EncryptionKeys:0:Key is just Key.</summary>
     private static bool IsSensitiveKey(string key) =>
         SensitiveFragments.Any(Normalize(key).Contains);
+
+    private static bool IsMasterKeyId(string key) =>
+        key.StartsWith(MasterKeys.Section + ":", StringComparison.OrdinalIgnoreCase)
+        && key.EndsWith(":Id", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Settings about secrets, such as Security:PasswordMinLength, are numbers and flags.</summary>
     private static bool IsSecretValue(string value) =>

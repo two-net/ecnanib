@@ -23,12 +23,15 @@ public sealed class BannedApiGuardTests
     [InlineData("HttpClientInAsyncMethod", "reaches the network")]
     [InlineData("HttpClientFactoryOutsideAdapters", "reaches the network")]
     [InlineData("HttpClientPassedToAnExtension", "reaches the network")]
+    [InlineData("SecretRevealedOutsideItsOwners", "reveals a user's secret")]
+    [InlineData("SecretStoredOutsideItsOwners", "reveals a user's secret")]
     public void A_banned_use_is_found(string fixture, string risk) =>
         Assert.Contains(Uses, use => use.Source.Contains(fixture, StringComparison.Ordinal) && use.Risk.Contains(risk, StringComparison.Ordinal));
 
     [Theory]
     [InlineData("InterpolatedSql")]
     [InlineData("AnAdapter")]
+    [InlineData("AnOwner")]
     public void An_allowed_use_passes(string fixture) =>
         Assert.DoesNotContain(Uses, use => use.Source.Contains(fixture, StringComparison.Ordinal));
 }

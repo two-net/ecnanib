@@ -532,6 +532,9 @@
   <data name="ActivityActionAdministratorConfirmationFailed" xml:space="preserve">
     <value>Failed attempt to confirm as an administrator</value>
   </data>
+  <data name="ActivityActionMasterKeyRotated" xml:space="preserve">
+    <value>Encryption key rotated</value>
+  </data>
   <data name="ChangePasswordPageTitle" xml:space="preserve">
     <value>Change password | Ecnanib</value>
   </data>

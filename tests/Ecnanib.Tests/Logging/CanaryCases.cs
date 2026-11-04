@@ -1,3 +1,4 @@
+using Ecnanib.Kernel;
 using Microsoft.Extensions.Logging;
 
 namespace Ecnanib.Tests.Logging;
@@ -124,6 +125,8 @@ internal static class CanaryCases
                canary,
                (logger, marker) => logger.LogError($"{marker} {{Value}}", shape.Render(canary))),
 
+        .. DecryptedSecrets(),
+
         BinanceKey(),
         NumericTotpCode(),
         KeysThatMaskToTheSameText(),
@@ -139,6 +142,40 @@ internal static class CanaryCases
     public static IReadOnlyList<(string Name, Func<string, string> Render)> SecretShapes => Shapes;
 
     public static string NewCanary() => $"Z{Guid.NewGuid():N}";
+
+    /// <summary>
+    /// A decrypted secret under a name no rule knows, so only its type keeps it out of the logs
+    /// (FR-KEY-09). See Masking in docs/architecture.md.
+    /// </summary>
+    private static IEnumerable<CanaryCase> DecryptedSecrets()
+    {
+        (string Name, Action<ILogger, string, SecretValue> Emit)[] routes =
+        [
+            ("Property", (logger, marker, secret) => logger.LogError($"{marker} {{Value}}", secret)),
+            ("Destructured", (logger, marker, secret) => logger.LogError($"{marker} {{@Value}}", secret)),
+            ("Nested", (logger, marker, secret) => logger.LogError($"{marker} {{@Value}}", new { Outer = new { Inner = secret } })),
+            ("Sequence", (logger, marker, secret) => logger.LogError($"{marker} {{Value}}", (object)new object[] { secret })),
+            ("Interpolated", (logger, marker, secret) => logger.LogError(new InvalidOperationException($"Failed with {secret}"), "{Marker}", marker)),
+            ("ScopeProperty", (logger, marker, secret) =>
+            {
+                using (logger.BeginScope(new Dictionary<string, object?> { ["Value"] = secret }))
+                {
+                    logger.LogError("{Marker}", marker);
+                }
+            }),
+        ];
+
+        foreach (var (name, emit) in routes)
+        {
+            var canary = NewCanary();
+
+            yield return new CanaryCase($"SecretValue.{name}", canary, (logger, marker) =>
+            {
+                using var secret = SecretValue.FromString(canary);
+                emit(logger, marker, secret);
+            });
+        }
+    }
 
     /// <summary>Binance keys and signatures are 64 characters with no marker at all.</summary>
     private static CanaryCase BinanceKey()

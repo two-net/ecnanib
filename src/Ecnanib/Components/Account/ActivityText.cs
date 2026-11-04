@@ -17,6 +17,7 @@ public static class ActivityText
         AuditAction.PasswordChanged => Strings.ActivityActionPasswordChanged,
         AuditAction.AdministratorConfirmed => Strings.ActivityActionAdministratorConfirmed,
         AuditAction.AdministratorConfirmationFailed => Strings.ActivityActionAdministratorConfirmationFailed,
+        AuditAction.MasterKeyRotated => Strings.ActivityActionMasterKeyRotated,
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Give the action its text in Strings.resx."),
     };
 

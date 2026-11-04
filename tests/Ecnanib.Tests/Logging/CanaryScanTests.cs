@@ -83,6 +83,7 @@ public sealed class CanaryScan(PostgresFixture postgres) : IAsyncLifetime
         logger.LogError("markerKnownProperty {Value}", ConfiguredSecret);
         logger.LogError("markerKnownPassword {Value}", postgres.Password);
         logger.LogError(new InvalidOperationException($"Failed on {postgres.Password}"), "markerKnownException");
+        logger.LogError("markerKnownMasterKey {Value}", AppFactory.TestKey);
 
         // Masking must not cost the content the logs exist for.
         logger.LogError("markerTokenCount {InputTokens} {OutputTokens} {TokenCount}", 1234, 5678, 6912);
@@ -90,6 +91,9 @@ public sealed class CanaryScan(PostgresFixture postgres) : IAsyncLifetime
         logger.LogError(new InvalidOperationException("""relation "providers" already exists"""), "markerException");
         logger.LogError("markerPath {Value}", $"{WorkingDirectory}/Ecnanib.dll");
         logger.LogError("markerLevelName {Value}", "Information");
+
+        // A master key's ID sits under Security:EncryptionKeys, but it's a label that logs have to show.
+        logger.LogError("markerKeyId {Value}", AppFactory.TestKeyId);
     }
 }
 
@@ -139,7 +143,9 @@ public sealed class CanaryScanTests(CanaryScan scan) : IClassFixture<CanaryScan>
         Assert.Contains("markerKnownProperty", output, StringComparison.Ordinal);
         Assert.Contains("markerKnownPassword", output, StringComparison.Ordinal);
         Assert.Contains("markerKnownException", output, StringComparison.Ordinal);
+        Assert.Contains("markerKnownMasterKey", output, StringComparison.Ordinal);
         Assert.DoesNotContain(scan.ConfiguredSecret, output, StringComparison.Ordinal);
+        Assert.DoesNotContain(AppFactory.TestKey, output, StringComparison.Ordinal);
         Assert.DoesNotContain(scan.ConnectionPassword, output, StringComparison.Ordinal);
     }
 
@@ -159,7 +165,8 @@ public sealed class CanaryScanTests(CanaryScan scan) : IClassFixture<CanaryScan>
 
     /// <summary>
     /// The host loads environment variables into the configuration, and PWD would mask every path in
-    /// every stack trace. An override key can contain a sensitive word, but its value is a level name.
+    /// every stack trace. An override key can contain a sensitive word, but its value is a level name,
+    /// and a master key's ID is a label.
     /// </summary>
     [Theory]
     [MemberData(nameof(Sinks))]
@@ -169,5 +176,6 @@ public sealed class CanaryScanTests(CanaryScan scan) : IClassFixture<CanaryScan>
 
         Assert.Contains($"{CanaryScan.WorkingDirectory}/Ecnanib.dll", output, StringComparison.Ordinal);
         Assert.Matches(@"markerLevelName\s+\\?""?Information", output);
+        Assert.Matches($@"markerKeyId\s+\\?""?{AppFactory.TestKeyId}", output);
     }
 }

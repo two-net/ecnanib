@@ -4,6 +4,10 @@ using Ecnanib.Platform.Correlation;
 using Ecnanib.Platform.Jobs;
 using Ecnanib.Platform.Logging;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Platform.Secrets;
+using Ecnanib.Platform.Secrets.DataProtection;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -42,10 +46,11 @@ public static class PlatformModule
         // for as long as the user stays connected, so without this a context could live that long.
         services.RemoveAll<EcnanibDbContext>();
 
-        // Registered first, so the database is ready before any later hosted service starts. The
-        // web server's own hosted service is always added last.
+        // It migrates in StartingAsync, which runs before any hosted service's StartAsync, including
+        // the framework's, which the Razor components register earlier and which reads the database.
         services.AddHostedService<DatabaseStartup>();
 
+        AddSecrets(services);
         AddJobs(services);
         AddAudit(services);
 
@@ -94,7 +99,39 @@ public static class PlatformModule
         }
     }
 
-    /// <summary>Registered straight after DatabaseStartup, because the runner reads and writes job_runs as it starts.</summary>
+    /// <summary>
+    /// SecretStartup is registered straight after DatabaseStartup, because its StartingAsync needs the
+    /// migrated database. Reading the keys checks the configuration file's permissions first (NFR-SEC-05).
+    /// </summary>
+    private static void AddSecrets(IServiceCollection services)
+    {
+        services.AddSingleton(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            ConfigurationFileAccess.Verify(configuration, provider.GetRequiredService<IHostEnvironment>());
+
+            return MasterKeys.Read(configuration);
+        });
+
+        services.AddSingleton<SecretStore>();
+        services.AddSingleton<ISecretStore>(provider => provider.GetRequiredService<SecretStore>());
+        services.AddSingleton<IMasterKeyRotation, MasterKeyRotation>();
+        services.AddSingleton<SecretReencryption>();
+        services.AddSingleton<IRecurringJob, SecretReencryptionJob>();
+        services.AddHostedService<SecretStartup>();
+
+        // The key ring lives in the database, and each key's secret part in secrets, under the master
+        // key. A fixed name, because the default comes from the content root path.
+        services.AddDataProtection().SetApplicationName("Ecnanib");
+        services.AddOptions<KeyManagementOptions>()
+            .Configure<IDbContextFactory<EcnanibDbContext>, SecretStore>((options, contextFactory, secrets) =>
+            {
+                options.XmlRepository = new DatabaseXmlRepository(contextFactory);
+                options.XmlEncryptor = new SecretStoreXmlEncryptor(secrets);
+            });
+    }
+
+    /// <summary>The runner reads and writes job_runs in StartAsync, after DatabaseStartup has migrated.</summary>
     private static void AddJobs(IServiceCollection services)
     {
         services.Configure<HostOptions>(options => options.ShutdownTimeout = JobRunner.ShutdownTimeout);

@@ -39,10 +39,10 @@ Trade Approval (3.11) belongs to `DecisionCycle`, because an approval hangs off 
 2. A unit may use only the `Contracts` of units listed for it in [`ModuleMap.cs`](../tests/Ecnanib.Tests/Architecture/ModuleMap.cs). That map is the single source of truth for dependencies, and it must stay free of cycles.
 3. `Program.cs` is the composition root. It calls every `Add<Module>()` explicitly, and is the only code allowed to use an entry class. There's no module scanning.
 4. The Risk Engine depends on `Kernel` only. It takes explicit inputs and returns results, which keeps it provably deterministic (FR-RISK-01). It defines its own intent type, so Appendix B types never reach it and AI output can't bypass it (NFR-SEC-08). This rule has its own test that doesn't read the map, so editing the map can't weaken it.
-5. `Kernel` holds only vocabulary that the SRS fixes, that at least two modules use, and that has no behaviour, such as `AuditAction`, `Market`, `Timeframe` and typed IDs. Moving a type there to escape a cycle is the wrong fix: use a port or event instead.
+5. `Kernel` holds only vocabulary that the SRS fixes, that at least two modules use, and that has no behaviour, such as `AuditAction`, `Market`, `Timeframe` and typed IDs. Moving a type there to escape a cycle is the wrong fix: use a port or event instead. `SecretValue` is the one exception. Its only behaviour is not showing its value, and it's here so the adapters, which can't use Platform, can carry a secret to where it's used. See [Secrets](#secrets).
 6. Razor components stay in `Components/`, because pages such as agent detail span several modules (FR-UI-01).
 
-The Web UI may use neither adapter nor `Platform`, so it can't reach secrets or place orders directly (2.4, FR-ADM-01, FR-KEY-09). `Endpoints/` counts as Web UI, so it reaches `Platform` only through framework abstractions, as the health endpoints do with the checks `Platform` registers. That's also why the [HTTP security code](#web-security) lives in `Endpoints/Security`: pages need its nonce and endpoints need its policy names.
+The Web UI may use neither adapter nor `Platform`, so it can't reach secrets or place orders directly (2.4, FR-ADM-01, FR-KEY-09). Administration may use `Platform`, so `BannedApis` keeps `ISecretStore` to Identity and Credentials. `Endpoints/` counts as Web UI, so it reaches `Platform` only through framework abstractions, as the health endpoints do with the checks `Platform` registers. That's also why the [HTTP security code](#web-security) lives in `Endpoints/Security`: pages need its nonce and endpoints need its policy names.
 
 ### Adding a dependency
 
@@ -91,7 +91,7 @@ In-process events are lost on a crash, so each one needs a recovery path, such a
 
 ### Startup
 
-`DatabaseStartup` is a hosted service that runs before the web server opens a port. It applies pending migrations, then runs the seeders. Any failure is logged and stops the process with a non-zero exit code (NFR-DEP-03). There's no "starting" state to report, so a health probe during a long migration gets connection refused rather than a 503.
+`DatabaseStartup` is a hosted service that works in `StartingAsync`, which the host runs before any hosted service's `StartAsync`. So the database is ready for every one of them, whatever order they were registered in, including the framework's [Data Protection](#data-protection-keys) service, and before the web server opens a port. It applies pending migrations, then runs the seeders. Any failure is logged and stops the process with a non-zero exit code (NFR-DEP-03). There's no "starting" state to report, so a health probe during a long migration gets connection refused rather than a 503.
 
 - A failed migration rolls back. Earlier ones stay committed, and the next start resumes from there.
 - A failed seeder saves nothing. The migrations stay applied, and the next start seeds again.
@@ -158,7 +158,7 @@ A category is a logger name, and an override matches it by dotted prefix, so `Mi
 
 Text is matched by name (`password=`), by shape (`Bearer`, `sk-`, 64 alphanumerics, JWTs) and by exact value. Exact values come from the configuration: any setting in a section whose full key contains a sensitive word, and the password in each connection string. A new secret setting is picked up without code, as long as its key says what it is.
 
-**What it can't do.** A secret with no marker, under a generic name, that isn't in the configuration can't be recognised. `{Value}` holding a decrypted user key is the case that matters, so wrap decrypted secrets in a type that doesn't render its value. The same goes for an `HttpRequestMessage` logged without `@`: it renders through `ToString()`, and a header with an unfamiliar name stays readable. With `@`, `SensitiveTypesPolicy` never takes the request apart.
+**What it can't do.** A secret with no marker, under a generic name, that isn't in the configuration can't be recognised. `{Value}` holding a decrypted user key is the case that matters, which is why a decrypted secret is a [`SecretValue`](#using-a-secret), which never renders its value. The same goes for an `HttpRequestMessage` logged without `@`: it renders through `ToString()`, and a header with an unfamiliar name stays readable. With `@`, `SensitiveTypesPolicy` never takes the request apart.
 
 **Level floors override the configuration, on purpose.** Some framework events can't be scanned, so `SanitizingSink.Floors` drops them whatever the configured level says. This is the one exception to FR-LOG-03:
 
@@ -372,6 +372,7 @@ await transaction.CommitAsync(cancellationToken);
 | `SignedOut`, `SessionRevoked` | `Sessions` | The row goes and the record arrives in one transaction, then the connections close. The session is the target |
 | `PasswordChanged` | `Accounts.ChangePasswordAsync` | In the transaction that changes the hash and ends the other sessions. A refused change isn't recorded, though its guess counts towards the lockout |
 | `AdministratorConfirmed`, `AdministratorConfirmationFailed` | `Administrators.ConfirmAsync` | The first in the transaction that verifies the address |
+| `MasterKeyRotated` | `SecretStartup` | By the system, with no user, in the transaction that records the new active key. `Changes` holds the old and new key IDs. See [Rotating the master key](#rotating-the-master-key) |
 
 **Visitors write `SignInFailed` rows,** one per attempt, whether or not the address has an account. FR-AUD-01 asks for them, and the sign-in [rate limit](#rate-limiting) bounds how fast they arrive.
 
@@ -380,6 +381,63 @@ await transaction.CommitAsync(cancellationToken);
 `/account/activity` shows the records whose `UserId` is the user's, newest first and 50 at a time (FR-AUD-03). The Web UI can't use Platform, so it reads them through `IAccountActivity` in Identity. That leaves out actor IDs and correlation IDs, which are for administrators (FR-ADM-06), so an administrator's action shows only as "By an administrator". Nothing records `Changes` yet, so the page doesn't show them.
 
 "Show older activity" moves focus to the first record it adds, so focus isn't lost when the button goes after the last page.
+
+## Secrets
+
+`Platform/Secrets` encrypts secrets at rest (FR-KEY-07): AI and exchange keys (#20), TOTP secrets (#14), and the [Data Protection keys](#data-protection-keys). Each is one row in `secrets`, and the row that owns it, such as a credential, keeps its ID.
+
+### The master keys
+
+`Security:EncryptionKeys` lists the keys, each with an `Id`, a `Key` of 32 random bytes in base64, and `Active`. Exactly one is active: it encrypts every new secret, and the others only decrypt. Startup is refused, before any migration, when a key is missing, malformed, repeated, not random, or the sample from SRS 7.3 (NFR-SEC-05, CFG-03).
+
+- **Messages name an entry as `Security:EncryptionKeys, entry 0`**, not by its path. These messages reach stderr through the masking rules, which hide whatever follows `EncryptionKeys:`.
+- **A key ID is a label.** It's stored with each secret, and logs, audit records and the health page show it, so `SecretRules` doesn't mask it as a configured value. The keys themselves are masked by value.
+- **The configuration file must be closed to everyone else.** Outside Development, startup is refused if group or others have any access to a settings file that was loaded, and the message names it. Development is exempt, because a checkout is normally readable by everyone. So is Windows, because ACLs aren't a file mode: #57 covers it.
+
+### Sealing
+
+AES-256-GCM with a random 12-byte nonce. `ciphertext` holds `[version 1][nonce][16-byte tag][ciphertext]`, and `key_id` says which key sealed it (FR-KEY-07). Random nonces are safe far beyond the number of secrets one key will seal.
+
+- **The associated data is the row's ID**, so a ciphertext copied onto another row doesn't decrypt there. Someone who can write to the table still can't move one user's key onto another user's credential.
+- **Plaintext is only held in pinned buffers**, which are cleared after use, until it's handed over as a `SecretValue`.
+- **A failure names the secret's ID and key ID**, and nothing else.
+
+### Using a secret
+
+Identity and Credentials use `ISecretStore` in `Platform/Contracts`, and nothing else may. `BannedApis` enforces that, because Administration may use Platform, and administrators must never see a decrypted secret (FR-ADM-01).
+
+| Call | What it does |
+|---|---|
+| `Add` | Seals with the active key and adds to the caller's context without saving, like an [audit record](#writing-a-record), so the secret commits with the row that refers to it |
+| `RemoveAsync` | Deletes straight away, so call it inside the caller's transaction |
+| `RevealAsync` | Decrypts into a `SecretValue`. Use it, then dispose it. Never cache it (FR-KEY-09) |
+
+**A `SecretValue` never shows its value.** `ToString()` and the debugger show `***`, logging masks it with or without `@`, and serializing it to JSON throws, so it can't reach an export, a decision trace or a notification. `Dispose()` clears it. `Reveal()` returns a string, which stays in memory until it's collected, so prefer `RevealUtf8()` wherever bytes will do.
+
+**An owner deletes its own secrets.** There's no foreign key either way, so nothing else knows when a secret stops being used, including when an account is deleted.
+
+### Rotating the master key
+
+FR-KEY-08, from the operator's side:
+
+1. Add the new key with `Active` set to true, set the old key's `Active` to false, keep both, and restart.
+2. Startup records the new key in `master_key_activations` and audits `MasterKeyRotated`, by the system, in one transaction. Restarting with the same keys records nothing more, and the first key isn't a rotation.
+3. Once the application has started, a run named `secret-reencryption-on-start` re-encrypts every secret that an older key seals, 100 to a transaction. Older keys keep decrypting meanwhile. The `secret-reencryption` job does the same every hour, in case that run didn't finish, and only one runs at a time.
+4. When the log says every secret uses the new key, or `IMasterKeyRotation` says `Complete`, remove the old key and restart.
+
+- **Startup won't drop a key that's in use.** If `secrets` holds a key ID that isn't configured, startup is refused, naming the key and how many secrets use it.
+- **A secret that won't decrypt is skipped** with a Warning naming its ID, and stays on its key, so that key can't be removed. The rest carry on, and the run's details count it as unreadable.
+- **Progress is `IMasterKeyRotation`:** the active key, when it became active, and how many secrets each key seals. The health page (#49) will show it. Until then, it's in the log and in `job_runs.details`.
+- **An owner can replace a secret mid-batch.** `key_id` is a concurrency token, so that batch saves nothing, and the next one finds whatever is left.
+
+### Data Protection keys
+
+ASP.NET Data Protection protects the session cookie, antiforgery tokens and a circuit's state. Its key ring is in `data_protection_keys`, and each key's secret part is a row in `secrets`, so the master key encrypts it and rotation covers it. A deployment is still the application, its configuration file and the database (NFR-DEP-01), and a restart or a new host keeps everyone signed in.
+
+- **The framework loads the key ring in its own `StartAsync`**, and the Razor components register it before `AddPlatform`. That's why `DatabaseStartup` migrates in `StartingAsync`.
+- **Each key's XML names `SecretStoreXmlDecryptor` by type, including the assembly version.** Renaming or moving that class, or lowering the version, would make every key unreadable and sign everyone out. `DataProtectionKeyTests` pins the name.
+- **The application name is fixed as `Ecnanib`.** The default is the content root's path, so moving the application would have meant new keys.
+- **The key's secret is saved before its key ring row.** A failure between the two leaves a secret that nothing refers to, which is encrypted and harmless.
 
 ## Web security
 
@@ -489,7 +547,7 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 | Server-side request forgery | Only the adapters may use `HttpClient`, and base URLs come only from the configuration file (NFR-SEC-10) | `BannedApis`, then #17, #18 |
 | Broken access control | Pages are [private by default](#access-control). Ownership checks go behind module contracts, which HTTP can't enforce on a circuit | `AccessTests`, then #55 |
 | Authentication failures | [Lockout](#lockout), [password hashing](#passwords) and [sessions](#sessions) | `LockoutTests`, `PasswordHasherTests`, `SessionTests`, `CircuitAccessTests`, then #14 |
-| Cryptographic failures | HTTPS, HSTS, Secure cookies. Secrets at rest are #12 | `HttpsTests`, `CookieTests`, #12 |
+| Cryptographic failures | HTTPS, HSTS, Secure cookies. [Secrets](#secrets) and Data Protection keys are encrypted at rest with AES-256-GCM | `HttpsTests`, `CookieTests`, `SecretStoreTests`, `KeyRotationTests`, `DataProtectionKeyTests` |
 | Security misconfiguration | Startup refuses a missing or `http` public address, and validates these settings. `AllowedHosts` is the operator's to set | `WebSecuritySettingsTests`, #57 |
 | Vulnerable components | The dependency scan (NFR-SEC-09) | CI |
 | Logging failures | [Logging](#logging) and masking, and the [audit trail](#audit) | `CanaryScanTests`, `AuditTrailTests`, `ClientOriginTests` |
@@ -736,11 +794,14 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Email (#13):** set `email_verified_at` from the emailed link. Nothing sets it when email is on until then, so no [administrator](#administrators) can exist in that mode. **Mind accounts from before email was on:** if a stranger registered an address and its real owner later clicks the link, the stranger's password then controls a verified account, which is an administrator if the address is listed. Verifying has to replace the password, or the first verification has to come from whoever set it.
 - **User administration (#47):** use `IAdministrators` and `AccountPolicies.Administrator`, behind contracts as well as on pages. Add a way to remove an account, because a stranger who registers a listed address holds it until then.
 - **Audited actions (#14, #20, #39, #47, and the agent, approval and emergency pause issues):** record each FR-AUD-01 action with `IAuditTrail.Add` on the context that makes the change, in the same transaction. Add its `AuditAction` value and its text in `ActivityText`. Set `UserId` to the account it's about, and the actor to whoever did it: an administrator acting on someone else's account, or the system for a job or a risk limit (FR-AGT-04). See [Audit](#audit).
-- **The first action with a before/after summary:** show `Changes` on the activity page, with each field name's text in `Strings.resx`. Nothing shows them yet.
+- **The first action with a before/after summary that a user sees:** show `Changes` on the activity page, with each field name's text in `Strings.resx`. Nothing shows them yet. `MasterKeyRotated` has them, but it's platform-wide, so it's on nobody's page.
 - **Account deletion (#51):** FR-AUTH-09 keeps audit records with the identity anonymized, and the [trigger](#append-only) refuses every `UPDATE`. Replace `audit_events_append_only()` in a new migration, so that an update can set `user_id`, `actor_id`, `ip_address` and `user_agent` to null and change nothing else, and add a test that it can't do more.
 - **Audit search (FR-ADM-06):** add a search to `IAuditTrail` and a page through Administration, which may use Platform. Show actor IDs and correlation IDs there, which `IAccountActivity` leaves out. Index whatever it filters on.
 - **Email links (#13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Build links from `App:PublicBaseUrl`, never from `Host`, which a client chooses. A redirect is different: it goes back to whoever asked, and `NavigateTo` and the cookie handler both build one from the request, which is what `AllowedHosts` limits. Throttle reset requests per address too, because the limiter only sees the sender's IP.
-- **Secrets (#12):** must sit below Identity and Credentials, and keep secret access separate from credential metadata (#20). Wrap decrypted secrets in a type that doesn't render its value: see [Masking](#masking). Antiforgery and session cookies are protected by Data Protection keys, which sit unencrypted in the user's profile by default: decide where they live.
+- **Two-factor and credentials (#14, #20):** store each secret with `ISecretStore.Add` on the context that saves the row that owns it, and keep only its ID. Replacing a secret is `Add` and `RemoveAsync` in one transaction, and so is deleting its owner. Keep secret access separate from credential metadata, so that listing credentials (FR-KEY-03) never decrypts anything. Decide whether to add a foreign key to `secrets`. The boundary tests refuse `HasOne<Secret>()`, so it would have to be written into the migration by hand. See [Secrets](#secrets).
+- **Adapters (#17, #18):** take a `SecretValue`, and reveal it at the last moment, when signing a request or setting a header. Prefer `RevealUtf8()` for an HMAC key. Never put a revealed key in a log scope, an exception or a field.
+- **System health (#49):** show `IMasterKeyRotation` for FR-ADM-04's credential re-encryption progress.
+- **Account deletion (#51):** delete a user's secrets through the modules that own them, in the transaction that deletes the rows that refer to them. Nothing else can find them.
 - **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds. Base URLs come from the configuration file only (NFR-SEC-10), and clients don't follow redirects, or a response could send a signed request somewhere else.
 - **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category. Base URLs and redirects follow the same rule as the exchange adapter.
 - **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
@@ -749,9 +810,9 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Order execution (#34):** pass `cancellationToken`, not `Stopping`, to exchange calls. Persist the intent before sending, or a cut send can't be recovered (FR-EXE-05, FR-EXE-08). Once an order is placed, save with a deadline of its own, or the end of the drain window could cancel the write.
 - **Reconciliation (#35):** run the startup pass from a hosted service's `StartAsync`, through `IJobRunner`, so it finishes before any scheduled cycle (FR-EXE-08).
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
-- **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses.
+- **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity` in `Modules/Identity/Contracts`, and the persistence, logging, correlation, job and audit contracts in `Platform/Contracts`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity` in `Modules/Identity/Contracts`, the persistence, logging, correlation, job, audit and secret contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue` in `Kernel`.
 
 ## What the boundary tests can't see
 

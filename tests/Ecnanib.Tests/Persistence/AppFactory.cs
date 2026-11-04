@@ -1,4 +1,5 @@
 using Ecnanib.Platform.Contracts;
+using Ecnanib.Tests.Secrets;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -26,6 +27,14 @@ public class AppFactory(
     /// <summary>App:PublicBaseUrl when a test names an environment, because outside Development it's required.</summary>
     public const string PublicBaseUrl = "https://ecnanib.test";
 
+    /// <summary>
+    /// The master key every application gets unless a test's settings name Security:EncryptionKeys.
+    /// The ID is long enough that masking it as a configured secret would show.
+    /// </summary>
+    public const string TestKeyId = "test-key-2026";
+
+    public const string TestKey = "EKpczgbAUVP8atXODJ2g3MIY4RpBE57Sye19rQ4J0tM=";
+
     /// <summary>Starts the application, which throws if startup fails.</summary>
     public void Start() => _ = Server;
 
@@ -50,6 +59,11 @@ public class AppFactory(
                 ["Logging:MinimumLevel"] = "Information",
                 ["App:PublicBaseUrl"] = environment is null ? null : PublicBaseUrl,
             });
+
+            if (settings?.Any(setting => setting.Key.StartsWith("Security:EncryptionKeys", StringComparison.OrdinalIgnoreCase)) != true)
+            {
+                configuration.AddInMemoryCollection(TestKeys.Settings((TestKeyId, TestKey, true)));
+            }
 
             if (settings is not null)
             {
