@@ -45,8 +45,28 @@ internal static class BinanceSamples
     public const string SpotAccount = """
         {"makerCommission":10,"canTrade":true,"canWithdraw":false,"canDeposit":true,"accountType":"SPOT",
          "balances":[{"asset":"BTC","free":"0.00100000","locked":"0.00050000"},{"asset":"USDT","free":"250.12000000","locked":"0.00000000"}],
-         "permissions":["SPOT"]}
+         "permissions":["SPOT"],"uid":354937868}
         """;
+
+    /// <summary>A Spot account, shaped like <see cref="SpotAccount"/>, for a chosen account and trading permission.</summary>
+    public static string SpotAccountOf(long uid, bool canTrade = true) => $$"""
+        {"makerCommission":10,"canTrade":{{(canTrade ? "true" : "false")}},"canWithdraw":false,"canDeposit":true,"accountType":"SPOT",
+         "balances":[],"permissions":["SPOT"],"uid":{{uid}}}
+        """;
+
+    /// <summary>GET /sapi/v1/account/apiRestrictions, from Binance's documented example.</summary>
+    public static string ApiRestrictions(
+        bool ipRestrict = true,
+        bool withdrawals = false,
+        bool spot = true,
+        bool futures = true) => $$"""
+        {"ipRestrict":{{Json(ipRestrict)}},"createTime":1698645219000,"enableReading":true,"enableWithdrawals":{{Json(withdrawals)}},
+         "enableInternalTransfer":false,"enableMargin":false,"enableFutures":{{Json(futures)}},"permitsUniversalTransfer":false,
+         "enableVanillaOptions":false,"enableFixApiTrade":false,"enableFixReadOnly":false,
+         "enableSpotAndMarginTrading":{{Json(spot)}},"enablePortfolioMarginTrading":false}
+        """;
+
+    private static string Json(bool value) => value ? "true" : "false";
 
     public const string FuturesAccount = """
         {"totalWalletBalance":"103.12345678","totalMarginBalance":"103.50000000","availableBalance":"103.12345678",

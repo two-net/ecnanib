@@ -24,3 +24,21 @@
     font-size: 0.875rem;
     overflow-wrap: anywhere;
 }
+
+/* A field's name beside its change, wrapping under it on a phone. */
+.activity-changes {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.125rem 0.75rem;
+    margin: 0;
+    font-size: 0.875rem;
+}
+
+.activity-changes dt {
+    color: var(--text-muted);
+}
+
+.activity-changes dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}

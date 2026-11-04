@@ -75,6 +75,8 @@ internal sealed class SpotAccountBody
 {
     public bool CanTrade { get; init; }
 
+    public long? Uid { get; init; }
+
     public List<SpotBalanceBody> Balances { get; init; } = [];
 }
 
@@ -85,6 +87,20 @@ internal sealed class SpotBalanceBody
     public decimal Free { get; init; }
 
     public decimal Locked { get; init; }
+}
+
+/// <summary>A key's permissions, from GET /sapi/v1/account/apiRestrictions.</summary>
+internal sealed class ApiRestrictionsBody
+{
+    public bool IpRestrict { get; init; }
+
+    public bool EnableReading { get; init; }
+
+    public bool EnableWithdrawals { get; init; }
+
+    public bool EnableSpotAndMarginTrading { get; init; }
+
+    public bool EnableFutures { get; init; }
 }
 
 internal sealed class FuturesAccountBody

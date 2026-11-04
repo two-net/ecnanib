@@ -1110,4 +1110,333 @@
   <data name="PreferencesEmailInvalid" xml:space="preserve">
     <value>Choose from the notifications listed.</value>
   </data>
+  <data name="NavCredentials" xml:space="preserve">
+    <value>API keys</value>
+  </data>
+  <data name="ActivityActionCredentialAdded" xml:space="preserve">
+    <value>Added an API key</value>
+  </data>
+  <data name="ActivityActionCredentialValidated" xml:space="preserve">
+    <value>Checked an API key</value>
+  </data>
+  <data name="ActivityActionCredentialRotated" xml:space="preserve">
+    <value>Replaced an API key</value>
+  </data>
+  <data name="ActivityActionCredentialDeleted" xml:space="preserve">
+    <value>Deleted an API key</value>
+  </data>
+  <data name="ActivityFieldProvider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="ActivityFieldEnvironment" xml:space="preserve">
+    <value>Environment</value>
+  </data>
+  <data name="ActivityFieldLabel" xml:space="preserve">
+    <value>Label</value>
+  </data>
+  <data name="ActivityFieldStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="ActivityFieldEnding" xml:space="preserve">
+    <value>Key ending</value>
+  </data>
+  <data name="ActivityChangeFromTo" xml:space="preserve">
+    <value>from {0} to {1}</value>
+    <comment>{0} is the value before, {1} the value after.</comment>
+  </data>
+  <data name="CredentialsPageTitle" xml:space="preserve">
+    <value>API keys | Ecnanib</value>
+  </data>
+  <data name="CredentialsHeading" xml:space="preserve">
+    <value>API keys</value>
+  </data>
+  <data name="CredentialsIntro" xml:space="preserve">
+    <value>Ecnanib trades with your own keys for AI providers and Binance, and has none of its own. Keys are encrypted when they arrive. Once saved, they're never shown again, only their last four characters.</value>
+  </data>
+  <data name="CredentialsAddLink" xml:space="preserve">
+    <value>Add a key</value>
+  </data>
+  <data name="CredentialsEmpty" xml:space="preserve">
+    <value>You haven't added a key yet. To start, add one for an AI provider and one for Binance Demo.</value>
+  </data>
+  <data name="CredentialsAddedNotice" xml:space="preserve">
+    <value>Key saved.</value>
+  </data>
+  <data name="CredentialsRotatedNotice" xml:space="preserve">
+    <value>Key replaced.</value>
+  </data>
+  <data name="CredentialsRenamedNotice" xml:space="preserve">
+    <value>Label changed.</value>
+  </data>
+  <data name="CredentialsDeletedNotice" xml:space="preserve">
+    <value>Key deleted.</value>
+  </data>
+  <data name="CredentialsBackLink" xml:space="preserve">
+    <value>Back to API keys</value>
+  </data>
+  <data name="CredentialDemo" xml:space="preserve">
+    <value>Demo</value>
+  </data>
+  <data name="CredentialBinanceProvider" xml:space="preserve">
+    <value>Binance {0}</value>
+    <comment>{0} is Live or Demo.</comment>
+  </data>
+  <data name="CredentialEnvironmentLive" xml:space="preserve">
+    <value>Live</value>
+  </data>
+  <data name="CredentialEnvironmentDemo" xml:space="preserve">
+    <value>Demo</value>
+  </data>
+  <data name="CredentialFieldStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="CredentialFieldEnding" xml:space="preserve">
+    <value>Key ends in</value>
+  </data>
+  <data name="CredentialFieldKeyType" xml:space="preserve">
+    <value>Key type</value>
+  </data>
+  <data name="CredentialFieldSpot" xml:space="preserve">
+    <value>Spot trading</value>
+  </data>
+  <data name="CredentialFieldFutures" xml:space="preserve">
+    <value>Futures trading</value>
+  </data>
+  <data name="CredentialFieldCreated" xml:space="preserve">
+    <value>Added</value>
+  </data>
+  <data name="CredentialFieldValidated" xml:space="preserve">
+    <value>Last checked</value>
+  </data>
+  <data name="CredentialFieldUsed" xml:space="preserve">
+    <value>Last used</value>
+  </data>
+  <data name="CredentialEnding" xml:space="preserve">
+    <value>…{0}</value>
+    <comment>{0} is the last four characters of the key.</comment>
+  </data>
+  <data name="CredentialNever" xml:space="preserve">
+    <value>Never</value>
+  </data>
+  <data name="CredentialKeyTypeHmac" xml:space="preserve">
+    <value>HMAC</value>
+  </data>
+  <data name="CredentialKeyTypeEd25519" xml:space="preserve">
+    <value>Ed25519</value>
+  </data>
+  <data name="CredentialMarketEnabled" xml:space="preserve">
+    <value>Enabled</value>
+  </data>
+  <data name="CredentialMarketNotEnabled" xml:space="preserve">
+    <value>Not enabled</value>
+  </data>
+  <data name="CredentialMarketUnknown" xml:space="preserve">
+    <value>Not known yet</value>
+  </data>
+  <data name="CredentialStatusValid" xml:space="preserve">
+    <value>Valid</value>
+  </data>
+  <data name="CredentialStatusInvalid" xml:space="preserve">
+    <value>Invalid</value>
+  </data>
+  <data name="CredentialStatusInsufficientPermissions" xml:space="preserve">
+    <value>Insufficient permissions</value>
+  </data>
+  <data name="CredentialStatusUnverified" xml:space="preserve">
+    <value>Unverified</value>
+  </data>
+  <data name="CredentialProblemRefused" xml:space="preserve">
+    <value>The provider refused this key. Check that it hasn't been deleted or revoked. For Binance, also check that its IP restriction includes Ecnanib's addresses.</value>
+  </data>
+  <data name="CredentialProblemPermissionDenied" xml:space="preserve">
+    <value>The provider recognised this key but wouldn't let it list models. Check its permissions with the provider.</value>
+  </data>
+  <data name="CredentialProblemNoModels" xml:space="preserve">
+    <value>This key can't use any model that writes text.</value>
+  </data>
+  <data name="CredentialProblemWithdrawalsEnabled" xml:space="preserve">
+    <value>This key can withdraw funds, so Ecnanib won't use it. Turn off withdrawals for it on Binance and check it again, or replace it.</value>
+  </data>
+  <data name="CredentialProblemNoTradingPermission" xml:space="preserve">
+    <value>This key can trade neither Spot nor Futures. Enable Spot or Futures trading for it on Binance, then check it again.</value>
+  </data>
+  <data name="CredentialUnverifiedHint" xml:space="preserve">
+    <value>The provider couldn't be reached when this key was saved, so it hasn't been checked. Check it now to use it.</value>
+  </data>
+  <data name="CredentialIpUnrestricted" xml:space="preserve">
+    <value>This key works from any IP address. Restrict it on Binance, so that a stolen copy is no use anywhere else.</value>
+  </data>
+  <data name="CredentialIpWhitelistIntro" xml:space="preserve">
+    <value>Allow only these addresses, which Ecnanib's requests come from:</value>
+  </data>
+  <data name="CredentialIpAskOperator" xml:space="preserve">
+    <value>Ask whoever runs Ecnanib for the addresses to allow.</value>
+  </data>
+  <data name="CredentialValidate" xml:space="preserve">
+    <value>Check now</value>
+  </data>
+  <data name="CredentialValidateLabel" xml:space="preserve">
+    <value>Check {0} now</value>
+    <comment>{0} is the key's label.</comment>
+  </data>
+  <data name="CredentialValidated" xml:space="preserve">
+    <value>Checked: {0}.</value>
+    <comment>{0} is the key's status.</comment>
+  </data>
+  <data name="CredentialValidateTooSoon" xml:space="preserve">
+    <value>This key was checked less than a minute ago. Try again shortly.</value>
+  </data>
+  <data name="CredentialValidateUnreachable" xml:space="preserve">
+    <value>{0} couldn't be reached, so nothing changed. Try again in a few minutes.</value>
+    <comment>{0} is the provider.</comment>
+  </data>
+  <data name="CredentialGone" xml:space="preserve">
+    <value>This key no longer exists.</value>
+  </data>
+  <data name="CredentialEdit" xml:space="preserve">
+    <value>Change label or replace key</value>
+  </data>
+  <data name="CredentialEditLabel" xml:space="preserve">
+    <value>Change the label of {0} or replace it</value>
+    <comment>{0} is the key's label.</comment>
+  </data>
+  <data name="CredentialDelete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="CredentialDeleteLabel" xml:space="preserve">
+    <value>Delete {0}</value>
+    <comment>{0} is the key's label.</comment>
+  </data>
+  <data name="CredentialDeleteConfirm" xml:space="preserve">
+    <value>Delete {0}? Nothing can use it afterwards, and it can't be undone.</value>
+    <comment>{0} is the key's label.</comment>
+  </data>
+  <data name="CredentialDeleteSubmit" xml:space="preserve">
+    <value>Delete key</value>
+  </data>
+  <data name="CredentialDeleteCancel" xml:space="preserve">
+    <value>Keep it</value>
+  </data>
+  <data name="FieldProvider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="FieldCredentialLabel" xml:space="preserve">
+    <value>Label</value>
+  </data>
+  <data name="FieldEnvironment" xml:space="preserve">
+    <value>Environment</value>
+  </data>
+  <data name="FieldApiKey" xml:space="preserve">
+    <value>API key</value>
+  </data>
+  <data name="FieldApiSecret" xml:space="preserve">
+    <value>Secret key</value>
+  </data>
+  <data name="FieldPrivateKey" xml:space="preserve">
+    <value>Private key</value>
+  </data>
+  <data name="CredentialLabelHint" xml:space="preserve">
+    <value>A name to tell your keys apart, such as Personal or Work.</value>
+  </data>
+  <data name="CredentialLabelInvalid" xml:space="preserve">
+    <value>Enter a label of up to {0} characters.</value>
+    <comment>{0} is the longest label.</comment>
+  </data>
+  <data name="CredentialEnvironmentHint" xml:space="preserve">
+    <value>Demo trades with test funds on Binance's demo exchange. Live trades with your real money.</value>
+  </data>
+  <data name="CredentialEnvironmentInvalid" xml:space="preserve">
+    <value>Choose Demo or Live.</value>
+  </data>
+  <data name="CredentialSecretLegend" xml:space="preserve">
+    <value>Secret</value>
+  </data>
+  <data name="CredentialSecretHint" xml:space="preserve">
+    <value>For an HMAC key, fill in the secret key. For an Ed25519 key, paste the private key, starting with -----BEGIN PRIVATE KEY-----. Fill in one, not both.</value>
+  </data>
+  <data name="CredentialSecretChoice" xml:space="preserve">
+    <value>Fill in the secret key or the private key, but not both.</value>
+  </data>
+  <data name="CredentialTwoFactorHint" xml:space="preserve">
+    <value>Adding or replacing a Binance key needs a code from your authenticator app, or a recovery code.</value>
+  </data>
+  <data name="CredentialKeyMalformed" xml:space="preserve">
+    <value>That isn't in the form of a key. Copy it again from the provider, and paste it without anything around it.</value>
+  </data>
+  <data name="CredentialUnknownProvider" xml:space="preserve">
+    <value>Choose a provider from the list.</value>
+  </data>
+  <data name="CredentialAiRefused" xml:space="preserve">
+    <value>{0} refused this key, so it wasn't saved. Check that you copied all of it, and that it hasn't been deleted or revoked.</value>
+    <comment>{0} is the provider.</comment>
+  </data>
+  <data name="CredentialBinanceRefused" xml:space="preserve">
+    <value>Binance refused this key, so it wasn't saved. Check the API key and secret, and if the key has an IP restriction, that it includes Ecnanib's addresses.</value>
+  </data>
+  <data name="CredentialWithdrawalsRefused" xml:space="preserve">
+    <value>This key can withdraw funds, so it wasn't saved. Ecnanib never needs to withdraw. Turn off withdrawals for the key on Binance, or create one without them.</value>
+  </data>
+  <data name="CredentialBinanceUnreachable" xml:space="preserve">
+    <value>Binance couldn't be reached, so the key wasn't saved. Try again in a few minutes.</value>
+  </data>
+  <data name="CredentialDifferentAccount" xml:space="preserve">
+    <value>This key isn't for the same Binance account, so it wasn't saved. To trade on another account, add its key separately.</value>
+  </data>
+  <data name="CredentialChanged" xml:space="preserve">
+    <value>This key changed or was deleted while you were replacing it, so nothing was saved.</value>
+  </data>
+  <data name="AddCredentialPageTitle" xml:space="preserve">
+    <value>Add a key | Ecnanib</value>
+  </data>
+  <data name="AddCredentialHeading" xml:space="preserve">
+    <value>Add a key</value>
+  </data>
+  <data name="AddCredentialIntro" xml:space="preserve">
+    <value>Ecnanib checks each key with its provider before saving it.</value>
+  </data>
+  <data name="AddCredentialAiHeading" xml:space="preserve">
+    <value>AI provider</value>
+  </data>
+  <data name="AddCredentialAiIntro" xml:space="preserve">
+    <value>The key is checked by listing the models it can use, which costs nothing.</value>
+  </data>
+  <data name="AddCredentialNoAiProviders" xml:space="preserve">
+    <value>No AI provider is available on this server.</value>
+  </data>
+  <data name="AddCredentialAiSubmit" xml:space="preserve">
+    <value>Add AI key</value>
+  </data>
+  <data name="AddCredentialBinanceHeading" xml:space="preserve">
+    <value>Binance</value>
+  </data>
+  <data name="AddCredentialBinanceIntro" xml:space="preserve">
+    <value>Create the key on Binance with Spot trading, Futures trading or both, and with withdrawals turned off. Ecnanib refuses a key that can withdraw.</value>
+  </data>
+  <data name="AddCredentialBinanceSubmit" xml:space="preserve">
+    <value>Add Binance key</value>
+  </data>
+  <data name="EditCredentialPageTitle" xml:space="preserve">
+    <value>Change a key | Ecnanib</value>
+  </data>
+  <data name="EditCredentialHeading" xml:space="preserve">
+    <value>Change a key</value>
+  </data>
+  <data name="EditCredentialRenameHeading" xml:space="preserve">
+    <value>Change the label</value>
+  </data>
+  <data name="EditCredentialRenameSubmit" xml:space="preserve">
+    <value>Change label</value>
+  </data>
+  <data name="EditCredentialRotateHeading" xml:space="preserve">
+    <value>Replace the key</value>
+  </data>
+  <data name="EditCredentialRotateAiIntro" xml:space="preserve">
+    <value>Paste a new key from the same provider. It's checked before it replaces this one, and it keeps this label.</value>
+  </data>
+  <data name="EditCredentialRotateBinanceIntro" xml:space="preserve">
+    <value>Paste a new key for the same Binance account and environment. It's checked before it replaces this one, and it keeps this label.</value>
+  </data>
+  <data name="EditCredentialRotateSubmit" xml:space="preserve">
+    <value>Replace key</value>
+  </data>
 </root>

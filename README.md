@@ -110,8 +110,9 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Accounts | Email and password with Argon2id, optional two-factor with an authenticator app and recovery codes, sessions that users can list and revoke, password change and reset, lockout, recorded acceptance of the legal documents, verified addresses, and administrators from the configuration file | In place |
 | Email | Optional. MailKit over SMTP with TLS required, sent in the background, for address verification, password reset links and notifications | In place |
 | Notifications | In the app always, listed newest first with an unread count in the menu, and by email for the events each user chooses, batched each minute | In place. Each later feature raises its own |
-| Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys and two-factor keys live in PostgreSQL under the same keys | In place. Credentials will store their secrets through it |
-| Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts. Each later feature records its own actions |
+| Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys, two-factor keys and users' API keys live in PostgreSQL under the same keys | In place |
+| API keys | Users bring their own keys for Anthropic, Google, OpenAI, xAI, Binance Live and Binance Demo, and the platform has none of its own. Each key is checked with its provider when it's added and on demand, stored encrypted, and never shown again, only its last four characters. Binance keys that can withdraw are refused, and the ones without an IP restriction are flagged | In place. Scheduled re-checks, pausing agents and catalog sync come with agents and the catalog |
+| Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, a before/after summary, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts and API keys. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
 
@@ -186,7 +187,9 @@ The `Binance` section names the servers the app calls. Users can't supply their 
 | `WeightHeadroomPercent` | The share of each server's request-weight limit kept for protective orders, 0 to 90. Defaults to `30` |
 | `ExchangeInfoRefreshHours` | How long symbols and their filters are kept before they're fetched again, 1 to 168. Defaults to `24` |
 
-Each URL is a server's address only, with no path, and must use https outside Development. Binance limits request weight per IP address, so every user shares the server's budget. If Binance bans the address from one of its servers, requests to that server stop until the ban ends, and administrators are notified. See [Exchange adapter](docs/architecture.md#exchange-adapter).
+Each URL is a server's address only, with no path, and must use https outside Development. Binance limits request weight per IP address, so every user shares the server's budget.
+
+`App:EgressIpAddresses` lists the addresses the server's requests to Binance come from, such as `[ "203.0.113.10" ]`. Users are told to restrict their Binance keys to them, so that a stolen copy of a key is no use anywhere else. Each entry is one IPv4 or IPv6 address, with no range or port. It's optional, and without it users are told to ask you. Keep it up to date when the server's address changes, or every restricted key stops working. If Binance bans the address from one of its servers, requests to that server stop until the ban ends, and administrators are notified. See [Exchange adapter](docs/architecture.md#exchange-adapter).
 
 ### AI providers
 
@@ -220,7 +223,7 @@ Outside Development the application won't start until it knows its public addres
 | `App:PublicBaseUrl` | Required outside Development. Sets where plain HTTP redirects to, and the only origin allowed to open a WebSocket |
 | `Security:TrustedProxies` | IP addresses or CIDR networks, such as `"10.0.0.0/8"`, whose `X-Forwarded-*` headers are believed. Loopback is always trusted. Defaults to none |
 | `Security:RateLimits:RequestsPerMinute` | Limit per IP address, and separately per account. Defaults to 300 |
-| `Security:RateLimits:AuthenticationRequestsPerMinute` | Limit per IP address on sign-in, registration, the password, email and two-factor forms, and the administrator pages, on top of the above. It counts submissions, not page views. Defaults to 10 |
+| `Security:RateLimits:AuthenticationRequestsPerMinute` | Limit per IP address on sign-in, registration, the password, email, two-factor and API key forms, and the administrator pages, on top of the above. It counts submissions, not page views. Defaults to 10 |
 
 A value that isn't valid stops startup. Set `AllowedHosts` to your public host too, plus any host a local probe uses, because the shipped `*` accepts any `Host` header.
 
@@ -259,6 +262,16 @@ Users can turn on two-factor authentication from their account page, with any au
 Turning it on gives the user 10 recovery codes, shown once. Each works once in place of a code from the app, which is how someone who loses their phone gets back in, and how they reach the kill switch if they've mistyped too many codes. There's no other way: an administrator can't turn it off for them, and a password reset leaves it on, so that a reset link alone can't take over an account. Someone who loses both their phone and their codes can't sign in. Tell users to keep the codes somewhere other than their phone.
 
 The key is encrypted with the [master key](#encryption-keys), like any other secret, and rotating the master key re-encrypts it.
+
+### API keys
+
+Users add their keys on the **API keys** page. Ecnanib checks each one with its provider before saving it, and again whenever the user asks, at most once a minute per key. After that only the last four characters are ever shown.
+
+- **AI keys** are checked by listing the models the key can use, which costs nothing. A key added while its provider is down is saved as Unverified, and isn't used until a check says it's valid.
+- **Binance keys** need Spot trading, Futures trading or both, and must not be able to withdraw. A Live key that can withdraw is refused and never stored, and so is one Binance couldn't be asked about. One without an IP restriction is saved with a warning that lists `App:EgressIpAddresses`. Binance doesn't document how to read a Demo key's restrictions, so for Demo only the markets are checked. HMAC and Ed25519 keys both work. Replacing a key needs one for the same Binance account.
+- **Adding or replacing a Binance key needs a two-factor code** when the user has two-factor on.
+
+Adding, checking, replacing and deleting a key each appear on the user's activity page, with which key it was.
 
 ### Email
 

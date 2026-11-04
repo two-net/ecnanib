@@ -114,6 +114,21 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     {
         public static Task<string> AskAsync(Modules.AiAdapters.Contracts.IAiCompletions completions) => completions.CompleteAsync("a prompt");
     }
+
+    public static class AiKeyOutsideCredentials
+    {
+        public static object Build() => new Modules.AiAdapters.Contracts.AiKey("a platform key");
+    }
+
+    public static class ExchangeKeyOutsideCredentials
+    {
+        public static object Build() => new Modules.ExchangeAdapter.Contracts.ExchangeKey("a platform key");
+    }
+
+    public static class KeyOpenedByTheWebUi
+    {
+        public static Task<object> OpenAsync(Modules.Credentials.Contracts.ICredentialKeys keys) => keys.OpenAsync(Guid.Empty);
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Platform.Contracts
@@ -151,6 +166,28 @@ namespace Ecnanib.Tests.Security.Fixtures.Modules.Credentials
     {
         public static Task<string> ReadAsync(Platform.Contracts.ISecretStore secrets, Guid id) => secrets.RevealAsync(id);
     }
+
+    public static class TheKeyBuilder
+    {
+        public static object Build() => new AiAdapters.Contracts.AiKey("a user's key");
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Credentials.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface ICredentialKeys
+    {
+        Task<object> OpenAsync(Guid credentialId);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Catalog
+{
+    public static class TheCatalog
+    {
+        public static Task<object> OpenAsync(Credentials.Contracts.ICredentialKeys keys) => keys.OpenAsync(Guid.Empty);
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Allowed
@@ -184,6 +221,12 @@ namespace Ecnanib.Tests.Security.Fixtures.Modules.ExchangeAdapter.Contracts
 
         Task CancelOrderAsync(string symbol);
     }
+
+    /// <summary>Stands in for the real type, under the same path below the root.</summary>
+    public sealed class ExchangeKey(string apiKey)
+    {
+        public string ApiKey { get; } = apiKey;
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Modules.Execution
@@ -200,6 +243,12 @@ namespace Ecnanib.Tests.Security.Fixtures.Modules.AiAdapters.Contracts
     public interface IAiCompletions
     {
         Task<string> CompleteAsync(string prompt);
+    }
+
+    /// <summary>Stands in for the real type, under the same path below the root.</summary>
+    public sealed class AiKey(string apiKey)
+    {
+        public string ApiKey { get; } = apiKey;
     }
 }
 

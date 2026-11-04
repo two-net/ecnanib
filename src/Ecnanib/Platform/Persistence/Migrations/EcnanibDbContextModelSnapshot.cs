@@ -38,6 +38,111 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("providers", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Credentials.Credential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ApiKeyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("api_key_id");
+
+                    b.Property<Guid?>("ApiSecretId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("api_secret_id");
+
+                    b.Property<DateTimeOffset?>("CheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Environment")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("environment");
+
+                    b.Property<long?>("ExchangeUid")
+                        .HasColumnType("bigint")
+                        .HasColumnName("exchange_uid");
+
+                    b.Property<bool?>("FuturesEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("futures_enabled");
+
+                    b.Property<bool?>("IpRestricted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("ip_restricted");
+
+                    b.Property<string>("KeyType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("key_type");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("label");
+
+                    b.Property<string>("LastFour")
+                        .IsRequired()
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)")
+                        .HasColumnName("last_four");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_used_at");
+
+                    b.Property<string>("Problem")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("problem");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<bool?>("SpotEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("spot_enabled");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset?>("ValidatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("validated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_credentials");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_credentials_user_id");
+
+                    b.ToTable("credentials", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Identity.AccountToken", b =>
                 {
                     b.Property<Guid>("UserId")

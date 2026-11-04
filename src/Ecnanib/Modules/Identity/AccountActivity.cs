@@ -11,6 +11,13 @@ internal sealed class AccountActivity(IAuditTrail audit) : IAccountActivity
     public async Task<IReadOnlyList<ActivityRecord>> ListAsync(Guid userId, long? before, CancellationToken cancellationToken) =>
         [
             .. from record in await audit.ListForUserAsync(userId, before, PageSize, cancellationToken)
-               select new ActivityRecord(record.Id, record.Timestamp, record.Action, record.ActorKind, record.IpAddress, record.UserAgent),
+               select new ActivityRecord(
+                   record.Id,
+                   record.Timestamp,
+                   record.Action,
+                   record.ActorKind,
+                   record.IpAddress,
+                   record.UserAgent,
+                   [.. record.Changes.Select(change => new ActivityChange(change.Field, change.Before, change.After))]),
         ];
 }

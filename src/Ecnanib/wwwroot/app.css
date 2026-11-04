@@ -234,7 +234,8 @@ h1:focus,
     }
 
     .field input:not([type=checkbox]),
-    .field select {
+    .field select,
+    .field textarea {
         width: 100%;
         padding: 0.625rem 0.75rem;
         border: 1px solid var(--text-muted);

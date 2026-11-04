@@ -51,4 +51,15 @@ public enum AuditAction
 
     /// <summary>A recovery code stood in for an authenticator code, at sign-in or for a sensitive action, and is now spent.</summary>
     RecoveryCodeUsed,
+
+    /// <summary>The user added an AI provider or Binance key, validated as it was saved.</summary>
+    CredentialAdded,
+
+    /// <summary>A key was checked with its provider again, and got an answer.</summary>
+    CredentialValidated,
+
+    /// <summary>The user replaced a key's secrets, keeping the credential.</summary>
+    CredentialRotated,
+
+    CredentialDeleted,
 }

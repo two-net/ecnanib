@@ -5,6 +5,18 @@
     <p class="activity-action">@ActivityText.Of(Record.Action)</p>
     <p class="activity-details">@Details</p>
 
+    @if (Changes.Count > 0)
+    {
+        @* Values can be user text, such as a key's label. Razor encodes them, so they're only text. *@
+        <dl class="activity-changes">
+            @foreach (var change in Changes)
+            {
+                <dt>@change.Name</dt>
+                <dd>@change.Text</dd>
+            }
+        </dl>
+    }
+
     @if (Record.UserAgent is { } userAgent)
     {
         @* Anyone can write this header. Razor encodes it, so it's only text. *@
@@ -30,6 +42,15 @@
     /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
     [CascadingParameter]
     private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    private List<(string Name, string Text)> Changes =>
+    [
+        .. from change in Record.Changes
+           let name = ActivityText.FieldOf(change.Field)
+           let text = ActivityText.Describe(change)
+           where name is not null && text is not null
+           select (name, text),
+    ];
 
     private string Details =>
         Record.IpAddress is { } address

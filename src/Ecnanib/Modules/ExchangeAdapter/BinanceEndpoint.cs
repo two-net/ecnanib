@@ -21,6 +21,13 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     public static readonly BinanceEndpoint SpotQueryOrder = new(HttpMethod.Get, "/api/v3/order", 4, Signed: true);
     public static readonly BinanceEndpoint SpotCancelOrder = new(HttpMethod.Delete, "/api/v3/order", 1, Signed: true, Trade: true);
 
+    /// <summary>
+    /// A key's permissions (FR-KEY-05), from the wallet API on the Spot Live server. Binance counts SAPI weight
+    /// apart from /api weight and reports it in X-SAPI-USED-IP-WEIGHT-1M, so the response doesn't move the
+    /// Spot Live budget, and reserving 1 from it is a slight overestimate.
+    /// </summary>
+    public static readonly BinanceEndpoint SpotApiRestrictions = new(HttpMethod.Get, "/sapi/v1/account/apiRestrictions", 1, Signed: true);
+
     public static readonly BinanceEndpoint FuturesTime = new(HttpMethod.Get, "/fapi/v1/time", 1, Signed: false);
     public static readonly BinanceEndpoint FuturesExchangeInfo = new(HttpMethod.Get, "/fapi/v1/exchangeInfo", 1, Signed: false);
     public static readonly BinanceEndpoint FuturesAccount = new(HttpMethod.Get, "/fapi/v3/account", 5, Signed: true);

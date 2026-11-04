@@ -381,18 +381,24 @@ await transaction.CommitAsync(cancellationToken);
 | `TwoFactorDisabled` | `TwoFactor.DisableAsync` | In the transaction that deletes the authenticator, its secret and the recovery codes |
 | `RecoveryCodesRegenerated` | `TwoFactor.RegenerateRecoveryCodesAsync` | In the transaction that replaces the codes |
 | `RecoveryCodeUsed` | `TwoFactor.SpendAsync` | In the transaction that spends the code, at sign-in or in a check for a sensitive action. A refused check isn't recorded, though a wrong authenticator code counts towards that check's throttle |
+| `CredentialAdded` | `Credentials.AddAiKeyAsync`, `Credentials.AddBinanceKeyAsync` | In the save that stores the key's secrets and its row, which is the target. `Changes` has the provider, environment, label and status. A refused key records nothing, because nothing was stored |
+| `CredentialValidated` | `Credentials.ValidateAsync` | In the transaction that writes the result, only when the provider answered. `Changes` has the status before and after |
+| `CredentialRotated` | `Credentials.RotateAiKeyAsync`, `Credentials.RotateBinanceKeyAsync` | In the transaction that swaps the secrets and deletes the old ones. `Changes` has the key's last four characters and the status, before and after |
+| `CredentialDeleted` | `Credentials.DeleteAsync` | In the transaction that deletes the row and its secrets. `Changes` has what the credential was |
 
 **Visitors write `SignInFailed` rows,** one per attempt, whether or not the address has an account. FR-AUD-01 asks for them, and the sign-in [rate limit](#rate-limiting) bounds how fast they arrive.
 
 ### A user's history
 
-`/account/activity` shows the records whose `UserId` is the user's, newest first and 50 at a time (FR-AUD-03). The Web UI can't use Platform, so it reads them through `IAccountActivity` in Identity. That leaves out actor IDs and correlation IDs, which are for administrators (FR-ADM-06), so an administrator's action shows only as "By an administrator". Nothing records `Changes` yet, so the page doesn't show them.
+`/account/activity` shows the records whose `UserId` is the user's, newest first and 50 at a time (FR-AUD-03). The Web UI can't use Platform, so it reads them through `IAccountActivity` in Identity. That leaves out actor IDs and correlation IDs, which are for administrators (FR-ADM-06), so an administrator's action shows only as "By an administrator".
+
+Each record shows its `Changes` as a field's name beside its value, or "from x to y" when it changed. `ActivityText.FieldOf` gives each field its text, and a field without text isn't shown, so an issue that records a summary a user sees gives its fields text there. `CredentialTextTests` checks that every credential field has some. Values are shown as recorded, as text, except a credential's status, environment and last four characters, which have words. `MasterKeyRotated` has `Changes` too, but it's platform-wide, so it's on nobody's page.
 
 "Show older activity" moves focus to the first record it adds, so focus isn't lost when the button goes after the last page.
 
 ## Secrets
 
-`Platform/Secrets` encrypts secrets at rest (FR-KEY-07): AI and exchange keys (#20), [TOTP keys](#two-factor), and the [Data Protection keys](#data-protection-keys). Each is one row in `secrets`, and the row that owns it, such as a credential, keeps its ID.
+`Platform/Secrets` encrypts secrets at rest (FR-KEY-07): AI and exchange keys ([Credentials](#credentials)), [TOTP keys](#two-factor), and the [Data Protection keys](#data-protection-keys). Each is one row in `secrets`, and the row that owns it, such as a credential, keeps its ID.
 
 ### The master keys
 
@@ -520,7 +526,7 @@ ASP.NET Data Protection protects the session cookie, antiforgery tokens and a ci
 | Contract | What | Who uses it |
 |---|---|---|
 | `IExchangeMarketData` | Public data, with no keys. So far, exchange information | Market Data, Credentials, Execution |
-| `IExchangeAccount` | Signed reads: the account, and an order by its client order ID | Credentials, Execution |
+| `IExchangeAccount` | Signed reads: the account, a Live key's restrictions, and an order by its client order ID | Credentials, Execution |
 | `IExchangeTrading` | Placing and cancelling orders | **Execution only** (AC-01). The map lets four units use the adapter, so `BannedApis` enforces this |
 | `IExchangeUsage` | Each server's weight, limits, backoff, ban and clock offset | Administration, for the health page (#49) |
 | `IExchangeBanObserver` | A port the adapter calls when Binance bans this server's address | Execution implements it |
@@ -536,7 +542,8 @@ There are five, each with its own base URL, weight budget, clock offset and bans
 ### Signing and the clock
 
 - **The signature covers exactly what's sent.** Values are percent-encoded with `Uri.EscapeDataString`, which Spot requires before signing since 2026-01-15, then `timestamp` and `recvWindow` follow, then the signature, last. Every parameter goes in the query, POST included.
-- **HMAC** is lower-case hex HMAC-SHA256, over the secret revealed as bytes. **Ed25519** imports the PKCS#8 PEM through NSec, signs, and sends percent-encoded base64. Binance documents Ed25519 for Spot only, and its Futures pages name HMAC and RSA, so check an Ed25519 key against Futures Demo before #20 accepts one there.
+- **HMAC** is lower-case hex HMAC-SHA256, over the secret revealed as bytes. **Ed25519** imports the PKCS#8 PEM through NSec, signs, and sends percent-encoded base64. Binance documents Ed25519 for Spot only, and its Futures pages name HMAC and RSA, so [Credentials](#validating-a-key) counts Futures as enabled for a key only once a signed Futures request with it has succeeded.
+- **A key's restrictions come from the wallet API**, `GET /sapi/v1/account/apiRestrictions`, which Binance documents on `api.binance.com` only, so `GetApiRestrictionsAsync` refuses a Demo key. It's sent to Spot Live and reserves weight there. Binance counts SAPI weight apart and reports it in `X-SAPI-USED-IP-WEIGHT-1M`, which the adapter doesn't read, so the reservation is a slight overestimate and the response doesn't move the budget.
 - **`ExchangeKey` holds the secrets, and its caller disposes them.** The API key is revealed into the `X-MBX-APIKEY` header and the secret into the signer, and nothing keeps either.
 - **The offset is Binance's time minus the midpoint of a `time` request's round trip** (FR-EXE-10). A signed request syncs it when it's missing or older than 10 minutes, one sync per server at a time. A -1021 resyncs it and sends the request once more: Binance refused the first, so this is safe even for an order.
 - **A failed routine sync keeps the previous offset**, with a Warning, and isn't tried again for 30 seconds, so a failed time request can't stop a protective order. Clocks drift slowly, and a -1021 would catch real drift. With no offset yet, the request isn't sent, and fails as `Unavailable`. When the resync after a -1021 fails, the request is still `Rejected`, because Binance refused it.
@@ -609,7 +616,7 @@ The algo endpoint's own page couldn't be read, so its parameters come from Binan
 
 | Contract | What | Who uses it |
 |---|---|---|
-| `IAiProviders` | The providers that have an adapter, and the models a key can use | Credentials (#20) to validate a key, Catalog (#21) to sync |
+| `IAiProviders` | The providers that have an adapter, and the models a key can use | Credentials to validate a key, Catalog (#21) to sync |
 | `IAiCompletions` | Calling a model | **AiCouncil only**, because it spends the user's money (FR-CYC-07). The map lets three units use the adapters, so `BannedApis` enforces this |
 | `IAiProviderAdapter` | One provider's request, answer and error formats | Each adapter implements it. It's public so that tests can add a provider. It never sends anything, so another unit that used it still couldn't reach the network |
 
@@ -1054,6 +1061,78 @@ The queue for those four is unbounded, and sign-in and registration share it. Th
 
 Hashes are PHC strings with their own parameters, so these can be raised later. **Pass bytes to `DeriveBytes`.** Its overload that takes a string hashes UTF-16, which no other Argon2 implementation would, and `PasswordHasherTests` checks against hashes made by another one.
 
+## Credentials
+
+`Modules/Credentials` holds users' own keys for the AI providers and for Binance Live and Demo (FR-KEY-01). The platform has no keys of its own (CON-11): only Credentials may build an `AiKey` or an `ExchangeKey`, which `BannedApis` enforces, so every key an adapter sees is a user's, and passed the checks below.
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `ICredentials` | Listing, adding, labelling, checking, replacing and deleting a user's keys. Nothing it returns holds a secret | The Web UI |
+| `ICredentialKeys` | A valid key, decrypted for one use, refused on a market Binance didn't enable for it | Catalog, AiCouncil and Execution only, which `BannedApis` enforces |
+
+`credentials` has one row per key. The API key, and for Binance the secret, are rows in [`secrets`](#secrets), and the row keeps only their IDs, so listing never decrypts anything (FR-KEY-03). It shows the API key's last four characters, never the secret's. Every query filters on the user, so another user's credential behaves like one that doesn't exist (NFR-SEC-04). There's no foreign key to `users` or `secrets`, as for notifications and two-factor: #51 deletes through Identity's port.
+
+### Statuses
+
+FR-KEY-04's four, with a `problem` that says why a key isn't valid:
+
+| Status | When |
+|---|---|
+| Valid | An AI key lists at least one model. A Binance key can trade Spot, Futures or both |
+| Invalid | The provider refused the key. Or a check found a Binance key that can withdraw, which nothing then uses |
+| Insufficient permissions | An AI provider answered 403, so it knows the key but won't let it list models, or the key can use no model that writes text. A Binance key can trade on neither market |
+| Unverified | An AI key added while its provider couldn't be reached. Nothing uses it until a check says it's valid |
+
+- **A refused key is never stored.** Neither is a Binance key with withdrawals enabled (AC-04), nor one Binance couldn't be asked about, so a key whose withdrawal permission was never read never reaches the database. An AI key has nothing like that to wait for, so one added during an outage is stored as Unverified.
+- **An outage changes nothing.** A check that can't reach the provider leaves the status as it was, so a provider's bad hour can't downgrade a key, or later pause its agents (#23).
+- **A key Binance didn't enable for a market is kept**, as Insufficient permissions when it can trade on neither, so the user can fix it on Binance and check again without pasting it twice.
+
+### Validating a key
+
+An AI key is checked with `IAiProviders.ListModelsAsync`, the lightweight call FR-KEY-04 suggests. The adapters read Gemini's and xAI's misleading 400s as `Authentication`, which means Invalid. Any other failure means the provider couldn't be reached.
+
+A Binance key is checked with authenticated requests to its environment's servers, and its permissions are read where Binance exposes them (FR-KEY-02, FR-KEY-05):
+
+| | Live | Demo |
+|---|---|---|
+| Restrictions | `GET /sapi/v1/account/apiRestrictions`: withdrawals, the IP restriction, Spot and Futures | Not asked, because Binance documents the wallet API only on `api.binance.com` |
+| Spot | Enabled when the restrictions allow it and `/api/v3/account` says `canTrade` | Enabled when `/api/v3/account` says `canTrade` |
+| Futures | Enabled when the restrictions allow it and `/fapi/v3/account` takes the key | Enabled when `/fapi/v3/account` takes the key |
+| Refused | When Binance refuses the restrictions call | When both accounts refuse it |
+
+- **-2015 covers a wrong key, an address the IP restriction leaves out, and a missing permission**, and Binance doesn't say which, so the page names all three.
+- **A market counts only once a signed request to it has succeeded.** Binance says a key made before the Futures account was opened can't use the Futures API, whatever its restrictions say. This also settles whether Futures takes an Ed25519 key, which Binance's Futures pages don't document: if it doesn't, the key is recorded as not enabled there.
+- **A Demo key's IP restriction isn't known**, so it gets no warning, and Demo holds no real funds. A Live key with no IP restriction is saved with a warning that lists `App:EgressIpAddresses`.
+- **The Spot account's `uid` is stored**, and replacing a key must keep it, because agents' orders and positions live on that account. A key for another account is added as a credential of its own. When Binance didn't say which account a new key is for, it's refused too.
+- **A Binance key's secret is HMAC or an Ed25519 private key** (FR-KEY-06). A shape check keeps out what plainly isn't either before anything is sent, and the adapter's signer refuses a PEM it can't import, which counts as Invalid.
+
+### Adding and replacing
+
+`/credentials/add` and `/credentials/{id}` are [static pages](#forms-that-take-a-secret), so keys never cross a circuit. Each kind of key has its own form, so no script decides which fields to show. A Binance key's secret goes in a password field for HMAC, or a text area for an Ed25519 PEM, and whichever is filled in decides the key type.
+
+- **For a Binance key, the two-factor check comes first** (FR-AUTH-05). It's inside the contract, before Binance hears of the key, so a stolen session can't use the server to try keys. A code is spent even when Binance then refuses the key, which the next code covers.
+- **A new key commits in one save:** its secrets, its row and the `CredentialAdded` record.
+- **Replacing a key is conditional on the one it replaces**, in one transaction with deleting the old secrets and recording `CredentialRotated`. Of two replacements at once, or a replacement and a deletion, one wins, and the other changes nothing and leaves no secret behind.
+- **The label is user text**, at most 60 characters, without control characters or half a surrogate pair. Pages show it only as text. Changing it isn't audited, because FR-AUD-01 doesn't list it, as it doesn't list preferences.
+
+### Checking on demand
+
+`/credentials` is interactive, because checking and deleting take no secret. Deleting asks first, on the page.
+
+A check claims the credential with one conditional `UPDATE` of `checked_at`, so each key is checked at most once a minute, however many tabs ask. Hub traffic never reaches the limiter, and every user shares the server's Binance weight, so the limit has to live behind the contract ([Circuits](#circuits)). A check's result is written only while the key it checked is still the credential's, so a replacement meanwhile keeps its own result. Each check that got an answer records `CredentialValidated`, with the status before and after.
+
+### Using a key
+
+`ICredentialKeys.OpenAiKeyAsync` and `OpenExchangeKeyAsync` return a key only for the user's own `Valid` credential, and a Binance key only for a market it's enabled for, which is FR-KEY-05's last rule. They reveal its secrets through `ISecretStore` at that moment, and the caller disposes them (FR-KEY-09). Each use moves `last_used_at`, at most once a minute, with a conditional `UPDATE`, so a busy key doesn't write on every call. Validating isn't a use.
+
+### Configuration
+
+`App:EgressIpAddresses` lists the addresses the server's requests come from (SRS 7.2), which the pages tell users to put on a Binance key's IP restriction. It's optional, and the pages tell users to ask the operator when it's empty. Each entry is one IPv4 or IPv6 address, with no range or port, or startup stops naming it (CFG-03).
+
+### Logging
+
+Outcomes are logged under the user's and the credential's IDs, with the provider, status and problem, at Information: a refused key is something a user did, not a fault. The adapters log each call. Nothing logs a key, a secret, a label or the last four characters, and `CredentialLoggingTests` checks the logs and the audit trail with canary keys through the real pages.
+
 ## Web UI
 
 `Components/` holds the interface, and every page renders inside `Layout/MainLayout`: a skip link, a header with the wordmark and `NavMenu`, `<main>`, and a footer. There's one layout because nothing needs a second yet, including `/account`, the first signed-in page.
@@ -1175,6 +1254,15 @@ Notifications were checked in Chromium and WebKit in Development, over plain HTT
 - No horizontal scroll on `/notifications` and `/account/preferences` at 375, 768 and 1280px, in both themes, and no console errors beyond the noise below
 - WebKit ticked checkboxes in green, which is kept for profit and loss, so `.check` boxes now use `--accent`. That changes the registration page's boxes too
 
+API keys were checked with Playwright in Chromium and WebKit, in Development over plain HTTP, against a local stand-in for Binance and the AI providers rather than the real servers:
+
+- Adding AI and Binance keys from the static forms, with a refused AI key and a Binance key that can withdraw each answered on the form, and neither key nor secret written back into the page
+- The list's statuses, the Unverified explanation, the Demo label, and a Live key's IP warning with both egress addresses
+- "Check now" answers that a key was checked less than a minute ago. "Delete" moves focus to its confirmation, "Keep it" moves it back, and deleting moves it to the notice that says so
+- Renaming and replacing a key on its static page, and the summaries on `/account/activity`
+- No horizontal scroll on `/credentials` and `/credentials/add` at 375, 768 and 1280px in both themes, nor on a key's page and `/account/activity` at 375 and 1280px. No `Error` in the log, and no console errors beyond the negotiation noise below
+- Not checked: real keys against Binance or a provider, including whether Binance's Demo servers answer `apiRestrictions`
+
 Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Signing out does the same, more loudly in WebKit: it closes the session's connections, including that tab's, so the tab tries to reconnect while it's leaving. The reconnect modal wasn't open on a single frame in either browser. None of these is a fault in the application.
 
 The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
@@ -1186,18 +1274,16 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Times (#41, #42 and every later page):** write each time through [`DisplayTime`](#time-zones), and give a chart `DisplayTime.Zone` for its axis. The account pages already do.
 - **Switching to Live (#39):** render `MandatoryNotices` in the flow (EXT-UI-03). Require `IEmailVerification.IsSatisfiedAsync`, which is true when email is off or the address is verified (FR-AUTH-03, FR-AGT-05).
 - **Legal review (#58):** review the notices in `Strings.resx`, which are drafts. If you change a phrase that EXT-UI-03 quotes, change the tests that check it. Replace the placeholder documents and `LegalDraftNotice`, set both versions in `LegalDocuments` to `1`, and update the digests in `LegalDocumentTests`. Everyone then accepts again, which is right, because nobody has seen the real text. Rule on whether agents keep trading for a user who hasn't re-accepted, and on keeping proof of acceptance after account deletion, which FR-AUTH-09 would remove.
-- **Credentials (#20):** adding and rotating a key are sensitive actions. Their forms take a secret, so they're static pages already: add a code field, shown when `ITwoFactor.IsEnabledAsync` says so, and call `ITwoFactor.CheckAsync` inside the Credentials contract before saving anything. Go ahead only when `Allows()` is true. See [Two-factor](#the-check-for-sensitive-actions).
 - **Kill switch (#37):** call `ITwoFactor.CheckAsync` behind the Agents contract, on the circuit, before stopping anything. It has its own throttle, which the sign-in lockout can't trip. After five wrong codes it pauses authenticator codes, but recovery codes still work, so the page should say so when the result is `Throttled`.
 - **Switching to Live (#39):** call `ITwoFactor.CheckAsync` as above. Add `Security:RequireTwoFactorForLive` from SRS 7.3, and when it's true, refuse a user for whom `ITwoFactor.IsEnabledAsync` is false (FR-AGT-05).
 - **The dashboard (#41):** [idle means a user action](#idle-means-a-user-action), so a live page times out when nobody touches it. Don't call .NET from a timer in JS, because that would count as activity.
 - **Administrators and account deletion (#47, #51):** add a revoke-all to `ISessions` for FR-ADM-01, built on `Sessions.DeleteAllAsync`, and call it before deleting a user. The foreign key removes the rows, but only `SessionConnections.End` closes live connections, and [a circuit's connection](#ending-a-circuit) would otherwise run until its next user action. `account_tokens` goes with the user through its foreign key.
 - **User administration (#47):** use `IAdministrators` and `AccountPolicies.Administrator`, behind contracts as well as on pages. Add a way to remove an account, because a stranger who registers a listed address holds it until then. Link a user's page to `/admin/password-reset`, which issues reset links with email off. Decide whether an administrator can turn off a user's two-factor, for someone who has lost both their phone and their recovery codes. With email off, an administrator can already issue a reset link, so the two together would let an administrator take over any account: if it's added, audit it, and consider requiring the bootstrap secret.
-- **Audited actions (#20, #39, #47, and the agent, approval and emergency pause issues):** record each FR-AUD-01 action with `IAuditTrail.Add` on the context that makes the change, in the same transaction. Add its `AuditAction` value and its text in `ActivityText`. Set `UserId` to the account it's about, and the actor to whoever did it: an administrator acting on someone else's account, or the system for a job or a risk limit (FR-AGT-04). See [Audit](#audit).
-- **The first action with a before/after summary that a user sees:** show `Changes` on the activity page, with each field name's text in `Strings.resx`. Nothing shows them yet. `MasterKeyRotated` has them, but it's platform-wide, so it's on nobody's page.
+- **Audited actions (#39, #47, and the agent, approval and emergency pause issues):** record each FR-AUD-01 action with `IAuditTrail.Add` on the context that makes the change, in the same transaction. Add its `AuditAction` value and its text in `ActivityText`. Set `UserId` to the account it's about, and the actor to whoever did it: an administrator acting on someone else's account, or the system for a job or a risk limit (FR-AGT-04). A before/after summary in `Changes` shows on the activity page, so give each field its text in `ActivityText.FieldOf`, or it's left out. See [Audit](#audit).
 - **Account deletion (#51):** FR-AUTH-09 keeps audit records with the identity anonymized, and the [trigger](#append-only) refuses every `UPDATE`. Replace `audit_events_append_only()` in a new migration, so that an update can set `user_id`, `actor_id`, `ip_address` and `user_agent` to null and change nothing else, and add a test that it can't do more.
 - **Audit search (FR-ADM-06):** add a search to `IAuditTrail` and a page through Administration, which may use Platform. Show actor IDs and correlation IDs there, which `IAccountActivity` leaves out. Index whatever it filters on.
 - **Raising notifications (FR-NTF-01):** raise each through `INotifications`, with `Add` on the context that makes the change it's about, so both commit together. Link to the page it's about, and set `Demo` for a Demo agent. See [Notifications](#notifications). Who raises what, by what `ModuleMap.cs` allows:
-  - Credentials (#20): `CredentialInvalid`, alongside pausing the agents (FR-KEY-11)
+  - Credentials (#23): `CredentialInvalid`, alongside pausing the agents (FR-KEY-11)
   - Catalog (#21): `CatalogSyncFailed`, through `RaiseForAdministratorsAsync`
   - Agents (#25): `ModelDeprecated` and `ModelRetired` (FR-CAT-04)
   - Agents (#23, #27): `AgentPausedLossLimit`, when it acts on the Risk Engine's result (FR-RISK-08)
@@ -1209,18 +1295,22 @@ The reconnect modal was checked in the published build, by stopping the server. 
   - Execution: `ExchangeRateLimitBan` is raised already, by `ExchangeBanNotifier`. See [Bans](#bans)
 - **Live updates (#41):** push a new notification to the menu's count and an open list. Today they only change on navigation.
 - **Retention (#50):** the SRS sets no period for `notifications`, so decide one, and purge in batches by `created_at`. With email on, the email job adds a `job_runs` row a minute, about 1,440 a day, plus a `send-email` row per message.
-- **Credentials' secrets (#20):** store each secret with `ISecretStore.Add` on the context that saves the row that owns it, and keep only its ID. Replacing a secret is `Add` and `RemoveAsync` in one transaction, and so is deleting its owner. Keep secret access separate from credential metadata, so that listing credentials (FR-KEY-03) never decrypts anything. Two-factor added no foreign key to `secrets`, and the boundary tests refuse `HasOne<Secret>()`, so one would have to be written into the migration by hand. See [Secrets](#secrets) and [Two-factor](#two-factor), which does this already.
 - **AI adapters (#19):** implement `IAiProviderAdapter` for each provider and register it in `AddAiAdapters`. Add its section to `appsettings.json` with the official base URL, and to the test settings in `AppFactory`, because every adapter needs its section. Switch `ProviderSeeder` from its fixed list to `IAiProviders.All`, so that a new provider needs no change there (NFR-MNT-02). Put the key in a header, never the URI: Gemini's is `x-goog-api-key`. Count reasoning and thinking tokens as output. Set `Refused` for each provider's refusal, such as Anthropic's `refusal` stop reason, OpenAI's `refusal` content, and Gemini's blocked prompt or `SAFETY` finish, and set `Truncated` at the output limit. Use `ReadError` where the status misleads, such as for OpenAI's `insufficient_quota`, which is a 429 that waiting won't fix, so map it to `Other`. See [AI adapters](#ai-adapters).
 - **System health (#49):** show `IMasterKeyRotation` for FR-ADM-04's credential re-encryption progress.
 - **Account deletion (#51):** delete a user's secrets through the modules that own them, in the transaction that deletes the rows that refer to them. Nothing else can find them. That includes the TOTP key in `totp_authenticators.secret_id`: the row cascades with the user, but the secret doesn't.
 - **Data export (#51):** include the user's preferences from `IPreferences.GetAsync`, and their email choices from `IPreferences.GetEmailNotificationsAsync` (FR-DATA-03). Deleting the account deletes their row through its foreign key.
 - **Account deletion (#51):** delete the user's `notifications` through the port Identity declares, which Notifications implements. There's no foreign key to do it.
-- **Exchange endpoints (#20, #22, #33, #35):** add each one to `BinanceEndpoint` with its weight, and call it through `BinanceTransport`, so it shares the budget, the clock, the outcomes and the logging. Put reads on `IExchangeAccount` or `IExchangeMarketData`, and anything that changes the account, such as leverage or margin mode (#33), on `IExchangeTrading`, which only Execution may use. See [Exchange adapter](#exchange-adapter).
-- **Credentials (#20):** validate a Binance key with `IExchangeAccount.GetAccountAsync` on the key's environment, and add `GET /sapi/v1/account/apiRestrictions` for FR-KEY-05. Before accepting an Ed25519 key for Futures, check that Futures Demo takes one. Build an `ExchangeKey` from `ISecretStore.RevealAsync` for each use, and dispose its secrets after.
+- **Exchange endpoints (#22, #33, #35):** add each one to `BinanceEndpoint` with its weight, and call it through `BinanceTransport`, so it shares the budget, the clock, the outcomes and the logging. Put reads on `IExchangeAccount` or `IExchangeMarketData`, and anything that changes the account, such as leverage or margin mode (#33), on `IExchangeTrading`, which only Execution may use. See [Exchange adapter](#exchange-adapter).
 - **Market Data (#22):** persist `ExchangeSymbol` from `IExchangeMarketData.GetExchangeInfoAsync`, which refreshes itself. Candles and prices are normal priority.
 - **Order execution (#34):** derive client order IDs that match `^[.A-Z:/a-z0-9_-]{1,36}$` (FR-EXE-04). Use `RequestPriority.Protective` for stops, closes and their queries. On `MayHaveExecuted`, query with `IExchangeAccount.GetOrderAsync` before sending again: only null allows it. Persist `SettlesAt` with the order, and don't send it again before then, even after a restart, which the adapter's memory doesn't survive. Check the Futures algo order parameters against Demo first, and add Spot OCO if it's wanted.
 - **System health (#49):** show `IExchangeUsage.Current()` for FR-ADM-04's exchange usage and bans, at `/admin/health`, which ban notifications already link to.
-- **Credentials (#20):** validate an AI key with `IAiProviders.ListModelsAsync`, where `Authentication` means Invalid. Build an `AiKey` from `ISecretStore.RevealAsync` for each use, and dispose it after.
+- **Catalog sync (#21):** sync on adding and rotating a key through an event Credentials declares in its `Contracts`, as [Inversions](#inversions) says, raised after the save commits. A sync can be lost with the process, so the schedule is its recovery path. Open each key with `ICredentialKeys.OpenAiKeyAsync`, which refuses one that isn't `Valid`, and dispose it after. Record availability by credential ID.
+- **Revalidation and pausing (#23):** FR-KEY-11's schedule needs a path in Credentials that a job can call for any user's key, reusing `AiValidator` and `BinanceValidator`. Treat an unreachable provider as no change, as checks on demand do, so an outage never pauses agents. Pause on `Invalid` and `InsufficientPermissions`, and on a market the key lost. FR-KEY-10 needs `ICredentials.DeleteAsync` to tell the caller which agents use the key, or a confirmation step before it. Add `Security:CredentialRevalidationHours` from SRS 7.3.
+- **Activation (#23, #39):** FR-AGT-05 needs a `Valid` credential for the agent's environment, with `SpotEnabled` or `FuturesEnabled` true for its market, from `ICredentials.FindAsync`. Futures still needs EXT-BIN-07's checks (#33).
+- **The AI council and execution (#31, #34, #35):** open a key with `ICredentialKeys` for each use, never cache it, and dispose its secrets after. `CredentialUnusableException` means the credential changed since the agent was activated: treat it as a paused agent's cause, not a provider failure, and don't retry it. `BannedApis` lets only Catalog, AiCouncil and Execution use `ICredentialKeys`, and only Credentials build a key.
+- **Binance Demo restrictions:** Binance doesn't document `/sapi` on its Demo servers, so a Demo key's restrictions aren't read. Try `apiRestrictions` against Demo with a real key, and if it answers, read them there too.
+- **Account deletion (#51):** delete the user's credentials with `ICredentials.DeleteAsync`, which removes their secrets in the same transaction, through the port Identity declares. There's no foreign key to `users`.
+- **Data isolation (#55):** `CredentialIsolationTests` covers every Credentials call. Add the three pages to the HTTP suite.
 - **Role defaults (#24):** check `RoleDefaults` against `IAiProviders.All`, and key assignments on `AiRole` from `Kernel`.
 - **The AI council (#31, #32):** call models through `IAiCompletions`, which only AiCouncil may use. Pass the catalog's price as `AiRequest.Price`. Record `Usage`, `Cost` and `Attempts` from the `AiResponse`, or from the `AiException` when the call fails, because a failed call can still have been billed. Keep `ProviderMessage` in the trace only. On an `AiException`, the retries are spent, so move to the role's fallback model (FR-ROLE-06).
 - **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
@@ -1231,7 +1321,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, the AI contracts in `Modules/AiAdapters/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment` and `AiRole` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 

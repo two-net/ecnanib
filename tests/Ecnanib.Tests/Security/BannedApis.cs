@@ -27,12 +27,22 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     private const string LegacySmtp = "is the SMTP client the framework no longer recommends, which can't require STARTTLS. Use IEmailSender";
     private const string Orders = "places or cancels orders, which only Execution may do, after a passing Risk Engine evaluation (AC-01)";
     private const string Spending = "calls a model on a user's key, which spends their money, and only AiCouncil may do that, inside the agent's budget (FR-CYC-07)";
+    private const string KeyBuilt =
+        "builds a key for an adapter, which only Credentials may do, from a user's own credential that passed its checks (CON-11, FR-KEY-05)";
+    private const string KeyOpened =
+        "decrypts a user's key for use, which only the modules that call providers with it may do: Catalog, AiCouncil and Execution (FR-KEY-09)";
 
     private static readonly string[] NoExceptions = [];
     private static readonly string[] Adapters = ["Modules.ExchangeAdapter.", "Modules.AiAdapters."];
     private static readonly string[] Email = ["Platform.Email."];
     private static readonly string[] Execution = ["Modules.Execution."];
     private static readonly string[] Council = ["Modules.AiCouncil."];
+
+    /// <summary>The one module that turns a user's credential into a key.</summary>
+    private static readonly string[] Credentials = ["Modules.Credentials."];
+
+    /// <summary>Credentials, which implements it, and the modules that call providers with a user's key.</summary>
+    private static readonly string[] KeyUsers = ["Modules.Credentials.", "Modules.Catalog.", "Modules.AiCouncil.", "Modules.Execution."];
 
     /// <summary>The secrets' owners, and Platform, which implements the store. Administration may use Platform, but not this.</summary>
     private static readonly string[] SecretOwners = ["Modules.Identity.", "Modules.Credentials.", "Platform."];
@@ -55,6 +65,9 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         ("System.Net.Mail.SmtpClient", LegacySmtp, NoExceptions),
         (".Modules.ExchangeAdapter.Contracts.IExchangeTrading::", Orders, Execution),
         (".Modules.AiAdapters.Contracts.IAiCompletions::", Spending, Council),
+        (".Modules.AiAdapters.Contracts.AiKey::.ctor", KeyBuilt, Credentials),
+        (".Modules.ExchangeAdapter.Contracts.ExchangeKey::.ctor", KeyBuilt, Credentials),
+        (".Modules.Credentials.Contracts.ICredentialKeys::", KeyOpened, KeyUsers),
     ];
 
     private readonly string _prefix = rootNamespace + ".";

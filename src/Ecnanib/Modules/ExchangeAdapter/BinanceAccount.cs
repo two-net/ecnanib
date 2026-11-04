@@ -22,7 +22,8 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
                 spot.CanTrade,
                 [.. spot.Balances.Select(balance => new AssetBalance(balance.Asset, balance.Free + balance.Locked, balance.Free))],
                 TotalMarginBalance: null,
-                AvailableBalance: null);
+                AvailableBalance: null,
+                spot.Uid);
         }
 
         var futures = await transport.SendAsync<FuturesAccountBody>(
@@ -38,6 +39,22 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
             ],
             futures.TotalMarginBalance,
             futures.AvailableBalance);
+    }
+
+    public async Task<ApiRestrictions> GetApiRestrictionsAsync(ExchangeKey key, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        if (key.Environment != TradingEnvironment.Live)
+        {
+            throw new ArgumentException("Binance documents a key's restrictions for Live keys only.", nameof(key));
+        }
+
+        var body = await transport.SendAsync<ApiRestrictionsBody>(
+            ExchangeServer.SpotLive, BinanceEndpoint.SpotApiRestrictions, [], key, RequestPriority.Normal, clientOrderId: null, cancellationToken);
+
+        return new ApiRestrictions(
+            body.IpRestrict, body.EnableReading, body.EnableWithdrawals, body.EnableSpotAndMarginTrading, body.EnableFutures);
     }
 
     public async Task<ExchangeOrder?> GetOrderAsync(
