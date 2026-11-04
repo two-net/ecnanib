@@ -344,6 +344,19 @@
   <data name="FieldCountryChoose" xml:space="preserve">
     <value>Choose a country</value>
   </data>
+  <data name="FieldTheme" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="FieldAnimation" xml:space="preserve">
+    <value>Animation</value>
+  </data>
+  <data name="FieldTimeZone" xml:space="preserve">
+    <value>Time zone</value>
+  </data>
+  <data name="DisplayTime" xml:space="preserve">
+    <value>{0:yyyy-MM-dd HH:mm} UTC{0:zzz}</value>
+    <comment>{0} is a time already in the user's time zone. zzz writes its offset from UTC, so this reads like 2026-11-04 17:00 UTC+07:00.</comment>
+  </data>
   <data name="FieldBootstrapSecret" xml:space="preserve">
     <value>Administrator secret</value>
   </data>
@@ -484,6 +497,9 @@
   <data name="AccountActivityLink" xml:space="preserve">
     <value>See your account activity</value>
   </data>
+  <data name="AccountPreferencesLink" xml:space="preserve">
+    <value>Change your theme, animation and time zone</value>
+  </data>
   <data name="AccountPasswordChanged" xml:space="preserve">
     <value>Your password has been changed, and your other sessions have been signed out.</value>
   </data>
@@ -497,8 +513,8 @@
     <value>unknown address</value>
   </data>
   <data name="AccountSessionDetails" xml:space="preserve">
-    <value>From {0}, signed in {1:yyyy-MM-dd HH:mm} UTC, last active {2:yyyy-MM-dd HH:mm} UTC</value>
-    <comment>{0} is an IP address, {1} and {2} are times in UTC.</comment>
+    <value>From {0}, signed in {1}, last active {2}</value>
+    <comment>{0} is an IP address, {1} and {2} are times written as DisplayTime.</comment>
   </data>
   <data name="AccountSessionCurrent" xml:space="preserve">
     <value>This session</value>
@@ -514,8 +530,8 @@
     <value>Accepted documents</value>
   </data>
   <data name="AccountDocumentAccepted" xml:space="preserve">
-    <value>{0}, version {1}, accepted {2:yyyy-MM-dd HH:mm} UTC</value>
-    <comment>{0} is a document title, {1} its version and {2} a time in UTC.</comment>
+    <value>{0}, version {1}, accepted {2}</value>
+    <comment>{0} is a document title, {1} its version and {2} a time written as DisplayTime.</comment>
   </data>
   <data name="AccountEmailVerification" xml:space="preserve">
     <value>Address verified</value>
@@ -571,13 +587,9 @@
   <data name="ActivityEmpty" xml:space="preserve">
     <value>Nothing has been recorded yet.</value>
   </data>
-  <data name="ActivityTime" xml:space="preserve">
-    <value>{0:yyyy-MM-dd HH:mm} UTC</value>
-    <comment>{0} is a time in UTC.</comment>
-  </data>
   <data name="ActivityTimeAndAddress" xml:space="preserve">
-    <value>{0:yyyy-MM-dd HH:mm} UTC, from {1}</value>
-    <comment>{0} is a time in UTC, {1} an IP address.</comment>
+    <value>{0}, from {1}</value>
+    <comment>{0} is a time written as DisplayTime, {1} an IP address.</comment>
   </data>
   <data name="ActivityByAdministrator" xml:space="preserve">
     <value>By an administrator</value>
@@ -815,8 +827,8 @@
     <value>Reset link</value>
   </data>
   <data name="IssueResetLinkIssued" xml:space="preserve">
-    <value>It works once, until {0:yyyy-MM-dd HH:mm} UTC. Issuing another one replaces it.</value>
-    <comment>{0} is a time in UTC.</comment>
+    <value>It works once, until {0}. Issuing another one replaces it.</value>
+    <comment>{0} is a time written as DisplayTime.</comment>
   </data>
   <data name="IssueResetLinkEmailOn" xml:space="preserve">
     <value>Email is on, so users reset their own passwords from the sign-in page.</value>
@@ -925,5 +937,64 @@
   </data>
   <data name="TwoFactorBackToAccount" xml:space="preserve">
     <value>Back to your account</value>
+  </data>
+  <data name="PreferencesPageTitle" xml:space="preserve">
+    <value>Preferences | Ecnanib</value>
+  </data>
+  <data name="PreferencesHeading" xml:space="preserve">
+    <value>Preferences</value>
+  </data>
+  <data name="PreferencesIntro" xml:space="preserve">
+    <value>These apply on every device you sign in on.</value>
+  </data>
+  <data name="PreferencesSaved" xml:space="preserve">
+    <value>Your preferences are saved.</value>
+  </data>
+  <data name="PreferencesSubmit" xml:space="preserve">
+    <value>Save preferences</value>
+  </data>
+  <data name="ThemeSystem" xml:space="preserve">
+    <value>System</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="PreferencesThemeHint" xml:space="preserve">
+    <value>System matches your device's light or dark setting, and switches when it does.</value>
+  </data>
+  <data name="AnimationSystem" xml:space="preserve">
+    <value>System</value>
+  </data>
+  <data name="AnimationFull" xml:space="preserve">
+    <value>Full</value>
+  </data>
+  <data name="AnimationReduced" xml:space="preserve">
+    <value>Reduced</value>
+  </data>
+  <data name="AnimationOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="PreferencesAnimationHint" xml:space="preserve">
+    <value>Reduced replaces movement with fades, and Off stops animation that isn't needed. System uses Reduced when your device asks for reduced motion.</value>
+  </data>
+  <data name="PreferencesTimeZoneBrowser" xml:space="preserve">
+    <value>Your browser's time zone</value>
+  </data>
+  <data name="PreferencesTimeZoneBrowserDetected" xml:space="preserve">
+    <value>Your browser's time zone ({0})</value>
+    <comment>{0} is a time zone ID, such as Asia/Bangkok.</comment>
+  </data>
+  <data name="PreferencesTimeZoneOption" xml:space="preserve">
+    <value>{1} (UTC{0:zzz})</value>
+    <comment>{0} is the time now in the zone, and zzz writes its offset from UTC. {1} is a time zone ID, such as Asia/Bangkok.</comment>
+  </data>
+  <data name="PreferencesTimeZoneHint" xml:space="preserve">
+    <value>Times on every page are shown in this zone.</value>
+  </data>
+  <data name="PreferencesChooseOption" xml:space="preserve">
+    <value>Choose one of the options.</value>
   </data>
 </root>

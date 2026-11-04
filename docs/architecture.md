@@ -578,7 +578,7 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 
 ## Accounts
 
-`Modules/Identity` owns users, passwords, legal acceptance and who counts as an administrator. It also registers cookie authentication and the authorization policies. The Web UI reaches all of it through `Modules/Identity/Contracts`, which return typed results, because Identity can't use `Strings`.
+`Modules/Identity` owns users, passwords, legal acceptance, [preferences](#preferences) and who counts as an administrator. It also registers cookie authentication and the authorization policies. The Web UI reaches all of it through `Modules/Identity/Contracts`, which return typed results, because Identity can't use `Strings`.
 
 ### Forms that take a secret
 
@@ -773,6 +773,33 @@ One challenge per account means that a second sign-in, from another device, repl
 - **A pause stops authenticator codes and not recovery codes.** Recovery codes aren't charged, because 50 random bits can't be guessed, so an owner who mistypes five codes in a hurry can still reach the kill switch with one.
 - **A refused check isn't audited**, and logs at Information, because only a signed-in user can make one. The action it guarded isn't recorded either, because it didn't happen.
 
+### Preferences
+
+`IPreferences` holds a user's theme, animation level and display time zone (SRS 3.2). `user_preferences` has one row per user, written when they first save and deleted with the account by its foreign key. Without a row, `Ui:DefaultTheme` and `Ui:DefaultAnimation` apply, and both default to System. Visitors always get the System theme (FR-PREF-03), with the configured animation level. Saving isn't audited, because FR-AUD-01 doesn't list it.
+
+**`App.razor` reads them once per full page load**, which is the only render that writes `<html>`, so the [theme](#theme-and-layout) and [motion level](#motion) are in the first response and never flash (AC-05). That's one query by primary key per page load. Navigating inside a circuit costs nothing.
+
+- **It renders nothing until they're read.** A component renders once at its first `await`, and that render would start `Routes`, and the page inside it, with the wrong time zone.
+- **The error page renders as a visitor's**, whoever is signed in. The database may be why it's showing, and a failure while rendering it would leave an empty 500.
+- **A change shows in another open tab only when that tab loads a page.** A circuit can't change `<html>`.
+
+**`/account/preferences` is a static page**, though it takes no secret, because its result shows on `<html>`. The page has to load again anyway, and a post and redirect does that with no script, so the [form](#forms-that-take-a-secret) works like the others. It has the general rate limit, not the authentication one. The selects post strings, and only exact names count, as in `Ui`: `Enum.TryParse` would also take a number or a list.
+
+#### Time zones
+
+**Write every time through `DisplayTime`**, never with `UtcDateTime`. `Routes` cascades it, and `Format` converts a time to the user's zone and adds the offset, as in `2026-11-04 17:00 UTC+07:00`, from one format in `Strings.resx` (FR-PREF-05). The zone is the first of these that the host knows:
+
+| Source | Where it comes from |
+|---|---|
+| The user's choice | `user_preferences.time_zone`, one of `TimeZones.Offered` |
+| The browser's | The `ecnanib.time-zone` cookie, which `wwwroot/shell.js` writes on every page from `Intl.DateTimeFormat` |
+| UTC | Neither |
+
+- **The server can't see the browser's zone** until a script says, and a script runs after the first render. A cookie reaches the first render of the next page, so only the first page a browser ever loads shows UTC. Visitors see no times, and the sign-in page writes the cookie, so in practice nobody sees that. The cookie is written on every page, so it follows a laptop that travels.
+- **`App` passes the zone's ID to `Routes` as a parameter.** A circuit has no `HttpContext` to read a cookie from, and a root component's parameters reach the circuit in the protected component descriptor. The cascaded value is fixed, because it only changes with a page load.
+- **The cookie is untrusted.** On Unix, a zone lookup reads the file of that name in the system's zone directory, so `TimeZones.TryFind` refuses anything not shaped like an IANA ID before asking, including any dot. It accepts the aliases browsers report, such as Chromium's `Asia/Calcutta`, which aren't offered.
+- **The zones come from the host:** its time zone data on Linux and macOS, and on Windows the IANA zone ICU maps each Windows one to. A host without the data offers only UTC: see [deployment](#constraints-for-later-issues).
+
 ### Passwords
 
 Argon2id through NSec.Cryptography, which wraps libsodium, so its 64 MiB stays off the managed heap of the process that runs trading cycles. The parameters are m=64 MiB, t=3, p=1, and at most four hashes run at once, which caps the memory at 256 MiB. A verification took about 85 ms on an Apple Silicon laptop, so measure it on the real host before relying on that.
@@ -814,12 +841,27 @@ CON-14 also rules out imitating Binance's trade dress, which no test can judge, 
 
 ### Theme and layout
 
-`wwwroot/app.css` holds the tokens. Each color is `light-dark(light, dark)`, so the side follows `color-scheme`, and the operating system's theme applies live with no script (FR-PREF-01, FR-PREF-02). The `color-scheme` meta tag in `App.razor` covers the moment before the stylesheet loads.
+`wwwroot/app.css` holds the tokens. Each color is `light-dark(light, dark)`, so the side follows `color-scheme`. `App.razor` renders the user's [theme](#preferences) as `data-theme` on `<html>`, and `app.css` sets `color-scheme` from it: one side for Light or Dark, and `light dark` for System, where the operating system's theme applies live with no script (FR-PREF-01, FR-PREF-02). The `color-scheme` meta tag, rendered from the same preference, covers the moment before the stylesheet loads, so the first paint is already right (FR-PREF-03).
 
 - **Use a token, never a color.** A fixed background under a dark `color-scheme` leaves light text on it, which is what the template's reconnect modal did.
 - **Keep green and red free** for profit and loss, and don't use color alone for direction (FR-ANI-03).
 - **Breakpoints are phone under 600px, tablet from 600px and desktop from 1024px.** A media query can't read a variable, so each stylesheet repeats them.
 - **Fonts are in `wwwroot/fonts` with their OFL licences:** Zilla Slab for headings and IBM Plex Mono for records and data. Body text uses `system-ui`. Add a weight only when a page needs it, because each is a download.
+
+### Motion
+
+`App.razor` renders the user's [animation level](#preferences) as `data-motion` on `<html>` (FR-PREF-04), and `app.css` turns it into two numbers:
+
+| Level | `--motion-travel` | `--motion-time` |
+|---|---|---|
+| Full | 1 | 1 |
+| Reduced | 0 | 1 |
+| Off | 0 | 0 |
+| System | 0 when the operating system asks for reduced motion, otherwise 1 | 1 |
+
+- **Animate through them.** Multiply a distance, or a scale's change, by `--motion-travel`, and every duration and delay by `--motion-time`, as `Layout/ReconnectModal.razor.css` does. Reduced then keeps the fades and drops the movement, and Off ends everything at once (FR-ANI-07), with no rule per level. Don't read `prefers-reduced-motion` anywhere else: System already does.
+- **An animation that takes no time still ends.** At Off it jumps to its last frame, or to the element's own style if it has no fill mode. Give an infinite animation a style that stands still, as the reconnect modal's ring has.
+- **Custom properties reach `@keyframes` and isolated CSS,** because they inherit from `:root`. `::backdrop` only inherits them in browsers from 2024 on, and an older one skips the backdrop's fade.
 
 ### Links and focus
 
@@ -871,6 +913,13 @@ Email, verification and resets were checked in Chromium and WebKit in Developmen
 - No horizontal scroll on the new pages, the account page with its verification block, and the administrator's page showing a link, at 375, 768 and 1280px, in both themes
 - No console errors beyond the screenshot noise below, no `Error` in either log, and no token or address in the logs
 
+Preferences were checked in Chromium and WebKit in Development, over plain HTTP, with Playwright emulating the operating system's color scheme, reduced motion and time zone:
+
+- Visitors and users on System follow the operating system's scheme both ways with no reload. Light under a dark scheme, and Dark under a light one, are right from the first response, including with both stylesheets blocked, which leaves only the meta tag
+- `--motion-travel` and `--motion-time` resolve as the [table](#motion) says for every level, and System follows reduced motion live. Opened by hand, the reconnect modal slides at Full, stays still at Reduced, and its animations take no time at Off
+- `shell.js` writes the time zone cookie, `/account` shows the browser's zone until the user chooses one, then the chosen one, and the preferences page names the browser's zone
+- No horizontal scroll on `/account/preferences` at 375, 768 and 1280px, in both themes, no console errors beyond the noise below, nothing above Warning in the log, and no cookie value in it
+
 Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Signing out does the same, more loudly in WebKit: it closes the session's connections, including that tab's, so the tab tries to reconnect while it's leaving. The reconnect modal wasn't open on a single frame in either browser. None of these is a fault in the application.
 
 The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
@@ -878,8 +927,9 @@ The reconnect modal was checked in the published build, by stopping the server. 
 ## Constraints for later issues
 
 - **The UI (#15, #41, #42, #52, #53):** no inline scripts, `<style>` blocks, `style=` attributes or `onclick=` handlers: the [CSP](#headers) blocks them all, and the failure is a console message and a silently broken page. Use classes, isolated CSS and script files. `Virtualize` renders `style=` attributes, so the first change that uses it adds `style-src-attr 'unsafe-inline'`, which is narrower than loosening `style-src`.
-- **Theme preferences (#15):** render `data-theme` on `<html>` from the preference, and add a rule in `app.css` that sets `color-scheme` to match. The tokens follow, with no script. Render the [`color-scheme` meta tag](#theme-and-layout) from the preference too, or Light can flash dark before the stylesheet loads.
-- **Animation (#52):** the reconnect modal's animations are the only motion so far, and they ignore the preference and the operating system's reduced motion setting (AC-06).
+- **Animation (#52):** animate through `--motion-travel` and `--motion-time`, as the reconnect modal does, and each animation follows the user's level and the operating system's reduced motion setting with no rule of its own (FR-ANI-07, AC-06). See [Motion](#motion). Off ends everything that uses `--motion-time`, so an animation that's essential needs another way, and a reason.
+- **Times (#41, #42 and every later page):** write each time through [`DisplayTime`](#time-zones), and give a chart `DisplayTime.Zone` for its axis. The account pages already do.
+- **Notification settings (#16):** FR-PREF-06 belongs in `user_preferences`, behind `IPreferences`, which SRS 6.1 groups with the rest.
 - **Switching to Live (#39):** render `MandatoryNotices` in the flow (EXT-UI-03). Require `IEmailVerification.IsSatisfiedAsync`, which is true when email is off or the address is verified (FR-AUTH-03, FR-AGT-05).
 - **Legal review (#58):** review the notices in `Strings.resx`, which are drafts. If you change a phrase that EXT-UI-03 quotes, change the tests that check it. Replace the placeholder documents and `LegalDraftNotice`, set both versions in `LegalDocuments` to `1`, and update the digests in `LegalDocumentTests`. Everyone then accepts again, which is right, because nobody has seen the real text. Rule on whether agents keep trading for a user who hasn't re-accepted, and on keeping proof of acceptance after account deletion, which FR-AUTH-09 would remove.
 - **Credentials (#20):** adding and rotating a key are sensitive actions. Their forms take a secret, so they're static pages already: add a code field, shown when `ITwoFactor.IsEnabledAsync` says so, and call `ITwoFactor.CheckAsync` inside the Credentials contract before saving anything. Go ahead only when `Allows()` is true. See [Two-factor](#the-check-for-sensitive-actions).
@@ -897,6 +947,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Adapters (#17, #18):** take a `SecretValue`, and reveal it at the last moment, when signing a request or setting a header. Prefer `RevealUtf8()` for an HMAC key. Never put a revealed key in a log scope, an exception or a field.
 - **System health (#49):** show `IMasterKeyRotation` for FR-ADM-04's credential re-encryption progress.
 - **Account deletion (#51):** delete a user's secrets through the modules that own them, in the transaction that deletes the rows that refer to them. Nothing else can find them. That includes the TOTP key in `totp_authenticators.secret_id`: the row cascades with the user, but the secret doesn't.
+- **Data export (#51):** include the user's preferences from `IPreferences.GetAsync` (FR-DATA-03). Deleting the account deletes their row through its foreign key.
 - **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds. Base URLs come from the configuration file only (NFR-SEC-10), and clients don't follow redirects, or a response could send a signed request somewhere else.
 - **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category. Base URLs and redirects follow the same rule as the exchange adapter.
 - **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
@@ -905,9 +956,9 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Order execution (#34):** pass `cancellationToken`, not `Stopping`, to exchange calls. Persist the intent before sending, or a cut send can't be recovered (FR-EXE-05, FR-EXE-08). Once an order is placed, save with a deadline of its own, or the end of the drain window could cancel the write.
 - **Reconciliation (#35):** run the startup pass from a hosted service's `StartAsync`, through `IJobRunner`, so it finishes before any scheduled cycle (FR-EXE-08).
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
-- **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
+- **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets` and `ITwoFactor` in `Modules/Identity/Contracts`, the persistence, logging, correlation, job, audit, secret and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences` and `TimeZones` in `Modules/Identity/Contracts`, the persistence, logging, correlation, job, audit, secret and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue` in `Kernel`.
 
 ## What the boundary tests can't see
 

@@ -27,10 +27,14 @@
     [Parameter]
     public bool TakeFocus { get; set; }
 
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
     private string Details =>
         Record.IpAddress is { } address
-            ? string.Format(CultureInfo.CurrentCulture, Strings.ActivityTimeAndAddress, Record.Timestamp.UtcDateTime, address)
-            : string.Format(CultureInfo.CurrentCulture, Strings.ActivityTime, Record.Timestamp.UtcDateTime);
+            ? string.Format(CultureInfo.CurrentCulture, Strings.ActivityTimeAndAddress, Time.Format(Record.Timestamp), address)
+            : Time.Format(Record.Timestamp);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

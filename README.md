@@ -100,7 +100,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Concern | Choice | State |
 |---|---|---|
 | Web app | ASP.NET Core Blazor Server on .NET 10, interactive across the whole app | In place |
-| Interface | Hand-written CSS with no component library, self-hosted fonts, a System theme, and all text in a resource file | In place |
+| Interface | Hand-written CSS with no component library, self-hosted fonts, Dark, Light and System themes, and all text in a resource file | In place. Users choose their theme, animation level and time zone |
 | Database | PostgreSQL | In place |
 | Persistence | Entity Framework Core 10 with Npgsql, code-first, with migrations applied at startup and no table partitioning | In place |
 | Logging | Serilog, with console, rolling file and PostgreSQL sinks, and masking in front of all of them | In place |
@@ -206,6 +206,8 @@ A value that isn't valid stops startup. Set `AllowedHosts` to your public host t
 | `Admin:BootstrapSecret` | At least 32 random characters. Required when an address is listed and `Email:Enabled` is false |
 | `Email:Enabled` | Defaults to `false`. See [Email](#email) |
 | `Legal:BlockedCountries` | ISO 3166-1 alpha-2 codes, such as `"GB"`, that can't register. Registration asks for a country only when this has entries. Defaults to none |
+| `Ui:DefaultTheme` | `System`, `Light` or `Dark`, for users who haven't chosen. Visitors always get `System`. Defaults to `System` |
+| `Ui:DefaultAnimation` | `System`, `Full`, `Reduced` or `Off`, for visitors and for users who haven't chosen. `System` follows the device's reduced motion setting. Defaults to `System` |
 
 To make yourself an administrator with email off:
 

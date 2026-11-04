@@ -22,3 +22,14 @@ document.addEventListener("click", event => {
         target.focus();
     }
 }, { capture: true });
+
+// The browser's time zone, for pages to show times in (FR-PREF-05) when the user hasn't chosen one. The
+// server can't see it otherwise, and a cookie reaches the first render of every page. The name is
+// DisplayTime.BrowserTimeZoneCookie. It's written on every load, so it follows a laptop that travels.
+const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+if (timeZone) {
+    const secure = location.protocol === "https:" ? "; secure" : "";
+
+    document.cookie = `ecnanib.time-zone=${encodeURIComponent(timeZone)}; path=/; max-age=31536000; samesite=lax${secure}`;
+}

@@ -1,4 +1,6 @@
-﻿<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+﻿@* Fixed, because it changes only with a full page load: see Preferences in docs/architecture.md. *@
+<CascadingValue Value="_time" IsFixed="true">
+<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
             <NotAuthorized>
@@ -16,10 +18,28 @@
         }
     </Found>
 </Router>
+</CascadingValue>
 
 @code {
+    private DisplayTime _time = DisplayTime.Utc;
     private Type? _firstPage;
     private bool _pageChanged;
+
+    /// <summary>
+    /// What App resolved from the user's choice and the browser's cookie. A circuit has no HttpContext,
+    /// and this reaches it in the protected component descriptor.
+    /// </summary>
+    [Parameter]
+    public string? TimeZone { get; set; }
+
+    /// <summary>A page gets one zone for its whole life, so this builds the value once, as a fixed value has to be.</summary>
+    protected override void OnParametersSet()
+    {
+        if (_time.Zone.Id != TimeZone)
+        {
+            _time = DisplayTime.For(TimeZone);
+        }
+    }
 
     /// <summary>
     /// FocusOnNavigate also fires on the first render, which would pull focus past the skip link and

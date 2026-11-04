@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text.RegularExpressions;
+using Ecnanib.Components;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -45,6 +47,19 @@ public sealed class ShellTests(PostgresFixture postgres)
         await AssertShellAsync(response);
     }
 
+    /// <summary>The script writes the cookie DisplayTime reads, and nothing else ties the two names together.</summary>
+    [Fact]
+    public async Task The_shell_script_writes_the_browser_time_zone_cookie()
+    {
+        await using var app = new AppFactory(postgres.NewConnectionString());
+        using var client = app.CreateClient();
+
+        var page = await client.GetStringAsync("/", Cancellation);
+        var script = Regex.Match(page, """<script type="module" src="(?<src>[^"]*shell[^"]*\.js)">""").Groups["src"].Value;
+
+        Assert.Contains($"{DisplayTime.BrowserTimeZoneCookie}=", await client.GetStringAsync(script, Cancellation), StringComparison.Ordinal);
+    }
+
     private static async Task AssertShellAsync(HttpResponseMessage response)
     {
         var page = await response.Content.ReadAsStringAsync(Cancellation);
@@ -52,6 +67,9 @@ public sealed class ShellTests(PostgresFixture postgres)
         Assert.Contains("href=\"#main\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"main\"", page, StringComparison.Ordinal);
         Assert.Contains("<nav", page, StringComparison.Ordinal);
+
+        // Before sign-in, and on the error page whoever asks (FR-PREF-03).
+        Assert.Contains("<html lang=\"en\" data-theme=\"system\"", page, StringComparison.Ordinal);
 
         // These only work with the script, on a page that may never have a circuit.
         Assert.Matches("""<script type="module" src="[^"]*shell[^"]*\.js">""", page);

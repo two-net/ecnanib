@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using Ecnanib.Components;
 using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -42,6 +43,8 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
 
     public const string DisableTwoFactorForm = "disable-two-factor";
 
+    public const string PreferencesForm = "preferences";
+
     public const string TwoFactorPage = "/account/two-factor";
 
     public const string SignInCodePage = "/sign-in/two-factor";
@@ -81,6 +84,13 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
         new(new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }) { BaseAddress = address });
 
     public Task<HttpResponseMessage> GetAsync(string path) => client.GetAsync(path, Cancellation);
+
+    /// <summary>
+    /// What wwwroot/shell.js writes on every page, escaped as it escapes it. Beside the cookies the
+    /// client keeps, which go in a header of their own.
+    /// </summary>
+    public void SendBrowserTimeZone(string zone) =>
+        client.DefaultRequestHeaders.Add("Cookie", $"{DisplayTime.BrowserTimeZoneCookie}={Uri.EscapeDataString(zone)}");
 
     public async Task<string> PageAsync(string path)
     {

@@ -58,6 +58,8 @@
         @* A plain link, because the page is static: see Forms that take a secret in docs/architecture.md. *@
         <p><a href="/account/two-factor">@(_twoFactorOn ? Strings.AccountManageTwoFactorLink : Strings.AccountSetUpTwoFactorLink)</a></p>
         <p><a href="/account/activity">@Strings.AccountActivityLink</a></p>
+        @* A plain link, because the page is static: see Preferences in docs/architecture.md. *@
+        <p><a href="/account/preferences">@Strings.AccountPreferencesLink</a></p>
 
         <SessionList UserId="_userId" CurrentSessionId="_sessionId" />
 
@@ -83,6 +85,10 @@
 
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
 
     /// <summary>A string, because a bool makes any other value a 500, and anyone can write this query.</summary>
     [SupplyParameterFromQuery]
@@ -121,11 +127,11 @@
     private async Task SendVerificationAsync() =>
         _sendResult = await Verification.SendAsync(_userId, CancellationToken.None);
 
-    private static string Describe(LegalAcceptanceRecord acceptance) =>
+    private string Describe(LegalAcceptanceRecord acceptance) =>
         string.Format(
             CultureInfo.CurrentCulture,
             Strings.AccountDocumentAccepted,
             acceptance.Document == LegalDocument.TermsOfUse ? Strings.LegalTermsOfUseTitle : Strings.LegalRiskDisclosureTitle,
             acceptance.Version,
-            acceptance.AcceptedAt.UtcDateTime);
+            Time.Format(acceptance.AcceptedAt));
 }

@@ -32,6 +32,7 @@ public static class IdentityModule
         services.AddSingleton<IEmailVerification>(provider => provider.GetRequiredService<EmailVerification>());
         services.AddSingleton<IPasswordResets, PasswordResets>();
         services.AddSingleton<IAccountActivity, AccountActivity>();
+        services.AddSingleton<IPreferences, Preferences>();
         services.AddSingleton<IAuthorizationHandler, LegalAcceptedHandler>();
         services.AddSingleton<IAuthorizationHandler, AdministratorHandler>();
 

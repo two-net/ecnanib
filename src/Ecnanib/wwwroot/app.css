@@ -28,8 +28,8 @@
 
 /*
     Each color is light-dark(light, dark), so the operating system's theme applies without a reload.
-    color-scheme picks the side. CON-14: no yellow, gold or amber, which are Binance's. Keep green and
-    red free for profit and loss.
+    color-scheme picks the side, and data-theme on <html> sets it from the user's preference (FR-PREF-01).
+    CON-14: no yellow, gold or amber, which are Binance's. Keep green and red free for profit and loss.
 */
 :root {
     color-scheme: light dark;
@@ -55,6 +55,38 @@
     --page-width: 72rem;
     --section-gap: 3.5rem;
     --radius: 0.375rem;
+
+    /*
+        FR-PREF-04 and FR-ANI-07. Animate through these, never around them: multiply a distance or a
+        scale's change by --motion-travel, and a duration or delay by --motion-time. Reduced keeps the
+        fades and drops the movement, and Off stops everything. data-motion holds the user's level.
+    */
+    --motion-travel: 1;
+    --motion-time: 1;
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+:root[data-motion="reduced"] {
+    --motion-travel: 0;
+}
+
+:root[data-motion="off"] {
+    --motion-travel: 0;
+    --motion-time: 0;
+}
+
+/* System is Reduced when the operating system asks for reduced motion, and Full otherwise. */
+@media (prefers-reduced-motion: reduce) {
+    :root[data-motion="system"] {
+        --motion-travel: 0;
+    }
 }
 
 @media (min-width: 600px) {

@@ -1,0 +1,177 @@
+@page "/account/preferences"
+@attribute [ExcludeFromInteractiveRouting]
+@using System.Globalization
+@inject IPreferences Preferences
+@inject NavigationManager Navigation
+
+@* Static, because the theme and animation level show on <html>, which only a full page load writes. It
+   takes no secret, so it has no stricter rate limit. See Preferences in docs/architecture.md. *@
+
+<PageTitle>@Strings.PreferencesPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.PreferencesHeading</h1>
+    <p>@Strings.PreferencesIntro</p>
+
+    @if (Saved == "true")
+    {
+        <p class="form-notice" role="status">@Strings.PreferencesSaved</p>
+    }
+
+    <EditForm Model="Input" FormName="preferences" OnSubmit="SubmitAsync" class="form">
+        <div class="field">
+            <label for="theme">@Strings.FieldTheme</label>
+            <select id="theme" name="Input.Theme" aria-invalid="@Invalid(_themeInvalid)" aria-describedby="theme-hint theme-error">
+                @foreach (var theme in Enum.GetValues<Theme>())
+                {
+                    <option value="@theme" selected="@(theme.ToString() == Input.Theme)">@TextOf(theme)</option>
+                }
+            </select>
+            <p id="theme-hint" class="field-hint">@Strings.PreferencesThemeHint</p>
+            <FieldError Id="theme-error" Message="@ErrorIf(_themeInvalid)" />
+        </div>
+
+        <div class="field">
+            <label for="animation">@Strings.FieldAnimation</label>
+            <select id="animation" name="Input.Animation" aria-invalid="@Invalid(_animationInvalid)" aria-describedby="animation-hint animation-error">
+                @foreach (var animation in Enum.GetValues<AnimationLevel>())
+                {
+                    <option value="@animation" selected="@(animation.ToString() == Input.Animation)">@TextOf(animation)</option>
+                }
+            </select>
+            <p id="animation-hint" class="field-hint">@Strings.PreferencesAnimationHint</p>
+            <FieldError Id="animation-error" Message="@ErrorIf(_animationInvalid)" />
+        </div>
+
+        <div class="field">
+            <label for="time-zone">@Strings.FieldTimeZone</label>
+            <select id="time-zone" name="Input.TimeZone" aria-invalid="@Invalid(_timeZoneInvalid)" aria-describedby="time-zone-hint time-zone-error">
+                <option value="" selected="@string.IsNullOrEmpty(Input.TimeZone)">@BrowserTimeZoneText</option>
+                @foreach (var (id, label) in OfferedTimeZones())
+                {
+                    <option value="@id" selected="@(id == Input.TimeZone)">@label</option>
+                }
+            </select>
+            <p id="time-zone-hint" class="field-hint">@Strings.PreferencesTimeZoneHint</p>
+            <FieldError Id="time-zone-error" Message="@ErrorIf(_timeZoneInvalid)" />
+        </div>
+
+        <button type="submit" class="button">@Strings.PreferencesSubmit</button>
+    </EditForm>
+</div>
+
+@code {
+    private bool _themeInvalid;
+    private bool _animationInvalid;
+    private bool _timeZoneInvalid;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    /// <summary>Strings, so that a value nobody offered is a refusal rather than a failure to bind.</summary>
+    [SupplyParameterFromForm]
+    private PreferencesForm Input { get; set; } = default!;
+
+    /// <summary>A string, because a bool makes any other value a 500, and anyone can write this query.</summary>
+    [SupplyParameterFromQuery]
+    private string? Saved { get; set; }
+
+    /// <summary>Names the zone the cookie reports, so the user can see what the default would be.</summary>
+    private string BrowserTimeZoneText =>
+        TimeZones.TryFind(HttpContext.Request.Cookies[DisplayTime.BrowserTimeZoneCookie], out var zone)
+            ? string.Format(CultureInfo.CurrentCulture, Strings.PreferencesTimeZoneBrowserDetected, zone.Id)
+            : Strings.PreferencesTimeZoneBrowser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A post brings its own values. Anything else shows what's saved, or the defaults. The form is
+        // there before the await, because the first render happens at it.
+        var posted = Input is not null;
+        Input ??= new PreferencesForm();
+
+        if (!posted && AccountClaims.UserId(HttpContext.User) is { } userId)
+        {
+            var current = await Preferences.GetAsync(userId, HttpContext.RequestAborted);
+
+            Input.Theme = current.Theme.ToString();
+            Input.Animation = current.Animation.ToString();
+            Input.TimeZone = current.TimeZone;
+        }
+    }
+
+    private static string? Invalid(bool invalid) => invalid ? "true" : null;
+
+    private static string? ErrorIf(bool invalid) => invalid ? Strings.PreferencesChooseOption : null;
+
+    private static string TextOf(Theme theme) => theme switch
+    {
+        Theme.Light => Strings.ThemeLight,
+        Theme.Dark => Strings.ThemeDark,
+        _ => Strings.ThemeSystem,
+    };
+
+    private static string TextOf(AnimationLevel animation) => animation switch
+    {
+        AnimationLevel.Full => Strings.AnimationFull,
+        AnimationLevel.Reduced => Strings.AnimationReduced,
+        AnimationLevel.Off => Strings.AnimationOff,
+        _ => Strings.AnimationSystem,
+    };
+
+    /// <summary>By the offset in force now, which is the one the label shows.</summary>
+    private static IEnumerable<(string Id, string Label)> OfferedTimeZones()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        return TimeZones.Offered
+            .Select(zone => (zone.Id, Local: TimeZoneInfo.ConvertTime(now, zone)))
+            .OrderBy(zone => zone.Local.Offset)
+            .ThenBy(zone => zone.Id, StringComparer.Ordinal)
+            .Select(zone => (zone.Id, string.Format(CultureInfo.CurrentCulture, Strings.PreferencesTimeZoneOption, zone.Local, zone.Id)));
+    }
+
+    /// <summary>An exact name only, as the settings require, because Enum.TryParse also takes a number.</summary>
+    private static T? Parse<T>(string? value)
+        where T : struct, Enum =>
+        value is not null && Enum.GetNames<T>().Contains(value, StringComparer.Ordinal) ? Enum.Parse<T>(value) : null;
+
+    private async Task SubmitAsync()
+    {
+        if (AccountClaims.UserId(HttpContext.User) is not { } userId)
+        {
+            return;
+        }
+
+        var theme = Parse<Theme>(Input.Theme);
+        var animation = Parse<AnimationLevel>(Input.Animation);
+        var timeZone = string.IsNullOrEmpty(Input.TimeZone) ? null : Input.TimeZone;
+
+        _themeInvalid = theme is null;
+        _animationInvalid = animation is null;
+        _timeZoneInvalid = timeZone is not null && !TimeZones.IsOffered(timeZone);
+
+        if (theme is not { } chosenTheme || animation is not { } chosenAnimation || _timeZoneInvalid)
+        {
+            return;
+        }
+
+        var result = await Preferences.SaveAsync(userId, new UserPreferences(chosenTheme, chosenAnimation, timeZone), HttpContext.RequestAborted);
+
+        if (result == PreferencesResult.UnknownTimeZone)
+        {
+            _timeZoneInvalid = true;
+            return;
+        }
+
+        Navigation.NavigateTo("/account/preferences?saved=true");
+    }
+
+    private sealed class PreferencesForm
+    {
+        public string? Theme { get; set; }
+
+        public string? Animation { get; set; }
+
+        public string? TimeZone { get; set; }
+    }
+}

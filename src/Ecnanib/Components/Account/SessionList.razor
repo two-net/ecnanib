@@ -35,17 +35,21 @@
     [Parameter, EditorRequired]
     public Guid? CurrentSessionId { get; set; }
 
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
     protected override async Task OnInitializedAsync() => _sessions = await Sessions.ListAsync(UserId, CancellationToken.None);
 
     private static string Address(SessionRecord session) => session.IpAddress ?? Strings.AccountSessionUnknownAddress;
 
-    private static string Describe(SessionRecord session) =>
+    private string Describe(SessionRecord session) =>
         string.Format(
             CultureInfo.CurrentCulture,
             Strings.AccountSessionDetails,
             Address(session),
-            session.CreatedAt.UtcDateTime,
-            session.LastSeenAt.UtcDateTime);
+            Time.Format(session.CreatedAt),
+            Time.Format(session.LastSeenAt));
 
     private static string RevokeLabel(SessionRecord session) =>
         string.Format(CultureInfo.CurrentCulture, Strings.AccountSessionRevokeLabel, Address(session));

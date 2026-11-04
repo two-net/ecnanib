@@ -15,6 +15,8 @@ public sealed class IdentitySettingsTests(PostgresFixture postgres)
     private const string EmailEnabled = "Email:Enabled";
     private const string BlockedCountry = "Legal:BlockedCountries:0";
     private const string PublicBaseUrl = "App:PublicBaseUrl";
+    private const string DefaultTheme = "Ui:DefaultTheme";
+    private const string DefaultAnimation = "Ui:DefaultAnimation";
 
     private const string Listed = "admin@example.test";
     private const string GoodSecret = "a bootstrap secret of plenty of characters";
@@ -40,6 +42,16 @@ public sealed class IdentitySettingsTests(PostgresFixture postgres)
         { BlockedCountry, new() { [BlockedCountry] = "UK" } },
         { BlockedCountry, new() { [BlockedCountry] = "us" } },
         { BlockedCountry, new() { [BlockedCountry] = "Germany" } },
+
+        // Names only, matched exactly, because Enum.TryParse would take a number or a list.
+        { DefaultTheme, new() { [DefaultTheme] = "Blue" } },
+        { DefaultTheme, new() { [DefaultTheme] = "dark" } },
+        { DefaultTheme, new() { [DefaultTheme] = "1" } },
+        { DefaultTheme, new() { [DefaultTheme] = "Light, Dark" } },
+        { DefaultTheme, new() { [DefaultTheme] = "" } },
+        { DefaultAnimation, new() { [DefaultAnimation] = "None" } },
+        { DefaultAnimation, new() { [DefaultAnimation] = "reduced" } },
+        { DefaultAnimation, new() { [DefaultAnimation] = "3" } },
     };
 
     [Theory]

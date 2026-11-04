@@ -1,13 +1,20 @@
 ﻿@using Ecnanib.Endpoints.Security
+@using Microsoft.AspNetCore.Diagnostics
+@inject IPreferences Preferences
 
 <!DOCTYPE html>
-<html lang="@Strings.HtmlLanguage">
+@* Nothing until the preferences are read. The first render happens at the first await, and it would
+   start Routes, and the page inside it, with the wrong time zone. *@
+@if (_preferences is { } preferences)
+{
+@* app.css sets color-scheme from data-theme, and the tokens follow it. data-motion is read there too. *@
+<html lang="@Strings.HtmlLanguage" data-theme="@Lower(preferences.Theme)" data-motion="@Lower(preferences.Animation)">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     @* Before the stylesheet loads, so the browser's first paint doesn't flash the wrong theme (FR-PREF-03). *@
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="@ColorScheme(preferences.Theme)" />
     <meta name="description" content="@Strings.MetaDescription" />
     <base href="/" />
     <link rel="icon" type="image/svg+xml" href="@Assets["brand/mark.svg"]" />
@@ -19,21 +26,52 @@
 </head>
 
 <body>
-    <Routes @rendermode="PageRenderMode" />
+    <Routes @rendermode="PageRenderMode" TimeZone="@_time.Zone.Id" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script type="module" src="@Assets["shell.js"]"></script>
 </body>
 
 </html>
+}
 
 @code {
+    private UserPreferences? _preferences;
+    private DisplayTime _time = DisplayTime.Utc;
+
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
+    private static string Lower(Enum value) => value.ToString().ToLowerInvariant();
+
+    private static string ColorScheme(Theme theme) => theme switch
+    {
+        Theme.Light => "light",
+        Theme.Dark => "dark",
+        _ => "light dark",
+    };
+
     /// <summary>
-    /// A page marked ExcludeFromInteractiveRouting stays static, because it collects a secret: a
-    /// circuit would carry it through the hub, and the first interactive render clears what's typed.
+    /// A page marked ExcludeFromInteractiveRouting stays static. Most collect a secret: a circuit would
+    /// carry it through the hub, and the first interactive render clears what's typed. The preferences
+    /// page is static because its result shows on &lt;html&gt;, which only a full page load writes.
     /// </summary>
     private IComponentRenderMode? PageRenderMode => HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+
+    /// <summary>
+    /// Once per full page load, which is the only render that writes &lt;html&gt;, so a saved change
+    /// applies from the next one. A circuit never renders this again, so it gets the time zone as a
+    /// parameter of Routes. The error page renders as a visitor's whoever asks, because the database
+    /// may be why it's showing, and a failure here would leave an empty 500.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        var preferences = HttpContext.Features.Get<IExceptionHandlerFeature>() is null
+            && AccountClaims.UserId(HttpContext.User) is { } userId
+                ? await Preferences.GetAsync(userId, HttpContext.RequestAborted)
+                : Preferences.ForVisitors;
+
+        _time = DisplayTime.For(preferences.TimeZone, HttpContext.Request.Cookies[DisplayTime.BrowserTimeZoneCookie]);
+        _preferences = preferences;
+    }
 }

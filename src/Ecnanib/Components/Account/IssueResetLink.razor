@@ -51,13 +51,17 @@
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
     [SupplyParameterFromForm]
     private IssueForm Input { get; set; } = default!;
 
     protected override void OnInitialized() => Input ??= new IssueForm();
 
-    private static string Expiry(DateTimeOffset expiresAt) =>
-        string.Format(CultureInfo.CurrentCulture, Strings.IssueResetLinkIssued, expiresAt.UtcDateTime);
+    private string Expiry(DateTimeOffset expiresAt) =>
+        string.Format(CultureInfo.CurrentCulture, Strings.IssueResetLinkIssued, Time.Format(expiresAt));
 
     private async Task SubmitAsync()
     {

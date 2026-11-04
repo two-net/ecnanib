@@ -30,6 +30,8 @@ internal sealed class IdentitySettings
     private const string EmailEnabledKey = "Email:Enabled";
     private const string PublicBaseUrlKey = "App:PublicBaseUrl";
     private const string BlockedCountriesKey = "Legal:BlockedCountries";
+    private const string DefaultThemeKey = "Ui:DefaultTheme";
+    private const string DefaultAnimationKey = "Ui:DefaultAnimation";
 
     private const int DefaultMaxFailedSignIns = 5;
     private const int DefaultLockoutMinutes = 15;
@@ -74,6 +76,12 @@ internal sealed class IdentitySettings
 
     public required IReadOnlySet<string> BlockedCountries { get; init; }
 
+    /// <summary>For signed-in users who haven't chosen. Visitors always get System (FR-PREF-03).</summary>
+    public required Theme DefaultTheme { get; init; }
+
+    /// <summary>For visitors, and for signed-in users who haven't chosen.</summary>
+    public required AnimationLevel DefaultAnimation { get; init; }
+
     /// <exception cref="InvalidOperationException">A setting is invalid. The message names it.</exception>
     public static IdentitySettings Read(IConfiguration configuration)
     {
@@ -106,6 +114,8 @@ internal sealed class IdentitySettings
             EmailEnabled = emailEnabled,
             PublicOrigin = ReadPublicOrigin(configuration, emailEnabled),
             BlockedCountries = ReadBlockedCountries(configuration),
+            DefaultTheme = ReadName(configuration, DefaultThemeKey, Theme.System),
+            DefaultAnimation = ReadName(configuration, DefaultAnimationKey, AnimationLevel.System),
         };
     }
 
@@ -164,6 +174,27 @@ internal sealed class IdentitySettings
         }
 
         return [.. codes];
+    }
+
+    /// <summary>
+    /// An exact name only. Enum.TryParse would also take a number, which could name nothing, and a list
+    /// such as "Light, Dark".
+    /// </summary>
+    private static T ReadName<T>(IConfiguration configuration, string key, T fallback)
+        where T : struct, Enum
+    {
+        var value = configuration[key];
+
+        if (value is null)
+        {
+            return fallback;
+        }
+
+        var names = Enum.GetNames<T>();
+
+        Require(names.Contains(value, StringComparer.Ordinal), $"{key} must be one of {string.Join(", ", names)}.");
+
+        return Enum.Parse<T>(value);
     }
 
     private static void Require(bool condition, string message)
