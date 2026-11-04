@@ -1,6 +1,7 @@
 using System.Reflection;
 using Ecnanib.Components.Account;
 using Ecnanib.Components.Credentials;
+using Ecnanib.Modules.Catalog.Contracts;
 using Ecnanib.Modules.Credentials.Contracts;
 using Ecnanib.Modules.Identity.Contracts;
 
@@ -18,6 +19,19 @@ public sealed class CredentialTextTests
         Assert.All(statuses.Concat(problems), text => Assert.False(string.IsNullOrWhiteSpace(text)));
         Assert.Equal(statuses.Count, statuses.Distinct().Count());
         Assert.Equal(problems.Count, problems.Distinct().Count());
+    }
+
+    [Fact]
+    public void Every_outcome_of_a_users_sync_has_text_of_its_own()
+    {
+        var outcomes = Enum.GetValues<UserSyncOutcome>().Select(outcome => CredentialText.SyncResultOf(new UserSyncResult(outcome))).ToList();
+        var partly = CredentialText.SyncResultOf(new UserSyncResult(UserSyncOutcome.Synced, Keys: 3, KeysFailed: 1, Models: 12));
+
+        Assert.All(outcomes, text => Assert.False(string.IsNullOrWhiteSpace(text)));
+        Assert.Equal(outcomes.Count, outcomes.Distinct().Count());
+        Assert.Equal(
+            "Models synced: 12 available to your keys. The provider didn't answer for 1 of them, so those keep the models they had.",
+            partly);
     }
 
     [Fact]

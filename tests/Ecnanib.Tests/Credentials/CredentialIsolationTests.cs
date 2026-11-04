@@ -34,6 +34,8 @@ public sealed class CredentialIsolationTests(PostgresFixture postgres)
         Assert.False(await app.Credentials.DeleteAsync(stranger, ai.Id, Cancellation));
         Assert.False(await app.Credentials.DeleteAsync(stranger, binance.Id, Cancellation));
         await Assert.ThrowsAsync<CredentialUnusableException>(() => app.Keys.OpenAiKeyAsync(stranger, ai.Id, Cancellation));
+        await Assert.ThrowsAsync<CredentialUnusableException>(() => app.Keys.OpenAiKeyToListModelsAsync(stranger, ai.Id, Cancellation));
+        Assert.Empty(await app.Keys.ListAiAsync(stranger, Cancellation));
         await Assert.ThrowsAsync<CredentialUnusableException>(() => app.Keys.OpenExchangeKeyAsync(stranger, binance.Id, Market.Spot, Cancellation));
 
         Assert.Equal(before, await app.Credentials.ListAsync(owner, Cancellation));

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.AiAdapters.Contracts;
 
@@ -23,11 +24,23 @@ internal sealed class XaiAdapter : IAiProviderAdapter
         var models = document.RootElement.Required("models").EnumerateArray()
             .Where(model => !model.TryGetProperty("output_modalities", out _)
                 || model.Strings("output_modalities").Contains("text", StringComparer.Ordinal))
-            .Select(model => new AiModel(model.String("id")!, CreatedAt: model.UnixSeconds("created")))
+            .Select(model => new AiModel(model.String("id")!, CreatedAt: model.UnixSeconds("created"))
+            {
+                Capabilities = new AiCapabilities(ImageInput: ImageInput(model)),
+            })
             .ToList();
 
         return new AiModelPage(models);
     }
+
+    /// <remarks>
+    /// The list also has prices, but xAI doesn't document their unit, so the catalog takes prices from the
+    /// configuration instead (FR-CAT-06).
+    /// </remarks>
+    private static bool? ImageInput(JsonElement model) =>
+        model.TryGetProperty("input_modalities", out var modalities) && modalities.ValueKind == JsonValueKind.Array
+            ? model.Strings("input_modalities").Contains("image", StringComparer.Ordinal)
+            : null;
 
     public HttpRequestMessage Complete(SecretValue apiKey, AiRequest request) => ResponsesFormat.Complete(apiKey, request, Dialect);
 

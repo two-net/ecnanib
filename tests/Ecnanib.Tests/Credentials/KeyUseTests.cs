@@ -63,8 +63,57 @@ public sealed class KeyUseTests(PostgresFixture postgres)
         var unverified = (await app.AddAiAsync(userId)).Credential!;
 
         var refused = await Assert.ThrowsAsync<CredentialUnusableException>(() => app.Keys.OpenAiKeyAsync(userId, unverified.Id, Cancellation));
+        var refusedToList = await Assert.ThrowsAsync<CredentialUnusableException>(
+            () => app.Keys.OpenAiKeyToListModelsAsync(userId, unverified.Id, Cancellation));
 
         Assert.Equal((CredentialStatus.Unverified, CredentialUnusableReason.NotValid), (unverified.Status, refused.Reason));
+        Assert.Equal(CredentialUnusableReason.NotValid, refusedToList.Reason);
+    }
+
+    /// <summary>Listing a key's models for the catalog isn't a use, as validating isn't (FR-KEY-03, FR-CAT-02).</summary>
+    [Fact]
+    public async Task Opening_a_key_to_list_its_models_leaves_its_last_use_alone()
+    {
+        await using var app = new CredentialApp(postgres);
+        app.AiAccepts();
+        var userId = Guid.NewGuid();
+        var added = (await app.AddAiAsync(userId)).Credential!;
+
+        var key = await app.Keys.OpenAiKeyToListModelsAsync(userId, added.Id, Cancellation);
+
+        using (key.ApiKey)
+        {
+            Assert.Equal((CredentialApp.Provider, added.Id, CredentialApp.AiKey), (key.Provider, key.CredentialId, key.ApiKey.Reveal()));
+        }
+
+        Assert.Null((await app.Credentials.FindAsync(userId, added.Id, Cancellation))!.LastUsedAt);
+
+        (await app.Keys.OpenAiKeyAsync(userId, added.Id, Cancellation)).ApiKey.Dispose();
+
+        Assert.NotNull((await app.Credentials.FindAsync(userId, added.Id, Cancellation))!.LastUsedAt);
+    }
+
+    /// <summary>The catalog syncs from every user's AI keys (FR-CAT-02), whatever their status, and never Binance's.</summary>
+    [Fact]
+    public async Task AI_keys_are_listed_with_their_status_for_one_user_or_for_everyone()
+    {
+        await using var app = new CredentialApp(postgres);
+        app.BinanceAccepts();
+        var userId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
+        var unverified = (await app.AddAiAsync(userId)).Credential!;
+        app.AiAccepts();
+        var valid = (await app.AddAiAsync(userId, CredentialApp.OtherAiKey, provider: "Second")).Credential!;
+        var others = (await app.AddAiAsync(otherId)).Credential!;
+        await app.AddBinanceAsync(userId);
+
+        Assert.Equal(
+            [
+                new AiCredential(unverified.Id, userId, CredentialApp.Provider, CredentialStatus.Unverified),
+                new AiCredential(valid.Id, userId, "Second", CredentialStatus.Valid),
+            ],
+            await app.Keys.ListAiAsync(userId, Cancellation));
+        Assert.Equal([unverified.Id, valid.Id, others.Id], (await app.Keys.ListAllAiAsync(Cancellation)).Select(key => key.Id));
     }
 
     [Fact]

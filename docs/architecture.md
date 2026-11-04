@@ -59,8 +59,8 @@ Some needs run in both directions, and a reference can't solve that. Separating 
 | Pair | Need | Direction |
 |---|---|---|
 | Agents, Execution | Stop, kill switch, open-exposure checks (FR-AGT-03, FR-AGT-07, FR-AGT-08, FR-AGT-13, EXT-BIN-07) | Port declared by Agents, implemented by Execution |
-| Credentials, Agents | Pause agents on credential failure or deletion (FR-KEY-10, FR-KEY-11) | Event from Credentials |
-| Credentials, Catalog | Sync when a credential is added or rotated (FR-CAT-03) | Event from Credentials |
+| Credentials, Agents | Pause agents on credential failure or deletion (FR-KEY-10, FR-KEY-11) | Event from Credentials, `ICredentialObserver` |
+| Credentials, Catalog | Sync when a credential is added or rotated (FR-CAT-03) | Event from Credentials, `ICredentialObserver`. See [Triggers](#triggers) |
 | Catalog, Agents | Model deprecation and retirement (FR-CAT-04) | Event from Catalog |
 | DecisionCycle, Experience | Attribution, metrics and reflections (FR-EXP-01, FR-EXP-02, FR-EXP-04) | Event from DecisionCycle, plus a reflection port it declares |
 | Execution, Experience | Review after a trade closes (FR-EXP-04) | Trade-closed event from Execution |
@@ -246,16 +246,16 @@ There are two ways in, and one way through. Every run gets its own correlation I
 - **Any other work:** call `IJobRunner.RunAsync`, which makes one recorded run now. It never throws for a job's failure, so a discarded task is safe. It's for work a recurring job can't express, such as a run for one credential.
 
 ```csharp
-internal sealed class CatalogSyncJob(ICatalogSync sync) : IRecurringJob
+internal sealed class CatalogSyncJob(CatalogSync sync, CatalogSettings settings) : IRecurringJob
 {
     public string Name => "catalog-sync";
 
-    public JobSchedule Schedule { get; } = JobSchedule.Every(TimeSpan.FromHours(12));
+    public JobSchedule Schedule { get; } = JobSchedule.Every(settings.SyncInterval);
 
-    public TimeSpan Timeout { get; } = TimeSpan.FromMinutes(30);
+    public TimeSpan Timeout => CatalogSync.FullTimeout;
 
-    public async Task RunAsync(JobContext context, CancellationToken cancellationToken) =>
-        context.Details = $"{await sync.RunAsync(cancellationToken)} models";
+    public Task RunAsync(JobContext context, CancellationToken cancellationToken) =>
+        sync.SyncEveryoneAsync(CatalogSyncTrigger.Schedule, context, cancellationToken);
 }
 ```
 
@@ -616,7 +616,7 @@ The algo endpoint's own page couldn't be read, so its parameters come from Binan
 
 | Contract | What | Who uses it |
 |---|---|---|
-| `IAiProviders` | The providers that have an adapter, and the models a key can use | Credentials to validate a key, Catalog (#21) to sync |
+| `IAiProviders` | The providers that have an adapter, and the models a key can use | Credentials to validate a key, Catalog to sync |
 | `IAiCompletions` | Calling a model | **AiCouncil only**, because it spends the user's money (FR-CYC-07). The map lets three units use the adapters, so `BannedApis` enforces this |
 | `IAiProviderAdapter` | One provider's request, answer and error formats | Each adapter implements it. It's public so that tests can add a provider. It never sends anything, so another unit that used it still couldn't reach the network |
 
@@ -647,7 +647,9 @@ Each adapter speaks its provider's current API, as its docs stood in November 20
 - **Images are PNG or JPEG**, because xAI documents no others, and `AiImage` refuses the rest. The model's own earlier turns are text only, because no provider takes an image from the model.
 - **Nothing is stored at a provider.** OpenAI and xAI keep a response for 30 days unless the request says `store: false`, and every request does.
 - **No thinking, temperature or sampling settings are sent**, so each model uses its own defaults. Several current models refuse them. A reasoning model's thinking counts towards `MaxOutputTokens` everywhere but xAI, so a tight limit can stop it before it writes.
-- **Model lists leave out what doesn't write text.** Where the provider describes a model, the adapter goes by that: Gemini's `supportedGenerationMethods` and xAI's `output_modalities`. Otherwise it goes by name. That covers OpenAI's embedding, speech, Whisper, image, moderation, realtime, audio, transcription and Sora models, and Gemini's TTS, image, live and audio ones. A new family that doesn't write text will be listed until it's added, and an administrator can hide it (FR-CAT-05).
+- **A model's details are whatever its provider says, and null otherwise.** Anthropic's list has a `line`, which is the family, and `capabilities`, from which the adapter reads `image_input`, `structured_outputs`, `server_tools.web_search` and `effort`. An epoch `created_at` means Anthropic doesn't know the date. Gemini's has `thinking`, which means the model takes a thinking level. xAI's has `input_modalities`. OpenAI's has nothing beyond the ID. `AdapterJson.OptionalBool` keeps a missing field null rather than false, and the catalog fills the gaps from the configuration ([Metadata](#metadata)).
+- **xAI's list has prices too, which aren't read**, because xAI doesn't document their unit. They come from the configuration until it's confirmed.
+- **Model lists leave out what doesn't write text.** Where the provider describes a model, the adapter goes by that: Gemini's `supportedGenerationMethods` and xAI's `output_modalities`. Otherwise it goes by name. That covers OpenAI's embedding, speech, Whisper, image, moderation, realtime, audio, transcription and Sora models, and Gemini's TTS, image, live and audio ones. A new family that doesn't write text will be listed until it's added, and an administrator can hide it (FR-CAT-05). OpenAI's fine-tunes are left out too: an `ft:` ID belongs to one account and names its organisation, so it mustn't reach a catalog every user sees (NFR-SEC-04). A key that can use nothing but fine-tunes is therefore `NoModels`.
 - **An answer is the model's final text.** For Anthropic, that's the text after the last search or thinking block, which drops a sentence written before a search. For the Responses API, it's the last message item. For Gemini, it leaves out thought parts.
 - **Truncated or refused.** These are truncated: Anthropic's `max_tokens` and `pause_turn`, Gemini's `MAX_TOKENS` and `CONTINUATION`, and an `incomplete` response. These are refused: Anthropic's `refusal`; Gemini's safety, recitation and blocklist reasons, and a blocked prompt; a `refusal` part; and `content_filter`.
 - **Gemini's `generateContent` is legacy** beside Google's newer Interactions API, but it's fully supported. Moving to Interactions would only take a new `GoogleAdapter`.
@@ -1068,7 +1070,8 @@ Hashes are PHC strings with their own parameters, so these can be raised later. 
 | Contract | What | Who uses it |
 |---|---|---|
 | `ICredentials` | Listing, adding, labelling, checking, replacing and deleting a user's keys. Nothing it returns holds a secret | The Web UI |
-| `ICredentialKeys` | A valid key, decrypted for one use, refused on a market Binance didn't enable for it | Catalog, AiCouncil and Execution only, which `BannedApis` enforces |
+| `ICredentialKeys` | A valid key, decrypted for one use, refused on a market Binance didn't enable for it. Also every AI credential of one user, or of everyone, as IDs and statuses | Catalog, AiCouncil and Execution only, which `BannedApis` enforces |
+| `ICredentialObserver` | Told after a change to a credential commits: added, rotated, checked with an answer, or deleted, with the status before and after. It must return at once | Catalog, and Agents (#23) |
 
 `credentials` has one row per key. The API key, and for Binance the secret, are rows in [`secrets`](#secrets), and the row keeps only their IDs, so listing never decrypts anything (FR-KEY-03). It shows the API key's last four characters, never the secret's. Every query filters on the user, so another user's credential behaves like one that doesn't exist (NFR-SEC-04). There's no foreign key to `users` or `secrets`, as for notifications and two-factor: #51 deletes through Identity's port.
 
@@ -1123,7 +1126,11 @@ A check claims the credential with one conditional `UPDATE` of `checked_at`, so 
 
 ### Using a key
 
-`ICredentialKeys.OpenAiKeyAsync` and `OpenExchangeKeyAsync` return a key only for the user's own `Valid` credential, and a Binance key only for a market it's enabled for, which is FR-KEY-05's last rule. They reveal its secrets through `ISecretStore` at that moment, and the caller disposes them (FR-KEY-09). Each use moves `last_used_at`, at most once a minute, with a conditional `UPDATE`, so a busy key doesn't write on every call. Validating isn't a use.
+`ICredentialKeys.OpenAiKeyAsync` and `OpenExchangeKeyAsync` return a key only for the user's own `Valid` credential, and a Binance key only for a market it's enabled for, which is FR-KEY-05's last rule. They reveal its secrets through `ISecretStore` at that moment, and the caller disposes them (FR-KEY-09). Each use moves `last_used_at`, at most once a minute, with a conditional `UPDATE`, so a busy key doesn't write on every call. Validating isn't a use, and neither is listing a key's models for the catalog, which `OpenAiKeyToListModelsAsync` does with the same checks and no stamp. Otherwise every key would look used each sync.
+
+`ListAiAsync` takes a user, and `ListAllAiAsync` lists everyone's. They're two methods so that no null can widen a user's query to everyone (NFR-SEC-04).
+
+Credentials tells `ICredentialObserver`s after each change commits, never before, so an observer can't hear of one that rolled back. A refused key, and a check that couldn't reach the provider, change nothing and raise nothing. An observer that throws is logged, and neither undoes the change nor stops the others.
 
 ### Configuration
 
@@ -1132,6 +1139,89 @@ A check claims the credential with one conditional `UPDATE` of `checked_at`, so 
 ### Logging
 
 Outcomes are logged under the user's and the credential's IDs, with the provider, status and problem, at Information: a refused key is something a user did, not a fault. The adapters log each call. Nothing logs a key, a secret, a label or the last four characters, and `CredentialLoggingTests` checks the logs and the audit trail with canary keys through the real pages.
+
+## Model catalog
+
+`Modules/Catalog` holds the models users' keys can use (FR-CAT-01), merged from every user's valid AI keys, with which key can use which model (FR-CAT-02). The platform has no keys of its own (CON-11), and what a key can use depends on its account, so asking with users' keys is the only way to know.
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `ICatalog` | The models, with the configuration's metadata applied, and what a user's keys can use | The Web UI now. Role assignments (#24), the catalog page (#26) and the council (#31) later |
+| `ICatalogSync` | A user's sync of their own keys (FR-CAT-03) | The Web UI |
+| `ICatalogAdministration` | A sync of every user's keys | **Administration only**, which `BannedApis` enforces, because it doesn't check who's asking. #26 adds the entry that does |
+
+### Tables
+
+| Table | What |
+|---|---|
+| `models` | One row per provider and model ID, with what providers reported: name, family, release date, context window, maximum output, the five capabilities as nullable booleans, status, and first and last seen |
+| `model_availability` | One row per key and model: whether the key could use it at its last sync, and when that sync began asking. It holds `user_id`, so a user's rows are found without asking Credentials |
+| `catalog_sync_runs` | One row per provider per run (FR-CAT-08): trigger, start and end, the keys asked, the keys that failed, models added and updated, and errors. Deprecated and retired are 0 until #25 |
+
+- **A model's key is its provider and ID**, so a role assignment (#24) can name one as the SRS does. `models.provider` has a foreign key to `providers`, which is inside the module, so the seeder now seeds from `IAiProviders.All` and a test provider gets its row too.
+- **There's no foreign key to `credentials` or `users`.** A sync removes a deleted key's rows, and account deletion (#51) removes a user's by `user_id`.
+- **`errors` holds `{credentialId, failure, statusCode}` and nothing else**, for the reason `job_runs.details` holds no exception text: a provider's message can quote a request, and administrators will read this table. The run's `correlation_id` finds its log events.
+- **A run's row is inserted before anything is asked**, and closed in the transaction that writes its results, so its counts always match what changed. A row with no `finished_at` was cut short, and its `job_runs` row says how.
+
+### Metadata
+
+Providers report different things ([The four providers](#the-four-providers)), and `Catalog:Overrides` fills the rest (FR-CAT-06, ASM-04). **Configured metadata isn't stored.** `ICatalog` applies it field by field as it reads, so a setting beats the provider, takes effect with a restart (CFG-04), and leaves "updated" meaning what a provider changed. Administrators' overrides (#26) will be a third layer above both.
+
+- **An override names one exact model**, because a prefix such as `gpt-5` would also match `gpt-5-mini` and give it the wrong price. A `*` is refused rather than ignored, and so is a field the section doesn't have, because a misspelt price would otherwise set nothing without a word.
+- **Prices are decimal US dollars per million tokens**, as `ModelPrice`. It matches the adapters' `AiModelPrice`, but it's Catalog's own, because the Web UI can't use AiAdapters.
+- **A null capability means nobody said.** OpenAI reports none, so every OpenAI model is null for all five until the configuration sets them.
+
+### Syncing
+
+Every trigger runs one pipeline over a set of keys. Each enabled provider runs on its own, so a slow one can't hold up another's write:
+
+1. **Insert the provider's run row.**
+2. **Fetch each key's list, with no lock or transaction held**, four keys at a time.
+   - Open the key with `ICredentialKeys.OpenAiKeyToListModelsAsync`, which doesn't count as a use, and dispose its secret after.
+   - A key gets 3 minutes, retries and pages included, so a provider that hangs costs each key that much rather than holding the run until its timeout.
+   - A key ends with its models, a failure (the `AiException`'s category and status, or `Other` for anything else), or as unusable (`CredentialUnusableException`). One key's failure never reaches another (NFR-REL-05).
+3. **Write, in one transaction, under an in-process lock** (ASM-06):
+   - **Read the keys again**, inside the lock, and record availability only for keys still `Valid`, so a key deleted or invalidated while its list was fetched doesn't get its rows back. The observer's clean-up takes the same lock.
+   - **Merge** every list. Each field takes the first non-null value, in credential-ID order, and a null never overwrites a stored value.
+   - **Newer results win.** `checked_at` is when a sync began asking, and a key whose stored `checked_at` is later than this fetch's start is left alone, however late this one writes.
+   - **A key that listed** has its models available and its others not. **An unusable key's** rows are deleted when it's gone, and marked unavailable when it isn't valid. **A key that failed keeps what it had**, as Credentials keeps a key's status in an outage.
+   - **A sync of everyone's keys also tidies:** rows of a key that's gone are deleted, and those of a key that isn't valid are marked unavailable. That's the recovery path for lost events, which [Inversions](#inversions) requires.
+   - **Close the run row.**
+4. **Notify administrators**, after a scheduled or administrator's run, when the provider had keys and every one failed on the provider's side: a timeout, an overload, or `Other` that isn't a 4XX, which covers a server error and an answer the adapter can't read. A refused key, a rate limit or a key with no money left is one user's problem, so it never alerts anybody. The notice links to `/admin/catalog`, which #26 adds.
+
+Shutdown stops the fetching, through `context.Stopping`, because an AI call is safe to abandon and nothing is written until the end. The write takes the run's own token, so results already fetched aren't dropped just because shutdown began.
+
+### Triggers
+
+| Trigger | Job | Keys | Timeout |
+|---|---|---|---|
+| `Schedule`, every `Catalog:SyncIntervalHours` | `catalog-sync` | Everyone's, then a tidy | 30 minutes |
+| `Administrator`, through `ICatalogAdministration.SyncAllAsync`, which doesn't wait | `catalog-sync-all` | Everyone's, then a tidy | 30 minutes |
+| `Credential`, through `ICredentialObserver` | `catalog-sync-credential` | One | 5 minutes |
+| `User`, through `ICatalogSync.SyncUserAsync`, which waits so the page can say how it went | `catalog-sync-user` | The user's | 5 minutes |
+
+- **Only the schedule runs as `catalog-sync`**, so nothing on demand moves it ([Schedules](#schedules)).
+- **The schedule and an administrator never overlap.** The run takes the guard itself, with `Wait(0)`, and records `Already running` when it's held. `SyncAllAsync` reads the guard only to choose its answer, so a run the runner refuses (`NotStarted`) can't leave it held. Other runs may overlap one, because the write lock and newer-wins keep them apart.
+- **A user syncs at most once a minute**, held in memory, because hub traffic never reaches the rate limiter ([Circuits](#circuits)). A user with no valid key is told so without using up the minute.
+- **The observer acts only when the catalog changes:**
+
+  | Change | Action |
+  |---|---|
+  | Added or rotated, and `Valid` | Sync the key |
+  | Checked, and `Valid` when it wasn't | Sync the key |
+  | Checked, and not `Valid` when it was, or rotated to a key that isn't `Valid` | Mark its rows unavailable |
+  | Deleted | Delete its rows |
+  | Anything else, such as a check that leaves a key valid | Nothing. The check has just listed the models to validate the key, so they aren't listed again |
+
+  It starts a job and returns, so the request that changed the key doesn't wait. A job is lost with the process, and the schedule's tidy recovers it.
+
+### Logging
+
+One Information event per provider run, with its counts, and a Warning for each failed key, with its credential ID, provider and failure. Nothing logs a key, and `AiTransport` already logs each attempt. `CatalogLoggingTests` checks the logs, `catalog_sync_runs` and `job_runs` with canary keys through every kind of sync.
+
+### The page
+
+`/credentials` shows how many models each AI key can use and when they were synced, and a **Sync models** button when the user has a valid AI key. The button waits for the sync, and says how it went in the page's status notice. The catalog itself has no page yet: that's #26.
 
 ## Web UI
 
@@ -1263,6 +1353,8 @@ API keys were checked with Playwright in Chromium and WebKit, in Development ove
 - No horizontal scroll on `/credentials` and `/credentials/add` at 375, 768 and 1280px in both themes, nor on a key's page and `/account/activity` at 375 and 1280px. No `Error` in the log, and no console errors beyond the negotiation noise below
 - Not checked: real keys against Binance or a provider, including whether Binance's Demo servers answer `apiRestrictions`
 
+The model catalog's additions to `/credentials`, the **Sync models** button and each AI key's models, haven't been checked in a browser. `CredentialPageTests` covers what they render, but not their layout at 375, 768 and 1280px.
+
 Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Signing out does the same, more loudly in WebKit: it closes the session's connections, including that tab's, so the tab tries to reconnect while it's leaving. The reconnect modal wasn't open on a single frame in either browser. None of these is a fault in the application.
 
 The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
@@ -1284,7 +1376,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Audit search (FR-ADM-06):** add a search to `IAuditTrail` and a page through Administration, which may use Platform. Show actor IDs and correlation IDs there, which `IAccountActivity` leaves out. Index whatever it filters on.
 - **Raising notifications (FR-NTF-01):** raise each through `INotifications`, with `Add` on the context that makes the change it's about, so both commit together. Link to the page it's about, and set `Demo` for a Demo agent. See [Notifications](#notifications). Who raises what, by what `ModuleMap.cs` allows:
   - Credentials (#23): `CredentialInvalid`, alongside pausing the agents (FR-KEY-11)
-  - Catalog (#21): `CatalogSyncFailed`, through `RaiseForAdministratorsAsync`
+  - Catalog: `CatalogSyncFailed` is raised already. See [Syncing](#syncing)
   - Agents (#25): `ModelDeprecated` and `ModelRetired` (FR-CAT-04)
   - Agents (#23, #27): `AgentPausedLossLimit`, when it acts on the Risk Engine's result (FR-RISK-08)
   - DecisionCycle (#31): `AgentPausedErrors`
@@ -1295,7 +1387,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
   - Execution: `ExchangeRateLimitBan` is raised already, by `ExchangeBanNotifier`. See [Bans](#bans)
 - **Live updates (#41):** push a new notification to the menu's count and an open list. Today they only change on navigation.
 - **Retention (#50):** the SRS sets no period for `notifications`, so decide one, and purge in batches by `created_at`. With email on, the email job adds a `job_runs` row a minute, about 1,440 a day, plus a `send-email` row per message.
-- **AI adapters (#19):** implement `IAiProviderAdapter` for each provider and register it in `AddAiAdapters`. Add its section to `appsettings.json` with the official base URL, and to the test settings in `AppFactory`, because every adapter needs its section. Switch `ProviderSeeder` from its fixed list to `IAiProviders.All`, so that a new provider needs no change there (NFR-MNT-02). Put the key in a header, never the URI: Gemini's is `x-goog-api-key`. Count reasoning and thinking tokens as output. Set `Refused` for each provider's refusal, such as Anthropic's `refusal` stop reason, OpenAI's `refusal` content, and Gemini's blocked prompt or `SAFETY` finish, and set `Truncated` at the output limit. Use `ReadError` where the status misleads, such as for OpenAI's `insufficient_quota`, which is a 429 that waiting won't fix, so map it to `Other`. See [AI adapters](#ai-adapters).
+- **AI adapters (#19):** implement `IAiProviderAdapter` for each provider and register it in `AddAiAdapters`. Add its section to `appsettings.json` with the official base URL, and to the test settings in `AppFactory`, because every adapter needs its section. Put the key in a header, never the URI: Gemini's is `x-goog-api-key`. Count reasoning and thinking tokens as output. Set `Refused` for each provider's refusal, such as Anthropic's `refusal` stop reason, OpenAI's `refusal` content, and Gemini's blocked prompt or `SAFETY` finish, and set `Truncated` at the output limit. Use `ReadError` where the status misleads, such as for OpenAI's `insufficient_quota`, which is a 429 that waiting won't fix, so map it to `Other`. See [AI adapters](#ai-adapters).
 - **System health (#49):** show `IMasterKeyRotation` for FR-ADM-04's credential re-encryption progress.
 - **Account deletion (#51):** delete a user's secrets through the modules that own them, in the transaction that deletes the rows that refer to them. Nothing else can find them. That includes the TOTP key in `totp_authenticators.secret_id`: the row cascades with the user, but the secret doesn't.
 - **Data export (#51):** include the user's preferences from `IPreferences.GetAsync`, and their email choices from `IPreferences.GetEmailNotificationsAsync` (FR-DATA-03). Deleting the account deletes their row through its foreign key.
@@ -1304,7 +1396,11 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Market Data (#22):** persist `ExchangeSymbol` from `IExchangeMarketData.GetExchangeInfoAsync`, which refreshes itself. Candles and prices are normal priority.
 - **Order execution (#34):** derive client order IDs that match `^[.A-Z:/a-z0-9_-]{1,36}$` (FR-EXE-04). Use `RequestPriority.Protective` for stops, closes and their queries. On `MayHaveExecuted`, query with `IExchangeAccount.GetOrderAsync` before sending again: only null allows it. Persist `SettlesAt` with the order, and don't send it again before then, even after a restart, which the adapter's memory doesn't survive. Check the Futures algo order parameters against Demo first, and add Spot OCO if it's wanted.
 - **System health (#49):** show `IExchangeUsage.Current()` for FR-ADM-04's exchange usage and bans, at `/admin/health`, which ban notifications already link to.
-- **Catalog sync (#21):** sync on adding and rotating a key through an event Credentials declares in its `Contracts`, as [Inversions](#inversions) says, raised after the save commits. A sync can be lost with the process, so the schedule is its recovery path. Open each key with `ICredentialKeys.OpenAiKeyAsync`, which refuses one that isn't `Valid`, and dispose it after. Record availability by credential ID.
+- **Pausing agents (#23):** subscribe to `ICredentialObserver`, which tells you about every add, rotation, check that got an answer and deletion, with the status before and after. Register it in `AddAgents`, and start a job and return, as `CatalogCredentialObserver` does. The revalidation schedule is the recovery path.
+- **Role assignments (#24):** choose models from `ICatalog.ListAsync`, and check access through `ICatalog.ListAccessAsync` for the user's keys (FR-ROLE-02, FR-AGT-05). Refer to a model by provider and model ID, which is the key of `models`. A null capability means nobody said, and every OpenAI model is null until the configuration says otherwise, so decide whether null counts, or nothing from OpenAI will be assignable.
+- **Deprecation (#25):** count a model missing only after a `Schedule` or `Administrator` run in which every key that had it succeeded. A failed key keeps its rows, so an outage can't deprecate anything. Fill `models_deprecated` and `models_retired`, add `Catalog:RetireAfterMissingDays` from SRS 7.3, and raise the event from Catalog that [Inversions](#inversions) names. Anthropic's list also has `lifecycle`, `deprecated_at` and `retires_at`, which the adapter doesn't read yet.
+- **The catalog page and administration (#26):** add an Administration contract that checks `IAdministrators.IsAdministratorAsync`, audits the action (FR-AUD-01 lists administrators' actions), and calls `ICatalogAdministration.SyncAllAsync`. Build `/admin/catalog`, which `CatalogSyncFailed` already links to, with the runs in `catalog_sync_runs`. Store administrators' overrides as a layer above `Catalog:Overrides`, applied where `Catalog` applies the configuration, so they persist across syncs (FR-CAT-05). Hidden is a status, which syncs don't change.
+- **The AI council and costs (#31, #32):** pass `CatalogModel.Price` as `AiRequest.Price`, as an `AiModelPrice`. A model with no price has no cost, so budgets need their token caps for it.
 - **Revalidation and pausing (#23):** FR-KEY-11's schedule needs a path in Credentials that a job can call for any user's key, reusing `AiValidator` and `BinanceValidator`. Treat an unreachable provider as no change, as checks on demand do, so an outage never pauses agents. Pause on `Invalid` and `InsufficientPermissions`, and on a market the key lost. FR-KEY-10 needs `ICredentials.DeleteAsync` to tell the caller which agents use the key, or a confirmation step before it. Add `Security:CredentialRevalidationHours` from SRS 7.3.
 - **Activation (#23, #39):** FR-AGT-05 needs a `Valid` credential for the agent's environment, with `SpotEnabled` or `FuturesEnabled` true for its market, from `ICredentials.FindAsync`. Futures still needs EXT-BIN-07's checks (#33).
 - **The AI council and execution (#31, #34, #35):** open a key with `ICredentialKeys` for each use, never cache it, and dispose its secrets after. `CredentialUnusableException` means the credential changed since the agent was activated: treat it as a paused agent's cause, not a provider failure, and don't retry it. `BannedApis` lets only Catalog, AiCouncil and Execution use `ICredentialKeys`, and only Credentials build a key.
@@ -1313,7 +1409,9 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Data isolation (#55):** `CredentialIsolationTests` covers every Credentials call. Add the three pages to the HTTP suite.
 - **Role defaults (#24):** check `RoleDefaults` against `IAiProviders.All`, and key assignments on `AiRole` from `Kernel`.
 - **The AI council (#31, #32):** call models through `IAiCompletions`, which only AiCouncil may use. Pass the catalog's price as `AiRequest.Price`. Record `Usage`, `Cost` and `Attempts` from the `AiResponse`, or from the `AiException` when the call fails, because a failed call can still have been billed. Keep `ProviderMessage` in the trace only. On an `AiException`, the retries are spent, so move to the role's fallback model (FR-ROLE-06).
-- **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
+- **Retention (#50):** the SRS sets no period for `catalog_sync_runs`, which gets a row per provider per scheduled run, plus one per key change and user sync.
+- **Account deletion (#51):** delete the user's `model_availability` rows by `user_id`. `catalog_sync_runs.errors` holds credential IDs, and nothing else about anybody.
+- **xAI prices:** confirm the unit of the prices in xAI's model list with `LiveProviderTests`, then read them into `AiModel`, below the configuration's.
 - **Risk Engine (#27):** see rule 4.
 - **Decision cycles (#30, #31):** call `ICorrelationContext.Begin()` around each cycle, and set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope. Decide between one `job_runs` row per tick and one per cycle, which costs about 19,000 rows a day at 200 agents on 15m. `RunAsync` stays pending while hung work keeps its place, so a concurrency limit must bound its wait.
 - **Order execution (#34):** pass `cancellationToken`, not `Stopping`, to exchange calls. Persist the intent before sending, or a cut send can't be recovered (FR-EXE-05, FR-EXE-08). Once an order is placed, save with a deadline of its own, or the end of the drain window could cancel the write.
@@ -1321,7 +1419,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment` and `AiRole` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync` and `ICatalogAdministration` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 

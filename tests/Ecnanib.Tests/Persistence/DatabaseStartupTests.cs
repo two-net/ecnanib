@@ -25,6 +25,23 @@ public sealed class DatabaseStartupTests(PostgresFixture postgres)
             await Sql.ColumnAsync(database, ProviderNames, Cancellation));
     }
 
+    /// <summary>NFR-MNT-02: a provider is its adapter, so one that only an adapter names still gets its row.</summary>
+    [Fact]
+    public async Task Every_provider_with_an_adapter_is_seeded()
+    {
+        var database = postgres.NewConnectionString();
+        await using var app = new AppFactory(
+            database,
+            services => Ai.AiHarness.Use(services, new Ai.FakeAiProvider(), new Ai.TestAdapter("Test")),
+            Ai.AiHarness.Settings());
+
+        app.Start();
+
+        Assert.Equal(
+            ["Anthropic", "Google", "OpenAI", "Test", "xAI"],
+            await Sql.ColumnAsync(database, ProviderNames, Cancellation));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

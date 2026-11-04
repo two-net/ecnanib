@@ -17,12 +17,33 @@ public interface ICredentialKeys
     /// <exception cref="CredentialUnusableException">It isn't this user's AI credential, or it isn't valid.</exception>
     Task<AiKey> OpenAiKeyAsync(Guid userId, Guid credentialId, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The same key as <see cref="OpenAiKeyAsync"/>, for listing its models only (FR-CAT-02). Listing isn't a
+    /// use, as validating isn't, so it leaves the last use alone. Otherwise every key would look used each sync.
+    /// </summary>
+    /// <exception cref="CredentialUnusableException">It isn't this user's AI credential, or it isn't valid.</exception>
+    Task<AiKey> OpenAiKeyToListModelsAsync(Guid userId, Guid credentialId, CancellationToken cancellationToken);
+
+    /// <summary>The user's AI credentials, whatever their status, oldest first.</summary>
+    Task<IReadOnlyList<AiCredential>> ListAiAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Every user's AI credentials, whatever their status. The catalog syncs from all of them and merges the
+    /// results (FR-CAT-02). It's a method of its own, rather than a null user, so that no slip widens a
+    /// user's query to everyone (NFR-SEC-04).
+    /// </summary>
+    Task<IReadOnlyList<AiCredential>> ListAllAiAsync(CancellationToken cancellationToken);
+
     /// <summary>A Binance key for one market, which it must be enabled for (FR-KEY-05).</summary>
     /// <exception cref="CredentialUnusableException">
     /// It isn't this user's Binance credential, it isn't valid, or it isn't enabled for <paramref name="market"/>.
     /// </exception>
     Task<ExchangeKey> OpenExchangeKeyAsync(Guid userId, Guid credentialId, Market market, CancellationToken cancellationToken);
 }
+
+/// <summary>An AI credential, as IDs and a status. It holds no secret and no label.</summary>
+/// <param name="Provider">The AI provider's name, such as <c>OpenAI</c>.</param>
+public sealed record AiCredential(Guid Id, Guid UserId, string Provider, CredentialStatus Status);
 
 public enum CredentialUnusableReason
 {

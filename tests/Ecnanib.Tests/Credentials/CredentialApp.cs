@@ -7,13 +7,15 @@ using Ecnanib.Tests.Exchange;
 using Ecnanib.Tests.Identity;
 using Ecnanib.Tests.Persistence;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Ecnanib.Tests.Credentials;
 
 /// <summary>
 /// The application with its own database and clock, a <see cref="FakeBinance"/>, and a
 /// <see cref="FakeAiProvider"/> behind an AI provider named Test. The adapters keep limits and credential
-/// slots in memory, so each test gets its own.
+/// slots in memory, so each test gets its own. Credential observers are removed unless a test asks for them,
+/// because the catalog's would list a key's models again after each change, and these tests count requests.
 /// </summary>
 internal sealed class CredentialApp : IAsyncDisposable
 {
@@ -33,16 +35,27 @@ internal sealed class CredentialApp : IAsyncDisposable
     /// <summary>The account in <see cref="BinanceSamples.SpotAccount"/>.</summary>
     public const long Uid = 354937868;
 
-    public CredentialApp(PostgresFixture postgres, Dictionary<string, string?>? settings = null)
+    public CredentialApp(
+        PostgresFixture postgres,
+        Dictionary<string, string?>? settings = null,
+        bool observers = false,
+        Action<IServiceCollection>? services = null)
     {
         Binance = new FakeBinance(Clock);
         App = AccountApp.Create(
             postgres,
             Settings(settings),
-            services =>
+            collection =>
             {
-                ExchangeHarness.Use(services, Binance, Clock);
-                AiHarness.Use(services, Ai, new TestAdapter(Provider), new TestAdapter("Second"));
+                ExchangeHarness.Use(collection, Binance, Clock);
+                AiHarness.Use(collection, Ai, new TestAdapter(Provider), new TestAdapter("Second"));
+
+                if (!observers)
+                {
+                    collection.RemoveAll<ICredentialObserver>();
+                }
+
+                services?.Invoke(collection);
             });
         App.Start();
     }

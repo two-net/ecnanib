@@ -1171,6 +1171,29 @@
   <data name="CredentialsDeletedNotice" xml:space="preserve">
     <value>Key deleted.</value>
   </data>
+  <data name="CredentialsSyncModels" xml:space="preserve">
+    <value>Sync models</value>
+  </data>
+  <data name="CredentialsSyncingModels" xml:space="preserve">
+    <value>Syncing models…</value>
+  </data>
+  <data name="CredentialsSynced" xml:space="preserve">
+    <value>Models synced: {0} available to your keys.</value>
+    <comment>{0} is how many models the user's keys can use between them.</comment>
+  </data>
+  <data name="CredentialsSyncedPartly" xml:space="preserve">
+    <value>Models synced: {0} available to your keys. The provider didn't answer for {1} of them, so those keep the models they had.</value>
+    <comment>{0} is how many models the user's keys can use between them. {1} is how many keys failed.</comment>
+  </data>
+  <data name="CredentialsSyncNoKeys" xml:space="preserve">
+    <value>None of your AI keys is valid, so there are no models to sync.</value>
+  </data>
+  <data name="CredentialsSyncTooSoon" xml:space="preserve">
+    <value>Your models were synced less than a minute ago. Try again shortly.</value>
+  </data>
+  <data name="CredentialsSyncFailed" xml:space="preserve">
+    <value>The sync didn't finish. Try again in a few minutes.</value>
+  </data>
   <data name="CredentialsBackLink" xml:space="preserve">
     <value>Back to API keys</value>
   </data>
@@ -1210,6 +1233,16 @@
   </data>
   <data name="CredentialFieldUsed" xml:space="preserve">
     <value>Last used</value>
+  </data>
+  <data name="CredentialFieldModels" xml:space="preserve">
+    <value>Models</value>
+  </data>
+  <data name="CredentialModelsSynced" xml:space="preserve">
+    <value>{0} available, synced {1}</value>
+    <comment>{0} is how many models the key can use. {1} is when they were synced, already in the user's time zone.</comment>
+  </data>
+  <data name="CredentialModelsNever" xml:space="preserve">
+    <value>Not synced yet</value>
   </data>
   <data name="CredentialEnding" xml:space="preserve">
     <value>…{0}</value>

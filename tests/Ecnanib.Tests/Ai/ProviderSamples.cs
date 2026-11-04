@@ -75,8 +75,12 @@ internal static class ProviderSamples
         public static string Models(string? next, params string[] ids) => $$"""
             {"data":[{{string.Join(',', ids.Select(id => $$"""
                 {"type":"model","id":{{Quote(id)}},"display_name":"Claude {{id}}","created_at":"2026-05-14T00:00:00Z",
-                 "max_input_tokens":1000000,"max_tokens":128000,
-                 "capabilities":{"image_input":{"supported":true},"structured_outputs":{"supported":true} } }
+                 "max_input_tokens":1000000,"max_tokens":128000,"line":"opus","lifecycle":"active","deprecated_at":null,"retires_at":null,
+                 "capabilities":{"batch":{"supported":true},"image_input":{"supported":true},"pdf_input":{"supported":true},
+                   "structured_outputs":{"supported":true},
+                   "effort":{"supported":true,"low":{"supported":true},"medium":{"supported":true},"high":{"supported":true},"max":{"supported":true},"xhigh":null},
+                   "server_tools":{"supported":true,"web_search":{"supported":false},"code_execution":{"supported":true} },
+                   "thinking":{"supported":true,"types":{"adaptive":{"supported":true},"enabled":{"supported":false} } } } }
                 """))}}],
              "has_more":{{(next is null ? "false" : "true")}},"first_id":{{Quote(ids.FirstOrDefault() ?? "")}},"last_id":{{(next is null ? "null" : Quote(next))}}}
             """;

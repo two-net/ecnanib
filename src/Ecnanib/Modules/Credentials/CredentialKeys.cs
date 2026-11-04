@@ -19,17 +19,29 @@ internal sealed class CredentialKeys(
     /// <summary>How stale <c>last_used_at</c> may get, so that a busy key doesn't write on every call.</summary>
     public static readonly TimeSpan LastUseResolution = TimeSpan.FromMinutes(1);
 
-    public async Task<AiKey> OpenAiKeyAsync(Guid userId, Guid credentialId, CancellationToken cancellationToken)
-    {
-        var row = await UsableAsync(userId, credentialId, CredentialKind.Ai, cancellationToken);
-        var apiKey = await secrets.RevealAsync(row.ApiKeyId, cancellationToken);
+    public Task<AiKey> OpenAiKeyAsync(Guid userId, Guid credentialId, CancellationToken cancellationToken) =>
+        OpenAiKeyAsync(userId, credentialId, use: true, cancellationToken);
 
-        return new AiKey(row.Provider, row.Id, apiKey);
+    public Task<AiKey> OpenAiKeyToListModelsAsync(Guid userId, Guid credentialId, CancellationToken cancellationToken) =>
+        OpenAiKeyAsync(userId, credentialId, use: false, cancellationToken);
+
+    public async Task<IReadOnlyList<AiCredential>> ListAiAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        return await AiCredentials(AiRows(context).Where(row => row.UserId == userId)).ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AiCredential>> ListAllAiAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        return await AiCredentials(AiRows(context)).ToListAsync(cancellationToken);
     }
 
     public async Task<ExchangeKey> OpenExchangeKeyAsync(Guid userId, Guid credentialId, Market market, CancellationToken cancellationToken)
     {
-        var row = await UsableAsync(userId, credentialId, CredentialKind.Exchange, cancellationToken);
+        var row = await UsableAsync(userId, credentialId, CredentialKind.Exchange, use: true, cancellationToken);
         var enabled = market == Market.Spot ? row.SpotEnabled : row.FuturesEnabled;
 
         if (enabled != true)
@@ -58,8 +70,26 @@ internal sealed class CredentialKeys(
         }
     }
 
-    /// <summary>The credential, once it's known to be usable, after stamping its last use.</summary>
-    private async Task<Credential> UsableAsync(Guid userId, Guid credentialId, CredentialKind kind, CancellationToken cancellationToken)
+    private static IQueryable<Credential> AiRows(EcnanibDbContext context) =>
+        context.Set<Credential>().AsNoTracking().Where(row => row.Kind == CredentialKind.Ai);
+
+    /// <summary>IDs only, oldest first, so that callers go through them in a fixed order.</summary>
+    private static IQueryable<AiCredential> AiCredentials(IQueryable<Credential> rows) =>
+        rows
+            .OrderBy(row => row.CreatedAt)
+            .ThenBy(row => row.Id)
+            .Select(row => new AiCredential(row.Id, row.UserId, row.Provider, row.Status));
+
+    private async Task<AiKey> OpenAiKeyAsync(Guid userId, Guid credentialId, bool use, CancellationToken cancellationToken)
+    {
+        var row = await UsableAsync(userId, credentialId, CredentialKind.Ai, use, cancellationToken);
+        var apiKey = await secrets.RevealAsync(row.ApiKeyId, cancellationToken);
+
+        return new AiKey(row.Provider, row.Id, apiKey);
+    }
+
+    /// <summary>The credential, once it's known to be usable, after stamping its last use when <paramref name="use"/> is true.</summary>
+    private async Task<Credential> UsableAsync(Guid userId, Guid credentialId, CredentialKind kind, bool use, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
@@ -71,6 +101,11 @@ internal sealed class CredentialKeys(
         if (row.Status != CredentialStatus.Valid)
         {
             throw new CredentialUnusableException(credentialId, CredentialUnusableReason.NotValid);
+        }
+
+        if (!use)
+        {
+            return row;
         }
 
         var now = time.GetUtcNow();

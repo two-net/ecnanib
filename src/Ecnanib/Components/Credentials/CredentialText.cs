@@ -1,5 +1,6 @@
 using System.Globalization;
 using Ecnanib.Kernel;
+using Ecnanib.Modules.Catalog.Contracts;
 using Ecnanib.Modules.Credentials.Contracts;
 
 namespace Ecnanib.Components.Credentials;
@@ -17,6 +18,25 @@ public static class CredentialText
         CredentialStatus.InsufficientPermissions => Strings.CredentialStatusInsufficientPermissions,
         CredentialStatus.Unverified => Strings.CredentialStatusUnverified,
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Give the status its text in Strings.resx."),
+    };
+
+    /// <summary>An AI key's models, as its card shows them.</summary>
+    public static string ModelsOf(DisplayTime time, CredentialModels? models) =>
+        models is { } synced
+            ? string.Format(CultureInfo.CurrentCulture, Strings.CredentialModelsSynced, synced.Available, time.Format(synced.SyncedAt))
+            : Strings.CredentialModelsNever;
+
+    /// <summary>What a user's sync of their keys did (FR-CAT-03).</summary>
+    public static string SyncResultOf(UserSyncResult result) => result.Outcome switch
+    {
+        UserSyncOutcome.Synced when result.KeysFailed == 0 =>
+            string.Format(CultureInfo.CurrentCulture, Strings.CredentialsSynced, result.Models),
+        UserSyncOutcome.Synced =>
+            string.Format(CultureInfo.CurrentCulture, Strings.CredentialsSyncedPartly, result.Models, result.KeysFailed),
+        UserSyncOutcome.NoKeys => Strings.CredentialsSyncNoKeys,
+        UserSyncOutcome.TooSoon => Strings.CredentialsSyncTooSoon,
+        UserSyncOutcome.Failed => Strings.CredentialsSyncFailed,
+        _ => throw new ArgumentOutOfRangeException(nameof(result), result.Outcome, "Give the outcome its text in Strings.resx."),
     };
 
     public static string ProblemOf(CredentialProblem problem) => problem switch

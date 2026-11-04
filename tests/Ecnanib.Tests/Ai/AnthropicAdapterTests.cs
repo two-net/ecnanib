@@ -73,6 +73,30 @@ public sealed class AnthropicAdapterTests
         Assert.Null(Adapter.ReadModels(Bytes(Anthropic.Models(null, "claude-opus-5"))).NextPageToken);
     }
 
+    /// <summary>FR-CAT-01: what the model can do, as Anthropic lists it, with false kept apart from not said.</summary>
+    [Fact]
+    public void A_model_s_line_and_capabilities_are_read_from_the_list()
+    {
+        var model = Adapter.ReadModels(Bytes(Anthropic.Models(null, "claude-opus-5"))).Models.Single();
+
+        Assert.Equal("opus", model.Family);
+        Assert.Equal(new AiCapabilities(ImageInput: true, StructuredOutput: true, LiveSearch: false, ReasoningEffort: true), model.Capabilities);
+    }
+
+    /// <summary>Anthropic sends the epoch for a release date it doesn't know, and an older answer has no capabilities.</summary>
+    [Fact]
+    public void An_unknown_release_date_and_missing_capabilities_stay_unknown()
+    {
+        var model = Adapter.ReadModels(Bytes("""
+            {"data":[{"type":"model","id":"claude-old","display_name":"Claude Old","created_at":"1970-01-01T00:00:00Z"}],
+             "has_more":false,"first_id":"claude-old","last_id":"claude-old"}
+            """)).Models.Single();
+
+        Assert.Null(model.CreatedAt);
+        Assert.Null(model.Family);
+        Assert.Equal(AiCapabilities.Unknown, model.Capabilities);
+    }
+
     [Fact]
     public void An_answer_is_its_text_without_the_thinking()
     {

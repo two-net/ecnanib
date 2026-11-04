@@ -90,6 +90,19 @@ public sealed class GoogleAdapterTests
         Assert.Equal(("Gemini gemini-3-pro", 1_048_576, 65_536), (model.DisplayName, model.ContextWindow, model.MaxOutputTokens));
     }
 
+    /// <summary>FR-CAT-01: a model that thinks takes a thinking level, and one that doesn't say stays unknown.</summary>
+    [Fact]
+    public void A_model_that_thinks_has_reasoning_effort_control()
+    {
+        var thinking = Adapter.ReadModels(Bytes(Google.Models(null, "gemini-3-pro"))).Models.Single();
+        var silent = Adapter.ReadModels(Bytes("""
+            {"models":[{"name":"models/gemini-old","displayName":"Gemini Old","supportedGenerationMethods":["generateContent"]}]}
+            """)).Models.Single();
+
+        Assert.Equal(new AiCapabilities(ReasoningEffort: true), thinking.Capabilities);
+        Assert.Equal(AiCapabilities.Unknown, silent.Capabilities);
+    }
+
     [Fact]
     public void A_key_with_no_models_gets_an_empty_list()
     {

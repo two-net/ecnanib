@@ -84,6 +84,19 @@ public sealed class OpenAiAdapterTests
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1790000000), page.Models[0].CreatedAt);
     }
 
+    /// <summary>
+    /// A fine-tune belongs to one account, and its ID names the organisation, so it never reaches the catalog
+    /// every user sees (NFR-SEC-04).
+    /// </summary>
+    [Fact]
+    public void Fine_tuned_models_are_left_out_of_the_list()
+    {
+        var page = Adapter.ReadModels(Bytes(OpenAi.Models("gpt-6-luna", "ft:gpt-6-luna:acme-trading::Ab12Cd34", "ft:gpt-6-luna:acme-trading:ckpt:step-100")));
+
+        Assert.Equal(["gpt-6-luna"], page.Models.Select(model => model.Id));
+        Assert.Equal(AiCapabilities.Unknown, page.Models[0].Capabilities);
+    }
+
     [Fact]
     public void An_answer_is_the_last_messages_text_and_reasoning_is_already_in_the_output()
     {

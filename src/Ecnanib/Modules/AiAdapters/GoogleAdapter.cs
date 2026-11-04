@@ -50,7 +50,11 @@ internal sealed class GoogleAdapter : IAiProviderAdapter
                 entry.Id,
                 entry.Model.String("displayName"),
                 ContextWindow: entry.Model.Int("inputTokenLimit"),
-                MaxOutputTokens: entry.Model.Int("outputTokenLimit")))
+                MaxOutputTokens: entry.Model.Int("outputTokenLimit"))
+            {
+                // A model that thinks takes a thinking level or budget.
+                Capabilities = new AiCapabilities(ReasoningEffort: entry.Model.OptionalBool("thinking")),
+            })
             .ToList();
 
         return new AiModelPage(models, root.String("nextPageToken"));

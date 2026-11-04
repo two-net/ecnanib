@@ -25,6 +25,12 @@ internal sealed class OpenAiAdapter : IAiProviderAdapter
     private static readonly string[] OutOfMoney =
         ["insufficient_quota", "credit_balance_exhausted", "organization_spend_limit_exceeded", "project_spend_limit_exceeded", "organization_usage_limit_exceeded"];
 
+    /// <summary>
+    /// A fine-tuned model belongs to one account, and its ID names the organisation, so it stays out of the
+    /// list, and out of the catalog every user sees (NFR-SEC-04).
+    /// </summary>
+    private const string FineTunePrefix = "ft:";
+
     public string Name => "OpenAI";
 
     /// <summary>The whole list, which OpenAI doesn't page.</summary>
@@ -37,6 +43,7 @@ internal sealed class OpenAiAdapter : IAiProviderAdapter
         var models = document.RootElement.Required("data").EnumerateArray()
             .Select(model => new AiModel(model.String("id")!, CreatedAt: model.UnixSeconds("created")))
             .Where(model => !NonTextModels.Any(family => model.Id.Contains(family, StringComparison.OrdinalIgnoreCase)))
+            .Where(model => !model.Id.StartsWith(FineTunePrefix, StringComparison.Ordinal))
             .ToList();
 
         return new AiModelPage(models);

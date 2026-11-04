@@ -22,6 +22,7 @@ internal sealed class Credentials(
     BinanceValidator binanceValidator,
     CredentialSettings settings,
     TimeProvider time,
+    IEnumerable<ICredentialObserver> observers,
     ILogger<Credentials> logger) : ICredentials
 {
     /// <summary>The shortest gap between two checks of one credential on demand.</summary>
@@ -247,10 +248,12 @@ internal sealed class Credentials(
             return new ValidationResult(ValidationOutcome.Unreachable, row.ToRecord());
         }
 
+        int updated;
+
         await using (var transaction = await context.Database.BeginTransactionAsync(cancellationToken))
         {
             // Only while the key checked is still the credential's: a rotation meanwhile has its own result.
-            var updated = await context.Set<Credential>()
+            updated = await context.Set<Credential>()
                 .Where(current => current.Id == row.Id && current.UserId == userId && current.ApiKeyId == row.ApiKeyId)
                 .ExecuteUpdateAsync(
                     setters => setters
@@ -275,6 +278,11 @@ internal sealed class Credentials(
         logger.LogInformation(
             "Validated credential {CredentialId} for user {UserId}: {Provider} {Status} {Problem}",
             row.Id, userId, row.Provider, verdict.Status, verdict.Problem);
+
+        if (updated == 1)
+        {
+            Notify(row, CredentialChangeKind.Validated, verdict.Status, row.Status);
+        }
 
         var current = await FindRowAsync(context, userId, id, cancellationToken);
 
@@ -310,6 +318,8 @@ internal sealed class Credentials(
         await transaction.CommitAsync(cancellationToken);
 
         logger.LogInformation("Deleted credential {CredentialId} for user {UserId}: {Provider}", row.Id, userId, row.Provider);
+
+        Notify(row, CredentialChangeKind.Deleted, status: null, row.Status);
 
         return true;
     }
@@ -386,6 +396,8 @@ internal sealed class Credentials(
             "Added credential {CredentialId} for user {UserId}: {Provider} {Environment} {Status} {Problem}",
             row.Id, userId, provider, environment, row.Status, row.Problem);
 
+        Notify(row, CredentialChangeKind.Added, row.Status, previous: null);
+
         return new SaveResult(SaveOutcome.Saved, row.ToRecord());
     }
 
@@ -450,9 +462,33 @@ internal sealed class Credentials(
         logger.LogInformation(
             "Rotated credential {CredentialId} for user {UserId}: {Provider} {Status} {Problem}", row.Id, row.UserId, row.Provider, status, verdict.Problem);
 
+        Notify(row, CredentialChangeKind.Rotated, status, row.Status);
+
         var current = await FindRowAsync(context, row.UserId, row.Id, cancellationToken);
 
         return current is null ? new SaveResult(SaveOutcome.Changed) : new SaveResult(SaveOutcome.Saved, current.ToRecord());
+    }
+
+    /// <summary>
+    /// Called once the change has committed, so an observer never hears of one that rolled back. Observers
+    /// must return at once and never throw, but one that does can't undo a committed change, or stop the others.
+    /// </summary>
+    private void Notify(Credential row, CredentialChangeKind change, CredentialStatus? status, CredentialStatus? previous)
+    {
+        var notice = new CredentialChange(row.UserId, row.Id, row.Kind, row.Provider, change, status, previous);
+
+        foreach (var observer in observers)
+        {
+            try
+            {
+                observer.OnChanged(notice);
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(
+                    exception, "Telling {Observer} that credential {CredentialId} was {Change} failed", observer.GetType().Name, row.Id, change);
+            }
+        }
     }
 
     private async Task RemoveSecretsAsync(EcnanibDbContext context, Credential row, CancellationToken cancellationToken)

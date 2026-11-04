@@ -22,6 +22,183 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Ecnanib.Modules.Catalog.CatalogSyncRun", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CorrelationId")
+                        .HasColumnType("text")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<string>("Errors")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("errors");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<int>("Keys")
+                        .HasColumnType("integer")
+                        .HasColumnName("keys");
+
+                    b.Property<int>("KeysFailed")
+                        .HasColumnType("integer")
+                        .HasColumnName("keys_failed");
+
+                    b.Property<int>("ModelsAdded")
+                        .HasColumnType("integer")
+                        .HasColumnName("models_added");
+
+                    b.Property<int>("ModelsDeprecated")
+                        .HasColumnType("integer")
+                        .HasColumnName("models_deprecated");
+
+                    b.Property<int>("ModelsRetired")
+                        .HasColumnType("integer")
+                        .HasColumnName("models_retired");
+
+                    b.Property<int>("ModelsUpdated")
+                        .HasColumnType("integer")
+                        .HasColumnName("models_updated");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("provider");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("trigger");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_sync_runs");
+
+                    b.HasIndex("Provider", "StartedAt")
+                        .HasDatabaseName("ix_catalog_sync_runs_provider_started_at");
+
+                    b.ToTable("catalog_sync_runs", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Catalog.Model", b =>
+                {
+                    b.Property<string>("Provider")
+                        .HasColumnType("text")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ModelId")
+                        .HasColumnType("text")
+                        .HasColumnName("model_id");
+
+                    b.Property<int?>("ContextWindow")
+                        .HasColumnType("integer")
+                        .HasColumnName("context_window");
+
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("text")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("Family")
+                        .HasColumnType("text")
+                        .HasColumnName("family");
+
+                    b.Property<DateTimeOffset>("FirstSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_seen_at");
+
+                    b.Property<bool?>("ImageInput")
+                        .HasColumnType("boolean")
+                        .HasColumnName("image_input");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<bool?>("LiveSearch")
+                        .HasColumnType("boolean")
+                        .HasColumnName("live_search");
+
+                    b.Property<int?>("MaxOutputTokens")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_output_tokens");
+
+                    b.Property<bool?>("ReasoningEffort")
+                        .HasColumnType("boolean")
+                        .HasColumnName("reasoning_effort");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<bool?>("StructuredOutput")
+                        .HasColumnType("boolean")
+                        .HasColumnName("structured_output");
+
+                    b.Property<bool?>("ToolUse")
+                        .HasColumnType("boolean")
+                        .HasColumnName("tool_use");
+
+                    b.HasKey("Provider", "ModelId")
+                        .HasName("pk_models");
+
+                    b.ToTable("models", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Catalog.ModelAvailability", b =>
+                {
+                    b.Property<Guid>("CredentialId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credential_id");
+
+                    b.Property<string>("Provider")
+                        .HasColumnType("text")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ModelId")
+                        .HasColumnType("text")
+                        .HasColumnName("model_id");
+
+                    b.Property<bool>("Available")
+                        .HasColumnType("boolean")
+                        .HasColumnName("available");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("CredentialId", "Provider", "ModelId")
+                        .HasName("pk_model_availability");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_model_availability_user_id");
+
+                    b.HasIndex("Provider", "ModelId")
+                        .HasDatabaseName("ix_model_availability_provider_model_id");
+
+                    b.ToTable("model_availability", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Catalog.Provider", b =>
                 {
                     b.Property<string>("Name")
@@ -725,6 +902,26 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasDatabaseName("ix_secrets_key_id");
 
                     b.ToTable("secrets", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Catalog.Model", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Catalog.Provider", null)
+                        .WithMany()
+                        .HasForeignKey("Provider")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_models_providers_provider");
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Catalog.ModelAvailability", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Catalog.Model", null)
+                        .WithMany()
+                        .HasForeignKey("Provider", "ModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_model_availability_models_provider_model_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.Identity.AccountToken", b =>

@@ -50,6 +50,22 @@ public sealed class XaiAdapterTests
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1790000000), page.Models[0].CreatedAt);
     }
 
+    /// <summary>
+    /// FR-CAT-01: image input comes from the input modalities. The list's prices aren't read, because xAI
+    /// doesn't document their unit, so they come from the configuration (FR-CAT-06).
+    /// </summary>
+    [Fact]
+    public void Image_input_is_read_from_the_input_modalities()
+    {
+        var listed = Adapter.ReadModels(Bytes(Xai.Models(("grok-4.7", "text")))).Models.Single();
+        var textOnly = Adapter.ReadModels(Bytes("""
+            {"models":[{"id":"grok-text","input_modalities":["text"],"output_modalities":["text"]},{"id":"grok-quiet"}]}
+            """)).Models;
+
+        Assert.Equal(new AiCapabilities(ImageInput: true), listed.Capabilities);
+        Assert.Equal([false, null], textOnly.Select(model => model.Capabilities.ImageInput));
+    }
+
     /// <summary>xAI's output_tokens leaves out reasoning, which it bills as output all the same.</summary>
     [Fact]
     public void Reasoning_is_added_to_the_output()

@@ -39,9 +39,13 @@ internal sealed class AnthropicAdapter : IAiProviderAdapter
             .Select(model => new AiModel(
                 model.String("id")!,
                 model.String("display_name"),
-                model.Time("created_at"),
+                Released(model),
                 model.Int("max_input_tokens"),
-                model.Int("max_tokens")))
+                model.Int("max_tokens"))
+            {
+                Family = model.String("line"),
+                Capabilities = Capabilities(model.Object("capabilities")),
+            })
             .ToList();
 
         var next = root.Bool("has_more")
@@ -50,6 +54,23 @@ internal sealed class AnthropicAdapter : IAiProviderAdapter
 
         return new AiModelPage(models, next);
     }
+
+    /// <summary>Anthropic sends the epoch when it doesn't know a model's release date.</summary>
+    private static DateTimeOffset? Released(JsonElement model) =>
+        model.Time("created_at") is { } released && released > DateTimeOffset.UnixEpoch ? released : null;
+
+    /// <summary>
+    /// Each capability is <c>{"supported": bool}</c>. Search is one of the server tools, and effort is the
+    /// reasoning effort setting. Tool use isn't listed, so it stays unknown.
+    /// </summary>
+    private static AiCapabilities Capabilities(JsonElement? capabilities) =>
+        capabilities is not { } listed
+            ? AiCapabilities.Unknown
+            : new AiCapabilities(
+                ImageInput: listed.Object("image_input").OptionalBool("supported"),
+                StructuredOutput: listed.Object("structured_outputs").OptionalBool("supported"),
+                LiveSearch: listed.Object("server_tools")?.Object("web_search").OptionalBool("supported"),
+                ReasoningEffort: listed.Object("effort").OptionalBool("supported"));
 
     /// <remarks>
     /// Web search always carries citations, which structured output refuses with a 400. A request that

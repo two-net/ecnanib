@@ -32,6 +32,9 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     private const string KeyOpened =
         "decrypts a user's key for use, which only the modules that call providers with it may do: Catalog, AiCouncil and Execution (FR-KEY-09)";
 
+    private const string CatalogWide =
+        "syncs every user's keys, which only an administrator may ask for, and Administration checks that before it calls (FR-ADM-03)";
+
     private static readonly string[] NoExceptions = [];
     private static readonly string[] Adapters = ["Modules.ExchangeAdapter.", "Modules.AiAdapters."];
     private static readonly string[] Email = ["Platform.Email."];
@@ -43,6 +46,9 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
 
     /// <summary>Credentials, which implements it, and the modules that call providers with a user's key.</summary>
     private static readonly string[] KeyUsers = ["Modules.Credentials.", "Modules.Catalog.", "Modules.AiCouncil.", "Modules.Execution."];
+
+    /// <summary>Catalog, which implements it, and Administration, which checks the caller is an administrator first.</summary>
+    private static readonly string[] CatalogAdministrators = ["Modules.Catalog.", "Modules.Administration."];
 
     /// <summary>The secrets' owners, and Platform, which implements the store. Administration may use Platform, but not this.</summary>
     private static readonly string[] SecretOwners = ["Modules.Identity.", "Modules.Credentials.", "Platform."];
@@ -68,6 +74,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         (".Modules.AiAdapters.Contracts.AiKey::.ctor", KeyBuilt, Credentials),
         (".Modules.ExchangeAdapter.Contracts.ExchangeKey::.ctor", KeyBuilt, Credentials),
         (".Modules.Credentials.Contracts.ICredentialKeys::", KeyOpened, KeyUsers),
+        (".Modules.Catalog.Contracts.ICatalogAdministration::", CatalogWide, CatalogAdministrators),
     ];
 
     private readonly string _prefix = rootNamespace + ".";

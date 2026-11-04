@@ -70,6 +70,17 @@ internal static class AdapterJson
     public static bool Bool(this JsonElement element, string name) =>
         Property(element, name) is { ValueKind: JsonValueKind.True };
 
+    /// <summary>A true or false, or null when it's missing or of another type, so "not said" stays apart from "no".</summary>
+    public static bool? OptionalBool(this JsonElement element, string name) =>
+        Property(element, name) switch
+        {
+            { ValueKind: JsonValueKind.True } => true,
+            { ValueKind: JsonValueKind.False } => false,
+            _ => null,
+        };
+
+    public static bool? OptionalBool(this JsonElement? element, string name) => element?.OptionalBool(name);
+
     /// <summary>The strings in an array, skipping anything else.</summary>
     public static IEnumerable<string> Strings(this JsonElement element, string name) =>
         element.Array(name).Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!);

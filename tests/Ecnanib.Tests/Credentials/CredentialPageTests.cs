@@ -42,6 +42,28 @@ public sealed class CredentialPageTests(PostgresFixture postgres)
         Assert.DoesNotContain(CredentialApp.AiKey[..20], page, StringComparison.Ordinal);
     }
 
+    /// <summary>FR-CAT-02, FR-CAT-03: a new key's models are synced, and the page offers to sync them again.</summary>
+    [Fact]
+    public async Task An_AI_key_shows_how_many_models_it_can_use_and_the_page_offers_a_sync()
+    {
+        await using var app = new CredentialApp(postgres, observers: true);
+        app.Ai.On(System.Net.Http.HttpMethod.Get, CredentialApp.ModelsPath, _ => Ai.FakeAiProvider.Models(null, "model-a", "model-b"));
+        using var visitor = Visitor.To(app.App);
+        await visitor.SignUpAsync();
+        var before = WebUtility.HtmlDecode(await visitor.PageAsync(ListPage));
+
+        (await visitor.SubmitAsync(
+            AddPage, AddAiForm, ("Input.Provider", CredentialApp.Provider), ("Input.Label", "Personal"), ("Input.ApiKey", CredentialApp.AiKey))).Dispose();
+        await Logging.LoggedApp.UntilAsync(async () => await Sql.ScalarAsync<long>(
+            app.ConnectionString, "SELECT count(*) FROM job_runs WHERE job_name = 'catalog-sync-credential' AND finished_at IS NOT NULL", Cancellation) == 1);
+        var page = WebUtility.HtmlDecode(await visitor.PageAsync(ListPage));
+
+        Assert.DoesNotContain("Sync models", before, StringComparison.Ordinal);
+        Assert.Contains("Sync models", page, StringComparison.Ordinal);
+        Assert.Contains(">Models</dt>", page, StringComparison.Ordinal);
+        Assert.Contains("2 available, synced ", page, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_refused_AI_key_is_not_written_back_into_the_page()
     {

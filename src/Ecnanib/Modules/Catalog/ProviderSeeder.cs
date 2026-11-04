@@ -1,17 +1,23 @@
+using Ecnanib.Modules.AiAdapters.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.Modules.Catalog;
 
-internal sealed class ProviderSeeder : IReferenceDataSeeder
+/// <summary>
+/// A row for each provider with an adapter, so adding a provider needs no change here (NFR-MNT-02). Rows are
+/// never removed, because models refer to them.
+/// </summary>
+internal sealed class ProviderSeeder(IAiProviders providers) : IReferenceDataSeeder
 {
-    private static readonly string[] Supported = ["Anthropic", "Google", "OpenAI", "xAI"];
-
     public async Task SeedAsync(EcnanibDbContext context, CancellationToken cancellationToken)
     {
-        var providers = context.Set<Provider>();
-        var existing = await providers.Select(provider => provider.Name).ToListAsync(cancellationToken);
+        var rows = context.Set<Provider>();
+        var existing = await rows.Select(provider => provider.Name).ToListAsync(cancellationToken);
 
-        providers.AddRange(Supported.Except(existing).Select(name => new Provider { Name = name }));
+        rows.AddRange(providers.All
+            .Select(provider => provider.Name)
+            .Except(existing, StringComparer.Ordinal)
+            .Select(name => new Provider { Name = name }));
     }
 }

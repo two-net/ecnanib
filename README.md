@@ -111,7 +111,8 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Email | Optional. MailKit over SMTP with TLS required, sent in the background, for address verification, password reset links and notifications | In place |
 | Notifications | In the app always, listed newest first with an unread count in the menu, and by email for the events each user chooses, batched each minute | In place. Each later feature raises its own |
 | Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys, two-factor keys and users' API keys live in PostgreSQL under the same keys | In place |
-| API keys | Users bring their own keys for Anthropic, Google, OpenAI, xAI, Binance Live and Binance Demo, and the platform has none of its own. Each key is checked with its provider when it's added and on demand, stored encrypted, and never shown again, only its last four characters. Binance keys that can withdraw are refused, and the ones without an IP restriction are flagged | In place. Scheduled re-checks, pausing agents and catalog sync come with agents and the catalog |
+| API keys | Users bring their own keys for Anthropic, Google, OpenAI, xAI, Binance Live and Binance Demo, and the platform has none of its own. Each key is checked with its provider when it's added and on demand, stored encrypted, and never shown again, only its last four characters. Binance keys that can withdraw are refused, and the ones without an IP restriction are flagged | In place. Scheduled re-checks and pausing agents come with agents |
+| Model catalog | Synced from every user's valid AI keys and merged into one list, with which key can use which model. It syncs on a schedule, when a key is added or replaced, and when a user asks. Every run is recorded. Prices and capabilities that providers don't report come from the configuration file | In place. Deprecation and retirement, the catalog page, and administrators' overrides and sync button come later |
 | Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, a before/after summary, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts and API keys. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
@@ -206,6 +207,40 @@ The `AiProviders` section has one entry per AI provider, under the provider's na
 
 Each URL is a server's address only, with no path, and must use https outside Development. `appsettings.json` ships the official servers of the four providers: `Anthropic`, `Google`, `OpenAI` and `xAI`. Nothing is stored at a provider, and keys come only from users' credentials, one call at a time. See [AI adapters](docs/architecture.md#ai-adapters), which also says how to check the adapters against the real APIs with your own keys.
 
+### Model catalog
+
+The catalog lists the models users' keys can use, synced from each provider with the keys themselves, because what a key can use depends on its account. The `Catalog` section sets how often that happens, and fills in what providers don't say about their models. An invalid value stops startup with a message that names it.
+
+| Setting | Meaning |
+|---|---|
+| `SyncIntervalHours` | How often every valid key is synced, 1 to 168. Defaults to `12`. Keys are also synced when they're added or replaced, and when their owner asks |
+| `Overrides` | Metadata for models, one entry each. Defaults to none |
+
+Providers report different things, and none reports everything. Anthropic says which models take images, follow a schema, search the web and take an effort setting. Google says which ones think, and xAI which take images. OpenAI says nothing beyond each model's ID, and no provider gives prices that Ecnanib reads. Whatever's missing stays unknown until an entry in `Overrides` supplies it, so keep it up to date as providers change their models and prices:
+
+| Field | Meaning |
+|---|---|
+| `Provider` | Required. A provider's name, as in `AiProviders`, such as `OpenAI` |
+| `Model` | Required. One model's exact ID, as the provider lists it. There are no wildcards, because a prefix such as `gpt-5` would also match `gpt-5-mini` |
+| `DisplayName`, `Family` | Up to 100 characters each |
+| `ContextWindow`, `MaxOutputTokens` | Tokens, at least 1 |
+| `InputPricePerMillion`, `OutputPricePerMillion` | US dollars per million tokens, such as `2.5`. Set both or neither |
+| `ImageInput`, `StructuredOutput`, `ToolUse`, `LiveSearch`, `ReasoningEffort` | `true` or `false` |
+
+A field that's set beats what the provider reports, and the rest come from the provider. An entry for a model no key has listed does nothing until one does. For example:
+
+```json
+"Catalog": {
+  "SyncIntervalHours": 12,
+  "Overrides": [
+    { "Provider": "OpenAI", "Model": "gpt-6-luna", "InputPricePerMillion": 1.25, "OutputPricePerMillion": 10, "StructuredOutput": true, "ToolUse": true },
+    { "Provider": "Anthropic", "Model": "claude-opus-5", "InputPricePerMillion": 5, "OutputPricePerMillion": 25 }
+  ]
+}
+```
+
+A model with no price has no cost estimate. If every key for a provider fails during a scheduled sync, because the provider is down or answering in a way Ecnanib can't read, administrators are notified. A single user's key that stops working only affects that user. See [Model catalog](docs/architecture.md#model-catalog).
+
 ## Security
 
 Outside Development the application won't start until it knows its public address. It must use `https`:
@@ -270,6 +305,7 @@ Users add their keys on the **API keys** page. Ecnanib checks each one with its 
 - **AI keys** are checked by listing the models the key can use, which costs nothing. A key added while its provider is down is saved as Unverified, and isn't used until a check says it's valid.
 - **Binance keys** need Spot trading, Futures trading or both, and must not be able to withdraw. A Live key that can withdraw is refused and never stored, and so is one Binance couldn't be asked about. One without an IP restriction is saved with a warning that lists `App:EgressIpAddresses`. Binance doesn't document how to read a Demo key's restrictions, so for Demo only the markets are checked. HMAC and Ed25519 keys both work. Replacing a key needs one for the same Binance account.
 - **Adding or replacing a Binance key needs a two-factor code** when the user has two-factor on.
+- **An AI key's models are synced** when it's added or replaced, when a check finds it valid again, on the schedule, and when the user presses **Sync models**, at most once a minute. Each AI key shows how many models it can use. Syncing isn't counted as a use, so **Last used** still means an agent used the key.
 
 Adding, checking, replacing and deleting a key each appear on the user's activity page, with which key it was.
 

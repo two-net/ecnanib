@@ -129,6 +129,11 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     {
         public static Task<object> OpenAsync(Modules.Credentials.Contracts.ICredentialKeys keys) => keys.OpenAsync(Guid.Empty);
     }
+
+    public static class EveryKeySyncedByTheWebUi
+    {
+        public static Task SyncAsync(Modules.Catalog.Contracts.ICatalogAdministration catalog) => catalog.SyncAllAsync();
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Platform.Contracts
@@ -187,6 +192,23 @@ namespace Ecnanib.Tests.Security.Fixtures.Modules.Catalog
     public static class TheCatalog
     {
         public static Task<object> OpenAsync(Credentials.Contracts.ICredentialKeys keys) => keys.OpenAsync(Guid.Empty);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Catalog.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface ICatalogAdministration
+    {
+        Task SyncAllAsync();
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Administration
+{
+    public static class TheAdministrator
+    {
+        public static Task SyncAsync(Catalog.Contracts.ICatalogAdministration catalog) => catalog.SyncAllAsync();
     }
 }
 
