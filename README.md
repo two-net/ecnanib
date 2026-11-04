@@ -157,7 +157,7 @@ The `Logging` section follows [SRS 7.3](SRS.md#73-example-placeholders-only), no
 | Setting | Meaning |
 |---|---|
 | `MinimumLevel` | Required. `Verbose`, `Debug`, `Information`, `Warning`, `Error` or `Fatal` |
-| `Overrides` | Logger name prefix to level, such as `"Microsoft.AspNetCore": "Warning"`. `Http` is the request log, and `Exchange` logs each Binance call |
+| `Overrides` | Logger name prefix to level, such as `"Microsoft.AspNetCore": "Warning"`. `Http` is the request log, `Exchange` logs each Binance call, and `AiCouncil` logs each AI call |
 | `Sinks:Console:Enabled` | Defaults to `true` |
 | `Sinks:File:Enabled` | Defaults to `false` |
 | `Sinks:File:Path` | Required when enabled. Relative paths start at the content root |
@@ -187,6 +187,21 @@ The `Binance` section names the servers the app calls. Users can't supply their 
 | `ExchangeInfoRefreshHours` | How long symbols and their filters are kept before they're fetched again, 1 to 168. Defaults to `24` |
 
 Each URL is a server's address only, with no path, and must use https outside Development. Binance limits request weight per IP address, so every user shares the server's budget. If Binance bans the address from one of its servers, requests to that server stop until the ban ends, and administrators are notified. See [Exchange adapter](docs/architecture.md#exchange-adapter).
+
+### AI providers
+
+The `AiProviders` section has one entry per AI provider, under the provider's name, such as `AiProviders:OpenAI`. Users bring their own keys, but they can't choose the server (NFR-SEC-10). Each provider that has an adapter needs its entry, and an invalid value stops startup with a message that names it. An entry for a name with no adapter is ignored, with a warning.
+
+| Setting | Meaning |
+|---|---|
+| `Enabled` | `true` or `false`. Defaults to `true`. When it's `false`, nothing else in the entry is read, and calls to that provider fail without being sent |
+| `BaseUrl` | Required. The provider's API server, such as `https://api.openai.com` |
+| `TimeoutSeconds` | How long one attempt may take, 1 to 600. Defaults to `120` |
+| `MaxRetries` | Further attempts after a rate limit, overload, timeout, refusal or server error, 0 to 5. Defaults to `2` |
+| `RetryBackoffMs` | The first wait before a retry, which doubles each time, 0 to 60000. Defaults to `1000`. A provider's own `Retry-After` takes its place |
+| `MaxConcurrentPerCredential` | How many calls one user key may have in flight at once, 1 to 32. Defaults to `4` |
+
+Each URL is a server's address only, with no path, and must use https outside Development. See [AI adapters](docs/architecture.md#ai-adapters).
 
 ## Security
 

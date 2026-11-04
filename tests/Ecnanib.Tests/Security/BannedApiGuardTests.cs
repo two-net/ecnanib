@@ -31,6 +31,7 @@ public sealed class BannedApiGuardTests
     [InlineData("FrameworkSmtpClientInEmail", "no longer recommends")]
     [InlineData("OrdersOutsideExecution", "places or cancels orders")]
     [InlineData("OrdersCancelledOutsideExecution", "places or cancels orders")]
+    [InlineData("CompletionsOutsideCouncil", "spends their money")]
     public void A_banned_use_is_found(string fixture, string risk) =>
         Assert.Contains(Uses, use => use.Source.Contains(fixture, StringComparison.Ordinal) && use.Risk.Contains(risk, StringComparison.Ordinal));
 
@@ -41,6 +42,7 @@ public sealed class BannedApiGuardTests
     [InlineData("TheEmailJob")]
     [InlineData("TheEmailSender")]
     [InlineData("TheExecutor")]
+    [InlineData("TheCouncil")]
     public void An_allowed_use_passes(string fixture) =>
         Assert.DoesNotContain(Uses, use => use.Source.Contains(fixture, StringComparison.Ordinal));
 }

@@ -150,7 +150,7 @@ using (logger.BeginScope(new Dictionary<string, object?> { [LogProperties.AgentI
 }
 ```
 
-A category is a logger name, and an override matches it by dotted prefix, so `Microsoft.AspNetCore` covers everything under it. SRS 7.3 names three categories that aren't code namespaces. Create those loggers by name with `ILoggerFactory.CreateLogger`: `Http` and `Exchange` (in use), and `AiCouncil`.
+A category is a logger name, and an override matches it by dotted prefix, so `Microsoft.AspNetCore` covers everything under it. SRS 7.3 names three categories that aren't code namespaces. Create those loggers by name with `ILoggerFactory.CreateLogger`: `Http`, `Exchange` and `AiCouncil`.
 
 ### Masking
 
@@ -602,6 +602,76 @@ The algo endpoint's own page couldn't be read, so its parameters come from Binan
 ### Testing it
 
 `FakeBinance` in `tests/Ecnanib.Tests/Exchange` replaces the named client's handler, and answers each method and path as a test says. `AppFactory` gives every application hosts under `.test`, which never resolve, so no test reaches Binance by accident. `ExchangeHarness` gives each test its own application, clock and fake, because the adapter's state is in memory. `RedirectTests` and `RetryTests` use `LoopbackServer`, a real socket, because redirects and retries happen inside the real handler, which the fake replaces.
+
+## AI adapters
+
+`Modules/AiAdapters` is the only way to Anthropic, Google, OpenAI and xAI (CON-13, EXT-AI-01). It may use `Kernel` only, so keys arrive as `SecretValue`s. Every call goes through `AiTransport`, which waits for a slot on the key's credential, sends to the configured server with a timeout, normalizes the failure, retries, and logs each attempt. An adapter only builds requests and reads answers, so adding a provider takes an adapter and its configuration section, and nothing in the council, risk or execution changes (EXT-AI-05, NFR-MNT-02).
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `IAiProviders` | The providers that have an adapter, and the models a key can use | Credentials (#20) to validate a key, Catalog (#21) to sync |
+| `IAiCompletions` | Calling a model | **AiCouncil only**, because it spends the user's money (FR-CYC-07). The map lets three units use the adapters, so `BannedApis` enforces this |
+| `IAiProviderAdapter` | One provider's request, answer and error formats | Each adapter implements it. It's public so that tests can add a provider. It never sends anything, so another unit that used it still couldn't reach the network |
+
+### Providers and settings
+
+- **A provider is its adapter's `Name`**, such as `OpenAI`. That name is the key for its `AiProviders` section, the catalog's `providers` row and a credential's provider. There's no `AiProvider` enum, because one would break NFR-MNT-02. A name is letters and digits, and two adapters can't share one.
+- **Every adapter needs its section**, or startup stops, naming `AiProviders:<Name>:BaseUrl`. A section with no adapter is only a Warning: a misspelt name leaves the real adapter's section missing, and that stops startup anyway.
+- **Base URLs come only from the section** (NFR-SEC-10), with no defaults in code. A base URL is a server's address and nothing more, over https outside Development. Adapters own their paths, including the API version, and give them as relative URIs. `AiTransport` puts the base URL in front and refuses anything else before it's sent. It reads the path's original string, because on Unix `"/v1/models"` parses as an absolute file URI.
+- **`Enabled: false` skips the rest of the section.** A call to a disabled provider fails as `Other` without being sent, with no attempts.
+- **The named client `AiProviders` follows no redirects**, keeps no cookies, buffers at most 32 MB, and has `RemoveAllLoggers()`, as the [exchange's](#servers) does.
+
+### Keys
+
+An `AiKey` holds the provider, the credential ID and a `SecretValue`, and the caller disposes it. The adapter reveals the key into a header as it builds each attempt's request, and nothing keeps it. Never put it in the URI: Gemini accepts `?key=`, and a URI can reach an exception.
+
+### Failures
+
+`AiFailure` holds EXT-AI-04's categories. The adapter's `ReadError` goes first, so a provider that sends an overload as a 400 can say so. Otherwise the status decides:
+
+| Cause | `Failure` | Retried |
+|---|---|---|
+| 401, 403 | `Authentication` | No |
+| 400, 404, 413, 422 | `InvalidRequest` | No |
+| 429 | `RateLimit` | Yes |
+| 503, 529 | `Overloaded` | Yes |
+| 408, 504, or no answer within `TimeoutSeconds` | `Timeout` | Yes |
+| A 2XX the adapter reads as refused | `Refusal` | Yes |
+| Any other 5XX, or a broken connection | `Other` | Yes |
+| A redirect, which is never followed, any other status, or an answer the adapter can't read | `Other` | No |
+
+- **A refusal is retried**, because FR-ROLE-06 lists it, and its tokens count, because they were billed.
+- **`Other` is retried only for a 5XX or a broken connection.** An adapter that maps something else to `Other`, such as OpenAI's `insufficient_quota`, gets no retry.
+- **The caller cancelling throws `OperationCanceledException`**, which is never retried, and is logged as `Cancelled`.
+- **`AiException.Message` never holds the provider's own message**, which can quote the prompt, and whoever catches the exception may log it. That message is `ProviderMessage`, cut to 500 characters, for the decision trace. The provider's error code is kept only when it's a plain token, such as `rate_limit_error`. An answer the adapter can't read reports the exception's type, not its message, which could quote the answer.
+
+### Retries and backoff
+
+- **Up to `MaxRetries` more attempts.** The wait is the provider's `Retry-After` when it gave one. Otherwise it's `RetryBackoffMs`, doubled each time, with equal jitter, capped at 60 seconds.
+- **A `Retry-After` over 60 seconds isn't waited for.** The exception carries it, and the council's fallback model is a better use of the cycle's deadline (FR-ROLE-06).
+- **`Usage` and `Cost` add up every attempt**, on `AiResponse` and on `AiException`, because each one was billed.
+
+### Concurrency
+
+`MaxConcurrentPerCredential` is a semaphore per provider and credential. A call waits for a slot with the caller's token, holds it for one attempt, and gives it back before any backoff. A gate exists only while something holds or waits for it, so the dictionary doesn't grow with every credential. One credential never waits on another (NFR-REL-05).
+
+### Timeouts and cancellation
+
+Each attempt gets `TimeoutSeconds`, linked to the caller's token, and running out is `Timeout`. Unlike an order, an AI call is safe to abandon, so a job can pass it [`context.Stopping`](#the-two-signals).
+
+### Cost
+
+`AiRequest.Price` is the catalog's price per million tokens, in US dollars. Cost is `decimal` throughout (DATA-R-02), and null without a price. It's an estimate, because providers charge less for cached input and extra for searches. Adapters count reasoning and thinking tokens as output, because that's how providers bill them.
+
+### Logging
+
+- **One event per attempt under `AiCouncil`** (FR-LOG-07), because each attempt is a billed call. It has `Provider`, `Operation`, `Model`, `Role`, `Attempt`, `Outcome`, `StatusCode`, `LatencyMs`, `InputTokens`, `OutputTokens`, `Cost` and `ErrorCode`. `Outcome` is `Success`, an `AiFailure` or `Cancelled`. Success and cancellation are Information, `Other` is an Error, and any other failure is a Warning.
+- **Events carry the caller's scope**, so a cycle's correlation, agent and cycle IDs reach them.
+- **The prompt, the answer, the key and the provider's message are never logged.** `AiRequest`, `AiMessage`, `AiText`, `AiImage`, `AiResponse`, `AiCompletion` and `AiProviderError` override `ToString` to leave them out, so a `{Request}` logged by mistake leaks nothing. `AiLoggingTests` checks with canaries too short for the shape rule. Token counts survive masking through `SecretRules.IsTokenCount`.
+
+### Testing it
+
+`TestAdapter` in `tests/Ecnanib.Tests/Ai` is a provider with a format of its own, and `FakeAiProvider` speaks it. `AiHarness` gives each test its own application with two such providers, because credential slots are in memory. The redirect test runs against `LoopbackServer`, as the exchange's does, because only the real handler follows redirects.
 
 ## Web security
 
@@ -1108,7 +1178,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Live updates (#41):** push a new notification to the menu's count and an open list. Today they only change on navigation.
 - **Retention (#50):** the SRS sets no period for `notifications`, so decide one, and purge in batches by `created_at`. With email on, the email job adds a `job_runs` row a minute, about 1,440 a day, plus a `send-email` row per message.
 - **Credentials' secrets (#20):** store each secret with `ISecretStore.Add` on the context that saves the row that owns it, and keep only its ID. Replacing a secret is `Add` and `RemoveAsync` in one transaction, and so is deleting its owner. Keep secret access separate from credential metadata, so that listing credentials (FR-KEY-03) never decrypts anything. Two-factor added no foreign key to `secrets`, and the boundary tests refuse `HasOne<Secret>()`, so one would have to be written into the migration by hand. See [Secrets](#secrets) and [Two-factor](#two-factor), which does this already.
-- **AI adapters (#18):** take a `SecretValue`, and reveal it at the last moment, when setting a header, as the [exchange adapter](#signing-and-the-clock) does. Never put a revealed key in a log scope, an exception or a field.
+- **AI adapters (#19):** implement `IAiProviderAdapter` for each provider and register it in `AddAiAdapters`. Add its section to `appsettings.json` with the official base URL, and to the test settings in `AppFactory`, because every adapter needs its section. Switch `ProviderSeeder` from its fixed list to `IAiProviders.All`, so that a new provider needs no change there (NFR-MNT-02). Put the key in a header, never the URI: Gemini's is `x-goog-api-key`. Count reasoning and thinking tokens as output. Set `Refused` for each provider's refusal, such as Anthropic's `refusal` stop reason, OpenAI's `refusal` content, and Gemini's blocked prompt or `SAFETY` finish, and set `Truncated` at the output limit. Use `ReadError` where the status misleads, such as for OpenAI's `insufficient_quota`, which is a 429 that waiting won't fix, so map it to `Other`. See [AI adapters](#ai-adapters).
 - **System health (#49):** show `IMasterKeyRotation` for FR-ADM-04's credential re-encryption progress.
 - **Account deletion (#51):** delete a user's secrets through the modules that own them, in the transaction that deletes the rows that refer to them. Nothing else can find them. That includes the TOTP key in `totp_authenticators.secret_id`: the row cascades with the user, but the secret doesn't.
 - **Data export (#51):** include the user's preferences from `IPreferences.GetAsync`, and their email choices from `IPreferences.GetEmailNotificationsAsync` (FR-DATA-03). Deleting the account deletes their row through its foreign key.
@@ -1118,7 +1188,9 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Market Data (#22):** persist `ExchangeSymbol` from `IExchangeMarketData.GetExchangeInfoAsync`, which refreshes itself. Candles and prices are normal priority.
 - **Order execution (#34):** derive client order IDs that match `^[.A-Z:/a-z0-9_-]{1,36}$` (FR-EXE-04). Use `RequestPriority.Protective` for stops, closes and their queries. On `MayHaveExecuted`, query with `IExchangeAccount.GetOrderAsync` before sending again: only null allows it. Persist `SettlesAt` with the order, and don't send it again before then, even after a restart, which the adapter's memory doesn't survive. Check the Futures algo order parameters against Demo first, and add Spot OCO if it's wanted.
 - **System health (#49):** show `IExchangeUsage.Current()` for FR-ADM-04's exchange usage and bans, at `/admin/health`, which ban notifications already link to.
-- **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category. Base URLs and redirects follow the same rule as the exchange adapter.
+- **Credentials (#20):** validate an AI key with `IAiProviders.ListModelsAsync`, where `Authentication` means Invalid. Build an `AiKey` from `ISecretStore.RevealAsync` for each use, and dispose it after.
+- **Role defaults (#24):** check `RoleDefaults` against `IAiProviders.All`, and key assignments on `AiRole` from `Kernel`.
+- **The AI council (#31, #32):** call models through `IAiCompletions`, which only AiCouncil may use. Pass the catalog's price as `AiRequest.Price`. Record `Usage`, `Cost` and `Attempts` from the `AiResponse`, or from the `AiException` when the call fails, because a failed call can still have been billed. Keep `ProviderMessage` in the trace only. On an `AiException`, the retries are spent, so move to the role's fallback model (FR-ROLE-06).
 - **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
 - **Risk Engine (#27):** see rule 4.
 - **Decision cycles (#30, #31):** call `ICorrelationContext.Begin()` around each cycle, and set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope. Decide between one `job_runs` row per tick and one per cycle, which costs about 19,000 rows a day at 200 agents on 15m. `RunAsync` stays pending while hung work keeps its place, so a concurrency limit must bound its wait.
@@ -1127,7 +1199,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market` and `TradingEnvironment` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, the AI contracts in `Modules/AiAdapters/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 

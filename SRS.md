@@ -711,7 +711,7 @@ There are no tenants. Every user is an independent account, and no data is share
 | `Legal` | Blocked countries as ISO 3166-1 alpha-2 codes (NFR-LEG-04) |
 | `Logging` | Minimum level, per-category overrides, sinks (console, rolling file, database) and their options |
 | `Binance` | Live and Demo base URLs per market, market-data URL, receive window, request-weight headroom, exchange-info refresh, reconciliation interval |
-| `AiProviders` | Per provider: enabled, base URL, timeout, retries, concurrency per credential |
+| `AiProviders` | Per provider: enabled, base URL, timeout, retries, retry backoff, concurrency per credential |
 | `Catalog` | Sync interval, retirement grace period, pricing and capability overrides |
 | `RoleDefaults` | Default provider per role |
 | `Agents` | Maximum agents per user, default environment, candle-close delay, maximum concurrent cycles, catch-up grace windows, cycle deadlines, approval windows |
@@ -799,10 +799,10 @@ There are no tenants. Every user is an independent account, and no data is share
     "ReconcileIntervalSeconds": 60
   },
   "AiProviders": {
-    "Anthropic": { "Enabled": true, "BaseUrl": "<API base URL>", "TimeoutSeconds": 120, "MaxRetries": 2, "MaxConcurrentPerCredential": 4 },
-    "Google": { "Enabled": true, "BaseUrl": "<API base URL>", "TimeoutSeconds": 120, "MaxRetries": 2, "MaxConcurrentPerCredential": 4 },
-    "OpenAI": { "Enabled": true, "BaseUrl": "<API base URL>", "TimeoutSeconds": 120, "MaxRetries": 2, "MaxConcurrentPerCredential": 4 },
-    "xAI": { "Enabled": true, "BaseUrl": "<API base URL>", "TimeoutSeconds": 120, "MaxRetries": 2, "MaxConcurrentPerCredential": 4 }
+    "Anthropic": { "Enabled": true, "BaseUrl": "<API base URL>", "TimeoutSeconds": 120, "MaxRetries": 2, "RetryBackoffMs": 1000, "MaxConcurrentPerCredential": 4 },
+    "Google": { "Enabled": true, "BaseUrl": "<API base URL>", "TimeoutSeconds": 120, "MaxRetries": 2, "RetryBackoffMs": 1000, "MaxConcurrentPerCredential": 4 },
+    "OpenAI": { "Enabled": true, "BaseUrl": "<API base URL>", "TimeoutSeconds": 120, "MaxRetries": 2, "RetryBackoffMs": 1000, "MaxConcurrentPerCredential": 4 },
+    "xAI": { "Enabled": true, "BaseUrl": "<API base URL>", "TimeoutSeconds": 120, "MaxRetries": 2, "RetryBackoffMs": 1000, "MaxConcurrentPerCredential": 4 }
   },
   "Catalog": {
     "SyncIntervalHours": 12,

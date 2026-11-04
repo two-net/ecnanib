@@ -109,6 +109,11 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     {
         public static Task CancelAsync(Modules.ExchangeAdapter.Contracts.IExchangeTrading trading) => trading.CancelOrderAsync("BTCUSDT");
     }
+
+    public static class CompletionsOutsideCouncil
+    {
+        public static Task<string> AskAsync(Modules.AiAdapters.Contracts.IAiCompletions completions) => completions.CompleteAsync("a prompt");
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Platform.Contracts
@@ -186,6 +191,23 @@ namespace Ecnanib.Tests.Security.Fixtures.Modules.Execution
     public static class TheExecutor
     {
         public static Task PlaceAsync(ExchangeAdapter.Contracts.IExchangeTrading trading) => trading.PlaceOrderAsync("BTCUSDT");
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.AiAdapters.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface IAiCompletions
+    {
+        Task<string> CompleteAsync(string prompt);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.AiCouncil
+{
+    public static class TheCouncil
+    {
+        public static Task<string> AskAsync(AiAdapters.Contracts.IAiCompletions completions) => completions.CompleteAsync("a prompt");
     }
 }
 
