@@ -1,0 +1,15 @@
+.recovery-codes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: 0.5rem 1.5rem;
+    margin: 0;
+    padding-inline-start: 1.5rem;
+    font-family: var(--font-mono);
+}
+
+.totp-key {
+    font-family: var(--font-mono);
+    font-size: 1.0625rem;
+    letter-spacing: 0.05em;
+    word-spacing: 0.25em;
+}

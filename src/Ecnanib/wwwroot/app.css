@@ -43,6 +43,10 @@
     --caution: light-dark(#9a2a4a, #f2a0b8);
     --rule: light-dark(#c8cbe0, #363a60);
 
+    /* The same in both themes, because some scanners only read dark modules on a light ground. */
+    --qr-light: #ffffff;
+    --qr-dark: #15172b;
+
     --font-display: "Zilla Slab", Rockwell, Georgia, serif;
     --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;

@@ -101,6 +101,23 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("legal_acceptances", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Identity.RecoveryCode", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<byte[]>("CodeHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea")
+                        .HasColumnName("code_hash");
+
+                    b.HasKey("UserId", "CodeHash")
+                        .HasName("pk_recovery_codes");
+
+                    b.ToTable("recovery_codes", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Identity.Session", b =>
                 {
                     b.Property<Guid>("Id")
@@ -141,6 +158,72 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasDatabaseName("ix_sessions_user_id");
 
                     b.ToTable("sessions", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Identity.SignInChallenge", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_sign_in_challenges");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_sign_in_challenges_token_hash");
+
+                    b.ToTable("sign_in_challenges", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Identity.TotpAuthenticator", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset?>("ChecksLockedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checks_locked_until");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("EnabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("enabled_at");
+
+                    b.Property<int>("FailedChecks")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_checks");
+
+                    b.Property<long>("LastUsedStep")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_used_step");
+
+                    b.Property<Guid>("SecretId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("secret_id");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_totp_authenticators");
+
+                    b.ToTable("totp_authenticators", (string)null);
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.Identity.User", b =>
@@ -459,6 +542,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasConstraintName("fk_legal_acceptances_user_user_id");
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Identity.RecoveryCode", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_recovery_codes_user_user_id");
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Identity.Session", b =>
                 {
                     b.HasOne("Ecnanib.Modules.Identity.User", null)
@@ -467,6 +560,26 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_sessions_user_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Identity.SignInChallenge", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_sign_in_challenges_user_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Identity.TotpAuthenticator", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_totp_authenticators_user_user_id");
                 });
 #pragma warning restore 612, 618
         }

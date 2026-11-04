@@ -29,7 +29,8 @@ internal static class AccountTokens
     /// </summary>
     public static readonly TimeSpan EmailThrottle = TimeSpan.FromMinutes(5);
 
-    private const int TokenLength = 32;
+    /// <summary>Random bytes in a token, which sign-in challenges share.</summary>
+    public const int TokenLength = 32;
 
     /// <summary>
     /// A new token, replacing any the account already has for <paramref name="purpose"/>. Null, changing
@@ -143,9 +144,9 @@ internal static class AccountTokens
 
     /// <summary>
     /// Null for anything that isn't a token this could have issued, which costs no query. The length is
-    /// checked first because it comes from the query string, and it sizes a buffer on the stack.
+    /// checked first because it comes from the query string or a cookie, and it sizes a buffer on the stack.
     /// </summary>
-    private static byte[]? HashOf(string? token)
+    public static byte[]? HashOf(string? token)
     {
         if (token is null || token.Length != Base64Url.GetEncodedLength(TokenLength))
         {

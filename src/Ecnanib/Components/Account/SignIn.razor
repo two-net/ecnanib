@@ -21,6 +21,10 @@
     {
         <p class="form-notice" role="status">@Strings.SignInAfterReset</p>
     }
+    else if (CodeExpired == "true")
+    {
+        <p class="form-notice" role="status">@Strings.SignInCodeExpired</p>
+    }
 
     @if (_refused)
     {
@@ -67,22 +71,33 @@
     [SupplyParameterFromQuery]
     private string? PasswordReset { get; set; }
 
+    /// <summary>The two-factor step sends someone back here when their sign-in took too long. A string, for the same reason.</summary>
+    [SupplyParameterFromQuery]
+    private string? CodeExpired { get; set; }
+
     protected override void OnInitialized() => Input ??= new SignInForm();
 
     private async Task SubmitAsync()
     {
         var client = new ClientDetails(HttpContext.Connection.RemoteIpAddress, HttpContext.Request.Headers.UserAgent);
-        var principal = await Accounts.SignInAsync(Input.Email, Input.Password, client, HttpContext.RequestAborted);
+        var result = await Accounts.SignInAsync(Input.Email, Input.Password, client, HttpContext.RequestAborted);
 
-        if (principal is null)
+        switch (result.Outcome)
         {
-            _refused = true;
-            return;
+            case SignInOutcome.SignedIn:
+                await HttpContext.SignInAsync(result.Principal!);
+                Navigation.NavigateTo(LocalUrl.Or(ReturnUrl, "/account"));
+                return;
+
+            case SignInOutcome.CodeRequired:
+                SignInChallengeCookie.Set(HttpContext, result.Challenge!, result.ChallengeExpiresAt!.Value);
+                Navigation.NavigateTo(LocalUrl.WithReturn("/sign-in/two-factor", ReturnUrl));
+                return;
+
+            default:
+                _refused = true;
+                return;
         }
-
-        await HttpContext.SignInAsync(principal);
-
-        Navigation.NavigateTo(LocalUrl.Or(ReturnUrl, "/account"));
     }
 
     private sealed class SignInForm

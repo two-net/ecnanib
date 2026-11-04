@@ -88,7 +88,7 @@ public sealed class PasswordResetTests(SharedEmailApp app) : IClassFixture<Share
 
         (await visitor.ResetPasswordAsync(first, NewPassword)).Dispose();
 
-        Assert.NotNull(await Accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation));
+        Assert.NotNull((await Accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation)).Principal);
     }
 
     /// <summary>A mail scanner that opens the link must not spend it.</summary>
@@ -125,8 +125,8 @@ public sealed class PasswordResetTests(SharedEmailApp app) : IClassFixture<Share
 
         Assert.Equal(HttpStatusCode.Redirect, signedOutHere.StatusCode);
         Assert.Equal(HttpStatusCode.Redirect, signedOutThere.StatusCode);
-        Assert.Null(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
-        Assert.NotNull(await Accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation));
+        Assert.Null((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
+        Assert.NotNull((await Accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation)).Principal);
         Assert.Contains("Your password has been reset", await visitor.PageAsync("/sign-in?passwordReset=true"), StringComparison.Ordinal);
     }
 
@@ -165,15 +165,15 @@ public sealed class PasswordResetTests(SharedEmailApp app) : IClassFixture<Share
 
         for (var attempt = 0; attempt < 5; attempt++)
         {
-            Assert.Null(await Accounts.SignInAsync(email, "a wrong password altogether", Visitor.AnyClient, Cancellation));
+            Assert.Null((await Accounts.SignInAsync(email, "a wrong password altogether", Visitor.AnyClient, Cancellation)).Principal);
         }
 
-        Assert.Null(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
+        Assert.Null((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
 
         using var visitor = Visitor.To(app);
         (await visitor.ResetPasswordAsync(await RequestAsync(email), NewPassword)).Dispose();
 
-        Assert.NotNull(await Accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation));
+        Assert.NotNull((await Accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation)).Principal);
     }
 
     [Fact]
@@ -198,7 +198,7 @@ public sealed class PasswordResetTests(SharedEmailApp app) : IClassFixture<Share
 
         Assert.Contains(Invalid, await visitor.PageAsync(link), StringComparison.Ordinal);
         Assert.Equal(PasswordResetResult.InvalidLink, await Resets.ResetAsync(CapturedEmail.TokenIn(link), NewPassword, Cancellation));
-        Assert.NotNull(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
+        Assert.NotNull((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
     }
 
     /// <summary>A link asked for before the change would otherwise undo it.</summary>
@@ -261,7 +261,7 @@ public sealed class PasswordResetTests(SharedEmailApp app) : IClassFixture<Share
         using var strangerPage = await stranger.GetAsync("/account");
 
         Assert.Equal(HttpStatusCode.Redirect, strangerPage.StatusCode);
-        Assert.Null(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
+        Assert.Null((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
         Assert.True(await AccountRows.IsVerifiedAsync(app.ConnectionString, email, Cancellation));
     }
 
@@ -277,7 +277,7 @@ public sealed class PasswordResetTests(SharedEmailApp app) : IClassFixture<Share
         using var response = await visitor.Client.PostAsync(link, form, Cancellation);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.NotNull(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
+        Assert.NotNull((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
     }
 
     private IEnumerable<EmailMessage> ResetsTo(string email) =>
@@ -364,7 +364,7 @@ public sealed class PasswordResetSettingsTests(PostgresFixture postgres)
         Assert.Equal(PasswordResetResult.Reset, await resets.ResetAsync(token, NewPassword, Cancellation));
         gate.Open();
 
-        Assert.Null(await signIn);
+        Assert.Null((await signIn).Principal);
         Assert.Empty(await SessionRows.OfAsync(app.ConnectionString(), email, Cancellation));
     }
 }

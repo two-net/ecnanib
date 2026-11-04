@@ -1,0 +1,255 @@
+@page "/account/two-factor"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [EnableRateLimiting(RateLimits.Authentication)]
+@inject ITwoFactor TwoFactor
+
+@* Static, like every form that takes a secret: the key, the password and the codes never cross a circuit. *@
+
+<PageTitle>@Strings.TwoFactorPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.TwoFactorHeading</h1>
+
+    @if (_codes is { } codes)
+    {
+        <p class="form-notice" role="status">@(_justEnabled ? Strings.TwoFactorEnabledNotice : Strings.TwoFactorCodesReplacedNotice)</p>
+
+        <h2>@Strings.TwoFactorRecoveryCodesHeading</h2>
+        <p>@Strings.TwoFactorRecoveryCodesIntro</p>
+
+        <ol class="recovery-codes">
+            @foreach (var recoveryCode in codes.Codes)
+            {
+                <li><code>@recoveryCode</code></li>
+            }
+        </ol>
+
+        <p><a class="button" href="/account">@Strings.TwoFactorSavedCodes</a></p>
+    }
+    else if (_status.State == TwoFactorState.On)
+    {
+        <dl class="facts">
+            <dt>@Strings.AccountTwoFactor</dt>
+            <dd>@Strings.AccountTwoFactorOn</dd>
+            <dt>@Strings.TwoFactorRecoveryCodesLeft</dt>
+            <dd>@_status.RecoveryCodesLeft</dd>
+        </dl>
+
+        @if (_status.RecoveryCodesLeft == 0)
+        {
+            <p class="form-error" role="alert">@Strings.TwoFactorNoRecoveryCodes</p>
+        }
+
+        <h2>@Strings.TwoFactorRegenerateHeading</h2>
+        <p>@Strings.TwoFactorRegenerateIntro</p>
+
+        <EditForm Model="RegenerateInput" FormName="regenerate-recovery-codes" OnSubmit="RegenerateAsync" class="form">
+            <div class="field">
+                <label for="regenerate-code">@Strings.FieldTwoFactorCode</label>
+                @* Not InputText, which would write the code back into the page after a refusal. *@
+                <input id="regenerate-code" name="Input.TwoFactorCode" type="text" autocomplete="one-time-code" autocapitalize="none"
+                       spellcheck="false" required maxlength="64"
+                       aria-invalid="@Invalid(RegenerateError)" aria-describedby="regenerate-code-hint regenerate-code-error" />
+                <p id="regenerate-code-hint" class="field-hint">@Strings.TwoFactorCodeHint</p>
+                <FieldError Id="regenerate-code-error" Message="@RegenerateError" />
+            </div>
+
+            <button type="submit" class="button">@Strings.TwoFactorRegenerateSubmit</button>
+        </EditForm>
+
+        <h2>@Strings.TwoFactorDisableHeading</h2>
+        <p>@Strings.TwoFactorDisableIntro</p>
+
+        <EditForm Model="DisableInput" FormName="disable-two-factor" OnSubmit="DisableAsync" class="form">
+            <div class="field">
+                <label for="disable-code">@Strings.FieldTwoFactorCode</label>
+                <input id="disable-code" name="Input.TwoFactorCode" type="text" autocomplete="one-time-code" autocapitalize="none"
+                       spellcheck="false" required maxlength="64"
+                       aria-invalid="@Invalid(DisableError)" aria-describedby="disable-code-hint disable-code-error" />
+                <p id="disable-code-hint" class="field-hint">@Strings.TwoFactorCodeHint</p>
+                <FieldError Id="disable-code-error" Message="@DisableError" />
+            </div>
+
+            <button type="submit" class="button">@Strings.TwoFactorDisableSubmit</button>
+        </EditForm>
+    }
+    else if (_setup is { } setup)
+    {
+        @if (_enableOutcome == EnableTwoFactorOutcome.NoSetup)
+        {
+            <p class="form-error" role="alert">@Strings.TwoFactorSetupReplaced</p>
+        }
+
+        <p>@Strings.TwoFactorSetupIntro</p>
+
+        <h2>@Strings.TwoFactorScanHeading</h2>
+        <p>@Strings.TwoFactorScanIntro</p>
+        <TotpQrCode Text="@setup.ProvisioningUri" />
+        <p>@Strings.TwoFactorKeyIntro</p>
+        <p><code class="totp-key">@Grouped(setup.Key)</code></p>
+        <p><a href="@setup.ProvisioningUri">@Strings.TwoFactorOpenApp</a></p>
+
+        <h2>@Strings.TwoFactorConfirmHeading</h2>
+        <p>@Strings.TwoFactorConfirmIntro</p>
+
+        <EditForm Model="EnableInput" FormName="enable-two-factor" OnSubmit="EnableAsync" class="form">
+            <div class="field">
+                <label for="current-password">@Strings.FieldCurrentPassword</label>
+                @* Not InputText, which would write the password back into the page after a refusal. *@
+                <input id="current-password" name="Input.Password" type="password" autocomplete="current-password" required
+                       aria-invalid="@Invalid(PasswordError)" aria-describedby="current-password-error" />
+                <FieldError Id="current-password-error" Message="@PasswordError" />
+            </div>
+
+            <div class="field">
+                <label for="setup-code">@Strings.FieldTwoFactorCode</label>
+                <input id="setup-code" name="Input.TwoFactorCode" type="text" autocomplete="one-time-code" inputmode="numeric"
+                       required maxlength="64"
+                       aria-invalid="@Invalid(SetupCodeError)" aria-describedby="setup-code-hint setup-code-error" />
+                <p id="setup-code-hint" class="field-hint">@Strings.TwoFactorSetupCodeHint</p>
+                <FieldError Id="setup-code-error" Message="@SetupCodeError" />
+            </div>
+
+            <button type="submit" class="button">@Strings.TwoFactorConfirmSubmit</button>
+        </EditForm>
+    }
+    else
+    {
+        @if (_turnedOff)
+        {
+            <p class="form-notice" role="status">@Strings.TwoFactorDisabledNotice</p>
+        }
+
+        <p>@Strings.TwoFactorOffIntro</p>
+        <p>@Strings.TwoFactorRecoveryIntro</p>
+
+        <EditForm Model="StartInput" FormName="start-two-factor" OnSubmit="StartAsync" class="form">
+            <button type="submit" class="button">@Strings.TwoFactorStart</button>
+        </EditForm>
+    }
+
+    @if (_codes is null)
+    {
+        <p><a href="/account">@Strings.TwoFactorBackToAccount</a></p>
+    }
+</div>
+
+@code {
+    private Guid _userId;
+    private TwoFactorStatus _status = new(TwoFactorState.Off, 0);
+    private TotpSetup? _setup;
+    private RecoveryCodeSet? _codes;
+    private bool _justEnabled;
+    private bool _turnedOff;
+    private EnableTwoFactorOutcome? _enableOutcome;
+    private TwoFactorCheck? _regenerateCheck;
+    private TwoFactorCheck? _disableCheck;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "start-two-factor")]
+    private StartForm StartInput { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "enable-two-factor", Name = "Input")]
+    private EnableForm EnableInput { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "regenerate-recovery-codes", Name = "Input")]
+    private CodeForm RegenerateInput { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "disable-two-factor", Name = "Input")]
+    private CodeForm DisableInput { get; set; } = default!;
+
+    private string? PasswordError => _enableOutcome == EnableTwoFactorOutcome.PasswordWrong ? Strings.ChangePasswordRefused : null;
+
+    private string? SetupCodeError => _enableOutcome == EnableTwoFactorOutcome.CodeWrong ? Strings.TwoFactorSetupCodeRefused : null;
+
+    private string? RegenerateError => CheckError(_regenerateCheck);
+
+    private string? DisableError => CheckError(_disableCheck);
+
+    protected override async Task OnInitializedAsync()
+    {
+        StartInput ??= new StartForm();
+        EnableInput ??= new EnableForm();
+        RegenerateInput ??= new CodeForm();
+        DisableInput ??= new CodeForm();
+
+        // Private, so there's always a user. Guid.Empty would find nothing anyway.
+        _userId = AccountClaims.UserId(HttpContext.User) ?? Guid.Empty;
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _status = await TwoFactor.GetStatusAsync(_userId, HttpContext.RequestAborted);
+        _setup = _status.State == TwoFactorState.SetupPending ? await TwoFactor.FindSetupAsync(_userId, HttpContext.RequestAborted) : null;
+    }
+
+    private async Task StartAsync()
+    {
+        await TwoFactor.BeginSetupAsync(_userId, HttpContext.RequestAborted);
+        await LoadAsync();
+    }
+
+    private async Task EnableAsync()
+    {
+        var result = await TwoFactor.EnableAsync(HttpContext.User, EnableInput.Password, EnableInput.TwoFactorCode, HttpContext.RequestAborted);
+
+        _enableOutcome = result.Outcome;
+
+        if (result.RecoveryCodes is { } codes)
+        {
+            _codes = codes;
+            _justEnabled = true;
+        }
+
+        if (result.Outcome is EnableTwoFactorOutcome.Enabled or EnableTwoFactorOutcome.NoSetup)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task RegenerateAsync()
+    {
+        var result = await TwoFactor.RegenerateRecoveryCodesAsync(_userId, RegenerateInput.TwoFactorCode, HttpContext.RequestAborted);
+
+        _regenerateCheck = result.Check;
+        _codes = result.Codes;
+        await LoadAsync();
+    }
+
+    private async Task DisableAsync()
+    {
+        _disableCheck = await TwoFactor.DisableAsync(_userId, DisableInput.TwoFactorCode, HttpContext.RequestAborted);
+        _turnedOff = _disableCheck == TwoFactorCheck.Passed;
+        await LoadAsync();
+    }
+
+    private static string? CheckError(TwoFactorCheck? check) => check switch
+    {
+        TwoFactorCheck.Refused => Strings.TwoFactorCodeRefused,
+        TwoFactorCheck.Throttled => Strings.TwoFactorCodeThrottled,
+        _ => null,
+    };
+
+    private static string? Invalid(string? error) => error is null ? null : "true";
+
+    /// <summary>In fours, the way authenticator apps show a key, so it's easier to type.</summary>
+    private static string Grouped(string key) => string.Join(' ', key.Chunk(4).Select(group => new string(group)));
+
+    private sealed class StartForm;
+
+    private sealed class EnableForm
+    {
+        public string Password { get; set; } = string.Empty;
+
+        public string TwoFactorCode { get; set; } = string.Empty;
+    }
+
+    private sealed class CodeForm
+    {
+        public string TwoFactorCode { get; set; } = string.Empty;
+    }
+}

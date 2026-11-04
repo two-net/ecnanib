@@ -29,8 +29,8 @@ public sealed class PasswordChangeTests(SharedAccountApp app) : IClassFixture<Sh
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/account?passwordChanged=true", Visitor.Target(response));
-        Assert.Null(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
-        Assert.NotNull(await Accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation));
+        Assert.Null((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
+        Assert.NotNull((await Accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation)).Principal);
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public sealed class PasswordChangeTests(SharedAccountApp app) : IClassFixture<Sh
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("isn&#x27;t your current password", await response.Content.ReadAsStringAsync(Cancellation), StringComparison.Ordinal);
         Assert.Equal(2, (await SessionRows.OfAsync(app.ConnectionString, email, Cancellation)).Count);
-        Assert.NotNull(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
+        Assert.NotNull((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
     }
 
     /// <summary>Someone holding a stolen session is who guesses here, so the guess has to cost what a sign-in does.</summary>
@@ -167,7 +167,7 @@ public sealed class PasswordChangeTests(SharedAccountApp app) : IClassFixture<Sh
 
         await Sql.ExecuteAsync(app.ConnectionString, $"UPDATE users SET locked_until = NULL WHERE id = '{id}'", Cancellation);
 
-        Assert.NotNull(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
+        Assert.NotNull((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
     }
 
     [Theory]
@@ -183,7 +183,7 @@ public sealed class PasswordChangeTests(SharedAccountApp app) : IClassFixture<Sh
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains(message, await response.Content.ReadAsStringAsync(Cancellation), StringComparison.Ordinal);
-        Assert.NotNull(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
+        Assert.NotNull((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
 
         // Refused before the current password was tried, so it cost no attempt and no hash.
         Assert.Equal(0, await Sql.ScalarAsync<int>(app.ConnectionString, $"SELECT failed_sign_ins FROM users WHERE id = '{id}'", Cancellation));
@@ -198,7 +198,7 @@ public sealed class PasswordChangeTests(SharedAccountApp app) : IClassFixture<Sh
         using var response = await visitor.ChangePasswordAsync(Visitor.Password, NewPassword, "a different new password");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.NotNull(await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation));
+        Assert.NotNull((await Accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal);
     }
 
     /// <summary>InputText writes its value into the page, and the framework's own sample echoes passwords this way.</summary>
@@ -302,7 +302,7 @@ public sealed class PasswordChangeRaceTests(PostgresFixture postgres)
         (await owner.ChangePasswordAsync(Visitor.Password, NewPassword)).Dispose();
         gate.Open();
 
-        Assert.Null(await signIn);
+        Assert.Null((await signIn).Principal);
         Assert.Single(await SessionRows.OfAsync(app.ConnectionString(), email, Cancellation));
     }
 
@@ -315,7 +315,7 @@ public sealed class PasswordChangeRaceTests(PostgresFixture postgres)
         using var visitor = Visitor.To(app);
         var email = await visitor.SignUpAsync();
         var accounts = app.Services.GetRequiredService<IAccounts>();
-        var user = await accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation);
+        var user = (await accounts.SignInAsync(email, Visitor.Password, Visitor.AnyClient, Cancellation)).Principal;
 
         var gate = hasher.HoldNextVerification();
         var slower = accounts.ChangePasswordAsync(user!, Visitor.Password, "the slower new password", Cancellation);
@@ -325,7 +325,7 @@ public sealed class PasswordChangeRaceTests(PostgresFixture postgres)
         gate.Open();
 
         Assert.Equal(PasswordChangeResult.CurrentPasswordWrong, await slower);
-        Assert.NotNull(await accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation));
+        Assert.NotNull((await accounts.SignInAsync(email, NewPassword, Visitor.AnyClient, Cancellation)).Principal);
     }
 
     private AppFactory App(GatedHasher hasher) =>

@@ -428,7 +428,7 @@ public sealed class SessionTests(SharedAccountApp app) : IClassFixture<SharedAcc
 
     private async Task<SessionRecord> SignInAsync(string email, ClientDetails client)
     {
-        var principal = await Accounts.SignInAsync(email, Visitor.Password, client, Cancellation);
+        var principal = (await Accounts.SignInAsync(email, Visitor.Password, client, Cancellation)).Principal;
         var sessionId = AccountClaims.SessionId(principal!);
 
         return (await Sessions.ListAsync(await UserIdAsync(email), Cancellation)).Single(session => session.Id == sessionId);

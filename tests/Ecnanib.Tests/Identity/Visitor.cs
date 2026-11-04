@@ -32,6 +32,20 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
 
     public const string IssueResetLinkForm = "issue-reset-link";
 
+    public const string SignInCodeForm = "sign-in-code";
+
+    public const string StartTwoFactorForm = "start-two-factor";
+
+    public const string EnableTwoFactorForm = "enable-two-factor";
+
+    public const string RegenerateCodesForm = "regenerate-recovery-codes";
+
+    public const string DisableTwoFactorForm = "disable-two-factor";
+
+    public const string TwoFactorPage = "/account/two-factor";
+
+    public const string SignInCodePage = "/sign-in/two-factor";
+
     private const string SessionCookieName = "ecnanib.session";
 
     /// <summary>For a test that calls the contract and doesn't care who's asking.</summary>
@@ -105,20 +119,12 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
                 .. fields,
             ]);
 
-    public async Task<HttpResponseMessage> SignInAsync(string email, string password = Password, string page = "/sign-in")
-    {
-        var response = await SubmitAsync(page, SignInForm, ("Input.Email", email), ("Input.Password", password));
+    public async Task<HttpResponseMessage> SignInAsync(string email, string password = Password, string page = "/sign-in") =>
+        KeepSessionCookie(await SubmitAsync(page, SignInForm, ("Input.Email", email), ("Input.Password", password)));
 
-        if (response.Headers.TryGetValues("Set-Cookie", out var cookies))
-        {
-            SessionCookie = cookies
-                .Where(cookie => cookie.StartsWith(SessionCookieName + "=", StringComparison.Ordinal))
-                .Select(cookie => cookie.Split(';')[0])
-                .LastOrDefault() ?? SessionCookie;
-        }
-
-        return response;
-    }
+    /// <summary>The second step of a sign-in with two-factor on, which is where the session cookie arrives.</summary>
+    public async Task<HttpResponseMessage> SubmitCodeAsync(string code, string page = SignInCodePage) =>
+        KeepSessionCookie(await SubmitAsync(page, SignInCodeForm, ("Input.TwoFactorCode", code)));
 
     public Task<HttpResponseMessage> ChangePasswordAsync(string current, string next, string? confirmation = null) =>
         SubmitAsync(
@@ -170,6 +176,19 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
     }
 
     public void Dispose() => client.Dispose();
+
+    private HttpResponseMessage KeepSessionCookie(HttpResponseMessage response)
+    {
+        if (response.Headers.TryGetValues("Set-Cookie", out var cookies))
+        {
+            SessionCookie = cookies
+                .Where(cookie => cookie.StartsWith(SessionCookieName + "=", StringComparison.Ordinal))
+                .Select(cookie => cookie.Split(';')[0])
+                .LastOrDefault() ?? SessionCookie;
+        }
+
+        return response;
+    }
 
     /// <summary>The hidden fields of a named form, or of the menu's sign-out form, which has no name.</summary>
     private static Dictionary<string, string> HiddenFields(string html, string? form)

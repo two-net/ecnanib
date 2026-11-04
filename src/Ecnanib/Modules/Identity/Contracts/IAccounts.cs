@@ -20,11 +20,24 @@ public interface IAccounts
     Task<IReadOnlyList<RegistrationProblem>> RegisterAsync(Registration registration, CancellationToken cancellationToken);
 
     /// <summary>
-    /// The principal to sign in, or null. An unknown address, a wrong password and a locked account
-    /// are one result, and each spends one hash, so tell the user no more than that. It starts a
-    /// session, which <paramref name="client"/> describes in the user's list of them.
+    /// An unknown address, a wrong password and a locked account are one result,
+    /// <see cref="SignInOutcome.Refused"/>, and each spends one hash, so tell the user no more than that.
+    /// Otherwise it starts a session, which <paramref name="client"/> describes in the user's list of
+    /// them. With two-factor on, it starts no session and returns a challenge for
+    /// <see cref="CompleteSignInAsync"/> instead.
     /// </summary>
-    Task<ClaimsPrincipal?> SignInAsync(string email, string password, ClientDetails client, CancellationToken cancellationToken);
+    Task<SignInResult> SignInAsync(string email, string password, ClientDetails client, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The second step of a sign-in with two-factor on: a code from the authenticator, or a recovery
+    /// code, for the challenge the first step returned. A wrong code counts towards the same lockout as a
+    /// wrong password, and gets the same answer as a locked account. The challenge works until it's used
+    /// or expires, or a password change ends it.
+    /// </summary>
+    Task<SignInResult> CompleteSignInAsync(string? challenge, string code, ClientDetails client, CancellationToken cancellationToken);
+
+    /// <summary>Whether a challenge would still work, so the second step's page can send someone back to sign in again.</summary>
+    Task<bool> IsChallengeLiveAsync(string? challenge, CancellationToken cancellationToken);
 
     /// <summary>
     /// Records acceptance of the versions the user was shown. Null, recording nothing, unless both are
@@ -85,6 +98,49 @@ public enum RegistrationProblem
 
     /// <summary>A document changed after the form was shown, so what was accepted isn't current.</summary>
     DocumentsChanged,
+}
+
+public enum SignInOutcome
+{
+    /// <summary><see cref="SignInResult.Principal"/> is the principal to sign in.</summary>
+    SignedIn,
+
+    /// <summary>The password was right and two-factor is on. <see cref="SignInResult.Challenge"/> goes to the second step.</summary>
+    CodeRequired,
+
+    Refused,
+
+    /// <summary>The challenge expired, was used, or something ended it, so the user signs in again.</summary>
+    ChallengeExpired,
+}
+
+/// <summary>
+/// How a sign-in step went. Not a record, whose ToString would print the challenge, which is as good as
+/// the password until it expires.
+/// </summary>
+public sealed class SignInResult
+{
+    private SignInResult(SignInOutcome outcome) => Outcome = outcome;
+
+    public static SignInResult Refused { get; } = new(SignInOutcome.Refused);
+
+    public static SignInResult ChallengeExpired { get; } = new(SignInOutcome.ChallengeExpired);
+
+    public SignInOutcome Outcome { get; }
+
+    public ClaimsPrincipal? Principal { get; private init; }
+
+    /// <summary>The token for the second step. Keep it in a cookie only that step's page can read, never in a URL.</summary>
+    public string? Challenge { get; private init; }
+
+    public DateTimeOffset? ChallengeExpiresAt { get; private init; }
+
+    public static SignInResult SignedIn(ClaimsPrincipal principal) => new(SignInOutcome.SignedIn) { Principal = principal };
+
+    public static SignInResult CodeRequired(string challenge, DateTimeOffset expiresAt) =>
+        new(SignInOutcome.CodeRequired) { Challenge = challenge, ChallengeExpiresAt = expiresAt };
+
+    public override string ToString() => Outcome.ToString();
 }
 
 public enum PasswordChangeResult

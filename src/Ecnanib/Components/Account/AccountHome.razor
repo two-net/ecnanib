@@ -4,6 +4,7 @@
 @inject IAdministrators Administrators
 @inject IEmailVerification Verification
 @inject IPasswordResets PasswordResets
+@inject ITwoFactor TwoFactor
 
 <PageTitle>@Strings.AccountPageTitle</PageTitle>
 
@@ -31,6 +32,8 @@
             }
             <dt>@Strings.AccountRole</dt>
             <dd>@(_isAdministrator ? Strings.AccountRoleAdministrator : Strings.AccountRoleUser)</dd>
+            <dt>@Strings.AccountTwoFactor</dt>
+            <dd>@(_twoFactorOn ? Strings.AccountTwoFactorOn : Strings.AccountTwoFactorOff)</dd>
         </dl>
 
         @if (Verification.IsEnabled && !overview.EmailVerified)
@@ -52,6 +55,8 @@
         }
 
         <p><a href="/account/password">@Strings.AccountChangePasswordLink</a></p>
+        @* A plain link, because the page is static: see Forms that take a secret in docs/architecture.md. *@
+        <p><a href="/account/two-factor">@(_twoFactorOn ? Strings.AccountManageTwoFactorLink : Strings.AccountSetUpTwoFactorLink)</a></p>
         <p><a href="/account/activity">@Strings.AccountActivityLink</a></p>
 
         <SessionList UserId="_userId" CurrentSessionId="_sessionId" />
@@ -73,6 +78,7 @@
     private Guid? _sessionId;
     private bool _isAdministrator;
     private bool _canConfirm;
+    private bool _twoFactorOn;
     private VerificationEmailResult? _sendResult;
 
     [CascadingParameter]
@@ -108,6 +114,7 @@
         _overview = await Accounts.FindAsync(userId, CancellationToken.None);
         _isAdministrator = await Administrators.IsAdministratorAsync(userId, CancellationToken.None);
         _canConfirm = await Administrators.CanConfirmAsync(userId, CancellationToken.None);
+        _twoFactorOn = await TwoFactor.IsEnabledAsync(userId, CancellationToken.None);
     }
 
     /// <summary>On the circuit, which the throttle on sending bounds, because hub traffic never reaches the limiter.</summary>

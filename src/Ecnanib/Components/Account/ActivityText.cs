@@ -22,6 +22,10 @@ public static class ActivityText
         AuditAction.PasswordResetRequested => Strings.ActivityActionPasswordResetRequested,
         AuditAction.PasswordReset => Strings.ActivityActionPasswordReset,
         AuditAction.PasswordResetLinkIssued => Strings.ActivityActionPasswordResetLinkIssued,
+        AuditAction.TwoFactorEnabled => Strings.ActivityActionTwoFactorEnabled,
+        AuditAction.TwoFactorDisabled => Strings.ActivityActionTwoFactorDisabled,
+        AuditAction.RecoveryCodesRegenerated => Strings.ActivityActionRecoveryCodesRegenerated,
+        AuditAction.RecoveryCodeUsed => Strings.ActivityActionRecoveryCodeUsed,
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Give the action its text in Strings.resx."),
     };
 

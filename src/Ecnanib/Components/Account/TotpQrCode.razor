@@ -1,0 +1,55 @@
+@using System.Globalization
+@using System.Text
+@using QRCoder
+
+@* Inline SVG, because the CSP's img-src 'self' refuses a data: image and MarkupString is banned. The
+   attributes are presentation, not style=, so style-src doesn't apply either. *@
+<svg class="qr" viewBox="0 0 @_size @_size" role="img" aria-label="@Strings.TwoFactorQrLabel" shape-rendering="crispEdges">
+    <rect class="qr-light" width="@_size" height="@_size" />
+    <path class="qr-dark" d="@_path" />
+</svg>
+
+@code {
+    private int _size;
+    private string _path = string.Empty;
+
+    /// <summary>What the code carries, which here holds a TOTP key, so it's never logged or kept.</summary>
+    [Parameter, EditorRequired]
+    public string Text { get; set; } = default!;
+
+    protected override void OnParametersSet()
+    {
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(Text, QRCodeGenerator.ECCLevel.M);
+
+        // The matrix includes the quiet zone that scanners need around the code.
+        var matrix = data.ModuleMatrix;
+        var path = new StringBuilder();
+
+        for (var y = 0; y < matrix.Count; y++)
+        {
+            var row = matrix[y];
+
+            for (var x = 0; x < row.Length; x++)
+            {
+                if (!row[x])
+                {
+                    continue;
+                }
+
+                var start = x;
+
+                while (x + 1 < row.Length && row[x + 1])
+                {
+                    x++;
+                }
+
+                var run = x - start + 1;
+                path.Append(CultureInfo.InvariantCulture, $"M{start} {y}h{run}v1h-{run}z");
+            }
+        }
+
+        _size = matrix.Count;
+        _path = path.ToString();
+    }
+}

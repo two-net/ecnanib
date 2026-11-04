@@ -347,6 +347,9 @@
   <data name="FieldBootstrapSecret" xml:space="preserve">
     <value>Administrator secret</value>
   </data>
+  <data name="FieldTwoFactorCode" xml:space="preserve">
+    <value>Code</value>
+  </data>
   <data name="NavAccount" xml:space="preserve">
     <value>Account</value>
   </data>
@@ -400,6 +403,28 @@
   </data>
   <data name="SignInAfterReset" xml:space="preserve">
     <value>Your password has been reset, and every device was signed out. Sign in with your new password.</value>
+  </data>
+  <data name="SignInCodeExpired" xml:space="preserve">
+    <value>Your sign-in took too long, so it was cancelled. Sign in again, then enter a new code.</value>
+  </data>
+  <data name="SignInCodePageTitle" xml:space="preserve">
+    <value>Enter your code | Ecnanib</value>
+  </data>
+  <data name="SignInCodeHeading" xml:space="preserve">
+    <value>Enter your code</value>
+  </data>
+  <data name="SignInCodeIntro" xml:space="preserve">
+    <value>Your account uses two-factor authentication. Open your authenticator app and enter the code it shows for Ecnanib.</value>
+  </data>
+  <data name="SignInCodeSubmit" xml:space="preserve">
+    <value>Sign in</value>
+  </data>
+  <data name="SignInCodeRefused" xml:space="preserve">
+    <value>That code didn't work. Codes change every 30 seconds, so enter the one your app shows now. After several failed attempts, sign-in pauses for a while.</value>
+    <comment>One message for a wrong code, a used code and a locked account, so it mustn't tell them apart.</comment>
+  </data>
+  <data name="SignInCodeStartAgain" xml:space="preserve">
+    <value>Start again with your password</value>
   </data>
   <data name="RegisterPageTitle" xml:space="preserve">
     <value>Register | Ecnanib</value>
@@ -519,6 +544,21 @@
   <data name="AccountIssueResetLink" xml:space="preserve">
     <value>Issue a password reset link for a user</value>
   </data>
+  <data name="AccountTwoFactor" xml:space="preserve">
+    <value>Two-factor authentication</value>
+  </data>
+  <data name="AccountTwoFactorOn" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="AccountTwoFactorOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="AccountSetUpTwoFactorLink" xml:space="preserve">
+    <value>Set up two-factor authentication</value>
+  </data>
+  <data name="AccountManageTwoFactorLink" xml:space="preserve">
+    <value>Manage two-factor authentication</value>
+  </data>
   <data name="ActivityPageTitle" xml:space="preserve">
     <value>Account activity | Ecnanib</value>
   </data>
@@ -583,6 +623,18 @@
   </data>
   <data name="ActivityActionPasswordResetLinkIssued" xml:space="preserve">
     <value>Password reset link issued</value>
+  </data>
+  <data name="ActivityActionTwoFactorEnabled" xml:space="preserve">
+    <value>Turned on two-factor authentication</value>
+  </data>
+  <data name="ActivityActionTwoFactorDisabled" xml:space="preserve">
+    <value>Turned off two-factor authentication</value>
+  </data>
+  <data name="ActivityActionRecoveryCodesRegenerated" xml:space="preserve">
+    <value>Replaced the recovery codes</value>
+  </data>
+  <data name="ActivityActionRecoveryCodeUsed" xml:space="preserve">
+    <value>Used a recovery code</value>
   </data>
   <data name="ChangePasswordPageTitle" xml:space="preserve">
     <value>Change password | Ecnanib</value>
@@ -768,5 +820,110 @@
   </data>
   <data name="IssueResetLinkEmailOn" xml:space="preserve">
     <value>Email is on, so users reset their own passwords from the sign-in page.</value>
+  </data>
+  <data name="TwoFactorPageTitle" xml:space="preserve">
+    <value>Two-factor authentication | Ecnanib</value>
+  </data>
+  <data name="TwoFactorHeading" xml:space="preserve">
+    <value>Two-factor authentication</value>
+  </data>
+  <data name="TwoFactorOffIntro" xml:space="preserve">
+    <value>With two-factor authentication on, signing in needs a code from an authenticator app on your phone as well as your password. So do adding or changing exchange keys, switching an agent to Live, the kill switch, and turning two-factor off.</value>
+  </data>
+  <data name="TwoFactorRecoveryIntro" xml:space="preserve">
+    <value>When you turn it on, you get recovery codes. Keep them somewhere safe: if you lose your phone, they're the only way back into your account.</value>
+  </data>
+  <data name="TwoFactorStart" xml:space="preserve">
+    <value>Set up two-factor authentication</value>
+  </data>
+  <data name="TwoFactorSetupIntro" xml:space="preserve">
+    <value>Two-factor authentication isn't on yet. Add Ecnanib to your authenticator app, then confirm with a code from it.</value>
+  </data>
+  <data name="TwoFactorScanHeading" xml:space="preserve">
+    <value>1. Add Ecnanib to your app</value>
+  </data>
+  <data name="TwoFactorScanIntro" xml:space="preserve">
+    <value>Scan this code with an authenticator app.</value>
+  </data>
+  <data name="TwoFactorQrLabel" xml:space="preserve">
+    <value>QR code for adding Ecnanib to an authenticator app</value>
+  </data>
+  <data name="TwoFactorKeyIntro" xml:space="preserve">
+    <value>If you can't scan it, enter this key in the app instead:</value>
+  </data>
+  <data name="TwoFactorOpenApp" xml:space="preserve">
+    <value>Open in an authenticator app on this device</value>
+  </data>
+  <data name="TwoFactorConfirmHeading" xml:space="preserve">
+    <value>2. Confirm</value>
+  </data>
+  <data name="TwoFactorConfirmIntro" xml:space="preserve">
+    <value>This signs out your other sessions. You'll stay signed in here.</value>
+  </data>
+  <data name="TwoFactorSetupCodeHint" xml:space="preserve">
+    <value>The 6-digit code your app now shows for Ecnanib.</value>
+  </data>
+  <data name="TwoFactorSetupCodeRefused" xml:space="preserve">
+    <value>That code didn't work. Check that your app shows Ecnanib, and enter the code it shows now.</value>
+  </data>
+  <data name="TwoFactorSetupReplaced" xml:space="preserve">
+    <value>That setup was replaced or has finished. Here is the current one.</value>
+  </data>
+  <data name="TwoFactorConfirmSubmit" xml:space="preserve">
+    <value>Turn on two-factor authentication</value>
+  </data>
+  <data name="TwoFactorEnabledNotice" xml:space="preserve">
+    <value>Two-factor authentication is on, and your other sessions have been signed out.</value>
+  </data>
+  <data name="TwoFactorCodesReplacedNotice" xml:space="preserve">
+    <value>Your recovery codes have been replaced. The old ones no longer work.</value>
+  </data>
+  <data name="TwoFactorRecoveryCodesHeading" xml:space="preserve">
+    <value>Your recovery codes</value>
+  </data>
+  <data name="TwoFactorRecoveryCodesIntro" xml:space="preserve">
+    <value>Save these somewhere safe, away from your phone. Each one works once in place of a code from your app. This is the only time they're shown.</value>
+  </data>
+  <data name="TwoFactorSavedCodes" xml:space="preserve">
+    <value>I've saved my recovery codes</value>
+  </data>
+  <data name="TwoFactorRecoveryCodesLeft" xml:space="preserve">
+    <value>Recovery codes left</value>
+  </data>
+  <data name="TwoFactorNoRecoveryCodes" xml:space="preserve">
+    <value>You have no recovery codes left. Get new ones below, or losing your phone will lock you out.</value>
+  </data>
+  <data name="TwoFactorRegenerateHeading" xml:space="preserve">
+    <value>New recovery codes</value>
+  </data>
+  <data name="TwoFactorRegenerateIntro" xml:space="preserve">
+    <value>Get a new set of recovery codes. The ones you have now stop working.</value>
+  </data>
+  <data name="TwoFactorRegenerateSubmit" xml:space="preserve">
+    <value>Get new recovery codes</value>
+  </data>
+  <data name="TwoFactorDisableHeading" xml:space="preserve">
+    <value>Turn off two-factor authentication</value>
+  </data>
+  <data name="TwoFactorDisableIntro" xml:space="preserve">
+    <value>Signing in will need only your password again. Your authenticator and recovery codes stop working. To change to a new phone, turn it off here, then set it up again.</value>
+  </data>
+  <data name="TwoFactorDisableSubmit" xml:space="preserve">
+    <value>Turn off two-factor authentication</value>
+  </data>
+  <data name="TwoFactorDisabledNotice" xml:space="preserve">
+    <value>Two-factor authentication is off.</value>
+  </data>
+  <data name="TwoFactorCodeHint" xml:space="preserve">
+    <value>The 6-digit code from your authenticator app, or one of your recovery codes.</value>
+  </data>
+  <data name="TwoFactorCodeRefused" xml:space="preserve">
+    <value>That code didn't work. Codes change every 30 seconds, so enter the one your app shows now.</value>
+  </data>
+  <data name="TwoFactorCodeThrottled" xml:space="preserve">
+    <value>Too many wrong codes. Wait a few minutes, or use one of your recovery codes.</value>
+  </data>
+  <data name="TwoFactorBackToAccount" xml:space="preserve">
+    <value>Back to your account</value>
   </data>
 </root>

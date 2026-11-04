@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Ecnanib.Modules.Identity;
 
@@ -16,6 +17,10 @@ public static class IdentityModule
     {
         services.AddSingleton(provider => IdentitySettings.Read(provider.GetRequiredService<IConfiguration>()));
         services.AddSingleton<IPasswordHasher, Argon2PasswordHasher>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<PasswordChecks>();
+        services.AddSingleton<TwoFactor>();
+        services.AddSingleton<ITwoFactor>(provider => provider.GetRequiredService<TwoFactor>());
         services.AddSingleton<IAccounts, Accounts>();
         services.AddSingleton<SessionConnections>();
         services.AddSingleton<Sessions>();

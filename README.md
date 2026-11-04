@@ -107,9 +107,9 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Health | ASP.NET Core health checks, on `/health/live` and `/health/ready` | In place |
 | Web security | HTTPS and HSTS, content security policy, secure cookies and rate limiting, in the application itself | In place |
 | Background jobs | An in-process runner, with its history and schedules in PostgreSQL | In place |
-| Accounts | Email and password with Argon2id, sessions that users can list and revoke, password change and reset, lockout, recorded acceptance of the legal documents, verified addresses, and administrators from the configuration file | In place. Two-factor comes later |
+| Accounts | Email and password with Argon2id, optional two-factor with an authenticator app and recovery codes, sessions that users can list and revoke, password change and reset, lockout, recorded acceptance of the legal documents, verified addresses, and administrators from the configuration file | In place |
 | Email | Optional. MailKit over SMTP with TLS required, sent in the background, for address verification and password reset links | In place for accounts. Notifications come later |
-| Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys live in PostgreSQL under the same keys | In place. Credentials and two-factor will store their secrets through it |
+| Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys and two-factor keys live in PostgreSQL under the same keys | In place. Credentials will store their secrets through it |
 | Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
@@ -189,7 +189,7 @@ Outside Development the application won't start until it knows its public addres
 | `App:PublicBaseUrl` | Required outside Development. Sets where plain HTTP redirects to, and the only origin allowed to open a WebSocket |
 | `Security:TrustedProxies` | IP addresses or CIDR networks, such as `"10.0.0.0/8"`, whose `X-Forwarded-*` headers are believed. Loopback is always trusted. Defaults to none |
 | `Security:RateLimits:RequestsPerMinute` | Limit per IP address, and separately per account. Defaults to 300 |
-| `Security:RateLimits:AuthenticationRequestsPerMinute` | Limit per IP address on sign-in, registration, the password and email forms, and the administrator pages, on top of the above. It counts submissions, not page views. Defaults to 10 |
+| `Security:RateLimits:AuthenticationRequestsPerMinute` | Limit per IP address on sign-in, registration, the password, email and two-factor forms, and the administrator pages, on top of the above. It counts submissions, not page views. Defaults to 10 |
 
 A value that isn't valid stops startup. Set `AllowedHosts` to your public host too, plus any host a local probe uses, because the shipped `*` accepts any `Host` header.
 
@@ -198,8 +198,8 @@ A value that isn't valid stops startup. Set `AllowedHosts` to your public host t
 | Setting | Meaning |
 |---|---|
 | `Security:PasswordMinLength` | Shortest password allowed. It can't go below 12. Defaults to 12 |
-| `Security:MaxFailedSignIns` | Failed attempts before an account locks. Defaults to 5 |
-| `Security:LockoutMinutes` | How long a lock lasts. Defaults to 15 |
+| `Security:MaxFailedSignIns` | Failed attempts before an account locks, counting wrong two-factor codes at sign-in as well as wrong passwords. It also limits wrong codes for sensitive actions, which have a count of their own. Defaults to 5 |
+| `Security:LockoutMinutes` | How long a lock lasts, and how long sensitive actions stop taking authenticator codes after too many wrong ones. Defaults to 15 |
 | `Security:SessionIdleTimeoutMinutes` | How long a session can last without a request or a user action. A page that's only showing live data doesn't count. Defaults to 60 |
 | `Security:SessionAbsoluteTimeoutHours` | The longest a session can last, however active it is. Defaults to 24 |
 | `Admin:AdminEmails` | Addresses that get administrator rights once verified. Defaults to none |
@@ -218,6 +218,14 @@ Registering a listed address doesn't grant anything by itself, so a stranger who
 With email on, the bootstrap secret isn't used. Register the listed address, sign in, and open the link that's emailed to it.
 
 The Terms of Use and Risk Disclosure are placeholders until the [legal review](https://github.com/two-net/ecnanib/issues/58). Sign-in keeps its session key in ASP.NET Data Protection, so if that key store doesn't persist, each restart signs everyone out.
+
+### Two-factor authentication
+
+Users can turn on two-factor authentication from their account page, with any authenticator app that takes a QR code, such as 1Password, Google Authenticator or Microsoft Authenticator. Once it's on, signing in needs a code from the app, and so will adding or changing exchange keys, switching an agent to Live, the kill switch, and turning two-factor off. There's nothing to configure.
+
+Turning it on gives the user 10 recovery codes, shown once. Each works once in place of a code from the app, which is how someone who loses their phone gets back in, and how they reach the kill switch if they've mistyped too many codes. There's no other way: an administrator can't turn it off for them, and a password reset leaves it on, so that a reset link alone can't take over an account. Someone who loses both their phone and their codes can't sign in. Tell users to keep the codes somewhere other than their phone.
+
+The key is encrypted with the [master key](#encryption-keys), like any other secret, and rotating the master key re-encrypts it.
 
 ### Email
 

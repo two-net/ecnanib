@@ -138,6 +138,10 @@ internal sealed class PasswordResets(
 
         var ended = await sessions.DeleteAllAsync(context, userId, cancellationToken);
 
+        // Two-factor stays on, so this link alone can't take over an account that has it. A sign-in
+        // that was waiting for its code started with the old password, so it ends here.
+        await SignInChallenges.DeleteAsync(context, userId, cancellationToken);
+
         audit.Add(context, AuditEntry.ByUser(AuditAction.PasswordReset, userId));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

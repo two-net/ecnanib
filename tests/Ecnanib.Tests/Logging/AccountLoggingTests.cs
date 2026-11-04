@@ -61,6 +61,51 @@ public sealed class AccountLoggingTests(PostgresFixture postgres)
         Assert.DoesNotContain("$argon2id$", text, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A key, a code and a recovery code are each as good as an authenticator while they last, and none
+    /// of them has a marker the masking could rely on in free text, so nothing may log them.
+    /// </summary>
+    [Fact]
+    public async Task Keys_and_codes_stay_out_of_the_logs()
+    {
+        var clock = new TestClock();
+
+        await using var app = new LoggedApp(
+            postgres.NewConnectionString(),
+            AccountApp.Settings(new()
+            {
+                ["Logging:MinimumLevel"] = "Verbose",
+                ["Logging:Overrides:Microsoft.AspNetCore"] = "Verbose",
+                ["Logging:Overrides:Microsoft.EntityFrameworkCore.Database.Command"] = "Verbose",
+                ["Logging:Sinks:Database:Enabled"] = "false",
+            }),
+            TwoFactorSteps.UseClock(clock));
+        using var visitor = Visitor.To(app.App);
+        using var later = Visitor.To(app.App);
+
+        var account = await TwoFactorSteps.SignUpWithTwoFactorAsync(visitor, clock);
+        var signInCode = clock.NextCode(account.Key);
+        (await TwoFactorSteps.SignInAsync(later, account.Email, signInCode)).Dispose();
+        var recoveryCode = account.RecoveryCodes[0];
+        (await later.SubmitAsync(Visitor.TwoFactorPage, Visitor.RegenerateCodesForm, ("Input.TwoFactorCode", recoveryCode))).Dispose();
+        var disableCode = clock.NextCode(account.Key);
+        (await later.SubmitAsync(Visitor.TwoFactorPage, Visitor.DisableTwoFactorForm, ("Input.TwoFactorCode", disableCode))).Dispose();
+
+        await app.StopAsync();
+
+        var text = app.FileText();
+
+        Assert.Contains("Turned two-factor on", text, StringComparison.Ordinal);
+        Assert.Contains("Signed in with two-factor", text, StringComparison.Ordinal);
+        Assert.Contains("Used a recovery code", text, StringComparison.Ordinal);
+        Assert.Contains("Turned two-factor off", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(account.Key, text, StringComparison.Ordinal);
+        Assert.False(Standalone(text, signInCode), "The sign-in code was logged");
+        Assert.False(Standalone(text, disableCode), "The code that turned two-factor off was logged");
+        Assert.All(account.RecoveryCodes, code => Assert.DoesNotContain(code, text, StringComparison.Ordinal));
+        Assert.DoesNotContain(recoveryCode.Replace("-", string.Empty, StringComparison.Ordinal), text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_sign_in_event_carries_the_user_id()
     {
@@ -141,4 +186,11 @@ public sealed class AccountLoggingTests(PostgresFixture postgres)
         Assert.DoesNotContain(PasswordCanary, text, StringComparison.Ordinal);
         Assert.DoesNotContain(NewPasswordCanary, text, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Whether six digits appear with no digit either side. Timestamps hold runs of seven digits, so a
+    /// plain search would sometimes find a code that was never logged.
+    /// </summary>
+    private static bool Standalone(string text, string code) =>
+        System.Text.RegularExpressions.Regex.IsMatch(text, $"(?<![0-9]){code}(?![0-9])");
 }

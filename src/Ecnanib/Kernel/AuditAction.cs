@@ -39,4 +39,16 @@ public enum AuditAction
 
     /// <summary>An administrator issued a reset link to hand to the user, because email is off.</summary>
     PasswordResetLinkIssued,
+
+    /// <summary>The user confirmed an authenticator, so sign-in and sensitive actions now need a code.</summary>
+    TwoFactorEnabled,
+
+    /// <summary>The user turned two-factor off, with a code.</summary>
+    TwoFactorDisabled,
+
+    /// <summary>The user replaced their recovery codes, with a code. The old ones stopped working.</summary>
+    RecoveryCodesRegenerated,
+
+    /// <summary>A recovery code stood in for an authenticator code, at sign-in or for a sensitive action, and is now spent.</summary>
+    RecoveryCodeUsed,
 }

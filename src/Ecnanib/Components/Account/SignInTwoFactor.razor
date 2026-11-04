@@ -1,0 +1,97 @@
+@page "/sign-in/two-factor"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [EnableRateLimiting(RateLimits.Authentication)]
+@inject IAccounts Accounts
+@inject NavigationManager Navigation
+
+<PageTitle>@Strings.SignInCodePageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.SignInCodeHeading</h1>
+    <p>@Strings.SignInCodeIntro</p>
+
+    @if (_refused)
+    {
+        <p class="form-error" role="alert">@Strings.SignInCodeRefused</p>
+    }
+
+    <EditForm Model="Input" FormName="sign-in-code" OnSubmit="SubmitAsync" class="form">
+        <div class="field">
+            <label for="code">@Strings.FieldTwoFactorCode</label>
+            @* Not InputText, which would write the code back into the page after a refusal. Not numeric, because a recovery code has letters. *@
+            <input id="code" name="Input.TwoFactorCode" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false"
+                   required maxlength="64" aria-describedby="code-hint" />
+            <p id="code-hint" class="field-hint">@Strings.TwoFactorCodeHint</p>
+        </div>
+
+        <button type="submit" class="button">@Strings.SignInCodeSubmit</button>
+    </EditForm>
+
+    <p><a href="@LocalUrl.WithReturn("/sign-in", ReturnUrl)">@Strings.SignInCodeStartAgain</a></p>
+</div>
+
+@code {
+    private bool _refused;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private CodeForm Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new CodeForm();
+
+        // Showing the form uses nothing, so only say the sign-in has to start again when it does.
+        if (HttpMethods.IsGet(HttpContext.Request.Method)
+            && !await Accounts.IsChallengeLiveAsync(SignInChallengeCookie.Read(HttpContext), HttpContext.RequestAborted))
+        {
+            StartAgain();
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        var client = new ClientDetails(HttpContext.Connection.RemoteIpAddress, HttpContext.Request.Headers.UserAgent);
+        var result = await Accounts.CompleteSignInAsync(
+            SignInChallengeCookie.Read(HttpContext),
+            Input.TwoFactorCode,
+            client,
+            HttpContext.RequestAborted);
+
+        switch (result.Outcome)
+        {
+            case SignInOutcome.SignedIn:
+                SignInChallengeCookie.Delete(HttpContext);
+                await HttpContext.SignInAsync(result.Principal!);
+                Navigation.NavigateTo(LocalUrl.Or(ReturnUrl, "/account"));
+                return;
+
+            case SignInOutcome.ChallengeExpired:
+                StartAgain();
+                return;
+
+            default:
+                _refused = true;
+                return;
+        }
+    }
+
+    private void StartAgain()
+    {
+        var hadChallenge = SignInChallengeCookie.Read(HttpContext) is not null;
+
+        SignInChallengeCookie.Delete(HttpContext);
+        Navigation.NavigateTo(LocalUrl.WithReturn("/sign-in", ReturnUrl, hadChallenge ? "codeExpired=true" : null));
+    }
+
+    private sealed class CodeForm
+    {
+        public string TwoFactorCode { get; set; } = string.Empty;
+    }
+}
