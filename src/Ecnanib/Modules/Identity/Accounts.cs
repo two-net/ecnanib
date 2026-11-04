@@ -16,6 +16,7 @@ internal sealed class Accounts(
     IDbContextFactory<EcnanibDbContext> contextFactory,
     IPasswordHasher hasher,
     Sessions sessions,
+    EmailVerification verification,
     IAuditTrail audit,
     IdentitySettings settings,
     ILogger<Accounts> logger) : IAccounts
@@ -54,12 +55,27 @@ internal sealed class Accounts(
             """,
             cancellationToken);
 
+        IssuedToken? verificationLink = null;
+
         if (created > 0)
         {
             await RecordAcceptanceAsync(context, userId, now, cancellationToken);
+
+            if (settings.EmailEnabled)
+            {
+                verificationLink = await verification.IssueAsync(context, userId, cancellationToken);
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);
+
+        // In the background, so a taken address, which sends nothing, takes as long to answer.
+        if (verificationLink is not null)
+        {
+            using var scope = logger.BeginScope(new Dictionary<string, object> { [LogProperties.UserId] = userId });
+
+            verification.Send(email, verificationLink);
+        }
 
         return [];
     }
@@ -207,6 +223,9 @@ internal sealed class Accounts(
 
         var revoked = await sessions.DeleteOthersAsync(context, userId, sessionId, cancellationToken);
 
+        // A link asked for before the change mustn't outlive it.
+        await AccountTokens.DeleteAsync(context, userId, AccountTokenPurpose.PasswordReset, cancellationToken);
+
         audit.Add(context, AuditEntry.ByUser(AuditAction.PasswordChanged, userId));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -221,12 +240,12 @@ internal sealed class Accounts(
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
-        var email = await context.Set<User>()
+        var account = await context.Set<User>()
             .Where(user => user.Id == userId)
-            .Select(user => user.Email)
+            .Select(user => new { user.Email, user.EmailVerifiedAt })
             .SingleOrDefaultAsync(cancellationToken);
 
-        if (email is null)
+        if (account is null)
         {
             return null;
         }
@@ -237,7 +256,7 @@ internal sealed class Accounts(
             .Select(acceptance => new LegalAcceptanceRecord(acceptance.Document, acceptance.Version, acceptance.AcceptedAt))
             .ToListAsync(cancellationToken);
 
-        return new AccountOverview(email, acceptances);
+        return new AccountOverview(account.Email, account.EmailVerifiedAt is not null, acceptances);
     }
 
     /// <summary>

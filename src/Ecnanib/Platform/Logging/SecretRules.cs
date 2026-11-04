@@ -39,8 +39,12 @@ internal sealed class SecretRules
         """(?<name>[\w-]*(?:authorization|cookie))(?<separator>\\?["']?\s*[:=]\s*)(?:\\?"[^"]*"?|'[^']*'?|[^\r\n]*)""",
         Options);
 
+    /// <summary>
+    /// The separator can also be a URL-encoded "=", as in returnUrl=%2Fx%3Ftoken%3D..., which is how a
+    /// link with a token travels through a sign-in.
+    /// </summary>
     private static readonly Regex Pairs = new(
-        $"""(?<name>[\w.-]*(?:{SecretNames})[\w.-]*|\b(?:sig|otp)\b)(?<separator>\\?["']?\s*[:=]\s*)(?<value>\\?"[^"]*"?|'[^']*'?|[^\s;&]+)""",
+        $"""(?<name>[\w.-]*(?:{SecretNames})[\w.-]*|\b(?:sig|otp)\b)(?<separator>\\?["']?\s*(?:[:=]|%3d)\s*)(?<value>\\?"[^"]*"?|'[^']*'?|[^\s;&]+)""",
         Options);
 
     /// <summary>The way KeyValuePair renders when it's logged without @.</summary>

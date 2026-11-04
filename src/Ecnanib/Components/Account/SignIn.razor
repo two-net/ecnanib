@@ -3,6 +3,7 @@
 @attribute [ExcludeFromInteractiveRouting]
 @attribute [EnableRateLimiting(RateLimits.Authentication)]
 @inject IAccounts Accounts
+@inject IEmailVerification Verification
 @inject NavigationManager Navigation
 
 <PageTitle>@Strings.SignInPageTitle</PageTitle>
@@ -12,7 +13,13 @@
 
     @if (Registered == "true")
     {
-        <p class="form-notice" role="status">@Strings.SignInAfterRegistering</p>
+        <p class="form-notice" role="status">
+            @(Verification.IsEnabled ? Strings.SignInAfterRegisteringWithEmail : Strings.SignInAfterRegistering)
+        </p>
+    }
+    else if (PasswordReset == "true")
+    {
+        <p class="form-notice" role="status">@Strings.SignInAfterReset</p>
     }
 
     @if (_refused)
@@ -35,6 +42,8 @@
         <button type="submit" class="button">@Strings.SignInSubmit</button>
     </EditForm>
 
+    <p><a href="/forgot-password">@Strings.SignInForgotPassword</a></p>
+
     <p>@Strings.SignInNoAccount <a href="/register">@Strings.SignInRegisterLink</a></p>
 </div>
 
@@ -53,6 +62,10 @@
     /// <summary>A string, because a bool makes any other value a 500, and anyone can write this query.</summary>
     [SupplyParameterFromQuery]
     private string? Registered { get; set; }
+
+    /// <summary>A string, for the same reason as <see cref="Registered"/>.</summary>
+    [SupplyParameterFromQuery]
+    private string? PasswordReset { get; set; }
 
     protected override void OnInitialized() => Input ??= new SignInForm();
 

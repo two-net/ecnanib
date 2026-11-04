@@ -14,7 +14,8 @@ public interface IAccounts
     /// <summary>
     /// Empty when the submission was valid, which says nothing about whether an account was created:
     /// an address that's taken gets the same answer, so that this alone can't look one up. Signing in
-    /// afterwards can still tell: see Registration in docs/architecture.md.
+    /// afterwards can still tell: see Registration in docs/architecture.md. With email on, a new account
+    /// is sent a link to verify its address, in the background.
     /// </summary>
     Task<IReadOnlyList<RegistrationProblem>> RegisterAsync(Registration registration, CancellationToken cancellationToken);
 
@@ -37,9 +38,9 @@ public interface IAccounts
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// FR-AUTH-08. Revokes every session but <paramref name="user"/>'s own. A guess at the current
-    /// password counts towards the same lockout as a sign-in, and a locked account gets the answer a
-    /// wrong password gets. Check the new password's length here, not in the page.
+    /// FR-AUTH-08. Revokes every session but <paramref name="user"/>'s own, and any outstanding reset
+    /// link. A guess at the current password counts towards the same lockout as a sign-in, and a locked
+    /// account gets the answer a wrong password gets. Check the new password's length here, not in the page.
     /// </summary>
     Task<PasswordChangeResult> ChangePasswordAsync(
         ClaimsPrincipal user,
@@ -94,6 +95,10 @@ public enum PasswordChangeResult
     PasswordTooLong,
 }
 
-public sealed record AccountOverview(string Email, IReadOnlyList<LegalAcceptanceRecord> Acceptances);
+/// <param name="EmailVerified">
+/// Whether a link or the bootstrap secret has proved the address. With email off this stays false for
+/// most users, and nothing needs it to be true (EXT-EML-01).
+/// </param>
+public sealed record AccountOverview(string Email, bool EmailVerified, IReadOnlyList<LegalAcceptanceRecord> Acceptances);
 
 public sealed record LegalAcceptanceRecord(LegalDocument Document, string Version, DateTimeOffset AcceptedAt);

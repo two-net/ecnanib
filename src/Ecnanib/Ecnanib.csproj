@@ -13,10 +13,19 @@
       <StronglyTypedClassName>Strings</StronglyTypedClassName>
       <StronglyTypedFileName>$(IntermediateOutputPath)Strings.g.cs</StronglyTypedFileName>
     </EmbeddedResource>
+    <!-- Identity can't use Strings, which is the Web UI's, so the email it sends has its own file. -->
+    <EmbeddedResource Update="Modules\Identity\Emails.resx">
+      <StronglyTypedLanguage>CSharp</StronglyTypedLanguage>
+      <StronglyTypedNamespace>Ecnanib.Modules.Identity</StronglyTypedNamespace>
+      <StronglyTypedManifestPrefix>Ecnanib.Modules.Identity</StronglyTypedManifestPrefix>
+      <StronglyTypedClassName>Emails</StronglyTypedClassName>
+      <StronglyTypedFileName>$(IntermediateOutputPath)Emails.g.cs</StronglyTypedFileName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+    <PackageReference Include="MailKit" Version="4.18.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

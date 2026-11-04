@@ -171,19 +171,18 @@ public sealed class AdministratorTests(PostgresFixture postgres)
         Assert.Equal(0, await AuditRows.CountHoldingAsync(app.ConnectionString(), Secret, Cancellation));
     }
 
-    /// <summary>Verification belongs to the emailed link (#13) when there is email, and that fails closed until then.</summary>
+    /// <summary>With email on, verification belongs to the emailed link. EmailVerificationTests covers that.</summary>
     [Fact]
     public async Task With_email_on_the_secret_verifies_nothing()
     {
         var email = Visitor.NewEmail();
         await using var app = AccountApp.Create(
             postgres,
-            new()
+            AccountApp.EmailOn(new()
             {
                 ["Admin:AdminEmails:0"] = email,
                 ["Admin:BootstrapSecret"] = Secret,
-                ["Email:Enabled"] = "true",
-            });
+            }));
         using var visitor = Visitor.To(app);
         await visitor.SignUpAsync(email);
         var id = await AccountRows.IdAsync(app.ConnectionString(), email, Cancellation);

@@ -135,6 +135,15 @@ internal sealed class Sessions(
             .SqlQuery<Guid>($"""DELETE FROM sessions WHERE user_id = {userId} AND id <> {keptSessionId} RETURNING id AS "Value" """)
             .ToListAsync(cancellationToken);
 
+    /// <summary>
+    /// Every session of the user, as a password reset needs. Takes the caller's context, like
+    /// <see cref="DeleteOthersAsync"/>, and what it returns goes to <see cref="EndConnections"/> the same way.
+    /// </summary>
+    public Task<List<Guid>> DeleteAllAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken) =>
+        context.Database
+            .SqlQuery<Guid>($"""DELETE FROM sessions WHERE user_id = {userId} RETURNING id AS "Value" """)
+            .ToListAsync(cancellationToken);
+
     public void EndConnections(IEnumerable<Guid> sessionIds) => connections.End(sessionIds);
 
     /// <summary>Deletes sessions past either timeout and closes their connections. Returns how many.</summary>

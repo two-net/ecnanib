@@ -22,11 +22,13 @@ public sealed class AccessTests(SharedApp app) : IClassFixture<SharedApp>
     [
         "/",
         "/Error",
+        "/forgot-password",
         "/legal/accept",
         "/legal/risk-disclosure",
         "/legal/terms",
         "/not-found",
         "/register",
+        "/reset-password",
         "/sign-in",
     ];
 

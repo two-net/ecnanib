@@ -1,3 +1,4 @@
+using Ecnanib.Tests.Email;
 using Ecnanib.Tests.Identity;
 using Ecnanib.Tests.Persistence;
 using Microsoft.Extensions.Logging;
@@ -87,5 +88,57 @@ public sealed class AccountLoggingTests(PostgresFixture postgres)
         var entry = Assert.Single(app.FileEvents(), candidate => candidate.GetProperty("MessageTemplate").GetString()!.StartsWith("Sign-in refused", StringComparison.Ordinal));
 
         Assert.Equal("Information", entry.GetProperty("Level").GetString());
+    }
+
+    /// <summary>
+    /// A link's token is as good as a password until it's used, and an address isn't masked, so neither
+    /// may reach a log. That includes a link carried through sign-in in returnUrl, where it's URL-encoded.
+    /// </summary>
+    [Fact]
+    public async Task Links_and_addresses_from_email_stay_out_of_the_logs()
+    {
+        var email = Visitor.NewEmail();
+        var captured = new CapturedEmail();
+
+        await using var app = new LoggedApp(
+            postgres.NewConnectionString(),
+            AccountApp.Settings(AccountApp.EmailOn(new()
+            {
+                ["Logging:MinimumLevel"] = "Verbose",
+                ["Logging:Overrides:Microsoft.AspNetCore"] = "Verbose",
+                ["Logging:Overrides:Microsoft.EntityFrameworkCore.Database.Command"] = "Verbose",
+                ["Logging:Sinks:Database:Enabled"] = "false",
+            })),
+            captured.ReplaceSender);
+        using var registrant = Visitor.To(app.App);
+        using var visitor = Visitor.To(app.App);
+
+        (await registrant.RegisterAsync(email, PasswordCanary)).Dispose();
+        var verificationLink = captured.LastPathTo(email);
+
+        using (var challenge = await visitor.GetAsync(verificationLink))
+        {
+            (await visitor.SignInAsync(email, PasswordCanary, page: Visitor.Target(challenge)!)).Dispose();
+        }
+
+        (await visitor.VerifyEmailAsync(verificationLink)).Dispose();
+        (await visitor.ForgotPasswordAsync(email)).Dispose();
+        var resetLink = captured.LastPathTo(email);
+        (await visitor.ResetPasswordAsync(resetLink, NewPasswordCanary)).Dispose();
+        (await visitor.GetAsync(resetLink)).Dispose();
+
+        await app.StopAsync();
+
+        var text = app.FileText();
+
+        Assert.Contains("Sent a link to verify the address", text, StringComparison.Ordinal);
+        Assert.Contains("Verified the address", text, StringComparison.Ordinal);
+        Assert.Contains("Sent a password reset link", text, StringComparison.Ordinal);
+        Assert.Contains("Reset the password through a link", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(CapturedEmail.TokenIn(verificationLink), text, StringComparison.Ordinal);
+        Assert.DoesNotContain(CapturedEmail.TokenIn(resetLink), text, StringComparison.Ordinal);
+        Assert.DoesNotContain(email, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(PasswordCanary, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(NewPasswordCanary, text, StringComparison.Ordinal);
     }
 }

@@ -373,6 +373,10 @@ await transaction.CommitAsync(cancellationToken);
 | `PasswordChanged` | `Accounts.ChangePasswordAsync` | In the transaction that changes the hash and ends the other sessions. A refused change isn't recorded, though its guess counts towards the lockout |
 | `AdministratorConfirmed`, `AdministratorConfirmationFailed` | `Administrators.ConfirmAsync` | The first in the transaction that verifies the address |
 | `MasterKeyRotated` | `SecretStartup` | By the system, with no user, in the transaction that records the new active key. `Changes` holds the old and new key IDs. See [Rotating the master key](#rotating-the-master-key) |
+| `EmailVerified` | `EmailVerification.VerifyAsync`, `PasswordResets.ResetAsync` | In the transaction that sets `email_verified_at`, and only when it was null, so an address is verified once |
+| `PasswordResetRequested` | `PasswordResets.RequestAsync` | By a visitor, against the account, in the transaction that issues the link. A throttled request and an unknown address record nothing |
+| `PasswordReset` | `PasswordResets.ResetAsync` | In the transaction that uses the link, replaces the hash and ends every session |
+| `PasswordResetLinkIssued` | `PasswordResets.IssueAsync` | By an administrator, with the user as `UserId`, in the transaction that issues the link |
 
 **Visitors write `SignInFailed` rows,** one per attempt, whether or not the address has an account. FR-AUD-01 asks for them, and the sign-in [rate limit](#rate-limiting) bounds how fast they arrive.
 
@@ -438,6 +442,20 @@ ASP.NET Data Protection protects the session cookie, antiforgery tokens and a ci
 - **Each key's XML names `SecretStoreXmlDecryptor` by type, including the assembly version.** Renaming or moving that class, or lowering the version, would make every key unreadable and sign everyone out. `DataProtectionKeyTests` pins the name.
 - **The application name is fixed as `Ecnanib`.** The default is the content root's path, so moving the application would have meant new keys.
 - **The key's secret is saved before its key ring row.** A failure between the two leaves a secret that nothing refers to, which is encrypted and harmless.
+
+## Email
+
+`Platform/Email` sends mail through the SMTP server in the `Email` section (EXT-EML-01). Accounts are the only sender so far, and Notifications (#16) will be the second. With `Email:Enabled` false, nothing is sent and `IEmailSender.Send` throws, so a caller checks first: Identity through `IEmailVerification.IsEnabled` and `IPasswordResets.Mode`.
+
+- **Sending is a job run.** `Send` hands the message to `IJobRunner` as a `send-email` run and returns at once. The time a request takes can't show whether it sent anything, which matters for registration and resets, and each send gets a `job_runs` row and its own correlation ID.
+- **Nothing stores a message,** so one a crash cuts off is lost. Everything sent so far is something the user can ask for again, and a durable outbox would hold live tokens in the database.
+- **TLS is required, never opportunistic.** `UseTls` means TLS from the first byte on port 465 and required STARTTLS on any other port, never MailKit's `Auto` or `StartTlsWhenAvailable`, which carry on in clear when STARTTLS isn't offered. `UseTls=false` is refused outside Development unless the server is on loopback.
+- **Neither the address nor the body reaches a log.** A server's refusal usually repeats the address, and the job runner logs a failed run's exception, so `SmtpCommandException` is replaced by an exception that holds only its codes. `details` stays empty.
+- **Messages are plain text,** so nothing in one is read as markup. `EmailMessage` is a class whose `ToString` prints nothing, because its body can hold a token.
+- **Only `Platform/Email` may use MailKit's `SmtpClient`,** and nothing may use `System.Net.Mail.SmtpClient`, which can't require STARTTLS. `BannedApis` enforces both.
+- **The settings are checked only when email is on.** `EmailStartup` takes them, so a bad value stops startup before any migration runs, and it logs whether email is on and through which server.
+
+`SmtpEmailSenderTests` sends to a real server, which `MailpitFixture` runs in a container. Other tests replace `IEmailSender` with `CapturedEmail` and follow the links in what it keeps.
 
 ## Web security
 
@@ -544,9 +562,9 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 | Injection | EF Core parameterises. Raw SQL APIs are banned, and the interpolated forms parameterise | `BannedApis` |
 | Cross-site scripting | Razor encodes. `MarkupString` is banned, because AI output and user input reach the UI. The CSP has no `unsafe-inline` or `unsafe-eval` | `BannedApis`, `SecurityHeaderTests` |
 | Cross-site request forgery | Antiforgery, SameSite and `form-action 'self'`. Every state-changing endpoint must require a token, proved by posting without one, and `DisableAntiforgery` is banned. The WebSocket `Origin` check covers the hub | `CsrfTests`, `BannedApis`, `WebSocketTests` |
-| Server-side request forgery | Only the adapters may use `HttpClient`, and base URLs come only from the configuration file (NFR-SEC-10) | `BannedApis`, then #17, #18 |
+| Server-side request forgery | Only the adapters may use `HttpClient`, only `Platform/Email` may use an SMTP client, and base URLs and the SMTP server come only from the configuration file (NFR-SEC-10) | `BannedApis`, then #17, #18 |
 | Broken access control | Pages are [private by default](#access-control). Ownership checks go behind module contracts, which HTTP can't enforce on a circuit | `AccessTests`, then #55 |
-| Authentication failures | [Lockout](#lockout), [password hashing](#passwords) and [sessions](#sessions) | `LockoutTests`, `PasswordHasherTests`, `SessionTests`, `CircuitAccessTests`, then #14 |
+| Authentication failures | [Lockout](#lockout), [password hashing](#passwords), [sessions](#sessions), and single-use [reset links](#verification-and-resets) | `LockoutTests`, `PasswordHasherTests`, `SessionTests`, `CircuitAccessTests`, `PasswordResetTests`, then #14 |
 | Cryptographic failures | HTTPS, HSTS, Secure cookies. [Secrets](#secrets) and Data Protection keys are encrypted at rest with AES-256-GCM | `HttpsTests`, `CookieTests`, `SecretStoreTests`, `KeyRotationTests`, `DataProtectionKeyTests` |
 | Security misconfiguration | Startup refuses a missing or `http` public address, and validates these settings. `AllowedHosts` is the operator's to set | `WebSecuritySettingsTests`, #57 |
 | Vulnerable components | The dependency scan (NFR-SEC-09) | CI |
@@ -560,7 +578,7 @@ Most of what NFR-SEC-03 protects doesn't exist yet, so this is what each risk re
 
 ### Forms that take a secret
 
-**A form that takes a password or other secret is a static page that posts to itself.** That's sign-in, registration, changing a password and the bootstrap secret. The other ways of hosting one all lose something:
+**A form that takes a password or other secret is a static page that posts to itself.** That's sign-in, registration, changing a password, the bootstrap secret, and the pages behind [emailed and issued links](#verification-and-resets), whose token is a secret too. The other ways of hosting one all lose something:
 
 | Approach | Why not |
 |---|---|
@@ -664,7 +682,7 @@ A tab showing live data with nobody touching it times out, because acknowledging
 
 **Registering never signs in**, and it gets the same answer whether or not the address is taken, so the answer alone doesn't show which it was. Someone who registers again with a new password gets a failed sign-in, which is the cost of that.
 
-This raises the price of a lookup and doesn't remove it. Registering an address with a fresh password and then signing in with it shows whether the address was free: a success also leaves the attacker holding that address. With email off there's nothing to close this with, so it's an accepted limit, and #13 should decide whether unverified accounts can sign in at all.
+This raises the price of a lookup and doesn't remove it. Registering an address with a fresh password and then signing in with it shows whether the address was free: a success also leaves the attacker holding that address. It's an accepted limit, because unverified accounts can sign in, even with email on: see [Verification and resets](#verification-and-resets). The address's owner can take the account back with a reset.
 
 It inserts with `ON CONFLICT DO NOTHING` rather than catching an exception, because EF logs a failed save as an Error, and a taken address would then write a database row for anyone who asks. This also settles a race between two registrations.
 
@@ -686,7 +704,31 @@ An administrator is an account whose verified address is in `Admin:AdminEmails` 
 
 With email off, nothing can verify an address, yet FR-AUTH-06 needs an administrator to issue resets. Treating a listed address as verified would give the rights to whoever registers it first, and those rights can take over any account. So the proof comes from the one channel only the operator controls: `Admin:BootstrapSecret`, entered at `/account/administrator` by a signed-in user with a listed address, sets `email_verified_at`. A stranger who registers a listed address stays an ordinary account, though they hold that address until #47, so the operator lists another. Someone can tell whether an address they've registered is listed, because the account page offers them the link.
 
-With email on, the secret does nothing. Only #13 verifies an address, so no administrator exists until then, which fails closed.
+With email on, the secret does nothing. The emailed link verifies the address instead, so a listed address becomes an administrator once its owner has used one: see [Verification and resets](#verification-and-resets).
+
+### Verification and resets
+
+With email on, a link proves that a user reads their address (FR-AUTH-03), and a link resets a forgotten password (FR-AUTH-06). With it off, nothing is verified, and an administrator issues reset links to hand over out of band (EXT-EML-01).
+
+`account_tokens` holds one live link of each kind per account: the key is the user and the purpose. A link carries 32 random bytes in base64url, and only their SHA-256 is stored, so the table can't be read for links. Using a link deletes its row, in the transaction that makes the change it allows, so it works once.
+
+| Link | Lasts | Comes from |
+|---|---|---|
+| Verify the address | 24 hours | Registering, or the button on `/account`, with email on |
+| Reset, emailed | 1 hour | `/forgot-password`, with email on |
+| Reset, from an administrator | 24 hours, because handing it over takes a while | `/admin/password-reset`, with email off |
+
+The SRS asks for links that are time-limited, not configurable, so these are constants in `AccountTokens`.
+
+- **A link verifies only for someone signed in to its account.** `/account/verify-email` is private, so a visitor signs in and comes back through `returnUrl`. Otherwise a stranger who registered someone's address first would get a verified account, and an administrator's if it's listed, the moment its owner clicked the link. That was the risk #9 left, and requiring the session means the person who set the password is the one who verifies. A link for another account is refused and left alone, so it still works for its own.
+- **Unverified accounts can sign in,** with email on as well as off. They can't become administrators, and #39 keeps them from Live. Turning email on later locks nobody out: each user verifies when they choose. The cost is the lookup in [Registration](#registration), which stays open.
+- **An emailed reset link verifies the address too.** Only the address's reader could have used it, and resetting replaces the password and ends every session, so whoever held the old password is out. That's how an address's owner takes back an account that a stranger registered with it. **An administrator's link never verifies,** because it proves nothing about the inbox. If it did, a stranger who registered a listed address could ask an administrator for a reset and become one.
+- **A reset ends every session and clears any lock.** It replaces the hash before deleting sessions, the same order as [changing a password](#changing-a-password), so a sign-in racing it can't keep a session. A password change deletes any outstanding reset link, so a link asked for earlier can't undo it.
+- **Opening a link changes nothing.** Each page shows a form, and only its POST uses the token, so a mail scanner that fetches the link can't spend it. The forms post back to their own address, so the token travels in the query string rather than a hidden field.
+- **Links start with `App:PublicBaseUrl`,** never the request's `Host`, which a client chooses and could point at a site of its own. It's required when email is on. Without it, which only happens in Development with email off, an administrator's link is shown as a path. The token is in the query as `token=`, so the masking rules see it, and they also match `token%3D` in a `returnUrl`.
+- **One account gets at most one email of each kind every 5 minutes, whoever asks.** The limiter only sees the sender's address, so without this anyone could fill someone's inbox. A request inside the window sends nothing and keeps the earlier link working. The throttle is a condition on the upsert that issues the link, so two requests at once can't both pass it. An administrator's link isn't throttled.
+- **Asking for a reset gives one answer, whether or not the address has an account.** Sending runs in the background, so the slow part takes no time in either case. An unknown address still does less work, because it writes no row, which the [lockout](#lockout) accepts for sign-in too.
+- **An administrator's link is shown once, on a static page,** so it never crosses a circuit. `IPasswordResets.IssueAsync` checks the administrator again, and refuses when email is on, because users reset their own then.
 
 ### Passwords
 
@@ -777,6 +819,15 @@ The audit trail was checked in Chromium and WebKit in Development, with two brow
 - No horizontal scroll on `/account/activity` at 375, 768 and 1280px, in both themes, and no console errors beyond the noise below
 - `UPDATE` and `TRUNCATE` on `audit_events` are refused in psql
 
+Email, verification and resets were checked in Chromium and WebKit in Development, over plain HTTP, with Mailpit as the SMTP server and one instance each with email on and off:
+
+- Registering emails a link from `App:PublicBaseUrl`. Opening it as a visitor goes to sign-in and back, and confirming it verifies the address. A listed address becomes an administrator
+- The account page's button sends a link on the circuit, and pressing it again within minutes says one was just sent, without sending another
+- Forgot password, the emailed reset, and signing in with the new password. The used link then says it has expired
+- With email off: the forgot-password page sends users to an administrator, an administrator confirmed with the bootstrap secret issues a link from the account page, and the user resets with it
+- No horizontal scroll on the new pages, the account page with its verification block, and the administrator's page showing a link, at 375, 768 and 1280px, in both themes
+- No console errors beyond the screenshot noise below, no `Error` in either log, and no token or address in the logs
+
 Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Signing out does the same, more loudly in WebKit: it closes the session's connections, including that tab's, so the tab tries to reconnect while it's leaving. The reconnect modal wasn't open on a single frame in either browser. None of these is a fault in the application.
 
 The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
@@ -786,18 +837,17 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **The UI (#15, #41, #42, #52, #53):** no inline scripts, `<style>` blocks, `style=` attributes or `onclick=` handlers: the [CSP](#headers) blocks them all, and the failure is a console message and a silently broken page. Use classes, isolated CSS and script files. `Virtualize` renders `style=` attributes, so the first change that uses it adds `style-src-attr 'unsafe-inline'`, which is narrower than loosening `style-src`.
 - **Theme preferences (#15):** render `data-theme` on `<html>` from the preference, and add a rule in `app.css` that sets `color-scheme` to match. The tokens follow, with no script. Render the [`color-scheme` meta tag](#theme-and-layout) from the preference too, or Light can flash dark before the stylesheet loads.
 - **Animation (#52):** the reconnect modal's animations are the only motion so far, and they ignore the preference and the operating system's reduced motion setting (AC-06).
-- **Switching to Live (#39):** render `MandatoryNotices` in the flow (EXT-UI-03).
+- **Switching to Live (#39):** render `MandatoryNotices` in the flow (EXT-UI-03). Require `IEmailVerification.IsSatisfiedAsync`, which is true when email is off or the address is verified (FR-AUTH-03, FR-AGT-05).
 - **Legal review (#58):** review the notices in `Strings.resx`, which are drafts. If you change a phrase that EXT-UI-03 quotes, change the tests that check it. Replace the placeholder documents and `LegalDraftNotice`, set both versions in `LegalDocuments` to `1`, and update the digests in `LegalDocumentTests`. Everyone then accepts again, which is right, because nobody has seen the real text. Rule on whether agents keep trading for a user who hasn't re-accepted, and on keeping proof of acceptance after account deletion, which FR-AUTH-09 would remove.
 - **Two-factor (#14):** a TOTP code checked on a circuit needs its own [per-account throttle](#circuits). The HTTP limiter can't see it.
 - **The dashboard (#41):** [idle means a user action](#idle-means-a-user-action), so a live page times out when nobody touches it. Don't call .NET from a timer in JS, because that would count as activity.
-- **Administrators and account deletion (#47, #51):** add a revoke-all to `ISessions` for FR-ADM-01, and call it before deleting a user. The foreign key removes the rows, but only `SessionConnections.End` closes live connections, and [a circuit's connection](#ending-a-circuit) would otherwise run until its next user action.
-- **Email (#13):** set `email_verified_at` from the emailed link. Nothing sets it when email is on until then, so no [administrator](#administrators) can exist in that mode. **Mind accounts from before email was on:** if a stranger registered an address and its real owner later clicks the link, the stranger's password then controls a verified account, which is an administrator if the address is listed. Verifying has to replace the password, or the first verification has to come from whoever set it.
-- **User administration (#47):** use `IAdministrators` and `AccountPolicies.Administrator`, behind contracts as well as on pages. Add a way to remove an account, because a stranger who registers a listed address holds it until then.
+- **Administrators and account deletion (#47, #51):** add a revoke-all to `ISessions` for FR-ADM-01, built on `Sessions.DeleteAllAsync`, and call it before deleting a user. The foreign key removes the rows, but only `SessionConnections.End` closes live connections, and [a circuit's connection](#ending-a-circuit) would otherwise run until its next user action. `account_tokens` goes with the user through its foreign key.
+- **User administration (#47):** use `IAdministrators` and `AccountPolicies.Administrator`, behind contracts as well as on pages. Add a way to remove an account, because a stranger who registers a listed address holds it until then. Link a user's page to `/admin/password-reset`, which issues reset links with email off.
 - **Audited actions (#14, #20, #39, #47, and the agent, approval and emergency pause issues):** record each FR-AUD-01 action with `IAuditTrail.Add` on the context that makes the change, in the same transaction. Add its `AuditAction` value and its text in `ActivityText`. Set `UserId` to the account it's about, and the actor to whoever did it: an administrator acting on someone else's account, or the system for a job or a risk limit (FR-AGT-04). See [Audit](#audit).
 - **The first action with a before/after summary that a user sees:** show `Changes` on the activity page, with each field name's text in `Strings.resx`. Nothing shows them yet. `MasterKeyRotated` has them, but it's platform-wide, so it's on nobody's page.
 - **Account deletion (#51):** FR-AUTH-09 keeps audit records with the identity anonymized, and the [trigger](#append-only) refuses every `UPDATE`. Replace `audit_events_append_only()` in a new migration, so that an update can set `user_id`, `actor_id`, `ip_address` and `user_agent` to null and change nothing else, and add a test that it can't do more.
 - **Audit search (FR-ADM-06):** add a search to `IAuditTrail` and a page through Administration, which may use Platform. Show actor IDs and correlation IDs there, which `IAccountActivity` leaves out. Index whatever it filters on.
-- **Email links (#13):** put tokens in the query string as `token=`, never in the path, so the text rules can see them. Build links from `App:PublicBaseUrl`, never from `Host`, which a client chooses. A redirect is different: it goes back to whoever asked, and `NavigateTo` and the cookie handler both build one from the request, which is what `AllowedHosts` limits. Throttle reset requests per address too, because the limiter only sees the sender's IP.
+- **Notifications (#16):** send email through `IEmailSender`, and only when email is on. Delivery isn't durable, so a notification that matters also needs its in-app copy (FR-NTF-01). Links go in plain text, built from `App:PublicBaseUrl` like the [account links](#verification-and-resets), and never carry a secret (FR-NTF-03). Decide whether email goes to an address that isn't verified. Throttle per user, because one event can fire for many agents.
 - **Two-factor and credentials (#14, #20):** store each secret with `ISecretStore.Add` on the context that saves the row that owns it, and keep only its ID. Replacing a secret is `Add` and `RemoveAsync` in one transaction, and so is deleting its owner. Keep secret access separate from credential metadata, so that listing credentials (FR-KEY-03) never decrypts anything. Decide whether to add a foreign key to `secrets`. The boundary tests refuse `HasOne<Secret>()`, so it would have to be written into the migration by hand. See [Secrets](#secrets).
 - **Adapters (#17, #18):** take a `SecretValue`, and reveal it at the last moment, when signing a request or setting a header. Prefer `RevealUtf8()` for an HMAC key. Never put a revealed key in a log scope, an exception or a field.
 - **System health (#49):** show `IMasterKeyRotation` for FR-ADM-04's credential re-encryption progress.
@@ -812,7 +862,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity` in `Modules/Identity/Contracts`, the persistence, logging, correlation, job, audit and secret contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification` and `IPasswordResets` in `Modules/Identity/Contracts`, the persistence, logging, correlation, job, audit, secret and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue` in `Kernel`.
 
 ## What the boundary tests can't see
 

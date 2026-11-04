@@ -91,7 +91,7 @@ To run the tests:
 dotnet test
 ```
 
-They need Docker, because they start their own PostgreSQL in a container. They never use the database in your settings files. They include the architecture tests that enforce the module boundaries in [docs/architecture.md](docs/architecture.md).
+They need Docker, because they start their own PostgreSQL and SMTP server in containers. They never use the database or mail server in your settings files. They include the architecture tests that enforce the module boundaries in [docs/architecture.md](docs/architecture.md).
 
 To add a migration, run `dotnet tool restore` once, then follow [Adding a migration](docs/architecture.md#adding-a-migration).
 
@@ -107,7 +107,8 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Health | ASP.NET Core health checks, on `/health/live` and `/health/ready` | In place |
 | Web security | HTTPS and HSTS, content security policy, secure cookies and rate limiting, in the application itself | In place |
 | Background jobs | An in-process runner, with its history and schedules in PostgreSQL | In place |
-| Accounts | Email and password with Argon2id, sessions that users can list and revoke, password change, lockout, recorded acceptance of the legal documents, and administrators from the configuration file | In place. Email and two-factor come later |
+| Accounts | Email and password with Argon2id, sessions that users can list and revoke, password change and reset, lockout, recorded acceptance of the legal documents, verified addresses, and administrators from the configuration file | In place. Two-factor comes later |
+| Email | Optional. MailKit over SMTP with TLS required, sent in the background, for address verification and password reset links | In place for accounts. Notifications come later |
 | Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys live in PostgreSQL under the same keys | In place. Credentials and two-factor will store their secrets through it |
 | Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
@@ -188,7 +189,7 @@ Outside Development the application won't start until it knows its public addres
 | `App:PublicBaseUrl` | Required outside Development. Sets where plain HTTP redirects to, and the only origin allowed to open a WebSocket |
 | `Security:TrustedProxies` | IP addresses or CIDR networks, such as `"10.0.0.0/8"`, whose `X-Forwarded-*` headers are believed. Loopback is always trusted. Defaults to none |
 | `Security:RateLimits:RequestsPerMinute` | Limit per IP address, and separately per account. Defaults to 300 |
-| `Security:RateLimits:AuthenticationRequestsPerMinute` | Limit per IP address on sign-in, registration and the administrator secret, on top of the above. It counts submissions, not page views. Defaults to 10 |
+| `Security:RateLimits:AuthenticationRequestsPerMinute` | Limit per IP address on sign-in, registration, the password and email forms, and the administrator pages, on top of the above. It counts submissions, not page views. Defaults to 10 |
 
 A value that isn't valid stops startup. Set `AllowedHosts` to your public host too, plus any host a local probe uses, because the shipped `*` accepts any `Host` header.
 
@@ -203,7 +204,7 @@ A value that isn't valid stops startup. Set `AllowedHosts` to your public host t
 | `Security:SessionAbsoluteTimeoutHours` | The longest a session can last, however active it is. Defaults to 24 |
 | `Admin:AdminEmails` | Addresses that get administrator rights once verified. Defaults to none |
 | `Admin:BootstrapSecret` | At least 32 random characters. Required when an address is listed and `Email:Enabled` is false |
-| `Email:Enabled` | Defaults to `false`. Sending email arrives with #13, so leave this off until then |
+| `Email:Enabled` | Defaults to `false`. See [Email](#email) |
 | `Legal:BlockedCountries` | ISO 3166-1 alpha-2 codes, such as `"GB"`, that can't register. Registration asks for a country only when this has entries. Defaults to none |
 
 To make yourself an administrator with email off:
@@ -214,7 +215,54 @@ To make yourself an administrator with email off:
 
 Registering a listed address doesn't grant anything by itself, so a stranger who registers it first gets an ordinary account. If that happens, list a different address. Removing an address and restarting ends its rights at once.
 
+With email on, the bootstrap secret isn't used. Register the listed address, sign in, and open the link that's emailed to it.
+
 The Terms of Use and Risk Disclosure are placeholders until the [legal review](https://github.com/two-net/ecnanib/issues/58). Sign-in keeps its session key in ASP.NET Data Protection, so if that key store doesn't persist, each restart signs everyone out.
+
+### Email
+
+Email is optional (SRS 4.4). With it off, addresses aren't verified and nothing needs them to be, and users who forget their password ask an administrator for a link. With it on, users verify their address with an emailed link, and reset a forgotten password from the sign-in page.
+
+```json
+{
+  "App": { "PublicBaseUrl": "https://ecnanib.example.com" },
+  "Email": {
+    "Enabled": true,
+    "SmtpHost": "smtp.example.com",
+    "SmtpPort": 587,
+    "UseTls": true,
+    "Username": "ecnanib",
+    "Password": "<smtp password>",
+    "FromAddress": "no-reply@example.com"
+  }
+}
+```
+
+| Setting | Meaning |
+|---|---|
+| `Email:Enabled` | Defaults to `false`. The rest of the section is only read when it's `true` |
+| `Email:SmtpHost` | Required when enabled. A host name or IP address |
+| `Email:SmtpPort` | Defaults to 587. On 465, TLS starts with the connection, and on any other port it starts with STARTTLS |
+| `Email:UseTls` | Defaults to `true`, which refuses a server that doesn't offer TLS rather than sending in clear. `false` is only allowed in Development, or for a server on the same machine |
+| `Email:Username`, `Email:Password` | Set both for a server that needs a sign-in, or neither |
+| `Email:FromAddress` | Required when enabled. A bare address, such as `no-reply@example.com` |
+| `App:PublicBaseUrl` | Required when enabled, in Development too, because every link in an email starts with it |
+
+A value that isn't valid stops startup. The log says at startup whether email is on, and through which server. Each message is sent in the background and recorded in `job_runs` as `send-email`, so a failure shows there and in the log, which names neither the recipient nor the message. Nothing retries a failed message: the user asks again.
+
+Links last 24 hours to verify an address, and an hour to reset a password. Each works once, and asking again replaces it. One account gets at most one email of each kind every 5 minutes, however often anyone asks.
+
+To try email locally, run [Mailpit](https://mailpit.axllent.org) with `docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`, set `SmtpHost` to `localhost`, `SmtpPort` to `1025` and `UseTls` to `false`, and read the mail at `http://localhost:8025`.
+
+#### Resetting a password with email off
+
+An administrator issues the link:
+
+1. On your account page, choose **Issue a password reset link for a user**.
+2. Enter the user's address, and copy the link that appears. It works once, for 24 hours, and issuing another replaces it.
+3. Give it to the user in a way you're sure reaches only them. Anyone with the link can take over the account until it's used.
+
+Resetting signs the account out everywhere. A link from an administrator doesn't verify the address, so it can't make anyone an administrator.
 
 ### Behind a reverse proxy
 

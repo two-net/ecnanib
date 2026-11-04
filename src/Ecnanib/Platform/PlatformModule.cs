@@ -1,6 +1,7 @@
 using Ecnanib.Platform.Audit;
 using Ecnanib.Platform.Contracts;
 using Ecnanib.Platform.Correlation;
+using Ecnanib.Platform.Email;
 using Ecnanib.Platform.Jobs;
 using Ecnanib.Platform.Logging;
 using Ecnanib.Platform.Persistence;
@@ -53,6 +54,7 @@ public static class PlatformModule
         AddSecrets(services);
         AddJobs(services);
         AddAudit(services);
+        AddEmail(services);
 
         services.AddSingleton<DatabaseHealthCheck>();
         services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
@@ -152,6 +154,19 @@ public static class PlatformModule
         services.AddSingleton<IAuditTrail, AuditTrail>();
         services.AddSingleton<ClientOriginHubFilter>();
         services.Configure<HubOptions>(options => options.AddFilter<ClientOriginHubFilter>());
+    }
+
+    /// <summary>
+    /// Registered whether or not email is on, so that callers can depend on it. EmailStartup takes the
+    /// settings, which is what validates them before any migration runs.
+    /// </summary>
+    private static void AddEmail(IServiceCollection services)
+    {
+        services.AddSingleton(provider => EmailSettings.Read(
+            provider.GetRequiredService<IConfiguration>(),
+            provider.GetRequiredService<IHostEnvironment>()));
+        services.AddSingleton<IEmailSender, SmtpEmailSender>();
+        services.AddHostedService<EmailStartup>();
     }
 
     private static void AddStructuredLogging(IServiceCollection services)

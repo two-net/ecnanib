@@ -83,6 +83,16 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     {
         public static Guid Store(Platform.Contracts.ISecretStore secrets, string value) => secrets.Add(value);
     }
+
+    public static class MailKitClientOutsideEmail
+    {
+        public static IDisposable Create() => new MailKit.Net.Smtp.SmtpClient();
+    }
+
+    public static class FrameworkSmtpClient
+    {
+        public static IDisposable Create() => new System.Net.Mail.SmtpClient();
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Platform.Contracts
@@ -109,6 +119,20 @@ namespace Ecnanib.Tests.Security.Fixtures.Allowed
     public static class InterpolatedSql
     {
         public static Task<int> RunAsync(DbContext context) => context.Database.ExecuteSqlAsync($"SELECT 1");
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Platform.Email
+{
+    public static class TheEmailSender
+    {
+        public static IDisposable Create() => new MailKit.Net.Smtp.SmtpClient();
+    }
+
+    /// <summary>Banned even where MailKit's client is allowed.</summary>
+    public static class FrameworkSmtpClientInEmail
+    {
+        public static IDisposable Create() => new System.Net.Mail.SmtpClient();
     }
 }
 

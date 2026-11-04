@@ -2,6 +2,8 @@
 @using System.Globalization
 @inject IAccounts Accounts
 @inject IAdministrators Administrators
+@inject IEmailVerification Verification
+@inject IPasswordResets PasswordResets
 
 <PageTitle>@Strings.AccountPageTitle</PageTitle>
 
@@ -12,19 +14,41 @@
     {
         <p class="form-notice" role="status">@Strings.AccountPasswordChanged</p>
     }
+    else if (EmailVerified == "true")
+    {
+        <p class="form-notice" role="status">@Strings.AccountEmailVerifiedNotice</p>
+    }
 
     @if (_overview is { } overview)
     {
         <dl class="facts">
             <dt>@Strings.FieldEmail</dt>
             <dd>@overview.Email</dd>
+            @if (Verification.IsEnabled)
+            {
+                <dt>@Strings.AccountEmailVerification</dt>
+                <dd>@(overview.EmailVerified ? Strings.AccountEmailVerifiedYes : Strings.AccountEmailVerifiedNo)</dd>
+            }
             <dt>@Strings.AccountRole</dt>
             <dd>@(_isAdministrator ? Strings.AccountRoleAdministrator : Strings.AccountRoleUser)</dd>
         </dl>
 
+        @if (Verification.IsEnabled && !overview.EmailVerified)
+        {
+            <p>@Strings.AccountVerifyIntro</p>
+            <button type="button" class="button" @onclick="SendVerificationAsync">@Strings.AccountVerifySend</button>
+            @* Always there, so a screen reader announces the result when it appears. *@
+            <p class="form-notice" role="status" hidden="@(_sendResult is null)">@SendResultText</p>
+        }
+
         @if (_canConfirm)
         {
             <p><a href="/account/administrator">@Strings.AccountConfirmAdministratorLink</a></p>
+        }
+
+        @if (_isAdministrator && PasswordResets.Mode == PasswordResetMode.ByAdministrator)
+        {
+            <p><a href="/admin/password-reset">@Strings.AccountIssueResetLink</a></p>
         }
 
         <p><a href="/account/password">@Strings.AccountChangePasswordLink</a></p>
@@ -49,6 +73,7 @@
     private Guid? _sessionId;
     private bool _isAdministrator;
     private bool _canConfirm;
+    private VerificationEmailResult? _sendResult;
 
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
@@ -56,6 +81,18 @@
     /// <summary>A string, because a bool makes any other value a 500, and anyone can write this query.</summary>
     [SupplyParameterFromQuery]
     private string? PasswordChanged { get; set; }
+
+    /// <summary>A string, for the same reason as <see cref="PasswordChanged"/>.</summary>
+    [SupplyParameterFromQuery]
+    private string? EmailVerified { get; set; }
+
+    private string? SendResultText => _sendResult switch
+    {
+        VerificationEmailResult.Sent => Strings.AccountVerifySent,
+        VerificationEmailResult.TooSoon => Strings.AccountVerifyTooSoon,
+        VerificationEmailResult.AlreadyVerified => Strings.AccountEmailVerifiedNotice,
+        _ => null,
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -72,6 +109,10 @@
         _isAdministrator = await Administrators.IsAdministratorAsync(userId, CancellationToken.None);
         _canConfirm = await Administrators.CanConfirmAsync(userId, CancellationToken.None);
     }
+
+    /// <summary>On the circuit, which the throttle on sending bounds, because hub traffic never reaches the limiter.</summary>
+    private async Task SendVerificationAsync() =>
+        _sendResult = await Verification.SendAsync(_userId, CancellationToken.None);
 
     private static string Describe(LegalAcceptanceRecord acceptance) =>
         string.Format(

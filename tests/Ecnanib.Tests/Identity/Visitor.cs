@@ -24,6 +24,14 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
 
     public const string PasswordForm = "change-password";
 
+    public const string ForgotPasswordForm = "forgot-password";
+
+    public const string ResetPasswordForm = "reset-password";
+
+    public const string VerifyEmailForm = "verify-email";
+
+    public const string IssueResetLinkForm = "issue-reset-link";
+
     private const string SessionCookieName = "ecnanib.session";
 
     /// <summary>For a test that calls the contract and doesn't care who's asking.</summary>
@@ -120,6 +128,19 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
             ("Input.NewPassword", next),
             ("Input.ConfirmPassword", confirmation ?? next));
 
+    public Task<HttpResponseMessage> ForgotPasswordAsync(string email) =>
+        SubmitAsync("/forgot-password", ForgotPasswordForm, ("Input.Email", email));
+
+    /// <summary>Opens a reset link and submits its form. <paramref name="link"/> is a path and query.</summary>
+    public Task<HttpResponseMessage> ResetPasswordAsync(string link, string password, string? confirmation = null) =>
+        SubmitAsync(link, ResetPasswordForm, ("Input.NewPassword", password), ("Input.ConfirmPassword", confirmation ?? password));
+
+    /// <summary>Opens a verification link and confirms it. <paramref name="link"/> is a path and query.</summary>
+    public Task<HttpResponseMessage> VerifyEmailAsync(string link) => SubmitAsync(link, VerifyEmailForm);
+
+    public Task<HttpResponseMessage> IssueResetLinkAsync(string email) =>
+        SubmitAsync("/admin/password-reset", IssueResetLinkForm, ("Input.Email", email));
+
     /// <summary>Registers and signs in, leaving the session in this visitor's cookies.</summary>
     public async Task<string> SignUpAsync(string? email = null)
     {
@@ -206,4 +227,31 @@ internal static class AccountRows
 
     public static Task<long> CountAsync(string connectionString, string email, CancellationToken cancellationToken) =>
         Sql.ScalarAsync<long>(connectionString, $"SELECT count(*) FROM users WHERE normalized_email = '{email.ToLowerInvariant()}'", cancellationToken);
+
+    public static Task<bool> IsVerifiedAsync(string connectionString, string email, CancellationToken cancellationToken) =>
+        Sql.ScalarAsync<bool>(
+            connectionString,
+            $"SELECT email_verified_at IS NOT NULL FROM users WHERE normalized_email = '{email.ToLowerInvariant()}'",
+            cancellationToken);
+}
+
+/// <summary>What the tests read and change in account_tokens, by address and purpose.</summary>
+internal static class TokenRows
+{
+    public const string Verification = "EmailVerification";
+
+    public const string Reset = "PasswordReset";
+
+    public static Task<long> CountAsync(string connectionString, string email, string purpose, CancellationToken cancellationToken) =>
+        Sql.ScalarAsync<long>(connectionString, $"SELECT count(*) FROM account_tokens WHERE {Where(email, purpose)}", cancellationToken);
+
+    public static Task ExpireAsync(string connectionString, string email, string purpose, CancellationToken cancellationToken) =>
+        Sql.ExecuteAsync(connectionString, $"UPDATE account_tokens SET expires_at = now() - interval '1 second' WHERE {Where(email, purpose)}", cancellationToken);
+
+    /// <summary>Makes a link look as if it was issued <paramref name="age"/> ago, such as '6 minutes', which the throttle reads.</summary>
+    public static Task AgeAsync(string connectionString, string email, string purpose, string age, CancellationToken cancellationToken) =>
+        Sql.ExecuteAsync(connectionString, $"UPDATE account_tokens SET created_at = created_at - interval '{age}' WHERE {Where(email, purpose)}", cancellationToken);
+
+    private static string Where(string email, string purpose) =>
+        $"purpose = '{purpose}' AND user_id = (SELECT id FROM users WHERE normalized_email = '{email.ToLowerInvariant()}')";
 }

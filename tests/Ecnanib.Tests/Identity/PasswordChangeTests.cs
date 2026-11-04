@@ -336,33 +336,34 @@ public sealed class PasswordChangeRaceTests(PostgresFixture postgres)
                 services.RemoveAll<IPasswordHasher>();
                 services.AddSingleton<IPasswordHasher>(hasher);
             });
+}
 
-    private sealed class GatedHasher : IPasswordHasher
+/// <summary>A hasher that a test can hold in the middle of a verification. Hashing is the identity.</summary>
+internal sealed class GatedHasher : IPasswordHasher
+{
+    private Gate? _gate;
+
+    /// <summary>Holds one verification once it has read the old hash, which is the moment that matters.</summary>
+    public Gate HoldNextVerification()
     {
-        private Gate? _gate;
+        var gate = new Gate();
 
-        /// <summary>Holds one verification once it has read the old hash, which is the moment that matters.</summary>
-        public Gate HoldNextVerification()
-        {
-            var gate = new Gate();
+        _gate = gate;
 
-            _gate = gate;
-
-            return gate;
-        }
-
-        public Task<string> HashAsync(string password, CancellationToken cancellationToken) => Task.FromResult(password);
-
-        public async Task<bool> VerifyAsync(string password, string hash, CancellationToken cancellationToken)
-        {
-            if (Interlocked.Exchange(ref _gate, null) is { } gate)
-            {
-                await gate.PassAsync();
-            }
-
-            return password == hash;
-        }
-
-        public Task SpendAsync(string password, CancellationToken cancellationToken) => Task.CompletedTask;
+        return gate;
     }
+
+    public Task<string> HashAsync(string password, CancellationToken cancellationToken) => Task.FromResult(password);
+
+    public async Task<bool> VerifyAsync(string password, string hash, CancellationToken cancellationToken)
+    {
+        if (Interlocked.Exchange(ref _gate, null) is { } gate)
+        {
+            await gate.PassAsync();
+        }
+
+        return password == hash;
+    }
+
+    public Task SpendAsync(string password, CancellationToken cancellationToken) => Task.CompletedTask;
 }

@@ -47,6 +47,8 @@ public sealed class CsrfTests(SharedApp factory, PostgresFixture postgres) : ICl
     [InlineData("/register")]
     [InlineData("/sign-out")]
     [InlineData("/legal/accept")]
+    [InlineData("/forgot-password")]
+    [InlineData("/reset-password")]
     public async Task A_post_without_a_token_is_refused(string path)
     {
         var cancellation = TestContext.Current.CancellationToken;
@@ -84,6 +86,8 @@ public sealed class CsrfTests(SharedApp factory, PostgresFixture postgres) : ICl
     [InlineData("/register")]
     [InlineData("/sign-out")]
     [InlineData("/legal/accept")]
+    [InlineData("/forgot-password")]
+    [InlineData("/reset-password")]
     public async Task A_refused_post_logs_no_error(string path)
     {
         var cancellation = TestContext.Current.CancellationToken;

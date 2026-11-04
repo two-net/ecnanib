@@ -391,6 +391,16 @@
   <data name="SignInRegisterLink" xml:space="preserve">
     <value>Register</value>
   </data>
+  <data name="SignInForgotPassword" xml:space="preserve">
+    <value>Forgot your password?</value>
+  </data>
+  <data name="SignInAfterRegisteringWithEmail" xml:space="preserve">
+    <value>Registration received. If this address is new to us, we've emailed it a link to verify it. Sign in to continue. If you already have an account with this address, use its existing password.</value>
+    <comment>The same for a new address and a taken one, so it mustn't tell them apart.</comment>
+  </data>
+  <data name="SignInAfterReset" xml:space="preserve">
+    <value>Your password has been reset, and every device was signed out. Sign in with your new password.</value>
+  </data>
   <data name="RegisterPageTitle" xml:space="preserve">
     <value>Register | Ecnanib</value>
   </data>
@@ -482,6 +492,33 @@
     <value>{0}, version {1}, accepted {2:yyyy-MM-dd HH:mm} UTC</value>
     <comment>{0} is a document title, {1} its version and {2} a time in UTC.</comment>
   </data>
+  <data name="AccountEmailVerification" xml:space="preserve">
+    <value>Address verified</value>
+  </data>
+  <data name="AccountEmailVerifiedYes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="AccountEmailVerifiedNo" xml:space="preserve">
+    <value>Not yet</value>
+  </data>
+  <data name="AccountVerifyIntro" xml:space="preserve">
+    <value>Verify your address so that you can reset your password by email. You'll also need it to switch an agent to Live.</value>
+  </data>
+  <data name="AccountVerifySend" xml:space="preserve">
+    <value>Email me a verification link</value>
+  </data>
+  <data name="AccountVerifySent" xml:space="preserve">
+    <value>We've sent a link to your address. Open it while you're signed in to this account. It works once, for 24 hours.</value>
+  </data>
+  <data name="AccountVerifyTooSoon" xml:space="preserve">
+    <value>We sent a link a few minutes ago, and it still works. Check your spam folder, or try again in a few minutes.</value>
+  </data>
+  <data name="AccountEmailVerifiedNotice" xml:space="preserve">
+    <value>Your email address is verified.</value>
+  </data>
+  <data name="AccountIssueResetLink" xml:space="preserve">
+    <value>Issue a password reset link for a user</value>
+  </data>
   <data name="ActivityPageTitle" xml:space="preserve">
     <value>Account activity | Ecnanib</value>
   </data>
@@ -534,6 +571,18 @@
   </data>
   <data name="ActivityActionMasterKeyRotated" xml:space="preserve">
     <value>Encryption key rotated</value>
+  </data>
+  <data name="ActivityActionEmailVerified" xml:space="preserve">
+    <value>Verified the email address</value>
+  </data>
+  <data name="ActivityActionPasswordResetRequested" xml:space="preserve">
+    <value>Someone asked for a password reset link</value>
+  </data>
+  <data name="ActivityActionPasswordReset" xml:space="preserve">
+    <value>Reset the password with a link</value>
+  </data>
+  <data name="ActivityActionPasswordResetLinkIssued" xml:space="preserve">
+    <value>Password reset link issued</value>
   </data>
   <data name="ChangePasswordPageTitle" xml:space="preserve">
     <value>Change password | Ecnanib</value>
@@ -636,5 +685,88 @@
   </data>
   <data name="RiskDisclosureDemo" xml:space="preserve">
     <value>Results in Demo differ from live trading, and past results do not predict future ones.</value>
+  </data>
+  <data name="ForgotPasswordPageTitle" xml:space="preserve">
+    <value>Reset your password | Ecnanib</value>
+  </data>
+  <data name="ForgotPasswordHeading" xml:space="preserve">
+    <value>Reset your password</value>
+  </data>
+  <data name="ForgotPasswordIntro" xml:space="preserve">
+    <value>Enter your account's email address, and we'll email you a link to choose a new password.</value>
+  </data>
+  <data name="ForgotPasswordSubmit" xml:space="preserve">
+    <value>Send the link</value>
+  </data>
+  <data name="ForgotPasswordSent" xml:space="preserve">
+    <value>If an account uses that address, we've emailed it a link. It works once, for an hour. If it doesn't arrive, check your spam folder.</value>
+    <comment>The same whether or not an account uses the address, so it mustn't tell them apart.</comment>
+  </data>
+  <data name="ForgotPasswordByAdministrator" xml:space="preserve">
+    <value>Email isn't set up on this site, so an administrator resets passwords. Contact the site's operator, who can give you a link to choose a new password.</value>
+  </data>
+  <data name="ForgotPasswordBackToSignIn" xml:space="preserve">
+    <value>Back to sign in</value>
+  </data>
+  <data name="ResetPasswordPageTitle" xml:space="preserve">
+    <value>Choose a new password | Ecnanib</value>
+  </data>
+  <data name="ResetPasswordHeading" xml:space="preserve">
+    <value>Choose a new password</value>
+  </data>
+  <data name="ResetPasswordIntro" xml:space="preserve">
+    <value>This signs out every device that's signed in to your account.</value>
+  </data>
+  <data name="ResetPasswordSubmit" xml:space="preserve">
+    <value>Set the password</value>
+  </data>
+  <data name="ResetPasswordLinkInvalid" xml:space="preserve">
+    <value>This link has expired or has already been used.</value>
+  </data>
+  <data name="ResetPasswordRequestNew" xml:space="preserve">
+    <value>Get a new link</value>
+  </data>
+  <data name="VerifyEmailPageTitle" xml:space="preserve">
+    <value>Verify your email address | Ecnanib</value>
+  </data>
+  <data name="VerifyEmailHeading" xml:space="preserve">
+    <value>Verify your email address</value>
+  </data>
+  <data name="VerifyEmailIntro" xml:space="preserve">
+    <value>Confirm that the address on this account is yours.</value>
+  </data>
+  <data name="VerifyEmailSubmit" xml:space="preserve">
+    <value>Verify the address</value>
+  </data>
+  <data name="VerifyEmailInvalid" xml:space="preserve">
+    <value>This link has expired, has already been used, or belongs to another account. Sign in to the account it was sent for, or send a new link from your account page.</value>
+  </data>
+  <data name="VerifyEmailAccountLink" xml:space="preserve">
+    <value>Go to your account</value>
+  </data>
+  <data name="IssueResetLinkPageTitle" xml:space="preserve">
+    <value>Issue a password reset link | Ecnanib</value>
+  </data>
+  <data name="IssueResetLinkHeading" xml:space="preserve">
+    <value>Issue a password reset link</value>
+  </data>
+  <data name="IssueResetLinkIntro" xml:space="preserve">
+    <value>Email is off, so users can't reset a forgotten password themselves. Enter the user's address to get a single-use link, then give it to them in a way you're sure reaches only them. Until it's used or expires, anyone with the link can take over the account.</value>
+  </data>
+  <data name="IssueResetLinkSubmit" xml:space="preserve">
+    <value>Issue a link</value>
+  </data>
+  <data name="IssueResetLinkNoAccount" xml:space="preserve">
+    <value>No account uses that address.</value>
+  </data>
+  <data name="IssueResetLinkField" xml:space="preserve">
+    <value>Reset link</value>
+  </data>
+  <data name="IssueResetLinkIssued" xml:space="preserve">
+    <value>It works once, until {0:yyyy-MM-dd HH:mm} UTC. Issuing another one replaces it.</value>
+    <comment>{0} is a time in UTC.</comment>
+  </data>
+  <data name="IssueResetLinkEmailOn" xml:space="preserve">
+    <value>Email is on, so users reset their own passwords from the sign-in page.</value>
   </data>
 </root>

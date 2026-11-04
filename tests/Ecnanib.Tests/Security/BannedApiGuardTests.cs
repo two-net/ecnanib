@@ -25,6 +25,9 @@ public sealed class BannedApiGuardTests
     [InlineData("HttpClientPassedToAnExtension", "reaches the network")]
     [InlineData("SecretRevealedOutsideItsOwners", "reveals a user's secret")]
     [InlineData("SecretStoredOutsideItsOwners", "reveals a user's secret")]
+    [InlineData("MailKitClientOutsideEmail", "reaches an SMTP server")]
+    [InlineData("FrameworkSmtpClient", "no longer recommends")]
+    [InlineData("FrameworkSmtpClientInEmail", "no longer recommends")]
     public void A_banned_use_is_found(string fixture, string risk) =>
         Assert.Contains(Uses, use => use.Source.Contains(fixture, StringComparison.Ordinal) && use.Risk.Contains(risk, StringComparison.Ordinal));
 
@@ -32,6 +35,7 @@ public sealed class BannedApiGuardTests
     [InlineData("InterpolatedSql")]
     [InlineData("AnAdapter")]
     [InlineData("AnOwner")]
+    [InlineData("TheEmailSender")]
     public void An_allowed_use_passes(string fixture) =>
         Assert.DoesNotContain(Uses, use => use.Source.Contains(fixture, StringComparison.Ordinal));
 }

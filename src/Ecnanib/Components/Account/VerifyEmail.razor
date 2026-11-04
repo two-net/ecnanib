@@ -1,0 +1,58 @@
+@page "/account/verify-email"
+@* Private, so a visitor signs in first and comes back here. A link verifies only for its own account,
+   whose password the person signed in must know: see Verification and resets in docs/architecture.md. *@
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [EnableRateLimiting(RateLimits.Authentication)]
+@inject IEmailVerification Verification
+@inject NavigationManager Navigation
+
+<PageTitle>@Strings.VerifyEmailPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.VerifyEmailHeading</h1>
+
+    @if (_invalid)
+    {
+        <p class="form-error" role="alert">@Strings.VerifyEmailInvalid</p>
+        <p><a href="/account">@Strings.VerifyEmailAccountLink</a></p>
+    }
+    else
+    {
+        <p>@Strings.VerifyEmailIntro</p>
+
+        @* A button rather than verifying on arrival, so a mail scanner that opens the link changes
+           nothing. No action, so the post goes back to this address, token and all. *@
+        <EditForm Model="Input" FormName="verify-email" OnSubmit="SubmitAsync" class="form">
+            <button type="submit" class="button">@Strings.VerifyEmailSubmit</button>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private bool _invalid;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private VerificationForm Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? Token { get; set; }
+
+    protected override void OnInitialized() => Input ??= new VerificationForm();
+
+    private async Task SubmitAsync()
+    {
+        if (await Verification.VerifyAsync(HttpContext.User, Token, HttpContext.RequestAborted) != EmailVerificationResult.Verified)
+        {
+            _invalid = true;
+            return;
+        }
+
+        Navigation.NavigateTo("/account?emailVerified=true");
+    }
+
+    /// <summary>Nothing to read: the token is in the address, and the form's own token travels with it.</summary>
+    private sealed class VerificationForm;
+}

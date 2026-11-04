@@ -18,6 +18,10 @@ public static class ActivityText
         AuditAction.AdministratorConfirmed => Strings.ActivityActionAdministratorConfirmed,
         AuditAction.AdministratorConfirmationFailed => Strings.ActivityActionAdministratorConfirmationFailed,
         AuditAction.MasterKeyRotated => Strings.ActivityActionMasterKeyRotated,
+        AuditAction.EmailVerified => Strings.ActivityActionEmailVerified,
+        AuditAction.PasswordResetRequested => Strings.ActivityActionPasswordResetRequested,
+        AuditAction.PasswordReset => Strings.ActivityActionPasswordReset,
+        AuditAction.PasswordResetLinkIssued => Strings.ActivityActionPasswordResetLinkIssued,
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Give the action its text in Strings.resx."),
     };
 

@@ -22,6 +22,10 @@ public static class IdentityModule
         services.AddSingleton<ISessions>(provider => provider.GetRequiredService<Sessions>());
         services.AddSingleton<IRecurringJob, SessionExpiryJob>();
         services.AddSingleton<IAdministrators, Administrators>();
+        services.AddSingleton<AccountEmails>();
+        services.AddSingleton<EmailVerification>();
+        services.AddSingleton<IEmailVerification>(provider => provider.GetRequiredService<EmailVerification>());
+        services.AddSingleton<IPasswordResets, PasswordResets>();
         services.AddSingleton<IAccountActivity, AccountActivity>();
         services.AddSingleton<IAuthorizationHandler, LegalAcceptedHandler>();
         services.AddSingleton<IAuthorizationHandler, AdministratorHandler>();

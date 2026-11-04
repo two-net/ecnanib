@@ -38,6 +38,45 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("providers", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Identity.AccountToken", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Purpose")
+                        .HasColumnType("text")
+                        .HasColumnName("purpose");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Delivery")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("delivery");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.HasKey("UserId", "Purpose")
+                        .HasName("pk_account_tokens");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_account_tokens_token_hash");
+
+                    b.ToTable("account_tokens", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Identity.LegalAcceptance", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -398,6 +437,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasDatabaseName("ix_secrets_key_id");
 
                     b.ToTable("secrets", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Identity.AccountToken", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_account_tokens_user_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.Identity.LegalAcceptance", b =>

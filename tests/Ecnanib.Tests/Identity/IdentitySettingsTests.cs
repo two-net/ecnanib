@@ -14,6 +14,7 @@ public sealed class IdentitySettingsTests(PostgresFixture postgres)
     private const string BootstrapSecret = "Admin:BootstrapSecret";
     private const string EmailEnabled = "Email:Enabled";
     private const string BlockedCountry = "Legal:BlockedCountries:0";
+    private const string PublicBaseUrl = "App:PublicBaseUrl";
 
     private const string Listed = "admin@example.test";
     private const string GoodSecret = "a bootstrap secret of plenty of characters";
@@ -34,6 +35,8 @@ public sealed class IdentitySettingsTests(PostgresFixture postgres)
         { BootstrapSecret, new() { [AdminEmail] = Listed, [BootstrapSecret] = "too short" } },
         { BootstrapSecret, new() { [AdminEmail] = Listed, [BootstrapSecret] = "<random secret of at least 32 characters>" } },
         { EmailEnabled, new() { [EmailEnabled] = "perhaps" } },
+        { PublicBaseUrl, AccountApp.EmailOn(new() { [PublicBaseUrl] = null }) },
+        { PublicBaseUrl, AccountApp.EmailOn(new() { [PublicBaseUrl] = " " }) },
         { BlockedCountry, new() { [BlockedCountry] = "UK" } },
         { BlockedCountry, new() { [BlockedCountry] = "us" } },
         { BlockedCountry, new() { [BlockedCountry] = "Germany" } },
@@ -68,9 +71,7 @@ public sealed class IdentitySettingsTests(PostgresFixture postgres)
     [Fact]
     public async Task No_secret_is_needed_when_email_can_verify_an_address()
     {
-        await using var app = new AppFactory(
-            postgres.NewConnectionString(),
-            settings: new Dictionary<string, string?> { [AdminEmail] = Listed, [EmailEnabled] = "true" });
+        await using var app = new AppFactory(postgres.NewConnectionString(), settings: AccountApp.EmailOn(new() { [AdminEmail] = Listed }));
 
         app.Start();
     }

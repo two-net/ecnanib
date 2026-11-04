@@ -1,0 +1,78 @@
+@page "/admin/password-reset"
+@* Static, because the page shows a link that's as good as a password, and that mustn't cross a circuit.
+   The contract checks the administrator again, as everything behind a contract must. *@
+@attribute [Authorize(Policy = AccountPolicies.Administrator)]
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [EnableRateLimiting(RateLimits.Authentication)]
+@using System.Globalization
+@inject IPasswordResets PasswordResets
+
+<PageTitle>@Strings.IssueResetLinkPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.IssueResetLinkHeading</h1>
+
+    @if (PasswordResets.Mode == PasswordResetMode.ByEmail)
+    {
+        <p>@Strings.IssueResetLinkEmailOn</p>
+    }
+    else
+    {
+        <p>@Strings.IssueResetLinkIntro</p>
+
+        @if (_result is { Outcome: ResetLinkOutcome.Issued, Link: { } link, ExpiresAt: { } expiresAt })
+        {
+            <div class="field" role="status">
+                <label for="reset-link">@Strings.IssueResetLinkField</label>
+                <input id="reset-link" type="text" readonly value="@link" autocomplete="off" spellcheck="false"
+                       aria-describedby="reset-link-expiry" />
+                <p id="reset-link-expiry" class="field-hint">@Expiry(expiresAt)</p>
+            </div>
+        }
+        else if (_result is { Outcome: ResetLinkOutcome.NoAccount })
+        {
+            <p class="form-error" role="alert">@Strings.IssueResetLinkNoAccount</p>
+        }
+
+        <EditForm Model="Input" FormName="issue-reset-link" OnSubmit="SubmitAsync" class="form">
+            <div class="field">
+                <label for="email">@Strings.FieldEmail</label>
+                <InputText id="email" type="email" autocomplete="off" required @bind-Value="Input.Email" />
+            </div>
+
+            <button type="submit" class="button">@Strings.IssueResetLinkSubmit</button>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private ResetLinkResult? _result;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private IssueForm Input { get; set; } = default!;
+
+    protected override void OnInitialized() => Input ??= new IssueForm();
+
+    private static string Expiry(DateTimeOffset expiresAt) =>
+        string.Format(CultureInfo.CurrentCulture, Strings.IssueResetLinkIssued, expiresAt.UtcDateTime);
+
+    private async Task SubmitAsync()
+    {
+        if (AccountClaims.UserId(HttpContext.User) is not { } administratorId)
+        {
+            return;
+        }
+
+        // NotAllowed shows nothing: the page's policy let them in, so only a configuration change
+        // since then could cause it, and the next load of the page answers 403.
+        _result = await PasswordResets.IssueAsync(administratorId, Input.Email, HttpContext.RequestAborted);
+    }
+
+    private sealed class IssueForm
+    {
+        public string Email { get; set; } = string.Empty;
+    }
+}

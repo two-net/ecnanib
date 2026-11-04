@@ -27,4 +27,16 @@ public enum AuditAction
 
     /// <summary>The application started with a different active master key, and began re-encrypting secrets.</summary>
     MasterKeyRotated,
+
+    /// <summary>An emailed link proved the user reads their address, through verification or a reset.</summary>
+    EmailVerified,
+
+    /// <summary>Someone asked for a reset link to be emailed to the account's address. By a visitor.</summary>
+    PasswordResetRequested,
+
+    /// <summary>A reset link set a new password, and ended every session.</summary>
+    PasswordReset,
+
+    /// <summary>An administrator issued a reset link to hand to the user, because email is off.</summary>
+    PasswordResetLinkIssued,
 }

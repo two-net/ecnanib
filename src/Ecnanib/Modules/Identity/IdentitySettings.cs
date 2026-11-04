@@ -4,8 +4,8 @@ namespace Ecnanib.Modules.Identity;
 
 /// <summary>
 /// The settings accounts read. Read() is the only way in, and it reads these keys and no others,
-/// because the Security and Email sections also hold keys that other issues own (CFG-03). A value
-/// nobody configured takes its SRS 7.3 default, and a value that's wrong stops startup.
+/// because the App, Security and Email sections also hold keys that other owners read (CFG-03). A
+/// value nobody configured takes its SRS 7.3 default, and a value that's wrong stops startup.
 /// </summary>
 internal sealed class IdentitySettings
 {
@@ -28,6 +28,7 @@ internal sealed class IdentitySettings
     private const string AdminEmailsKey = "Admin:AdminEmails";
     private const string BootstrapSecretKey = "Admin:BootstrapSecret";
     private const string EmailEnabledKey = "Email:Enabled";
+    private const string PublicBaseUrlKey = "App:PublicBaseUrl";
     private const string BlockedCountriesKey = "Legal:BlockedCountries";
 
     private const int DefaultMaxFailedSignIns = 5;
@@ -64,6 +65,13 @@ internal sealed class IdentitySettings
 
     public required bool EmailEnabled { get; init; }
 
+    /// <summary>
+    /// The origin that links in email and administrator-issued links start with, such as
+    /// https://ecnanib.example.com. Never the request's Host, which a client chooses. Null only in
+    /// Development with email off, where an administrator's link is shown as a path.
+    /// </summary>
+    public required string? PublicOrigin { get; init; }
+
     public required IReadOnlySet<string> BlockedCountries { get; init; }
 
     /// <exception cref="InvalidOperationException">A setting is invalid. The message names it.</exception>
@@ -96,6 +104,7 @@ internal sealed class IdentitySettings
             AdministratorEmails = administrators,
             BootstrapSecret = !emailEnabled && administrators.Count > 0 ? ReadBootstrapSecret(configuration) : null,
             EmailEnabled = emailEnabled,
+            PublicOrigin = ReadPublicOrigin(configuration, emailEnabled),
             BlockedCountries = ReadBlockedCountries(configuration),
         };
     }
@@ -125,6 +134,24 @@ internal sealed class IdentitySettings
             $"{BootstrapSecretKey} must be a random value of at least {BootstrapSecretMinLength} characters, not the sample.");
 
         return secret;
+    }
+
+    /// <summary>The web security settings check the scheme. This only needs somewhere to point links.</summary>
+    private static string? ReadPublicOrigin(IConfiguration configuration, bool emailEnabled)
+    {
+        var value = configuration[PublicBaseUrlKey];
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            Require(!emailEnabled, $"{PublicBaseUrlKey} is required when {EmailEnabledKey} is true, because emailed links start with it.");
+            return null;
+        }
+
+        Require(
+            Uri.TryCreate(value, UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttps || url.Scheme == Uri.UriSchemeHttp),
+            $"{PublicBaseUrlKey} must be an absolute http or https URL.");
+
+        return url!.GetLeftPart(UriPartial.Authority);
     }
 
     private static HashSet<string> ReadBlockedCountries(IConfiguration configuration)
