@@ -84,6 +84,12 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
         public static Guid Store(Platform.Contracts.ISecretStore secrets, string value) => secrets.Add(value);
     }
 
+    public static class AddressesOutsideNotifications
+    {
+        public static Task<IReadOnlyList<string>> FindAsync(Modules.Identity.Contracts.IEmailRecipients recipients, Guid id) =>
+            recipients.FindAsync([id]);
+    }
+
     public static class MailKitClientOutsideEmail
     {
         public static IDisposable Create() => new MailKit.Net.Smtp.SmtpClient();
@@ -103,6 +109,24 @@ namespace Ecnanib.Tests.Security.Fixtures.Platform.Contracts
         Guid Add(string value);
 
         Task<string> RevealAsync(Guid id);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Identity.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface IEmailRecipients
+    {
+        Task<IReadOnlyList<string>> FindAsync(IReadOnlyCollection<Guid> userIds);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Notifications
+{
+    public static class TheEmailJob
+    {
+        public static Task<IReadOnlyList<string>> FindAsync(Identity.Contracts.IEmailRecipients recipients, Guid id) =>
+            recipients.FindAsync([id]);
     }
 }
 

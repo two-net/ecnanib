@@ -1,0 +1,153 @@
+@page "/notifications"
+@using Ecnanib.Modules.Notifications.Contracts
+@inject INotifications Inbox
+@inject IEmailVerification Verification
+@inject Layout.UnreadNotifications Unread
+
+@* Named so that it doesn't clash with the module's namespace. FR-NTF-01: every notification, newest
+   first, 50 at a time, like the activity page. *@
+
+<PageTitle>@Strings.NotificationsPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.NotificationsHeading</h1>
+    <p>@Strings.NotificationsIntro</p>
+
+    @if (Verification.IsEnabled)
+    {
+        @* A plain link, because the page is static: see Preferences in docs/architecture.md. *@
+        <p><a href="/account/preferences">@Strings.NotificationsEmailChoicesLink</a></p>
+    }
+
+    @if (_unread > 0 && _records.Count > 0)
+    {
+        <p><button type="button" class="button" @onclick="MarkAllReadAsync">@Strings.NotificationsMarkAllRead</button></p>
+    }
+
+    @* Always there, so a screen reader announces it. Focus moves here when the button above goes. *@
+    <p class="form-notice" role="status" tabindex="-1" hidden="@(!_markedAll)" @ref="_status">@Strings.NotificationsAllRead</p>
+
+    @if (_loaded && _records.Count == 0)
+    {
+        <p>@Strings.NotificationsEmpty</p>
+    }
+    else
+    {
+        <ol class="notification-list">
+            @foreach (var record in _records)
+            {
+                <NotificationItem @key="record.Id" Record="record" OnOpen="() => OpenAsync(record)" TakeFocus="record.Id == _firstOfLastPage" />
+            }
+        </ol>
+    }
+
+    @if (_hasOlder)
+    {
+        @* Focus moves to the first notification it adds, so it isn't lost when this button goes. *@
+        <button type="button" class="button" @onclick="ShowOlderAsync">@Strings.NotificationsShowOlder</button>
+    }
+</div>
+
+@code {
+    private readonly List<NotificationRecord> _records = [];
+    private Guid? _userId;
+    private bool _loaded;
+    private bool _hasOlder;
+    private int _unread;
+    private bool _markedAll;
+    private ElementReference _status;
+
+    /// <summary>Only set after showing older ones, so the first page doesn't take focus from the heading.</summary>
+    private long? _firstOfLastPage;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = AccountClaims.UserId((await AuthenticationState).User);
+
+        if (_userId is { } userId)
+        {
+            _unread = await Inbox.CountUnreadAsync(userId, CancellationToken.None);
+        }
+
+        await LoadAsync(before: null);
+    }
+
+    private async Task ShowOlderAsync()
+    {
+        var before = _records.Count > 0 ? _records[^1].Id : (long?)null;
+
+        await LoadAsync(before);
+
+        _firstOfLastPage = _records.FirstOrDefault(record => record.Id < before)?.Id;
+    }
+
+    private async Task LoadAsync(long? before)
+    {
+        if (_userId is not { } userId)
+        {
+            return;
+        }
+
+        var page = await Inbox.ListAsync(userId, before, CancellationToken.None);
+
+        _records.AddRange(page);
+        _hasOlder = page.Count == Inbox.PageSize;
+        _loaded = true;
+    }
+
+    /// <summary>
+    /// The link navigates whatever happens here, so this marks it read on the way, and the page updates
+    /// for the case where it opened in another tab.
+    /// </summary>
+    private async Task OpenAsync(NotificationRecord record)
+    {
+        if (_userId is not { } userId || record.ReadAt is not null)
+        {
+            return;
+        }
+
+        await Inbox.MarkReadAsync(userId, record.Id, CancellationToken.None);
+
+        Replace(record, record with { ReadAt = DateTimeOffset.UtcNow });
+        _unread = Math.Max(0, _unread - 1);
+        Unread.Refresh();
+    }
+
+    /// <summary>Up to the newest one shown, so one that arrived meanwhile stays unread.</summary>
+    private async Task MarkAllReadAsync()
+    {
+        if (_userId is not { } userId || _records.Count == 0)
+        {
+            return;
+        }
+
+        await Inbox.MarkAllReadAsync(userId, _records.Max(record => record.Id), CancellationToken.None);
+
+        var now = DateTimeOffset.UtcNow;
+
+        for (var index = 0; index < _records.Count; index++)
+        {
+            _records[index] = _records[index] with { ReadAt = _records[index].ReadAt ?? now };
+        }
+
+        _unread = 0;
+        _markedAll = true;
+        Unread.Refresh();
+
+        StateHasChanged();
+        await _status.FocusAsync();
+    }
+
+    private void Replace(NotificationRecord old, NotificationRecord replacement)
+    {
+        var index = _records.FindIndex(record => record.Id == old.Id);
+
+        if (index >= 0)
+        {
+            _records[index] = replacement;
+        }
+    }
+}

@@ -116,6 +116,22 @@ internal sealed partial class Visitor(HttpClient client) : IDisposable
         return await client.PostAsync(page, content, Cancellation);
     }
 
+    /// <summary>
+    /// The same, for a form where a name can repeat, as ticked boxes do. A name given here replaces a
+    /// hidden field of that name, and repeats as often as it's given.
+    /// </summary>
+    public async Task<HttpResponseMessage> SubmitRepeatedAsync(string page, string form, IEnumerable<(string Name, string Value)> fields)
+    {
+        var given = fields.ToList();
+        var values = HiddenFields(await PageAsync(page), form)
+            .Where(hidden => given.All(field => field.Name != hidden.Key))
+            .Concat(given.Select(field => new KeyValuePair<string, string>(field.Name, field.Value)));
+
+        using var content = new FormUrlEncodedContent(values);
+
+        return await client.PostAsync(page, content, Cancellation);
+    }
+
     public Task<HttpResponseMessage> RegisterAsync(string email, string password = Password, params (string Name, string Value)[] fields) =>
         SubmitAsync(
             "/register",

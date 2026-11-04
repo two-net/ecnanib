@@ -277,6 +277,11 @@ h1:focus,
         font-weight: 400;
     }
 
+    /* WebKit ticks in green by default, and green is kept for profit and loss. */
+    .check input[type=checkbox] {
+        accent-color: var(--accent);
+    }
+
     .check a {
         grid-column: 2;
         font-size: 0.875rem;

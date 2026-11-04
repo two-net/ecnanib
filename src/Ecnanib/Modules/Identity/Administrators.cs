@@ -60,6 +60,23 @@ internal sealed class Administrators(
         return true;
     }
 
+    public async Task<IReadOnlyList<Guid>> ListAsync(CancellationToken cancellationToken)
+    {
+        if (settings.AdministratorEmails.Count == 0)
+        {
+            return [];
+        }
+
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var listed = settings.AdministratorEmails.ToList();
+
+        return await context.Set<User>()
+            .Where(user => user.EmailVerifiedAt != null && listed.Contains(user.NormalizedEmail))
+            .Select(user => user.Id)
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>Hashed first, because FixedTimeEquals returns at once when the lengths differ.</summary>
     private static bool Matches(string secret, string expected) =>
         CryptographicOperations.FixedTimeEquals(

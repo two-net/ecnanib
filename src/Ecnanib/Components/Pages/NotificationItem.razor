@@ -1,0 +1,51 @@
+@using Ecnanib.Modules.Notifications.Contracts
+
+@* A link or focus target needs tabindex="-1". Unread ones say "New" in words, not by color alone. *@
+<li class="notification @(Record.ReadAt is null ? "notification-unread" : null)" tabindex="-1" @ref="_element">
+    <p class="notification-heading">
+        <a href="@Record.Link" @onclick="OnOpen">@NotificationText.Of(Record.Type)</a>
+        @if (Record.ReadAt is null)
+        {
+            <span class="notification-label">@Strings.NotificationsNew</span>
+        }
+        @if (Record.Demo)
+        {
+            <span class="notification-label">@Strings.NotificationsDemo</span>
+        }
+    </p>
+
+    @if (Record.Subject is { } subject)
+    {
+        @* Anyone with an account chooses this text. Razor encodes it, so it's only text. *@
+        <p class="notification-subject">@subject</p>
+    }
+
+    <p class="notification-time">@Time.Format(Record.CreatedAt)</p>
+</li>
+
+@code {
+    private ElementReference _element;
+
+    [Parameter, EditorRequired]
+    public NotificationRecord Record { get; set; } = default!;
+
+    /// <summary>Runs as the link is followed. The navigation doesn't wait for it.</summary>
+    [Parameter]
+    public EventCallback OnOpen { get; set; }
+
+    /// <summary>For the first notification that "show older" added.</summary>
+    [Parameter]
+    public bool TakeFocus { get; set; }
+
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && TakeFocus)
+        {
+            await _element.FocusAsync();
+        }
+    }
+}

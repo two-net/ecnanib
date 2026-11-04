@@ -44,8 +44,9 @@ internal static class AccountApp
         PostgresFixture postgres,
         CapturedEmail email,
         Dictionary<string, string?>? settings = null,
-        string? connectionString = null) =>
-        Create(postgres, EmailOn(settings), email.ReplaceSender, connectionString: connectionString);
+        string? connectionString = null,
+        IReadOnlyCollection<string>? manualJobs = null) =>
+        Create(postgres, EmailOn(settings), email.ReplaceSender, connectionString: connectionString, manualJobs: manualJobs);
 
     public static Dictionary<string, string?> Settings(Dictionary<string, string?>? extra = null) =>
         new(extra ?? [])
@@ -60,8 +61,15 @@ internal static class AccountApp
         Action<IServiceCollection>? services = null,
         string? environment = null,
         string? connectionString = null,
-        bool realJobs = false) =>
-        new(connectionString ?? postgres.NewConnectionString(), services, Settings(settings), environment: environment, realJobs: realJobs);
+        bool realJobs = false,
+        IReadOnlyCollection<string>? manualJobs = null) =>
+        new(
+            connectionString ?? postgres.NewConnectionString(),
+            services,
+            Settings(settings),
+            environment: environment,
+            realJobs: realJobs,
+            manualJobs: manualJobs);
 
     public static string ConnectionString(this AppFactory app) =>
         app.Services.GetRequiredService<IConfiguration>()["ConnectionStrings:Default"]!;

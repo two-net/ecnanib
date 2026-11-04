@@ -33,6 +33,9 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddCascadingAuthenticationState();
 
+// One per circuit, so a page can tell the menu's unread count that something was read.
+builder.Services.AddScoped<Ecnanib.Components.Layout.UnreadNotifications>();
+
 builder.Services.AddWebSecurity();
 
 // Modules, lowest level first. See docs/architecture.md.

@@ -108,7 +108,8 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Web security | HTTPS and HSTS, content security policy, secure cookies and rate limiting, in the application itself | In place |
 | Background jobs | An in-process runner, with its history and schedules in PostgreSQL | In place |
 | Accounts | Email and password with Argon2id, optional two-factor with an authenticator app and recovery codes, sessions that users can list and revoke, password change and reset, lockout, recorded acceptance of the legal documents, verified addresses, and administrators from the configuration file | In place |
-| Email | Optional. MailKit over SMTP with TLS required, sent in the background, for address verification and password reset links | In place for accounts. Notifications come later |
+| Email | Optional. MailKit over SMTP with TLS required, sent in the background, for address verification, password reset links and notifications | In place |
+| Notifications | In the app always, listed newest first with an unread count in the menu, and by email for the events each user chooses, batched each minute | In place. Each later feature raises its own |
 | Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys and two-factor keys live in PostgreSQL under the same keys | In place. Credentials will store their secrets through it |
 | Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
@@ -261,6 +262,12 @@ Email is optional (SRS 4.4). With it off, addresses aren't verified and nothing 
 A value that isn't valid stops startup. The log says at startup whether email is on, and through which server. Each message is sent in the background and recorded in `job_runs` as `send-email`, so a failure shows there and in the log, which names neither the recipient nor the message. Nothing retries a failed message: the user asks again.
 
 Links last 24 hours to verify an address, and an hour to reset a password. Each works once, and asking again replaces it. One account gets at most one email of each kind every 5 minutes, however often anyone asks.
+
+#### Notification emails
+
+Notifications always appear in the app. With email on, users choose on their preferences page which ones are also emailed. Until they choose, they get the ones that need them to act: a trade waiting for approval, a paused agent, a key that stopped working, a retired model and a used kill switch, plus model catalog sync failures and Binance rate-limit bans for administrators. Email only goes to verified addresses.
+
+A job checks each minute and sends each user one email listing everything new, so a burst arrives as one message. It's recorded in `job_runs` as `notification-email`, and each message as `send-email`. A notification more than a day old isn't emailed, so restarting after an outage doesn't send yesterday's news. There's nothing to configure.
 
 To try email locally, run [Mailpit](https://mailpit.axllent.org) with `docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`, set `SmtpHost` to `localhost`, `SmtpPort` to `1025` and `UseTls` to `false`, and read the mail at `http://localhost:8025`.
 

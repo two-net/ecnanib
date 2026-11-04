@@ -21,6 +21,14 @@
       <StronglyTypedClassName>Emails</StronglyTypedClassName>
       <StronglyTypedFileName>$(IntermediateOutputPath)Emails.g.cs</StronglyTypedFileName>
     </EmbeddedResource>
+    <!-- The same for Notifications, under a file name of its own so the two don't overwrite each other. -->
+    <EmbeddedResource Update="Modules\Notifications\Emails.resx">
+      <StronglyTypedLanguage>CSharp</StronglyTypedLanguage>
+      <StronglyTypedNamespace>Ecnanib.Modules.Notifications</StronglyTypedNamespace>
+      <StronglyTypedManifestPrefix>Ecnanib.Modules.Notifications</StronglyTypedManifestPrefix>
+      <StronglyTypedClassName>Emails</StronglyTypedClassName>
+      <StronglyTypedFileName>$(IntermediateOutputPath)NotificationEmails.g.cs</StronglyTypedFileName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

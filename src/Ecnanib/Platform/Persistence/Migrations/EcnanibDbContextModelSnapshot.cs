@@ -288,6 +288,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("animation");
 
+                    b.PrimitiveCollection<string[]>("EmailNotifications")
+                        .HasColumnType("text[]")
+                        .HasColumnName("email_notifications");
+
                     b.Property<string>("Theme")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -307,6 +311,69 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasName("pk_user_preferences");
 
                     b.ToTable("user_preferences", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Notifications.Notification", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("EmailDue")
+                        .HasColumnType("boolean")
+                        .HasColumnName("email_due");
+
+                    b.Property<DateTimeOffset?>("EmailedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("emailed_at");
+
+                    b.Property<string>("Link")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("link");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("type");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notifications");
+
+                    b.HasIndex(new[] { "UserId", "Id" }, "EmailDue")
+                        .HasDatabaseName("ix_notifications_user_id_id_email_due")
+                        .HasFilter("email_due");
+
+                    b.HasIndex(new[] { "UserId", "Id" }, "List")
+                        .HasDatabaseName("ix_notifications_user_id_id");
+
+                    b.HasIndex(new[] { "UserId" }, "Unread")
+                        .HasDatabaseName("ix_notifications_user_id_unread")
+                        .HasFilter("read_at IS NULL");
+
+                    b.ToTable("notifications", (string)null);
                 });
 
             modelBuilder.Entity("Ecnanib.Platform.Audit.AuditEvent", b =>

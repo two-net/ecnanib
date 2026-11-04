@@ -14,6 +14,7 @@ namespace Ecnanib.Tests.Persistence;
 /// WebApplicationFactory, which runs as Development: it would load a developer's
 /// appsettings.Development.json and migrate the database that file points to. Real jobs are removed
 /// unless a test asks for them: one with no history is due at once, so it would run on every start.
+/// A job named in manualJobs stays, but only for the test to run, by <see cref="ManualJob"/>.
 /// </summary>
 public class AppFactory(
     string? connectionString,
@@ -21,7 +22,8 @@ public class AppFactory(
     IEnumerable<KeyValuePair<string, string?>>? settings = null,
     Action<IConfigurationBuilder>? configure = null,
     string? environment = null,
-    bool realJobs = false)
+    bool realJobs = false,
+    IReadOnlyCollection<string>? manualJobs = null)
     : WebApplicationFactory<Program>
 {
     /// <summary>App:PublicBaseUrl when a test names an environment, because outside Development it's required.</summary>
@@ -37,6 +39,12 @@ public class AppFactory(
 
     /// <summary>Starts the application, which throws if startup fails.</summary>
     public void Start() => _ = Server;
+
+    /// <summary>
+    /// A recurring job named in manualJobs, by its class name. It's registered keyed, so the runner never
+    /// loops it, and a test runs it when it chooses, without the real loop racing it.
+    /// </summary>
+    public IRecurringJob ManualJob(string className) => Services.GetRequiredKeyedService<IRecurringJob>(className);
 
     /// <summary>A client on the public address, over HTTPS. HSTS skips localhost, so only this one can see it.</summary>
     public HttpClient CreatePublicClient() =>
@@ -75,9 +83,20 @@ public class AppFactory(
 
         builder.ConfigureTestServices(services =>
         {
-            if (!realJobs)
+            var kept = services
+                .Where(service => service.ServiceType == typeof(IRecurringJob)
+                    && service.ImplementationType is { } type
+                    && manualJobs?.Contains(type.Name) == true)
+                .ToList();
+
+            if (!realJobs || kept.Count > 0)
             {
                 services.RemoveAll<IRecurringJob>();
+            }
+
+            foreach (var job in kept)
+            {
+                services.Add(ServiceDescriptor.KeyedSingleton(typeof(IRecurringJob), job.ImplementationType!.Name, job.ImplementationType));
             }
 
             configureServices?.Invoke(services);

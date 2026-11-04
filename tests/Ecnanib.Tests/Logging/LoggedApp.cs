@@ -24,7 +24,8 @@ internal sealed class LoggedApp : IAsyncDisposable
         Dictionary<string, string?>? settings = null,
         Action<IServiceCollection>? configureServices = null,
         Action<IConfigurationBuilder>? configure = null,
-        string? environment = null)
+        string? environment = null,
+        IReadOnlyCollection<string>? manualJobs = null)
     {
         _connectionString = connectionString;
 
@@ -44,7 +45,7 @@ internal sealed class LoggedApp : IAsyncDisposable
         }
 
         _settings = allSettings;
-        App = new AppFactory(connectionString, configureServices, allSettings, configure, environment);
+        App = new AppFactory(connectionString, configureServices, allSettings, configure, environment, manualJobs: manualJobs);
         App.Start();
     }
 

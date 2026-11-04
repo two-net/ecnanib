@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="SubjectOne" xml:space="preserve">
+    <value>{0} on Ecnanib</value>
+    <comment>{0} is the notification's title.</comment>
+  </data>
+  <data name="SubjectMany" xml:space="preserve">
+    <value>{0} new notifications on Ecnanib</value>
+    <comment>{0} is how many, always more than one.</comment>
+  </data>
+  <data name="IntroOne" xml:space="preserve">
+    <value>You have a new notification on Ecnanib.</value>
+  </data>
+  <data name="IntroMany" xml:space="preserve">
+    <value>You have {0} new notifications on Ecnanib.</value>
+    <comment>{0} is how many, always more than one.</comment>
+  </data>
+  <data name="Heading" xml:space="preserve">
+    <value>{0}: {1}</value>
+    <comment>{0} is the title. {1} is what it's about, such as an agent's name.</comment>
+  </data>
+  <data name="HeadingDemo" xml:space="preserve">
+    <value>{0}: {1} (Demo)</value>
+    <comment>{0} is the title. {1} is what it's about, such as an agent's name. It's about a Demo agent.</comment>
+  </data>
+  <data name="HeadingNoSubject" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="HeadingNoSubjectDemo" xml:space="preserve">
+    <value>{0} (Demo)</value>
+    <comment>{0} is the title. It's about a Demo agent.</comment>
+  </data>
+  <data name="Entry" xml:space="preserve">
+    <value>{0}
+{1:u}
+{2}</value>
+    <comment>{0} is the heading. {1} is when it happened, in UTC. {2} is the link to the page it's about.</comment>
+  </data>
+  <data name="More" xml:space="preserve">
+    <value>And {0} more: {1}</value>
+    <comment>{0} is how many more. {1} is the link to the notifications page.</comment>
+  </data>
+  <data name="Footer" xml:space="preserve">
+    <value>You get these emails for the notifications you chose. To change them, open:
+{0}</value>
+    <comment>{0} is the link to the preferences page.</comment>
+  </data>
+  <data name="TitleTradeOpened" xml:space="preserve">
+    <value>Trade opened</value>
+  </data>
+  <data name="TitleTradeClosed" xml:space="preserve">
+    <value>Trade closed</value>
+  </data>
+  <data name="TitleStopMoved" xml:space="preserve">
+    <value>Stop moved</value>
+  </data>
+  <data name="TitleApprovalPending" xml:space="preserve">
+    <value>Trade waiting for your approval</value>
+  </data>
+  <data name="TitleApprovalExpired" xml:space="preserve">
+    <value>Approval expired</value>
+  </data>
+  <data name="TitleAgentPausedLossLimit" xml:space="preserve">
+    <value>Agent paused at its loss limit</value>
+  </data>
+  <data name="TitleAgentPausedBudget" xml:space="preserve">
+    <value>Agent out of AI budget</value>
+  </data>
+  <data name="TitleAgentPausedErrors" xml:space="preserve">
+    <value>Agent paused after errors</value>
+  </data>
+  <data name="TitleCredentialInvalid" xml:space="preserve">
+    <value>Key stopped working</value>
+  </data>
+  <data name="TitleModelDeprecated" xml:space="preserve">
+    <value>Model deprecated</value>
+  </data>
+  <data name="TitleModelRetired" xml:space="preserve">
+    <value>Model retired</value>
+  </data>
+  <data name="TitleKillSwitchExecuted" xml:space="preserve">
+    <value>Kill switch used</value>
+  </data>
+  <data name="TitleCatalogSyncFailed" xml:space="preserve">
+    <value>Model catalog sync failed</value>
+  </data>
+  <data name="TitleExchangeRateLimitBan" xml:space="preserve">
+    <value>Binance rate-limit ban</value>
+  </data>
+</root>

@@ -24,6 +24,7 @@ public static class PlatformModule
         AddStructuredLogging(services);
 
         services.AddSingleton<ICorrelationContext, CorrelationContext>();
+        services.AddSingleton<ISecretScrubber, SecretScrubber>();
         services.AddScoped<CircuitHandler, CorrelationCircuitHandler>();
 
         services.AddDbContextFactory<EcnanibDbContext>((provider, options) =>

@@ -1,11 +1,15 @@
 @page "/account/preferences"
 @attribute [ExcludeFromInteractiveRouting]
 @using System.Globalization
+@using Ecnanib.Kernel
 @inject IPreferences Preferences
+@inject IEmailVerification Verification
+@inject IAdministrators Administrators
 @inject NavigationManager Navigation
 
 @* Static, because the theme and animation level show on <html>, which only a full page load writes. It
-   takes no secret, so it has no stricter rate limit. See Preferences in docs/architecture.md. *@
+   takes no secret, so it has no stricter rate limit. See Preferences in docs/architecture.md. The email
+   choices (FR-PREF-06) are only here when email is on, and saving without them keeps what's stored. *@
 
 <PageTitle>@Strings.PreferencesPageTitle</PageTitle>
 
@@ -56,6 +60,38 @@
             <FieldError Id="time-zone-error" Message="@ErrorIf(_timeZoneInvalid)" />
         </div>
 
+        @if (Verification.IsEnabled)
+        {
+            @* Tells "none ticked", which posts no box at all, from "not shown", which keeps what's stored. *@
+            <input type="hidden" name="Input.EmailShown" value="true" />
+
+            <h2>@Strings.PreferencesEmailHeading</h2>
+            <p id="email-hint" class="field-hint">@Strings.PreferencesEmailHint</p>
+
+            @if (!_verified)
+            {
+                <p>@Strings.PreferencesEmailUnverified <a href="/account">@Strings.PreferencesEmailVerifyLink</a></p>
+            }
+
+            @foreach (var (legend, types) in OfferedGroups)
+            {
+                <fieldset class="field checks" aria-describedby="email-hint email-error">
+                    <legend>@legend</legend>
+
+                    @foreach (var type in types)
+                    {
+                        @* Plain inputs, like the other fields here: see Forms that take a secret in docs/architecture.md. *@
+                        <div class="check">
+                            <input id="email-@type" name="Input.EmailNotifications" type="checkbox" value="@type" checked="@IsChosen(type)" />
+                            <label for="email-@type">@NotificationText.Of(type)</label>
+                        </div>
+                    }
+                </fieldset>
+            }
+
+            <FieldError Id="email-error" Message="@(_emailInvalid ? Strings.PreferencesEmailInvalid : null)" />
+        }
+
         <button type="submit" class="button">@Strings.PreferencesSubmit</button>
     </EditForm>
 </div>
@@ -64,6 +100,9 @@
     private bool _themeInvalid;
     private bool _animationInvalid;
     private bool _timeZoneInvalid;
+    private bool _emailInvalid;
+    private bool _administrator;
+    private bool _verified;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -89,15 +128,42 @@
         var posted = Input is not null;
         Input ??= new PreferencesForm();
 
-        if (!posted && AccountClaims.UserId(HttpContext.User) is { } userId)
+        if (AccountClaims.UserId(HttpContext.User) is not { } userId)
+        {
+            return;
+        }
+
+        if (Verification.IsEnabled)
+        {
+            _administrator = await Administrators.IsAdministratorAsync(userId, HttpContext.RequestAborted);
+            _verified = await Verification.IsSatisfiedAsync(userId, HttpContext.RequestAborted);
+        }
+
+        if (!posted)
         {
             var current = await Preferences.GetAsync(userId, HttpContext.RequestAborted);
 
             Input.Theme = current.Theme.ToString();
             Input.Animation = current.Animation.ToString();
             Input.TimeZone = current.TimeZone;
+
+            if (Verification.IsEnabled)
+            {
+                var chosen = await Preferences.GetEmailNotificationsAsync(userId, HttpContext.RequestAborted);
+                Input.EmailNotifications = [.. chosen.Select(type => type.ToString())];
+            }
         }
     }
+
+    /// <summary>Each group with the types this user can receive, leaving out a group with none.</summary>
+    private IEnumerable<(string Legend, NotificationType[] Types)> OfferedGroups =>
+        from groups in NotificationText.Groups
+        let offered = groups.Types.Where(EmailNotificationChoices.AvailableTo(_administrator).Contains).ToArray()
+        where offered.Length > 0
+        select (groups.Legend, offered);
+
+    /// <summary>What's stored, or after a refusal what was posted, so a mistake elsewhere doesn't lose the ticks.</summary>
+    private bool IsChosen(NotificationType type) => Input.EmailNotifications?.Contains(type.ToString(), StringComparer.Ordinal) == true;
 
     private static string? Invalid(bool invalid) => invalid ? "true" : null;
 
@@ -150,16 +216,39 @@
         _animationInvalid = animation is null;
         _timeZoneInvalid = timeZone is not null && !TimeZones.IsOffered(timeZone);
 
-        if (theme is not { } chosenTheme || animation is not { } chosenAnimation || _timeZoneInvalid)
+        // Null keeps what's stored: with email off nothing was shown, and a post without the marker
+        // didn't come from this form as it is now.
+        HashSet<NotificationType>? email = null;
+
+        if (Verification.IsEnabled && Input.EmailShown == "true")
+        {
+            var parsed = (Input.EmailNotifications ?? []).Select(Parse<NotificationType>).ToList();
+            var available = EmailNotificationChoices.AvailableTo(_administrator);
+
+            _emailInvalid = parsed.Any(type => type is not { } known || !available.Contains(known));
+            email = [.. parsed.OfType<NotificationType>()];
+        }
+
+        if (theme is not { } chosenTheme || animation is not { } chosenAnimation || _timeZoneInvalid || _emailInvalid)
         {
             return;
         }
 
-        var result = await Preferences.SaveAsync(userId, new UserPreferences(chosenTheme, chosenAnimation, timeZone), HttpContext.RequestAborted);
+        var result = await Preferences.SaveAsync(
+            userId,
+            new UserPreferences(chosenTheme, chosenAnimation, timeZone),
+            email,
+            HttpContext.RequestAborted);
 
         if (result == PreferencesResult.UnknownTimeZone)
         {
             _timeZoneInvalid = true;
+            return;
+        }
+
+        if (result == PreferencesResult.UnavailableEmailNotification)
+        {
+            _emailInvalid = true;
             return;
         }
 
@@ -173,5 +262,11 @@
         public string? Animation { get; set; }
 
         public string? TimeZone { get; set; }
+
+        /// <summary>The names of the ticked boxes. Null when none is ticked, because a browser posts nothing for those.</summary>
+        public List<string>? EmailNotifications { get; set; }
+
+        /// <summary>"true" when the email choices were on the form. A string, for the same reason as the rest.</summary>
+        public string? EmailShown { get; set; }
     }
 }

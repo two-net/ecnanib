@@ -1,0 +1,86 @@
+@using System.Globalization
+@using Ecnanib.Modules.Notifications.Contracts
+@implements IDisposable
+@inject INotifications Inbox
+@inject NavigationManager Navigation
+@inject UnreadNotifications Unread
+@inject ILogger<UnreadCount> Logger
+
+@* The count is part of the link's text, so a screen reader hears what's shown. *@
+<a href="/notifications">@Text</a>
+
+@code {
+    /// <summary>Above this the menu shows NavNotificationsCountMany, which keeps a narrow menu narrow.</summary>
+    private const int MostShown = 99;
+
+    [Parameter, EditorRequired]
+    public Guid UserId { get; set; }
+
+    /// <summary>Which read is the latest, so an older one that finishes last can't put back a stale count.</summary>
+    private int _reads;
+
+    /// <summary>
+    /// Read on the prerender and again when the circuit starts, rather than carried across: a page that
+    /// a notification's link loaded in full can be prerendered before the click that marked it read has
+    /// committed, and the circuit's read corrects that. Re-read on every move inside a circuit, where
+    /// the layout stays, and when the list says something was read.
+    /// </summary>
+    private int? Count { get; set; }
+
+    private string Text => Count is > 0 and var count
+        ? string.Format(
+            CultureInfo.CurrentCulture,
+            Strings.NavNotificationsUnread,
+            count > MostShown ? Strings.NavNotificationsCountMany : count.ToString(CultureInfo.CurrentCulture))
+        : Strings.NavNotifications;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        Unread.Changed += OnChanged;
+
+        await ReadAsync();
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+        Unread.Changed -= OnChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => OnChanged();
+
+    private void OnChanged() => _ = InvokeAsync(RefreshAsync);
+
+    /// <summary>
+    /// A throw from an event handler ends the circuit, so a failed count keeps the last one. The page
+    /// itself still works, and the next move tries again.
+    /// </summary>
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            await ReadAsync();
+            StateHasChanged();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Couldn't count unread notifications");
+        }
+    }
+
+    /// <summary>
+    /// On the renderer's context, so reads start in order. A page that marked something read may
+    /// commit after a read that a navigation started, and its signal starts a newer one.
+    /// </summary>
+    private async Task ReadAsync()
+    {
+        var read = ++_reads;
+        var count = await Inbox.CountUnreadAsync(UserId, CancellationToken.None);
+
+        if (read == _reads)
+        {
+            Count = count;
+        }
+    }
+}

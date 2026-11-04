@@ -23,6 +23,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     private const string Ssrf = "reaches the network, which only the adapters may do, using URLs from the configuration file";
     private const string SecretAccess = "stores or reveals a user's secret, which only Identity and Credentials may do (FR-KEY-09, FR-ADM-01)";
     private const string Smtp = "reaches an SMTP server, which only Platform/Email may do, requiring TLS, using the server from the configuration file";
+    private const string Addresses = "hands out other users' addresses, which only Notifications may ask for (FR-NTF-02)";
     private const string LegacySmtp = "is the SMTP client the framework no longer recommends, which can't require STARTTLS. Use IEmailSender";
 
     private static readonly string[] NoExceptions = [];
@@ -31,6 +32,9 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
 
     /// <summary>The secrets' owners, and Platform, which implements the store. Administration may use Platform, but not this.</summary>
     private static readonly string[] SecretOwners = ["Modules.Identity.", "Modules.Credentials.", "Platform."];
+
+    /// <summary>Identity, which implements it, and Notifications, which emails them. Not the Web UI or Administration.</summary>
+    private static readonly string[] AddressReaders = ["Modules.Identity.", "Modules.Notifications."];
 
     private static readonly (string Reference, string Risk, string[] AllowedIn)[] Rules =
     [
@@ -42,6 +46,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         ("System.Net.Http.HttpClient", Ssrf, Adapters),
         ("System.Net.Http.IHttpClientFactory", Ssrf, Adapters),
         (".Platform.Contracts.ISecretStore::", SecretAccess, SecretOwners),
+        (".Modules.Identity.Contracts.IEmailRecipients::", Addresses, AddressReaders),
         ("MailKit.Net.Smtp.SmtpClient", Smtp, Email),
         ("System.Net.Mail.SmtpClient", LegacySmtp, NoExceptions),
     ];

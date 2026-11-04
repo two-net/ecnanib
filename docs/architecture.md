@@ -449,7 +449,7 @@ ASP.NET Data Protection protects the session cookie, antiforgery tokens and a ci
 
 ## Email
 
-`Platform/Email` sends mail through the SMTP server in the `Email` section (EXT-EML-01). Accounts are the only sender so far, and Notifications (#16) will be the second. With `Email:Enabled` false, nothing is sent and `IEmailSender.Send` throws, so a caller checks first: Identity through `IEmailVerification.IsEnabled` and `IPasswordResets.Mode`.
+`Platform/Email` sends mail through the SMTP server in the `Email` section (EXT-EML-01). Accounts and [Notifications](#notifications) send through it. With `Email:Enabled` false, nothing is sent and `IEmailSender.Send` throws, so a caller checks first: Identity through `IEmailVerification.IsEnabled` and `IPasswordResets.Mode`, and Notifications through `IEmailVerification.IsEnabled`.
 
 - **Sending is a job run.** `Send` hands the message to `IJobRunner` as a `send-email` run and returns at once. The time a request takes can't show whether it sent anything, which matters for registration and resets, and each send gets a `job_runs` row and its own correlation ID.
 - **Nothing stores a message,** so one a crash cuts off is lost. Everything sent so far is something the user can ask for again, and a durable outbox would hold live tokens in the database.
@@ -460,6 +460,58 @@ ASP.NET Data Protection protects the session cookie, antiforgery tokens and a ci
 - **The settings are checked only when email is on.** `EmailStartup` takes them, so a bad value stops startup before any migration runs, and it logs whether email is on and through which server.
 
 `SmtpEmailSenderTests` sends to a real server, which `MailpitFixture` runs in a container. Other tests replace `IEmailSender` with `CapturedEmail` and follow the links in what it keeps.
+
+## Notifications
+
+`Modules/Notifications` holds a user's notifications (FR-NTF-01) and emails the ones they chose (FR-NTF-02, FR-PREF-06). Each feature raises its own through `INotifications`. In-app is always on, so a notification is a row in `notifications` whatever the email settings, and email follows in the background.
+
+### Raising one
+
+| Call | When |
+|---|---|
+| `Add(context, notice)` | Alongside a change, such as a trade. It adds to the caller's context and doesn't save, like an [audit record](#writing-a-record), so the notification commits with the change or neither does |
+| `RaiseAsync(notice)` | A raiser with nothing else to commit |
+| `RaiseForAdministratorsAsync(notice)` | `CatalogSyncFailed` and `ExchangeRateLimitBan`, one row for each account that's an administrator now. Someone who becomes one later doesn't get earlier ones |
+
+**A `Notice` checks itself when it's built,** so a bad value throws in the raiser rather than failing the save of the change it's about:
+
+- **The type** is a `NotificationType` from `Kernel`, stored by name, so never rename one. A user's notice can't take an administrator's type, and an `AdministratorNotice` can't take a user's.
+- **The link** is a path on this site, such as `/agents/42`, of letters, digits, hyphens and underscores between slashes, at most 256 characters, with no query or fragment (FR-NTF-03). So it can't leave the site, carry a token, or hold `..` or `%`. Email puts `App:PublicBaseUrl` in front of it.
+- **The subject** is what the user would recognise it by, such as an agent's name or a key's label. It's user text, so pages only show it as text. Control characters, including the NUL that PostgreSQL refuses, and half surrogate pairs are removed, and it's cut to 120 characters. It's then scrubbed with the [masking rules](#masking) through `ISecretScrubber`, as a backstop: it can't recognise a secret with no marker, so never put one there.
+- **`Demo`** labels it wherever it's shown (FR-UI-07).
+
+`payload` is JSON holding the subject and `Demo`. A feature that needs more adds a nullable property to `NotificationPayload`, which older rows still read, and its text, with no migration.
+
+**There's no foreign key to `users`.** The boundary tests refuse `HasOne<User>()` from another module, and account deletion reaches this table through the port Identity declares (#51). Until then, a notification for a user that doesn't exist is stored, and nobody can see it.
+
+### Reading them
+
+`/notifications` lists a user's notifications, newest first and 50 at a time, like the [activity page](#a-users-history). Every call takes the user's ID and is scoped to it (NFR-SEC-04), so marking another user's notification does nothing.
+
+- **Following a notification's link marks it read** on the way. The link navigates as any link does, inside the circuit or, for a static page, as a full page load, and its click reaches the circuit first. Opening it in another tab marks it too. There's no GET that marks anything.
+- **"Mark all as read" stops at the newest one shown,** so one that arrived while the page was open stays unread.
+- **The menu shows the unread count** to signed-in users, as words in the link, capped at 99+. `Layout/UnreadCount` reads it when it renders: on the prerender and again when the circuit starts, on every navigation inside a circuit, and when the list says something was read. That's a query by a partial index each time.
+  - **The circuit reads again rather than taking the prerender's count with `[PersistentState]`.** A full page load from a notification's link can be prerendered before the click that marked it read commits, and the second read corrects it.
+  - **The list signals through `UnreadNotifications`, a scoped service,** so a circuit has one whatever the layout does. A page with its own `@layout`, such as Not Found, mounts a new menu, and a cascaded value from the old layout wouldn't reach it.
+  - **Only the latest read counts.** A read a navigation started can finish after the one the list's signal started, so `UnreadCount` numbers them and drops a result that a newer read has overtaken.
+  - **A failed count keeps the last one** and logs a Warning, because a throw from an event handler ends the circuit.
+- **A new notification doesn't reach a page that's open** until the next navigation. Live updates are #41's.
+
+### Notification email
+
+`NotificationEmailJob` (`notification-email`) runs every minute with email on, and never with it off, so it adds no rows to `job_runs` then. It sends each user at most one email per run, listing everything new, which is the throttle: one event can fire for many agents, and a storm becomes one email.
+
+- **Only verified addresses.** Anyone can register an address that isn't theirs, so an unverified one could be a stranger's inbox. With email on, verifying is always possible, and the preferences page says so. A notification raised before the user verified isn't sent later.
+- **Only the types the user chose.** Until they choose, the defaults are the ones that need them to act: approval pending, the three pauses, credential invalid, model retired and kill switch executed, plus both administrator types for administrators (`EmailNotificationChoices.Defaults`). The choices are in `user_preferences.email_notifications`, as names, where null means never chosen and empty means none.
+- **`email_due` is set when it's raised,** from whether email is on. Turning email on later doesn't send old notifications.
+- **Rows are cleared before the message goes,** in one transaction per user, then `IEmailSender.Send` hands it over. A failed write therefore sends nothing rather than the same email every minute. `emailed_at` means handed to the sender, which records its own `send-email` run, not delivered.
+- **50 users per run,** because each message is a `send-email` run with its own SMTP connection. The rest wait for the next minute, oldest first. One message lists 20 notifications at most, and counts the rest with a link to the list.
+- **Older than 24 hours isn't emailed,** so after an outage yesterday's news stays in the app rather than arriving as a burst.
+- **Shutdown** stops it between users, through `context.Stopping`, so a run interrupted half way leaves the rest due.
+- **It never logs an address or a subject.** It logs a count under the user's ID. `details` holds counts only.
+- **Text is in `Modules/Notifications/Emails.resx`,** plain text, with times in UTC like the account emails. It's a second file named `Emails.resx`, so `Ecnanib.csproj` gives its generated class its own file name. The Web UI gives each type its own words in `Strings.resx`, through `NotificationText`.
+
+`IEmailRecipients` in Identity answers who gets what. It hands out other users' addresses, so `BannedApis` allows it only in Identity and Notifications.
 
 ## Web security
 
@@ -775,15 +827,17 @@ One challenge per account means that a second sign-in, from another device, repl
 
 ### Preferences
 
-`IPreferences` holds a user's theme, animation level and display time zone (SRS 3.2). `user_preferences` has one row per user, written when they first save and deleted with the account by its foreign key. Without a row, `Ui:DefaultTheme` and `Ui:DefaultAnimation` apply, and both default to System. Visitors always get the System theme (FR-PREF-03), with the configured animation level. Saving isn't audited, because FR-AUD-01 doesn't list it.
+`IPreferences` holds a user's theme, animation level and display time zone (SRS 3.2), and which [notifications](#notification-email) they're emailed (FR-PREF-06). `user_preferences` has one row per user, written when they first save and deleted with the account by its foreign key. Without a row, `Ui:DefaultTheme` and `Ui:DefaultAnimation` apply, and both default to System. Visitors always get the System theme (FR-PREF-03), with the configured animation level. Saving isn't audited, because FR-AUD-01 doesn't list it.
 
-**`App.razor` reads them once per full page load**, which is the only render that writes `<html>`, so the [theme](#theme-and-layout) and [motion level](#motion) are in the first response and never flash (AC-05). That's one query by primary key per page load. Navigating inside a circuit costs nothing.
+**`App.razor` reads them once per full page load**, which is the only render that writes `<html>`, so the [theme](#theme-and-layout) and [motion level](#motion) are in the first response and never flash (AC-05). That's one query by primary key per page load. Navigating inside a circuit costs nothing here, though the menu's [unread count](#reading-them) reads again. The email choices aren't part of `UserPreferences`, so this read doesn't need them.
 
 - **It renders nothing until they're read.** A component renders once at its first `await`, and that render would start `Routes`, and the page inside it, with the wrong time zone.
 - **The error page renders as a visitor's**, whoever is signed in. The database may be why it's showing, and a failure while rendering it would leave an empty 500.
 - **A change shows in another open tab only when that tab loads a page.** A circuit can't change `<html>`.
 
 **`/account/preferences` is a static page**, though it takes no secret, because its result shows on `<html>`. The page has to load again anyway, and a post and redirect does that with no script, so the [form](#forms-that-take-a-secret) works like the others. It has the general rate limit, not the authentication one. The selects post strings, and only exact names count, as in `Ui`: `Enum.TryParse` would also take a number or a list.
+
+**The email choices are only on the form with email on.** A browser posts nothing for a box that isn't ticked, so the form also posts a hidden `EmailShown`, which tells "none ticked" from "not shown". Without it, or with email off, `SaveAsync` leaves the stored choices alone. An administrator's types are only offered to administrators, and `SaveAsync` refuses them from anyone else.
 
 #### Time zones
 
@@ -920,6 +974,15 @@ Preferences were checked in Chromium and WebKit in Development, over plain HTTP,
 - `shell.js` writes the time zone cookie, `/account` shows the browser's zone until the user chooses one, then the chosen one, and the preferences page names the browser's zone
 - No horizontal scroll on `/account/preferences` at 375, 768 and 1280px, in both themes, no console errors beyond the noise below, nothing above Warning in the log, and no cookie value in it
 
+Notifications were checked in Chromium and WebKit in Development, over plain HTTP, with Mailpit as the SMTP server and notifications written into the table, because nothing raises them yet:
+
+- The menu counts on a page load, and again after navigating inside the circuit. "Mark all as read" clears it without a reload and moves focus to its status message
+- Following a notification's link marks it read, and the menu follows, both to an interactive page inside the circuit and to a static page that loads in full
+- A subject with markup shows as text, and Demo is labelled
+- The email choices show the defaults ticked, save, and are stored as names, and the email arrived within a minute as one message, with links on `App:PublicBaseUrl`
+- No horizontal scroll on `/notifications` and `/account/preferences` at 375, 768 and 1280px, in both themes, and no console errors beyond the noise below
+- WebKit ticked checkboxes in green, which is kept for profit and loss, so `.check` boxes now use `--accent`. That changes the registration page's boxes too
+
 Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Signing out does the same, more loudly in WebKit: it closes the session's connections, including that tab's, so the tab tries to reconnect while it's leaving. The reconnect modal wasn't open on a single frame in either browser. None of these is a fault in the application.
 
 The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
@@ -929,7 +992,6 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **The UI (#15, #41, #42, #52, #53):** no inline scripts, `<style>` blocks, `style=` attributes or `onclick=` handlers: the [CSP](#headers) blocks them all, and the failure is a console message and a silently broken page. Use classes, isolated CSS and script files. `Virtualize` renders `style=` attributes, so the first change that uses it adds `style-src-attr 'unsafe-inline'`, which is narrower than loosening `style-src`.
 - **Animation (#52):** animate through `--motion-travel` and `--motion-time`, as the reconnect modal does, and each animation follows the user's level and the operating system's reduced motion setting with no rule of its own (FR-ANI-07, AC-06). See [Motion](#motion). Off ends everything that uses `--motion-time`, so an animation that's essential needs another way, and a reason.
 - **Times (#41, #42 and every later page):** write each time through [`DisplayTime`](#time-zones), and give a chart `DisplayTime.Zone` for its axis. The account pages already do.
-- **Notification settings (#16):** FR-PREF-06 belongs in `user_preferences`, behind `IPreferences`, which SRS 6.1 groups with the rest.
 - **Switching to Live (#39):** render `MandatoryNotices` in the flow (EXT-UI-03). Require `IEmailVerification.IsSatisfiedAsync`, which is true when email is off or the address is verified (FR-AUTH-03, FR-AGT-05).
 - **Legal review (#58):** review the notices in `Strings.resx`, which are drafts. If you change a phrase that EXT-UI-03 quotes, change the tests that check it. Replace the placeholder documents and `LegalDraftNotice`, set both versions in `LegalDocuments` to `1`, and update the digests in `LegalDocumentTests`. Everyone then accepts again, which is right, because nobody has seen the real text. Rule on whether agents keep trading for a user who hasn't re-accepted, and on keeping proof of acceptance after account deletion, which FR-AUTH-09 would remove.
 - **Credentials (#20):** adding and rotating a key are sensitive actions. Their forms take a secret, so they're static pages already: add a code field, shown when `ITwoFactor.IsEnabledAsync` says so, and call `ITwoFactor.CheckAsync` inside the Credentials contract before saving anything. Go ahead only when `Allows()` is true. See [Two-factor](#the-check-for-sensitive-actions).
@@ -942,12 +1004,25 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **The first action with a before/after summary that a user sees:** show `Changes` on the activity page, with each field name's text in `Strings.resx`. Nothing shows them yet. `MasterKeyRotated` has them, but it's platform-wide, so it's on nobody's page.
 - **Account deletion (#51):** FR-AUTH-09 keeps audit records with the identity anonymized, and the [trigger](#append-only) refuses every `UPDATE`. Replace `audit_events_append_only()` in a new migration, so that an update can set `user_id`, `actor_id`, `ip_address` and `user_agent` to null and change nothing else, and add a test that it can't do more.
 - **Audit search (FR-ADM-06):** add a search to `IAuditTrail` and a page through Administration, which may use Platform. Show actor IDs and correlation IDs there, which `IAccountActivity` leaves out. Index whatever it filters on.
-- **Notifications (#16):** send email through `IEmailSender`, and only when email is on. Delivery isn't durable, so a notification that matters also needs its in-app copy (FR-NTF-01). Links go in plain text, built from `App:PublicBaseUrl` like the [account links](#verification-and-resets), and never carry a secret (FR-NTF-03). Decide whether email goes to an address that isn't verified. Throttle per user, because one event can fire for many agents.
+- **Raising notifications (FR-NTF-01):** raise each through `INotifications`, with `Add` on the context that makes the change it's about, so both commit together. Link to the page it's about, and set `Demo` for a Demo agent. See [Notifications](#notifications). Who raises what, by what `ModuleMap.cs` allows:
+  - Credentials (#20): `CredentialInvalid`, alongside pausing the agents (FR-KEY-11)
+  - Catalog (#21): `CatalogSyncFailed`, through `RaiseForAdministratorsAsync`
+  - Agents (#25): `ModelDeprecated` and `ModelRetired` (FR-CAT-04)
+  - Agents (#23, #27): `AgentPausedLossLimit`, when it acts on the Risk Engine's result (FR-RISK-08)
+  - DecisionCycle (#31): `AgentPausedErrors`
+  - DecisionCycle (#32): `AgentPausedBudget` (FR-CYC-07), because AI Council can't use Notifications
+  - Execution (#34, #35, #36): `TradeOpened`, `TradeClosed` (including a close outside Ecnanib, FR-EXE-06) and `StopMoved`
+  - Agents (#37): `KillSwitchExecuted`
+  - DecisionCycle (#38): `ApprovalPending` and `ApprovalExpired`, linking to the approval page, which needs sign-in like every page (FR-APR-02)
+  - Execution (#17, #49): `ExchangeRateLimitBan`, through `RaiseForAdministratorsAsync`. Neither the adapter, Market Data nor Administration may use Notifications, so Execution raises it when the adapter reports a ban, or a new edge goes in the map with its reason
+- **Live updates (#41):** push a new notification to the menu's count and an open list. Today they only change on navigation.
+- **Retention (#50):** the SRS sets no period for `notifications`, so decide one, and purge in batches by `created_at`. With email on, the email job adds a `job_runs` row a minute, about 1,440 a day, plus a `send-email` row per message.
 - **Credentials' secrets (#20):** store each secret with `ISecretStore.Add` on the context that saves the row that owns it, and keep only its ID. Replacing a secret is `Add` and `RemoveAsync` in one transaction, and so is deleting its owner. Keep secret access separate from credential metadata, so that listing credentials (FR-KEY-03) never decrypts anything. Two-factor added no foreign key to `secrets`, and the boundary tests refuse `HasOne<Secret>()`, so one would have to be written into the migration by hand. See [Secrets](#secrets) and [Two-factor](#two-factor), which does this already.
 - **Adapters (#17, #18):** take a `SecretValue`, and reveal it at the last moment, when signing a request or setting a header. Prefer `RevealUtf8()` for an HMAC key. Never put a revealed key in a log scope, an exception or a field.
 - **System health (#49):** show `IMasterKeyRotation` for FR-ADM-04's credential re-encryption progress.
 - **Account deletion (#51):** delete a user's secrets through the modules that own them, in the transaction that deletes the rows that refer to them. Nothing else can find them. That includes the TOTP key in `totp_authenticators.secret_id`: the row cascades with the user, but the secret doesn't.
-- **Data export (#51):** include the user's preferences from `IPreferences.GetAsync` (FR-DATA-03). Deleting the account deletes their row through its foreign key.
+- **Data export (#51):** include the user's preferences from `IPreferences.GetAsync`, and their email choices from `IPreferences.GetEmailNotificationsAsync` (FR-DATA-03). Deleting the account deletes their row through its foreign key.
+- **Account deletion (#51):** delete the user's `notifications` through the port Identity declares, which Notifications implements. There's no foreign key to do it.
 - **Exchange adapter (#17):** separate read and trade surfaces, so only Execution can place orders (AC-01), and share one request-weight budget (EXT-BIN-04, FR-EXE-09). Log FR-LOG-08 events under the `Exchange` category. Order-placing calls must enforce their own timeout of about 10 seconds and stop honouring a caller's token once the send has begun, or they won't fit the [drain window](#shutdown): `HttpClient`'s default is 100 seconds. Base URLs come from the configuration file only (NFR-SEC-10), and clients don't follow redirects, or a response could send a signed request somewhere else.
 - **AI adapters (#18):** no `AiProvider` enum. Providers are data, and an enum would break NFR-MNT-02. Log FR-LOG-07 events under the `AiCouncil` category. Base URLs and redirects follow the same rule as the exchange adapter.
 - **Catalog sync (#21):** use a separate job name for on-demand runs, so they don't move the schedule, and guard against one overlapping the scheduled run.
@@ -958,7 +1033,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences` and `TimeZones` in `Modules/Identity/Contracts`, the persistence, logging, correlation, job, audit, secret and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue` and `NotificationType` in `Kernel`.
 
 ## What the boundary tests can't see
 

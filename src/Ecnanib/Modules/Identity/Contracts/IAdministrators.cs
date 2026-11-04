@@ -15,4 +15,7 @@ public interface IAdministrators
 
     /// <summary>Verifies the user's address if they can confirm and the secret is right.</summary>
     Task<bool> ConfirmAsync(Guid userId, string secret, CancellationToken cancellationToken);
+
+    /// <summary>Every account that's an administrator now, such as for notifications only they get (FR-NTF-01).</summary>
+    Task<IReadOnlyList<Guid>> ListAsync(CancellationToken cancellationToken);
 }

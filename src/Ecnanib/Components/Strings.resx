@@ -997,4 +997,117 @@
   <data name="PreferencesChooseOption" xml:space="preserve">
     <value>Choose one of the options.</value>
   </data>
+  <data name="NavNotifications" xml:space="preserve">
+    <value>Notifications</value>
+  </data>
+  <data name="NavNotificationsUnread" xml:space="preserve">
+    <value>Notifications ({0} new)</value>
+    <comment>{0} is how many are unread, or NavNotificationsCountMany.</comment>
+  </data>
+  <data name="NavNotificationsCountMany" xml:space="preserve">
+    <value>99+</value>
+    <comment>Shown in place of a count above 99.</comment>
+  </data>
+  <data name="NotificationsPageTitle" xml:space="preserve">
+    <value>Notifications | Ecnanib</value>
+  </data>
+  <data name="NotificationsHeading" xml:space="preserve">
+    <value>Notifications</value>
+  </data>
+  <data name="NotificationsIntro" xml:space="preserve">
+    <value>What your agents, keys and models did that you should know about, newest first.</value>
+  </data>
+  <data name="NotificationsEmailChoicesLink" xml:space="preserve">
+    <value>Choose which notifications are also emailed to you</value>
+  </data>
+  <data name="NotificationsEmpty" xml:space="preserve">
+    <value>Nothing yet. Notifications appear here when something happens that you should know about.</value>
+  </data>
+  <data name="NotificationsShowOlder" xml:space="preserve">
+    <value>Show older notifications</value>
+  </data>
+  <data name="NotificationsMarkAllRead" xml:space="preserve">
+    <value>Mark all as read</value>
+  </data>
+  <data name="NotificationsAllRead" xml:space="preserve">
+    <value>All your notifications are marked as read.</value>
+  </data>
+  <data name="NotificationsNew" xml:space="preserve">
+    <value>New</value>
+  </data>
+  <data name="NotificationsDemo" xml:space="preserve">
+    <value>Demo</value>
+  </data>
+  <data name="NotificationTitleTradeOpened" xml:space="preserve">
+    <value>Trade opened</value>
+  </data>
+  <data name="NotificationTitleTradeClosed" xml:space="preserve">
+    <value>Trade closed</value>
+  </data>
+  <data name="NotificationTitleStopMoved" xml:space="preserve">
+    <value>Stop moved</value>
+  </data>
+  <data name="NotificationTitleApprovalPending" xml:space="preserve">
+    <value>Trade waiting for your approval</value>
+  </data>
+  <data name="NotificationTitleApprovalExpired" xml:space="preserve">
+    <value>Approval expired</value>
+  </data>
+  <data name="NotificationTitleAgentPausedLossLimit" xml:space="preserve">
+    <value>Agent paused at its loss limit</value>
+  </data>
+  <data name="NotificationTitleAgentPausedBudget" xml:space="preserve">
+    <value>Agent out of AI budget</value>
+  </data>
+  <data name="NotificationTitleAgentPausedErrors" xml:space="preserve">
+    <value>Agent paused after errors</value>
+  </data>
+  <data name="NotificationTitleCredentialInvalid" xml:space="preserve">
+    <value>Key stopped working</value>
+  </data>
+  <data name="NotificationTitleModelDeprecated" xml:space="preserve">
+    <value>Model deprecated</value>
+  </data>
+  <data name="NotificationTitleModelRetired" xml:space="preserve">
+    <value>Model retired</value>
+  </data>
+  <data name="NotificationTitleKillSwitchExecuted" xml:space="preserve">
+    <value>Kill switch used</value>
+  </data>
+  <data name="NotificationTitleCatalogSyncFailed" xml:space="preserve">
+    <value>Model catalog sync failed</value>
+  </data>
+  <data name="NotificationTitleExchangeRateLimitBan" xml:space="preserve">
+    <value>Binance rate-limit ban</value>
+  </data>
+  <data name="PreferencesEmailHeading" xml:space="preserve">
+    <value>Email notifications</value>
+  </data>
+  <data name="PreferencesEmailHint" xml:space="preserve">
+    <value>Every notification appears in Ecnanib. Tick the ones you also want by email. Several close together arrive as one email.</value>
+  </data>
+  <data name="PreferencesEmailUnverified" xml:space="preserve">
+    <value>Email only goes to a verified address, so you won't get these until you verify yours.</value>
+  </data>
+  <data name="PreferencesEmailVerifyLink" xml:space="preserve">
+    <value>Verify your address</value>
+  </data>
+  <data name="PreferencesEmailGroupTrades" xml:space="preserve">
+    <value>Trades</value>
+  </data>
+  <data name="PreferencesEmailGroupApprovals" xml:space="preserve">
+    <value>Approvals</value>
+  </data>
+  <data name="PreferencesEmailGroupAgents" xml:space="preserve">
+    <value>Agents</value>
+  </data>
+  <data name="PreferencesEmailGroupKeysAndModels" xml:space="preserve">
+    <value>Keys and models</value>
+  </data>
+  <data name="PreferencesEmailGroupAdministration" xml:space="preserve">
+    <value>Administration</value>
+  </data>
+  <data name="PreferencesEmailInvalid" xml:space="preserve">
+    <value>Choose from the notifications listed.</value>
+  </data>
 </root>

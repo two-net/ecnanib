@@ -32,7 +32,10 @@ public sealed partial class CapturedEmail : IEmailSender
     /// </summary>
     public string LastPathTo(string address) => LastLinkTo(address).PathAndQuery;
 
-    public static Uri LinkIn(EmailMessage message) => new(Links().Matches(message.TextBody).Single().Value);
+    public static Uri LinkIn(EmailMessage message) => LinksIn(message).Single();
+
+    /// <summary>Every link in a message, in order, for one that holds several.</summary>
+    public static IReadOnlyList<Uri> LinksIn(EmailMessage message) => [.. Links().Matches(message.TextBody).Select(match => new Uri(match.Value))];
 
     /// <summary>The token in a link, for a test that has to look for it somewhere else.</summary>
     public static string TokenIn(string link) => Tokens().Match(link).Groups["token"].Value;

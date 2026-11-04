@@ -31,11 +31,18 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public ValueTask DisposeAsync() => _container.DisposeAsync();
 
-    /// <summary>A connection string for a database that doesn't exist yet.</summary>
+    /// <summary>
+    /// A connection string for a database that doesn't exist yet. Its pool closes idle connections after
+    /// a few seconds rather than Npgsql's five minutes, which is longer than the whole run: otherwise every
+    /// connection any test ever opened would stay, each one a server process, and on a Docker VM with 2 GB
+    /// the kernel kills one, which restarts the server under every test running at the time.
+    /// </summary>
     public string NewConnectionString() =>
         new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
         {
             Database = $"test_{Guid.NewGuid():N}",
+            ConnectionIdleLifetime = 5,
+            ConnectionPruningInterval = 1,
         }.ConnectionString;
 
     /// <summary>A connection string for a database that exists and is empty.</summary>

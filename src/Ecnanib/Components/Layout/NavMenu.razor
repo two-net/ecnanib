@@ -8,6 +8,10 @@
     @* Not the default policy, which would hide sign-out from someone with a document to accept. *@
     <AuthorizeView Policy="@AccountPolicies.SignedIn">
         <Authorized>
+            @if (AccountClaims.UserId(context.User) is { } userId)
+            {
+                <UnreadCount UserId="userId" />
+            }
             <a href="/account">@Strings.NavAccount</a>
             @* A plain post, because a circuit can't clear a cookie. *@
             <form method="post" action="/sign-out" class="nav-form">
