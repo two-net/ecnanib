@@ -309,6 +309,65 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("agent_role_assignments", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.AiCouncil.PromptTemplateRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)")
+                        .HasColumnName("content");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Layer")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("layer");
+
+                    b.Property<string>("Market")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("market");
+
+                    b.Property<string>("Role")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("role");
+
+                    b.Property<string>("Timeframe")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("timeframe");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_prompt_templates");
+
+                    b.HasIndex("Layer", "Role", "Market", "Timeframe", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ix_prompt_templates_layer_role_market_timeframe_version");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("Layer", "Role", "Market", "Timeframe", "Version"), false);
+
+                    b.ToTable("prompt_templates", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_prompt_templates_layer_dimension", "(layer NOT IN ('Role', 'OutputContract') OR role IS NOT NULL) AND (layer <> 'Market' OR market IS NOT NULL) AND (layer <> 'Timeframe' OR timeframe IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_prompt_templates_version", "version >= 1");
+                        });
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Catalog.CatalogSyncRun", b =>
                 {
                     b.Property<long>("Id")

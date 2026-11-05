@@ -28,7 +28,8 @@ internal static class ModuleMap
         ["Scheduler"] = [Platform, "Agents", "DecisionCycle", "Execution"],
         ["Experience"] = [Platform, "DecisionCycle", "Execution", "MarketData", "AiCouncil", "Agents", "Catalog"],
         ["DecisionCycle"] = [Platform, "Agents", "MarketData", "AiCouncil", "RiskEngine", "Execution", "Notifications"],
-        ["AiCouncil"] = [Platform, "AiAdapters", "Credentials", "Catalog"],
+        // MarketData and RiskEngine for the runtime context in prompts: market data, indicators and risk settings (FR-PRM-01).
+        ["AiCouncil"] = [Platform, "AiAdapters", "Credentials", "Catalog", "MarketData", "RiskEngine"],
         ["Execution"] =
         [
             Platform, "Agents", "Credentials", "ExchangeAdapter", "MarketData", "RiskEngine", "Notifications",

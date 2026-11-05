@@ -29,6 +29,8 @@
       <StronglyTypedClassName>Emails</StronglyTypedClassName>
       <StronglyTypedFileName>$(IntermediateOutputPath)NotificationEmails.g.cs</StronglyTypedFileName>
     </EmbeddedResource>
+    <!-- FR-PRM-04: the initial prompt templates, which PromptSeeds reads. None of their names is a culture. -->
+    <EmbeddedResource Include="Modules\AiCouncil\Templates\*.md" LogicalName="Ecnanib.Prompts.%(Filename)%(Extension)" WithCulture="false" />
   </ItemGroup>
 
   <ItemGroup>

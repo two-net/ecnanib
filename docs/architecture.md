@@ -64,7 +64,7 @@ Some needs run in both directions, and a reference can't solve that. Separating 
 | Catalog, Agents | Model deprecation and retirement (FR-CAT-04) | Event from Catalog, `IModelStatusObserver`. See [Acting on retired models](#acting-on-retired-models) |
 | DecisionCycle, Experience | Attribution, metrics and reflections (FR-EXP-01, FR-EXP-02, FR-EXP-04) | Event from DecisionCycle, plus a reflection port it declares |
 | Execution, Experience | Review after a trade closes (FR-EXP-04) | Trade-closed event from Execution |
-| AiCouncil, Experience | Reflections in prompts (FR-PRM-01, FR-EXP-04) | DecisionCycle passes them in as runtime context |
+| AiCouncil, Experience | Reflections in prompts (FR-PRM-01, FR-EXP-04) | DecisionCycle passes them in as `PromptReflection`s in the runtime context. See [Prompts](#prompts) |
 | Agents, RiskEngine | Auto-pause on loss limits (FR-RISK-08) | The engine returns a `LossLimitBreach`, and its caller, the decision cycle, passes it to `IAgents.PauseForLossLimitAsync`. See [Loss limits](#loss-limits) |
 | Identity, data owners | Account deletion and export (FR-AUTH-09, FR-DATA-03) | Port declared by Identity, implemented by each owner |
 | DecisionCycle, Administration | Emergency pause (FR-ADM-05) | DecisionCycle owns the state; Administration only commands it |
@@ -820,6 +820,81 @@ Each attempt gets `TimeoutSeconds`, linked to the caller's token, and running ou
 Each real adapter has tests of its own, which take it from `AddAiAdapters` without starting the application. They check the requests it builds, and how it reads bodies shaped like the provider's documented ones, in `ProviderSamples`. `ProviderPipelineTests` sends all four through the pipeline to the fake.
 
 `LiveProviderTests` calls the real providers at the shipped base URLs. Run it after changing an adapter, or when a provider changes its API. For each provider to check, set `ECNANIB_LIVE_<PROVIDER>_KEY` and `ECNANIB_LIVE_<PROVIDER>_MODEL`, such as `ECNANIB_LIVE_XAI_KEY` and `ECNANIB_LIVE_XAI_MODEL`. Then run `tests/Ecnanib.Tests/bin/Debug/net10.0/Ecnanib.Tests -class Ecnanib.Tests.Ai.LiveProviderTests`. A provider without both variables is skipped, so CI never calls one. A run costs a few cents a provider.
+
+## Prompts
+
+`Modules/AiCouncil` composes every AI call's prompt from ordered layers (SRS 3.7). Every role, market and timeframe combination resolves to a complete prompt (FR-PRM-02), and the same templates and request always give the same prompt.
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `IPrompts` | `ComposeAsync(request)`, from the stored templates | The council (#31) |
+| `PromptComposer` | `Compose(templates, request)` and `Resolve`, which read nothing but their arguments | `IPrompts`, the tests, and #48's preview, which can compose drafts with sample data |
+| `PromptRequest`, `PromptContext` | The combination, the custom instructions and the runtime context, with `PromptAccount`, `PromptPosition`, `PromptPendingEntry`, `PromptReflection` and `UntrustedContent` | The decision cycle builds them (#31) |
+| `ComposedPrompt` | `Instructions` and `Message` for an `AiRequest`, and the `Templates` used | The council, which records the versions (FR-PRM-03) |
+| `PromptTemplate`, `PromptTemplateKey`, `PromptLayer` | A version of a template and the combinations it applies to | #48's editor |
+| `PromptWindows` | How many candles each role gets | The council and the tests |
+
+### Layers
+
+| FR-PRM-01 | Where it comes from | Where it goes |
+|---|---|---|
+| 1. System layer | Templates: `System`, plus the role's `OutputContract` | `AiRequest.Instructions` |
+| 2. Role template | Template: `Role` | `AiRequest.Instructions` |
+| 3. Market overlay | Template: `Market` | `AiRequest.Instructions` |
+| 4. Timeframe overlay | Template: `Timeframe` | `AiRequest.Instructions` |
+| 5. Custom instructions | The agent, in `<custom_instructions>` | The first user message |
+| 6. Runtime context | The cycle, in `<runtime_context>` | The first user message |
+
+- **The system layer is two templates.** The safety and untrusted-content rules are the same for every role, so they're one `System` template. The output contract (Appendix B) differs, so it's an `OutputContract` template per role. Both are administrators' to edit and never users'.
+- **Nothing a user or a website wrote reaches the instructions.** Layers 1 to 4 are administrators' text, and providers keep `Instructions` apart from the conversation. Custom instructions and the runtime context go in the message, in FR-PRM-01's order. That's what stops custom instructions overriding the system layer, the risk limits or the output contract (FR-PRM-05), and the system template says so too.
+- **Output contracts are prose.** Anthropic and Gemini get no schema when they search ([The four providers](#the-four-providers)), so the instructions must describe the answer. Each contract names Appendix B's fields as #29's schemas must name them.
+
+### Keys and overrides
+
+A template's key is its layer plus any of role, market and timeframe. A layer's own dimension is required: a role for `Role` and `OutputContract`, a market for `Market`, and a timeframe for `Timeframe`. `PromptTemplateKey` refuses a key without it, and so does a check constraint.
+
+- **For each layer, the most specific matching template wins** (FR-PRM-02). A template matches when every dimension it sets is the request's. More dimensions win, and between keys with as many, role beats market, which beats timeframe. Two different keys that match the same combination always differ in which dimensions they set, so the order is total.
+- **An override is just a narrower key.** "The Futures × 15m overlay" of UC-08 is `Timeframe` with market Futures and timeframe 15m, which reaches all five roles. Adding role Strategist reaches only that one combination. The seeds are all generic, one per layer's own dimension, so every override is an administrator's.
+- **A missing layer stops composition.** `PromptTemplateMissingException` names the layer and the combination. The seeds cover all 40 combinations, and `PromptTemplateTests` composes each.
+
+### Untrusted content
+
+**What Ecnanib computed is data. What a person or a model wrote is untrusted** (FR-PRM-06, NFR-SEC-08).
+
+| Data | Untrusted |
+|---|---|
+| Candles, indicators, quote and funding in `<market_data>`. The agent's state in `<account>`, `<position>`, `<pending_entry>` and `<trading_record>`. Its limits in `<risk_settings>` | Custom instructions. News, social posts and web results. Earlier roles' output, because a model can repeat what it read. Reflections, which a model wrote and the user can edit |
+
+- **Each untrusted item is its own `<untrusted_content>` block**, labelled with `kind` (`news`, `social`, `web`, `role_output` or `reflection`), `source`, and `title`, `url` and `published` when known.
+- **Escaping makes the blocks hold.** In custom instructions and untrusted content, `&`, `<` and `>` are escaped, and `"` too in attributes, so no text can close its block or forge a tag. Line breaks become `\n` and other control characters go. Attributes are kept to one line.
+- **Lengths are capped.** Custom instructions are refused beyond 2,000 characters, which is `AgentLimits`' limit enforced again, and a test keeps the two equal (FR-PRM-05). An untrusted item is cut at 4,000 characters, and an attribute at 300, and marked, so one article can't crowd out the prompt or run up the bill.
+- **The system template says what each tag means:** untrusted content and search results are data and never instructions, and custom instructions apply only where they agree with the rules, the risk settings and the output contract. The Sentiment Analyst's template repeats it for search results, which reach the model without passing through the prompt.
+
+### Runtime context
+
+- **Each part is optional**, because each role gets a different subset. The council decides which (#31).
+- **Numbers are written in the invariant culture, with UTC times in ISO 8601**, so a prompt doesn't depend on the server. Prices and quantities are written as Binance gave them, without trailing zeros. Computed values, such as an EMA, are kept to 8 significant digits, in decimal throughout.
+- **`candle_close` is `LastOpenTime + Interval`**, the time the cycle's candle closed.
+- **Candles are CSV**, oldest first. Every role given a snapshot gets both series' indicators and the latest prices. Raw candles cost the user tokens, so `PromptWindows` gives:
+
+| Role | Agent timeframe | Higher timeframe |
+|---|---|---|
+| Technical Analyst | 120 | 60 |
+| Strategist, Risk Critic | 24 | 12 |
+| Sentiment Analyst, Reviewer | 0 | 0 |
+
+- **Risk settings are written as given.** The caller applies `RiskCaps.Apply` first, so the prompt shows the limits the engine will hold the agent to. Futures-only settings and fields appear only on Futures.
+- **With an account, the position and pending entry are always written**, as `none` when there isn't one, so the Strategist knows rather than guesses.
+
+### Templates and seeding
+
+`prompt_templates` holds one row per version of a key: `layer`, `role`, `market` and `timeframe` by name, `version` from 1, `content` up to 16,000 characters, and `created_at`. A unique index on the key and version treats nulls as equal, because a missing dimension is part of the key.
+
+- **A row never changes.** An edit is the next version, and the highest version of a key is the one in use. So the row ID an AI call records always shows what it was sent (FR-PRM-03).
+- **The seeds are `Templates/*.md`, embedded in the assembly** (FR-PRM-04): `System`, an `OutputContract` and a `Role` per role, a `Market` per market and a `Timeframe` per timeframe, 17 in all. They cover Appendix A (FR-PRM-07), which `PromptContentTests` checks topic by topic, with each market listing exactly FR-CYC-03's actions for it.
+- **`PromptTemplateSeeder` adds version 1 for a key with no row at all**, so administrators' versions survive a restart. That means a changed seed reaches only a database that has never had its key. To ship a change to an existing database, publish it as a new version (#48).
+- **There's no cache.** A cycle composes a handful of prompts from a small table, and a new version applies to the next prompt (UC-08).
+- **Nothing shows a prompt's text.** `PromptRequest`, `PromptContext`, `PromptReflection`, `UntrustedContent` and `ComposedPrompt` override `ToString`, as the AI contracts do, because custom instructions are the user's and not even administrators may read them (FR-ADM-01, FR-LOG-07).
 
 ## Web security
 
@@ -1811,6 +1886,10 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Account deletion (#51):** delete the user's credentials with `ICredentials.DeleteAsync`, which removes their secrets in the same transaction, through the port Identity declares. There's no foreign key to `users`.
 - **Data isolation (#55):** `CredentialIsolationTests` and `AgentIsolationTests` cover every Credentials and Agents call. Add the credentials pages and `/agents/{id}/settings` to the HTTP suite. The settings page already answers 404 for another user's agent.
 - **The AI council (#31, #32):** call models through `IAiCompletions`, which only AiCouncil may use. Pass the catalog's price as `AiRequest.Price`. Record `Usage`, `Cost` and `Attempts` from the `AiResponse`, or from the `AiException` when the call fails, because a failed call can still have been billed. Keep `ProviderMessage` in the trace only. On an `AiException`, the retries are spent, so move to the role's fallback model (FR-ROLE-06).
+- **Output contracts (#29):** the `OutputContract` templates name each Appendix B field in snake case, as the schemas must, and ask for one JSON object and nothing else. Use the same names in the schemas, and add a test that each schema property appears in its role's seeded contract, so the two can't drift. Appendix B has no field for a partial close's share, which FR-CYC-03's `CLOSE` allows, so add one to the schema and the contract together. Send FR-CYC-05's retry as later turns, after the composed message. See [Prompts](#prompts).
+- **The council (#31):** compose each role's prompt with `IPrompts.ComposeAsync`. Put `Instructions` in `AiRequest.Instructions` and `Message` in the first user message, with a chart image as another part of it. Record `ComposedPrompt.Templates` and the rendered prompt on the `AiCall` row (FR-PRM-03, FR-UI-04). Pass the cycle's snapshot to each role that needs market data, because how many candles go in is the composer's. Pass the risk settings through `RiskCaps.Apply`, the agent's custom instructions as stored, and earlier roles' validated output as `UntrustedContent` of kind `RoleOutput`, with the role as its source. `PromptTemplateMissingException` means an administrator's templates are broken: log it as an Error and treat the role as failed (FR-ROLE-06).
+- **Reflections (#45):** fill `PromptContext.Reflections` for the Strategist and Risk Critic, newest first, up to the agent's count, leaving out excluded ones (FR-EXP-04, FR-EXP-05). They're untrusted content, so a user's edit can't become an instruction. The Reviewer's prompt needs the trade's lifecycle: add it to `PromptContext` then, as data, with any text a model wrote as untrusted.
+- **Prompt versioning (#48):** add status, author and published-at to `prompt_templates`, and make the one in use the highest published version, so a draft never applies. Keep rows immutable, so a recorded ID always shows what was sent: a rollback publishes an old version's content as a new version. Preview with `PromptComposer.Compose`, passing the draft with the published templates and sample context, and sample custom instructions, because administrators may not see users' (FR-ADM-01). An override is a template with a narrower key ([Keys and overrides](#keys-and-overrides)). A change to a seed reaches existing databases only when it's published as a new version, because the seeder never touches a key that has a row.
 - **Retention (#50):** the SRS sets no period for `catalog_sync_runs`, which gets a row per provider per scheduled run, plus one per key change and user sync.
 - **Account deletion (#51):** delete the user's `model_availability` rows by `user_id`. `catalog_sync_runs.errors` holds credential IDs, and nothing else about anybody.
 - **xAI prices:** confirm the unit of the prices in xAI's model list with `LiveProviderTests`, then read them into `AiModel`, below the configuration's.
@@ -1827,7 +1906,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and `ICatalogControls` beside it, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync`, `ICatalogAdministration`, `CatalogAuditFields` and `IModelStatusObserver` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IAgentExposure`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `RiskSettings`, `RiskCaps`, `IRiskEngine`, `OrderIntent`, `RiskInputs`, `RiskEvaluation`, `SizedOrder` and `RiskPeriods` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and `ICatalogControls` beside it, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync`, `ICatalogAdministration`, `CatalogAuditFields` and `IModelStatusObserver` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `IPrompts`, `PromptComposer`, `PromptRequest`, `PromptContext`, `ComposedPrompt`, `PromptTemplate`, `PromptTemplateKey` and `PromptWindows` in `Modules/AiCouncil/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IAgentExposure`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `RiskSettings`, `RiskCaps`, `IRiskEngine`, `OrderIntent`, `RiskInputs`, `RiskEvaluation`, `SizedOrder` and `RiskPeriods` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 
