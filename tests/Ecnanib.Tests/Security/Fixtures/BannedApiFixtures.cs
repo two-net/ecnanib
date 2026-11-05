@@ -134,6 +134,28 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     {
         public static Task SyncAsync(Modules.Catalog.Contracts.ICatalogAdministration catalog) => catalog.SyncAllAsync();
     }
+
+    public static class OrderSizedByAModel
+    {
+        public static object Size() => new Modules.RiskEngine.Contracts.SizedOrder(1000m);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.RiskEngine.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public sealed class SizedOrder(decimal quantity)
+    {
+        public decimal Quantity => quantity;
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.RiskEngine
+{
+    public static class TheEngine
+    {
+        public static object Size() => new Contracts.SizedOrder(0.5m);
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Platform.Contracts

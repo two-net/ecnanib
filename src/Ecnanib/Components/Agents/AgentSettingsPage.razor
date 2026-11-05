@@ -6,6 +6,7 @@
 @inject ICredentials Credentials
 @inject ICatalog Catalog
 @inject IAgentExposure Exposure
+@inject RiskCaps Caps
 @inject NavigationManager Navigation
 
 @* Static, like every form here: a post goes through the HTTP rate limiter, which circuit traffic never
@@ -40,7 +41,7 @@
                     <ul class="facts-list">
                         @foreach (var problem in _problems)
                         {
-                            <li>@AgentText.ProblemOf(problem)</li>
+                            <li>@AgentText.ProblemOf(problem, Time)</li>
                         }
                     </ul>
                 }
@@ -171,12 +172,19 @@
         @foreach (var setting in Enum.GetValues<RiskSetting>())
         {
             var id = $"agent-risk-{setting}";
+            var cap = AgentText.RiskCapOf(setting, Caps);
 
             <div class="field">
                 <label for="@id">@AgentText.RiskSettingOf(setting)</label>
                 <input id="@id" name="@($"Input.{setting}")" type="text" inputmode="decimal" value="@Input.RiskValue(setting)" autocomplete="off"
-                       aria-invalid="@(_riskSettings.Contains(setting) ? "true" : null)" aria-describedby="@($"{id}-hint {id}-error")" />
+                       aria-invalid="@(_riskSettings.Contains(setting) ? "true" : null)"
+                       aria-describedby="@(cap is null ? $"{id}-hint {id}-error" : $"{id}-hint {id}-cap {id}-error")" />
                 <p id="@($"{id}-hint")" class="field-hint">@AgentText.RiskHintOf(setting)</p>
+                @if (cap is not null)
+                {
+                    @* FR-RISK-11's global cap, which the save refuses to go beyond. *@
+                    <p id="@($"{id}-cap")" class="field-hint">@cap</p>
+                }
                 <FieldError Id="@($"{id}-error")" Message="@(_riskSettings.Contains(setting) ? Strings.AgentFieldRiskError : null)" />
             </div>
         }
@@ -266,6 +274,10 @@
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
     [SupplyParameterFromForm(FormName = "agent-settings", Name = "Input")]
     private AgentForm Input { get; set; } = default!;
 
@@ -329,6 +341,9 @@
                 Timeframe = Timeframe.OneHour,
                 ExecutionMode = ExecutionMode.Confirm,
                 Roles = choices.Defaults,
+
+                // The SRS's defaults, within the caps when an administrator set them lower (FR-RISK-11).
+                Risk = Caps.Apply(RiskSettings.Default),
             };
 
             Input = AgentForm.Of(settings, _agent?.Version);

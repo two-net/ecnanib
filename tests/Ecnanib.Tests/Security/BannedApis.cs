@@ -32,6 +32,10 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     private const string KeyOpened =
         "decrypts a user's key for use, which only the modules that call providers with it may do: Catalog, AiCouncil and Execution (FR-KEY-09)";
 
+    private const string Unchecked =
+        "makes an order the Risk Engine didn't size, which only the engine may do, so that nothing reaches the exchange "
+        + "without a passing evaluation (FR-RISK-01, AC-01)";
+
     private const string CatalogWide =
         "syncs every user's keys, overrides models' metadata or changes the roles' defaults, which only an administrator may do, "
         + "and Administration checks that before it calls (FR-ADM-03)";
@@ -41,6 +45,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     private static readonly string[] Email = ["Platform.Email."];
     private static readonly string[] Execution = ["Modules.Execution."];
     private static readonly string[] Council = ["Modules.AiCouncil."];
+    private static readonly string[] RiskEngine = ["Modules.RiskEngine."];
 
     /// <summary>The one module that turns a user's credential into a key.</summary>
     private static readonly string[] Credentials = ["Modules.Credentials."];
@@ -76,6 +81,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         (".Modules.ExchangeAdapter.Contracts.ExchangeKey::.ctor", KeyBuilt, Credentials),
         (".Modules.Credentials.Contracts.ICredentialKeys::", KeyOpened, KeyUsers),
         (".Modules.Catalog.Contracts.ICatalogAdministration::", CatalogWide, CatalogAdministrators),
+        (".Modules.RiskEngine.Contracts.SizedOrder::.ctor", Unchecked, RiskEngine),
     ];
 
     private readonly string _prefix = rootNamespace + ".";

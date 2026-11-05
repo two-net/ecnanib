@@ -1,3 +1,5 @@
+using Ecnanib.Modules.RiskEngine.Contracts;
+
 namespace Ecnanib.Modules.Agents.Contracts;
 
 /// <summary>
@@ -51,6 +53,16 @@ public interface IAgents
 
     /// <summary>Stops new decision cycles of an Active agent. Its positions and protective orders stay (FR-AGT-06).</summary>
     Task<TransitionResult> PauseAsync(Guid userId, Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Pauses an Active agent for a loss limit the Risk Engine found it reached (FR-RISK-08), by the system, and
+    /// tells its user, in one transaction. A daily or weekly limit's pause lasts until <see cref="LossLimitBreach.Until"/>:
+    /// the agent can't be activated before then, and resumes on its own after. The consecutive-loss count's lasts
+    /// until the user resumes it. The decision cycle calls it with the breach from
+    /// <see cref="IRiskEngine.CheckLossLimits"/> or an entry's evaluation.
+    /// </summary>
+    /// <returns>False when the agent isn't Active, or the period has already ended, so nothing was done.</returns>
+    Task<bool> PauseForLossLimitAsync(Guid userId, Guid id, LossLimitBreach breach, CancellationToken cancellationToken);
 
     /// <summary>
     /// Ends an Active, Paused or Error agent's decision cycles, and leaves its positions and orders as they

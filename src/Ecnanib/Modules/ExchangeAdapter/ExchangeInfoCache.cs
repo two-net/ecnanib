@@ -23,6 +23,9 @@ internal sealed class ExchangeInfoCache(
 {
     private static readonly TimeSpan RetryAfterFailure = TimeSpan.FromMinutes(1);
 
+    /// <summary>How old a copy must be before a rejection may expire it.</summary>
+    public static readonly TimeSpan ExpireAfter = TimeSpan.FromMinutes(1);
+
     private readonly ConcurrentDictionary<(Market, TradingEnvironment), Entry> _entries = new();
     private readonly ILogger _logger = loggerFactory.CreateLogger(BinanceTransport.Category);
 
@@ -52,6 +55,37 @@ internal sealed class ExchangeInfoCache(
     }
 
     /// <summary>
+    /// Marks the copy stale unless it's younger than <see cref="ExpireAfter"/>, so the next read fetches a new
+    /// one (FR-RISK-04).
+    /// </summary>
+    public bool Expire(Market market, TradingEnvironment environment)
+    {
+        if (!_entries.TryGetValue((market, environment), out var entry))
+        {
+            return false;
+        }
+
+        lock (entry)
+        {
+            if (entry.Current is not { } current || time.GetUtcNow() - current.RefreshedAt < ExpireAfter)
+            {
+                return false;
+            }
+
+            // A refresh that failed less than a minute ago still holds the next one back.
+            entry.Expired = true;
+        }
+
+        _logger.LogInformation(
+            "Binance exchange information for {Market} {Environment} from {RefreshedAt:O} expired early, after a filter rejection",
+            market,
+            environment,
+            entry.Current?.RefreshedAt);
+
+        return true;
+    }
+
+    /// <summary>
     /// Fetches without any caller's token. The transport's own read timeout bounds it, and a public request
     /// has no outcome to lose.
     /// </summary>
@@ -64,6 +98,7 @@ internal sealed class ExchangeInfoCache(
         {
             var fetched = await FetchAsync(market, environment, CancellationToken.None);
             entry.Current = fetched;
+            entry.Expired = false;
 
             return fetched;
         }
@@ -93,7 +128,7 @@ internal sealed class ExchangeInfoCache(
     {
         var now = time.GetUtcNow();
 
-        return entry.Current is { } current && (now - current.RefreshedAt < settings.ExchangeInfoRefresh || now < entry.NextAttempt)
+        return entry.Current is { } current && ((!entry.Expired && now - current.RefreshedAt < settings.ExchangeInfoRefresh) || now < entry.NextAttempt)
             ? current
             : null;
     }
@@ -164,6 +199,7 @@ internal sealed class ExchangeInfoCache(
         QuantityRules? quantity = null;
         QuantityRules? marketQuantity = null;
         NotionalRules? notional = null;
+        PercentPriceRules? percentPrice = null;
 
         foreach (var filter in symbol.Filters)
         {
@@ -184,6 +220,29 @@ internal sealed class ExchangeInfoCache(
                 case "MIN_NOTIONAL" when (Decimal(filter, "notional") ?? Decimal(filter, "minNotional")) is { } min:
                     notional = new NotionalRules(min, null);
                     break;
+
+                // Spot's, by side, from the average price.
+                case "PERCENT_PRICE_BY_SIDE"
+                    when Decimal(filter, "bidMultiplierUp") is { } bidUp
+                        && Decimal(filter, "bidMultiplierDown") is { } bidDown
+                        && Decimal(filter, "askMultiplierUp") is { } askUp
+                        && Decimal(filter, "askMultiplierDown") is { } askDown:
+                    percentPrice = new PercentPriceRules(bidUp, bidDown, askUp, askDown, Whole(filter, "avgPriceMins"));
+                    break;
+
+                // Futures bounds a buy from above and a sell from below, around the mark price. Spot's older filter
+                // bounds both sides both ways, around the average price, and gives way to the one by side.
+                case "PERCENT_PRICE" when Decimal(filter, "multiplierUp") is { } up && Decimal(filter, "multiplierDown") is { } down:
+                    if (symbol.ContractType is not null)
+                    {
+                        percentPrice = new PercentPriceRules(up, 0m, 0m, down, null);
+                    }
+                    else
+                    {
+                        percentPrice ??= new PercentPriceRules(up, down, up, down, Whole(filter, "avgPriceMins"));
+                    }
+
+                    break;
             }
         }
 
@@ -197,8 +256,12 @@ internal sealed class ExchangeInfoCache(
             price,
             quantity,
             marketQuantity,
-            notional);
+            notional,
+            percentPrice);
     }
+
+    private static int? Whole(JsonElement filter, string name) =>
+        filter.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) ? number : null;
 
     private static QuantityRules? Quantity(JsonElement filter) =>
         Decimal(filter, "minQty") is { } min && Decimal(filter, "maxQty") is { } max && Decimal(filter, "stepSize") is { } step
@@ -234,5 +297,8 @@ internal sealed class ExchangeInfoCache(
         public ExchangeInfo? Current { get; set; }
 
         public DateTimeOffset NextAttempt { get; set; }
+
+        /// <summary>Set by <see cref="Expire"/>, until the next fetch succeeds.</summary>
+        public bool Expired { get; set; }
     }
 }

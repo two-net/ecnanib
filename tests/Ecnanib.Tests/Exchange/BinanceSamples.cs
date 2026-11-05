@@ -116,8 +116,12 @@ internal static class BinanceSamples
     private static DateTimeOffset? Time(string? milliseconds) =>
         milliseconds is null ? null : DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(milliseconds, CultureInfo.InvariantCulture));
 
-    /// <summary>GET /api/v3/exchangeInfo with BTCUSDT and, unless a test delists it, ETHBTC.</summary>
-    public static string SpotExchangeInfo(int weightLimit = 6000, string btcTickSize = "0.01000000", bool ethBtc = true) => $$"""
+    /// <summary>
+    /// GET /api/v3/exchangeInfo with BTCUSDT and, unless a test delists it, ETHBTC. BTCUSDT bounds prices by side,
+    /// as Binance's does now, or with the older filter for both sides when <paramref name="legacyPercentPrice"/> is set.
+    /// </summary>
+    public static string SpotExchangeInfo(
+        int weightLimit = 6000, string btcTickSize = "0.01000000", bool ethBtc = true, bool legacyPercentPrice = false) => $$"""
         {"timezone":"UTC","serverTime":1793801870500,
          "rateLimits":[
            {"rateLimitType":"REQUEST_WEIGHT","interval":"MINUTE","intervalNum":1,"limit":{{weightLimit}}},
@@ -133,7 +137,16 @@ internal static class BinanceSamples
              {"filterType":"ICEBERG_PARTS","limit":100},
              {"filterType":"MARKET_LOT_SIZE","minQty":"0.00000000","maxQty":"127.44699891","stepSize":"0.00000000"},
              {"filterType":"NOTIONAL","minNotional":"5.00000000","applyMinToMarket":true,"maxNotional":"9000000.00000000","applyMaxToMarket":false,"avgPriceMins":5},
+             {{(legacyPercentPrice ? SpotPercentPrice : SpotPercentPriceBySide)}},
              {"filterType":"MAX_NUM_ORDERS","maxNumOrders":200}]}{{(ethBtc ? EthBtc : "")}}]}
+        """;
+
+    private const string SpotPercentPriceBySide = """
+        {"filterType":"PERCENT_PRICE_BY_SIDE","bidMultiplierUp":"5","bidMultiplierDown":"0.2","askMultiplierUp":"5","askMultiplierDown":"0.2","avgPriceMins":5}
+        """;
+
+    private const string SpotPercentPrice = """
+        {"filterType":"PERCENT_PRICE","multiplierUp":"1.3","multiplierDown":"0.7","avgPriceMins":5}
         """;
 
     private const string EthBtc = """

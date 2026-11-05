@@ -87,6 +87,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("experience_enabled");
 
+                    b.Property<DateTimeOffset?>("LossLimitUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("loss_limit_until");
+
                     b.Property<string>("Market")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1105,6 +1109,26 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text[]")
                         .HasColumnName("order_types");
+
+                    b.Property<int?>("PercentAveragePriceMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("percent_average_price_minutes");
+
+                    b.Property<decimal?>("PercentBuyDown")
+                        .HasColumnType("numeric")
+                        .HasColumnName("percent_buy_down");
+
+                    b.Property<decimal?>("PercentBuyUp")
+                        .HasColumnType("numeric")
+                        .HasColumnName("percent_buy_up");
+
+                    b.Property<decimal?>("PercentSellDown")
+                        .HasColumnType("numeric")
+                        .HasColumnName("percent_sell_down");
+
+                    b.Property<decimal?>("PercentSellUp")
+                        .HasColumnType("numeric")
+                        .HasColumnName("percent_sell_up");
 
                     b.Property<string>("QuoteAsset")
                         .IsRequired()

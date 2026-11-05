@@ -15,10 +15,10 @@ internal static partial class AgentInput
 
     /// <summary>
     /// Cleans the text, as <see cref="Text"/> says, and puts the pair in upper case, then checks every setting's
-    /// own range. Whether Binance lists the pair, and whether the exchange key is the user's, are checked by
-    /// the caller.
+    /// own range, and the risk settings against the global caps (FR-RISK-11). Whether Binance lists the pair, and
+    /// whether the exchange key is the user's, are checked by the caller.
     /// </summary>
-    public static Checked Check(AgentSettings settings)
+    public static Checked Check(AgentSettings settings, RiskCaps caps)
     {
         var fields = new List<AgentField>();
 
@@ -54,10 +54,13 @@ internal static partial class AgentInput
         var risk = settings.Risk ?? RiskSettings.Default;
         var riskProblems = risk.Problems().ToList();
 
-        if (risk.MaxPositionNotional > AgentLimits.MaxAmount && !riskProblems.Contains(RiskSetting.MaxPositionNotional))
+        if (risk.MaxPositionNotional > AgentLimits.MaxAmount)
         {
             riskProblems.Add(RiskSetting.MaxPositionNotional);
         }
+
+        riskProblems.AddRange(caps.Problems(risk));
+        riskProblems = [.. riskProblems.Distinct().Order()];
 
         Require(riskProblems.Count == 0, AgentField.Risk);
 

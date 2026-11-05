@@ -32,7 +32,8 @@ public sealed class ExchangeInfoTests(PostgresFixture postgres)
                 new PriceRules(0.01m, 1000000m, 0.01m),
                 new QuantityRules(0.00001m, 9000m, 0.00001m),
                 new QuantityRules(0m, 127.44699891m, 0m),
-                new NotionalRules(5m, 9000000m)),
+                new NotionalRules(5m, 9000000m),
+                new PercentPriceRules(5m, 0.2m, 5m, 0.2m, 5)),
             spot.Find("BTCUSDT"));
         Assert.Contains("STOP_LOSS", spot.Find("BTCUSDT")!.OrderTypes);
         Assert.False(spot.Find("ETHBTC")!.IsTrading);
@@ -42,6 +43,9 @@ public sealed class ExchangeInfoTests(PostgresFixture postgres)
         Assert.Equal(
             ("PERPETUAL", new PriceRules(261.1m, 809484m, 0.1m), new QuantityRules(0.0001m, 1000m, 0.0001m), new NotionalRules(50m, null)),
             (perpetual.ContractType, perpetual.Price, perpetual.Quantity, perpetual.Notional));
+
+        // Futures bounds a buy from above and a sell from below, around the mark price.
+        Assert.Equal(new PercentPriceRules(1.05m, 0m, 0m, 0.95m, null), perpetual.PercentPrice);
         Assert.Null(futures.Find("ETHUSDT"));
     }
 

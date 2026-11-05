@@ -31,6 +31,10 @@
     {
         <p class="agent-problem">@explanation</p>
     }
+    @if (Agent.LossLimitUntil is { } until && Agent.Status != AgentStatus.Active)
+    {
+        <p class="agent-problem">@string.Format(CultureInfo.CurrentCulture, Strings.AgentLossLimitUntil, Time.Format(until))</p>
+    }
 
     <div class="agent-actions">
         @if (Agent.Status is AgentStatus.Draft or AgentStatus.Stopped or AgentStatus.Error or AgentStatus.Paused)
@@ -89,7 +93,7 @@
             <ul class="facts-list">
                 @foreach (var problem in _problems)
                 {
-                    <li>@AgentText.ProblemOf(problem)</li>
+                    <li>@AgentText.ProblemOf(problem, Time)</li>
                 }
             </ul>
         }
@@ -122,6 +126,10 @@
 
     [Parameter, EditorRequired]
     public Guid UserId { get; set; }
+
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
 
     /// <summary>The agent as it is now, after a change of status, or when it changed meanwhile.</summary>
     [Parameter]

@@ -113,6 +113,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys, two-factor keys and users' API keys live in PostgreSQL under the same keys | In place |
 | API keys | Users bring their own keys for Anthropic, Google, OpenAI, xAI, Binance Live and Binance Demo, and the platform has none of its own. Each key is checked with its provider when it's added, on demand and on a schedule, stored encrypted, and never shown again, only its last four characters. Binance keys that can withdraw are refused, and the ones without an IP restriction are flagged. A key that stops working pauses the agents that use it | In place |
 | Agents | Users create, edit, clone, archive and delete agents, each with its market, pair, timeframe, models per role, capital, risk settings, execution mode, AI budget and custom instructions. A new agent starts with a model and a fallback per role, from default providers in the configuration file and the models the user's keys can use. Activation checks the keys, models and their capabilities, capital and risk settings, and allows one agent per key, market and pair. Every change of status is audited | In place for Demo, as settings and a lifecycle. Agents don't trade yet: decision cycles, the wizard and switching to Live come later |
+| Risk engine | Deterministic rules, in code with no AI, that validate and size every order intent: position size from the risk per trade, capped by notional, balance, leverage and the exchange's filters, the stop's side and distance, reward-to-risk, no averaging down, funding, liquidation buffer, entry limits and loss limits. Every rule's inputs and outcome are recorded, and only the engine can produce an order to send. Global hard caps come from the configuration file, and a loss limit pauses the agent | In place as an engine. Decision cycles call it later |
 | Model catalog | Synced from every user's valid AI keys and merged into one list, with which key can use which model. It syncs on a schedule, when a key is added or replaced, and when a user asks. Every run is recorded. Prices and capabilities that providers don't report come from the configuration file. A model no key lists any more is deprecated, then retired after a grace period, when the roles that use it switch to their fallbacks or their agents pause. Users browse it on the **Models** page, filtered by provider, capability and status. Administrators correct its metadata, hide models, recommend them for roles, set each role's default and sync every key, all audited | In place |
 | Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, a before/after summary, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts and API keys. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
@@ -252,7 +253,7 @@ When a scheduled sync finds that no key lists a model any more, and none can use
 
 ### Agents
 
-Users create agents on the **Agents** page. Each trades one pair on Binance Spot or USDⓈ-M Futures, in Demo only for now, with a model chosen per role from those their AI keys can use. A new agent is a draft, and activating it checks that its Binance key is valid for its market, that each required role has a model one of the user's valid keys can use, and that its capital and risk settings are set. Only one agent at a time may be active, paused or in error per Binance key, market and pair, because they'd share the position. Archiving removes an agent and frees its name. An archived agent can be deleted for good.
+Users create agents on the **Agents** page. Each trades one pair on Binance Spot or USDⓈ-M Futures, in Demo only for now, with a model chosen per role from those their AI keys can use. A new agent is a draft, and activating it checks that its Binance key is valid for its market, that each required role has a model one of the user's valid keys can use, and that its capital and risk settings are set and within the [risk caps](#risk-caps). Only one agent at a time may be active, paused or in error per Binance key, market and pair, because they'd share the position. Archiving removes an agent and frees its name. An archived agent can be deleted for good.
 
 | Setting | Meaning |
 |---|---|
@@ -286,6 +287,21 @@ The `RoleDefaults` section gives each role a default provider by strength (FR-RO
 `appsettings.json` ships SRS 7.3's providers and no models. A new agent's roles start from the models the user's keys can use. Each role takes its default model, else its default provider's recommended or newest, else another provider's, so a user with one key gets every role from it. The Risk Critic takes a provider other than the Strategist's when the user has one, and each fallback comes from a provider other than its role's where possible.
 
 The first start copies the section into the `role_defaults` table (NFR-DEP-02), and from then on a role keeps its row: a change to the section reaches only a role that has none, so administrators' edits aren't overwritten. Administrators change the defaults on `/admin/catalog`, including **No default**, which a restart doesn't undo.
+
+#### Risk caps
+
+The `RiskCaps` section holds the global hard caps that no agent's risk settings may go beyond (FR-RISK-11). `appsettings.json` ships SRS 7.3's values, which are also the defaults.
+
+| Setting | Meaning |
+|---|---|
+| `RiskCaps:MaxLeverage` | The highest leverage any Futures agent may use, 1 to 125. Defaults to `5` |
+| `RiskCaps:MaxRiskPerTradePercent` | The most any agent may risk on one trade, as a percentage of its capital, above 0 and at most 100. Defaults to `2` |
+| `RiskCaps:MinLiquidationBufferMultiple` | The least distance to liquidation, in multiples of the distance to the stop, 1 to 100. Defaults to `2` |
+| `RiskCaps:MinRewardToRisk` | The least reward-to-risk a trade with a target may have, above 0 and at most 100. Defaults to `1` |
+
+An invalid value stops startup with a message that names it. Users see each cap beside its setting, and saving refuses a setting beyond it. If you tighten a cap, agents saved under the old one can't be activated or edited until their owners bring the setting within it, and the Risk Engine holds active ones to the new cap at once. See [Risk Engine](docs/architecture.md#risk-engine).
+
+When an agent reaches its daily or weekly loss limit, it pauses until the next UTC day, or Monday 00:00 UTC, and its owner is notified. It can't be resumed before then, and resumes on its own after, if it still passes the activation checks. Reaching the losing-trades-in-a-row count pauses it until its owner resumes it. Agents don't trade yet, so nothing reaches a limit until decision cycles arrive. See [Loss limits](docs/architecture.md#loss-limits).
 
 ## Security
 

@@ -54,7 +54,7 @@ internal sealed class AgentApp : IAsyncDisposable
 
                 services?.Invoke(collection);
             },
-            manualJobs: ["CredentialRevalidationJob", "AgentPrerequisitesJob", "CatalogSyncJob", "ModelLifecycleJob"]);
+            manualJobs: ["CredentialRevalidationJob", "AgentPrerequisitesJob", "CatalogSyncJob", "ModelLifecycleJob", "LossLimitResumeJob"]);
 
         Ai.On(
             HttpMethod.Get,

@@ -85,7 +85,10 @@ public enum AgentField
 
 /// <param name="Agent">The agent as it's stored, when saved, and as it is now when <see cref="AgentSaveOutcome.Changed"/>.</param>
 /// <param name="Fields">What's wrong, when <see cref="AgentSaveOutcome.Invalid"/>.</param>
-/// <param name="RiskSettings">Which risk settings are outside their range, when <see cref="Fields"/> has <see cref="AgentField.Risk"/>.</param>
+/// <param name="RiskSettings">
+/// Which risk settings are outside their range or beyond the global caps (FR-RISK-11), when <see cref="Fields"/>
+/// has <see cref="AgentField.Risk"/>.
+/// </param>
 /// <param name="Problems">Why the Active agent's new settings fail activation, when <see cref="AgentSaveOutcome.WouldFailActivation"/>.</param>
 public sealed record AgentSaveResult(
     AgentSaveOutcome Outcome,
@@ -175,6 +178,18 @@ public enum ActivationProblemKind
     RiskSettingsInvalid,
 
     /// <summary>
+    /// A risk setting is beyond the global hard caps in configuration (FR-RISK-11), which may have been tightened
+    /// since the agent was saved.
+    /// </summary>
+    RiskSettingsAboveCaps,
+
+    /// <summary>
+    /// A daily or weekly loss limit paused the agent, and the pause hasn't ended (FR-RISK-08).
+    /// <see cref="ActivationProblem.Until"/> says when it does.
+    /// </summary>
+    LossLimitPause,
+
+    /// <summary>
     /// Another agent that's Active, Paused or in Error trades the same pair on the same market with the same
     /// exchange key (FR-AGT-10). <see cref="ActivationProblem.OtherAgent"/> names it.
     /// </summary>
@@ -183,7 +198,8 @@ public enum ActivationProblemKind
 
 /// <param name="Role">Which role, for the role problems.</param>
 /// <param name="OtherAgent">The other agent's name, for <see cref="ActivationProblemKind.SlotTaken"/>. Only show it as text.</param>
-public sealed record ActivationProblem(ActivationProblemKind Kind, AiRole? Role = null, string? OtherAgent = null);
+/// <param name="Until">When the pause ends, for <see cref="ActivationProblemKind.LossLimitPause"/>.</param>
+public sealed record ActivationProblem(ActivationProblemKind Kind, AiRole? Role = null, string? OtherAgent = null, DateTimeOffset? Until = null);
 
 public enum ActivationWarningKind
 {

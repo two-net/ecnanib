@@ -60,6 +60,24 @@ internal sealed class ExchangeSymbols(
         return [.. rows.OrderBy(row => row.Symbol, StringComparer.Ordinal).Select(row => row.ToInfo())];
     }
 
+    public async Task RefreshAsync(Market market, TradingEnvironment environment, CancellationToken cancellationToken)
+    {
+        if (!exchange.ExpireExchangeInfo(market, environment))
+        {
+            return;
+        }
+
+        try
+        {
+            await ExchangeInfoAsync(market, environment, cancellationToken);
+        }
+        catch (MarketDataException exception)
+        {
+            // Nothing is stored, and Binance can't be reached: the next read tries again.
+            logger.LogWarning(exception, "Refreshing Binance exchange information for {Market} {Environment} failed", market, environment);
+        }
+    }
+
     /// <summary>
     /// The adapter's copy, after storing it if it's newer than the stored one. Null when Binance can't
     /// provide it but a copy is stored, which the caller then reads.

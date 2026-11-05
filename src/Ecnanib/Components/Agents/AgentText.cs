@@ -31,6 +31,10 @@ public static class AgentText
         AgentStatusReason.MarketNotEnabled => Strings.AgentReasonMarketNotEnabled,
         AgentStatusReason.AiKeyUnavailable => Strings.AgentReasonAiKeyUnavailable,
         AgentStatusReason.ModelRetired => Strings.AgentReasonModelRetired,
+        AgentStatusReason.DailyLossLimit => Strings.AgentReasonDailyLossLimit,
+        AgentStatusReason.WeeklyLossLimit => Strings.AgentReasonWeeklyLossLimit,
+        AgentStatusReason.ConsecutiveLosses => Strings.AgentReasonConsecutiveLosses,
+        AgentStatusReason.LossLimitEnded => Strings.AgentReasonLossLimitEnded,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Give the reason its text in Strings.resx."),
     };
 
@@ -43,6 +47,10 @@ public static class AgentText
         AgentStatusReason.MarketNotEnabled => Strings.AgentExplanationMarketNotEnabled,
         AgentStatusReason.AiKeyUnavailable => Strings.AgentExplanationAiKeyUnavailable,
         AgentStatusReason.ModelRetired => Strings.AgentExplanationModelRetired,
+        AgentStatusReason.DailyLossLimit => Strings.AgentExplanationDailyLossLimit,
+        AgentStatusReason.WeeklyLossLimit => Strings.AgentExplanationWeeklyLossLimit,
+        AgentStatusReason.ConsecutiveLosses => Strings.AgentExplanationConsecutiveLosses,
+        AgentStatusReason.LossLimitEnded => Strings.AgentExplanationLossLimitEnded,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Give the reason its explanation in Strings.resx."),
     };
 
@@ -78,6 +86,16 @@ public static class AgentText
         AiRole.Reviewer => Strings.RoleReviewer,
         _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Give the role its text in Strings.resx."),
     };
+
+    /// <summary>
+    /// The global cap on a setting, for its hint (FR-RISK-11, NFR-USA-03): a most for risk and leverage, a least for
+    /// the reward-to-risk and liquidation buffer. Null for a setting without one.
+    /// </summary>
+    public static string? RiskCapOf(RiskSetting setting, RiskCaps caps) => caps.CapOf(setting) is not { } cap ? null
+        : string.Format(
+            CultureInfo.CurrentCulture,
+            setting is RiskSetting.MinRewardToRisk or RiskSetting.LiquidationBufferMultiple ? Strings.AgentRiskFloorHint : Strings.AgentRiskCapHint,
+            cap);
 
     public static string RiskSettingOf(RiskSetting setting) => setting switch
     {
@@ -170,7 +188,8 @@ public static class AgentText
     };
 
     /// <summary>What has to be fixed before an agent can be activated.</summary>
-    public static string ProblemOf(ActivationProblem problem) => problem.Kind switch
+    /// <param name="time">The user's time zone, for when a loss limit's pause ends. UTC without one.</param>
+    public static string ProblemOf(ActivationProblem problem, DisplayTime? time = null) => problem.Kind switch
     {
         ActivationProblemKind.LiveNotAvailable => Strings.AgentLiveNotAvailable,
         ActivationProblemKind.NoExchangeKey => Strings.AgentProblemNoExchangeKey,
@@ -187,6 +206,10 @@ public static class AgentText
         ActivationProblemKind.ModelLacksStructuredOutput => WithRole(Strings.AgentProblemModelLacksStructuredOutput, problem.Role),
         ActivationProblemKind.NoCapitalAllocation => Strings.AgentProblemNoCapitalAllocation,
         ActivationProblemKind.RiskSettingsInvalid => Strings.AgentProblemRiskSettingsInvalid,
+        ActivationProblemKind.RiskSettingsAboveCaps => Strings.AgentProblemRiskSettingsAboveCaps,
+        ActivationProblemKind.LossLimitPause => problem.Until is { } until
+            ? string.Format(CultureInfo.CurrentCulture, Strings.AgentProblemLossLimitPause, (time ?? DisplayTime.Utc).Format(until))
+            : Strings.AgentProblemLossLimitPauseOpen,
         ActivationProblemKind.SlotTaken => string.Format(CultureInfo.CurrentCulture, Strings.AgentProblemSlotTaken, problem.OtherAgent),
         _ => throw new ArgumentOutOfRangeException(nameof(problem), problem.Kind, "Give the problem its text in Strings.resx."),
     };
@@ -246,6 +269,7 @@ public static class AgentText
             AgentAuditFields.Status => Strings.ActivityFieldStatus,
             AgentAuditFields.Reason => Strings.ActivityFieldReason,
             AgentAuditFields.ClonedFrom => Strings.ActivityFieldClonedFrom,
+            AgentAuditFields.PausedUntil => Strings.ActivityFieldPausedUntil,
             _ => null,
         };
     }

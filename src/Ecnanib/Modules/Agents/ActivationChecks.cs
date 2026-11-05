@@ -2,6 +2,7 @@ using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
 using Ecnanib.Modules.Credentials.Contracts;
 using Ecnanib.Modules.MarketData.Contracts;
+using Ecnanib.Modules.RiskEngine.Contracts;
 
 namespace Ecnanib.Modules.Agents;
 
@@ -11,7 +12,7 @@ namespace Ecnanib.Modules.Agents;
 /// opens a transaction: a symbol lookup can call Binance, and a transaction is never held across an
 /// exchange call. Switching to Live, with its own checks, is #39.
 /// </summary>
-internal sealed class ActivationChecks(ICredentials credentials, RoleModels roleModels, IExchangeSymbols symbols)
+internal sealed class ActivationChecks(ICredentials credentials, RoleModels roleModels, IExchangeSymbols symbols, RiskCaps caps)
 {
     /// <summary>Everything that stops the agent being activated, and what's worth a warning.</summary>
     public async Task<(List<ActivationProblem> Problems, List<ActivationWarning> Warnings)> CheckAsync(
@@ -51,6 +52,12 @@ internal sealed class ActivationChecks(ICredentials credentials, RoleModels role
         if (settings.Risk.Problems().Count > 0)
         {
             problems.Add(new ActivationProblem(ActivationProblemKind.RiskSettingsInvalid));
+        }
+
+        // The caps may have been tightened since the agent was saved (FR-RISK-11).
+        if (caps.Problems(settings.Risk).Count > 0)
+        {
+            problems.Add(new ActivationProblem(ActivationProblemKind.RiskSettingsAboveCaps));
         }
 
         return (problems, warnings);

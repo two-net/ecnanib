@@ -14,6 +14,8 @@ internal sealed class BinanceMarketData(BinanceTransport transport, ExchangeInfo
     public Task<ExchangeInfo> GetExchangeInfoAsync(Market market, TradingEnvironment environment, CancellationToken cancellationToken) =>
         exchangeInfo.GetAsync(market, environment, cancellationToken);
 
+    public bool ExpireExchangeInfo(Market market, TradingEnvironment environment) => exchangeInfo.Expire(market, environment);
+
     public async Task<IReadOnlyList<ExchangeCandle>> GetCandlesAsync(
         Market market,
         TradingEnvironment environment,

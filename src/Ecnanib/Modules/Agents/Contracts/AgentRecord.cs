@@ -6,6 +6,10 @@ namespace Ecnanib.Modules.Agents.Contracts;
 /// <param name="QuoteAsset">The pair's quote asset, which the capital allocation is in (DATA-R-02).</param>
 /// <param name="StatusReason">Why it's in its status: the user, or what paused it.</param>
 /// <param name="Version">Changes with every change, so an edit can't overwrite one it hasn't seen.</param>
+/// <param name="LossLimitUntil">
+/// When a daily or weekly loss limit's pause ends (FR-RISK-08). It can't be activated before then, even after
+/// it's stopped, and it resumes on its own then. Null when no such pause is under way.
+/// </param>
 public sealed record AgentRecord(
     Guid Id,
     AgentSettings Settings,
@@ -15,7 +19,8 @@ public sealed record AgentRecord(
     DateTimeOffset StatusChangedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    int Version)
+    int Version,
+    DateTimeOffset? LossLimitUntil = null)
 {
     public bool IsDemo => Settings.Environment == TradingEnvironment.Demo;
 }
@@ -62,6 +67,18 @@ public enum AgentStatusReason
 
     /// <summary>A required role's model retired, and the role had no fallback that could take over (FR-CAT-04).</summary>
     ModelRetired,
+
+    /// <summary>Its daily loss limit was reached. It resumes at the next UTC day (FR-RISK-08).</summary>
+    DailyLossLimit,
+
+    /// <summary>Its weekly loss limit was reached. It resumes at the next UTC week, on Monday (FR-RISK-08).</summary>
+    WeeklyLossLimit,
+
+    /// <summary>It lost the configured number of trades in a row. It stays paused until its user resumes it (FR-RISK-08).</summary>
+    ConsecutiveLosses,
+
+    /// <summary>Active again because a loss limit's pause ended (FR-RISK-08).</summary>
+    LossLimitEnded,
 }
 
 /// <summary>The field names in an agent's audit summary (FR-AUD-02), which the Web UI gives text to.</summary>
@@ -118,6 +135,9 @@ public static class AgentAuditFields
 
     /// <summary>The name of the agent a clone was made from.</summary>
     public const string ClonedFrom = nameof(ClonedFrom);
+
+    /// <summary>When a loss limit's pause ends (FR-RISK-08), as an ISO 8601 time in UTC.</summary>
+    public const string PausedUntil = nameof(PausedUntil);
 
     /// <summary>The prefix of a role's model field, such as <c>Role.Strategist</c>, holding the model as <see cref="ModelRef"/> writes it.</summary>
     public const string RolePrefix = "Role.";

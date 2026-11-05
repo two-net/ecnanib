@@ -1,6 +1,8 @@
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
 using Ecnanib.Modules.Credentials.Contracts;
+using Ecnanib.Modules.Notifications.Contracts;
+using Ecnanib.Modules.RiskEngine.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +21,8 @@ internal sealed class Agents(
     RoleModels roleModels,
     IAgentExposure exposure,
     AgentsSettings settings,
+    RiskCaps caps,
+    INotifications notifications,
     TimeProvider time,
     ILogger<Agents> logger) : IAgents
 {
@@ -269,7 +273,15 @@ internal sealed class Agents(
         return new AgentSaveResult(AgentSaveOutcome.Saved, await FindAsync(userId, cloneId, cancellationToken));
     }
 
-    public async Task<ActivationResult> ActivateAsync(Guid userId, Guid id, CancellationToken cancellationToken)
+    public Task<ActivationResult> ActivateAsync(Guid userId, Guid id, CancellationToken cancellationToken) =>
+        ActivateAsync(userId, id, resumingFrom: null, cancellationToken);
+
+    /// <summary>
+    /// The user's activation, or, with <paramref name="resumingFrom"/>, the system's resume after a daily or weekly
+    /// loss limit's pause ended (FR-RISK-08). The system's is refused unless the agent is still Paused for that
+    /// reason, so it never undoes what the user did meanwhile.
+    /// </summary>
+    internal async Task<ActivationResult> ActivateAsync(Guid userId, Guid id, AgentStatusReason? resumingFrom, CancellationToken cancellationToken)
     {
         var before = await FindAsync(userId, id, cancellationToken);
 
@@ -278,7 +290,9 @@ internal sealed class Agents(
             return new ActivationResult(ActivationOutcome.NotFound);
         }
 
-        if (!Activatable.Contains(before.Status))
+        var bySystem = resumingFrom is not null;
+
+        if (!Activatable.Contains(before.Status) || (bySystem && (before.Status != AgentStatus.Paused || before.StatusReason != resumingFrom)))
         {
             return new ActivationResult(ActivationOutcome.NotAllowed, before);
         }
@@ -286,6 +300,14 @@ internal sealed class Agents(
         // These can call Binance, so they run before the transaction, which is conditional on the version they checked.
         var (problems, warnings) = await checks.CheckAsync(userId, before.Settings, cancellationToken);
         var now = time.GetUtcNow();
+
+        // A loss limit's pause lasts its whole period, whatever the status, so stopping the agent can't end it early.
+        if (before.LossLimitUntil is { } until && until > now)
+        {
+            problems.Insert(0, new ActivationProblem(ActivationProblemKind.LossLimitPause, Until: until));
+        }
+
+        var reason = bySystem ? AgentStatusReason.LossLimitEnded : AgentStatusReason.User;
 
         await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
@@ -309,8 +331,9 @@ internal sealed class Agents(
                 .ExecuteUpdateAsync(
                     setters => setters
                         .SetProperty(agent => agent.Status, AgentStatus.Active)
-                        .SetProperty(agent => agent.StatusReason, AgentStatusReason.User)
+                        .SetProperty(agent => agent.StatusReason, reason)
                         .SetProperty(agent => agent.StatusChangedAt, now)
+                        .SetProperty(agent => agent.LossLimitUntil, (DateTimeOffset?)null)
                         .SetProperty(agent => agent.Version, agent => agent.Version + 1),
                     cancellationToken);
 
@@ -319,17 +342,25 @@ internal sealed class Agents(
                 return new ActivationResult(ActivationOutcome.Changed, await FindAsync(userId, id, cancellationToken));
             }
 
+            var changes = AgentAudit.StatusChange(before.Status, AgentStatus.Active, reason);
             audit.Add(
                 context,
-                AgentAudit.ByUser(
-                    AuditAction.AgentActivated, userId, id, AgentAudit.StatusChange(before.Status, AgentStatus.Active, AgentStatusReason.User)));
+                bySystem
+                    ? AgentAudit.BySystem(AuditAction.AgentActivated, userId, id, changes)
+                    : AgentAudit.ByUser(AuditAction.AgentActivated, userId, id, changes));
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
 
-        logger.LogInformation("Activated agent {AgentId} for user {UserId}, from {Status}", id, userId, before.Status);
+        logger.LogInformation("Activated agent {AgentId} for user {UserId}, from {Status}, because {Reason}", id, userId, before.Status, reason);
 
         var activated = await FindAsync(userId, id, cancellationToken);
+
+        // Nobody sees a warning when the system resumes the agent, so Binance isn't asked for one.
+        if (bySystem)
+        {
+            return new ActivationResult(ActivationOutcome.Activated, activated, [], warnings);
+        }
 
         // The agent is active whatever happens here, so a failure only loses a warning the SRS says "should" give.
         try
@@ -345,6 +376,88 @@ internal sealed class Agents(
         }
 
         return new ActivationResult(ActivationOutcome.Activated, activated, [], warnings);
+    }
+
+    public async Task<bool> PauseForLossLimitAsync(Guid userId, Guid id, LossLimitBreach breach, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(breach);
+
+        var reason = breach.Kind switch
+        {
+            LossLimitKind.Daily => AgentStatusReason.DailyLossLimit,
+            LossLimitKind.Weekly => AgentStatusReason.WeeklyLossLimit,
+            LossLimitKind.ConsecutiveLosses => AgentStatusReason.ConsecutiveLosses,
+            _ => throw new ArgumentOutOfRangeException(nameof(breach), breach.Kind, "Not a loss limit."),
+        };
+
+        // A daily or weekly limit pauses for its period, and only the consecutive-loss count waits for the user.
+        if ((breach.Kind == LossLimitKind.ConsecutiveLosses) != (breach.Until is null))
+        {
+            throw new ArgumentException("A daily or weekly limit's pause has an end, and the consecutive-loss count's has none.", nameof(breach));
+        }
+
+        var now = time.GetUtcNow();
+
+        // A period that has already ended would pause nothing.
+        if (breach.Until <= now)
+        {
+            return false;
+        }
+
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        await AgentLock.TakeAsync(context, userId, cancellationToken);
+
+        var agent = await context.Set<Agent>().AsNoTracking().SingleOrDefaultAsync(row => row.Id == id && row.UserId == userId, cancellationToken);
+
+        if (agent is not { Status: AgentStatus.Active }
+            || !await AgentPause.TryAsync(context, audit, userId, id, agent.Version, reason, now, cancellationToken, breach.Until))
+        {
+            return false;
+        }
+
+        notifications.Add(
+            context,
+            new Notice(NotificationType.AgentPausedLossLimit, userId, $"/agents/{id}/settings", agent.Name, agent.Environment == TradingEnvironment.Demo));
+
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        logger.LogInformation(
+            "Paused agent {AgentId} of user {UserId} because of {Reason}, until {Until}", id, userId, reason, breach.Until);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Resumes an agent whose daily or weekly loss limit's pause has ended (FR-RISK-08), by the system. When the
+    /// activation checks fail, it stays paused for its user to resume, and is left alone from then on, unless all
+    /// that failed was reaching Binance, which the next run tries again.
+    /// </summary>
+    internal async Task<ActivationOutcome> ResumeAfterLossLimitAsync(Guid userId, Guid id, AgentStatusReason reason, CancellationToken cancellationToken)
+    {
+        var result = await ActivateAsync(userId, id, reason, cancellationToken);
+
+        if (result is { Outcome: ActivationOutcome.Refused, Agent: { } agent, Problems: { } problems }
+            && problems.Any(problem => problem.Kind != ActivationProblemKind.SymbolUnverifiable))
+        {
+            await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+            await context.Set<Agent>()
+                .Where(row => row.Id == id && row.UserId == userId && row.Version == agent.Version && row.Status == AgentStatus.Paused)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(row => row.LossLimitUntil, (DateTimeOffset?)null)
+                        .SetProperty(row => row.Version, row => row.Version + 1),
+                    cancellationToken);
+
+            logger.LogInformation(
+                "Agent {AgentId} of user {UserId} stays paused after its loss limit's pause ended, because it fails activation: {Problems}",
+                id,
+                userId,
+                problems.Select(problem => problem.Kind));
+        }
+
+        return result.Outcome;
     }
 
     public Task<TransitionResult> PauseAsync(Guid userId, Guid id, CancellationToken cancellationToken) =>
@@ -442,7 +555,7 @@ internal sealed class Agents(
     private async Task<(AgentSaveResult? Refusal, AgentSettings? Cleaned, string? QuoteAsset, string? ExchangeKey)> PrepareAsync(
         Guid userId, AgentSettings input, AgentRecord? current, CancellationToken cancellationToken)
     {
-        var verdict = AgentInput.Check(input);
+        var verdict = AgentInput.Check(input, caps);
 
         if (verdict.Settings is not { } cleaned)
         {

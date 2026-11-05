@@ -36,6 +36,7 @@ public sealed class BannedApiGuardTests
     [InlineData("ExchangeKeyOutsideCredentials", "builds a key for an adapter")]
     [InlineData("KeyOpenedByTheWebUi", "decrypts a user's key for use")]
     [InlineData("EveryKeySyncedByTheWebUi", "syncs every user's keys")]
+    [InlineData("OrderSizedByAModel", "the Risk Engine didn't size")]
     public void A_banned_use_is_found(string fixture, string risk) =>
         Assert.Contains(Uses, use => use.Source.Contains(fixture, StringComparison.Ordinal) && use.Risk.Contains(risk, StringComparison.Ordinal));
 
@@ -50,6 +51,7 @@ public sealed class BannedApiGuardTests
     [InlineData("TheKeyBuilder")]
     [InlineData("TheCatalog")]
     [InlineData("TheAdministrator")]
+    [InlineData("TheEngine")]
     public void An_allowed_use_passes(string fixture) =>
         Assert.DoesNotContain(Uses, use => use.Source.Contains(fixture, StringComparison.Ordinal));
 }

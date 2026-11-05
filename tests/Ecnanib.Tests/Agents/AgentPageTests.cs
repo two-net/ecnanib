@@ -1,6 +1,8 @@
 using System.Net.Http;
+using Ecnanib.Components;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
+using Ecnanib.Modules.RiskEngine.Contracts;
 using Ecnanib.Tests.Ai;
 using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Identity;
@@ -139,6 +141,48 @@ public sealed class AgentPageTests(PostgresFixture postgres)
         Assert.Equal(Enum.GetValues<AiRole>().Length, page.Split(chosen).Length - 1);
         Assert.DoesNotContain($"{AgentApp.Provider}|model-b", page, StringComparison.Ordinal);
         Assert.Contains("The Strategist and the Risk Critic use the same provider.", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_form_shows_the_global_caps_starts_within_them_and_refuses_more()
+    {
+        await using var app = new AgentApp(postgres, new() { ["RiskCaps:MaxLeverage"] = "1" });
+        using var visitor = Visitor.To(app.App);
+        var user = await SignedUpAsync(app, visitor);
+
+        var page = WebUtility.HtmlDecode(await visitor.PageAsync(NewPage));
+
+        // The SRS's default of 2 is brought within the cap of 1 (FR-RISK-11), and each capped setting says its cap.
+        Assert.Contains("name=\"Input.MaxLeverage\" type=\"text\" inputmode=\"decimal\" value=\"1\"", page, StringComparison.Ordinal);
+        Assert.Contains("aria-describedby=\"agent-risk-MaxLeverage-hint agent-risk-MaxLeverage-cap agent-risk-MaxLeverage-error\"", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"agent-risk-MaxLeverage-cap\"", page, StringComparison.Ordinal);
+        Assert.Contains("At most 1 on this site.", page, StringComparison.Ordinal);
+        Assert.Contains("At least 1 on this site.", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-risk-CooldownCyclesAfterLoss-cap", page, StringComparison.Ordinal);
+
+        using var response = await visitor.SubmitAsync(NewPage, Form, Fields(user, ("Input.MaxLeverage", "2")));
+        var refused = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Cancellation));
+
+        Assert.Contains("Some settings need fixing.", refused, StringComparison.Ordinal);
+        Assert.Contains("id=\"agent-risk-MaxLeverage\"", refused, StringComparison.Ordinal);
+        Assert.Contains("Enter a number in this setting's range.", refused, StringComparison.Ordinal);
+        Assert.Empty(await app.Agents.ListAsync(user.Id, includeArchived: true, Cancellation));
+    }
+
+    [Fact]
+    public async Task An_agent_paused_for_a_loss_limit_says_why_and_when_it_resumes()
+    {
+        await using var app = new AgentApp(postgres);
+        using var visitor = Visitor.To(app.App);
+        var user = await SignedUpAsync(app, visitor);
+        var agent = await app.ActiveAsync(user);
+        var until = RiskPeriods.NextDay(app.Clock.GetUtcNow());
+        await app.Agents.PauseForLossLimitAsync(user.Id, agent.Id, new LossLimitBreach(LossLimitKind.Daily, until), Cancellation);
+
+        var page = WebUtility.HtmlDecode(await visitor.PageAsync(ListPage));
+
+        Assert.Contains("Paused because its losses today reached its daily loss limit.", page, StringComparison.Ordinal);
+        Assert.Contains($"Resumes on its own at {DisplayTime.Utc.Format(until)}.", page, StringComparison.Ordinal);
     }
 
     /// <summary>A user who signed up through the pages, with a valid key of each kind.</summary>

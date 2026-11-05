@@ -21,6 +21,14 @@ public interface IExchangeMarketData
     Task<ExchangeInfo> GetExchangeInfoAsync(Market market, TradingEnvironment environment, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Marks the copy stale, so the next <see cref="GetExchangeInfoAsync"/> fetches a new one, as FR-RISK-04
+    /// requires after Binance rejects an order on a filter. A copy younger than a minute is kept, so a run of
+    /// rejections can't spend the weight a fetch costs again and again.
+    /// </summary>
+    /// <returns>False when the copy was kept because it's that new, or there's none yet.</returns>
+    bool ExpireExchangeInfo(Market market, TradingEnvironment environment);
+
+    /// <summary>
     /// Candles whose open times fall between <paramref name="from"/> and <paramref name="to"/>, both
     /// included, oldest first, and at most <paramref name="limit"/> of them. Without <paramref name="from"/>,
     /// the latest <paramref name="limit"/> up to <paramref name="to"/>. The last one may still be open: a
@@ -123,6 +131,7 @@ public sealed record ExchangeInfo(
 /// <param name="Quantity">LOT_SIZE.</param>
 /// <param name="MarketQuantity">MARKET_LOT_SIZE. A step of zero means LOT_SIZE's step applies.</param>
 /// <param name="Notional">Spot's NOTIONAL or Futures' MIN_NOTIONAL.</param>
+/// <param name="PercentPrice">Spot's PERCENT_PRICE_BY_SIDE or PERCENT_PRICE, or Futures' PERCENT_PRICE.</param>
 public sealed record SymbolRules(
     string Symbol,
     string Status,
@@ -133,7 +142,8 @@ public sealed record SymbolRules(
     PriceRules? Price,
     QuantityRules? Quantity,
     QuantityRules? MarketQuantity,
-    NotionalRules? Notional)
+    NotionalRules? Notional,
+    PercentPriceRules? PercentPrice = null)
 {
     public bool IsTrading => Status == "TRADING";
 }
@@ -144,3 +154,11 @@ public sealed record QuantityRules(decimal Minimum, decimal Maximum, decimal Ste
 
 /// <param name="Maximum">Null when Binance sets none.</param>
 public sealed record NotionalRules(decimal Minimum, decimal? Maximum);
+
+/// <summary>
+/// How far an order's limit price may be from the reference price, as multipliers of it: the mark price on
+/// Futures, and the average price over <paramref name="AveragePriceMinutes"/> on Spot. A 0 is no bound. Futures
+/// bounds a buy from above and a sell from below only, so its other two are 0.
+/// </summary>
+/// <param name="AveragePriceMinutes">Spot only.</param>
+public sealed record PercentPriceRules(decimal BuyUp, decimal BuyDown, decimal SellUp, decimal SellDown, int? AveragePriceMinutes);

@@ -112,6 +112,12 @@ internal sealed class Agent
 
     public required DateTimeOffset StatusChangedAt { get; set; }
 
+    /// <summary>
+    /// When a daily or weekly loss limit's pause ends (FR-RISK-08). Activation is refused before then, whatever the
+    /// status, so stopping the agent can't get round it. Activation clears it.
+    /// </summary>
+    public DateTimeOffset? LossLimitUntil { get; set; }
+
     public required DateTimeOffset CreatedAt { get; init; }
 
     public required DateTimeOffset UpdatedAt { get; set; }
@@ -205,7 +211,7 @@ internal sealed class Agent
     }
 
     public AgentRecord ToRecord() =>
-        new(Id, Settings, QuoteAsset, Status, StatusReason, StatusChangedAt, CreatedAt, UpdatedAt, Version);
+        new(Id, Settings, QuoteAsset, Status, StatusReason, StatusChangedAt, CreatedAt, UpdatedAt, Version, LossLimitUntil);
 }
 
 /// <summary>The model, and optional fallback, that fills one role for one agent (SRS 6.1, FR-AGT-02).</summary>

@@ -1551,6 +1551,9 @@
   <data name="ActivityFieldClonedFrom" xml:space="preserve">
     <value>Copied from</value>
   </data>
+  <data name="ActivityFieldPausedUntil" xml:space="preserve">
+    <value>Paused until</value>
+  </data>
   <data name="ActivityFieldFallback" xml:space="preserve">
     <value>{0} fallback</value>
     <comment>{0} is a role on the AI council, such as Strategist.</comment>
@@ -1786,6 +1789,18 @@
   <data name="AgentReasonModelRetired" xml:space="preserve">
     <value>Model retired</value>
   </data>
+  <data name="AgentReasonDailyLossLimit" xml:space="preserve">
+    <value>Daily loss limit</value>
+  </data>
+  <data name="AgentReasonWeeklyLossLimit" xml:space="preserve">
+    <value>Weekly loss limit</value>
+  </data>
+  <data name="AgentReasonConsecutiveLosses" xml:space="preserve">
+    <value>Losses in a row</value>
+  </data>
+  <data name="AgentReasonLossLimitEnded" xml:space="preserve">
+    <value>Loss limit pause ended</value>
+  </data>
   <data name="AgentExplanationCredentialDeleted" xml:space="preserve">
     <value>Paused because its Binance key was deleted. Choose another key in its settings, then resume it.</value>
   </data>
@@ -1800,6 +1815,22 @@
   </data>
   <data name="AgentExplanationModelRetired" xml:space="preserve">
     <value>Paused because its provider retired a model one of its roles needs, and the role had no fallback that could take over. Choose another model in its settings, then resume it.</value>
+  </data>
+  <data name="AgentExplanationDailyLossLimit" xml:space="preserve">
+    <value>Paused because its losses today reached its daily loss limit. Its open positions keep their stops. If it can't resume on its own when the day ends, resume it here.</value>
+  </data>
+  <data name="AgentExplanationWeeklyLossLimit" xml:space="preserve">
+    <value>Paused because its losses this week reached its weekly loss limit. Its open positions keep their stops. If it can't resume on its own when the week ends, resume it here.</value>
+  </data>
+  <data name="AgentExplanationConsecutiveLosses" xml:space="preserve">
+    <value>Paused because it lost too many trades in a row. Look at its recent trades and settings, then resume it when you're ready. Its open positions keep their stops.</value>
+  </data>
+  <data name="AgentExplanationLossLimitEnded" xml:space="preserve">
+    <value>Resumed on its own when its loss limit pause ended.</value>
+  </data>
+  <data name="AgentLossLimitUntil" xml:space="preserve">
+    <value>Resumes on its own at {0}.</value>
+    <comment>{0} is a time, written as DisplayTime writes it.</comment>
   </data>
   <data name="AgentMarketSpot" xml:space="preserve">
     <value>Spot</value>
@@ -2103,6 +2134,14 @@
   <data name="AgentFieldRiskError" xml:space="preserve">
     <value>Enter a number in this setting's range.</value>
   </data>
+  <data name="AgentRiskCapHint" xml:space="preserve">
+    <value>At most {0} on this site.</value>
+    <comment>{0} is the cap, a number.</comment>
+  </data>
+  <data name="AgentRiskFloorHint" xml:space="preserve">
+    <value>At least {0} on this site.</value>
+    <comment>{0} is the minimum, a number.</comment>
+  </data>
   <data name="AgentFieldBudgetError" xml:space="preserve">
     <value>Enter amounts above zero, with a month's at least a day's.</value>
   </data>
@@ -2186,6 +2225,16 @@
   </data>
   <data name="AgentProblemRiskSettingsInvalid" xml:space="preserve">
     <value>A risk setting is out of range.</value>
+  </data>
+  <data name="AgentProblemRiskSettingsAboveCaps" xml:space="preserve">
+    <value>A risk setting is beyond the limits this site allows. Lower it in the agent's settings.</value>
+  </data>
+  <data name="AgentProblemLossLimitPause" xml:space="preserve">
+    <value>It's paused for a loss limit until {0}, and resumes on its own then.</value>
+    <comment>{0} is a time, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="AgentProblemLossLimitPauseOpen" xml:space="preserve">
+    <value>It's paused for a loss limit, and resumes on its own when the pause ends.</value>
   </data>
   <data name="AgentProblemSlotTaken" xml:space="preserve">
     <value>{0} already trades this pair with this Binance key. Stop or archive it first.</value>

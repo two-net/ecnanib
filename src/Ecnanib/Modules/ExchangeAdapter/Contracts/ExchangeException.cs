@@ -68,4 +68,35 @@ public sealed class ExchangeException(
 
     /// <summary>True when the request may have taken effect, so an order must be queried before it's sent again.</summary>
     public bool MayHaveExecuted => Failure == ExchangeFailure.Unknown;
+
+    /// <summary>
+    /// True when Binance rejected an order on one of the symbol's filters, so Ecnanib's copy of them may be out
+    /// of date. Execution then refreshes it with <c>IExchangeSymbols.RefreshAsync</c> (FR-RISK-04).
+    /// </summary>
+    public bool IsFilterRejection => Failure == ExchangeFailure.Rejected && Code is { } code && FilterCodes.Contains(code);
+
+    /// <summary>
+    /// From Binance's error code pages: Spot's -1013 "Filter failure" (any filter, named in the message) and
+    /// -1111 precision, and Futures' price, quantity, tick, step, percent-price and minimum-notional codes.
+    /// Check them against Demo when orders are first placed (#34).
+    /// </summary>
+    private static readonly HashSet<int> FilterCodes =
+    [
+        -1013, // Filter failure (Spot)
+        -1111, // Precision is over the maximum defined for this asset
+        -4001, // Price less than 0
+        -4002, // Price greater than max price
+        -4003, // Quantity less than zero
+        -4004, // Quantity less than min quantity
+        -4005, // Quantity greater than max quantity
+        -4006, // Stop price less than zero
+        -4007, // Stop price greater than max price
+        -4013, // Price less than min price
+        -4014, // Price not increased by tick size
+        -4016, // Limit price can't be higher than the multiplier-up bound
+        -4023, // Quantity not increased by step size
+        -4024, // Limit price can't be lower than the multiplier-down bound
+        -4131, // The counterparty's best price doesn't meet the PERCENT_PRICE filter
+        -4164, // Notional must be no smaller than the minimum
+    ];
 }

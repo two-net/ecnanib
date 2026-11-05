@@ -16,12 +16,14 @@ public static class AgentsModule
         services.AddSingleton<RoleModels>();
         services.AddSingleton<ActivationChecks>();
         services.AddSingleton<AgentPrerequisites>();
-        services.AddSingleton<IAgents, Agents>();
+        services.AddSingleton<Agents>();
+        services.AddSingleton<IAgents>(provider => provider.GetRequiredService<Agents>());
         services.AddSingleton<ICredentialObserver, AgentCredentialObserver>();
         services.AddSingleton<IRecurringJob, AgentPrerequisitesJob>();
         services.AddSingleton<ModelLifecycle>();
         services.AddSingleton<IModelStatusObserver, AgentModelObserver>();
         services.AddSingleton<IRecurringJob, ModelLifecycleJob>();
+        services.AddSingleton<IRecurringJob, LossLimitResumeJob>();
 
         return services;
     }

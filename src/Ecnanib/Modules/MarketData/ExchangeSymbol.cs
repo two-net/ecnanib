@@ -56,6 +56,17 @@ internal sealed class ExchangeSymbol
 
     public decimal? MaxNotional { get; set; }
 
+    /// <summary>PERCENT_PRICE's multipliers, as <see cref="PercentPriceRules"/> has them.</summary>
+    public decimal? PercentBuyUp { get; set; }
+
+    public decimal? PercentBuyDown { get; set; }
+
+    public decimal? PercentSellUp { get; set; }
+
+    public decimal? PercentSellDown { get; set; }
+
+    public int? PercentAveragePriceMinutes { get; set; }
+
     /// <summary>When Binance gave the list this row came from, by this server's clock.</summary>
     public required DateTimeOffset RefreshedAt { get; set; }
 
@@ -89,6 +100,12 @@ internal sealed class ExchangeSymbol
         (MinQuantity, MaxQuantity, StepSize) = (rules.Quantity?.Minimum, rules.Quantity?.Maximum, rules.Quantity?.StepSize);
         (MarketMinQuantity, MarketMaxQuantity, MarketStepSize) = (rules.MarketQuantity?.Minimum, rules.MarketQuantity?.Maximum, rules.MarketQuantity?.StepSize);
         (MinNotional, MaxNotional) = (rules.Notional?.Minimum, rules.Notional?.Maximum);
+        (PercentBuyUp, PercentBuyDown, PercentSellUp, PercentSellDown, PercentAveragePriceMinutes) = (
+            rules.PercentPrice?.BuyUp,
+            rules.PercentPrice?.BuyDown,
+            rules.PercentPrice?.SellUp,
+            rules.PercentPrice?.SellDown,
+            rules.PercentPrice?.AveragePriceMinutes);
         RefreshedAt = refreshedAt;
     }
 
@@ -107,7 +124,10 @@ internal sealed class ExchangeSymbol
             ? new QuantityFilter(marketMin, marketMax, marketStep)
             : null,
         MinNotional is { } minNotional ? new NotionalFilter(minNotional, MaxNotional) : null,
-        RefreshedAt);
+        RefreshedAt,
+        PercentBuyUp is { } buyUp && PercentBuyDown is { } buyDown && PercentSellUp is { } sellUp && PercentSellDown is { } sellDown
+            ? new PercentPriceFilter(buyUp, buyDown, sellUp, sellDown, PercentAveragePriceMinutes)
+            : null);
 
     public static ExchangeSymbolInfo ToInfo(Market market, TradingEnvironment environment, SymbolRules rules, DateTimeOffset refreshedAt) =>
         From(market, environment, rules, refreshedAt).ToInfo();

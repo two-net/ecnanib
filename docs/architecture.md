@@ -65,7 +65,7 @@ Some needs run in both directions, and a reference can't solve that. Separating 
 | DecisionCycle, Experience | Attribution, metrics and reflections (FR-EXP-01, FR-EXP-02, FR-EXP-04) | Event from DecisionCycle, plus a reflection port it declares |
 | Execution, Experience | Review after a trade closes (FR-EXP-04) | Trade-closed event from Execution |
 | AiCouncil, Experience | Reflections in prompts (FR-PRM-01, FR-EXP-04) | DecisionCycle passes them in as runtime context |
-| Agents, RiskEngine | Auto-pause on loss limits (FR-RISK-08) | The engine returns a result and its caller acts on it |
+| Agents, RiskEngine | Auto-pause on loss limits (FR-RISK-08) | The engine returns a `LossLimitBreach`, and its caller, the decision cycle, passes it to `IAgents.PauseForLossLimitAsync`. See [Loss limits](#loss-limits) |
 | Identity, data owners | Account deletion and export (FR-AUTH-09, FR-DATA-03) | Port declared by Identity, implemented by each owner |
 | DecisionCycle, Administration | Emergency pause (FR-ADM-05) | DecisionCycle owns the state; Administration only commands it |
 | Modules, Web UI | Live updates (FR-UI-05, FR-ROLE-08) | Events that the Web UI subscribes to |
@@ -388,7 +388,7 @@ await transaction.CommitAsync(cancellationToken);
 | `AgentCreated` | `Agents.CreateAsync`, `Agents.CloneAsync` | In the save that inserts the agent and its roles. `Changes` has every setting but the description and custom instructions, and a clone's `ClonedFrom` |
 | `AgentUpdated` | `Agents.UpdateAsync` | In the save that changes the settings, with only the fields that changed, before and after. Not recorded when nothing did |
 | `AgentExecutionModeChanged` | `Agents.UpdateAsync` | In the same save, as well as `AgentUpdated`, because FR-AUD-01 names it |
-| `AgentActivated`, `AgentPaused`, `AgentStopped`, `AgentArchived` | `Agents`, and `AgentPrerequisites` for a pause by the system | In the transaction of the conditional update that changes the status. `Changes` has the status before and after, and the reason. A pause because of a credential is by the system, with the owner as `UserId` (FR-AGT-04) |
+| `AgentActivated`, `AgentPaused`, `AgentStopped`, `AgentArchived` | `Agents`, and `AgentPrerequisites`, `ModelLifecycle` and `Agents.PauseForLossLimitAsync` for a pause by the system | In the transaction of the conditional update that changes the status. `Changes` has the status before and after, and the reason. A pause because of a credential, a retired model or a loss limit is by the system, with the owner as `UserId` (FR-AGT-04), and a loss limit's has `PausedUntil` when it has a period. So is the resume when that period ends, `LossLimitEnded` |
 | `AgentDeleted` | `Agents.DeleteAsync` | In the transaction that deletes the archived agent. `Changes` has its name, market, environment and pair |
 | `CatalogModelEdited` | `CatalogAdministration.SaveModelAsync` | By an administrator, with no user, in the transaction that writes `model_overrides`. The target is the model, as `provider/model` when that fits 128 characters. `Changes` has the provider and model, and each field that changed, before and after, with a null for inherited. Not recorded when nothing changed |
 | `RoleDefaultChanged` | `CatalogAdministration.SaveRoleDefaultsAsync` | By an administrator, with no user, one per role that changed, in the transaction that saves them all. The role is the target, and `Changes` has the provider and model, before and after |
@@ -604,6 +604,8 @@ The algo endpoint's own page couldn't be read, so its parameters come from Binan
 
 - **It's held in memory per market and environment**, loaded on first use, and refreshed once it's older than `Binance:ExchangeInfoRefreshHours` (EXT-BIN-06). It's lazy rather than a job, because the adapter can't use Platform. Market Data keeps a copy in `exchange_symbols`: see [Exchange symbols](#exchange-symbols).
 - **A failed refresh keeps the last copy**, with a Warning, and waits a minute before trying again. With no copy, it throws.
+- **A filter rejection can expire it early (FR-RISK-04).** `ExpireExchangeInfo` marks the copy stale, so the next read fetches, unless the copy is under a minute old, so a run of rejections can't spend the weight again and again. A failed refresh's minute still holds. `ExchangeException.IsFilterRejection` names the codes that count, from Binance's error code pages: check them against Demo when orders are first placed (#34).
+- **Price bands are kept as four multipliers**, a 0 meaning no bound: Spot's `PERCENT_PRICE_BY_SIDE` by side, Spot's older `PERCENT_PRICE` for both sides when there's no by-side filter, and Futures' `PERCENT_PRICE`, which bounds a buy from above and a sell from below around the mark price.
 - **Callers share one refresh, which none of them can cancel.** One that stops waiting gets the last copy if there is one, and the refresh carries on for the next caller. The transport's read timeout bounds it.
 - **Spot asks for `showPermissionSets=false`**, which cuts the full body from about 18 MB to 7 MB.
 - **Each refresh updates its servers' limits.**
@@ -632,7 +634,7 @@ The algo endpoint's own page couldn't be read, so its parameters come from Binan
 | Contract | What | Who uses it |
 |---|---|---|
 | `IMarketData` | A snapshot for one symbol, timeframe and candle close: two candle series with their indicators, the quote, and Futures funding | DecisionCycle (#31) |
-| `IExchangeSymbols` | Binance's symbols and their filters, from `exchange_symbols` when Binance can't be reached | Agents, the wizard (#40), and the Risk Engine's callers (#27, #34) |
+| `IExchangeSymbols` | Binance's symbols and their filters, from `exchange_symbols` when Binance can't be reached, and a refresh after a filter rejection | Agents, the wizard (#40), and the Risk Engine's callers (#31, #34) |
 | `Indicators` | The indicator functions, pure and deterministic | Market Data, and anything that needs the same numbers, such as shadow outcomes (#44) |
 | `MarketDataException` | A failure in Market Data's terms: `Unavailable`, `Throttled` with `RetryAfter`, or `UnknownSymbol` | Its callers, which can't see the adapter's `ExchangeException` |
 
@@ -681,6 +683,7 @@ FR-CYC-09 asks for one fetch per symbol, timeframe and candle, whatever the numb
 - **It reads through, with no job.** `IExchangeSymbols` asks the adapter, whose copy refreshes itself after `Binance:ExchangeInfoRefreshHours` (EXT-BIN-06). When that copy is newer than the stored one, it replaces the rows in one transaction, deleting the symbols Binance dropped. A job would call Binance at startup, from every test application too.
 - **When Binance can't be reached, the table answers**, with its `RefreshedAt`, and there's a Warning. With nothing stored, it throws `Unavailable`.
 - **Failing to store doesn't fail the read.** The table is a copy, and the caller already has the data. There's a Warning, and the next read tries again.
+- **`RefreshAsync` fetches and stores again after a filter rejection** (FR-RISK-04), through the adapter's early expiry. Execution calls it (#34).
 
 ### Indicators
 
@@ -1386,13 +1389,13 @@ One Information event per provider run, with its counts, one per change of a mod
 |---|---|---|
 | `IAgents` | Listing, creating, editing, cloning, activating, pausing, stopping, archiving and deleting a user's agents, which agents use a credential (FR-KEY-10), and the models the user can give each role with the assignment a new agent starts with (FR-ROLE-02, FR-ROLE-03). Every call takes the user, so another user's agent behaves like one that doesn't exist (NFR-SEC-04) | The Web UI now. The wizard, the scheduler, the council and execution later |
 | `IAgentExposure` | Whether an agent has open positions or orders, and an account's available balance. A port Agents declares and Execution implements ([Inversions](#inversions)) | Agents, and the settings page, which locks fields with it |
-| `RiskSettings`, in `RiskEngine/Contracts` | FR-RISK-02's settings, their defaults and each one's own range. Only numbers, so the engine still depends on Kernel alone (rule 4) | Agents stores them. The engine (#27) takes them as input |
+| `RiskSettings`, in `RiskEngine/Contracts` | FR-RISK-02's settings, their defaults and each one's own range. Only numbers, so the engine still depends on Kernel alone (rule 4) | Agents stores them, and checks them against `RiskCaps` (FR-RISK-11). The engine takes them as input. See [Risk Engine](#risk-engine) |
 
 ### Tables
 
 | Table | What |
 |---|---|
-| `agents` | One row per agent: its settings as plain columns, risk settings as `risk_*`, the budget, its status, why it's in it, and a `version` |
+| `agents` | One row per agent: its settings as plain columns, risk settings as `risk_*`, the budget, its status, why it's in it, when a loss limit's pause ends (`loss_limit_until`), and a `version` |
 | `agent_role_assignments` | One row per agent and role: the model as provider and model ID, which is the catalog's key, and an optional fallback. Its foreign key to `agents` cascades, because both are this module's |
 | `agent_model_notices` | One row per agent, model and status (Deprecated or Retired) its owner was told about, so they're told once ([Acting on retired models](#acting-on-retired-models)). It's apart from the role rows because an edit replaces those. Its foreign key to `agents` cascades |
 
@@ -1415,6 +1418,7 @@ One Information event per provider run, with its counts, one per change of a mod
 - **Each change is a conditional update on the status and version it read**, in one transaction with its audit record, which has the status before and after and the reason (FR-AGT-04). Of two changes at once, one happens and the other says the status doesn't allow it.
 - **Archiving is how an agent is removed** (DATA-R-04), and needs no open positions or orders. Deleting is only for an archived agent, and removes its row and roles.
 - **Stopping leaves positions and orders as they are.** FR-AGT-07's other choice, closing them, comes with the kill switch (#37).
+- **A daily or weekly loss limit's pause can't be ended early**, by resuming or by stopping and activating, and ends on its own. See [Loss limits](#loss-limits).
 - **Nothing enters Error yet.** Decision cycles do (#31).
 
 ### Activation
@@ -1425,8 +1429,9 @@ One Information event per provider run, with its counts, one per change of a mod
 2. **The exchange key** exists, is the user's Binance key for the agent's environment, is `Valid`, and is enabled for the agent's market (FR-KEY-05).
 3. **The pair** is one Binance lists as trading, and a perpetual contract on Futures. A delivery contract has no funding, which the funding filter assumes, and it expires.
 4. **Each required role** (Technical Analyst, Strategist and Risk Critic) has a model that's `Active` in the catalog, that one of the user's `Valid` AI keys can use, and that doesn't lack structured output ([Role assignments](#role-assignments)). Validity comes from Credentials, not the catalog's rows, which follow a change to a key a moment later. An optional role's model, and every fallback, are checked the same way, but only warn. So does a Strategist and Risk Critic on one provider (FR-ROLE-04), and a Sentiment Analyst whose model says it can't search.
-5. **Capital** above zero, and every risk setting in its range: "complete risk settings". The global caps come with the engine (#27).
+5. **Capital** above zero, and every risk setting in its range: "complete risk settings". And none beyond the global caps (FR-RISK-11), which may have been tightened since the agent was saved. Saving checks both too, per setting, so the page marks each one.
 6. **The slot**, under the [user's lock](#the-users-lock).
+7. **No loss limit's pause under way** ([Loss limits](#loss-limits)). It's checked from the agent's row, not its settings, so an Active agent's edit doesn't ask.
 
 **FR-AGT-13's warning** comes after the agent is active: the capital of the key's active agents on that market, in the pair's quote asset, against the account's available balance in that asset. Execution reads the balance from Binance, at most once a minute per key and market, because every user shares the weight and a circuit's clicks never reach the rate limiter. An unknown balance gives no warning.
 
@@ -1486,14 +1491,113 @@ It reads only what Credentials says, so an outage, which leaves a key's status a
 
 A Deprecated model only warns: the agent keeps using it until it retires. `agent-models` runs the same pass every hour, and is the recovery path for an event lost with the process. One agent's or user's failure is logged and never stops the rest (NFR-REL-05).
 
+### Loss limits
+
+The Risk Engine finds a limit reached (FR-RISK-08), and `IAgents.PauseForLossLimitAsync` acts on it. The decision cycle (#31) calls it with the `LossLimitBreach` from `IRiskEngine.CheckLossLimits` at the start of each cycle, or from an entry's evaluation.
+
+| Limit | Reason | Pause ends |
+|---|---|---|
+| Daily | `DailyLossLimit` | At the next UTC day, on its own |
+| Weekly | `WeeklyLossLimit` | At Monday 00:00 UTC, on its own |
+| Losses in a row | `ConsecutiveLosses` | When the user resumes it. A streak suggests something a person should look at, and the SRS gives it no period |
+
+- **The pause is by the system, through `AgentPause`**, under the user's lock, with `AgentPausedLossLimit` raised in the same transaction, linking to the agent's settings and labelled Demo for a Demo agent. Only an Active agent pauses, and a period that's already over pauses nothing.
+- **`loss_limit_until` holds the end of a daily or weekly pause.** Activation refuses with `LossLimitPause` until then, whatever the status, so stopping the agent can't get round it. Any activation clears it.
+- **`agent-loss-limit-resume` ends the pause**, every minute. It resumes each agent still Paused for a daily or weekly limit whose end has passed, one at a time, through the same checks as a user's resume, with the reason `LossLimitEnded` and an audit record by the system. An agent the user stopped meanwhile is left alone. One that fails its checks stays paused for the user, and its `loss_limit_until` is cleared so it's tried no more, unless all that failed was reaching Binance, which the next run tries again. The end is in the table, so a restart loses nothing.
+- **The streak restarts when the agent resumes.** The decision cycle counts losing trades closed since the agent last became Active (#31), or a resumed agent would pause again at once.
+
 ### The pages
 
 | Page | What |
 |---|---|
 | `/agents` | Interactive. Each agent, labelled Demo (FR-UI-07), with its status, why the system paused it, and the actions its status allows. Stop, archive and delete ask first, in place. Activation lists what to fix, and its warnings. Archived agents are in a section of their own |
-| `/agents/new`, `/agents/{id}/settings` | Static, like every form: a post goes through the HTTP rate limiter, which a circuit never reaches. Every FR-AGT-02 setting on one page. It offers the user's Binance Demo keys, and each role's options from `IAgents.ListRoleChoicesAsync`, keeping a chosen model that's no longer offered so that saving doesn't drop it. A new agent starts with the default assignment. When the Strategist and Risk Critic share a provider, a note under the Risk Critic says so, on load and after a refused post, because the page is static |
+| `/agents/new`, `/agents/{id}/settings` | Static, like every form: a post goes through the HTTP rate limiter, which a circuit never reaches. Every FR-AGT-02 setting on one page, with each capped risk setting's global cap under its hint, and a new agent's risk settings brought within the caps. It offers the user's Binance Demo keys, and each role's options from `IAgents.ListRoleChoicesAsync`, keeping a chosen model that's no longer offered so that saving doesn't drop it. A new agent starts with the default assignment. When the Strategist and Risk Critic share a provider, a note under the Risk Critic says so, on load and after a refused post, because the page is static |
 
 The wizard (#40) will take over `/agents/new`, and the agent's own page (#41) `/agents/{id}`. A clone is named by the page, "name (copy)", numbered when that's taken, because the name is text the user reads.
+
+## Risk Engine
+
+`Modules/RiskEngine` validates and sizes every order intent (SRS 3.9), and nothing reaches the exchange without a passing evaluation (FR-RISK-01, AC-01). It depends on `Kernel` alone (rule 4): it takes everything as plain values and returns results, so the council's Appendix B types never reach it, and a model's output can only become one of the engine's own `OrderIntent`s, which it doesn't trust (NFR-SEC-08).
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `IRiskEngine` | `Evaluate(intent, inputs)`, and `CheckLossLimits` for the start of each cycle | The decision cycle (#31), approvals' re-validation (#38), and Execution for the kill switch and the emergency close (#34, #37) |
+| `OrderIntent`, `RiskInputs` | What's asked, and everything the rules look at | Their callers build them |
+| `RiskEvaluation`, `SizedOrder` | Every rule's outcome, reason and inputs (FR-RISK-10), and what a passing evaluation allows to be sent | The decision trace (#31) and Execution (#34) |
+| `RiskCaps` | FR-RISK-11's global hard caps, from the `RiskCaps` section, with SRS 7.3's values when it's missing. An invalid one stops startup and is named (CFG-03) | The engine, Agents and the settings page share one instance |
+| `RiskPeriods` | The UTC day and the week from Monday that the loss limits count over and pause until | Whoever sums P&L for `TradingRecord` (#31, #36) |
+
+### Determinism
+
+- **An evaluation reads nothing but its arguments and the caps.** No clock (`RiskInputs.Now` is the caller's), no I/O, no state, no randomness, and `decimal` only (DATA-R-02). `RiskEngineDeterminismTests` scans the module for clocks, `Random`, `Guid.NewGuid`, tasks, threads, the network, files, the database, configuration and binary floating point, and `RiskEngineDeterminismGuardTests` proves the scan against broken fixtures. The entry class and the caps' reader are exempt, because they wire the engine up. The scan caught `DateTimeOffset.AddDays`, which takes a `double`, so whole days are `TimeSpan`s.
+- **The caps come through DI**, not as an argument, so a caller can't pass looser ones. An agent saved before the caps were tightened is clamped to them at every evaluation, and the trace shows the setting, its cap and what was used.
+- **Every rule runs and is recorded,** in `RiskRule` order, with its inputs written in the invariant culture. A rule that depends on one that failed is `NotEvaluated`. Only a failed `Settings` or `Action` stops the rest. The verdict passes when no rule failed.
+
+### Rules
+
+s is +1 for a long and −1 for a short. Comparisons multiply rather than divide, so no rounding moves a boundary, and a value exactly at a bound passes.
+
+| Rule | Applies to | Fails when |
+|---|---|---|
+| `Settings` | Entries | A setting is out of its range, or there's no capital |
+| `Action` | All | The action isn't the market's (FR-CYC-03), an entry is opposite the position, an exit or adjustment has no position, or there's no unfilled entry to cancel |
+| `SymbolTrading` | Entries | Binance doesn't list the symbol as TRADING |
+| `DailyLoss`, `WeeklyLoss`, `ConsecutiveLosses` | Entries | The loss is at least the limit, or the streak at least the count. The breach goes back to the caller ([Loss limits](#loss-limits)) |
+| `EntriesPerDay`, `Cooldown`, `PendingEntry` | Entries | Too many entries today, adds and unfilled limits included; too few cycles since a loss; an entry still unfilled, which could otherwise stack past every cap |
+| `Funding` | Futures entries | s × rate × 800 > threshold × interval hours: funding against the position, per 8 hours, above the threshold. No rate passes |
+| `Prices` | Entries and adjustments | A filter is missing, a price is outside `PRICE_FILTER`, or a limit price (a limit entry, or a Spot target) is outside `PERCENT_PRICE`'s band |
+| `StopRequired`, `StopSide`, `StopDistance` | Entries; `AdjustStop` for the first two | No stop; a stop on the wrong side of the entry, or past the price that triggers it; a stop outside the agent's ATR bounds. The bounds are for entries only, so a trailing stop may sit closer |
+| `StopNotWidened` | `AdjustStop`, adds | A moved stop isn't strictly tighter, or an add's stop, which then guards the whole position, is wider (FR-RISK-06) |
+| `TargetSide`, `RewardToRisk` | Entries with a target, `AdjustTarget` | A target on the wrong side, or below the minimum reward-to-risk. No target on `AdjustTarget` removes it |
+| `NoAveragingDown` | Adds | The position isn't in profit at the price it would close at now, against Binance's break-even price when known (FR-RISK-07). Break-even counts as a loss |
+| `Size`, `Quantity`, `Notional` | Entries and exits | Below |
+| `LiquidationBuffer` | Futures entries | Below |
+
+**Exits are never blocked by policy.** The loss limits, cooldown, funding and the rest apply to entries only, and `Settings` too, so an exit fails only when it can't be sent: no position, or a Spot position too small to sell (`Dust`). That's what lets the kill switch and the emergency close go through the engine (AC-01).
+
+### Rounding and sizing
+
+- **Prices are rounded before anything checks or sizes with them**, on Binance's grid, which starts at the filter's minimum: `min + n × tick`. A limit entry rounds to a better price, a stop toward the price, which can only tighten it, and a target toward the entry. A 0 in a filter is Binance turning that part off.
+- **Quantity = (capital × risk %) ÷ |entry − stop|** (FR-RISK-03), with the risk asked for brought down to the agent's maximum, then capped by the smallest of: the maximum notional (the capital when unset); the capital, which on Futures is margin, so notional up to capital × leverage; the available balance, or margin × leverage; the leverage bracket's notional at the agent's leverage; and the smaller maximum of both lot filters, so the position can always be closed at market. It's rounded down, on `MARKET_LOT_SIZE`'s grid for a market order unless its step is 0. Below the minimum quantity or notional, the intent fails.
+- **On an add, one stop guards the whole position,** so what the position already risks at the new stop comes out of the budget, and its notional and cost count against the caps.
+- **A market entry is sized at the ask to buy and the bid to sell.** The minimum notional is checked at the lower of that and the last price, and the maximum at the higher, because Binance measures with its own.
+- **An exit closes the share asked for, rounded down.** On Spot, only what the agent's own fills bought, and no more than the account holds (FR-AGT-09). A remainder too small to sell later is sold now. Futures reduce-only orders are exempt from the minimum notional.
+
+### Liquidation
+
+The liquidation price is Binance's isolated one-way formula, for the whole position after the entry, at the agent's leverage, with the bracket its notional falls in:
+
+- long: (Q × EP − WB − cum) ÷ (Q × (1 − MMR))
+- short: (Q × EP + WB + cum) ÷ (Q × (1 + MMR))
+
+where WB = Q × EP ÷ leverage. The distance from the entry must be at least the agent's multiple of the stop's. A long that can't be liquidated passes. Without brackets, every Futures entry fails, because the buffer can't be checked. A notional exactly at a bracket's cap belongs to that bracket, which is the one sizing capped at.
+
+### Orders and AC-01
+
+- **Every order cites a passing evaluation.** An entry's protective stop and target are part of its `SizedOrder`, so they cite its evaluation. The kill switch and the emergency close are `Close` or `Sell` with `Origin = System`, which only the structural rules can stop. So the audit query over traces and orders that AC-01 asks for has no exceptions.
+- **Only the engine makes a `SizedOrder`.** Its constructor is internal, `BannedApis` refuses it anywhere else, and it's a class rather than a record, so nothing can copy one with a change. Execution sends only these (#34).
+
+### Inputs
+
+The engine can't read them itself, so the decision cycle builds them (#31):
+
+| `RiskInputs` | From |
+|---|---|
+| `Filters` | `IExchangeSymbols.FindAsync`: `IsTrading`, `Price`, `Quantity` (LOT_SIZE), `MarketQuantity`, `Notional`, `PercentPrice`. A null filter means Binance sent none |
+| `Prices` | The snapshot's `Quote` (bid, ask, last) and, on Futures, `Futures.MarkPrice` |
+| `Atr` | `snapshot.Candles.Indicators.Atr14` |
+| `Funding` | `snapshot.Futures.FundingRate`, with the interval from `/fapi/v1/fundingInfo` (#33), which is 8 hours for most symbols |
+| `AvailableQuote`, `BaseHeld` | `IExchangeAccount.GetAccountAsync`: the quote asset's available balance on Spot, `AvailableBalance` on Futures, and the base asset's total on Spot |
+| `Position` | Execution's records (#34, #35): the agent's own quantity and average entry, its stop and target. On Futures, Binance's `BreakEvenPrice` too |
+| `HasPendingEntry` | Execution's records (#34) |
+| `Record` | The trade journal (#36), over `RiskPeriods` |
+| `Brackets` | `/fapi/v1/leverageBracket` (#33) |
+
+### What it doesn't do
+
+- **Fees and slippage aren't in the size.** FR-RISK-03's formula is followed as written, so the loss if the stop fills is the agent's risk per trade plus the fees on both legs and a stop-market's slippage: on a tight Futures stop, roughly a tenth to a fifth more. A fee-aware size would need the account's commission rate as an input.
+- **Spot's price band uses the last price**, where Binance uses an average over a few minutes. A rare rejection is refreshed and recorded (#34).
+- **An add's liquidation price assumes the whole position posts notional ÷ leverage**, which is what Binance's isolated margin holds unless margin was added by hand, which an agent never does.
 
 ## Web UI
 
@@ -1667,7 +1771,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
   - Credentials: `CredentialInvalid` is raised already, when a check finds a key stopped working or lost a market. See [Checking on a schedule](#checking-on-a-schedule)
   - Catalog: `CatalogSyncFailed` is raised already. See [Syncing](#syncing)
   - Agents: `ModelDeprecated` and `ModelRetired` are raised already, by `ModelLifecycle`. See [Acting on retired models](#acting-on-retired-models)
-  - Agents (#27): `AgentPausedLossLimit`, when it acts on the Risk Engine's result (FR-RISK-08)
+  - Agents: `AgentPausedLossLimit` is raised already, by `Agents.PauseForLossLimitAsync`. See [Loss limits](#loss-limits)
   - DecisionCycle (#31): `AgentPausedErrors`
   - DecisionCycle (#32): `AgentPausedBudget` (FR-CYC-07), because AI Council can't use Notifications
   - Execution (#34, #35, #36): `TradeOpened`, `TradeClosed` (including a close outside Ecnanib, FR-EXE-06) and `StopMoved`
@@ -1685,7 +1789,6 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Decision cycles (#30, #31):** `Timeframe` is in `Kernel`. Pass the cycle's scheduled candle close to `IMarketData.CollectAsync`, not the time it started, so every agent on a candle shares one fetch. A catch-up cycle passes its own close too. See [Market data](#market-data).
 - **The decision cycle (#31):** catch `MarketDataException`. `Throttled` has a `RetryAfter`, which may fit the cycle's deadline (FR-CYC-06), and `UnknownSymbol` means the agent's pair is gone. Take the liquidation price from the position that reconciliation reads (#35), because Market Data has no keys. A snapshot holds 500 candles per series, so decide how many go into the prompt (#28) and into the trace's input snapshot. Compare the last candle with `CandleSeries.LastOpenTime`, because Binance can have a gap.
 - **The wizard (#40):** fill the roles step from `IAgents.ListRoleChoicesAsync`, whose `Defaults` a user can accept as they are, and show the activation warnings from `AgentText`, including FR-ROLE-04's. Create through `IAgents.CreateAsync`, which checks the pair with Binance and takes only Demo and perpetual Futures contracts, and replace `/agents/new`. Offer pairs from `IExchangeSymbols.ListAsync`, which `AgentSettingsPage` doesn't. Its risk hints in `AgentText.RiskHintOf` are a start on NFR-USA-03. Activate from the last step with `IAgents.ActivateAsync`, and show its problems and warnings with `AgentText`.
-- **The Risk Engine's inputs (#27, #34):** take the tick size, step sizes and minimum notional from `IExchangeSymbols`, and pass them in, because the engine depends on `Kernel` only. A null filter means Binance sent none.
 - **Reconciliation (#35):** read a position with `IExchangeAccount.GetPositionAsync` for the agent's symbol, not the whole account (NFR-PERF-05). It's empty when there's no position, and its liquidation price is null when Binance sends 0. Check `positionRisk`'s weight and fields against Futures Demo first, because its page couldn't be read.
 - **Retention (#50):** purge `candle_cache` by `fetched_at`, using `Retention:CandleCacheDays`, never by `open_time`, which would make every 1D cycle fetch its whole window. Batch the deletes. `exchange_symbols` needs no purge, because it only ever holds Binance's latest list.
 - **Shadow outcomes (#44):** the candles after a proposal are in `candle_cache` for `Retention:CandleCacheDays`, but nothing reads a range after a time yet, so add that read to `IMarketData`. Use `Indicators` for any indicator, so the numbers match what the cycle saw.
@@ -1697,7 +1800,6 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **The AI council and costs (#31, #32):** pass `CatalogModel.Price` as `AiRequest.Price`, as an `AiModelPrice`. A model with no price has no cost, so budgets need their token caps for it.
 - **Switching to Live (#39):** `AgentInput` and `ActivationChecks` refuse Live, and `AgentForm.ToSettings` always sends Demo. Make the switch an action of its own (UC-04), for a Paused or Stopped agent with no open positions or orders, with its checks on top of [Activation](#activation)'s, and audit it with its own `AuditAction`. Add `Agents:DefaultEnvironment` from SRS 7.3 then. The slot and the exchange key's environment already follow the agent's environment.
 - **Futures prerequisites (#33):** add EXT-BIN-07's checks to `ActivationChecks`, and read the account through a port Execution implements, as `IAgentExposure` does, because Agents can't use the exchange adapter.
-- **The Risk Engine (#27):** take `RiskSettings` from `Modules/RiskEngine/Contracts` as the agent's settings, and add `RiskCaps` (FR-RISK-11). Check the caps where `RiskSettings.Problems` is checked: on save in `AgentInput` and at activation in `ActivationChecks`, so an agent saved before the caps can't be activated above them. Pause on a loss limit with a new `AgentStatusReason`, through `AgentPause.TryAsync`, by the system.
 - **Error and the council (#31):** set Error with a new `AgentStatusReason` and an audit record by the system, through a conditional update on the status, as pauses do. Activation already accepts an agent in Error. To call a role's model, pick one of the user's `Valid` keys for the provider whose catalog access lists the model, because an agent stores the model, not the key.
 - **An agent's history (#31, #34, #36):** `IAgents.DeleteAsync` deletes an archived agent's row and roles. Tables that hold its history sit in modules above Agents, so declare a port in Agents that each owner implements, and call it in the delete's transaction, so nothing is left behind.
 - **Order execution and reconciliation (#34, #35):** replace `AgentExposure.HasOpenPositionsOrOrdersAsync`, which is `false` while nothing places orders, with what Execution records. Answer from the database, without calling Binance, because Agents asks while it holds the user's lock. FR-AGT-03's lock and archiving both depend on it.
@@ -1712,14 +1814,20 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** the SRS sets no period for `catalog_sync_runs`, which gets a row per provider per scheduled run, plus one per key change and user sync.
 - **Account deletion (#51):** delete the user's `model_availability` rows by `user_id`. `catalog_sync_runs.errors` holds credential IDs, and nothing else about anybody.
 - **xAI prices:** confirm the unit of the prices in xAI's model list with `LiveProviderTests`, then read them into `AiModel`, below the configuration's.
-- **Risk Engine (#27):** see rule 4.
+- **The decision cycle and the Risk Engine (#31):** build `RiskInputs` in DecisionCycle, from the sources in [Inputs](#inputs). Call `IRiskEngine.CheckLossLimits` at the start of every cycle, HOLD or not, and pass a breach to `IAgents.PauseForLossLimitAsync`, as with a breach from an entry's evaluation. Count `TradingRecord.ConsecutiveLosses` from the agent's last `StatusChangedAt` into Active, or a resumed agent pauses again at once. Pass the nearest of the proposal's targets, which gives the lowest reward-to-risk. Persist every `RiskEvaluation`, its enums by name, as SRS 6.1's RiskEvaluation, with the cycle, so AC-01's audit query can join orders to it. Apply the Risk Critic's modifications before evaluating, and only the risk-reducing ones (Appendix B).
+- **Futures inputs (#33):** read the symbol's leverage brackets (`/fapi/v1/leverageBracket`, signed) and funding interval (`/fapi/v1/fundingInfo`) through the adapter, with their weights in `BinanceEndpoint`, and set the leverage to `SizedOrder.Leverage`, which is the agent's after the caps. Without brackets, every Futures entry fails.
+- **Order execution and AC-01 (#34):** send only a `SizedOrder`, and record the evaluation it came from on each order row, the stop and target legs citing their entry's. Cancel only the unfilled entry for `CancelEntry`, never a protective order. Send Futures stops with `workingType=MARK_PRICE`, which `StopSide` assumes. On Spot, place the stop for the base quantity received after the fee, which Binance takes from it. On a rejection where `ExchangeException.IsFilterRejection`, call `IExchangeSymbols.RefreshAsync`. Evaluate the emergency close (FR-EXE-02) as a `Close` or `Sell` with `Origin = System`. Write AC-01's audit query: every order row has a passing evaluation.
+- **The trade journal (#36):** sum `TradingRecord`'s P&L over `RiskPeriods.DayStart` and `WeekStart`, net of fees and funding. A loss is net P&L below zero, and any other trade ends a streak. `EntriesToday` counts entry orders placed, adds included. `CyclesSinceLastLoss` counts cycles finished since the losing trade closed.
+- **The kill switch (#37):** evaluate each close as a `Close` or `Sell` with `Origin = System` and no fraction, which only the structural rules can stop, and send its `SizedOrder`.
+- **Approvals (#38):** re-evaluate on approval with fresh inputs (FR-APR-03): the size and prices may change, and a failure rejects the approval with its reasons. Show `SizedOrder.MoneyAtRisk` as the money at risk (FR-APR-01).
+- **The trace viewer (#42):** give `RiskRule`, `RuleOutcome` and `RiskReason` their text, and show each rule's inputs as recorded. The Settings rule's inputs show each capped setting, its cap and what was used.
 - **Decision cycles (#30, #31):** call `ICorrelationContext.Begin()` around each cycle, and set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope. Decide between one `job_runs` row per tick and one per cycle, which costs about 19,000 rows a day at 200 agents on 15m. `RunAsync` stays pending while hung work keeps its place, so a concurrency limit must bound its wait.
 - **Order execution (#34):** pass `cancellationToken`, not `Stopping`, to exchange calls. Persist the intent before sending, or a cut send can't be recovered (FR-EXE-05, FR-EXE-08). Once an order is placed, save with a deadline of its own, or the end of the drain window could cancel the write.
 - **Reconciliation (#35):** run the startup pass from a hosted service's `StartAsync`, through `IJobRunner`, so it finishes before any scheduled cycle (FR-EXE-08).
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and `ICatalogControls` beside it, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync`, `ICatalogAdministration`, `CatalogAuditFields` and `IModelStatusObserver` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IAgentExposure`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `RiskSettings` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and `ICatalogControls` beside it, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync`, `ICatalogAdministration`, `CatalogAuditFields` and `IModelStatusObserver` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IAgentExposure`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `RiskSettings`, `RiskCaps`, `IRiskEngine`, `OrderIntent`, `RiskInputs`, `RiskEvaluation`, `SizedOrder` and `RiskPeriods` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 

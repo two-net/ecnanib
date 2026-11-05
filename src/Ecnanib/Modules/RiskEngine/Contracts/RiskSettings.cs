@@ -3,8 +3,8 @@ namespace Ecnanib.Modules.RiskEngine.Contracts;
 /// <summary>
 /// An agent's risk settings (FR-RISK-02), with the SRS's defaults. Agents stores them, and the Risk Engine
 /// takes them as an input, so this holds only numbers and the engine still depends on Kernel alone (rule 4).
-/// <see cref="Problems"/> checks each setting's own range. The global hard caps (FR-RISK-11) come with the
-/// engine (#27), which refuses anything above them. Two settings aren't here because they can't be changed:
+/// <see cref="Problems"/> checks each setting's own range, and <see cref="RiskCaps"/> the global hard caps
+/// (FR-RISK-11). Two settings aren't here because they can't be changed:
 /// margin mode is always isolated in version 1, and a protective stop is always required.
 /// </summary>
 public sealed record RiskSettings
@@ -59,7 +59,7 @@ public sealed record RiskSettings
 
     /// <summary>
     /// The settings outside their own range, in declaration order. Empty when every setting is usable. The
-    /// global caps aren't checked here (FR-RISK-11, #27).
+    /// global caps are <see cref="RiskCaps.Problems"/>' (FR-RISK-11).
     /// </summary>
     public IReadOnlyList<RiskSetting> Problems()
     {
@@ -113,7 +113,7 @@ public enum RiskSetting
 
 /// <summary>
 /// The outer bounds of each setting's own range: what makes sense at all, not what's prudent. The global
-/// hard caps in configuration are far tighter (FR-RISK-11, #27).
+/// hard caps in configuration, <see cref="RiskCaps"/>, are far tighter (FR-RISK-11).
 /// </summary>
 public static class RiskLimits
 {
