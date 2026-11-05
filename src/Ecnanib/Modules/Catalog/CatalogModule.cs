@@ -14,11 +14,12 @@ public static class CatalogModule
         services.AddSingleton(provider => RoleDefaultSettings.Read(provider.GetRequiredService<IConfiguration>(), provider.GetRequiredService<IAiProviders>()));
         services.AddHostedService<CatalogStartup>();
         services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton<ICatalog, Catalog>();
+        services.AddSingleton<Catalog>();
+        services.AddSingleton<ICatalog>(provider => provider.GetRequiredService<Catalog>());
         services.AddSingleton<ModelStatusObservers>();
         services.AddSingleton<CatalogSync>();
         services.AddSingleton<ICatalogSync>(provider => provider.GetRequiredService<CatalogSync>());
-        services.AddSingleton<ICatalogAdministration>(provider => provider.GetRequiredService<CatalogSync>());
+        services.AddSingleton<ICatalogAdministration, CatalogAdministration>();
         services.AddSingleton<IRecurringJob, CatalogSyncJob>();
         services.AddSingleton<ICredentialObserver, CatalogCredentialObserver>();
         services.AddSingleton<IReferenceDataSeeder, ProviderSeeder>();

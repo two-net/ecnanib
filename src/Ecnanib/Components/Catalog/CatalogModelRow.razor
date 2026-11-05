@@ -1,0 +1,69 @@
+@using System.Globalization
+
+@* One model in a catalog table: what everyone sees of it (FR-CAT-01). The page adds its own cells after. *@
+
+<tr>
+    <th scope="row">
+        <span class="catalog-name">@Model.DisplayName</span>
+        <code class="catalog-id">@Model.ModelId</code>
+        @if (Model.RecommendedRoles.Count > 0)
+        {
+            <span class="catalog-recommended">@string.Format(CultureInfo.CurrentCulture, Strings.CatalogRecommendedFor, CatalogText.RolesOf(Model.RecommendedRoles))</span>
+        }
+    </th>
+    <td>@CatalogText.ProviderOf(Model.Provider)</td>
+    <td>
+        @if (Has.Count > 0)
+        {
+            <ul class="catalog-badges">
+                @foreach (var capability in Has)
+                {
+                    <li class="catalog-badge">@CatalogText.CapabilityOf(capability)</li>
+                }
+            </ul>
+        }
+        @if (NotStated.Count > 0)
+        {
+            <span class="catalog-muted">@string.Format(CultureInfo.CurrentCulture, Strings.CatalogCapabilitiesNotStated, string.Join(", ", NotStated.Select(CatalogText.CapabilityOf)))</span>
+        }
+        else if (Has.Count == 0)
+        {
+            <span class="catalog-muted">@Strings.CatalogCapabilitiesNone</span>
+        }
+    </td>
+    <td class="catalog-numbers">
+        @CatalogText.TokensOf(Model.ContextWindow, Model.MaxOutputTokens)
+    </td>
+    <td class="catalog-numbers">@CatalogText.PriceOf(Model.Price)</td>
+    <td>
+        @* The words as well as the edge, so a status doesn't rely on color. *@
+        <span class="@StatusClass">@CatalogText.StatusOf(Model.ShownStatus)</span>
+        @if (Model.Hidden && Model.Status != ModelStatus.Active)
+        {
+            @* Only administrators see a hidden model, and its lifecycle status matters more to its agents. *@
+            <span class="catalog-muted">@Strings.CatalogAlsoHidden</span>
+        }
+    </td>
+    @ChildContent
+</tr>
+
+@code {
+    [Parameter, EditorRequired]
+    public CatalogModel Model { get; set; } = default!;
+
+    /// <summary>The page's own cells, after the status.</summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private IReadOnlyList<ModelCapability> Has =>
+        [.. Enum.GetValues<ModelCapability>().Where(capability => Model.Capabilities.Of(capability) == true)];
+
+    private IReadOnlyList<ModelCapability> NotStated =>
+        [.. Enum.GetValues<ModelCapability>().Where(capability => Model.Capabilities.Of(capability) is null)];
+
+    private string StatusClass => Model.ShownStatus switch
+    {
+        ModelStatus.Deprecated or ModelStatus.Retired => "catalog-status catalog-status-warning",
+        _ => "catalog-status",
+    };
+}

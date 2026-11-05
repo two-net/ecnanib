@@ -6,7 +6,8 @@ namespace Ecnanib.Modules.Catalog;
 
 /// <summary>
 /// A role's default provider, and optionally model (FR-ROLE-03). Seeded from the RoleDefaults section once per
-/// role (NFR-DEP-02), and then the table is what counts, so administrators' edits (#26) survive a restart.
+/// role (NFR-DEP-02), and then the table is what counts, so administrators' edits survive a restart. A row with
+/// no provider is an administrator's "no default", which keeps the seeder from filling the role again.
 /// </summary>
 internal sealed class RoleDefaultRow
 {
@@ -15,10 +16,13 @@ internal sealed class RoleDefaultRow
 
     public required AiRole Role { get; init; }
 
-    /// <summary>A row of <c>providers</c>.</summary>
-    public required string Provider { get; set; }
+    /// <summary>A row of <c>providers</c>, or null when an administrator left the role with no default.</summary>
+    public string? Provider { get; set; }
 
-    /// <summary>A model ID, compared exactly with <c>models.model_id</c>. It may name a model nobody's key has listed yet.</summary>
+    /// <summary>
+    /// A model ID, compared exactly with <c>models.model_id</c>. It may name a model nobody's key has listed yet.
+    /// Null when there's no provider.
+    /// </summary>
     public string? ModelId { get; set; }
 }
 
@@ -26,7 +30,8 @@ internal sealed class RoleDefaultRowConfiguration : IEntityTypeConfiguration<Rol
 {
     public void Configure(EntityTypeBuilder<RoleDefaultRow> builder)
     {
-        builder.ToTable("role_defaults");
+        builder.ToTable("role_defaults", table => table.HasCheckConstraint(
+            "ck_role_defaults_model_needs_provider", "provider IS NOT NULL OR model_id IS NULL"));
         builder.HasKey(row => row.Role);
         builder.Property(row => row.Role).HasConversion<string>().HasMaxLength(RoleDefaultRow.RoleMaxLength);
 

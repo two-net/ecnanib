@@ -33,7 +33,8 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         "decrypts a user's key for use, which only the modules that call providers with it may do: Catalog, AiCouncil and Execution (FR-KEY-09)";
 
     private const string CatalogWide =
-        "syncs every user's keys, which only an administrator may ask for, and Administration checks that before it calls (FR-ADM-03)";
+        "syncs every user's keys, overrides models' metadata or changes the roles' defaults, which only an administrator may do, "
+        + "and Administration checks that before it calls (FR-ADM-03)";
 
     private static readonly string[] NoExceptions = [];
     private static readonly string[] Adapters = ["Modules.ExchangeAdapter.", "Modules.AiAdapters."];

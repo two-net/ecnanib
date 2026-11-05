@@ -1982,6 +1982,10 @@
     <value>{0} (your keys can't use it now)</value>
     <comment>{0} is the model's name.</comment>
   </data>
+  <data name="AgentSettingsModelHidden" xml:space="preserve">
+    <value>{0} (no longer offered)</value>
+    <comment>{0} is the model's name. An administrator hid it, and agents that have it keep it.</comment>
+  </data>
   <data name="AgentSettingsRiskHeading" xml:space="preserve">
     <value>Capital and risk</value>
   </data>
@@ -2222,5 +2226,367 @@
   </data>
   <data name="CredentialDeletePausesAgents" xml:space="preserve">
     <value>Deleting it pauses the active ones. Their positions and protective orders stay on Binance.</value>
+  </data>
+  <data name="NavCatalog" xml:space="preserve">
+    <value>Models</value>
+  </data>
+  <data name="AccountCatalogAdministrationLink" xml:space="preserve">
+    <value>Manage the model catalog and default models</value>
+  </data>
+  <data name="ActivityActionCatalogModelEdited" xml:space="preserve">
+    <value>Changed a model in the catalog</value>
+  </data>
+  <data name="ActivityActionRoleDefaultChanged" xml:space="preserve">
+    <value>Changed a role's default model</value>
+  </data>
+  <data name="ActivityActionCatalogSyncRequested" xml:space="preserve">
+    <value>Synced every user's AI keys</value>
+  </data>
+  <data name="CatalogStatusActive" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="CatalogStatusDeprecated" xml:space="preserve">
+    <value>Deprecated</value>
+  </data>
+  <data name="CatalogStatusRetired" xml:space="preserve">
+    <value>Retired</value>
+  </data>
+  <data name="CatalogStatusHidden" xml:space="preserve">
+    <value>Hidden</value>
+  </data>
+  <data name="CatalogAlsoHidden" xml:space="preserve">
+    <value>Hidden</value>
+    <comment>Under a deprecated or retired model's status, when an administrator also hid it.</comment>
+  </data>
+  <data name="CatalogCapabilityImageInput" xml:space="preserve">
+    <value>Image input</value>
+  </data>
+  <data name="CatalogCapabilityStructuredOutput" xml:space="preserve">
+    <value>Structured output</value>
+  </data>
+  <data name="CatalogCapabilityToolUse" xml:space="preserve">
+    <value>Tool use</value>
+  </data>
+  <data name="CatalogCapabilityLiveSearch" xml:space="preserve">
+    <value>Live search</value>
+  </data>
+  <data name="CatalogCapabilityReasoningEffort" xml:space="preserve">
+    <value>Reasoning effort</value>
+  </data>
+  <data name="CatalogTriggerSchedule" xml:space="preserve">
+    <value>Schedule</value>
+  </data>
+  <data name="CatalogTriggerAdministrator" xml:space="preserve">
+    <value>Administrator</value>
+  </data>
+  <data name="CatalogTriggerCredential" xml:space="preserve">
+    <value>Key added or changed</value>
+  </data>
+  <data name="CatalogTriggerUser" xml:space="preserve">
+    <value>User</value>
+  </data>
+  <data name="CatalogYes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="CatalogNo" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="CatalogNotStated" xml:space="preserve">
+    <value>Not stated</value>
+  </data>
+  <data name="CatalogPrice" xml:space="preserve">
+    <value>${0} in, ${1} out</value>
+    <comment>{0} and {1} are US dollars per million input and output tokens.</comment>
+  </data>
+  <data name="CatalogPriceUnknown" xml:space="preserve">
+    <value>Unknown</value>
+  </data>
+  <data name="CatalogNoRoles" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="CatalogPageTitle" xml:space="preserve">
+    <value>Models | Ecnanib</value>
+  </data>
+  <data name="CatalogHeading" xml:space="preserve">
+    <value>Models</value>
+  </data>
+  <data name="CatalogIntro" xml:space="preserve">
+    <value>The models your AI keys and everyone else's can use, synced from each provider. A model is only offered to your agents when one of your valid keys can use it.</value>
+  </data>
+  <data name="CatalogFiltersLabel" xml:space="preserve">
+    <value>Filter models</value>
+  </data>
+  <data name="CatalogFilterProvider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="CatalogFilterCapability" xml:space="preserve">
+    <value>Capability</value>
+  </data>
+  <data name="CatalogFilterStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="CatalogFilterAny" xml:space="preserve">
+    <value>Any</value>
+  </data>
+  <data name="CatalogFilterApply" xml:space="preserve">
+    <value>Filter</value>
+  </data>
+  <data name="CatalogFilterClear" xml:space="preserve">
+    <value>Clear filters</value>
+  </data>
+  <data name="CatalogFilterCapabilityHint" xml:space="preserve">
+    <value>A capability shows only the models known to have it. Some providers don't say, so their models are left out until an administrator does.</value>
+  </data>
+  <data name="CatalogCount" xml:space="preserve">
+    <value>Showing {0} of {1} models</value>
+    <comment>{0} is how many match the filters, {1} how many there are.</comment>
+  </data>
+  <data name="CatalogEmpty" xml:space="preserve">
+    <value>No models yet. They're synced from the AI keys users add.</value>
+  </data>
+  <data name="CatalogEmptyLink" xml:space="preserve">
+    <value>Add an AI key</value>
+  </data>
+  <data name="CatalogNoMatch" xml:space="preserve">
+    <value>No models match these filters.</value>
+  </data>
+  <data name="CatalogTableLabel" xml:space="preserve">
+    <value>Models</value>
+  </data>
+  <data name="CatalogColumnModel" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="CatalogColumnProvider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="CatalogColumnCapabilities" xml:space="preserve">
+    <value>Capabilities</value>
+  </data>
+  <data name="CatalogColumnTokens" xml:space="preserve">
+    <value>Context and output tokens</value>
+  </data>
+  <data name="CatalogColumnPrice" xml:space="preserve">
+    <value>Price per million tokens</value>
+  </data>
+  <data name="CatalogColumnStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="CatalogColumnKeys" xml:space="preserve">
+    <value>Your keys</value>
+  </data>
+  <data name="CatalogNoKeys" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="CatalogRecommendedFor" xml:space="preserve">
+    <value>Recommended for {0}</value>
+    <comment>{0} is a list of roles.</comment>
+  </data>
+  <data name="CatalogCapabilitiesNotStated" xml:space="preserve">
+    <value>Not stated: {0}</value>
+    <comment>{0} is a list of capabilities nobody has said whether the model has.</comment>
+  </data>
+  <data name="CatalogCapabilitiesNone" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="CatalogTokensContext" xml:space="preserve">
+    <value>{0:N0} context</value>
+    <comment>{0} is the context window, in tokens.</comment>
+  </data>
+  <data name="CatalogTokensOutput" xml:space="preserve">
+    <value>{0:N0} output</value>
+    <comment>{0} is the most tokens the model writes in one answer.</comment>
+  </data>
+  <data name="AdminCatalogPageTitle" xml:space="preserve">
+    <value>Model catalog administration | Ecnanib</value>
+  </data>
+  <data name="AdminCatalogHeading" xml:space="preserve">
+    <value>Model catalog administration</value>
+  </data>
+  <data name="AdminCatalogIntro" xml:space="preserve">
+    <value>Sync everyone's keys, set each role's default, and correct what providers say about their models. Your changes last through every sync.</value>
+  </data>
+  <data name="AdminCatalogUserPageLink" xml:space="preserve">
+    <value>See the catalog as users do</value>
+  </data>
+  <data name="AdminCatalogModelSaved" xml:space="preserve">
+    <value>The model is saved.</value>
+  </data>
+  <data name="AdminCatalogDefaultsSaved" xml:space="preserve">
+    <value>The defaults are saved.</value>
+  </data>
+  <data name="AdminCatalogSyncHeading" xml:space="preserve">
+    <value>Sync</value>
+  </data>
+  <data name="AdminCatalogSyncIntro" xml:space="preserve">
+    <value>Lists the models of every user's valid AI keys now, rather than at the next scheduled sync. It runs in the background, and its runs appear below.</value>
+  </data>
+  <data name="AdminCatalogSyncButton" xml:space="preserve">
+    <value>Sync every key</value>
+  </data>
+  <data name="AdminCatalogSyncStarted" xml:space="preserve">
+    <value>The sync has started. Its runs appear below as each provider finishes.</value>
+  </data>
+  <data name="AdminCatalogSyncRunning" xml:space="preserve">
+    <value>A sync of every key is already running.</value>
+  </data>
+  <data name="AdminCatalogDefaultsHeading" xml:space="preserve">
+    <value>Default models</value>
+  </data>
+  <data name="AdminCatalogDefaultsIntro" xml:space="preserve">
+    <value>A new agent starts each role on its default provider's model, if the user's keys can use one. Users can change it per agent.</value>
+  </data>
+  <data name="AdminCatalogDefaultsInvalid" xml:space="preserve">
+    <value>Some defaults can't be saved. Nothing changed.</value>
+  </data>
+  <data name="AdminCatalogDefaultProvider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="AdminCatalogDefaultModel" xml:space="preserve">
+    <value>Model ID</value>
+  </data>
+  <data name="AdminCatalogNoDefault" xml:space="preserve">
+    <value>No default</value>
+  </data>
+  <data name="AdminCatalogDefaultModelHint" xml:space="preserve">
+    <value>Leave the model blank for the provider's newest one the user's keys can use. A model ID may name one no key has listed yet. If you hide a default model, the role takes its provider's next one.</value>
+  </data>
+  <data name="AdminCatalogDefaultsSave" xml:space="preserve">
+    <value>Save the defaults</value>
+  </data>
+  <data name="AdminCatalogDefaultUnknownProvider" xml:space="preserve">
+    <value>Choose one of the providers.</value>
+  </data>
+  <data name="AdminCatalogDefaultInvalidModel" xml:space="preserve">
+    <value>Enter one model's exact ID, of at most 256 characters, with no spaces.</value>
+  </data>
+  <data name="AdminCatalogDefaultModelWithoutProvider" xml:space="preserve">
+    <value>Choose the model's provider, or clear the model.</value>
+  </data>
+  <data name="AdminCatalogModelsHeading" xml:space="preserve">
+    <value>Models</value>
+  </data>
+  <data name="AdminCatalogModelsIntro" xml:space="preserve">
+    <value>Every model, hidden ones included. Change a model's name, capabilities, price, recommended roles or visibility.</value>
+  </data>
+  <data name="AdminCatalogColumnEdit" xml:space="preserve">
+    <value>Change</value>
+  </data>
+  <data name="AdminCatalogEdit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="AdminCatalogEditLabel" xml:space="preserve">
+    <value>Edit {0}</value>
+    <comment>{0} is the model's name.</comment>
+  </data>
+  <data name="AdminCatalogRunsHeading" xml:space="preserve">
+    <value>Recent syncs</value>
+  </data>
+  <data name="AdminCatalogRunsIntro" xml:space="preserve">
+    <value>The newest {0}, one row per provider per sync.</value>
+    <comment>{0} is how many runs are shown.</comment>
+  </data>
+  <data name="AdminCatalogRunsEmpty" xml:space="preserve">
+    <value>Nothing has synced yet.</value>
+  </data>
+  <data name="AdminCatalogRunsLabel" xml:space="preserve">
+    <value>Recent syncs</value>
+  </data>
+  <data name="AdminCatalogRunStarted" xml:space="preserve">
+    <value>Started</value>
+  </data>
+  <data name="AdminCatalogRunTrigger" xml:space="preserve">
+    <value>Started by</value>
+  </data>
+  <data name="AdminCatalogRunDuration" xml:space="preserve">
+    <value>Took</value>
+  </data>
+  <data name="AdminCatalogRunKeys" xml:space="preserve">
+    <value>Keys, failed</value>
+  </data>
+  <data name="AdminCatalogRunModels" xml:space="preserve">
+    <value>Added, updated, deprecated, retired</value>
+  </data>
+  <data name="AdminCatalogRunErrors" xml:space="preserve">
+    <value>Errors</value>
+  </data>
+  <data name="AdminCatalogRunKeysValue" xml:space="preserve">
+    <value>{0}, {1}</value>
+    <comment>{0} is how many keys the run asked, {1} how many failed.</comment>
+  </data>
+  <data name="AdminCatalogRunModelsValue" xml:space="preserve">
+    <value>{0}, {1}, {2}, {3}</value>
+    <comment>How many models the run added, updated, deprecated and retired.</comment>
+  </data>
+  <data name="AdminCatalogRunSeconds" xml:space="preserve">
+    <value>{0:0.#} s</value>
+    <comment>{0} is a number of seconds.</comment>
+  </data>
+  <data name="AdminCatalogRunNotFinished" xml:space="preserve">
+    <value>Not finished</value>
+  </data>
+  <data name="AdminModelPageTitle" xml:space="preserve">
+    <value>Edit a model | Ecnanib</value>
+  </data>
+  <data name="AdminModelHeading" xml:space="preserve">
+    <value>Edit {0}</value>
+    <comment>{0} is the model's name.</comment>
+  </data>
+  <data name="AdminModelNotFoundHeading" xml:space="preserve">
+    <value>Model not found</value>
+  </data>
+  <data name="AdminModelNotFound" xml:space="preserve">
+    <value>No sync has listed this model.</value>
+  </data>
+  <data name="AdminModelBack" xml:space="preserve">
+    <value>Back to the catalog</value>
+  </data>
+  <data name="AdminModelIntro" xml:space="preserve">
+    <value>Leave a field blank to use the configuration file's value, or else the provider's. Your changes last through every sync.</value>
+  </data>
+  <data name="AdminModelInvalid" xml:space="preserve">
+    <value>Some fields need correcting. Nothing changed.</value>
+  </data>
+  <data name="AdminModelInherits" xml:space="preserve">
+    <value>Inherited: {0}</value>
+    <comment>{0} is the value the field takes from the configuration or the provider.</comment>
+  </data>
+  <data name="AdminModelDisplayName" xml:space="preserve">
+    <value>Display name</value>
+  </data>
+  <data name="AdminModelDisplayNameError" xml:space="preserve">
+    <value>Use at most 100 characters, with no control characters.</value>
+  </data>
+  <data name="AdminModelHidden" xml:space="preserve">
+    <value>Hide it from users</value>
+  </data>
+  <data name="AdminModelHiddenHint" xml:space="preserve">
+    <value>A hidden model isn't listed for users or offered for their agents. Agents that already use it keep it.</value>
+  </data>
+  <data name="AdminModelCapabilities" xml:space="preserve">
+    <value>Capabilities</value>
+  </data>
+  <data name="AdminModelPrice" xml:space="preserve">
+    <value>Price in US dollars per million tokens</value>
+  </data>
+  <data name="AdminModelInputPrice" xml:space="preserve">
+    <value>Input</value>
+  </data>
+  <data name="AdminModelOutputPrice" xml:space="preserve">
+    <value>Output</value>
+  </data>
+  <data name="AdminModelInputPriceError" xml:space="preserve">
+    <value>Enter a price from 0 to 1000000, such as 2.5, with the output price.</value>
+  </data>
+  <data name="AdminModelOutputPriceError" xml:space="preserve">
+    <value>Enter a price from 0 to 1000000, such as 10, with the input price.</value>
+  </data>
+  <data name="AdminModelRecommendedRoles" xml:space="preserve">
+    <value>Recommended roles</value>
+  </data>
+  <data name="AdminModelRecommendedRolesHint" xml:space="preserve">
+    <value>In each role you tick, it comes before its provider's other models in the options and defaults users get.</value>
+  </data>
+  <data name="AdminModelSave" xml:space="preserve">
+    <value>Save the model</value>
   </data>
 </root>

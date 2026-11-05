@@ -7,6 +7,7 @@ public static class AdministrationModule
     public static IServiceCollection AddAdministration(this IServiceCollection services)
     {
         services.AddSingleton<ISystemInfo, SystemInfo>();
+        services.AddSingleton<ICatalogControls, CatalogControls>();
         return services;
     }
 }

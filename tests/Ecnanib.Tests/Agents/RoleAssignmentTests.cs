@@ -2,9 +2,11 @@ using System.Net.Http;
 using System.Text.Json;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
+using Ecnanib.Modules.Catalog.Contracts;
 using Ecnanib.Tests.Ai;
 using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Persistence;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.Agents;
 
@@ -179,7 +181,69 @@ public sealed class RoleAssignmentTests(PostgresFixture postgres)
         Assert.Empty((await app.Agents.ListRoleChoicesAsync(owner.Id, Cancellation)).Defaults);
     }
 
+    /// <summary>
+    /// FR-CAT-05: a hidden model is withdrawn from offer, so it's in no role's options and no default, even a
+    /// default that names it. An agent that already has it keeps it, and activation still accepts it.
+    /// </summary>
+    [Fact]
+    public async Task A_hidden_model_is_not_offered_but_an_agent_that_has_it_still_activates()
+    {
+        await using var app = new AgentApp(postgres, new()
+        {
+            ["RoleDefaults:Strategist:Provider"] = Test,
+            ["RoleDefaults:Strategist:Model"] = "model-b",
+        });
+        app.Ai.On(HttpMethod.Get, CredentialApp.ModelsPath, _ => FakeAiProvider.Models(null, "model-a", "model-b"));
+        var user = await app.UserAsync();
+        var settings = AgentApp.Ready(user) with
+        {
+            Roles = [.. AgentApp.Ready(user).Roles.Select(role => role with { Model = new ModelRef(Test, "model-b") })],
+        };
+        var agent = await app.CreateAsync(user.Id, settings);
+
+        await EditAsync(app, "model-b", ModelEdit.None with { Hidden = true });
+        var choices = await app.Agents.ListRoleChoicesAsync(user.Id, Cancellation);
+
+        Assert.All(Enum.GetValues<AiRole>(), role => Assert.Equal(["model-a"], choices.Options[role].Select(choice => choice.Model.ModelId)));
+        Assert.Equal(new ModelRef(Test, "model-a"), Default(choices, AiRole.Strategist).Model);
+        Assert.Equal(ActivationOutcome.Activated, (await app.Agents.ActivateAsync(user.Id, agent.Id, Cancellation)).Outcome);
+    }
+
+    /// <summary>
+    /// FR-CAT-05: a model administrators recommend for a role comes before its provider's others in that role's
+    /// options and default, below what the role prefers (FR-ROLE-02) and a configured default model (FR-ROLE-03).
+    /// </summary>
+    [Fact]
+    public async Task A_recommended_model_comes_first_among_its_providers_for_its_role()
+    {
+        await using var app = new AgentApp(postgres, Overrides(("model-c", "LiveSearch", "true")));
+        app.Ai.On(
+            HttpMethod.Get,
+            CredentialApp.ModelsPath,
+            _ => Listing(("model-a", new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero)), ("model-b", new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero)), ("model-c", null)));
+        var user = await app.UserAsync();
+
+        await EditAsync(app, "model-b", ModelEdit.None with { RecommendedRoles = [AiRole.Strategist, AiRole.SentimentAnalyst] });
+        var choices = await app.Agents.ListRoleChoicesAsync(user.Id, Cancellation);
+
+        Assert.Equal(["model-b", "model-a", "model-c"], choices.Options[AiRole.Strategist].Select(choice => choice.Model.ModelId));
+        Assert.Equal(["model-c", "model-b", "model-a"], choices.Options[AiRole.SentimentAnalyst].Select(choice => choice.Model.ModelId));
+        Assert.Equal(["model-a", "model-b", "model-c"], choices.Options[AiRole.Reviewer].Select(choice => choice.Model.ModelId));
+        Assert.Equal(new ModelRef(Test, "model-b"), Default(choices, AiRole.Strategist).Model);
+        Assert.Equal(new ModelRef(Test, "model-c"), Default(choices, AiRole.SentimentAnalyst).Model);
+        Assert.Equal(new ModelRef(Test, "model-a"), Default(choices, AiRole.Reviewer).Model);
+    }
+
     private static RoleAssignment Default(RoleChoices choices, AiRole role) => choices.Defaults.Single(assignment => assignment.Role == role);
+
+    /// <summary>As an administrator would, through the contract Administration calls once it has checked them.</summary>
+    private static async Task EditAsync(AgentApp app, string model, ModelEdit edit)
+    {
+        var result = await app.App.Services.GetRequiredService<ICatalogAdministration>()
+            .SaveModelAsync(Catalog.CatalogApp.AdministratorId, Test, model, edit, Cancellation);
+
+        Assert.Equal(ModelEditOutcome.Saved, result.Outcome);
+    }
 
     /// <summary>Catalog:Overrides for the Test provider's models, one field each.</summary>
     private static Dictionary<string, string?> Overrides(params (string Model, string Field, string Value)[] overrides)

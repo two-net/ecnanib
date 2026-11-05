@@ -12,7 +12,9 @@ namespace Ecnanib.Tests.Catalog;
 public sealed class RoleDefaultTests(PostgresFixture postgres)
 {
     private const string Section = "RoleDefaults";
-    private const string Rows = "SELECT role || ' ' || provider || coalesce(' ' || model_id, '') FROM role_defaults ORDER BY role";
+    /// <summary>Each row as "role provider model", with "none" for an administrator's no default.</summary>
+    private const string Rows =
+        "SELECT role || ' ' || coalesce(provider, 'none') || coalesce(' ' || model_id, '') FROM role_defaults ORDER BY role";
 
     /// <summary>Each case is settings as key=value, and the key the message must name.</summary>
     public static TheoryData<string[], string> InvalidSettings => new()
@@ -94,8 +96,8 @@ public sealed class RoleDefaultTests(PostgresFixture postgres)
     }
 
     /// <summary>
-    /// NFR-DEP-02: a seeded role keeps what administrators made of it (#26), and a role configured later is
-    /// added. The section only reaches a role that has no row.
+    /// NFR-DEP-02: a seeded role keeps what administrators made of it (FR-ADM-03), even no default, and a role
+    /// configured later is added. The section only reaches a role that has no row.
     /// </summary>
     [Fact]
     public async Task A_restart_keeps_an_administrators_edit_and_adds_a_newly_configured_role()
@@ -107,24 +109,107 @@ public sealed class RoleDefaultTests(PostgresFixture postgres)
         await using (var app = new AppFactory(database, settings: first))
         {
             app.Start();
-        }
 
-        await Sql.ExecuteAsync(database, "UPDATE role_defaults SET provider = 'Google', model_id = 'gemini-9' WHERE role = 'Strategist'", Cancellation);
+            var result = await Administration(app).SaveRoleDefaultsAsync(
+                Administrator,
+                [new RoleDefaultEdit(AiRole.Strategist, "Google", "gemini-9"), new RoleDefaultEdit(AiRole.SentimentAnalyst, null, null)],
+                Cancellation);
+
+            Assert.True(result.Saved);
+        }
 
         await using (var app = new AppFactory(database, settings: Shipped))
         {
             app.Start();
+
+            Assert.DoesNotContain(
+                AiRole.SentimentAnalyst,
+                (await app.Services.GetRequiredService<ICatalog>().ListRoleDefaultsAsync(Cancellation)).Select(value => value.Role));
         }
 
         Assert.Equal(
             [
                 "Reviewer Google",
                 "RiskCritic Anthropic claude-opus-5-5",
-                "SentimentAnalyst xAI",
+                "SentimentAnalyst none",
                 "Strategist Google gemini-9",
                 "TechnicalAnalyst Google",
             ],
             await Sql.ColumnAsync(database, Rows, Cancellation));
+    }
+
+    /// <summary>
+    /// A role with no row and no default stays without one, so the section can still give it a default, and a
+    /// role an administrator didn't change keeps its row as it was.
+    /// </summary>
+    [Fact]
+    public async Task No_default_for_a_role_without_one_changes_nothing()
+    {
+        var database = postgres.NewConnectionString();
+        await using var app = new AppFactory(database, settings: new Dictionary<string, string?> { [$"{Section}:Strategist"] = "OpenAI" });
+        app.Start();
+
+        var result = await Administration(app).SaveRoleDefaultsAsync(
+            Administrator,
+            [.. Enum.GetValues<AiRole>().Select(role => new RoleDefaultEdit(role, role == AiRole.Strategist ? "OpenAI" : null, null))],
+            Cancellation);
+
+        Assert.True(result.Saved);
+        Assert.Equal(["Strategist OpenAI"], await Sql.ColumnAsync(database, Rows, Cancellation));
+        Assert.Equal(0L, await AuditCountAsync(database));
+    }
+
+    /// <summary>FR-ADM-03: the provider is one with an adapter, and the model one exact ID, as RoleDefaultSettings checks.</summary>
+    [Fact]
+    public async Task An_invalid_default_changes_nothing_and_names_each_role()
+    {
+        var database = postgres.NewConnectionString();
+        await using var app = new AppFactory(database, settings: Shipped);
+        app.Start();
+
+        var result = await Administration(app).SaveRoleDefaultsAsync(
+            Administrator,
+            [
+                new RoleDefaultEdit(AiRole.Strategist, "Mistral", null),
+                new RoleDefaultEdit(AiRole.RiskCritic, "Anthropic", "claude opus"),
+                new RoleDefaultEdit(AiRole.Reviewer, null, "gemini-9"),
+                new RoleDefaultEdit(AiRole.TechnicalAnalyst, "OpenAI", null),
+            ],
+            Cancellation);
+
+        Assert.False(result.Saved);
+        Assert.Equal(
+            new Dictionary<AiRole, RoleDefaultProblem>
+            {
+                [AiRole.Strategist] = RoleDefaultProblem.UnknownProvider,
+                [AiRole.RiskCritic] = RoleDefaultProblem.InvalidModel,
+                [AiRole.Reviewer] = RoleDefaultProblem.ModelWithoutProvider,
+            },
+            result.Problems);
+        Assert.Contains("TechnicalAnalyst Google", await Sql.ColumnAsync(database, Rows, Cancellation));
+        Assert.Equal(0L, await AuditCountAsync(database));
+    }
+
+    /// <summary>FR-AUD-01: each role an administrator changed is audited, platform-wide, as the administrator.</summary>
+    [Fact]
+    public async Task Each_changed_role_is_audited()
+    {
+        var database = postgres.NewConnectionString();
+        await using var app = new AppFactory(database, settings: Shipped);
+        app.Start();
+
+        await Administration(app).SaveRoleDefaultsAsync(
+            Administrator,
+            [new RoleDefaultEdit(AiRole.Strategist, "OpenAI", "gpt-6"), new RoleDefaultEdit(AiRole.Reviewer, "Google", null)],
+            Cancellation);
+
+        Assert.Equal(
+            [$"RoleDefaultChanged Administrator {Administrator} none Role Strategist"],
+            await Sql.ColumnAsync(
+                database,
+                "SELECT concat_ws(' ', action, actor_kind, actor_id, coalesce(user_id::text, 'none'), target_type, target_id) FROM audit_events",
+                Cancellation));
+        Assert.Contains("gpt-6", await Sql.ScalarAsync<string>(database, "SELECT summary::text FROM audit_events", Cancellation));
     }
 
     [Fact]
@@ -137,6 +222,14 @@ public sealed class RoleDefaultTests(PostgresFixture postgres)
 
         Assert.Empty(await Sql.ColumnAsync(database, Rows, Cancellation));
     }
+
+    /// <summary>ICatalogAdministration checks nobody, so any ID will do.</summary>
+    private static readonly Guid Administrator = CatalogApp.AdministratorId;
+
+    private static ICatalogAdministration Administration(AppFactory app) => app.Services.GetRequiredService<ICatalogAdministration>();
+
+    private static Task<long> AuditCountAsync(string database) =>
+        Sql.ScalarAsync<long>(database, "SELECT count(*) FROM audit_events WHERE action = 'RoleDefaultChanged'", Cancellation);
 
     private static Dictionary<string, string?> Parse(string[] settings) =>
         settings.Select(setting => setting.Split('=', 2)).ToDictionary(pair => pair[0], pair => (string?)pair[1]);

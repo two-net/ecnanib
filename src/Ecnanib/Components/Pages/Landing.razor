@@ -170,13 +170,6 @@
     /// The role's default provider (FR-ROLE-03), as administrators set it, so the page never claims a default
     /// that isn't one. The four providers the product launched with have their product's name.
     /// </summary>
-    private string DefaultOf(AiRole role) => _defaults.FirstOrDefault(value => value.Role == role)?.Provider switch
-    {
-        null => Strings.RolesNoDefault,
-        "Google" => Strings.ProviderGoogle,
-        "xAI" => Strings.ProviderXai,
-        "OpenAI" => Strings.ProviderOpenAi,
-        "Anthropic" => Strings.ProviderAnthropic,
-        var provider => provider,
-    };
+    private string DefaultOf(AiRole role) =>
+        _defaults.FirstOrDefault(value => value.Role == role)?.Provider is { } provider ? CatalogText.ProviderOf(provider) : Strings.RolesNoDefault;
 }

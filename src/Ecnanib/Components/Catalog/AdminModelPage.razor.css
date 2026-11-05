@@ -1,0 +1,15 @@
+/* Providers choose names and IDs, which can be long and have no spaces to break at. */
+.admin-model-heading,
+.admin-model-id {
+    overflow-wrap: anywhere;
+}
+
+.admin-model-id {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+}
+
+.admin-model-provider {
+    margin-inline-start: 0.5rem;
+    color: var(--text-muted);
+}

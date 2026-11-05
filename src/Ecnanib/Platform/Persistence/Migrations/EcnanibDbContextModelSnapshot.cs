@@ -486,6 +486,67 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("model_availability", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Catalog.ModelOverrideRow", b =>
+                {
+                    b.Property<string>("Provider")
+                        .HasColumnType("text")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ModelId")
+                        .HasColumnType("text")
+                        .HasColumnName("model_id");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("display_name");
+
+                    b.Property<bool>("Hidden")
+                        .HasColumnType("boolean")
+                        .HasColumnName("hidden");
+
+                    b.Property<bool?>("ImageInput")
+                        .HasColumnType("boolean")
+                        .HasColumnName("image_input");
+
+                    b.Property<decimal?>("InputPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("input_price");
+
+                    b.Property<bool?>("LiveSearch")
+                        .HasColumnType("boolean")
+                        .HasColumnName("live_search");
+
+                    b.Property<decimal?>("OutputPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("output_price");
+
+                    b.Property<bool?>("ReasoningEffort")
+                        .HasColumnType("boolean")
+                        .HasColumnName("reasoning_effort");
+
+                    b.PrimitiveCollection<string[]>("RecommendedRoles")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("recommended_roles");
+
+                    b.Property<bool?>("StructuredOutput")
+                        .HasColumnType("boolean")
+                        .HasColumnName("structured_output");
+
+                    b.Property<bool?>("ToolUse")
+                        .HasColumnType("boolean")
+                        .HasColumnName("tool_use");
+
+                    b.HasKey("Provider", "ModelId")
+                        .HasName("pk_model_overrides");
+
+                    b.ToTable("model_overrides", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_model_overrides_prices", "(input_price IS NULL) = (output_price IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Catalog.Provider", b =>
                 {
                     b.Property<string>("Name")
@@ -514,7 +575,6 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnName("model_id");
 
                     b.Property<string>("Provider")
-                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("provider");
 
@@ -524,7 +584,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.HasIndex("Provider")
                         .HasDatabaseName("ix_role_defaults_provider");
 
-                    b.ToTable("role_defaults", (string)null);
+                    b.ToTable("role_defaults", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_role_defaults_model_needs_provider", "provider IS NOT NULL OR model_id IS NULL");
+                        });
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.Credentials.Credential", b =>
@@ -1422,13 +1485,22 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasConstraintName("fk_model_availability_models_provider_model_id");
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Catalog.ModelOverrideRow", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Catalog.Model", null)
+                        .WithOne()
+                        .HasForeignKey("Ecnanib.Modules.Catalog.ModelOverrideRow", "Provider", "ModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_model_overrides_models_provider_model_id");
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Catalog.RoleDefaultRow", b =>
                 {
                     b.HasOne("Ecnanib.Modules.Catalog.Provider", null)
                         .WithMany()
                         .HasForeignKey("Provider")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_role_defaults_providers_provider");
                 });
 

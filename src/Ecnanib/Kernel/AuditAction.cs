@@ -86,4 +86,16 @@ public enum AuditAction
 
     /// <summary>An archived agent was deleted for good.</summary>
     AgentDeleted,
+
+    /// <summary>
+    /// An administrator changed a model's overrides: its name, visibility, capabilities, price or recommended
+    /// roles (FR-CAT-05). Platform-wide, so it has no user.
+    /// </summary>
+    CatalogModelEdited,
+
+    /// <summary>An administrator changed a role's default provider or model (FR-ROLE-03, FR-ADM-03). Platform-wide.</summary>
+    RoleDefaultChanged,
+
+    /// <summary>An administrator started a sync of every user's AI keys (FR-CAT-03). Platform-wide.</summary>
+    CatalogSyncRequested,
 }

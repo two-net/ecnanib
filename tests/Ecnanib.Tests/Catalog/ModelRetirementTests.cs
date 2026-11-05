@@ -128,21 +128,40 @@ public sealed class ModelRetirementTests(PostgresFixture postgres)
         Assert.Equal(0L, await Sql.ScalarAsync<long>(app.ConnectionString, "SELECT count(*) FROM models WHERE missing_since IS NOT NULL", Cancellation));
     }
 
-    /// <summary>Hidden is administrators' (FR-CAT-05, #26), so syncs never change it.</summary>
+    /// <summary>
+    /// Hiding is an override (FR-CAT-05) that leaves a model's lifecycle alone, so a hidden model that no key
+    /// lists any more is deprecated and retired like any other, and its agents are told as usual. The pages show
+    /// Hidden only for an Active one.
+    /// </summary>
     [Fact]
-    public async Task A_hidden_model_is_left_alone()
+    public async Task A_hidden_model_still_ages()
     {
-        await using var app = new CatalogApp(postgres, observers: false);
+        await using var app = new CatalogApp(postgres, new() { [RetireAfter] = "1" }, observers: false);
         app.Lists(CatalogApp.AiKey, "model-a", "model-b");
         await app.AddAsync(Guid.NewGuid());
         await app.RunScheduleAsync();
-        await Sql.ExecuteAsync(app.ConnectionString, "UPDATE models SET status = 'Hidden' WHERE model_id IN ('model-a', 'model-b')", Cancellation);
+
+        foreach (var model in new[] { "model-a", "model-b" })
+        {
+            var hidden = ModelEdit.None with { Hidden = true };
+            var result = await app.Administration.SaveModelAsync(CatalogApp.AdministratorId, CatalogApp.Provider, model, hidden, Cancellation);
+            Assert.Equal(ModelEditOutcome.Saved, result.Outcome);
+        }
 
         app.Lists(CatalogApp.AiKey, "model-a");
         await app.RunScheduleAsync();
 
-        Assert.Equal((ModelStatus.Hidden, ModelStatus.Hidden), (await StatusAsync(app, "model-a"), await StatusAsync(app, "model-b")));
-        Assert.Equal((0, 0), Counts((await app.RunsAsync())[^1]));
+        Assert.Equal((ModelStatus.Active, ModelStatus.Deprecated), (await StatusAsync(app, "model-a"), await StatusAsync(app, "model-b")));
+        Assert.Equal((1, 0), Counts((await app.RunsAsync())[^1]));
+
+        app.Clock.Advance(TimeSpan.FromDays(1));
+        await app.RunScheduleAsync();
+
+        var models = (await app.Catalog.ListAsync(Cancellation)).Where(model => model.Provider == CatalogApp.Provider).ToList();
+        Assert.All(models, model => Assert.True(model.Hidden));
+        Assert.Equal([ModelStatus.Active, ModelStatus.Retired], models.Select(model => model.Status));
+        Assert.Equal([ModelStatus.Hidden, ModelStatus.Retired], models.Select(model => model.ShownStatus));
+        Assert.Equal(0L, await Sql.ScalarAsync<long>(app.ConnectionString, "SELECT count(*) FROM models WHERE status = 'Hidden'", Cancellation));
     }
 
     /// <summary>The event Agents subscribes to (Inversions in docs/architecture.md), raised once the changes have committed.</summary>

@@ -252,6 +252,7 @@
 
     private Dictionary<AiRole, List<(string Value, string Text)>> _options = [];
     private Dictionary<string, string> _modelNames = [];
+    private HashSet<string> _hiddenModels = [];
     private HashSet<AgentField> _fields = [];
     private HashSet<RiskSetting> _riskSettings = [];
     private IReadOnlyList<ActivationProblem> _problems = [];
@@ -359,7 +360,7 @@
 
     /// <summary>
     /// The user's Binance Demo keys, and the models their valid AI keys can give each role (FR-ROLE-02). The
-    /// catalog's names are kept for a chosen model that's no longer offered.
+    /// catalog's names are kept for a chosen model that's no longer offered, and which models are hidden.
     /// </summary>
     private async Task LoadOptionsAsync(Guid userId, RoleChoices choices, CancellationToken cancellationToken)
     {
@@ -368,6 +369,7 @@
 
         var models = await Catalog.ListAsync(cancellationToken);
         _modelNames = models.ToDictionary(model => AgentForm.ValueOf(new ModelRef(model.Provider, model.ModelId)), model => model.DisplayName);
+        _hiddenModels = [.. models.Where(model => model.Hidden).Select(model => AgentForm.ValueOf(new ModelRef(model.Provider, model.ModelId)))];
         _options = choices.Options.ToDictionary(
             pair => pair.Key,
             pair => pair.Value.Select(choice => (AgentForm.ValueOf(choice.Model), AgentText.ModelOption(choice, pair.Key))).ToList());
@@ -375,7 +377,8 @@
 
     /// <summary>
     /// The role's options, plus the chosen model when it isn't one of them, such as when its key stopped
-    /// working. Otherwise saving would quietly drop it.
+    /// working, or an administrator hid it, which leaves it to the agents that have it. Otherwise saving would
+    /// quietly drop it.
     /// </summary>
     private IEnumerable<(string Value, string Text)> OptionsWith(AiRole role, string? chosen)
     {
@@ -388,7 +391,10 @@
 
         var separator = chosen.IndexOf(AgentForm.ModelSeparator, StringComparison.Ordinal);
         var name = _modelNames.GetValueOrDefault(chosen) ?? (separator > 0 ? chosen[(separator + 1)..] : chosen);
-        var unavailable = string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsModelUnavailable, name);
+        var unavailable = string.Format(
+            CultureInfo.CurrentCulture,
+            _hiddenModels.Contains(chosen) ? Strings.AgentSettingsModelHidden : Strings.AgentSettingsModelUnavailable,
+            name);
 
         return [(chosen, unavailable), .. options];
     }

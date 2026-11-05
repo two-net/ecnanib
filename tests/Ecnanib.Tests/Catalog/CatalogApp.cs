@@ -28,6 +28,12 @@ internal sealed class CatalogApp : IAsyncDisposable
     public const string OtherAiKey = CredentialApp.OtherAiKey;
     public const string ThirdAiKey = "sk-test-aaaabbbbccccddddEFGH";
 
+    /// <summary>
+    /// Who <see cref="ICatalogAdministration"/>'s calls name. It checks nobody, so any ID will do: Administration's
+    /// own tests check administrators.
+    /// </summary>
+    public static readonly Guid AdministratorId = Guid.Parse("0f0f0f0f-0000-4000-8000-000000000026");
+
     private readonly ConcurrentDictionary<string, Func<HttpResponseMessage>> _answers = new(StringComparer.Ordinal);
 
     public CatalogApp(

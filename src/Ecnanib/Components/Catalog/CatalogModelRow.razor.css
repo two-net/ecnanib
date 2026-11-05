@@ -1,0 +1,49 @@
+/* A model's name, then its exact ID, which can be long and has no spaces to break at. */
+.catalog-name {
+    display: block;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.catalog-id {
+    display: block;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    overflow-wrap: anywhere;
+}
+
+.catalog-recommended,
+.catalog-muted {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-weight: 400;
+}
+
+.catalog-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin: 0 0 0.25rem;
+    padding: 0;
+    list-style: none;
+}
+
+.catalog-badge,
+.catalog-status {
+    padding: 0 0.375rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+/* A thicker edge as well as the words, so the status doesn't rely on color. */
+.catalog-status-warning {
+    border-color: var(--caution);
+    border-inline-start-width: 4px;
+    color: var(--caution);
+}

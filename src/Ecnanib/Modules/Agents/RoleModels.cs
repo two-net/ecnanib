@@ -34,7 +34,9 @@ internal sealed class RoleModels(ICredentials credentials, ICatalog catalog)
     {
         var keys = await credentials.ListAsync(userId, cancellationToken);
         var user = await ReadAsync(userId, keys, cancellationToken);
-        var usable = user.Models.Values.Where(user.IsUsable).ToList();
+        // A hidden model is withdrawn from offer (FR-CAT-05), but an agent that already has it keeps it, and
+        // activation still accepts it, so ProblemOf doesn't count it against a model.
+        var usable = user.Models.Values.Where(model => !model.Hidden && user.IsUsable(model)).ToList();
 
         var options = Enum.GetValues<AiRole>().ToDictionary(
             role => role,
@@ -106,22 +108,28 @@ internal sealed class RoleModels(ICredentials credentials, ICatalog catalog)
     }
 
     /// <summary>
-    /// One provider's models, best first for the role. Nothing says which model is strongest, so newer goes
-    /// first: by release date, which Gemini doesn't give, then by when a sync first listed it.
+    /// One provider's models, best first for the role: what the role prefers, then what administrators recommend
+    /// for it. Nothing says which model is strongest, so newer goes first after that: by release date, which
+    /// Gemini doesn't give, then by when a sync first listed it.
     /// </summary>
     private static IEnumerable<CatalogModel> Ranked(AiRole role, IEnumerable<CatalogModel> models) =>
         models
             .OrderBy(model => Preference(role, model))
+            .ThenBy(model => !model.IsRecommendedFor(role))
             .ThenByDescending(model => model.ReleasedAt.HasValue)
             .ThenByDescending(model => model.ReleasedAt)
             .ThenByDescending(model => model.FirstSeenAt)
             .ThenBy(model => model.ModelId, StringComparer.Ordinal);
 
-    /// <summary>The settings page's order: what the role prefers, then by provider and name.</summary>
+    /// <summary>
+    /// The settings page's order: what the role prefers, then by provider, with what administrators recommend for
+    /// the role first, then by name.
+    /// </summary>
     private static IEnumerable<CatalogModel> Listed(AiRole role, IEnumerable<CatalogModel> models) =>
         models
             .OrderBy(model => Preference(role, model))
             .ThenBy(model => model.Provider, StringComparer.Ordinal)
+            .ThenBy(model => !model.IsRecommendedFor(role))
             .ThenBy(model => model.DisplayName, StringComparer.CurrentCulture)
             .ThenBy(model => model.ModelId, StringComparer.Ordinal);
 

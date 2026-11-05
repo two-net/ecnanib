@@ -43,6 +43,9 @@ public static class ActivityText
         AuditAction.AgentStopped => Strings.ActivityActionAgentStopped,
         AuditAction.AgentArchived => Strings.ActivityActionAgentArchived,
         AuditAction.AgentDeleted => Strings.ActivityActionAgentDeleted,
+        AuditAction.CatalogModelEdited => Strings.ActivityActionCatalogModelEdited,
+        AuditAction.RoleDefaultChanged => Strings.ActivityActionRoleDefaultChanged,
+        AuditAction.CatalogSyncRequested => Strings.ActivityActionCatalogSyncRequested,
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Give the action its text in Strings.resx."),
     };
 

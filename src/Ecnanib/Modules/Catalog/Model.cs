@@ -6,8 +6,8 @@ namespace Ecnanib.Modules.Catalog;
 
 /// <summary>
 /// A model, as providers report it (SRS 6.1). Metadata from the configuration file isn't stored here: it's
-/// applied as the catalog is read, so it changes with a restart and administrators' overrides (#26) can sit
-/// above it. A field a provider stops sending keeps its last value.
+/// applied as the catalog is read, so it changes with a restart, and administrators' overrides sit above it in
+/// <see cref="ModelOverrideRow"/>. A field a provider stops sending keeps its last value.
 /// </summary>
 internal sealed class Model
 {
@@ -42,7 +42,7 @@ internal sealed class Model
 
     /// <summary>
     /// Deprecated and then Retired once providers stop listing it, and Active again when one lists it (FR-CAT-04).
-    /// Hidden is administrators' (#26), and a sync never changes it.
+    /// Never Hidden: hiding is an override, which leaves this alone.
     /// </summary>
     public ModelStatus Status { get; set; } = ModelStatus.Active;
 

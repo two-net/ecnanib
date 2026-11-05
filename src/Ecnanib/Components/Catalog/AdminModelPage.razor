@@ -1,0 +1,198 @@
+@page "/admin/catalog/model"
+@attribute [Authorize(Policy = AccountPolicies.Administrator)]
+@attribute [ExcludeFromInteractiveRouting]
+@using System.Globalization
+@inject ICatalogControls Controls
+@inject NavigationManager Navigation
+
+@* Static, like every form here, and it takes no secret. The model is in the query string rather than the
+   route, because an ID can hold a dot, which the static file fallback would take, or a slash. A static form
+   posts back to its own address, query and all. Each field left blank inherits from the configuration, then
+   the provider (FR-CAT-05, FR-CAT-06). *@
+
+<PageTitle>@Strings.AdminModelPageTitle</PageTitle>
+
+<div class="page form-page">
+    @if (_detail is not { } detail)
+    {
+        <h1>@Strings.AdminModelNotFoundHeading</h1>
+        <p>@Strings.AdminModelNotFound</p>
+        <p><a href="/admin/catalog">@Strings.AdminModelBack</a></p>
+    }
+    else
+    {
+        @* Providers chose the names and IDs. Razor encodes them, so they're only text. *@
+        <h1 class="admin-model-heading">@string.Format(CultureInfo.CurrentCulture, Strings.AdminModelHeading, detail.Model.DisplayName)</h1>
+        <p>
+            <code class="admin-model-id">@detail.Model.ModelId</code>
+            <span class="admin-model-provider">@CatalogText.ProviderOf(detail.Model.Provider)</span>
+        </p>
+        <p><a href="/admin/catalog">@Strings.AdminModelBack</a></p>
+        <p>@Strings.AdminModelIntro</p>
+
+        <EditForm Model="Input" FormName="model-edit" OnSubmit="SubmitAsync" class="form">
+            @if (_fields.Count > 0)
+            {
+                <p class="form-error" role="alert">@Strings.AdminModelInvalid</p>
+            }
+
+            <div class="field">
+                <label for="model-name">@Strings.AdminModelDisplayName</label>
+                <input id="model-name" name="Input.DisplayName" type="text" value="@Input.DisplayName" autocomplete="off"
+                       maxlength="100" aria-invalid="@Invalid(ModelEditField.DisplayName)" aria-describedby="model-name-hint model-name-error" />
+                <p id="model-name-hint" class="field-hint">@InheritedText(Inherited(layer => layer.DisplayName) ?? detail.Model.ModelId)</p>
+                <FieldError Id="model-name-error" Message="@ErrorOf(ModelEditField.DisplayName)" />
+            </div>
+
+            <div class="field">
+                <div class="check">
+                    <input id="model-hidden" name="Input.Hidden" type="checkbox" value="true" checked="@Input.Hidden" aria-describedby="model-hidden-hint" />
+                    <label for="model-hidden">@Strings.AdminModelHidden</label>
+                </div>
+                <p id="model-hidden-hint" class="field-hint">@Strings.AdminModelHiddenHint</p>
+            </div>
+
+            <fieldset class="field">
+                <legend>@Strings.AdminModelCapabilities</legend>
+                @foreach (var capability in Enum.GetValues<ModelCapability>())
+                {
+                    var id = $"model-{capability}";
+                    var value = Input.CapabilityValue(capability);
+
+                    <div class="field">
+                        <label for="@id">@CatalogText.CapabilityOf(capability)</label>
+                        <select id="@id" name="@($"Input.{capability}")">
+                            <option value="" selected="@(value is not ("true" or "false"))">@InheritedText(CatalogText.FlagOf(InheritedCapability(capability)))</option>
+                            <option value="true" selected="@(value == "true")">@Strings.CatalogYes</option>
+                            <option value="false" selected="@(value == "false")">@Strings.CatalogNo</option>
+                        </select>
+                    </div>
+                }
+            </fieldset>
+
+            <fieldset class="field">
+                <legend>@Strings.AdminModelPrice</legend>
+                <p id="model-price-hint" class="field-hint">@InheritedText(CatalogText.PriceOf(Inherited(layer => layer.Price)))</p>
+                <div class="field">
+                    <label for="model-input-price">@Strings.AdminModelInputPrice</label>
+                    <input id="model-input-price" name="Input.InputPrice" type="text" inputmode="decimal" value="@Input.InputPrice" autocomplete="off"
+                           aria-invalid="@Invalid(ModelEditField.InputPrice)" aria-describedby="model-price-hint model-input-price-error" />
+                    <FieldError Id="model-input-price-error" Message="@ErrorOf(ModelEditField.InputPrice)" />
+                </div>
+                <div class="field">
+                    <label for="model-output-price">@Strings.AdminModelOutputPrice</label>
+                    <input id="model-output-price" name="Input.OutputPrice" type="text" inputmode="decimal" value="@Input.OutputPrice" autocomplete="off"
+                           aria-invalid="@Invalid(ModelEditField.OutputPrice)" aria-describedby="model-price-hint model-output-price-error" />
+                    <FieldError Id="model-output-price-error" Message="@ErrorOf(ModelEditField.OutputPrice)" />
+                </div>
+            </fieldset>
+
+            <fieldset class="field checks" aria-describedby="model-roles-hint">
+                <legend>@Strings.AdminModelRecommendedRoles</legend>
+                <p id="model-roles-hint" class="field-hint">@Strings.AdminModelRecommendedRolesHint</p>
+                @foreach (var role in Enum.GetValues<AiRole>())
+                {
+                    <div class="check">
+                        <input id="model-role-@role" name="@($"Input.{role}")" type="checkbox" value="true" checked="@Input.IsRecommended(role)" />
+                        <label for="model-role-@role">@AgentText.RoleOf(role)</label>
+                    </div>
+                }
+            </fieldset>
+
+            <div>
+                <button type="submit" class="button">@Strings.AdminModelSave</button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private ModelDetail? _detail;
+    private IReadOnlySet<ModelEditField> _fields = new HashSet<ModelEditField>();
+    private Guid _administratorId;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "model-edit", Name = "Input")]
+    private ModelEditForm Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "provider")]
+    private string? Provider { get; set; }
+
+    [SupplyParameterFromQuery(Name = "model")]
+    private string? ModelId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A post brings its own values. Anything else shows what's saved.
+        var posted = Input is not null;
+        Input ??= new ModelEditForm();
+
+        if (AccountClaims.UserId(HttpContext.User) is not { } administratorId || Provider is null || ModelId is null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        _administratorId = administratorId;
+        _detail = await Controls.GetModelAsync(administratorId, Provider, ModelId, HttpContext.RequestAborted);
+
+        if (_detail is null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+        }
+        else if (!posted)
+        {
+            Input = ModelEditForm.Of(_detail.Overridden);
+        }
+    }
+
+    /// <summary>What a field inherits: the configuration's value, else the provider's.</summary>
+    private T? Inherited<T>(Func<ModelLayer, T?> field) =>
+        (_detail?.Configured is { } configured ? field(configured) : default) ?? (_detail is { } detail ? field(detail.Reported) : default);
+
+    private bool? InheritedCapability(ModelCapability capability) =>
+        _detail?.Configured?.Capabilities.Of(capability) ?? _detail?.Reported.Capabilities.Of(capability);
+
+    private static string InheritedText(string value) =>
+        string.Format(CultureInfo.CurrentCulture, Strings.AdminModelInherits, value);
+
+    private string? ErrorOf(ModelEditField field) => _fields.Contains(field) ? CatalogText.FieldErrorOf(field) : null;
+
+    private string? Invalid(ModelEditField field) => _fields.Contains(field) ? "true" : null;
+
+    private async Task SubmitAsync()
+    {
+        if (_detail is null)
+        {
+            return;
+        }
+
+        var (edit, fields) = Input.ToEdit();
+
+        if (edit is null)
+        {
+            _fields = fields;
+            return;
+        }
+
+        var result = await Controls.SaveModelAsync(
+            _administratorId, _detail.Model.Provider, _detail.Model.ModelId, edit, HttpContext.RequestAborted);
+
+        // Null shows nothing: only a configuration change since the page's policy let them in could cause it,
+        // and the next load answers 403.
+        switch (result?.Outcome)
+        {
+            case ModelEditOutcome.Saved:
+                Navigation.NavigateTo("/admin/catalog?saved=model");
+                break;
+            case ModelEditOutcome.Invalid:
+                _fields = new HashSet<ModelEditField>(result.Problems);
+                break;
+            case ModelEditOutcome.NotFound:
+                _detail = null;
+                break;
+        }
+    }
+}

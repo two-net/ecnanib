@@ -230,11 +230,11 @@ public sealed class CatalogSyncTests(PostgresFixture postgres)
         var scheduled = app.RunScheduleAsync();
         await Logging.LoggedApp.UntilAsync(async () => (await app.RunsAsync()).Count == 1);
 
-        Assert.Equal(SyncAllOutcome.AlreadyRunning, await app.Administration.SyncAllAsync(Cancellation));
+        Assert.Equal(SyncAllOutcome.AlreadyRunning, await app.Administration.SyncAllAsync(CatalogApp.AdministratorId, Cancellation));
 
         release.SetResult();
         Assert.Equal(JobStatus.Succeeded, await scheduled);
-        Assert.Equal(SyncAllOutcome.Started, await app.Administration.SyncAllAsync(Cancellation));
+        Assert.Equal(SyncAllOutcome.Started, await app.Administration.SyncAllAsync(CatalogApp.AdministratorId, Cancellation));
         await app.UntilFinishedAsync("catalog-sync-all", 1);
 
         Assert.Equal(["Schedule", "Administrator"], (await app.RunsAsync()).Select(run => run.Trigger));
@@ -253,10 +253,10 @@ public sealed class CatalogSyncTests(PostgresFixture postgres)
         await using var app = new CatalogApp(postgres, observers: false, services: runner.Use);
         await app.AddAsync(Guid.NewGuid());
 
-        Assert.Equal(SyncAllOutcome.Started, await app.Administration.SyncAllAsync(Cancellation));
+        Assert.Equal(SyncAllOutcome.Started, await app.Administration.SyncAllAsync(CatalogApp.AdministratorId, Cancellation));
         Assert.Equal(1, runner.Refused);
 
-        Assert.Equal(SyncAllOutcome.Started, await app.Administration.SyncAllAsync(Cancellation));
+        Assert.Equal(SyncAllOutcome.Started, await app.Administration.SyncAllAsync(CatalogApp.AdministratorId, Cancellation));
         await app.UntilFinishedAsync("catalog-sync-all", 1);
         Assert.True((await app.RunsAsync()).Single().Finished);
     }

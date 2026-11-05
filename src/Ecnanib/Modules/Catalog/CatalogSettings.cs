@@ -37,16 +37,11 @@ internal sealed class CatalogSettings
 
     public const string OverridesKey = Section + ":Overrides";
 
-    public const int TextMaxLength = 100;
-
-    public const int ModelMaxLength = 256;
-
     private const int DefaultSyncIntervalHours = 12;
     private const int MaximumSyncIntervalHours = 168;
     private const int DefaultRetireAfterDays = 7;
     private const int MaximumRetireAfterDays = 365;
     private const int MaximumTokens = 100_000_000;
-    private const decimal MaximumPrice = 1_000_000m;
 
     private static readonly string[] Fields =
     [
@@ -104,10 +99,8 @@ internal sealed class CatalogSettings
         // A * would read as a prefix that matches nothing, so it's refused rather than ignored.
         var model = configuration[prefix + ":Model"]?.Trim();
         Require(
-            !string.IsNullOrEmpty(model)
-                && model.Length <= ModelMaxLength
-                && !model.Any(character => character == '*' || char.IsControl(character) || char.IsWhiteSpace(character)),
-            $"{prefix}:Model must be one model's exact ID, of at most {ModelMaxLength} characters, with no spaces or wildcards.");
+            model is not null && CatalogRules.IsModelId(model) && !model.Contains('*', StringComparison.Ordinal),
+            $"{prefix}:Model must be one model's exact ID, of at most {CatalogRules.ModelMaxLength} characters, with no spaces or wildcards.");
 
         var input = ReadPrice(configuration, prefix + ":InputPricePerMillion");
         var output = ReadPrice(configuration, prefix + ":OutputPricePerMillion");
@@ -139,9 +132,7 @@ internal sealed class CatalogSettings
             return null;
         }
 
-        Require(
-            value.Length <= TextMaxLength && !value.Any(char.IsControl),
-            $"{key} must be at most {TextMaxLength} characters, with no control characters.");
+        Require(CatalogRules.IsText(value), $"{key} must be at most {CatalogRules.TextMaxLength} characters, with no control characters.");
 
         return value;
     }
@@ -172,8 +163,8 @@ internal sealed class CatalogSettings
         }
 
         Require(
-            decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var price) && price <= MaximumPrice,
-            $"{key} must be a price in US dollars per million tokens, from 0 to {MaximumPrice.ToString(CultureInfo.InvariantCulture)}, such as 2.5.");
+            CatalogRules.TryParsePrice(value, out var price),
+            $"{key} must be a price in US dollars per million tokens, from 0 to {CatalogRules.MaximumPrice.ToString(CultureInfo.InvariantCulture)}, such as 2.5.");
 
         return price;
     }

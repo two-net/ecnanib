@@ -10,7 +10,7 @@ namespace Ecnanib.Modules.Catalog;
 /// <c>{ "Provider": "OpenAI", "Model": "…" }</c>. A role that's missing or blank has no default.
 /// <para>
 /// These seed <c>role_defaults</c> once per role (NFR-DEP-02), so a change here reaches only a role that has
-/// no row yet. After that the table is what counts, and administrators edit it (#26). Read() is the only way
+/// no row yet. After that the table is what counts, and administrators edit it on /admin/catalog. Read() is the only way
 /// in. An invalid value stops startup with a message that names it (CFG-03).
 /// </para>
 /// </summary>
@@ -84,11 +84,9 @@ internal sealed class RoleDefaultSettings
             return new RoleDefault(role, provider!, null);
         }
 
-        // Compared exactly with the catalog's IDs, so a space is refused rather than trimmed.
         Require(
-            model.Length <= CatalogSettings.ModelMaxLength
-                && !model.Any(character => char.IsControl(character) || char.IsWhiteSpace(character)),
-            $"{key}:Model must be one model's exact ID, of at most {CatalogSettings.ModelMaxLength} characters, with no spaces.");
+            CatalogRules.IsModelId(model),
+            $"{key}:Model must be one model's exact ID, of at most {CatalogRules.ModelMaxLength} characters, with no spaces.");
 
         return new RoleDefault(role, provider!, model);
     }

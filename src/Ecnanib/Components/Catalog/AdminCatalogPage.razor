@@ -1,0 +1,339 @@
+@page "/admin/catalog"
+@attribute [Authorize(Policy = AccountPolicies.Administrator)]
+@attribute [ExcludeFromInteractiveRouting]
+@using System.Globalization
+@inject ICatalog Catalog
+@inject ICatalogControls Controls
+@inject NavigationManager Navigation
+
+@* Static, like every form here: a post goes through the HTTP rate limiter, which circuit traffic never
+   reaches, and the page works without a script. It takes no secret, so it has only the global limit. The
+   contract checks the administrator again, as everything behind a contract must (FR-ADM-03). See The pages
+   in docs/architecture.md. *@
+
+<PageTitle>@Strings.AdminCatalogPageTitle</PageTitle>
+
+<div class="page catalog-page">
+    <h1>@Strings.AdminCatalogHeading</h1>
+    <p>@Strings.AdminCatalogIntro <a href="/catalog">@Strings.AdminCatalogUserPageLink</a></p>
+
+    @if (Notice is { } notice)
+    {
+        <p class="form-notice" role="status">@notice</p>
+    }
+
+    <section class="catalog-section" aria-labelledby="admin-catalog-sync">
+        <h2 id="admin-catalog-sync">@Strings.AdminCatalogSyncHeading</h2>
+        <p>@Strings.AdminCatalogSyncIntro</p>
+        <EditForm Model="SyncInput" FormName="catalog-sync" OnSubmit="SyncAsync">
+            <button type="submit" class="button">@Strings.AdminCatalogSyncButton</button>
+        </EditForm>
+    </section>
+
+    <section class="catalog-section" aria-labelledby="admin-catalog-defaults">
+        <h2 id="admin-catalog-defaults">@Strings.AdminCatalogDefaultsHeading</h2>
+        <p>@Strings.AdminCatalogDefaultsIntro</p>
+
+        <EditForm Model="Roles" FormName="role-defaults" OnSubmit="SaveRolesAsync" class="form catalog-defaults">
+            @if (_roleProblems.Count > 0)
+            {
+                <p class="form-error" role="alert">@Strings.AdminCatalogDefaultsInvalid</p>
+            }
+
+            @foreach (var role in Enum.GetValues<AiRole>())
+            {
+                var id = $"default-{role}";
+                var problem = _roleProblems.TryGetValue(role, out var value) ? CatalogText.RoleDefaultProblemOf(value) : null;
+
+                <fieldset class="field catalog-default">
+                    <legend>@AgentText.RoleOf(role)</legend>
+                    <div class="field">
+                        <label for="@($"{id}-provider")">@Strings.AdminCatalogDefaultProvider</label>
+                        <select id="@($"{id}-provider")" name="@($"Roles.{role}Provider")" aria-describedby="@($"{id}-error")">
+                            <option value="" selected="@string.IsNullOrEmpty(Roles.ProviderOf(role))">@Strings.AdminCatalogNoDefault</option>
+                            @foreach (var provider in Catalog.Providers)
+                            {
+                                <option value="@provider" selected="@(provider == Roles.ProviderOf(role))">@CatalogText.ProviderOf(provider)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="@($"{id}-model")">@Strings.AdminCatalogDefaultModel</label>
+                        <input id="@($"{id}-model")" name="@($"Roles.{role}Model")" type="text" value="@Roles.ModelOf(role)" list="catalog-model-ids"
+                               autocomplete="off" spellcheck="false" maxlength="256" aria-invalid="@(problem is null ? null : "true")"
+                               aria-describedby="@($"{id}-error default-model-hint")" />
+                    </div>
+                    <FieldError Id="@($"{id}-error")" Message="@problem" />
+                </fieldset>
+            }
+
+            <p id="default-model-hint" class="field-hint">@Strings.AdminCatalogDefaultModelHint</p>
+            <datalist id="catalog-model-ids">
+                @foreach (var model in _models)
+                {
+                    <option value="@model.ModelId">@CatalogText.ProviderOf(model.Provider)</option>
+                }
+            </datalist>
+
+            <div>
+                <button type="submit" class="button">@Strings.AdminCatalogDefaultsSave</button>
+            </div>
+        </EditForm>
+    </section>
+
+    <section class="catalog-section" aria-labelledby="admin-catalog-models">
+        <h2 id="admin-catalog-models">@Strings.AdminCatalogModelsHeading</h2>
+        <p>@Strings.AdminCatalogModelsIntro</p>
+
+        <form method="get" action="/admin/catalog" class="catalog-filters" aria-label="@Strings.CatalogFiltersLabel">
+            <div class="field">
+                <label for="catalog-provider">@Strings.CatalogFilterProvider</label>
+                <select id="catalog-provider" name="provider">
+                    <option value="" selected="@(ProviderFilter is null)">@Strings.CatalogFilterAny</option>
+                    @foreach (var provider in Catalog.Providers)
+                    {
+                        <option value="@provider" selected="@(provider == ProviderFilter)">@CatalogText.ProviderOf(provider)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label for="catalog-capability">@Strings.CatalogFilterCapability</label>
+                <select id="catalog-capability" name="capability">
+                    <option value="" selected="@(CapabilityFilter is null)">@Strings.CatalogFilterAny</option>
+                    @foreach (var capability in Enum.GetValues<ModelCapability>())
+                    {
+                        <option value="@capability" selected="@(capability == CapabilityFilter)">@CatalogText.CapabilityOf(capability)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label for="catalog-status">@Strings.CatalogFilterStatus</label>
+                <select id="catalog-status" name="status">
+                    <option value="" selected="@(StatusFilter is null)">@Strings.CatalogFilterAny</option>
+                    @foreach (var status in Enum.GetValues<ModelStatus>())
+                    {
+                        <option value="@status" selected="@(status == StatusFilter)">@CatalogText.StatusOf(status)</option>
+                    }
+                </select>
+            </div>
+            <div class="catalog-filter-actions">
+                <button type="submit" class="button">@Strings.CatalogFilterApply</button>
+                <a href="/admin/catalog">@Strings.CatalogFilterClear</a>
+            </div>
+        </form>
+
+        <p class="catalog-count">@string.Format(CultureInfo.CurrentCulture, Strings.CatalogCount, Shown.Count, _models.Count)</p>
+
+        @if (Shown.Count > 0)
+        {
+            @* Its own scroll, so a phone scrolls the table rather than the page. Focusable, so a keyboard can too. *@
+            <div class="catalog-table" role="region" tabindex="0" aria-label="@Strings.CatalogTableLabel">
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">@Strings.CatalogColumnModel</th>
+                            <th scope="col">@Strings.CatalogColumnProvider</th>
+                            <th scope="col">@Strings.CatalogColumnCapabilities</th>
+                            <th scope="col">@Strings.CatalogColumnTokens</th>
+                            <th scope="col">@Strings.CatalogColumnPrice</th>
+                            <th scope="col">@Strings.CatalogColumnStatus</th>
+                            <th scope="col">@Strings.AdminCatalogColumnEdit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var model in Shown)
+                        {
+                            <CatalogModelRow @key="(model.Provider, model.ModelId)" Model="model">
+                                <td>
+                                    <a href="@EditLink(model)" aria-label="@string.Format(CultureInfo.CurrentCulture, Strings.AdminCatalogEditLabel, model.DisplayName)">@Strings.AdminCatalogEdit</a>
+                                </td>
+                            </CatalogModelRow>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="catalog-section" aria-labelledby="admin-catalog-runs">
+        <h2 id="admin-catalog-runs">@Strings.AdminCatalogRunsHeading</h2>
+        <p>@string.Format(CultureInfo.CurrentCulture, Strings.AdminCatalogRunsIntro, RunCount)</p>
+
+        @if (_runs.Count == 0)
+        {
+            <p>@Strings.AdminCatalogRunsEmpty</p>
+        }
+        else
+        {
+            <div class="catalog-table" role="region" tabindex="0" aria-label="@Strings.AdminCatalogRunsLabel">
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">@Strings.AdminCatalogRunStarted</th>
+                            <th scope="col">@Strings.CatalogColumnProvider</th>
+                            <th scope="col">@Strings.AdminCatalogRunTrigger</th>
+                            <th scope="col">@Strings.AdminCatalogRunDuration</th>
+                            <th scope="col">@Strings.AdminCatalogRunKeys</th>
+                            <th scope="col">@Strings.AdminCatalogRunModels</th>
+                            <th scope="col">@Strings.AdminCatalogRunErrors</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var run in _runs)
+                        {
+                            <tr @key="run.Id">
+                                <th scope="row">@Time.Format(run.StartedAt)</th>
+                                <td>@CatalogText.ProviderOf(run.Provider)</td>
+                                <td>@CatalogText.TriggerOf(run.Trigger)</td>
+                                <td class="catalog-numbers">@DurationOf(run)</td>
+                                <td class="catalog-numbers">@string.Format(CultureInfo.CurrentCulture, Strings.AdminCatalogRunKeysValue, run.Keys, run.KeysFailed)</td>
+                                <td class="catalog-numbers">@string.Format(CultureInfo.CurrentCulture, Strings.AdminCatalogRunModelsValue, run.ModelsAdded, run.ModelsUpdated, run.ModelsDeprecated, run.ModelsRetired)</td>
+                                <td class="catalog-numbers">@run.Errors</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    /// <summary>The runs the page shows: a few days of the schedule's, with every provider.</summary>
+    private const int RunCount = 50;
+
+    private IReadOnlyList<CatalogModel> _models = [];
+    private IReadOnlyList<SyncRunRecord> _runs = [];
+    private IReadOnlyDictionary<AiRole, RoleDefaultProblem> _roleProblems = new Dictionary<AiRole, RoleDefaultProblem>();
+    private Guid _administratorId;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    [SupplyParameterFromForm(FormName = "catalog-sync")]
+    private SyncForm SyncInput { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "role-defaults", Name = "Roles")]
+    private RoleDefaultsForm Roles { get; set; } = default!;
+
+    /// <summary>Strings, because anyone can write this query, and only the names below mean anything.</summary>
+    [SupplyParameterFromQuery(Name = "provider")]
+    private string? Provider { get; set; }
+
+    [SupplyParameterFromQuery(Name = "capability")]
+    private string? Capability { get; set; }
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    [SupplyParameterFromQuery(Name = "saved")]
+    private string? Saved { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sync")]
+    private string? Sync { get; set; }
+
+    private string? Notice => (Saved, Sync) switch
+    {
+        ("model", _) => Strings.AdminCatalogModelSaved,
+        ("roles", _) => Strings.AdminCatalogDefaultsSaved,
+        (_, "started") => CatalogText.SyncAllOf(SyncAllOutcome.Started),
+        (_, "running") => CatalogText.SyncAllOf(SyncAllOutcome.AlreadyRunning),
+        _ => null,
+    };
+
+    private string? ProviderFilter => Catalog.Providers.FirstOrDefault(provider => provider == Provider);
+
+    private ModelCapability? CapabilityFilter =>
+        Enum.GetValues<ModelCapability>().Cast<ModelCapability?>().FirstOrDefault(value => value.ToString() == Capability);
+
+    private ModelStatus? StatusFilter =>
+        Enum.GetValues<ModelStatus>().Cast<ModelStatus?>().FirstOrDefault(value => value.ToString() == Status);
+
+    /// <summary>
+    /// Every model, hidden ones included, by provider then name. Hidden matches every hidden model, whatever
+    /// its lifecycle status, and a capability only when it's known to be there.
+    /// </summary>
+    private IReadOnlyList<CatalogModel> Shown =>
+    [
+        .. _models
+            .Where(model => ProviderFilter is null || model.Provider == ProviderFilter)
+            .Where(model => CapabilityFilter is not { } capability || model.Capabilities.Of(capability) == true)
+            .Where(model => StatusFilter switch
+            {
+                null => true,
+                ModelStatus.Hidden => model.Hidden,
+                var status => model.ShownStatus == status,
+            })
+            .OrderBy(model => model.Provider, StringComparer.Ordinal)
+            .ThenBy(model => model.DisplayName, StringComparer.CurrentCulture)
+            .ThenBy(model => model.ModelId, StringComparer.Ordinal),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A post brings its own values. Anything else shows what's saved.
+        var posted = Roles is not null;
+        SyncInput ??= new SyncForm();
+        Roles ??= new RoleDefaultsForm();
+
+        if (AccountClaims.UserId(HttpContext.User) is not { } administratorId)
+        {
+            return;
+        }
+
+        _administratorId = administratorId;
+        var cancellationToken = HttpContext.RequestAborted;
+
+        _models = await Catalog.ListAsync(cancellationToken);
+        _runs = await Controls.ListRunsAsync(administratorId, RunCount, cancellationToken) ?? [];
+
+        if (!posted)
+        {
+            Roles = RoleDefaultsForm.Of(await Catalog.ListRoleDefaultsAsync(cancellationToken));
+        }
+    }
+
+    /// <summary>
+    /// Null shows nothing: the page's policy let them in, so only a configuration change since then could cause
+    /// it, and the next load of the page answers 403.
+    /// </summary>
+    private async Task SyncAsync()
+    {
+        if (await Controls.SyncAllAsync(_administratorId, HttpContext.RequestAborted) is { } outcome)
+        {
+            Navigation.NavigateTo(outcome == SyncAllOutcome.Started ? "/admin/catalog?sync=started" : "/admin/catalog?sync=running");
+        }
+    }
+
+    private async Task SaveRolesAsync()
+    {
+        if (await Controls.SaveRoleDefaultsAsync(_administratorId, Roles.ToEdits(), HttpContext.RequestAborted) is not { } result)
+        {
+            return;
+        }
+
+        if (result.Saved)
+        {
+            Navigation.NavigateTo("/admin/catalog?saved=roles");
+            return;
+        }
+
+        _roleProblems = result.Problems;
+    }
+
+    /// <summary>A query string rather than a route, because an ID can hold a dot or a slash.</summary>
+    private static string EditLink(CatalogModel model) =>
+        $"/admin/catalog/model?provider={Uri.EscapeDataString(model.Provider)}&model={Uri.EscapeDataString(model.ModelId)}";
+
+    private static string DurationOf(SyncRunRecord run) =>
+        run.FinishedAt is { } finished
+            ? string.Format(CultureInfo.CurrentCulture, Strings.AdminCatalogRunSeconds, (finished - run.StartedAt).TotalSeconds)
+            : Strings.AdminCatalogRunNotFinished;
+
+    /// <summary>The sync button posts nothing but its token.</summary>
+    private sealed class SyncForm;
+}

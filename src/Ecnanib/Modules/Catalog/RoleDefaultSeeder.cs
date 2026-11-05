@@ -5,8 +5,8 @@ namespace Ecnanib.Modules.Catalog;
 
 /// <summary>
 /// A row for each role the RoleDefaults section gives a default (NFR-DEP-02). A role that has a row keeps it,
-/// because administrators may have edited it (#26), so the section only reaches a role that has none. Runs after
-/// <see cref="ProviderSeeder"/>, which the settings' providers are always among.
+/// because administrators may have edited it, even to no default, so the section only reaches a role that has
+/// none. Runs after <see cref="ProviderSeeder"/>, which the settings' providers are always among.
 /// </summary>
 internal sealed class RoleDefaultSeeder(RoleDefaultSettings settings) : IReferenceDataSeeder
 {

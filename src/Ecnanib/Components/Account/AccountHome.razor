@@ -49,6 +49,12 @@
             <p><a href="/account/administrator">@Strings.AccountConfirmAdministratorLink</a></p>
         }
 
+        @if (_isAdministrator)
+        {
+            @* A plain link, because the page is static, so its forms go through the rate limiter. *@
+            <p><a href="/admin/catalog">@Strings.AccountCatalogAdministrationLink</a></p>
+        }
+
         @if (_isAdministrator && PasswordResets.Mode == PasswordResetMode.ByAdministrator)
         {
             <p><a href="/admin/password-reset">@Strings.AccountIssueResetLink</a></p>

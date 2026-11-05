@@ -1,0 +1,94 @@
+.catalog-page {
+    display: grid;
+    gap: 1.25rem;
+    align-content: start;
+    padding-block: var(--section-gap);
+}
+
+.catalog-filters {
+    display: grid;
+    gap: 1rem;
+    align-items: end;
+}
+
+.catalog-filter-actions,
+.catalog-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+}
+
+.catalog-filter-hint {
+    grid-column: 1 / -1;
+}
+
+.catalog-count {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+/* The table scrolls inside this, so a phone never scrolls the page sideways. */
+.catalog-table {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+    .catalog-table table {
+        width: 100%;
+        min-width: 52rem;
+        border-collapse: collapse;
+    }
+
+    .catalog-table ::deep th,
+    .catalog-table ::deep td {
+        padding: 0.75rem 0.75rem 0.75rem 0;
+        border-block-start: 1px solid var(--rule);
+        text-align: start;
+        vertical-align: top;
+    }
+
+    .catalog-table thead th {
+        border-block-start: 0;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        font-weight: 400;
+    }
+
+    .catalog-table ::deep .catalog-numbers {
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        white-space: nowrap;
+    }
+
+.catalog-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-wrap: anywhere;
+}
+
+.catalog-muted {
+    color: var(--text-muted);
+}
+
+@media (min-width: 600px) {
+    .catalog-filters {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .catalog-filter-actions {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (min-width: 1024px) {
+    .catalog-filters {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    }
+
+    .catalog-filter-actions {
+        grid-column: auto;
+    }
+}

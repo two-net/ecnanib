@@ -11,16 +11,6 @@ public interface ICatalogSync
     Task<UserSyncResult> SyncUserAsync(Guid userId, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Syncing every user's keys on demand (FR-CAT-03, FR-ADM-03). Only Catalog and Administration may use
-/// this, which BannedApis enforces, because it doesn't check who's asking: Administration does (#26).
-/// </summary>
-public interface ICatalogAdministration
-{
-    /// <summary>Starts a sync of every user's valid AI keys in the background, unless one is running.</summary>
-    Task<SyncAllOutcome> SyncAllAsync(CancellationToken cancellationToken);
-}
-
 /// <param name="Keys">The user's valid AI keys it asked about.</param>
 /// <param name="KeysFailed">How many of them the provider didn't answer for.</param>
 /// <param name="Models">How many models the keys that answered can use between them.</param>

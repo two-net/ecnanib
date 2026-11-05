@@ -26,7 +26,7 @@ internal sealed class CatalogSync(
     CatalogSettings settings,
     ModelStatusObservers observers,
     TimeProvider time,
-    ILogger<CatalogSync> logger) : ICatalogSync, ICatalogAdministration
+    ILogger<CatalogSync> logger) : ICatalogSync
 {
     /// <summary>An administrator's sync of every key. Not the schedule's name, so it doesn't move the schedule.</summary>
     public const string AllJobName = "catalog-sync-all";
@@ -35,7 +35,7 @@ internal sealed class CatalogSync(
 
     public const string CredentialJobName = "catalog-sync-credential";
 
-    /// <summary>Where administrators see the runs, which #26 adds.</summary>
+    /// <summary>Where administrators see the runs.</summary>
     public const string FailureLink = "/admin/catalog";
 
     public static readonly TimeSpan FullTimeout = TimeSpan.FromMinutes(30);
@@ -89,19 +89,23 @@ internal sealed class CatalogSync(
             : new UserSyncResult(UserSyncOutcome.Failed);
     }
 
-    public Task<SyncAllOutcome> SyncAllAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Starts an administrator's sync of every user's valid keys in the background, unless one is running. Through
+    /// <see cref="CatalogAdministration"/>, which audits it.
+    /// </summary>
+    public SyncAllOutcome StartEveryone()
     {
         // Only a hint for the answer. The run takes the guard itself, so a run the runner refuses can't leave
         // it held, and of two requests at once the second run records that it was already running.
         if (_everyone.CurrentCount == 0)
         {
-            return Task.FromResult(SyncAllOutcome.AlreadyRunning);
+            return SyncAllOutcome.AlreadyRunning;
         }
 
         // RunAsync never throws for the work's failure, so the task can be left to run.
         _ = jobs.RunAsync(AllJobName, FullTimeout, (context, token) => SyncEveryoneAsync(CatalogSyncTrigger.Administrator, context, token));
 
-        return Task.FromResult(SyncAllOutcome.Started);
+        return SyncAllOutcome.Started;
     }
 
     /// <summary>Every user's valid keys, then a tidy of rows that lost events left behind.</summary>
@@ -479,7 +483,7 @@ internal sealed class CatalogSync(
     /// Deprecated the first time, and Retired once it has been missing for Catalog:RetireAfterMissingDays
     /// (FR-CAT-04). A key that failed keeps its rows, so a model any failing key could use stays as it is, and
     /// an outage can't deprecate anything. The tidy has already dropped what deleted and invalid keys had.
-    /// Hidden is administrators' (#26), so it's left alone.
+    /// Hiding is an override in <c>model_overrides</c>, so a hidden model ages like any other.
     /// </summary>
     private async Task<(int Deprecated, int Retired)> AgeAsync(
         EcnanibDbContext context,
