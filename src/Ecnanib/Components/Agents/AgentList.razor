@@ -1,0 +1,175 @@
+@page "/agents"
+@using System.Globalization
+@inject IAgents Agents
+
+@* Interactive: activating, pausing, stopping, cloning, archiving and deleting take no secret. The settings
+   form is a static page, linked with a plain <a>. The agent detail page is #41's. *@
+
+<PageTitle>@Strings.AgentsPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.AgentsHeading</h1>
+    <p>@Strings.AgentsIntro</p>
+
+    @* Always there, so a screen reader announces a notice when it appears. *@
+    <p class="form-notice" role="status" tabindex="-1" hidden="@(Notice is null)" @ref="_notice">@Notice</p>
+
+    @if (_agents is { } loaded)
+    {
+        <div class="agents-actions">
+            @if (Current.Count() < Agents.MaxAgentsPerUser)
+            {
+                <a class="button" href="/agents/new">@Strings.AgentsAddLink</a>
+            }
+            else
+            {
+                <p>@Strings.AgentsLimitReached</p>
+            }
+            <p class="agents-count">@string.Format(CultureInfo.CurrentCulture, Strings.AgentsCount, Current.Count(), Agents.MaxAgentsPerUser)</p>
+        </div>
+
+        @if (!Current.Any())
+        {
+            <p>@Strings.AgentsEmpty</p>
+        }
+        else
+        {
+            <ul class="agents">
+                @foreach (var agent in Current)
+                {
+                    <AgentCard @key="agent.Id" Agent="agent" UserId="_userId" OnChanged="Replace" OnClone="CloneAsync" OnRemoved="Remove" />
+                }
+            </ul>
+        }
+
+        @if (Archived.Any())
+        {
+            <details class="agents-archived">
+                <summary>@string.Format(CultureInfo.CurrentCulture, Strings.AgentsArchivedHeading, Archived.Count())</summary>
+                <ul class="agents">
+                    @foreach (var agent in Archived)
+                    {
+                        <AgentCard @key="agent.Id" Agent="agent" UserId="_userId" OnChanged="Replace" OnClone="CloneAsync" OnRemoved="Remove" />
+                    }
+                </ul>
+            </details>
+        }
+
+        <p class="field-hint">@Strings.AgentsCredentialsHint <a href="/credentials">@Strings.NavCredentials</a></p>
+    }
+</div>
+
+@code {
+    private List<AgentRecord>? _agents;
+    private Guid _userId;
+    private string? _message;
+    private bool _focusNotice;
+    private ElementReference _notice;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /// <summary>A string, because anyone can write this query, and only the names below mean anything.</summary>
+    [SupplyParameterFromQuery]
+    private string? Saved { get; set; }
+
+    private string? Notice => _message ?? Saved switch
+    {
+        "created" => Strings.AgentsCreatedNotice,
+        "updated" => Strings.AgentsUpdatedNotice,
+        _ => null,
+    };
+
+    private IEnumerable<AgentRecord> Current => _agents?.Where(agent => agent.Status != AgentStatus.Archived) ?? [];
+
+    private IEnumerable<AgentRecord> Archived => _agents?.Where(agent => agent.Status == AgentStatus.Archived) ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AccountClaims.UserId((await AuthenticationState).User) is not { } userId)
+        {
+            return;
+        }
+
+        _userId = userId;
+        _agents = [.. await Agents.ListAsync(userId, includeArchived: true, CancellationToken.None)];
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusNotice)
+        {
+            _focusNotice = false;
+            await _notice.FocusAsync();
+        }
+    }
+
+    private void Replace(AgentRecord agent)
+    {
+        var index = _agents?.FindIndex(existing => existing.Id == agent.Id) ?? -1;
+
+        if (index >= 0)
+        {
+            _agents![index] = agent;
+        }
+    }
+
+    /// <summary>
+    /// A card that moves to the archive, or goes, takes its buttons with it, so focus moves to the notice
+    /// that says what happened.
+    /// </summary>
+    private void Remove((AgentRecord Agent, bool Deleted) removed)
+    {
+        if (removed.Deleted)
+        {
+            _agents?.RemoveAll(existing => existing.Id == removed.Agent.Id);
+            _message = Strings.AgentsDeletedNotice;
+        }
+        else
+        {
+            Replace(removed.Agent);
+            _message = Strings.AgentsArchivedNotice;
+        }
+
+        _focusNotice = true;
+    }
+
+    /// <summary>A Draft named after the original, numbered when that's taken (FR-AGT-12).</summary>
+    private async Task CloneAsync(AgentRecord source)
+    {
+        var name = CloneName(source.Settings.Name);
+        var result = await Agents.CloneAsync(_userId, source.Id, name, CancellationToken.None);
+
+        if (result is { Outcome: AgentSaveOutcome.Saved, Agent: { } clone })
+        {
+            _agents?.Add(clone);
+            _message = string.Format(CultureInfo.CurrentCulture, Strings.AgentsClonedNotice, clone.Settings.Name);
+        }
+        else
+        {
+            _message = AgentText.SaveErrorOf(result.Outcome);
+        }
+
+        _focusNotice = true;
+    }
+
+    /// <summary>The first free name of the form "name (copy)", then "name (copy 2)", cut to fit.</summary>
+    private string CloneName(string name)
+    {
+        var taken = Current.Select(agent => agent.Settings.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        for (var number = 1; ; number++)
+        {
+            var suffix = number == 1
+                ? string.Format(CultureInfo.CurrentCulture, Strings.AgentCloneName, "")
+                : string.Format(CultureInfo.CurrentCulture, Strings.AgentCloneNameNumbered, "", number);
+            var stem = name.Length + suffix.Length > AgentLimits.NameMaxLength ? name[..(AgentLimits.NameMaxLength - suffix.Length)].TrimEnd() : name;
+            var candidate = stem + suffix;
+
+            if (!taken.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+}

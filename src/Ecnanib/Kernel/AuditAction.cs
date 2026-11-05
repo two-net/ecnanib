@@ -62,4 +62,28 @@ public enum AuditAction
     CredentialRotated,
 
     CredentialDeleted,
+
+    /// <summary>The user created an agent, from scratch or as a clone of another, as a Draft.</summary>
+    AgentCreated,
+
+    /// <summary>The user changed an agent's settings.</summary>
+    AgentUpdated,
+
+    /// <summary>The user switched an agent between Autonomous and Confirm each trade (FR-AUD-01).</summary>
+    AgentExecutionModeChanged,
+
+    /// <summary>The agent passed its activation checks and became Active, from Draft or to resume it.</summary>
+    AgentActivated,
+
+    /// <summary>By the user, or by the system with a reason, such as a credential that stopped working.</summary>
+    AgentPaused,
+
+    /// <summary>The agent stopped running cycles, and left its positions and orders as they were.</summary>
+    AgentStopped,
+
+    /// <summary>The agent was archived, which is how agents are removed by default (DATA-R-04).</summary>
+    AgentArchived,
+
+    /// <summary>An archived agent was deleted for good.</summary>
+    AgentDeleted,
 }

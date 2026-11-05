@@ -22,6 +22,255 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Ecnanib.Modules.Agents.Agent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("AutoExecuteRiskReducing")
+                        .HasColumnType("boolean")
+                        .HasColumnName("auto_execute_risk_reducing");
+
+                    b.Property<long?>("BudgetDailyTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("budget_daily_tokens");
+
+                    b.Property<decimal?>("BudgetDailyUsd")
+                        .HasColumnType("numeric")
+                        .HasColumnName("budget_daily_usd");
+
+                    b.Property<long?>("BudgetMonthlyTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("budget_monthly_tokens");
+
+                    b.Property<decimal?>("BudgetMonthlyUsd")
+                        .HasColumnType("numeric")
+                        .HasColumnName("budget_monthly_usd");
+
+                    b.Property<decimal?>("CapitalAllocation")
+                        .HasColumnType("numeric")
+                        .HasColumnName("capital_allocation");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CustomInstructions")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("custom_instructions");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("environment");
+
+                    b.Property<Guid?>("ExchangeCredentialId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("exchange_credential_id");
+
+                    b.Property<string>("ExecutionMode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("execution_mode");
+
+                    b.Property<bool>("ExperienceEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("experience_enabled");
+
+                    b.Property<string>("Market")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("market");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("NameKey")
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("name_key")
+                        .HasComputedColumnSql("lower(name)", true);
+
+                    b.Property<string>("QuoteAsset")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("quote_asset");
+
+                    b.Property<int>("ReflectionsInPrompt")
+                        .HasColumnType("integer")
+                        .HasColumnName("reflections_in_prompt");
+
+                    b.Property<int>("RiskConsecutiveLossesBeforePause")
+                        .HasColumnType("integer")
+                        .HasColumnName("risk_consecutive_losses_before_pause");
+
+                    b.Property<int>("RiskCooldownCyclesAfterLoss")
+                        .HasColumnType("integer")
+                        .HasColumnName("risk_cooldown_cycles_after_loss");
+
+                    b.Property<decimal>("RiskDailyLossLimitPercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_daily_loss_limit_percent");
+
+                    b.Property<decimal>("RiskFundingFilterPercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_funding_filter_percent");
+
+                    b.Property<decimal>("RiskLiquidationBufferMultiple")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_liquidation_buffer_multiple");
+
+                    b.Property<int>("RiskMaxLeverage")
+                        .HasColumnType("integer")
+                        .HasColumnName("risk_max_leverage");
+
+                    b.Property<int>("RiskMaxNewEntriesPerDay")
+                        .HasColumnType("integer")
+                        .HasColumnName("risk_max_new_entries_per_day");
+
+                    b.Property<decimal?>("RiskMaxPositionNotional")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_max_position_notional");
+
+                    b.Property<decimal>("RiskMaxRiskPerTradePercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_max_risk_per_trade_percent");
+
+                    b.Property<decimal>("RiskMaxStopDistanceAtr")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_max_stop_distance_atr");
+
+                    b.Property<decimal>("RiskMinRewardToRisk")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_min_reward_to_risk");
+
+                    b.Property<decimal>("RiskMinStopDistanceAtr")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_min_stop_distance_atr");
+
+                    b.Property<decimal>("RiskWeeklyLossLimitPercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_weekly_loss_limit_percent");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("StatusChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("status_changed_at");
+
+                    b.Property<string>("StatusReason")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status_reason");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("symbol");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("timeframe");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_agents");
+
+                    b.HasIndex("ExchangeCredentialId")
+                        .HasDatabaseName("ix_agents_exchange_credential_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_agents_user_id");
+
+                    b.HasIndex("UserId", "NameKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_agents_user_id_name_key")
+                        .HasFilter("status <> 'Archived'");
+
+                    b.HasIndex("ExchangeCredentialId", "Market", "Symbol")
+                        .IsUnique()
+                        .HasDatabaseName("ix_agents_trading_slot")
+                        .HasFilter("status IN ('Active', 'Paused', 'Error')");
+
+                    b.ToTable("agents", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Agents.AgentRoleAssignment", b =>
+                {
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Role")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("role");
+
+                    b.Property<string>("FallbackModelId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("fallback_model_id");
+
+                    b.Property<string>("FallbackProvider")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("fallback_provider");
+
+                    b.Property<string>("ModelId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("model_id");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.HasKey("AgentId", "Role")
+                        .HasName("pk_agent_role_assignments");
+
+                    b.ToTable("agent_role_assignments", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Catalog.CatalogSyncRun", b =>
                 {
                     b.Property<long>("Id")
@@ -1070,6 +1319,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("secrets", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Agents.AgentRoleAssignment", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Agents.Agent", null)
+                        .WithMany("Roles")
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_role_assignments_agents_agent_id");
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Catalog.Model", b =>
                 {
                     b.HasOne("Ecnanib.Modules.Catalog.Provider", null)
@@ -1158,6 +1417,11 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_user_preferences_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Agents.Agent", b =>
+                {
+                    b.Navigation("Roles");
                 });
 #pragma warning restore 612, 618
         }

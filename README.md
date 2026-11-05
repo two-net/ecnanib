@@ -111,7 +111,8 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Email | Optional. MailKit over SMTP with TLS required, sent in the background, for address verification, password reset links and notifications | In place |
 | Notifications | In the app always, listed newest first with an unread count in the menu, and by email for the events each user chooses, batched each minute | In place. Each later feature raises its own |
 | Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys, two-factor keys and users' API keys live in PostgreSQL under the same keys | In place |
-| API keys | Users bring their own keys for Anthropic, Google, OpenAI, xAI, Binance Live and Binance Demo, and the platform has none of its own. Each key is checked with its provider when it's added and on demand, stored encrypted, and never shown again, only its last four characters. Binance keys that can withdraw are refused, and the ones without an IP restriction are flagged | In place. Scheduled re-checks and pausing agents come with agents |
+| API keys | Users bring their own keys for Anthropic, Google, OpenAI, xAI, Binance Live and Binance Demo, and the platform has none of its own. Each key is checked with its provider when it's added, on demand and on a schedule, stored encrypted, and never shown again, only its last four characters. Binance keys that can withdraw are refused, and the ones without an IP restriction are flagged. A key that stops working pauses the agents that use it | In place |
+| Agents | Users create, edit, clone, archive and delete agents, each with its market, pair, timeframe, models per role, capital, risk settings, execution mode, AI budget and custom instructions. Activation checks the keys, models, capital and risk settings, and allows one agent per key, market and pair. Every change of status is audited | In place for Demo, as settings and a lifecycle. Agents don't trade yet: decision cycles, the wizard and switching to Live come later |
 | Model catalog | Synced from every user's valid AI keys and merged into one list, with which key can use which model. It syncs on a schedule, when a key is added or replaced, and when a user asks. Every run is recorded. Prices and capabilities that providers don't report come from the configuration file | In place. Deprecation and retirement, the catalog page, and administrators' overrides and sync button come later |
 | Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, a before/after summary, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts and API keys. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
@@ -243,6 +244,16 @@ A field that's set beats what the provider reports, and the rest come from the p
 
 A model with no price has no cost estimate. If every key for a provider fails during a scheduled sync, because the provider is down or answering in a way Ecnanib can't read, administrators are notified. A single user's key that stops working only affects that user. See [Model catalog](docs/architecture.md#model-catalog).
 
+### Agents
+
+Users create agents on the **Agents** page. Each trades one pair on Binance Spot or USDⓈ-M Futures, in Demo only for now, with a model chosen per role from those their AI keys can use. A new agent is a draft, and activating it checks that its Binance key is valid for its market, that each required role has a model one of the user's valid keys can use, and that its capital and risk settings are set. Only one agent at a time may be active, paused or in error per Binance key, market and pair, because they'd share the position. Archiving removes an agent and frees its name. An archived agent can be deleted for good.
+
+| Setting | Meaning |
+|---|---|
+| `Agents:MaxAgentsPerUser` | The most agents a user may have that aren't archived, 1 to 1000. Defaults to `10` |
+
+An invalid value stops startup with a message that names it. See [Agents](docs/architecture.md#agents).
+
 ## Security
 
 Outside Development the application won't start until it knows its public address. It must use `https`:
@@ -310,6 +321,12 @@ Users add their keys on the **API keys** page. Ecnanib checks each one with its 
 - **An AI key's models are synced** when it's added or replaced, when a check finds it valid again, on the schedule, and when the user presses **Sync models**, at most once a minute. Each AI key shows how many models it can use. Syncing isn't counted as a use, so **Last used** still means an agent used the key.
 
 Adding, checking, replacing and deleting a key each appear on the user's activity page, with which key it was.
+
+Every key is checked again on a schedule, and a key that stopped working, or a Binance key that lost a market, raises a notification and pauses the agents that use it. Their positions and protective orders stay on Binance, and the user resumes them once the key is fixed. A provider that can't be reached changes nothing, so an outage never pauses an agent. Deleting a key that agents use says which ones first, and pauses the active ones.
+
+| Setting | Meaning |
+|---|---|
+| `Security:CredentialRevalidationHours` | How often every key is checked again, 1 to 168. Defaults to `24`. Each check of a Binance key costs a few requests of the server's shared weight |
 
 ### Email
 

@@ -1,0 +1,29 @@
+.agents-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+}
+
+.agents-count {
+    color: var(--text-muted);
+}
+
+.agents {
+    display: grid;
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.agents-archived {
+    display: grid;
+    gap: 1rem;
+}
+
+    .agents-archived summary {
+        margin-block-end: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+    }

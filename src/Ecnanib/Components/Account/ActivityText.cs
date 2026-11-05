@@ -1,4 +1,5 @@
 using System.Globalization;
+using Ecnanib.Components.Agents;
 using Ecnanib.Components.Credentials;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Credentials.Contracts;
@@ -34,6 +35,14 @@ public static class ActivityText
         AuditAction.CredentialValidated => Strings.ActivityActionCredentialValidated,
         AuditAction.CredentialRotated => Strings.ActivityActionCredentialRotated,
         AuditAction.CredentialDeleted => Strings.ActivityActionCredentialDeleted,
+        AuditAction.AgentCreated => Strings.ActivityActionAgentCreated,
+        AuditAction.AgentUpdated => Strings.ActivityActionAgentUpdated,
+        AuditAction.AgentExecutionModeChanged => Strings.ActivityActionAgentExecutionModeChanged,
+        AuditAction.AgentActivated => Strings.ActivityActionAgentActivated,
+        AuditAction.AgentPaused => Strings.ActivityActionAgentPaused,
+        AuditAction.AgentStopped => Strings.ActivityActionAgentStopped,
+        AuditAction.AgentArchived => Strings.ActivityActionAgentArchived,
+        AuditAction.AgentDeleted => Strings.ActivityActionAgentDeleted,
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Give the action its text in Strings.resx."),
     };
 
@@ -48,7 +57,7 @@ public static class ActivityText
         CredentialAuditFields.Label => Strings.ActivityFieldLabel,
         CredentialAuditFields.Status => Strings.ActivityFieldStatus,
         CredentialAuditFields.Ending => Strings.ActivityFieldEnding,
-        _ => null,
+        _ => AgentText.AuditFieldOf(field),
     };
 
     /// <summary>
@@ -79,7 +88,7 @@ public static class ActivityText
         (CredentialAuditFields.Environment, _) when Enum.GetNames<TradingEnvironment>().Contains(value, StringComparer.Ordinal) =>
             CredentialText.EnvironmentOf(Enum.Parse<TradingEnvironment>(value)),
         (CredentialAuditFields.Ending, _) => CredentialText.Ending(value),
-        _ => value,
+        _ => AgentText.AuditValueOf(field, value) ?? value,
     };
 
     /// <summary>Null when the user or a visitor acted, which the action already says.</summary>

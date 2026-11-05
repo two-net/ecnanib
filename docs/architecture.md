@@ -58,8 +58,8 @@ Some needs run in both directions, and a reference can't solve that. Separating 
 
 | Pair | Need | Direction |
 |---|---|---|
-| Agents, Execution | Stop, kill switch, open-exposure checks (FR-AGT-03, FR-AGT-07, FR-AGT-08, FR-AGT-13, EXT-BIN-07) | Port declared by Agents, implemented by Execution |
-| Credentials, Agents | Pause agents on credential failure or deletion (FR-KEY-10, FR-KEY-11) | Event from Credentials, `ICredentialObserver` |
+| Agents, Execution | Stop, kill switch, open-exposure checks (FR-AGT-03, FR-AGT-07, FR-AGT-08, FR-AGT-13, EXT-BIN-07) | Port declared by Agents, `IAgentExposure`, implemented by Execution |
+| Credentials, Agents | Pause agents on credential failure or deletion (FR-KEY-10, FR-KEY-11) | Event from Credentials, `ICredentialObserver`. See [Pausing](#pausing-on-a-credential) |
 | Credentials, Catalog | Sync when a credential is added or rotated (FR-CAT-03) | Event from Credentials, `ICredentialObserver`. See [Triggers](#triggers) |
 | Catalog, Agents | Model deprecation and retirement (FR-CAT-04) | Event from Catalog |
 | DecisionCycle, Experience | Attribution, metrics and reflections (FR-EXP-01, FR-EXP-02, FR-EXP-04) | Event from DecisionCycle, plus a reflection port it declares |
@@ -382,9 +382,14 @@ await transaction.CommitAsync(cancellationToken);
 | `RecoveryCodesRegenerated` | `TwoFactor.RegenerateRecoveryCodesAsync` | In the transaction that replaces the codes |
 | `RecoveryCodeUsed` | `TwoFactor.SpendAsync` | In the transaction that spends the code, at sign-in or in a check for a sensitive action. A refused check isn't recorded, though a wrong authenticator code counts towards that check's throttle |
 | `CredentialAdded` | `Credentials.AddAiKeyAsync`, `Credentials.AddBinanceKeyAsync` | In the save that stores the key's secrets and its row, which is the target. `Changes` has the provider, environment, label and status. A refused key records nothing, because nothing was stored |
-| `CredentialValidated` | `Credentials.ValidateAsync` | In the transaction that writes the result, only when the provider answered. `Changes` has the status before and after |
+| `CredentialValidated` | `CredentialChecks.CheckAsync`, on demand and from `credential-revalidation` | In the transaction that writes the result, only when the provider answered. By the user on demand, and by the system on the schedule. `Changes` has the status before and after |
 | `CredentialRotated` | `Credentials.RotateAiKeyAsync`, `Credentials.RotateBinanceKeyAsync` | In the transaction that swaps the secrets and deletes the old ones. `Changes` has the key's last four characters and the status, before and after |
 | `CredentialDeleted` | `Credentials.DeleteAsync` | In the transaction that deletes the row and its secrets. `Changes` has what the credential was |
+| `AgentCreated` | `Agents.CreateAsync`, `Agents.CloneAsync` | In the save that inserts the agent and its roles. `Changes` has every setting but the description and custom instructions, and a clone's `ClonedFrom` |
+| `AgentUpdated` | `Agents.UpdateAsync` | In the save that changes the settings, with only the fields that changed, before and after. Not recorded when nothing did |
+| `AgentExecutionModeChanged` | `Agents.UpdateAsync` | In the same save, as well as `AgentUpdated`, because FR-AUD-01 names it |
+| `AgentActivated`, `AgentPaused`, `AgentStopped`, `AgentArchived` | `Agents`, and `AgentPrerequisites` for a pause by the system | In the transaction of the conditional update that changes the status. `Changes` has the status before and after, and the reason. A pause because of a credential is by the system, with the owner as `UserId` (FR-AGT-04) |
+| `AgentDeleted` | `Agents.DeleteAsync` | In the transaction that deletes the archived agent. `Changes` has its name, market, environment and pair |
 
 **Visitors write `SignInFailed` rows,** one per attempt, whether or not the address has an account. FR-AUD-01 asks for them, and the sign-in [rate limit](#rate-limiting) bounds how fast they arrive.
 
@@ -624,7 +629,7 @@ The algo endpoint's own page couldn't be read, so its parameters come from Binan
 | Contract | What | Who uses it |
 |---|---|---|
 | `IMarketData` | A snapshot for one symbol, timeframe and candle close: two candle series with their indicators, the quote, and Futures funding | DecisionCycle (#31) |
-| `IExchangeSymbols` | Binance's symbols and their filters, from `exchange_symbols` when Binance can't be reached | Agents (#23), the wizard (#40), and the Risk Engine's callers (#27, #34) |
+| `IExchangeSymbols` | Binance's symbols and their filters, from `exchange_symbols` when Binance can't be reached | Agents, the wizard (#40), and the Risk Engine's callers (#27, #34) |
 | `Indicators` | The indicator functions, pure and deterministic | Market Data, and anything that needs the same numbers, such as shadow outcomes (#44) |
 | `MarketDataException` | A failure in Market Data's terms: `Unavailable`, `Throttled` with `RetryAfter`, or `UnknownSymbol` | Its callers, which can't see the adapter's `ExchangeException` |
 
@@ -1167,7 +1172,7 @@ Hashes are PHC strings with their own parameters, so these can be raised later. 
 |---|---|---|
 | `ICredentials` | Listing, adding, labelling, checking, replacing and deleting a user's keys. Nothing it returns holds a secret | The Web UI |
 | `ICredentialKeys` | A valid key, decrypted for one use, refused on a market Binance didn't enable for it. Also every AI credential of one user, or of everyone, as IDs and statuses | Catalog, AiCouncil and Execution only, which `BannedApis` enforces |
-| `ICredentialObserver` | Told after a change to a credential commits: added, rotated, checked with an answer, or deleted, with the status before and after. It must return at once | Catalog, and Agents (#23) |
+| `ICredentialObserver` | Told after a change to a credential commits: added, rotated, checked with an answer, or deleted, with the status before and after. It must return at once | Catalog and Agents |
 
 `credentials` has one row per key. The API key, and for Binance the secret, are rows in [`secrets`](#secrets), and the row keeps only their IDs, so listing never decrypts anything (FR-KEY-03). It shows the API key's last four characters, never the secret's. Every query filters on the user, so another user's credential behaves like one that doesn't exist (NFR-SEC-04). There's no foreign key to `users` or `secrets`, as for notifications and two-factor: #51 deletes through Identity's port.
 
@@ -1183,7 +1188,7 @@ FR-KEY-04's four, with a `problem` that says why a key isn't valid:
 | Unverified | An AI key added while its provider couldn't be reached. Nothing uses it until a check says it's valid |
 
 - **A refused key is never stored.** Neither is a Binance key with withdrawals enabled (AC-04), nor one Binance couldn't be asked about, so a key whose withdrawal permission was never read never reaches the database. An AI key has nothing like that to wait for, so one added during an outage is stored as Unverified.
-- **An outage changes nothing.** A check that can't reach the provider leaves the status as it was, so a provider's bad hour can't downgrade a key, or later pause its agents (#23).
+- **An outage changes nothing.** A check that can't reach the provider leaves the status as it was, so a provider's bad hour can't downgrade a key, or pause its agents.
 - **A key Binance didn't enable for a market is kept**, as Insufficient permissions when it can trade on neither, so the user can fix it on Binance and check again without pasting it twice.
 
 ### Validating a key
@@ -1216,9 +1221,21 @@ A Binance key is checked with authenticated requests to its environment's server
 
 ### Checking on demand
 
-`/credentials` is interactive, because checking and deleting take no secret. Deleting asks first, on the page.
+`/credentials` is interactive, because checking and deleting take no secret. Deleting asks first, on the page, and the question names the agents that use the key and says the active ones will pause (FR-KEY-10), from `IAgents.ListUsingCredentialAsync`.
 
 A check claims the credential with one conditional `UPDATE` of `checked_at`, so each key is checked at most once a minute, however many tabs ask. Hub traffic never reaches the limiter, and every user shares the server's Binance weight, so the limit has to live behind the contract ([Circuits](#circuits)). A check's result is written only while the key it checked is still the credential's, so a replacement meanwhile keeps its own result. Each check that got an answer records `CredentialValidated`, with the status before and after.
+
+### Checking on a schedule
+
+`credential-revalidation` checks every key again every `Security:CredentialRevalidationHours`, 24 by default (FR-KEY-11). It and checks on demand share `CredentialChecks`, so they claim, write and record a check the same way, and a key a user checked a moment ago is skipped.
+
+- **Four keys at a time, each on its own.** One key's failure is logged and counted, and never reaches another (NFR-REL-05). Once shutdown begins, nothing new starts, and the checks under way finish, because they can be exchange calls.
+- **A check that loses something raises `CredentialInvalid`**, in the transaction that writes it: a key that was `Valid` and isn't, or a Binance market that was enabled and isn't. On demand too, because agents pause either way. It links to `/credentials`, and its subject is the key's label.
+- **The observers hear of every check that got an answer**, and Agents pauses what it must: see [Pausing](#pausing-on-a-credential).
+- **The record is by the system** on the schedule, with the owner as `UserId`, so the user's activity page shows it as by Ecnanib.
+- **`details` holds counts**: keys, checked, unreachable, too soon, gone and failed.
+
+`CredentialObservers` resolves the observers on the first change rather than taking them in its constructor. An observer uses the contracts it observes, as Agents reads `ICredentials`, so injecting them would be a cycle, and startup validates the container.
 
 ### Using a key
 
@@ -1318,6 +1335,95 @@ One Information event per provider run, with its counts, and a Warning for each 
 ### The page
 
 `/credentials` shows how many models each AI key can use and when they were synced, and a **Sync models** button when the user has a valid AI key. The button waits for the sync, and says how it went in the page's status notice. The catalog itself has no page yet: that's #26.
+
+## Agents
+
+`Modules/Agents` holds users' trading agents: their settings (FR-AGT-02) and their lifecycle (FR-AGT-04). Running them is later issues' work: the scheduler (#30), the council (#31) and execution (#34).
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `IAgents` | Listing, creating, editing, cloning, activating, pausing, stopping, archiving and deleting a user's agents, and which agents use a credential (FR-KEY-10). Every call takes the user, so another user's agent behaves like one that doesn't exist (NFR-SEC-04) | The Web UI now. The scheduler, the council and execution later |
+| `IAgentExposure` | Whether an agent has open positions or orders, and an account's available balance. A port Agents declares and Execution implements ([Inversions](#inversions)) | Agents, and the settings page, which locks fields with it |
+| `RiskSettings`, in `RiskEngine/Contracts` | FR-RISK-02's settings, their defaults and each one's own range. Only numbers, so the engine still depends on Kernel alone (rule 4) | Agents stores them. The engine (#27) takes them as input |
+
+### Tables
+
+| Table | What |
+|---|---|
+| `agents` | One row per agent: its settings as plain columns, risk settings as `risk_*`, the budget, its status, why it's in it, and a `version` |
+| `agent_role_assignments` | One row per agent and role: the model as provider and model ID, which is the catalog's key, and an optional fallback. Its foreign key to `agents` cascades, because both are this module's |
+
+- **There's no foreign key to `users` or `credentials`.** An agent keeps its exchange key's ID after the key is deleted, so the user can still edit it, and activation says the key is missing. Account deletion (#51) goes through Identity's port.
+- **`version` is a concurrency token that every change increments.** Edits and status changes are conditional on it, so an edit from an old page, or one that crosses a pause, changes nothing and says so. It's explicit rather than `xmin`, so a conditional `ExecuteUpdate` can compare and increment it.
+- **`name_key` is `lower(name)`, computed by the database**, for the unique index on a user's names among agents that aren't archived. Archiving frees a name.
+- **`quote_asset` is stored from Binance's symbol** when the pair is saved, because the capital allocation is an amount in it (DATA-R-02).
+
+### States
+
+| From | Activate | Pause | Stop | Archive | Delete |
+|---|---|---|---|---|---|
+| Draft | ✓ | | | ✓ | |
+| Active | | ✓ | ✓ | | |
+| Paused | ✓, to resume | | ✓ | ✓ | |
+| Stopped | ✓ | | | ✓ | |
+| Error | ✓ | | ✓ | ✓ | |
+| Archived | | | | | ✓, for good |
+
+- **Each change is a conditional update on the status and version it read**, in one transaction with its audit record, which has the status before and after and the reason (FR-AGT-04). Of two changes at once, one happens and the other says the status doesn't allow it.
+- **Archiving is how an agent is removed** (DATA-R-04), and needs no open positions or orders. Deleting is only for an archived agent, and removes its row and roles.
+- **Stopping leaves positions and orders as they are.** FR-AGT-07's other choice, closing them, comes with the kill switch (#37).
+- **Nothing enters Error yet.** Decision cycles do (#31).
+
+### Activation
+
+`ActivationChecks` holds FR-AGT-05's checks for Demo. They read credentials, the catalog and Binance's symbols, and a symbol lookup can call Binance, so they run before the transaction, which is then conditional on the version they checked. Each check gives a typed problem, and the page lists them all.
+
+1. **Demo.** Live is refused until switching to Live exists (#39), which UC-04 makes an action of its own rather than an edit.
+2. **The exchange key** exists, is the user's Binance key for the agent's environment, is `Valid`, and is enabled for the agent's market (FR-KEY-05).
+3. **The pair** is one Binance lists as trading, and a perpetual contract on Futures. A delivery contract has no funding, which the funding filter assumes, and it expires.
+4. **Each required role** (Technical Analyst, Strategist and Risk Critic) has a model that's `Active` in the catalog and that one of the user's `Valid` AI keys can use. Validity comes from Credentials, not the catalog's rows, which follow a change to a key a moment later. An optional role's model, and every fallback, are checked the same way, but only warn.
+5. **Capital** above zero, and every risk setting in its range: "complete risk settings". The global caps come with the engine (#27).
+6. **The slot**, under the [user's lock](#the-users-lock).
+
+**FR-AGT-13's warning** comes after the agent is active: the capital of the key's active agents on that market, in the pair's quote asset, against the account's available balance in that asset. Execution reads the balance from Binance, at most once a minute per key and market, because every user shares the weight and a circuit's clicks never reach the rate limiter. An unknown balance gives no warning.
+
+### One agent per key, market and pair
+
+FR-AGT-10 and AC-13 hold the slot for **Active, Paused and Error** agents, because each may still hold positions or orders on the account, which the exchange shares between everything trading that symbol. A Draft or Stopped agent holds none. The user frees the slot by stopping or archiving the other agent.
+
+The rule is checked under the user's lock, by activation and by an edit that moves an agent holding a slot. A unique index, `ix_agents_trading_slot`, filtered to those statuses, is the backstop. It should never fire, because a violation is logged as an Error, which `Accounts` avoids too.
+
+### The user's lock
+
+`AgentLock` takes a PostgreSQL advisory lock for the transaction, keyed on the user, around every write that could break a rule across rows: the most agents a user may have (`Agents:MaxAgentsPerUser`), unique names, and the slot. A credential belongs to one user, so every slot conflict is within one user, and one lock covers them all. A system pause takes it too, so it can't cross an activation.
+
+It doesn't lock the `users` row, as `TwoFactor` does, because that's Identity's table, and SQL against another module's table is the one boundary the tests can't see. An in-process lock would also do for one instance (ASM-06), but this one doesn't depend on it.
+
+### Editing
+
+- **The market, environment, pair, timeframe and exchange key can't change while the agent has open positions or orders** (FR-AGT-03). The key is locked too, because the positions live on its account. The settings page asks `IAgentExposure` and shows them disabled.
+- **An Active agent's new settings must pass the activation checks**, so an edit can't leave a running agent without a role or capital.
+- **The pair is checked with Binance only when it changes**, so a pair that stopped trading doesn't block other edits. Activation checks it again.
+- **The audit summary never holds the description or custom instructions.** Administrators can search the trail (FR-ADM-06), and must not read what users write to their models (FR-ADM-01).
+
+### Pausing on a credential
+
+`AgentCredentialObserver` hears of every change to a credential. A deletion, a key that isn't `Valid`, or a Binance key checked again, which may have lost a market, starts an `agent-credential-check` run for the user, and the request that changed the key doesn't wait.
+
+`AgentPrerequisites` pauses each of the user's Active agents whose credentials no longer let it trade, one at a time, under the user's lock, with the reason: the exchange key was deleted, isn't valid or isn't enabled for the market, or no valid AI key is left for a required role's provider. The pause is by the system, with the owner as `UserId`. Their positions and protective orders stay on the exchange (FR-AGT-06), and resuming is the user's choice. `CredentialInvalid` is raised by Credentials, in the transaction that records the check.
+
+It reads only what Credentials says, so an outage, which leaves a key's status alone, pauses nothing. A model that's deprecated or retired is #25's, with FR-CAT-04's own steps.
+
+`agent-prerequisites` runs the same check for every user with Active agents every hour, and asks nothing of Binance or the providers. It's the recovery path for an event lost with the process.
+
+### The pages
+
+| Page | What |
+|---|---|
+| `/agents` | Interactive. Each agent, labelled Demo (FR-UI-07), with its status, why the system paused it, and the actions its status allows. Stop, archive and delete ask first, in place. Activation lists what to fix, and its warnings. Archived agents are in a section of their own |
+| `/agents/new`, `/agents/{id}/settings` | Static, like every form: a post goes through the HTTP rate limiter, which a circuit never reaches. Every FR-AGT-02 setting on one page. It offers the user's Binance Demo keys, and the `Active` models their valid AI keys can use, keeping a chosen model that's no longer offered so that saving doesn't drop it |
+
+The wizard (#40) will take over `/agents/new`, and the agent's own page (#41) `/agents/{id}`. A clone is named by the page, "name (copy)", numbered when that's taken, because the name is text the user reads.
 
 ## Web UI
 
@@ -1451,6 +1557,15 @@ API keys were checked with Playwright in Chromium and WebKit, in Development ove
 
 The model catalog's additions to `/credentials`, the **Sync models** button and each AI key's models, haven't been checked in a browser. `CredentialPageTests` covers what they render, but not their layout at 375, 768 and 1280px.
 
+Agents were checked with Playwright in Chromium and WebKit, in Development over plain HTTP, against a scratch database with a Binance Demo key, an AI key, models and symbols written into it, and Binance and the providers pointed at an address that refuses connections:
+
+- Creating an agent from the settings form, with markup in its name, which shows as text. Activating it, and a second agent on the same pair refused with what to fix, including the agent that holds the slot
+- Clone, pause, stop and archive from the list, with stop and archive asking first and focus moving to the confirmation, then to the notice when the card leaves. The archived section, and the activity page's records
+- Deleting a key from `/credentials` names the agents that use it
+- Activation still succeeds when the balance for FR-AGT-13 can't be read, which logs a Warning and gives no warning on the page
+- No horizontal scroll on `/agents`, `/agents/new`, an agent's settings page and `/account/activity` at 375, 768 and 1280px, in both themes, and no console errors beyond the noise below
+- Not checked: a real Binance Demo key, a real provider's models, and the pause after a scheduled check, which `AgentCredentialTests` covers
+
 Playwright's screenshots inject a style that the CSP refuses, so WebKit logs an error per screenshot. Leaving a page while its circuit is negotiating also logs one, because the fetch is cancelled. Signing out does the same, more loudly in WebKit: it closes the session's connections, including that tab's, so the tab tries to reconnect while it's leaving. The reconnect modal wasn't open on a single frame in either browser. None of these is a fault in the application.
 
 The reconnect modal was checked in the published build, by stopping the server. Every text color is at least 6.5:1 against its background. A change to the shell or `shell.js` needs this check again until there's a browser test. On macOS, WebKit's Tab skips links by default, so use Option+Tab there.
@@ -1471,10 +1586,10 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Account deletion (#51):** FR-AUTH-09 keeps audit records with the identity anonymized, and the [trigger](#append-only) refuses every `UPDATE`. Replace `audit_events_append_only()` in a new migration, so that an update can set `user_id`, `actor_id`, `ip_address` and `user_agent` to null and change nothing else, and add a test that it can't do more.
 - **Audit search (FR-ADM-06):** add a search to `IAuditTrail` and a page through Administration, which may use Platform. Show actor IDs and correlation IDs there, which `IAccountActivity` leaves out. Index whatever it filters on.
 - **Raising notifications (FR-NTF-01):** raise each through `INotifications`, with `Add` on the context that makes the change it's about, so both commit together. Link to the page it's about, and set `Demo` for a Demo agent. See [Notifications](#notifications). Who raises what, by what `ModuleMap.cs` allows:
-  - Credentials (#23): `CredentialInvalid`, alongside pausing the agents (FR-KEY-11)
+  - Credentials: `CredentialInvalid` is raised already, when a check finds a key stopped working or lost a market. See [Checking on a schedule](#checking-on-a-schedule)
   - Catalog: `CatalogSyncFailed` is raised already. See [Syncing](#syncing)
   - Agents (#25): `ModelDeprecated` and `ModelRetired` (FR-CAT-04)
-  - Agents (#23, #27): `AgentPausedLossLimit`, when it acts on the Risk Engine's result (FR-RISK-08)
+  - Agents (#27): `AgentPausedLossLimit`, when it acts on the Risk Engine's result (FR-RISK-08)
   - DecisionCycle (#31): `AgentPausedErrors`
   - DecisionCycle (#32): `AgentPausedBudget` (FR-CYC-07), because AI Council can't use Notifications
   - Execution (#34, #35, #36): `TradeOpened`, `TradeClosed` (including a close outside Ecnanib, FR-EXE-06) and `StopMoved`
@@ -1491,7 +1606,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Exchange endpoints (#33, #35):** add each one to `BinanceEndpoint` with its weight, and call it through `BinanceTransport`, so it shares the budget, the clock, the outcomes and the logging. Put reads on `IExchangeAccount` or `IExchangeMarketData`, and anything that changes the account, such as leverage or margin mode (#33), on `IExchangeTrading`, which only Execution may use. See [Exchange adapter](#exchange-adapter).
 - **Decision cycles (#30, #31):** `Timeframe` is in `Kernel`. Pass the cycle's scheduled candle close to `IMarketData.CollectAsync`, not the time it started, so every agent on a candle shares one fetch. A catch-up cycle passes its own close too. See [Market data](#market-data).
 - **The decision cycle (#31):** catch `MarketDataException`. `Throttled` has a `RetryAfter`, which may fit the cycle's deadline (FR-CYC-06), and `UnknownSymbol` means the agent's pair is gone. Take the liquidation price from the position that reconciliation reads (#35), because Market Data has no keys. A snapshot holds 500 candles per series, so decide how many go into the prompt (#28) and into the trace's input snapshot. Compare the last candle with `CandleSeries.LastOpenTime`, because Binance can have a gap.
-- **Agents and the wizard (#23, #40):** validate the trading pair with `IExchangeSymbols.FindAsync`, which is null for a symbol Binance doesn't list, and check `IsTrading` (FR-AGT-02). Decide whether a Futures agent may only use a `PERPETUAL` contract, because a delivery contract has no funding.
+- **The wizard (#40):** create through `IAgents.CreateAsync`, which checks the pair with Binance and takes only Demo and perpetual Futures contracts, and replace `/agents/new`. Offer pairs from `IExchangeSymbols.ListAsync`, which `AgentSettingsPage` doesn't. Its risk hints in `AgentText.RiskHintOf` are a start on NFR-USA-03. Activate from the last step with `IAgents.ActivateAsync`, and show its problems and warnings with `AgentText`.
 - **The Risk Engine's inputs (#27, #34):** take the tick size, step sizes and minimum notional from `IExchangeSymbols`, and pass them in, because the engine depends on `Kernel` only. A null filter means Binance sent none.
 - **Reconciliation (#35):** read a position with `IExchangeAccount.GetPositionAsync` for the agent's symbol, not the whole account (NFR-PERF-05). It's empty when there's no position, and its liquidation price is null when Binance sends 0. Check `positionRisk`'s weight and fields against Futures Demo first, because its page couldn't be read.
 - **Retention (#50):** purge `candle_cache` by `fetched_at`, using `Retention:CandleCacheDays`, never by `open_time`, which would make every 1D cycle fetch its whole window. Batch the deletes. `exchange_symbols` needs no purge, because it only ever holds Binance's latest list.
@@ -1499,17 +1614,23 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Capacity (#56):** start from [Request weight per candle](#request-weight-per-candle).
 - **Order execution (#34):** derive client order IDs that match `^[.A-Z:/a-z0-9_-]{1,36}$` (FR-EXE-04). Use `RequestPriority.Protective` for stops, closes and their queries. On `MayHaveExecuted`, query with `IExchangeAccount.GetOrderAsync` before sending again: only null allows it. Persist `SettlesAt` with the order, and don't send it again before then, even after a restart, which the adapter's memory doesn't survive. Check the Futures algo order parameters against Demo first, and add Spot OCO if it's wanted.
 - **System health (#49):** show `IExchangeUsage.Current()` for FR-ADM-04's exchange usage and bans, at `/admin/health`, which ban notifications already link to.
-- **Pausing agents (#23):** subscribe to `ICredentialObserver`, which tells you about every add, rotation, check that got an answer and deletion, with the status before and after. Register it in `AddAgents`, and start a job and return, as `CatalogCredentialObserver` does. The revalidation schedule is the recovery path.
-- **Role assignments (#24):** choose models from `ICatalog.ListAsync`, and check access through `ICatalog.ListAccessAsync` for the user's keys (FR-ROLE-02, FR-AGT-05). Refer to a model by provider and model ID, which is the key of `models`. A null capability means nobody said, and every OpenAI model is null until the configuration says otherwise, so decide whether null counts, or nothing from OpenAI will be assignable.
-- **Deprecation (#25):** count a model missing only after a `Schedule` or `Administrator` run in which every key that had it succeeded. A failed key keeps its rows, so an outage can't deprecate anything. Fill `models_deprecated` and `models_retired`, add `Catalog:RetireAfterMissingDays` from SRS 7.3, and raise the event from Catalog that [Inversions](#inversions) names. Anthropic's list also has `lifecycle`, `deprecated_at` and `retires_at`, which the adapter doesn't read yet.
+- **Role assignments (#24):** agents already store a model and an optional fallback per role, as provider and model ID, and activation already needs each required role's model to be `Active` and reachable with a valid key ([Activation](#activation)). Add the capabilities each role needs (FR-ROLE-02) to `ActivationChecks` and to the settings page's options, which offer every reachable model now. A null capability means nobody said, and every OpenAI model is null until the configuration says otherwise, so decide whether null counts, or nothing from OpenAI will be assignable. Add the defaults (FR-ROLE-03) and the warning when the Strategist and Risk Critic share a provider (FR-ROLE-04).
+- **Deprecation (#25):** pause an agent whose model retired without a valid fallback through the same path as `AgentPrerequisites`, with a reason of its own, and raise `ModelDeprecated` and `ModelRetired` from Agents. Count a model missing only after a `Schedule` or `Administrator` run in which every key that had it succeeded. A failed key keeps its rows, so an outage can't deprecate anything. Fill `models_deprecated` and `models_retired`, add `Catalog:RetireAfterMissingDays` from SRS 7.3, and raise the event from Catalog that [Inversions](#inversions) names. Anthropic's list also has `lifecycle`, `deprecated_at` and `retires_at`, which the adapter doesn't read yet.
 - **The catalog page and administration (#26):** add an Administration contract that checks `IAdministrators.IsAdministratorAsync`, audits the action (FR-AUD-01 lists administrators' actions), and calls `ICatalogAdministration.SyncAllAsync`. Build `/admin/catalog`, which `CatalogSyncFailed` already links to, with the runs in `catalog_sync_runs`. Store administrators' overrides as a layer above `Catalog:Overrides`, applied where `Catalog` applies the configuration, so they persist across syncs (FR-CAT-05). Hidden is a status, which syncs don't change.
 - **The AI council and costs (#31, #32):** pass `CatalogModel.Price` as `AiRequest.Price`, as an `AiModelPrice`. A model with no price has no cost, so budgets need their token caps for it.
-- **Revalidation and pausing (#23):** FR-KEY-11's schedule needs a path in Credentials that a job can call for any user's key, reusing `AiValidator` and `BinanceValidator`. Treat an unreachable provider as no change, as checks on demand do, so an outage never pauses agents. Pause on `Invalid` and `InsufficientPermissions`, and on a market the key lost. FR-KEY-10 needs `ICredentials.DeleteAsync` to tell the caller which agents use the key, or a confirmation step before it. Add `Security:CredentialRevalidationHours` from SRS 7.3.
-- **Activation (#23, #39):** FR-AGT-05 needs a `Valid` credential for the agent's environment, with `SpotEnabled` or `FuturesEnabled` true for its market, from `ICredentials.FindAsync`. Futures still needs EXT-BIN-07's checks (#33).
+- **Switching to Live (#39):** `AgentInput` and `ActivationChecks` refuse Live, and `AgentForm.ToSettings` always sends Demo. Make the switch an action of its own (UC-04), for a Paused or Stopped agent with no open positions or orders, with its checks on top of [Activation](#activation)'s, and audit it with its own `AuditAction`. Add `Agents:DefaultEnvironment` from SRS 7.3 then. The slot and the exchange key's environment already follow the agent's environment.
+- **Futures prerequisites (#33):** add EXT-BIN-07's checks to `ActivationChecks`, and read the account through a port Execution implements, as `IAgentExposure` does, because Agents can't use the exchange adapter.
+- **The Risk Engine (#27):** take `RiskSettings` from `Modules/RiskEngine/Contracts` as the agent's settings, and add `RiskCaps` (FR-RISK-11). Check the caps where `RiskSettings.Problems` is checked: on save in `AgentInput` and at activation in `ActivationChecks`, so an agent saved before the caps can't be activated above them. Pause on a loss limit with a new `AgentStatusReason`, through a conditional update like `AgentPrerequisites.PauseAsync`, by the system.
+- **Error and the council (#31):** set Error with a new `AgentStatusReason` and an audit record by the system, through a conditional update on the status, as pauses do. Activation already accepts an agent in Error. To call a role's model, pick one of the user's `Valid` keys for the provider whose catalog access lists the model, because an agent stores the model, not the key.
+- **An agent's history (#31, #34, #36):** `IAgents.DeleteAsync` deletes an archived agent's row and roles. Tables that hold its history sit in modules above Agents, so declare a port in Agents that each owner implements, and call it in the delete's transaction, so nothing is left behind.
+- **Order execution and reconciliation (#34, #35):** replace `AgentExposure.HasOpenPositionsOrOrdersAsync`, which is `false` while nothing places orders, with what Execution records. Answer from the database, without calling Binance, because Agents asks while it holds the user's lock. FR-AGT-03's lock and archiving both depend on it.
+- **Stop and the kill switch (#37):** `IAgents.StopAsync` leaves positions and orders as they are. Add FR-AGT-07's choice to close them, and the kill switch, through `IAgentExposure` or a port beside it that Execution implements. "Stop all agents" should go through the user's agents one at a time, so one failure doesn't stop the rest.
+- **The agent's page (#41):** `/agents/{id}` is free. Link the list's names to it, and move the actions there as well, using the same contract calls and `AgentText`.
+- **Account deletion (#51):** stop the user's agents first, with their choice to close or keep positions (FR-AUTH-09), then delete them through the port Identity declares. There's no foreign key to `users`.
 - **The AI council and execution (#31, #34, #35):** open a key with `ICredentialKeys` for each use, never cache it, and dispose its secrets after. `CredentialUnusableException` means the credential changed since the agent was activated: treat it as a paused agent's cause, not a provider failure, and don't retry it. `BannedApis` lets only Catalog, AiCouncil and Execution use `ICredentialKeys`, and only Credentials build a key.
 - **Binance Demo restrictions:** Binance doesn't document `/sapi` on its Demo servers, so a Demo key's restrictions aren't read. Try `apiRestrictions` against Demo with a real key, and if it answers, read them there too.
 - **Account deletion (#51):** delete the user's credentials with `ICredentials.DeleteAsync`, which removes their secrets in the same transaction, through the port Identity declares. There's no foreign key to `users`.
-- **Data isolation (#55):** `CredentialIsolationTests` covers every Credentials call. Add the three pages to the HTTP suite.
+- **Data isolation (#55):** `CredentialIsolationTests` and `AgentIsolationTests` cover every Credentials and Agents call. Add the credentials pages and `/agents/{id}/settings` to the HTTP suite. The settings page already answers 404 for another user's agent.
 - **Role defaults (#24):** check `RoleDefaults` against `IAiProviders.All`, and key assignments on `AiRole` from `Kernel`.
 - **The AI council (#31, #32):** call models through `IAiCompletions`, which only AiCouncil may use. Pass the catalog's price as `AiRequest.Price`. Record `Usage`, `Cost` and `Attempts` from the `AiResponse`, or from the `AiException` when the call fails, because a failed call can still have been billed. Keep `ProviderMessage` in the trace only. On an `AiException`, the retries are spent, so move to the role's fallback model (FR-ROLE-06).
 - **Retention (#50):** the SRS sets no period for `catalog_sync_runs`, which gets a row per provider per scheduled run, plus one per key change and user sync.
@@ -1522,7 +1643,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync` and `ICatalogAdministration` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync` and `ICatalogAdministration` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IAgentExposure`, `AgentSettings` and `AgentAuditFields` in `Modules/Agents/Contracts`, `RiskSettings` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 

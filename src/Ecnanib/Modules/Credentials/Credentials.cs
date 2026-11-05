@@ -20,15 +20,14 @@ internal sealed class Credentials(
     IAiProviders aiProviders,
     AiValidator aiValidator,
     BinanceValidator binanceValidator,
+    CredentialChecks checks,
     CredentialSettings settings,
     TimeProvider time,
-    IEnumerable<ICredentialObserver> observers,
+    CredentialObservers observers,
     ILogger<Credentials> logger) : ICredentials
 {
-    /// <summary>The shortest gap between two checks of one credential on demand.</summary>
-    public static readonly TimeSpan ValidationInterval = TimeSpan.FromMinutes(1);
-
-    private const string Target = "Credential";
+    /// <summary>What a credential's audit records name as their target.</summary>
+    public const string Target = "Credential";
 
     public IReadOnlyList<string> AiProviders =>
         [.. aiProviders.All.Where(provider => provider.Enabled).Select(provider => provider.Name)];
@@ -217,77 +216,8 @@ internal sealed class Credentials(
         return renamed == 1 ? RenameOutcome.Renamed : RenameOutcome.NotFound;
     }
 
-    public async Task<ValidationResult> ValidateAsync(Guid userId, Guid id, CancellationToken cancellationToken)
-    {
-        var now = time.GetUtcNow();
-        var due = now - ValidationInterval;
-
-        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-
-        // One update claims the check, so of two at once only one reaches the provider.
-        var claimed = await context.Set<Credential>()
-            .Where(row => row.Id == id && row.UserId == userId && (row.CheckedAt == null || row.CheckedAt <= due))
-            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.CheckedAt, now), cancellationToken);
-
-        var row = await FindRowAsync(context, userId, id, cancellationToken);
-
-        if (row is null)
-        {
-            return new ValidationResult(ValidationOutcome.NotFound);
-        }
-
-        if (claimed == 0)
-        {
-            return new ValidationResult(ValidationOutcome.TooSoon, row.ToRecord());
-        }
-
-        var verdict = await CheckAsync(row, cancellationToken);
-
-        if (!verdict.Reached)
-        {
-            return new ValidationResult(ValidationOutcome.Unreachable, row.ToRecord());
-        }
-
-        int updated;
-
-        await using (var transaction = await context.Database.BeginTransactionAsync(cancellationToken))
-        {
-            // Only while the key checked is still the credential's: a rotation meanwhile has its own result.
-            updated = await context.Set<Credential>()
-                .Where(current => current.Id == row.Id && current.UserId == userId && current.ApiKeyId == row.ApiKeyId)
-                .ExecuteUpdateAsync(
-                    setters => setters
-                        .SetProperty(current => current.Status, verdict.Status)
-                        .SetProperty(current => current.Problem, verdict.Problem)
-                        .SetProperty(current => current.SpotEnabled, verdict.SpotEnabled ?? row.SpotEnabled)
-                        .SetProperty(current => current.FuturesEnabled, verdict.FuturesEnabled ?? row.FuturesEnabled)
-                        .SetProperty(current => current.IpRestricted, verdict.IpRestricted ?? row.IpRestricted)
-                        .SetProperty(current => current.ExchangeUid, row.ExchangeUid ?? verdict.Uid)
-                        .SetProperty(current => current.ValidatedAt, now),
-                    cancellationToken);
-
-            if (updated == 1)
-            {
-                audit.Add(context, Entry(AuditAction.CredentialValidated, row, [new(CredentialAuditFields.Status, row.Status.ToString(), verdict.Status.ToString())]));
-                await context.SaveChangesAsync(cancellationToken);
-            }
-
-            await transaction.CommitAsync(cancellationToken);
-        }
-
-        logger.LogInformation(
-            "Validated credential {CredentialId} for user {UserId}: {Provider} {Status} {Problem}",
-            row.Id, userId, row.Provider, verdict.Status, verdict.Problem);
-
-        if (updated == 1)
-        {
-            Notify(row, CredentialChangeKind.Validated, verdict.Status, row.Status);
-        }
-
-        var current = await FindRowAsync(context, userId, id, cancellationToken);
-
-        return current is null ? new ValidationResult(ValidationOutcome.NotFound) : new ValidationResult(ValidationOutcome.Checked, current.ToRecord());
-    }
+    public Task<ValidationResult> ValidateAsync(Guid userId, Guid id, CancellationToken cancellationToken) =>
+        checks.CheckAsync(userId, id, AuditActorKind.User, cancellationToken);
 
     public async Task<bool> DeleteAsync(Guid userId, Guid id, CancellationToken cancellationToken)
     {
@@ -319,31 +249,9 @@ internal sealed class Credentials(
 
         logger.LogInformation("Deleted credential {CredentialId} for user {UserId}: {Provider}", row.Id, userId, row.Provider);
 
-        Notify(row, CredentialChangeKind.Deleted, status: null, row.Status);
+        observers.Notify(row, CredentialChangeKind.Deleted, status: null, row.Status);
 
         return true;
-    }
-
-    /// <summary>Decrypts the credential's secrets for one check, and clears them after.</summary>
-    private async Task<Verdict> CheckAsync(Credential row, CancellationToken cancellationToken)
-    {
-        using var apiKey = await secrets.RevealAsync(row.ApiKeyId, cancellationToken);
-
-        if (row.Kind == CredentialKind.Ai)
-        {
-            return await aiValidator.ValidateAsync(row.Provider, row.Id, apiKey, cancellationToken);
-        }
-
-        using var secret = await secrets.RevealAsync(
-            row.ApiSecretId ?? throw new InvalidOperationException($"Credential {row.Id} has no secret."), cancellationToken);
-
-        return await binanceValidator.ValidateAsync(
-            row.Id,
-            row.Environment ?? throw new InvalidOperationException($"Credential {row.Id} has no environment."),
-            row.KeyType ?? BinanceKeyType.Hmac,
-            apiKey,
-            secret,
-            cancellationToken);
     }
 
     private async Task<SaveResult> AddAsync(
@@ -396,7 +304,7 @@ internal sealed class Credentials(
             "Added credential {CredentialId} for user {UserId}: {Provider} {Environment} {Status} {Problem}",
             row.Id, userId, provider, environment, row.Status, row.Problem);
 
-        Notify(row, CredentialChangeKind.Added, row.Status, previous: null);
+        observers.Notify(row, CredentialChangeKind.Added, row.Status, previous: null);
 
         return new SaveResult(SaveOutcome.Saved, row.ToRecord());
     }
@@ -462,33 +370,11 @@ internal sealed class Credentials(
         logger.LogInformation(
             "Rotated credential {CredentialId} for user {UserId}: {Provider} {Status} {Problem}", row.Id, row.UserId, row.Provider, status, verdict.Problem);
 
-        Notify(row, CredentialChangeKind.Rotated, status, row.Status);
+        observers.Notify(row, CredentialChangeKind.Rotated, status, row.Status);
 
         var current = await FindRowAsync(context, row.UserId, row.Id, cancellationToken);
 
         return current is null ? new SaveResult(SaveOutcome.Changed) : new SaveResult(SaveOutcome.Saved, current.ToRecord());
-    }
-
-    /// <summary>
-    /// Called once the change has committed, so an observer never hears of one that rolled back. Observers
-    /// must return at once and never throw, but one that does can't undo a committed change, or stop the others.
-    /// </summary>
-    private void Notify(Credential row, CredentialChangeKind change, CredentialStatus? status, CredentialStatus? previous)
-    {
-        var notice = new CredentialChange(row.UserId, row.Id, row.Kind, row.Provider, change, status, previous);
-
-        foreach (var observer in observers)
-        {
-            try
-            {
-                observer.OnChanged(notice);
-            }
-            catch (Exception exception)
-            {
-                logger.LogError(
-                    exception, "Telling {Observer} that credential {CredentialId} was {Change} failed", observer.GetType().Name, row.Id, change);
-            }
-        }
     }
 
     private async Task RemoveSecretsAsync(EcnanibDbContext context, Credential row, CancellationToken cancellationToken)

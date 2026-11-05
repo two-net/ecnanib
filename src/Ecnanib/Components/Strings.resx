@@ -1472,4 +1472,720 @@
   <data name="EditCredentialRotateSubmit" xml:space="preserve">
     <value>Replace key</value>
   </data>
+  <data name="NavAgents" xml:space="preserve">
+    <value>Agents</value>
+  </data>
+  <data name="ActivityActionAgentCreated" xml:space="preserve">
+    <value>Created an agent</value>
+  </data>
+  <data name="ActivityActionAgentUpdated" xml:space="preserve">
+    <value>Changed an agent's settings</value>
+  </data>
+  <data name="ActivityActionAgentExecutionModeChanged" xml:space="preserve">
+    <value>Changed an agent's execution mode</value>
+  </data>
+  <data name="ActivityActionAgentActivated" xml:space="preserve">
+    <value>Activated an agent</value>
+  </data>
+  <data name="ActivityActionAgentPaused" xml:space="preserve">
+    <value>Paused an agent</value>
+  </data>
+  <data name="ActivityActionAgentStopped" xml:space="preserve">
+    <value>Stopped an agent</value>
+  </data>
+  <data name="ActivityActionAgentArchived" xml:space="preserve">
+    <value>Archived an agent</value>
+  </data>
+  <data name="ActivityActionAgentDeleted" xml:space="preserve">
+    <value>Deleted an agent</value>
+  </data>
+  <data name="ActivityFieldAgentName" xml:space="preserve">
+    <value>Agent</value>
+  </data>
+  <data name="ActivityFieldMarket" xml:space="preserve">
+    <value>Market</value>
+  </data>
+  <data name="ActivityFieldPair" xml:space="preserve">
+    <value>Pair</value>
+  </data>
+  <data name="ActivityFieldTimeframe" xml:space="preserve">
+    <value>Timeframe</value>
+  </data>
+  <data name="ActivityFieldExchangeKey" xml:space="preserve">
+    <value>Binance key</value>
+  </data>
+  <data name="ActivityFieldExecutionMode" xml:space="preserve">
+    <value>Execution</value>
+  </data>
+  <data name="ActivityFieldAutoExecuteRiskReducing" xml:space="preserve">
+    <value>Risk-reducing actions without asking</value>
+  </data>
+  <data name="ActivityFieldCapitalAllocation" xml:space="preserve">
+    <value>Capital</value>
+  </data>
+  <data name="ActivityFieldDailyBudget" xml:space="preserve">
+    <value>Daily AI budget</value>
+  </data>
+  <data name="ActivityFieldMonthlyBudget" xml:space="preserve">
+    <value>Monthly AI budget</value>
+  </data>
+  <data name="ActivityFieldDailyTokenCap" xml:space="preserve">
+    <value>Daily token cap</value>
+  </data>
+  <data name="ActivityFieldMonthlyTokenCap" xml:space="preserve">
+    <value>Monthly token cap</value>
+  </data>
+  <data name="ActivityFieldExperienceMemory" xml:space="preserve">
+    <value>Lessons in prompts</value>
+  </data>
+  <data name="ActivityFieldReflectionsInPrompt" xml:space="preserve">
+    <value>Lessons per prompt</value>
+  </data>
+  <data name="ActivityFieldReason" xml:space="preserve">
+    <value>Why</value>
+  </data>
+  <data name="ActivityFieldClonedFrom" xml:space="preserve">
+    <value>Copied from</value>
+  </data>
+  <data name="ActivityFieldFallback" xml:space="preserve">
+    <value>{0} fallback</value>
+    <comment>{0} is a role on the AI council, such as Strategist.</comment>
+  </data>
+  <data name="AgentsPageTitle" xml:space="preserve">
+    <value>Agents</value>
+  </data>
+  <data name="AgentsHeading" xml:space="preserve">
+    <value>Agents</value>
+  </data>
+  <data name="AgentsIntro" xml:space="preserve">
+    <value>Each agent trades one pair on Binance, with a council of AI models proposing and a set of fixed rules deciding. Agents run in Demo, with test funds and no real money.</value>
+  </data>
+  <data name="AgentsAddLink" xml:space="preserve">
+    <value>New agent</value>
+  </data>
+  <data name="AgentsLimitReached" xml:space="preserve">
+    <value>You have as many agents as you can. Archive one to make room for another.</value>
+  </data>
+  <data name="AgentsCount" xml:space="preserve">
+    <value>{0} of {1} agents</value>
+    <comment>{0} is how many agents the user has that aren't archived, and {1} the most they may have.</comment>
+  </data>
+  <data name="AgentsEmpty" xml:space="preserve">
+    <value>You haven't created an agent yet. An agent needs a Binance Demo key and at least one AI key, which you add on the API keys page.</value>
+  </data>
+  <data name="AgentsArchivedHeading" xml:space="preserve">
+    <value>Archived agents ({0})</value>
+    <comment>{0} is how many there are.</comment>
+  </data>
+  <data name="AgentsCreatedNotice" xml:space="preserve">
+    <value>Agent saved as a draft. Activate it when it's ready.</value>
+  </data>
+  <data name="AgentsUpdatedNotice" xml:space="preserve">
+    <value>Settings saved.</value>
+  </data>
+  <data name="AgentsArchivedNotice" xml:space="preserve">
+    <value>Agent archived.</value>
+  </data>
+  <data name="AgentsDeletedNotice" xml:space="preserve">
+    <value>Agent deleted.</value>
+  </data>
+  <data name="AgentsClonedNotice" xml:space="preserve">
+    <value>Copy saved as a draft, named {0}.</value>
+    <comment>{0} is the new agent's name.</comment>
+  </data>
+  <data name="AgentsCredentialsHint" xml:space="preserve">
+    <value>Agents trade with your own keys.</value>
+    <comment>Followed by a link to the API keys page.</comment>
+  </data>
+  <data name="AgentDemo" xml:space="preserve">
+    <value>Demo</value>
+  </data>
+  <data name="AgentFieldStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="AgentFieldMarket" xml:space="preserve">
+    <value>Market</value>
+  </data>
+  <data name="AgentFieldPair" xml:space="preserve">
+    <value>Pair</value>
+  </data>
+  <data name="AgentFieldTimeframe" xml:space="preserve">
+    <value>Timeframe</value>
+  </data>
+  <data name="AgentFieldExecutionMode" xml:space="preserve">
+    <value>Execution</value>
+  </data>
+  <data name="AgentFieldCapital" xml:space="preserve">
+    <value>Capital</value>
+  </data>
+  <data name="AgentCapitalOf" xml:space="preserve">
+    <value>{0} {1}</value>
+    <comment>{0} is an amount, and {1} the asset it's in, such as USDT.</comment>
+  </data>
+  <data name="AgentCapitalNone" xml:space="preserve">
+    <value>Not set</value>
+  </data>
+  <data name="AgentActivate" xml:space="preserve">
+    <value>Activate</value>
+  </data>
+  <data name="AgentActivateLabel" xml:space="preserve">
+    <value>Activate {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentResume" xml:space="preserve">
+    <value>Resume</value>
+  </data>
+  <data name="AgentResumeLabel" xml:space="preserve">
+    <value>Resume {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentPause" xml:space="preserve">
+    <value>Pause</value>
+  </data>
+  <data name="AgentPauseLabel" xml:space="preserve">
+    <value>Pause {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentStop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="AgentStopLabel" xml:space="preserve">
+    <value>Stop {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentStopConfirm" xml:space="preserve">
+    <value>Stop {0}? It runs no more cycles until you activate it again, and it leaves any positions and orders on Binance as they are, for you to manage.</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentStopSubmit" xml:space="preserve">
+    <value>Stop agent</value>
+  </data>
+  <data name="AgentSettingsLink" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="AgentSettingsLabel" xml:space="preserve">
+    <value>Settings for {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentClone" xml:space="preserve">
+    <value>Clone</value>
+  </data>
+  <data name="AgentCloneLabel" xml:space="preserve">
+    <value>Clone {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentCloneName" xml:space="preserve">
+    <value>{0} (copy)</value>
+    <comment>{0} is the original agent's name.</comment>
+  </data>
+  <data name="AgentCloneNameNumbered" xml:space="preserve">
+    <value>{0} (copy {1})</value>
+    <comment>{0} is the original agent's name, and {1} a number from 2 up.</comment>
+  </data>
+  <data name="AgentArchive" xml:space="preserve">
+    <value>Archive</value>
+  </data>
+  <data name="AgentArchiveLabel" xml:space="preserve">
+    <value>Archive {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentArchiveConfirm" xml:space="preserve">
+    <value>Archive {0}? It frees the name for another agent. You can still clone it, or delete it for good.</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentArchiveSubmit" xml:space="preserve">
+    <value>Archive agent</value>
+  </data>
+  <data name="AgentDelete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="AgentDeleteLabel" xml:space="preserve">
+    <value>Delete {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentDeleteConfirm" xml:space="preserve">
+    <value>Delete {0} for good? This can't be undone.</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentDeleteSubmit" xml:space="preserve">
+    <value>Delete agent</value>
+  </data>
+  <data name="AgentConfirmCancel" xml:space="preserve">
+    <value>Keep it</value>
+  </data>
+  <data name="AgentActivated" xml:space="preserve">
+    <value>Activated.</value>
+  </data>
+  <data name="AgentActivateRefused" xml:space="preserve">
+    <value>Not activated. Fix these first:</value>
+  </data>
+  <data name="AgentActivationWarnings" xml:space="preserve">
+    <value>Worth knowing:</value>
+  </data>
+  <data name="AgentPausedNotice" xml:space="preserve">
+    <value>Paused. Its positions and protective orders stay on Binance.</value>
+  </data>
+  <data name="AgentStoppedNotice" xml:space="preserve">
+    <value>Stopped.</value>
+  </data>
+  <data name="AgentNotAllowed" xml:space="preserve">
+    <value>That isn't possible in the agent's current status, which the card now shows.</value>
+  </data>
+  <data name="AgentOpenPositions" xml:space="preserve">
+    <value>The agent has open positions or orders on Binance. Close them first.</value>
+  </data>
+  <data name="AgentGone" xml:space="preserve">
+    <value>This agent no longer exists.</value>
+  </data>
+  <data name="AgentChanged" xml:space="preserve">
+    <value>The agent changed while it was being checked. Try again.</value>
+  </data>
+  <data name="AgentOn" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="AgentOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="AgentStatusDraft" xml:space="preserve">
+    <value>Draft</value>
+  </data>
+  <data name="AgentStatusActive" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="AgentStatusPaused" xml:space="preserve">
+    <value>Paused</value>
+  </data>
+  <data name="AgentStatusStopped" xml:space="preserve">
+    <value>Stopped</value>
+  </data>
+  <data name="AgentStatusError" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="AgentStatusArchived" xml:space="preserve">
+    <value>Archived</value>
+  </data>
+  <data name="AgentReasonUser" xml:space="preserve">
+    <value>By you</value>
+  </data>
+  <data name="AgentReasonCredentialDeleted" xml:space="preserve">
+    <value>Binance key deleted</value>
+  </data>
+  <data name="AgentReasonCredentialInvalid" xml:space="preserve">
+    <value>Binance key stopped working</value>
+  </data>
+  <data name="AgentReasonMarketNotEnabled" xml:space="preserve">
+    <value>Market not allowed for the Binance key</value>
+  </data>
+  <data name="AgentReasonAiKeyUnavailable" xml:space="preserve">
+    <value>No working AI key</value>
+  </data>
+  <data name="AgentExplanationCredentialDeleted" xml:space="preserve">
+    <value>Paused because its Binance key was deleted. Choose another key in its settings, then resume it.</value>
+  </data>
+  <data name="AgentExplanationCredentialInvalid" xml:space="preserve">
+    <value>Paused because its Binance key stopped working. Check or replace the key on the API keys page, then resume it.</value>
+  </data>
+  <data name="AgentExplanationMarketNotEnabled" xml:space="preserve">
+    <value>Paused because Binance no longer lets its key trade on this market. Allow the market for the key on Binance, check the key again, then resume it.</value>
+  </data>
+  <data name="AgentExplanationAiKeyUnavailable" xml:space="preserve">
+    <value>Paused because you have no working key left for one of its AI providers. Add or check a key on the API keys page, then resume it.</value>
+  </data>
+  <data name="AgentMarketSpot" xml:space="preserve">
+    <value>Spot</value>
+  </data>
+  <data name="AgentMarketFutures" xml:space="preserve">
+    <value>USDⓈ-M Futures</value>
+  </data>
+  <data name="TimeframeFifteenMinutes" xml:space="preserve">
+    <value>15m</value>
+  </data>
+  <data name="TimeframeOneHour" xml:space="preserve">
+    <value>1H</value>
+  </data>
+  <data name="TimeframeFourHours" xml:space="preserve">
+    <value>4H</value>
+  </data>
+  <data name="TimeframeOneDay" xml:space="preserve">
+    <value>1D</value>
+  </data>
+  <data name="ExecutionModeAutonomous" xml:space="preserve">
+    <value>Autonomous</value>
+  </data>
+  <data name="ExecutionModeConfirm" xml:space="preserve">
+    <value>Confirm each trade</value>
+  </data>
+  <data name="RiskMaxRiskPerTradePercent" xml:space="preserve">
+    <value>Risk per trade (%)</value>
+  </data>
+  <data name="RiskMaxRiskPerTradePercentHint" xml:space="preserve">
+    <value>The most one trade may lose if its stop is hit, as a share of the capital. 1 means 1%.</value>
+  </data>
+  <data name="RiskMaxPositionNotional" xml:space="preserve">
+    <value>Largest position (optional)</value>
+  </data>
+  <data name="RiskMaxPositionNotionalHint" xml:space="preserve">
+    <value>A further cap on a position's size, in the pair's quote asset. Leave it empty to use the capital.</value>
+  </data>
+  <data name="RiskMaxLeverage" xml:space="preserve">
+    <value>Leverage (Futures)</value>
+  </data>
+  <data name="RiskMaxLeverageHint" xml:space="preserve">
+    <value>Borrowing to trade more than you put in. It multiplies gains and losses alike. Futures only.</value>
+  </data>
+  <data name="RiskDailyLossLimitPercent" xml:space="preserve">
+    <value>Daily loss limit (%)</value>
+  </data>
+  <data name="RiskDailyLossLimitPercentHint" xml:space="preserve">
+    <value>Losing this share of the capital in a day pauses the agent until the next day starts, in UTC.</value>
+  </data>
+  <data name="RiskWeeklyLossLimitPercent" xml:space="preserve">
+    <value>Weekly loss limit (%)</value>
+  </data>
+  <data name="RiskWeeklyLossLimitPercentHint" xml:space="preserve">
+    <value>Losing this share of the capital in a week pauses the agent until the next week starts, in UTC.</value>
+  </data>
+  <data name="RiskConsecutiveLossesBeforePause" xml:space="preserve">
+    <value>Losing trades in a row before pausing</value>
+  </data>
+  <data name="RiskConsecutiveLossesBeforePauseHint" xml:space="preserve">
+    <value>0 turns this off.</value>
+  </data>
+  <data name="RiskMinRewardToRisk" xml:space="preserve">
+    <value>Smallest reward for the risk</value>
+  </data>
+  <data name="RiskMinRewardToRiskHint" xml:space="preserve">
+    <value>When a trade has a target, the target must be at least this many times as far from the entry as the stop.</value>
+  </data>
+  <data name="RiskMaxNewEntriesPerDay" xml:space="preserve">
+    <value>New trades per day</value>
+  </data>
+  <data name="RiskMaxNewEntriesPerDayHint" xml:space="preserve">
+    <value>The most trades the agent may open in a day.</value>
+  </data>
+  <data name="RiskMinStopDistanceAtr" xml:space="preserve">
+    <value>Closest stop (in ATR)</value>
+  </data>
+  <data name="RiskMinStopDistanceAtrHint" xml:space="preserve">
+    <value>How close a stop may be to the entry, in multiples of the pair's average move per candle, its average true range.</value>
+  </data>
+  <data name="RiskMaxStopDistanceAtr" xml:space="preserve">
+    <value>Furthest stop (in ATR)</value>
+  </data>
+  <data name="RiskMaxStopDistanceAtrHint" xml:space="preserve">
+    <value>How far a stop may be from the entry, in the same multiples. It must be more than the closest.</value>
+  </data>
+  <data name="RiskLiquidationBufferMultiple" xml:space="preserve">
+    <value>Liquidation buffer (Futures)</value>
+  </data>
+  <data name="RiskLiquidationBufferMultipleHint" xml:space="preserve">
+    <value>Binance closes a Futures position by force at its liquidation price. That price must be at least this many times as far from the entry as the stop.</value>
+  </data>
+  <data name="RiskFundingFilterPercent" xml:space="preserve">
+    <value>Funding filter (Futures, % per 8 hours)</value>
+  </data>
+  <data name="RiskFundingFilterPercentHint" xml:space="preserve">
+    <value>Futures positions pay or receive funding every few hours. The agent skips a trade when the funding it would pay is above this.</value>
+  </data>
+  <data name="RiskCooldownCyclesAfterLoss" xml:space="preserve">
+    <value>Cycles to wait after a loss</value>
+  </data>
+  <data name="RiskCooldownCyclesAfterLossHint" xml:space="preserve">
+    <value>After a losing trade, the agent waits this many candles before opening another.</value>
+  </data>
+  <data name="AgentSettingsNewPageTitle" xml:space="preserve">
+    <value>New agent</value>
+  </data>
+  <data name="AgentSettingsNewHeading" xml:space="preserve">
+    <value>New agent</value>
+  </data>
+  <data name="AgentSettingsNewIntro" xml:space="preserve">
+    <value>It's saved as a draft, which does nothing until you activate it from the agents page.</value>
+  </data>
+  <data name="AgentSettingsEditPageTitle" xml:space="preserve">
+    <value>Agent settings</value>
+  </data>
+  <data name="AgentSettingsEditHeading" xml:space="preserve">
+    <value>Settings for {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentSettingsBack" xml:space="preserve">
+    <value>Back to agents</value>
+  </data>
+  <data name="AgentSettingsAgentHeading" xml:space="preserve">
+    <value>Agent</value>
+  </data>
+  <data name="AgentSettingsMarketHeading" xml:space="preserve">
+    <value>Market and pair</value>
+  </data>
+  <data name="AgentSettingsDemoOnly" xml:space="preserve">
+    <value>Agents trade in Demo, on Binance's demo exchange with test funds. Switching an agent to Live isn't available yet.</value>
+  </data>
+  <data name="AgentSettingsMarketHint" xml:space="preserve">
+    <value>Spot buys and sells the coin itself. USDⓈ-M Futures trades contracts settled in a stablecoin, which can go short and use leverage, and can be liquidated.</value>
+  </data>
+  <data name="AgentSettingsPairHint" xml:space="preserve">
+    <value>One Binance symbol, such as BTCUSDT. The capital is in its second asset, here USDT.</value>
+  </data>
+  <data name="AgentSettingsTimeframeHint" xml:space="preserve">
+    <value>The agent decides each time a candle of this length closes.</value>
+  </data>
+  <data name="AgentSettingsExchangeKeyHint" xml:space="preserve">
+    <value>One of your Binance Demo keys. You can choose it later, but not activate the agent without one.</value>
+  </data>
+  <data name="AgentSettingsNoExchangeKey" xml:space="preserve">
+    <value>Choose later</value>
+  </data>
+  <data name="AgentSettingsRolesHeading" xml:space="preserve">
+    <value>AI council</value>
+  </data>
+  <data name="AgentSettingsRolesHint" xml:space="preserve">
+    <value>Models your valid AI keys can use. If one is missing, sync your keys' models on the API keys page. A fallback takes over when a model fails.</value>
+  </data>
+  <data name="AgentSettingsRoleRequired" xml:space="preserve">
+    <value>Required</value>
+  </data>
+  <data name="AgentSettingsRoleOptional" xml:space="preserve">
+    <value>Optional</value>
+  </data>
+  <data name="AgentSettingsRoleModel" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="AgentSettingsRoleFallback" xml:space="preserve">
+    <value>Fallback model (optional)</value>
+  </data>
+  <data name="AgentSettingsNoModel" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="AgentSettingsModelOption" xml:space="preserve">
+    <value>{0} ({1})</value>
+    <comment>{0} is the model's name, and {1} its provider.</comment>
+  </data>
+  <data name="AgentSettingsModelUnavailable" xml:space="preserve">
+    <value>{0} (your keys can't use it now)</value>
+    <comment>{0} is the model's name.</comment>
+  </data>
+  <data name="AgentSettingsRiskHeading" xml:space="preserve">
+    <value>Capital and risk</value>
+  </data>
+  <data name="AgentSettingsCapitalHint" xml:space="preserve">
+    <value>The most this agent may commit, in the pair's quote asset, such as USDT. It needs this before it can be activated.</value>
+  </data>
+  <data name="AgentSettingsExecutionHeading" xml:space="preserve">
+    <value>Execution</value>
+  </data>
+  <data name="AgentSettingsAutoExecuteHint" xml:space="preserve">
+    <value>With Confirm each trade, tightening a stop or closing a position at a loss limit still happens at once.</value>
+  </data>
+  <data name="AgentSettingsBudgetHeading" xml:space="preserve">
+    <value>AI budget and memory</value>
+  </data>
+  <data name="AgentSettingsBudgetHint" xml:space="preserve">
+    <value>Optional limits on what the agent's AI calls may cost, in US dollars per day and per month. Token caps cover models whose price isn't known.</value>
+  </data>
+  <data name="AgentSettingsExperienceHint" xml:space="preserve">
+    <value>After each trade, the Reviewer writes a lesson, and the latest lessons go into future prompts.</value>
+  </data>
+  <data name="AgentSettingsInstructionsHeading" xml:space="preserve">
+    <value>Custom instructions</value>
+  </data>
+  <data name="AgentSettingsInstructionsHint" xml:space="preserve">
+    <value>Added to the agent's prompts in a section of their own, up to {0} characters. They can't change the risk limits.</value>
+    <comment>{0} is the most characters allowed.</comment>
+  </data>
+  <data name="AgentSettingsCreate" xml:space="preserve">
+    <value>Save draft</value>
+  </data>
+  <data name="AgentSettingsSave" xml:space="preserve">
+    <value>Save settings</value>
+  </data>
+  <data name="FieldAgentName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="FieldAgentDescription" xml:space="preserve">
+    <value>Description (optional)</value>
+  </data>
+  <data name="FieldAgentMarket" xml:space="preserve">
+    <value>Market</value>
+  </data>
+  <data name="FieldAgentPair" xml:space="preserve">
+    <value>Pair</value>
+  </data>
+  <data name="FieldAgentTimeframe" xml:space="preserve">
+    <value>Timeframe</value>
+  </data>
+  <data name="FieldAgentExchangeKey" xml:space="preserve">
+    <value>Binance key</value>
+  </data>
+  <data name="FieldAgentCapital" xml:space="preserve">
+    <value>Capital</value>
+  </data>
+  <data name="FieldAgentExecutionMode" xml:space="preserve">
+    <value>When the agent wants to trade</value>
+  </data>
+  <data name="FieldAgentAutoExecuteRiskReducing" xml:space="preserve">
+    <value>Reduce risk without asking</value>
+  </data>
+  <data name="FieldAgentDailyBudget" xml:space="preserve">
+    <value>Daily AI budget (US dollars)</value>
+  </data>
+  <data name="FieldAgentMonthlyBudget" xml:space="preserve">
+    <value>Monthly AI budget (US dollars)</value>
+  </data>
+  <data name="FieldAgentDailyTokens" xml:space="preserve">
+    <value>Daily token cap</value>
+  </data>
+  <data name="FieldAgentMonthlyTokens" xml:space="preserve">
+    <value>Monthly token cap</value>
+  </data>
+  <data name="FieldAgentExperienceMemory" xml:space="preserve">
+    <value>Use lessons from past trades</value>
+  </data>
+  <data name="FieldAgentReflections" xml:space="preserve">
+    <value>Lessons per prompt</value>
+  </data>
+  <data name="FieldAgentCustomInstructions" xml:space="preserve">
+    <value>Instructions (optional)</value>
+  </data>
+  <data name="AgentFieldNameError" xml:space="preserve">
+    <value>Enter a name of up to {0} characters.</value>
+    <comment>{0} is the most characters allowed.</comment>
+  </data>
+  <data name="AgentFieldDescriptionError" xml:space="preserve">
+    <value>Keep the description to {0} characters.</value>
+    <comment>{0} is the most characters allowed.</comment>
+  </data>
+  <data name="AgentFieldMarketError" xml:space="preserve">
+    <value>Choose a market.</value>
+  </data>
+  <data name="AgentFieldEnvironmentError" xml:space="preserve">
+    <value>Choose Demo.</value>
+  </data>
+  <data name="AgentFieldSymbolError" xml:space="preserve">
+    <value>Enter a symbol of letters and digits, such as BTCUSDT.</value>
+  </data>
+  <data name="AgentFieldTimeframeError" xml:space="preserve">
+    <value>Choose a timeframe.</value>
+  </data>
+  <data name="AgentFieldExchangeKeyError" xml:space="preserve">
+    <value>Choose one of your Binance Demo keys.</value>
+  </data>
+  <data name="AgentFieldRolesError" xml:space="preserve">
+    <value>Choose each model from the list. A fallback needs a model, and can't be the same one.</value>
+  </data>
+  <data name="AgentFieldExecutionModeError" xml:space="preserve">
+    <value>Choose how the agent trades.</value>
+  </data>
+  <data name="AgentFieldCapitalError" xml:space="preserve">
+    <value>Enter an amount above zero.</value>
+  </data>
+  <data name="AgentFieldRiskError" xml:space="preserve">
+    <value>Enter a number in this setting's range.</value>
+  </data>
+  <data name="AgentFieldBudgetError" xml:space="preserve">
+    <value>Enter amounts above zero, with a month's at least a day's.</value>
+  </data>
+  <data name="AgentFieldReflectionsError" xml:space="preserve">
+    <value>Enter a whole number from 0 to {0}.</value>
+    <comment>{0} is the most allowed.</comment>
+  </data>
+  <data name="AgentFieldCustomInstructionsError" xml:space="preserve">
+    <value>Keep the instructions to {0} characters.</value>
+    <comment>{0} is the most characters allowed.</comment>
+  </data>
+  <data name="AgentSaveInvalid" xml:space="preserve">
+    <value>Some settings need fixing.</value>
+  </data>
+  <data name="AgentSaveNameTaken" xml:space="preserve">
+    <value>You already have an agent with this name.</value>
+  </data>
+  <data name="AgentSaveLimitReached" xml:space="preserve">
+    <value>You have as many agents as you can. Archive one to make room for another.</value>
+  </data>
+  <data name="AgentSymbolUnknown" xml:space="preserve">
+    <value>Binance doesn't list this pair on this market.</value>
+  </data>
+  <data name="AgentSymbolNotTrading" xml:space="preserve">
+    <value>Binance isn't trading this pair at the moment.</value>
+  </data>
+  <data name="AgentSymbolNotPerpetual" xml:space="preserve">
+    <value>Only perpetual Futures contracts can be traded.</value>
+  </data>
+  <data name="AgentSymbolUnverifiable" xml:space="preserve">
+    <value>Binance can't be reached to check the pair. Try again later.</value>
+  </data>
+  <data name="AgentLiveNotAvailable" xml:space="preserve">
+    <value>Switching an agent to Live isn't available yet.</value>
+  </data>
+  <data name="AgentSaveLocked" xml:space="preserve">
+    <value>The market, pair, timeframe and Binance key can't change while the agent has open positions or orders.</value>
+  </data>
+  <data name="AgentSaveWouldFailActivation" xml:space="preserve">
+    <value>The agent is active, and these settings would stop it running:</value>
+  </data>
+  <data name="AgentSaveSlotTaken" xml:space="preserve">
+    <value>Another agent already trades this pair with this Binance key:</value>
+  </data>
+  <data name="AgentSaveArchived" xml:space="preserve">
+    <value>An archived agent can't be changed. Clone it to make a new one.</value>
+  </data>
+  <data name="AgentSaveChanged" xml:space="preserve">
+    <value>The agent changed since you opened this page. Open it again, then make your changes.</value>
+  </data>
+  <data name="AgentProblemNoExchangeKey" xml:space="preserve">
+    <value>Choose a Binance key in its settings.</value>
+  </data>
+  <data name="AgentProblemExchangeKeyMissing" xml:space="preserve">
+    <value>Its Binance key was deleted. Choose another in its settings.</value>
+  </data>
+  <data name="AgentProblemExchangeKeyNotValid" xml:space="preserve">
+    <value>Its Binance key isn't valid. Check or replace it on the API keys page.</value>
+  </data>
+  <data name="AgentProblemMarketNotEnabled" xml:space="preserve">
+    <value>Binance doesn't let its key trade on this market. Allow the market for the key on Binance, then check the key again.</value>
+  </data>
+  <data name="AgentProblemRoleUnassigned" xml:space="preserve">
+    <value>The {0} needs a model.</value>
+    <comment>{0} is a role on the AI council, such as Strategist.</comment>
+  </data>
+  <data name="AgentProblemModelNotActive" xml:space="preserve">
+    <value>The {0}'s model is no longer active.</value>
+    <comment>{0} is a role on the AI council, such as Strategist.</comment>
+  </data>
+  <data name="AgentProblemModelNotAccessible" xml:space="preserve">
+    <value>None of your valid AI keys can use the {0}'s model.</value>
+    <comment>{0} is a role on the AI council, such as Strategist.</comment>
+  </data>
+  <data name="AgentProblemNoCapitalAllocation" xml:space="preserve">
+    <value>Set the capital it may commit.</value>
+  </data>
+  <data name="AgentProblemRiskSettingsInvalid" xml:space="preserve">
+    <value>A risk setting is out of range.</value>
+  </data>
+  <data name="AgentProblemSlotTaken" xml:space="preserve">
+    <value>{0} already trades this pair with this Binance key. Stop or archive it first.</value>
+    <comment>{0} is the other agent's name.</comment>
+  </data>
+  <data name="AgentWarningOptionalModelUnavailable" xml:space="preserve">
+    <value>The {0} will be skipped, because your keys can't use its model.</value>
+    <comment>{0} is a role on the AI council, such as Sentiment Analyst.</comment>
+  </data>
+  <data name="AgentWarningFallbackUnavailable" xml:space="preserve">
+    <value>The {0}'s fallback model isn't available to your keys.</value>
+    <comment>{0} is a role on the AI council, such as Strategist.</comment>
+  </data>
+  <data name="AgentWarningCapitalExceedsBalance" xml:space="preserve">
+    <value>This key's active agents have {0} {2} allocated, more than the {1} {2} available on the account.</value>
+    <comment>{0} is the total allocated, {1} what's available, and {2} the asset, such as USDT.</comment>
+  </data>
+  <data name="CredentialDeleteUsedBy" xml:space="preserve">
+    <value>These agents use it:</value>
+  </data>
+  <data name="CredentialDeleteAgent" xml:space="preserve">
+    <value>{0} ({1})</value>
+    <comment>{0} is the agent's name, and {1} its status.</comment>
+  </data>
+  <data name="CredentialDeletePausesAgents" xml:space="preserve">
+    <value>Deleting it pauses the active ones. Their positions and protective orders stay on Binance.</value>
+  </data>
 </root>

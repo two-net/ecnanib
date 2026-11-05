@@ -1,0 +1,22 @@
+/* The user chose the name, and it can be one long word on a narrow phone. */
+.agent-settings-heading {
+    overflow-wrap: anywhere;
+}
+
+.agent-role {
+    gap: 0.5rem;
+    padding-block-start: 0.75rem;
+    border-block-start: 1px solid var(--rule);
+}
+
+    .agent-role legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.625rem;
+        align-items: baseline;
+    }
+
+/* Under the box's label, in the check's second column. */
+.agent-check-hint {
+    grid-column: 2;
+}

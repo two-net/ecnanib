@@ -1,0 +1,443 @@
+@page "/agents/new"
+@page "/agents/{Id:guid}/settings"
+@attribute [ExcludeFromInteractiveRouting]
+@using System.Globalization
+@inject IAgents Agents
+@inject ICredentials Credentials
+@inject ICatalog Catalog
+@inject IAgentExposure Exposure
+@inject NavigationManager Navigation
+
+@* Static, like every form here: a post goes through the HTTP rate limiter, which circuit traffic never
+   reaches, and the page works without a script. It takes no secret. Every FR-AGT-02 setting is on one page;
+   the creation wizard (#40) will take over /agents/new. See Agents in docs/architecture.md. *@
+
+<PageTitle>@(_agent is null ? Strings.AgentSettingsNewPageTitle : Strings.AgentSettingsEditPageTitle)</PageTitle>
+
+<div class="page form-page">
+    @if (_agent is null)
+    {
+        <h1>@Strings.AgentSettingsNewHeading</h1>
+        <p>@Strings.AgentSettingsNewIntro</p>
+    }
+    else
+    {
+        @* The user chose the name. Razor encodes it, so it's only text. *@
+        <h1 class="agent-settings-heading">@string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsEditHeading, _agent.Settings.Name)</h1>
+    }
+
+    <p><a href="/agents">@Strings.AgentSettingsBack</a></p>
+
+    <EditForm Model="Input" FormName="agent-settings" OnSubmit="SubmitAsync" class="form">
+        <input type="hidden" name="Input.Version" value="@Input.Version" />
+
+        @if (_error is not null)
+        {
+            <div class="form-error" role="alert">
+                <p>@_error</p>
+                @if (_problems.Count > 0)
+                {
+                    <ul class="facts-list">
+                        @foreach (var problem in _problems)
+                        {
+                            <li>@AgentText.ProblemOf(problem)</li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+
+        <h2>@Strings.AgentSettingsAgentHeading</h2>
+
+        <div class="field">
+            <label for="agent-name">@Strings.FieldAgentName</label>
+            <input id="agent-name" name="Input.Name" type="text" value="@Input.Name" autocomplete="off" required
+                   maxlength="@AgentLimits.NameMaxLength" aria-invalid="@Invalid(AgentField.Name)" aria-describedby="agent-name-error" />
+            <FieldError Id="agent-name-error" Message="@ErrorOf(AgentField.Name)" />
+        </div>
+
+        <div class="field">
+            <label for="agent-description">@Strings.FieldAgentDescription</label>
+            <textarea id="agent-description" name="Input.Description" rows="2" maxlength="@AgentLimits.DescriptionMaxLength"
+                      aria-invalid="@Invalid(AgentField.Description)" aria-describedby="agent-description-error">@Input.Description</textarea>
+            <FieldError Id="agent-description-error" Message="@ErrorOf(AgentField.Description)" />
+        </div>
+
+        <h2>@Strings.AgentSettingsMarketHeading</h2>
+        @* Demo is the only environment until switching to Live comes (#39). *@
+        <p class="field-hint">@Strings.AgentSettingsDemoOnly</p>
+
+        <div class="field">
+            <label for="agent-market">@Strings.FieldAgentMarket</label>
+            <select id="agent-market" name="Input.Market" disabled="@_locked" aria-invalid="@Invalid(AgentField.Market)"
+                    aria-describedby="agent-market-hint agent-market-error">
+                @foreach (var market in Enum.GetValues<Market>())
+                {
+                    <option value="@market" selected="@(market.ToString() == Input.Market)">@AgentText.MarketOf(market)</option>
+                }
+            </select>
+            <p id="agent-market-hint" class="field-hint">@Strings.AgentSettingsMarketHint</p>
+            <FieldError Id="agent-market-error" Message="@ErrorOf(AgentField.Market)" />
+        </div>
+
+        <div class="field">
+            <label for="agent-symbol">@Strings.FieldAgentPair</label>
+            <input id="agent-symbol" name="Input.Symbol" type="text" value="@Input.Symbol" autocomplete="off" autocapitalize="characters"
+                   spellcheck="false" required maxlength="@AgentLimits.SymbolMaxLength" readonly="@_locked"
+                   aria-invalid="@Invalid(AgentField.Symbol)" aria-describedby="agent-symbol-hint agent-symbol-error" />
+            <p id="agent-symbol-hint" class="field-hint">@Strings.AgentSettingsPairHint</p>
+            <FieldError Id="agent-symbol-error" Message="@ErrorOf(AgentField.Symbol)" />
+        </div>
+
+        <div class="field">
+            <label for="agent-timeframe">@Strings.FieldAgentTimeframe</label>
+            <select id="agent-timeframe" name="Input.Timeframe" disabled="@_locked" aria-invalid="@Invalid(AgentField.Timeframe)"
+                    aria-describedby="agent-timeframe-hint agent-timeframe-error">
+                @foreach (var timeframe in Enum.GetValues<Timeframe>())
+                {
+                    <option value="@timeframe" selected="@(timeframe.ToString() == Input.Timeframe)">@AgentText.TimeframeOf(timeframe)</option>
+                }
+            </select>
+            <p id="agent-timeframe-hint" class="field-hint">@Strings.AgentSettingsTimeframeHint</p>
+            <FieldError Id="agent-timeframe-error" Message="@ErrorOf(AgentField.Timeframe)" />
+        </div>
+
+        <div class="field">
+            <label for="agent-exchange-key">@Strings.FieldAgentExchangeKey</label>
+            <select id="agent-exchange-key" name="Input.ExchangeKey" disabled="@_locked" aria-invalid="@Invalid(AgentField.ExchangeCredential)"
+                    aria-describedby="agent-exchange-key-hint agent-exchange-key-error">
+                <option value="" selected="@string.IsNullOrEmpty(Input.ExchangeKey)">@Strings.AgentSettingsNoExchangeKey</option>
+                @foreach (var key in _exchangeKeys)
+                {
+                    <option value="@key.Id" selected="@(key.Id.ToString() == Input.ExchangeKey)">@key.Label</option>
+                }
+            </select>
+            <p id="agent-exchange-key-hint" class="field-hint">@Strings.AgentSettingsExchangeKeyHint</p>
+            <FieldError Id="agent-exchange-key-error" Message="@ErrorOf(AgentField.ExchangeCredential)" />
+        </div>
+
+        @if (_locked)
+        {
+            @* A disabled control posts nothing, so the values it shows go as hidden fields. *@
+            <input type="hidden" name="Input.Market" value="@Input.Market" />
+            <input type="hidden" name="Input.Timeframe" value="@Input.Timeframe" />
+            <input type="hidden" name="Input.ExchangeKey" value="@Input.ExchangeKey" />
+            <p class="field-hint">@Strings.AgentSaveLocked</p>
+        }
+
+        <h2>@Strings.AgentSettingsRolesHeading</h2>
+        <p class="field-hint">@Strings.AgentSettingsRolesHint</p>
+        <FieldError Id="agent-roles-error" Message="@ErrorOf(AgentField.Roles)" />
+
+        @foreach (var role in Enum.GetValues<AiRole>())
+        {
+            var id = $"agent-role-{role}";
+
+            <fieldset class="field agent-role">
+                <legend>@AgentText.RoleOf(role) <span class="field-hint">@(AgentRoles.IsRequired(role) ? Strings.AgentSettingsRoleRequired : Strings.AgentSettingsRoleOptional)</span></legend>
+                <label for="@id">@Strings.AgentSettingsRoleModel</label>
+                <select id="@id" name="@($"Input.{role}")" aria-describedby="agent-roles-error">
+                    <option value="" selected="@string.IsNullOrEmpty(Input.RoleValue(role, false))">@Strings.AgentSettingsNoModel</option>
+                    @foreach (var option in OptionsWith(Input.RoleValue(role, false)))
+                    {
+                        <option value="@option.Value" selected="@(option.Value == Input.RoleValue(role, false))">@option.Text</option>
+                    }
+                </select>
+                <label for="@($"{id}-fallback")">@Strings.AgentSettingsRoleFallback</label>
+                <select id="@($"{id}-fallback")" name="@($"Input.{role}Fallback")">
+                    <option value="" selected="@string.IsNullOrEmpty(Input.RoleValue(role, true))">@Strings.AgentSettingsNoModel</option>
+                    @foreach (var option in OptionsWith(Input.RoleValue(role, true)))
+                    {
+                        <option value="@option.Value" selected="@(option.Value == Input.RoleValue(role, true))">@option.Text</option>
+                    }
+                </select>
+            </fieldset>
+        }
+
+        <h2>@Strings.AgentSettingsRiskHeading</h2>
+
+        <div class="field">
+            <label for="agent-capital">@Strings.FieldAgentCapital</label>
+            <input id="agent-capital" name="Input.CapitalAllocation" type="text" inputmode="decimal" value="@Input.CapitalAllocation"
+                   autocomplete="off" aria-invalid="@Invalid(AgentField.CapitalAllocation)" aria-describedby="agent-capital-hint agent-capital-error" />
+            <p id="agent-capital-hint" class="field-hint">@Strings.AgentSettingsCapitalHint</p>
+            <FieldError Id="agent-capital-error" Message="@ErrorOf(AgentField.CapitalAllocation)" />
+        </div>
+
+        @foreach (var setting in Enum.GetValues<RiskSetting>())
+        {
+            var id = $"agent-risk-{setting}";
+
+            <div class="field">
+                <label for="@id">@AgentText.RiskSettingOf(setting)</label>
+                <input id="@id" name="@($"Input.{setting}")" type="text" inputmode="decimal" value="@Input.RiskValue(setting)" autocomplete="off"
+                       aria-invalid="@(_riskSettings.Contains(setting) ? "true" : null)" aria-describedby="@($"{id}-hint {id}-error")" />
+                <p id="@($"{id}-hint")" class="field-hint">@AgentText.RiskHintOf(setting)</p>
+                <FieldError Id="@($"{id}-error")" Message="@(_riskSettings.Contains(setting) ? Strings.AgentFieldRiskError : null)" />
+            </div>
+        }
+
+        <h2>@Strings.AgentSettingsExecutionHeading</h2>
+
+        <fieldset class="field checks">
+            <legend>@Strings.FieldAgentExecutionMode</legend>
+            @foreach (var mode in Enum.GetValues<ExecutionMode>())
+            {
+                <div class="check">
+                    <input id="@($"agent-mode-{mode}")" name="Input.ExecutionMode" type="radio" value="@mode"
+                           checked="@(mode.ToString() == Input.ExecutionMode)" required />
+                    <label for="@($"agent-mode-{mode}")">@AgentText.ExecutionModeOf(mode)</label>
+                </div>
+            }
+            <FieldError Id="agent-mode-error" Message="@ErrorOf(AgentField.ExecutionMode)" />
+        </fieldset>
+
+        <div class="field check">
+            <input id="agent-auto-risk" name="Input.AutoExecuteRiskReducing" type="checkbox" value="true"
+                   checked="@(Input.AutoExecuteRiskReducing == "true")" aria-describedby="agent-auto-risk-hint" />
+            <label for="agent-auto-risk">@Strings.FieldAgentAutoExecuteRiskReducing</label>
+            <p id="agent-auto-risk-hint" class="field-hint agent-check-hint">@Strings.AgentSettingsAutoExecuteHint</p>
+        </div>
+
+        <h2>@Strings.AgentSettingsBudgetHeading</h2>
+        <p id="agent-budget-hint" class="field-hint">@Strings.AgentSettingsBudgetHint</p>
+        <FieldError Id="agent-budget-error" Message="@ErrorOf(AgentField.Budget)" />
+
+        @foreach (var (name, label, value, decimals) in BudgetFields)
+        {
+            <div class="field">
+                <label for="@($"agent-{name}")">@label</label>
+                <input id="@($"agent-{name}")" name="@($"Input.{name}")" type="text" inputmode="@(decimals ? "decimal" : "numeric")" value="@value"
+                       autocomplete="off" aria-invalid="@Invalid(AgentField.Budget)" aria-describedby="agent-budget-hint agent-budget-error" />
+            </div>
+        }
+
+        <div class="field check">
+            <input id="agent-experience" name="Input.ExperienceEnabled" type="checkbox" value="true"
+                   checked="@(Input.ExperienceEnabled == "true")" aria-describedby="agent-experience-hint" />
+            <label for="agent-experience">@Strings.FieldAgentExperienceMemory</label>
+            <p id="agent-experience-hint" class="field-hint agent-check-hint">@Strings.AgentSettingsExperienceHint</p>
+        </div>
+
+        <div class="field">
+            <label for="agent-reflections">@Strings.FieldAgentReflections</label>
+            <input id="agent-reflections" name="Input.ReflectionsInPrompt" type="text" inputmode="numeric" value="@Input.ReflectionsInPrompt"
+                   autocomplete="off" aria-invalid="@Invalid(AgentField.ReflectionsInPrompt)" aria-describedby="agent-reflections-error" />
+            <FieldError Id="agent-reflections-error" Message="@ErrorOf(AgentField.ReflectionsInPrompt)" />
+        </div>
+
+        <h2>@Strings.AgentSettingsInstructionsHeading</h2>
+
+        <div class="field">
+            <label for="agent-instructions">@Strings.FieldAgentCustomInstructions</label>
+            <textarea id="agent-instructions" name="Input.CustomInstructions" rows="5" maxlength="@AgentLimits.CustomInstructionsMaxLength"
+                      aria-invalid="@Invalid(AgentField.CustomInstructions)"
+                      aria-describedby="agent-instructions-hint agent-instructions-error">@Input.CustomInstructions</textarea>
+            <p id="agent-instructions-hint" class="field-hint">@InstructionsHint</p>
+            <FieldError Id="agent-instructions-error" Message="@ErrorOf(AgentField.CustomInstructions)" />
+        </div>
+
+        <button type="submit" class="button">@(_agent is null ? Strings.AgentSettingsCreate : Strings.AgentSettingsSave)</button>
+    </EditForm>
+</div>
+
+@code {
+    private AgentRecord? _agent;
+    private List<CredentialRecord> _exchangeKeys = [];
+    private List<(string Value, string Text)> _models = [];
+    private Dictionary<string, string> _modelNames = [];
+    private HashSet<AgentField> _fields = [];
+    private HashSet<RiskSetting> _riskSettings = [];
+    private IReadOnlyList<ActivationProblem> _problems = [];
+    private string? _error;
+    private bool _locked;
+    private Guid _userId;
+
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "agent-settings", Name = "Input")]
+    private AgentForm Input { get; set; } = default!;
+
+    private static string InstructionsHint =>
+        string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsInstructionsHint, AgentLimits.CustomInstructionsMaxLength);
+
+    private IEnumerable<(string Name, string Label, string? Value, bool Decimals)> BudgetFields =>
+    [
+        (nameof(AgentForm.DailyBudgetUsd), Strings.FieldAgentDailyBudget, Input.DailyBudgetUsd, true),
+        (nameof(AgentForm.MonthlyBudgetUsd), Strings.FieldAgentMonthlyBudget, Input.MonthlyBudgetUsd, true),
+        (nameof(AgentForm.DailyTokens), Strings.FieldAgentDailyTokens, Input.DailyTokens, false),
+        (nameof(AgentForm.MonthlyTokens), Strings.FieldAgentMonthlyTokens, Input.MonthlyTokens, false),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A post brings its own values. Anything else shows what's saved, or the defaults. The form is
+        // there before the await, because the first render happens at it.
+        var posted = Input is not null;
+        Input ??= new AgentForm();
+
+        if (AccountClaims.UserId(HttpContext.User) is not { } userId)
+        {
+            return;
+        }
+
+        _userId = userId;
+        var cancellationToken = HttpContext.RequestAborted;
+
+        if (Id is { } id)
+        {
+            _agent = await Agents.FindAsync(userId, id, cancellationToken);
+
+            if (_agent is null)
+            {
+                Navigation.NotFound();
+                return;
+            }
+
+            if (_agent.Status == AgentStatus.Archived)
+            {
+                _error = Strings.AgentSaveArchived;
+            }
+        }
+
+        if (!posted)
+        {
+            var settings = _agent?.Settings ?? new AgentSettings
+            {
+                Name = "",
+                Market = Market.Spot,
+                Symbol = "",
+                Timeframe = Timeframe.OneHour,
+                ExecutionMode = ExecutionMode.Confirm,
+            };
+
+            Input = AgentForm.Of(settings, _agent?.Version);
+        }
+
+        // FR-AGT-03. The contract checks again when it saves, so this only spares the user a refusal.
+        if (_agent is not null && await Exposure.HasOpenPositionsOrOrdersAsync(userId, _agent.Id, cancellationToken))
+        {
+            KeepLocked();
+        }
+
+        await LoadOptionsAsync(userId, cancellationToken);
+    }
+
+    /// <summary>Shows the stored market, pair, timeframe and key, which can't change while the agent has positions or orders.</summary>
+    private void KeepLocked()
+    {
+        if (_agent is null)
+        {
+            return;
+        }
+
+        _locked = true;
+        Input.Market = _agent.Settings.Market.ToString();
+        Input.Symbol = _agent.Settings.Symbol;
+        Input.Timeframe = _agent.Settings.Timeframe.ToString();
+        Input.ExchangeKey = _agent.Settings.ExchangeCredentialId?.ToString();
+    }
+
+    /// <summary>
+    /// The user's Binance Demo keys, and the Active models their valid AI keys can use. Validity comes from
+    /// Credentials, as activation reads it.
+    /// </summary>
+    private async Task LoadOptionsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var keys = await Credentials.ListAsync(userId, cancellationToken);
+        _exchangeKeys = [.. keys.Where(key => key.Kind == CredentialKind.Exchange && key.Environment == TradingEnvironment.Demo)];
+
+        var validAi = keys.Where(key => key is { Kind: CredentialKind.Ai, Status: CredentialStatus.Valid }).Select(key => key.Id).ToHashSet();
+        var reachable = (await Catalog.ListAccessAsync(userId, cancellationToken))
+            .Where(access => access.Available && validAi.Contains(access.CredentialId))
+            .Select(access => (access.Provider, access.ModelId))
+            .ToHashSet();
+        var models = await Catalog.ListAsync(cancellationToken);
+
+        _modelNames = models.ToDictionary(model => AgentForm.ValueOf(new ModelRef(model.Provider, model.ModelId)), model => model.DisplayName);
+        _models =
+        [
+            .. models
+                .Where(model => model.Status == ModelStatus.Active && reachable.Contains((model.Provider, model.ModelId)))
+                .OrderBy(model => model.Provider, StringComparer.Ordinal)
+                .ThenBy(model => model.DisplayName, StringComparer.CurrentCulture)
+                .Select(model => (AgentForm.ValueOf(new ModelRef(model.Provider, model.ModelId)), AgentText.ModelOption(model.DisplayName, model.Provider))),
+        ];
+    }
+
+    /// <summary>
+    /// The options, plus the chosen model when it isn't one of them, such as when its key stopped working.
+    /// Otherwise saving would quietly drop it.
+    /// </summary>
+    private IEnumerable<(string Value, string Text)> OptionsWith(string? chosen)
+    {
+        if (string.IsNullOrEmpty(chosen) || _models.Any(option => option.Value == chosen))
+        {
+            return _models;
+        }
+
+        var separator = chosen.IndexOf(AgentForm.ModelSeparator, StringComparison.Ordinal);
+        var name = _modelNames.GetValueOrDefault(chosen) ?? (separator > 0 ? chosen[(separator + 1)..] : chosen);
+        var unavailable = string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsModelUnavailable, name);
+
+        return [(chosen, unavailable), .. _models];
+    }
+
+    private string? ErrorOf(AgentField field) => _fields.Contains(field) ? AgentText.FieldErrorOf(field) : null;
+
+    private string? Invalid(AgentField field) => _fields.Contains(field) ? "true" : null;
+
+    private async Task SubmitAsync()
+    {
+        if (_userId == Guid.Empty || (_agent is not null && _agent.Status == AgentStatus.Archived))
+        {
+            return;
+        }
+
+        var (settings, fields, riskSettings) = Input.ToSettings();
+
+        if (settings is null)
+        {
+            _fields = fields;
+            _riskSettings = riskSettings;
+            _error = Strings.AgentSaveInvalid;
+            return;
+        }
+
+        var cancellationToken = HttpContext.RequestAborted;
+        AgentSaveResult result;
+
+        if (_agent is null)
+        {
+            result = await Agents.CreateAsync(_userId, settings, cancellationToken);
+        }
+        else if (int.TryParse(Input.Version, NumberStyles.Integer, CultureInfo.InvariantCulture, out var version))
+        {
+            result = await Agents.UpdateAsync(_userId, _agent.Id, version, settings, cancellationToken);
+        }
+        else
+        {
+            result = new AgentSaveResult(AgentSaveOutcome.Changed);
+        }
+
+        if (result.Outcome == AgentSaveOutcome.Saved)
+        {
+            Navigation.NavigateTo(_agent is null ? "/agents?saved=created" : "/agents?saved=updated");
+            return;
+        }
+
+        _fields = [.. result.Fields ?? []];
+        _riskSettings = [.. result.RiskSettings ?? []];
+        _problems = result.Problems ?? [];
+        _error = AgentText.SaveErrorOf(result.Outcome);
+
+        if (result.Outcome == AgentSaveOutcome.LockedByOpenPositions)
+        {
+            KeepLocked();
+        }
+    }
+}
