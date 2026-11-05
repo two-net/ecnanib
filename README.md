@@ -113,7 +113,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys, two-factor keys and users' API keys live in PostgreSQL under the same keys | In place |
 | API keys | Users bring their own keys for Anthropic, Google, OpenAI, xAI, Binance Live and Binance Demo, and the platform has none of its own. Each key is checked with its provider when it's added, on demand and on a schedule, stored encrypted, and never shown again, only its last four characters. Binance keys that can withdraw are refused, and the ones without an IP restriction are flagged. A key that stops working pauses the agents that use it | In place |
 | Agents | Users create, edit, clone, archive and delete agents, each with its market, pair, timeframe, models per role, capital, risk settings, execution mode, AI budget and custom instructions. A new agent starts with a model and a fallback per role, from default providers in the configuration file and the models the user's keys can use. Activation checks the keys, models and their capabilities, capital and risk settings, and allows one agent per key, market and pair. Every change of status is audited | In place for Demo, as settings and a lifecycle. Agents don't trade yet: decision cycles, the wizard and switching to Live come later |
-| Model catalog | Synced from every user's valid AI keys and merged into one list, with which key can use which model. It syncs on a schedule, when a key is added or replaced, and when a user asks. Every run is recorded. Prices and capabilities that providers don't report come from the configuration file | In place. Deprecation and retirement, the catalog page, and administrators' overrides and sync button come later |
+| Model catalog | Synced from every user's valid AI keys and merged into one list, with which key can use which model. It syncs on a schedule, when a key is added or replaced, and when a user asks. Every run is recorded. Prices and capabilities that providers don't report come from the configuration file. A model no key lists any more is deprecated, then retired after a grace period, when the roles that use it switch to their fallbacks or their agents pause | In place. The catalog page, and administrators' overrides and sync button come later |
 | Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, a before/after summary, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts and API keys. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
 | Build pipeline | GitHub Actions: build, test and dependency vulnerability scan | In place |
@@ -217,6 +217,7 @@ The catalog lists the models users' keys can use, synced from each provider with
 | Setting | Meaning |
 |---|---|
 | `SyncIntervalHours` | How often every valid key is synced, 1 to 168. Defaults to `12`. Keys are also synced when they're added or replaced, and when their owner asks |
+| `RetireAfterMissingDays` | How long a model stays deprecated before it's retired, 1 to 365 days. Defaults to `7` |
 | `Overrides` | Metadata for models, one entry each. Defaults to none |
 
 Providers report different things, and none reports everything. Anthropic says which models take images, follow a schema, search the web and take an effort setting. Google says which ones think, and xAI which take images. OpenAI says nothing beyond each model's ID, and no provider gives prices that Ecnanib reads. Whatever's missing stays unknown until an entry in `Overrides` supplies it, so keep it up to date as providers change their models and prices:
@@ -235,6 +236,7 @@ A field that's set beats what the provider reports, and the rest come from the p
 ```json
 "Catalog": {
   "SyncIntervalHours": 12,
+  "RetireAfterMissingDays": 7,
   "Overrides": [
     { "Provider": "OpenAI", "Model": "gpt-6-luna", "InputPricePerMillion": 1.25, "OutputPricePerMillion": 10, "StructuredOutput": true, "ToolUse": true },
     { "Provider": "Anthropic", "Model": "claude-opus-5", "InputPricePerMillion": 5, "OutputPricePerMillion": 25 }
@@ -243,6 +245,8 @@ A field that's set beats what the provider reports, and the rest come from the p
 ```
 
 A model with no price has no cost estimate. If every key for a provider fails during a scheduled sync, because the provider is down or answering in a way Ecnanib can't read, administrators are notified. A single user's key that stops working only affects that user. See [Model catalog](docs/architecture.md#model-catalog).
+
+When a scheduled sync finds that no key lists a model any more, and none can use it, the model is deprecated, and the owners of the agents that use it are notified. It's retired once it has been missing for `RetireAfterMissingDays`. A key that failed during the sync still counts as having its models, so an outage never deprecates anything, and a model that's listed again is active again. See [Deprecation and retirement](docs/architecture.md#deprecation-and-retirement).
 
 ### Agents
 
@@ -257,6 +261,8 @@ An invalid value stops startup with a message that names it. See [Agents](docs/a
 #### Roles
 
 Each agent has a model per role on its AI council, and optionally a fallback model that takes over when the model fails. A role is offered only the models the user's valid keys can use that can give structured answers, which every role needs. A model whose structured output nobody has stated counts as able, because only Anthropic reports it, so set `"StructuredOutput": false` in `Catalog:Overrides` to rule a model out. The Sentiment Analyst's models with live search come first, and activating one without it warns. Using the same provider for the Strategist and the Risk Critic is allowed, so one AI key is enough, but it warns, because the critique is less independent.
+
+When a provider retires a model, each role that uses it switches to its fallback, if the fallback can fill the role, and is left without one. An active agent with a required role that has no such fallback pauses until its owner chooses another model. Either way, the owner is notified. See [Acting on retired models](docs/architecture.md#acting-on-retired-models).
 
 The `RoleDefaults` section gives each role a default provider by strength (FR-ROLE-03), and optionally a model:
 

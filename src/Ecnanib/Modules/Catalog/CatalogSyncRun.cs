@@ -37,10 +37,10 @@ internal sealed class CatalogSyncRun
     /// <summary>Models whose provider-reported details changed.</summary>
     public int ModelsUpdated { get; set; }
 
-    /// <summary>0 until #25 deprecates models (FR-CAT-04).</summary>
+    /// <summary>Models no key can use any more (FR-CAT-04). Only a sync of everyone's keys deprecates.</summary>
     public int ModelsDeprecated { get; set; }
 
-    /// <summary>0 until #25 retires models (FR-CAT-04).</summary>
+    /// <summary>Deprecated models whose grace period ended (FR-CAT-04). Only a sync of everyone's keys retires.</summary>
     public int ModelsRetired { get; set; }
 
     /// <summary>

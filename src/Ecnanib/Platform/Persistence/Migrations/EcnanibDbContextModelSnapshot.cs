@@ -232,6 +232,40 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("agents", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Agents.AgentModelNotice", b =>
+                {
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ModelId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("model_id");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("AgentId", "Provider", "ModelId", "Status")
+                        .HasName("pk_agent_model_notices");
+
+                    b.HasIndex("Provider", "ModelId")
+                        .HasDatabaseName("ix_agent_model_notices_provider_model_id");
+
+                    b.ToTable("agent_model_notices", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Agents.AgentRoleAssignment", b =>
                 {
                     b.Property<Guid>("AgentId")
@@ -381,6 +415,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.Property<int?>("MaxOutputTokens")
                         .HasColumnType("integer")
                         .HasColumnName("max_output_tokens");
+
+                    b.Property<DateTimeOffset?>("MissingSince")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("missing_since");
 
                     b.Property<bool?>("ReasoningEffort")
                         .HasColumnType("boolean")
@@ -1342,6 +1380,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasDatabaseName("ix_secrets_key_id");
 
                     b.ToTable("secrets", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Agents.AgentModelNotice", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Agents.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_model_notices_agents_agent_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.Agents.AgentRoleAssignment", b =>

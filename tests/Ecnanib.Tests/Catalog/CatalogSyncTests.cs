@@ -144,7 +144,9 @@ public sealed class CatalogSyncTests(PostgresFixture postgres)
         var kept = models.Single(model => model.ModelId == "model-a");
         var dropped = models.Single(model => model.ModelId == "model-b");
         Assert.Equal(["model-a:yes", "model-b:no"], await app.AccessAsync(userId, credential.Id));
-        Assert.Equal((ModelStatus.Active, ModelStatus.Active), (kept.Status, dropped.Status));
+
+        // No key can use it now, so it's deprecated (FR-CAT-04): see ModelRetirementTests.
+        Assert.Equal((ModelStatus.Active, ModelStatus.Deprecated), (kept.Status, dropped.Status));
         Assert.Equal(firstSeen, kept.FirstSeenAt);
         Assert.InRange(kept.LastSeenAt - dropped.LastSeenAt, TimeSpan.FromHours(12), TimeSpan.FromHours(12) + TimeSpan.FromMinutes(1));
     }

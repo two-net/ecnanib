@@ -59,6 +59,9 @@ public enum AgentStatusReason
 
     /// <summary>The user has no valid key left for a required role's provider (FR-KEY-10, FR-KEY-11).</summary>
     AiKeyUnavailable,
+
+    /// <summary>A required role's model retired, and the role had no fallback that could take over (FR-CAT-04).</summary>
+    ModelRetired,
 }
 
 /// <summary>The field names in an agent's audit summary (FR-AUD-02), which the Web UI gives text to.</summary>

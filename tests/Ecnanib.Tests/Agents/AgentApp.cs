@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
@@ -18,8 +19,9 @@ namespace Ecnanib.Tests.Agents;
 /// <summary>
 /// The application with its own database and clock, a <see cref="FakeBinance"/> that lists BTCUSDT on Spot and
 /// Futures and takes any Demo key, and a <see cref="FakeAiProvider"/> behind the Test and Second providers,
-/// whose keys list model-a. Credential observers are on, so the catalog syncs a new AI key and Agents hears of
-/// every change to a key. The revalidation and recovery jobs run only when a test runs them.
+/// whose keys list model-a unless a test gives one its own list. Credential observers are on, so the catalog
+/// syncs a new AI key and Agents hears of every change to a key. The revalidation, catalog schedule and
+/// recovery jobs run only when a test runs them.
 /// </summary>
 internal sealed class AgentApp : IAsyncDisposable
 {
@@ -27,6 +29,8 @@ internal sealed class AgentApp : IAsyncDisposable
     public const string Second = "Second";
     public const string Model = "model-a";
     public const string Symbol = "BTCUSDT";
+
+    private readonly ConcurrentDictionary<string, string[]> _lists = new(StringComparer.Ordinal);
 
     public AgentApp(
         PostgresFixture postgres,
@@ -50,9 +54,12 @@ internal sealed class AgentApp : IAsyncDisposable
 
                 services?.Invoke(collection);
             },
-            manualJobs: ["CredentialRevalidationJob", "AgentPrerequisitesJob"]);
+            manualJobs: ["CredentialRevalidationJob", "AgentPrerequisitesJob", "CatalogSyncJob", "ModelLifecycleJob"]);
 
-        Ai.On(HttpMethod.Get, CredentialApp.ModelsPath, _ => FakeAiProvider.Models(null, Model));
+        Ai.On(
+            HttpMethod.Get,
+            CredentialApp.ModelsPath,
+            request => FakeAiProvider.Models(null, _lists.TryGetValue(request.Key ?? "", out var ids) ? ids : [Model]));
         Binance.On(HttpMethod.Get, "/api/v3/exchangeInfo", _ => FakeBinance.Json(BinanceSamples.SpotExchangeInfo()));
         Binance.On(HttpMethod.Get, "/fapi/v1/exchangeInfo", _ => FakeBinance.Json(BinanceSamples.FuturesExchangeInfo));
         BinanceAccepts();
@@ -74,6 +81,9 @@ internal sealed class AgentApp : IAsyncDisposable
     public string ConnectionString => App.ConnectionString();
 
     public static CancellationToken Cancellation => TestContext.Current.CancellationToken;
+
+    /// <summary>From now on, <paramref name="key"/> lists these models.</summary>
+    public void Lists(string key, params string[] ids) => _lists[key] = ids;
 
     /// <summary>Binance takes a Demo key on the markets given, and its Spot account holds 250.12 USDT.</summary>
     public void BinanceAccepts(bool spot = true, bool futures = true)

@@ -1,4 +1,3 @@
-using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
 using Ecnanib.Modules.Credentials.Contracts;
 using Ecnanib.Platform.Contracts;
@@ -11,7 +10,8 @@ namespace Ecnanib.Modules.Agents;
 /// was deleted, isn't valid, or can't trade on the agent's market, or no valid AI key is left for a required
 /// role's provider. Their positions and protective orders stay on the exchange (FR-AGT-06). It reads only
 /// what Credentials says, so a provider's outage, which leaves a key's status alone, never pauses anything.
-/// A model that's deprecated or retired is #25's to handle (FR-CAT-04). See Agents in docs/architecture.md.
+/// A model that's deprecated or retired is <see cref="ModelLifecycle"/>'s (FR-CAT-04). See Agents in
+/// docs/architecture.md.
 /// </summary>
 internal sealed class AgentPrerequisites(
     IDbContextFactory<EcnanibDbContext> contextFactory,
@@ -143,24 +143,11 @@ internal sealed class AgentPrerequisites(
             return false;
         }
 
-        var updated = await context.Set<Agent>()
-            .Where(row => row.Id == agentId && row.UserId == userId && row.Version == agent.Version && row.Status == AgentStatus.Active)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(row => row.Status, AgentStatus.Paused)
-                    .SetProperty(row => row.StatusReason, reason)
-                    .SetProperty(row => row.StatusChangedAt, time.GetUtcNow())
-                    .SetProperty(row => row.Version, row => row.Version + 1),
-                cancellationToken);
-
-        if (updated == 0)
+        if (!await AgentPause.TryAsync(context, audit, userId, agentId, agent.Version, reason, time.GetUtcNow(), cancellationToken))
         {
             return false;
         }
 
-        audit.Add(
-            context,
-            AgentAudit.BySystem(AuditAction.AgentPaused, userId, agentId, AgentAudit.StatusChange(AgentStatus.Active, AgentStatus.Paused, reason)));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 

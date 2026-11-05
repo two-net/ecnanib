@@ -30,6 +30,7 @@ public static class AgentText
         AgentStatusReason.CredentialInvalid => Strings.AgentReasonCredentialInvalid,
         AgentStatusReason.MarketNotEnabled => Strings.AgentReasonMarketNotEnabled,
         AgentStatusReason.AiKeyUnavailable => Strings.AgentReasonAiKeyUnavailable,
+        AgentStatusReason.ModelRetired => Strings.AgentReasonModelRetired,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Give the reason its text in Strings.resx."),
     };
 
@@ -41,6 +42,7 @@ public static class AgentText
         AgentStatusReason.CredentialInvalid => Strings.AgentExplanationCredentialInvalid,
         AgentStatusReason.MarketNotEnabled => Strings.AgentExplanationMarketNotEnabled,
         AgentStatusReason.AiKeyUnavailable => Strings.AgentExplanationAiKeyUnavailable,
+        AgentStatusReason.ModelRetired => Strings.AgentExplanationModelRetired,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Give the reason its explanation in Strings.resx."),
     };
 

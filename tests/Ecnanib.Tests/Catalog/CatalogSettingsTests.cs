@@ -6,6 +6,7 @@ namespace Ecnanib.Tests.Catalog;
 public sealed class CatalogSettingsTests(PostgresFixture postgres)
 {
     private const string Interval = "Catalog:SyncIntervalHours";
+    private const string RetireAfter = "Catalog:RetireAfterMissingDays";
     private const string Entry = "Catalog:Overrides:0";
 
     /// <summary>Each case is settings as key=value, and the key the message must name.</summary>
@@ -14,6 +15,9 @@ public sealed class CatalogSettingsTests(PostgresFixture postgres)
         { [$"{Interval}=0"], Interval },
         { [$"{Interval}=169"], Interval },
         { [$"{Interval}=twelve"], Interval },
+        { [$"{RetireAfter}=0"], RetireAfter },
+        { [$"{RetireAfter}=366"], RetireAfter },
+        { [$"{RetireAfter}=seven"], RetireAfter },
         { [$"{Entry}:Model=gpt-6-luna"], $"{Entry}:Provider" },
         { [$"{Entry}:Provider=openai", $"{Entry}:Model=gpt-6-luna"], $"{Entry}:Provider" },
         { [$"{Entry}:Provider=OpenAI"], $"{Entry}:Model" },
@@ -56,7 +60,7 @@ public sealed class CatalogSettingsTests(PostgresFixture postgres)
     [Fact]
     public async Task The_shipped_settings_and_none_at_all_both_start()
     {
-        await using var shipped = new AppFactory(postgres.NewConnectionString(), settings: Parse([$"{Interval}=12"]));
+        await using var shipped = new AppFactory(postgres.NewConnectionString(), settings: Parse([$"{Interval}=12", $"{RetireAfter}=7"]));
         await using var none = new AppFactory(postgres.NewConnectionString());
 
         shipped.Start();

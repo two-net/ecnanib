@@ -40,12 +40,21 @@ internal sealed class Model
 
     public bool? ReasoningEffort { get; set; }
 
-    /// <summary>Always <see cref="ModelStatus.Active"/> until #25 and #26 change it.</summary>
+    /// <summary>
+    /// Deprecated and then Retired once providers stop listing it, and Active again when one lists it (FR-CAT-04).
+    /// Hidden is administrators' (#26), and a sync never changes it.
+    /// </summary>
     public ModelStatus Status { get; set; } = ModelStatus.Active;
 
     public required DateTimeOffset FirstSeenAt { get; init; }
 
     public required DateTimeOffset LastSeenAt { get; set; }
+
+    /// <summary>
+    /// When a sync of everyone's keys first found no key that could use it, which starts the grace period
+    /// before it retires. Null while a key can.
+    /// </summary>
+    public DateTimeOffset? MissingSince { get; set; }
 }
 
 internal sealed class ModelConfiguration : IEntityTypeConfiguration<Model>

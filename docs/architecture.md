@@ -61,7 +61,7 @@ Some needs run in both directions, and a reference can't solve that. Separating 
 | Agents, Execution | Stop, kill switch, open-exposure checks (FR-AGT-03, FR-AGT-07, FR-AGT-08, FR-AGT-13, EXT-BIN-07) | Port declared by Agents, `IAgentExposure`, implemented by Execution |
 | Credentials, Agents | Pause agents on credential failure or deletion (FR-KEY-10, FR-KEY-11) | Event from Credentials, `ICredentialObserver`. See [Pausing](#pausing-on-a-credential) |
 | Credentials, Catalog | Sync when a credential is added or rotated (FR-CAT-03) | Event from Credentials, `ICredentialObserver`. See [Triggers](#triggers) |
-| Catalog, Agents | Model deprecation and retirement (FR-CAT-04) | Event from Catalog |
+| Catalog, Agents | Model deprecation and retirement (FR-CAT-04) | Event from Catalog, `IModelStatusObserver`. See [Acting on retired models](#acting-on-retired-models) |
 | DecisionCycle, Experience | Attribution, metrics and reflections (FR-EXP-01, FR-EXP-02, FR-EXP-04) | Event from DecisionCycle, plus a reflection port it declares |
 | Execution, Experience | Review after a trade closes (FR-EXP-04) | Trade-closed event from Execution |
 | AiCouncil, Experience | Reflections in prompts (FR-PRM-01, FR-EXP-04) | DecisionCycle passes them in as runtime context |
@@ -1262,14 +1262,15 @@ Outcomes are logged under the user's and the credential's IDs, with the provider
 | `ICatalog` | The models, with the configuration's metadata applied, what a user's keys can use, and each role's default provider and model | The Web UI and Agents' role assignments now. The catalog page (#26) and the council (#31) later |
 | `ICatalogSync` | A user's sync of their own keys (FR-CAT-03) | The Web UI |
 | `ICatalogAdministration` | A sync of every user's keys | **Administration only**, which `BannedApis` enforces, because it doesn't check who's asking. #26 adds the entry that does |
+| `IModelStatusObserver` | Told after a sync commits changes to models' statuses (FR-CAT-04). An event Catalog raises ([Inversions](#inversions)) | Agents |
 
 ### Tables
 
 | Table | What |
 |---|---|
-| `models` | One row per provider and model ID, with what providers reported: name, family, release date, context window, maximum output, the five capabilities as nullable booleans, status, and first and last seen |
+| `models` | One row per provider and model ID, with what providers reported: name, family, release date, context window, maximum output, the five capabilities as nullable booleans, status, first and last seen, and `missing_since`, when no key could use it any more |
 | `model_availability` | One row per key and model: whether the key could use it at its last sync, and when that sync began asking. It holds `user_id`, so a user's rows are found without asking Credentials |
-| `catalog_sync_runs` | One row per provider per run (FR-CAT-08): trigger, start and end, the keys asked, the keys that failed, models added and updated, and errors. Deprecated and retired are 0 until #25 |
+| `catalog_sync_runs` | One row per provider per run (FR-CAT-08): trigger, start and end, the keys asked, the keys that failed, models added, updated, deprecated and retired, and errors |
 | `role_defaults` | One row per role that has a default (FR-ROLE-03): a provider, with a foreign key to `providers`, and optionally a model ID, which may name a model nobody's key has listed yet |
 
 - **A model's key is its provider and ID**, so a role assignment (#24) can name one as the SRS does. `models.provider` has a foreign key to `providers`, which is inside the module, so the seeder now seeds from `IAiProviders.All` and a test provider gets its row too.
@@ -1301,7 +1302,9 @@ Every trigger runs one pipeline over a set of keys. Each enabled provider runs o
    - **Newer results win.** `checked_at` is when a sync began asking, and a key whose stored `checked_at` is later than this fetch's start is left alone, however late this one writes.
    - **A key that listed** has its models available and its others not. **An unusable key's** rows are deleted when it's gone, and marked unavailable when it isn't valid. **A key that failed keeps what it had**, as Credentials keeps a key's status in an outage.
    - **A sync of everyone's keys also tidies:** rows of a key that's gone are deleted, and those of a key that isn't valid are marked unavailable. That's the recovery path for lost events, which [Inversions](#inversions) requires.
+   - **A sync of everyone's keys also ages** the models no key can use any more. See [Deprecation and retirement](#deprecation-and-retirement).
    - **Close the run row.**
+   - **After the commit, tell every `IModelStatusObserver`** about the provider's changes of status, if there were any.
 4. **Notify administrators**, after a scheduled or administrator's run, when the provider had keys and every one failed on the provider's side: a timeout, an overload, or `Other` that isn't a 4XX, which covers a server error and an answer the adapter can't read. A refused key, a rate limit or a key with no money left is one user's problem, so it never alerts anybody. The notice links to `/admin/catalog`, which #26 adds.
 
 Shutdown stops the fetching, through `context.Stopping`, because an AI call is safe to abandon and nothing is written until the end. The write takes the run's own token, so results already fetched aren't dropped just because shutdown began.
@@ -1330,9 +1333,22 @@ Shutdown stops the fetching, through `context.Stopping`, because an AI call is s
 
   It starts a job and returns, so the request that changed the key doesn't wait. A job is lost with the process, and the schedule's tidy recovers it.
 
+### Deprecation and retirement
+
+FR-CAT-04's statuses come from the write of a sync of everyone's keys, `Schedule` or `Administrator`, once its availability is recorded:
+
+- **A model is missing** when no key listed it in this run and no key can use it any more, in a run where at least one of the provider's keys listed. A key that failed keeps its rows, so a model that any failing key could use isn't missing. A run in which every key failed judges nothing, so an outage can't deprecate anything. The tidy has already removed what deleted keys had and marked what invalid keys had unavailable, so those don't hold a model up.
+- **The first time it's missing, it's Deprecated**, and `missing_since` is set. **At a run that finds it still missing `Catalog:RetireAfterMissingDays` later**, 7 by default, it's Retired. A run in which every key failed leaves it as it is, however long that lasts.
+- **A sync of some keys never deprecates anything.** One user's keys, or one key, can't show that nobody can use a model.
+- **Any sync that lists it makes it Active again**, whatever the trigger, and clears `missing_since`. That counts as an update.
+- **Hidden is administrators' (#26)**, and a sync never changes it.
+- **The run's row counts** the models it deprecated and retired, and each change is an Information event.
+
+Once the write has committed, `ModelStatusObservers` tells every `IModelStatusObserver` about the provider's changes. It works like `CredentialObservers`: the observers are resolved on first use, and one that throws is logged and doesn't stop the others. Agents subscribes, and has its own recovery path: see [Acting on retired models](#acting-on-retired-models).
+
 ### Logging
 
-One Information event per provider run, with its counts, and a Warning for each failed key, with its credential ID, provider and failure. Nothing logs a key, and `AiTransport` already logs each attempt. `CatalogLoggingTests` checks the logs, `catalog_sync_runs` and `job_runs` with canary keys through every kind of sync.
+One Information event per provider run, with its counts, one per change of a model's status, and a Warning for each failed key, with its credential ID, provider and failure. Nothing logs a key, and `AiTransport` already logs each attempt. `CatalogLoggingTests` checks the logs, `catalog_sync_runs` and `job_runs` with canary keys through every kind of sync.
 
 ### The page
 
@@ -1354,6 +1370,7 @@ One Information event per provider run, with its counts, and a Warning for each 
 |---|---|
 | `agents` | One row per agent: its settings as plain columns, risk settings as `risk_*`, the budget, its status, why it's in it, and a `version` |
 | `agent_role_assignments` | One row per agent and role: the model as provider and model ID, which is the catalog's key, and an optional fallback. Its foreign key to `agents` cascades, because both are this module's |
+| `agent_model_notices` | One row per agent, model and status (Deprecated or Retired) its owner was told about, so they're told once ([Acting on retired models](#acting-on-retired-models)). It's apart from the role rows because an edit replaces those. Its foreign key to `agents` cascades |
 
 - **There's no foreign key to `users` or `credentials`.** An agent keeps its exchange key's ID after the key is deleted, so the user can still edit it, and activation says the key is missing. Account deletion (#51) goes through Identity's port.
 - **`version` is a concurrency token that every change increments.** Edits and status changes are conditional on it, so an edit from an old page, or one that crosses a pause, changes nothing and says so. It's explicit rather than `xmin`, so a conditional `ExecuteUpdate` can compare and increment it.
@@ -1427,11 +1444,21 @@ It doesn't lock the `users` row, as `TwoFactor` does, because that's Identity's 
 
 `AgentCredentialObserver` hears of every change to a credential. A deletion, a key that isn't `Valid`, or a Binance key checked again, which may have lost a market, starts an `agent-credential-check` run for the user, and the request that changed the key doesn't wait.
 
-`AgentPrerequisites` pauses each of the user's Active agents whose credentials no longer let it trade, one at a time, under the user's lock, with the reason: the exchange key was deleted, isn't valid or isn't enabled for the market, or no valid AI key is left for a required role's provider. The pause is by the system, with the owner as `UserId`. Their positions and protective orders stay on the exchange (FR-AGT-06), and resuming is the user's choice. `CredentialInvalid` is raised by Credentials, in the transaction that records the check.
+`AgentPrerequisites` pauses each of the user's Active agents whose credentials no longer let it trade, one at a time, under the user's lock, with the reason: the exchange key was deleted, isn't valid or isn't enabled for the market, or no valid AI key is left for a required role's provider. The pause is by the system, with the owner as `UserId`, through `AgentPause`: a conditional update on the status and version it read, with its audit record, which a retired model's pause shares. Their positions and protective orders stay on the exchange (FR-AGT-06), and resuming is the user's choice. `CredentialInvalid` is raised by Credentials, in the transaction that records the check.
 
-It reads only what Credentials says, so an outage, which leaves a key's status alone, pauses nothing. A model that's deprecated or retired is #25's, with FR-CAT-04's own steps.
+It reads only what Credentials says, so an outage, which leaves a key's status alone, pauses nothing. A model that's deprecated or retired has [steps of its own](#acting-on-retired-models).
 
 `agent-prerequisites` runs the same check for every user with Active agents every hour, and asks nothing of Binance or the providers. It's the recovery path for an event lost with the process.
+
+### Acting on retired models
+
+`AgentModelObserver` hears of each change the catalog makes to models' statuses ([Deprecation and retirement](#deprecation-and-retirement)), and starts an `agent-model-check` run, so the sync doesn't wait. `ModelLifecycle` then takes every agent that isn't archived and names a Deprecated or Retired model, as a role's model or its fallback, that its owner hasn't been told about. It goes user by user, reading each user's keys and catalog once, then one agent at a time, under the user's lock, working out each step again from the agent as it is:
+
+1. **Switch.** A role whose model retired takes its fallback, when the fallback can fill the role as [activation](#role-assignments) requires: `Active`, usable with one of the user's `Valid` keys, and not lacking structured output. The fallback becomes the model, and the role is left without one until the user chooses another. The agent's version moves on, and the change is audited as `AgentUpdated` by the system, with each role's model and fallback before and after. That applies to every agent that isn't archived, so one that's activated later doesn't fail on the retired model.
+2. **Pause.** An Active agent with a required role still on a retired model pauses, with the reason `ModelRetired`, through `AgentPause`. An optional role is skipped when its model fails (FR-ROLE-06), and a fallback only stands by, so a retired one of either doesn't pause anything. An agent that isn't Active isn't running, and activation refuses a model that isn't `Active`.
+3. **Tell.** At most one `ModelDeprecated` and one `ModelRetired` per agent per run, linking to its settings, labelled Demo for a Demo agent. Each model and status it was about becomes a row of `agent_model_notices` in the same transaction, so the owner is told once. When a model is Active again, its rows are deleted, so a later deprecation is news again.
+
+A Deprecated model only warns: the agent keeps using it until it retires. `agent-models` runs the same pass every hour, and is the recovery path for an event lost with the process. One agent's or user's failure is logged and never stops the rest (NFR-REL-05).
 
 ### The pages
 
@@ -1605,7 +1632,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Raising notifications (FR-NTF-01):** raise each through `INotifications`, with `Add` on the context that makes the change it's about, so both commit together. Link to the page it's about, and set `Demo` for a Demo agent. See [Notifications](#notifications). Who raises what, by what `ModuleMap.cs` allows:
   - Credentials: `CredentialInvalid` is raised already, when a check finds a key stopped working or lost a market. See [Checking on a schedule](#checking-on-a-schedule)
   - Catalog: `CatalogSyncFailed` is raised already. See [Syncing](#syncing)
-  - Agents (#25): `ModelDeprecated` and `ModelRetired` (FR-CAT-04)
+  - Agents: `ModelDeprecated` and `ModelRetired` are raised already, by `ModelLifecycle`. See [Acting on retired models](#acting-on-retired-models)
   - Agents (#27): `AgentPausedLossLimit`, when it acts on the Risk Engine's result (FR-RISK-08)
   - DecisionCycle (#31): `AgentPausedErrors`
   - DecisionCycle (#32): `AgentPausedBudget` (FR-CYC-07), because AI Council can't use Notifications
@@ -1632,12 +1659,12 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Order execution (#34):** derive client order IDs that match `^[.A-Z:/a-z0-9_-]{1,36}$` (FR-EXE-04). Use `RequestPriority.Protective` for stops, closes and their queries. On `MayHaveExecuted`, query with `IExchangeAccount.GetOrderAsync` before sending again: only null allows it. Persist `SettlesAt` with the order, and don't send it again before then, even after a restart, which the adapter's memory doesn't survive. Check the Futures algo order parameters against Demo first, and add Spot OCO if it's wanted.
 - **System health (#49):** show `IExchangeUsage.Current()` for FR-ADM-04's exchange usage and bans, at `/admin/health`, which ban notifications already link to.
 - **Suggest assignment (#46):** start from `RoleModels`, which already filters and ranks each role's models, and replace "newest first" with the trading-experience metrics (FR-ROLE-07). Keep the Risk Critic off the Strategist's provider (FR-ROLE-04).
-- **Deprecation (#25):** pause an agent whose model retired without a valid fallback through the same path as `AgentPrerequisites`, with a reason of its own, and raise `ModelDeprecated` and `ModelRetired` from Agents. Count a model missing only after a `Schedule` or `Administrator` run in which every key that had it succeeded. A failed key keeps its rows, so an outage can't deprecate anything. Fill `models_deprecated` and `models_retired`, add `Catalog:RetireAfterMissingDays` from SRS 7.3, and raise the event from Catalog that [Inversions](#inversions) names. Anthropic's list also has `lifecycle`, `deprecated_at` and `retires_at`, which the adapter doesn't read yet.
-- **The catalog page and administration (#26):** add an Administration contract that checks `IAdministrators.IsAdministratorAsync`, audits the action (FR-AUD-01 lists administrators' actions), and calls `ICatalogAdministration.SyncAllAsync`. Build `/admin/catalog`, which `CatalogSyncFailed` already links to, with the runs in `catalog_sync_runs`. Store administrators' overrides as a layer above `Catalog:Overrides`, applied where `Catalog` applies the configuration, so they persist across syncs (FR-CAT-05). Hidden is a status, which syncs don't change.
+- **Anthropic's model lifecycle:** Anthropic's list also has `lifecycle`, `deprecated_at` and `retires_at`, which the adapter doesn't read yet. Reading them into `AiModel` would let the catalog deprecate a model before it disappears, ahead of [Deprecation and retirement](#deprecation-and-retirement)'s rule, and warn its agents sooner.
+- **The catalog page and administration (#26):** add an Administration contract that checks `IAdministrators.IsAdministratorAsync`, audits the action (FR-AUD-01 lists administrators' actions), and calls `ICatalogAdministration.SyncAllAsync`. Build `/admin/catalog`, which `CatalogSyncFailed` already links to, with the runs in `catalog_sync_runs`. Store administrators' overrides as a layer above `Catalog:Overrides`, applied where `Catalog` applies the configuration, so they persist across syncs (FR-CAT-05). Hidden is a status, which syncs don't change, so a hidden model is never deprecated or retired, and its agents aren't told: decide whether hiding a model should act on them.
 - **The AI council and costs (#31, #32):** pass `CatalogModel.Price` as `AiRequest.Price`, as an `AiModelPrice`. A model with no price has no cost, so budgets need their token caps for it.
 - **Switching to Live (#39):** `AgentInput` and `ActivationChecks` refuse Live, and `AgentForm.ToSettings` always sends Demo. Make the switch an action of its own (UC-04), for a Paused or Stopped agent with no open positions or orders, with its checks on top of [Activation](#activation)'s, and audit it with its own `AuditAction`. Add `Agents:DefaultEnvironment` from SRS 7.3 then. The slot and the exchange key's environment already follow the agent's environment.
 - **Futures prerequisites (#33):** add EXT-BIN-07's checks to `ActivationChecks`, and read the account through a port Execution implements, as `IAgentExposure` does, because Agents can't use the exchange adapter.
-- **The Risk Engine (#27):** take `RiskSettings` from `Modules/RiskEngine/Contracts` as the agent's settings, and add `RiskCaps` (FR-RISK-11). Check the caps where `RiskSettings.Problems` is checked: on save in `AgentInput` and at activation in `ActivationChecks`, so an agent saved before the caps can't be activated above them. Pause on a loss limit with a new `AgentStatusReason`, through a conditional update like `AgentPrerequisites.PauseAsync`, by the system.
+- **The Risk Engine (#27):** take `RiskSettings` from `Modules/RiskEngine/Contracts` as the agent's settings, and add `RiskCaps` (FR-RISK-11). Check the caps where `RiskSettings.Problems` is checked: on save in `AgentInput` and at activation in `ActivationChecks`, so an agent saved before the caps can't be activated above them. Pause on a loss limit with a new `AgentStatusReason`, through `AgentPause.TryAsync`, by the system.
 - **Error and the council (#31):** set Error with a new `AgentStatusReason` and an audit record by the system, through a conditional update on the status, as pauses do. Activation already accepts an agent in Error. To call a role's model, pick one of the user's `Valid` keys for the provider whose catalog access lists the model, because an agent stores the model, not the key.
 - **An agent's history (#31, #34, #36):** `IAgents.DeleteAsync` deletes an archived agent's row and roles. Tables that hold its history sit in modules above Agents, so declare a port in Agents that each owner implements, and call it in the delete's transaction, so nothing is left behind.
 - **Order execution and reconciliation (#34, #35):** replace `AgentExposure.HasOpenPositionsOrOrdersAsync`, which is `false` while nothing places orders, with what Execution records. Answer from the database, without calling Binance, because Agents asks while it holds the user's lock. FR-AGT-03's lock and archiving both depend on it.
@@ -1660,7 +1687,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync` and `ICatalogAdministration` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IAgentExposure`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `RiskSettings` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync`, `ICatalogAdministration` and `IModelStatusObserver` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IAgentExposure`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `RiskSettings` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 

@@ -66,10 +66,10 @@ public enum ModelStatus
 {
     Active,
 
-    /// <summary>The provider stopped listing it (FR-CAT-04, #25).</summary>
+    /// <summary>A sync of everyone's keys found that none lists it, or can use it, any more (FR-CAT-04).</summary>
     Deprecated,
 
-    /// <summary>Missing for longer than the grace period (FR-CAT-04, #25).</summary>
+    /// <summary>Missing for longer than Catalog:RetireAfterMissingDays (FR-CAT-04). Listed again, it's Active.</summary>
     Retired,
 
     /// <summary>An administrator hid it (FR-CAT-05, #26).</summary>

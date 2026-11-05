@@ -15,6 +15,7 @@ public static class CatalogModule
         services.AddHostedService<CatalogStartup>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<ICatalog, Catalog>();
+        services.AddSingleton<ModelStatusObservers>();
         services.AddSingleton<CatalogSync>();
         services.AddSingleton<ICatalogSync>(provider => provider.GetRequiredService<CatalogSync>());
         services.AddSingleton<ICatalogAdministration>(provider => provider.GetRequiredService<CatalogSync>());

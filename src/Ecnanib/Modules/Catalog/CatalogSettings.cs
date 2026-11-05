@@ -33,6 +33,8 @@ internal sealed class CatalogSettings
 
     public const string SyncIntervalKey = Section + ":SyncIntervalHours";
 
+    public const string RetireAfterKey = Section + ":RetireAfterMissingDays";
+
     public const string OverridesKey = Section + ":Overrides";
 
     public const int TextMaxLength = 100;
@@ -41,6 +43,8 @@ internal sealed class CatalogSettings
 
     private const int DefaultSyncIntervalHours = 12;
     private const int MaximumSyncIntervalHours = 168;
+    private const int DefaultRetireAfterDays = 7;
+    private const int MaximumRetireAfterDays = 365;
     private const int MaximumTokens = 100_000_000;
     private const decimal MaximumPrice = 1_000_000m;
 
@@ -50,13 +54,18 @@ internal sealed class CatalogSettings
         "OutputPricePerMillion", "ImageInput", "StructuredOutput", "ToolUse", "LiveSearch", "ReasoningEffort",
     ];
 
-    private CatalogSettings(TimeSpan syncInterval, IReadOnlyDictionary<(string Provider, string Model), ModelOverride> overrides)
+    private CatalogSettings(
+        TimeSpan syncInterval, TimeSpan retireAfter, IReadOnlyDictionary<(string Provider, string Model), ModelOverride> overrides)
     {
         SyncInterval = syncInterval;
+        RetireAfter = retireAfter;
         Overrides = overrides;
     }
 
     public TimeSpan SyncInterval { get; }
+
+    /// <summary>How long a model stays Deprecated before it retires (FR-CAT-04), in whole days.</summary>
+    public TimeSpan RetireAfter { get; }
 
     /// <summary>By provider and exact model ID, both compared exactly.</summary>
     public IReadOnlyDictionary<(string Provider, string Model), ModelOverride> Overrides { get; }
@@ -65,6 +74,7 @@ internal sealed class CatalogSettings
     public static CatalogSettings Read(IConfiguration configuration, IAiProviders providers)
     {
         var interval = ReadInteger(configuration, SyncIntervalKey, 1, MaximumSyncIntervalHours) ?? DefaultSyncIntervalHours;
+        var retireAfter = ReadInteger(configuration, RetireAfterKey, 1, MaximumRetireAfterDays) ?? DefaultRetireAfterDays;
         var names = providers.All.Select(provider => provider.Name).ToList();
         var overrides = new Dictionary<(string Provider, string Model), ModelOverride>();
 
@@ -75,7 +85,7 @@ internal sealed class CatalogSettings
             Require(overrides.TryAdd((model.Provider, model.Model), model), $"{OverridesKey}:{entry.Key} repeats {model.Provider} {model.Model}.");
         }
 
-        return new CatalogSettings(TimeSpan.FromHours(interval), overrides);
+        return new CatalogSettings(TimeSpan.FromHours(interval), TimeSpan.FromDays(retireAfter), overrides);
     }
 
     private static ModelOverride ReadOverride(IConfiguration configuration, string prefix, IConfigurationSection entry, IReadOnlyList<string> providers)

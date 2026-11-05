@@ -11,8 +11,10 @@ internal sealed class CatalogStartup(CatalogSettings settings, RoleDefaultSettin
     public Task StartAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation(
-            "The model catalog syncs every {SyncIntervalHours} hours, with metadata for {Overrides} models from {Setting}",
+            "The model catalog syncs every {SyncIntervalHours} hours, retires a model {RetireAfterDays} days after no key lists it, "
+            + "and has metadata for {Overrides} models from {Setting}",
             settings.SyncInterval.TotalHours,
+            settings.RetireAfter.TotalDays,
             settings.Overrides.Count,
             CatalogSettings.OverridesKey);
 

@@ -12,7 +12,8 @@ namespace Ecnanib.Modules.Catalog;
 /// <summary>
 /// Lists the models of users' valid AI keys and merges them into the catalog, with what each key can use
 /// (FR-CAT-02). Every trigger runs the same pipeline: each provider on its own, its keys fetched with no lock
-/// held, then written in one transaction with the run's record (FR-CAT-08). See Model catalog in
+/// held, then written in one transaction with the run's record (FR-CAT-08). A sync of everyone's keys also
+/// deprecates and retires the models no key lists any more (FR-CAT-04). See Model catalog in
 /// docs/architecture.md.
 /// </summary>
 internal sealed class CatalogSync(
@@ -22,6 +23,8 @@ internal sealed class CatalogSync(
     INotifications notifications,
     IJobRunner jobs,
     ICorrelationContext correlation,
+    CatalogSettings settings,
+    ModelStatusObservers observers,
     TimeProvider time,
     ILogger<CatalogSync> logger) : ICatalogSync, ICatalogAdministration
 {
@@ -185,8 +188,18 @@ internal sealed class CatalogSync(
         var written = await WriteAsync(runId, provider, results, owner, syncStartedAt, cancellationToken);
 
         logger.LogInformation(
-            "Synced {Provider} models ({Trigger}): {Keys} keys, {KeysFailed} failed, {Added} added, {Updated} updated",
-            provider, trigger, written.Keys, written.KeysFailed, written.Added, written.Updated);
+            "Synced {Provider} models ({Trigger}): {Keys} keys, {KeysFailed} failed, {Added} added, {Updated} updated, "
+            + "{Deprecated} deprecated, {Retired} retired",
+            provider, trigger, written.Keys, written.KeysFailed, written.Added, written.Updated, written.Deprecated, written.Retired);
+
+        foreach (var change in written.Changes)
+        {
+            logger.LogInformation(
+                "{Provider} model {ModelId} is now {Status}, from {PreviousStatus}", provider, change.ModelId, change.Status, change.PreviousStatus);
+        }
+
+        // Only once committed, so Agents never acts on a change that rolled back.
+        observers.Notify(provider, written.Changes);
 
         // Only when the provider looks down to everyone, so one user's revoked or unpaid key never alerts anybody.
         if (trigger is CatalogSyncTrigger.Schedule or CatalogSyncTrigger.Administrator
@@ -300,8 +313,14 @@ internal sealed class CatalogSync(
                 await TidyAsync(context, provider, current, cancellationToken);
             }
 
-            var (added, updated, listed) = await MergeModelsAsync(context, provider, results, now, cancellationToken);
+            var changes = new List<ModelStatusChange>();
+            var (added, updated, listed) = await MergeModelsAsync(context, provider, results, now, changes, cancellationToken);
             await RecordAvailabilityAsync(context, provider, results, current, cancellationToken);
+
+            // Only everyone's keys can show that nobody can use a model, and only when at least one of them answered.
+            var (deprecated, retired) = owner is null && results.Any(result => result.Models is not null)
+                ? await AgeAsync(context, provider, listed, now, changes, cancellationToken)
+                : (0, 0);
 
             var failed = results.Where(result => result.Failure is not null).ToList();
             var run = await context.Set<CatalogSyncRun>().SingleAsync(row => row.Id == runId, cancellationToken);
@@ -309,12 +328,14 @@ internal sealed class CatalogSync(
             run.KeysFailed = failed.Count;
             run.ModelsAdded = added;
             run.ModelsUpdated = updated;
+            run.ModelsDeprecated = deprecated;
+            run.ModelsRetired = retired;
             run.Errors = SyncError.ToJson([.. failed.Select(result => new SyncError(result.Key.Id, result.Failure!.Value, result.StatusCode))]);
 
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
-            return new ProviderResult(results.Count, failed.Count, added, updated, listed);
+            return new ProviderResult(results.Count, failed.Count, added, updated, deprecated, retired, listed, changes);
         }
         finally
         {
@@ -324,10 +345,16 @@ internal sealed class CatalogSync(
 
     /// <summary>
     /// The union of every list. Each field takes the first value a key reported, in credential order, so the
-    /// result doesn't depend on which key answered first, and a value no key sent this time is kept.
+    /// result doesn't depend on which key answered first, and a value no key sent this time is kept. A model
+    /// that was deprecated or retired is Active again once any key lists it, which counts as an update.
     /// </summary>
     private static async Task<(int Added, int Updated, IReadOnlySet<string> Listed)> MergeModelsAsync(
-        EcnanibDbContext context, string provider, IReadOnlyList<Fetched> results, DateTimeOffset now, CancellationToken cancellationToken)
+        EcnanibDbContext context,
+        string provider,
+        IReadOnlyList<Fetched> results,
+        DateTimeOffset now,
+        List<ModelStatusChange> changes,
+        CancellationToken cancellationToken)
     {
         var merged = new Dictionary<string, AiModel>(StringComparer.Ordinal);
 
@@ -351,8 +378,18 @@ internal sealed class CatalogSync(
         {
             if (stored.TryGetValue(model.Id, out var row))
             {
-                updated += Apply(row, model) ? 1 : 0;
+                var changed = Apply(row, model);
+
+                if (row.Status is ModelStatus.Deprecated or ModelStatus.Retired)
+                {
+                    changes.Add(new ModelStatusChange(provider, row.ModelId, ModelStatus.Active, row.Status));
+                    row.Status = ModelStatus.Active;
+                    changed = true;
+                }
+
+                updated += changed ? 1 : 0;
                 row.LastSeenAt = now;
+                row.MissingSince = null;
             }
             else
             {
@@ -435,6 +472,53 @@ internal sealed class CatalogSync(
             // A key the provider didn't answer for keeps what it had, as Credentials keeps a key's status in an
             // outage, so a provider's bad hour can't make models look unavailable.
         }
+    }
+
+    /// <summary>
+    /// After a sync of everyone's keys, a model that no key listed and that no key can use any more is missing:
+    /// Deprecated the first time, and Retired once it has been missing for Catalog:RetireAfterMissingDays
+    /// (FR-CAT-04). A key that failed keeps its rows, so a model any failing key could use stays as it is, and
+    /// an outage can't deprecate anything. The tidy has already dropped what deleted and invalid keys had.
+    /// Hidden is administrators' (#26), so it's left alone.
+    /// </summary>
+    private async Task<(int Deprecated, int Retired)> AgeAsync(
+        EcnanibDbContext context,
+        string provider,
+        IReadOnlySet<string> listed,
+        DateTimeOffset now,
+        List<ModelStatusChange> changes,
+        CancellationToken cancellationToken)
+    {
+        // So the query below sees the availability this run recorded.
+        await context.SaveChangesAsync(cancellationToken);
+
+        var missing = await context.Set<Model>()
+            .Where(model => model.Provider == provider && (model.Status == ModelStatus.Active || model.Status == ModelStatus.Deprecated))
+            .Where(model => !context.Set<ModelAvailability>()
+                .Any(row => row.Provider == model.Provider && row.ModelId == model.ModelId && row.Available))
+            .ToListAsync(cancellationToken);
+        var deprecated = 0;
+        var retired = 0;
+
+        // A model listed by a key deleted while it was fetched has no rows, but it was still listed.
+        foreach (var model in missing.Where(model => !listed.Contains(model.ModelId)).OrderBy(model => model.ModelId, StringComparer.Ordinal))
+        {
+            if (model.Status == ModelStatus.Active)
+            {
+                model.Status = ModelStatus.Deprecated;
+                model.MissingSince = now;
+                changes.Add(new ModelStatusChange(provider, model.ModelId, ModelStatus.Deprecated, ModelStatus.Active));
+                deprecated++;
+            }
+            else if (now - (model.MissingSince ??= now) >= settings.RetireAfter)
+            {
+                model.Status = ModelStatus.Retired;
+                changes.Add(new ModelStatusChange(provider, model.ModelId, ModelStatus.Retired, ModelStatus.Deprecated));
+                retired++;
+            }
+        }
+
+        return (deprecated, retired);
     }
 
     /// <summary>
@@ -576,9 +660,17 @@ internal sealed class CatalogSync(
             || (Failure is AiFailure.Other && StatusCode is not (>= 400 and < 500));
     }
 
-    private sealed record ProviderResult(int Keys, int KeysFailed, int Added, int Updated, IReadOnlySet<string> Models);
+    private sealed record ProviderResult(
+        int Keys,
+        int KeysFailed,
+        int Added,
+        int Updated,
+        int Deprecated,
+        int Retired,
+        IReadOnlySet<string> Models,
+        IReadOnlyList<ModelStatusChange> Changes);
 
-    private sealed record Summary(int Providers, int Keys, int KeysFailed, int Added, int Updated, int Models)
+    private sealed record Summary(int Providers, int Keys, int KeysFailed, int Added, int Updated, int Deprecated, int Retired, int Models)
     {
         public static Summary Of(IReadOnlyCollection<ProviderResult> results) => new(
             results.Count,
@@ -586,10 +678,12 @@ internal sealed class CatalogSync(
             results.Sum(result => result.KeysFailed),
             results.Sum(result => result.Added),
             results.Sum(result => result.Updated),
+            results.Sum(result => result.Deprecated),
+            results.Sum(result => result.Retired),
             results.Sum(result => result.Models.Count));
 
         /// <summary>Counts only, for <see cref="JobContext.Details"/>.</summary>
         public string Describe() =>
-            $"{Providers} providers, {Keys} keys, {KeysFailed} failed, {Added} added, {Updated} updated";
+            $"{Providers} providers, {Keys} keys, {KeysFailed} failed, {Added} added, {Updated} updated, {Deprecated} deprecated, {Retired} retired";
     }
 }

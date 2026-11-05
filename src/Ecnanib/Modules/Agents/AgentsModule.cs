@@ -1,4 +1,5 @@
 using Ecnanib.Modules.Agents.Contracts;
+using Ecnanib.Modules.Catalog.Contracts;
 using Ecnanib.Modules.Credentials.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -18,6 +19,9 @@ public static class AgentsModule
         services.AddSingleton<IAgents, Agents>();
         services.AddSingleton<ICredentialObserver, AgentCredentialObserver>();
         services.AddSingleton<IRecurringJob, AgentPrerequisitesJob>();
+        services.AddSingleton<ModelLifecycle>();
+        services.AddSingleton<IModelStatusObserver, AgentModelObserver>();
+        services.AddSingleton<IRecurringJob, ModelLifecycleJob>();
 
         return services;
     }

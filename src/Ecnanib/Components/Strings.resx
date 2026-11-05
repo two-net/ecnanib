@@ -1783,6 +1783,9 @@
   <data name="AgentReasonAiKeyUnavailable" xml:space="preserve">
     <value>No working AI key</value>
   </data>
+  <data name="AgentReasonModelRetired" xml:space="preserve">
+    <value>Model retired</value>
+  </data>
   <data name="AgentExplanationCredentialDeleted" xml:space="preserve">
     <value>Paused because its Binance key was deleted. Choose another key in its settings, then resume it.</value>
   </data>
@@ -1794,6 +1797,9 @@
   </data>
   <data name="AgentExplanationAiKeyUnavailable" xml:space="preserve">
     <value>Paused because you have no working key left for one of its AI providers. Add or check a key on the API keys page, then resume it.</value>
+  </data>
+  <data name="AgentExplanationModelRetired" xml:space="preserve">
+    <value>Paused because its provider retired a model one of its roles needs, and the role had no fallback that could take over. Choose another model in its settings, then resume it.</value>
   </data>
   <data name="AgentMarketSpot" xml:space="preserve">
     <value>Spot</value>
