@@ -1,6 +1,5 @@
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
-using Ecnanib.Modules.Catalog.Contracts;
 using Ecnanib.Modules.Credentials.Contracts;
 using Ecnanib.Modules.MarketData.Contracts;
 
@@ -12,7 +11,7 @@ namespace Ecnanib.Modules.Agents;
 /// opens a transaction: a symbol lookup can call Binance, and a transaction is never held across an
 /// exchange call. Switching to Live, with its own checks, is #39.
 /// </summary>
-internal sealed class ActivationChecks(ICredentials credentials, ICatalog catalog, IExchangeSymbols symbols)
+internal sealed class ActivationChecks(ICredentials credentials, RoleModels roleModels, IExchangeSymbols symbols)
 {
     /// <summary>Everything that stops the agent being activated, and what's worth a warning.</summary>
     public async Task<(List<ActivationProblem> Problems, List<ActivationWarning> Warnings)> CheckAsync(
@@ -100,9 +99,10 @@ internal sealed class ActivationChecks(ICredentials credentials, ICatalog catalo
     }
 
     /// <summary>
-    /// Each required role needs a model that's Active in the catalog and that one of the user's valid AI keys
-    /// can use. Validity comes from Credentials, not the catalog's rows, which follow a key's change a moment
-    /// later. An optional role's model and every fallback are checked the same way, but only warn.
+    /// Each required role needs a model that's Active in the catalog, that one of the user's valid AI keys can
+    /// use, and that doesn't lack structured output (FR-ROLE-02). An optional role's model and every fallback
+    /// are checked the same way, but only warn. So does a Strategist and Risk Critic on one provider
+    /// (FR-ROLE-04), and a Sentiment Analyst that can't search.
     /// </summary>
     private async Task CheckRolesAsync(
         Guid userId,
@@ -118,17 +118,7 @@ internal sealed class ActivationChecks(ICredentials credentials, ICatalog catalo
             return;
         }
 
-        var models = (await catalog.ListAsync(cancellationToken)).ToDictionary(model => new ModelRef(model.Provider, model.ModelId));
-        var validKeys = keys.Where(key => key is { Kind: CredentialKind.Ai, Status: CredentialStatus.Valid }).Select(key => key.Id).ToHashSet();
-        var reachable = (await catalog.ListAccessAsync(userId, cancellationToken))
-            .Where(access => access.Available && validKeys.Contains(access.CredentialId))
-            .Select(access => new ModelRef(access.Provider, access.ModelId))
-            .ToHashSet();
-
-        ActivationProblemKind? ModelProblem(ModelRef model) =>
-            !models.TryGetValue(model, out var listed) || !reachable.Contains(model) ? ActivationProblemKind.ModelNotAccessible
-            : listed.Status != ModelStatus.Active ? ActivationProblemKind.ModelNotActive
-            : null;
+        var user = await roleModels.ReadAsync(userId, keys, cancellationToken);
 
         foreach (var role in Enum.GetValues<AiRole>())
         {
@@ -144,24 +134,49 @@ internal sealed class ActivationChecks(ICredentials credentials, ICatalog catalo
                 continue;
             }
 
-            if (ModelProblem(assignment.Model) is { } problem)
+            if (user.ProblemOf(assignment.Model) is { } problem)
             {
                 if (AgentRoles.IsRequired(role))
                 {
-                    problems.Add(new ActivationProblem(problem, role));
+                    problems.Add(new ActivationProblem(RequiredProblemOf(problem), role));
                 }
                 else
                 {
-                    warnings.Add(new ActivationWarning(ActivationWarningKind.OptionalModelUnavailable, role));
+                    warnings.Add(new ActivationWarning(OptionalWarningOf(problem), role));
                 }
             }
-
-            if (assignment.Fallback is { } fallback && ModelProblem(fallback) is not null)
+            else if (role == AiRole.SentimentAnalyst && user.Models[assignment.Model].Capabilities.LiveSearch == false)
             {
-                warnings.Add(new ActivationWarning(ActivationWarningKind.FallbackUnavailable, role));
+                warnings.Add(new ActivationWarning(ActivationWarningKind.SentimentWithoutLiveSearch, role));
+            }
+
+            if (assignment.Fallback is { } fallback && user.ProblemOf(fallback) is { } fallbackProblem)
+            {
+                warnings.Add(new ActivationWarning(FallbackWarningOf(fallbackProblem), role));
             }
         }
+
+        if (settings.RoleOf(AiRole.Strategist) is { } strategist
+            && settings.RoleOf(AiRole.RiskCritic) is { } critic
+            && strategist.Model.Provider == critic.Model.Provider)
+        {
+            warnings.Add(new ActivationWarning(ActivationWarningKind.RiskCriticSharesProvider, AiRole.RiskCritic));
+        }
     }
+
+    private static ActivationProblemKind RequiredProblemOf(ModelProblem problem) => problem switch
+    {
+        ModelProblem.NotAccessible => ActivationProblemKind.ModelNotAccessible,
+        ModelProblem.NotActive => ActivationProblemKind.ModelNotActive,
+        ModelProblem.LacksStructuredOutput => ActivationProblemKind.ModelLacksStructuredOutput,
+        _ => throw new ArgumentOutOfRangeException(nameof(problem), problem, null),
+    };
+
+    private static ActivationWarningKind OptionalWarningOf(ModelProblem problem) =>
+        problem == ModelProblem.LacksStructuredOutput ? ActivationWarningKind.OptionalModelLacksStructuredOutput : ActivationWarningKind.OptionalModelUnavailable;
+
+    private static ActivationWarningKind FallbackWarningOf(ModelProblem problem) =>
+        problem == ModelProblem.LacksStructuredOutput ? ActivationWarningKind.FallbackLacksStructuredOutput : ActivationWarningKind.FallbackUnavailable;
 
     private static class FuturesContract
     {

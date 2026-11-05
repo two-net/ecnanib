@@ -1,11 +1,12 @@
 namespace Ecnanib.Modules.Catalog;
 
 /// <summary>
-/// Says at startup how often the catalog syncs and how many models the configuration describes. The host
-/// builds every hosted service before it starts any, and this one takes <see cref="CatalogSettings"/>, so an
-/// invalid setting stops startup before any migration runs (CFG-03).
+/// Says at startup how often the catalog syncs, how many models the configuration describes, and the roles'
+/// default providers. The host builds every hosted service before it starts any, and this one takes
+/// <see cref="CatalogSettings"/> and <see cref="RoleDefaultSettings"/>, so an invalid setting stops startup
+/// before any migration runs (CFG-03).
 /// </summary>
-internal sealed class CatalogStartup(CatalogSettings settings, ILogger<CatalogStartup> logger) : IHostedService
+internal sealed class CatalogStartup(CatalogSettings settings, RoleDefaultSettings roleDefaults, ILogger<CatalogStartup> logger) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -14,6 +15,13 @@ internal sealed class CatalogStartup(CatalogSettings settings, ILogger<CatalogSt
             settings.SyncInterval.TotalHours,
             settings.Overrides.Count,
             CatalogSettings.OverridesKey);
+
+        // Only a role with no row yet takes these (NFR-DEP-02), so the table may differ, and that's not a fault.
+        logger.LogInformation(
+            "{Setting} gives {Roles} roles a default, for any role that has none yet: {Defaults}",
+            RoleDefaultSettings.Section,
+            roleDefaults.Defaults.Count,
+            string.Join(", ", roleDefaults.Defaults.Select(value => $"{value.Role} {value.Provider} {value.ModelId}".TrimEnd())));
 
         return Task.CompletedTask;
     }

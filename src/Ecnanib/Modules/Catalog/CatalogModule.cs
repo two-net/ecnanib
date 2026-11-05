@@ -11,6 +11,7 @@ public static class CatalogModule
     public static IServiceCollection AddCatalog(this IServiceCollection services)
     {
         services.AddSingleton(provider => CatalogSettings.Read(provider.GetRequiredService<IConfiguration>(), provider.GetRequiredService<IAiProviders>()));
+        services.AddSingleton(provider => RoleDefaultSettings.Read(provider.GetRequiredService<IConfiguration>(), provider.GetRequiredService<IAiProviders>()));
         services.AddHostedService<CatalogStartup>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<ICatalog, Catalog>();
@@ -20,6 +21,7 @@ public static class CatalogModule
         services.AddSingleton<IRecurringJob, CatalogSyncJob>();
         services.AddSingleton<ICredentialObserver, CatalogCredentialObserver>();
         services.AddSingleton<IReferenceDataSeeder, ProviderSeeder>();
+        services.AddSingleton<IReferenceDataSeeder, RoleDefaultSeeder>();
         return services;
     }
 }

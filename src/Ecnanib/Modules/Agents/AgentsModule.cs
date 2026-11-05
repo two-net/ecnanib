@@ -12,6 +12,7 @@ public static class AgentsModule
         services.AddSingleton(provider => AgentsSettings.Read(provider.GetRequiredService<IConfiguration>()));
         services.AddHostedService<AgentsStartup>();
         services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<RoleModels>();
         services.AddSingleton<ActivationChecks>();
         services.AddSingleton<AgentPrerequisites>();
         services.AddSingleton<IAgents, Agents>();

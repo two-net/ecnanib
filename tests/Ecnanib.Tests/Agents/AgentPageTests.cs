@@ -1,4 +1,8 @@
+using System.Net.Http;
+using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
+using Ecnanib.Tests.Ai;
+using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Identity;
 using Ecnanib.Tests.Persistence;
 using HttpStatusCode = System.Net.HttpStatusCode;
@@ -109,6 +113,32 @@ public sealed class AgentPageTests(PostgresFixture postgres)
 
         Assert.Equal(HttpStatusCode.NotFound, notFound.StatusCode);
         Assert.DoesNotContain("Renamed", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// FR-ROLE-03: a new agent starts with a default model for each role, from the models the user's keys can
+    /// use, and only the ones that can give structured answers are offered (FR-ROLE-02). With one provider for
+    /// every role, the page says the Risk Critic shares the Strategist's (FR-ROLE-04).
+    /// </summary>
+    [Fact]
+    public async Task A_new_agent_starts_with_the_default_models_and_only_suitable_ones_are_offered()
+    {
+        await using var app = new AgentApp(postgres, new()
+        {
+            ["Catalog:Overrides:0:Provider"] = AgentApp.Provider,
+            ["Catalog:Overrides:0:Model"] = "model-b",
+            ["Catalog:Overrides:0:StructuredOutput"] = "false",
+        });
+        app.Ai.On(HttpMethod.Get, CredentialApp.ModelsPath, _ => FakeAiProvider.Models(null, AgentApp.Model, "model-b"));
+        using var visitor = Visitor.To(app.App);
+        await SignedUpAsync(app, visitor);
+
+        var page = WebUtility.HtmlDecode(await visitor.PageAsync(NewPage));
+        var chosen = $"<option value=\"{AgentApp.Provider}|{AgentApp.Model}\" selected";
+
+        Assert.Equal(Enum.GetValues<AiRole>().Length, page.Split(chosen).Length - 1);
+        Assert.DoesNotContain($"{AgentApp.Provider}|model-b", page, StringComparison.Ordinal);
+        Assert.Contains("The Strategist and the Risk Critic use the same provider.", page, StringComparison.Ordinal);
     }
 
     /// <summary>A user who signed up through the pages, with a valid key of each kind.</summary>

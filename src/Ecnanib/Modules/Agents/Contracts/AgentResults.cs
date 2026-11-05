@@ -166,6 +166,9 @@ public enum ActivationProblemKind
     /// <summary>None of the user's valid AI keys can use a required role's model.</summary>
     ModelNotAccessible,
 
+    /// <summary>A required role's model can't be held to a JSON schema, which every role needs (FR-ROLE-02).</summary>
+    ModelLacksStructuredOutput,
+
     NoCapitalAllocation,
 
     /// <summary>A risk setting is outside its range.</summary>
@@ -189,6 +192,21 @@ public enum ActivationWarningKind
 
     /// <summary>A role's fallback model isn't Active, or none of the user's valid keys can use it.</summary>
     FallbackUnavailable,
+
+    /// <summary>An optional role's model can't be held to a JSON schema (FR-ROLE-02), so the role will be skipped.</summary>
+    OptionalModelLacksStructuredOutput,
+
+    /// <summary>A role's fallback model can't be held to a JSON schema (FR-ROLE-02).</summary>
+    FallbackLacksStructuredOutput,
+
+    /// <summary>
+    /// The Strategist and the Risk Critic use the same provider, so the critique is less independent
+    /// (FR-ROLE-04). Allowed, so a user with one AI key can still run an agent (FR-ROLE-05).
+    /// </summary>
+    RiskCriticSharesProvider,
+
+    /// <summary>The Sentiment Analyst's model can't search the web or X, which the role prefers (FR-ROLE-02).</summary>
+    SentimentWithoutLiveSearch,
 
     /// <summary>The exchange key's Active agents have more capital allocated than the account has available (FR-AGT-13).</summary>
     CapitalExceedsBalance,

@@ -464,6 +464,31 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("providers", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Catalog.RoleDefaultRow", b =>
+                {
+                    b.Property<string>("Role")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("role");
+
+                    b.Property<string>("ModelId")
+                        .HasColumnType("text")
+                        .HasColumnName("model_id");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("provider");
+
+                    b.HasKey("Role")
+                        .HasName("pk_role_defaults");
+
+                    b.HasIndex("Provider")
+                        .HasDatabaseName("ix_role_defaults_provider");
+
+                    b.ToTable("role_defaults", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Credentials.Credential", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1347,6 +1372,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_model_availability_models_provider_model_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Catalog.RoleDefaultRow", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Catalog.Provider", null)
+                        .WithMany()
+                        .HasForeignKey("Provider")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_role_defaults_providers_provider");
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.Identity.AccountToken", b =>

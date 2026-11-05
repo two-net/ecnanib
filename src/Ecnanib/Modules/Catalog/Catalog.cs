@@ -37,6 +37,16 @@ internal sealed class Catalog(IDbContextFactory<EcnanibDbContext> contextFactory
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<RoleDefault>> ListRoleDefaultsAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var rows = await context.Set<RoleDefaultRow>().AsNoTracking().ToListAsync(cancellationToken);
+
+        // Stored by name, so ordered here rather than by the database's text order.
+        return [.. rows.OrderBy(row => row.Role).Select(row => new RoleDefault(row.Role, row.Provider, row.ModelId))];
+    }
+
     /// <summary>The configuration beats the provider, field by field. Administrators' overrides (#26) will beat both.</summary>
     private CatalogModel Effective(Model model)
     {

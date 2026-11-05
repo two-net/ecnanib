@@ -112,7 +112,7 @@ To add a migration, run `dotnet tool restore` once, then follow [Adding a migrat
 | Notifications | In the app always, listed newest first with an unread count in the menu, and by email for the events each user chooses, batched each minute | In place. Each later feature raises its own |
 | Secrets at rest | AES-256-GCM under master keys from the configuration file, re-encrypted in the background when the active key changes. ASP.NET Data Protection keys, two-factor keys and users' API keys live in PostgreSQL under the same keys | In place |
 | API keys | Users bring their own keys for Anthropic, Google, OpenAI, xAI, Binance Live and Binance Demo, and the platform has none of its own. Each key is checked with its provider when it's added, on demand and on a schedule, stored encrypted, and never shown again, only its last four characters. Binance keys that can withdraw are refused, and the ones without an IP restriction are flagged. A key that stops working pauses the agents that use it | In place |
-| Agents | Users create, edit, clone, archive and delete agents, each with its market, pair, timeframe, models per role, capital, risk settings, execution mode, AI budget and custom instructions. Activation checks the keys, models, capital and risk settings, and allows one agent per key, market and pair. Every change of status is audited | In place for Demo, as settings and a lifecycle. Agents don't trade yet: decision cycles, the wizard and switching to Live come later |
+| Agents | Users create, edit, clone, archive and delete agents, each with its market, pair, timeframe, models per role, capital, risk settings, execution mode, AI budget and custom instructions. A new agent starts with a model and a fallback per role, from default providers in the configuration file and the models the user's keys can use. Activation checks the keys, models and their capabilities, capital and risk settings, and allows one agent per key, market and pair. Every change of status is audited | In place for Demo, as settings and a lifecycle. Agents don't trade yet: decision cycles, the wizard and switching to Live come later |
 | Model catalog | Synced from every user's valid AI keys and merged into one list, with which key can use which model. It syncs on a schedule, when a key is added or replaced, and when a user asks. Every run is recorded. Prices and capabilities that providers don't report come from the configuration file | In place. Deprecation and retirement, the catalog page, and administrators' overrides and sync button come later |
 | Audit trail | Security and trading actions in their own PostgreSQL table, which the database keeps append-only, with who, what, when, a before/after summary, the client's address and device, and a correlation ID. Users see their own on their account | In place for accounts and API keys. Each later feature records its own actions |
 | Tests | xUnit v3 on Microsoft.Testing.Platform, with ArchUnitNET for module boundaries and Testcontainers for PostgreSQL | In place |
@@ -253,6 +253,31 @@ Users create agents on the **Agents** page. Each trades one pair on Binance Spot
 | `Agents:MaxAgentsPerUser` | The most agents a user may have that aren't archived, 1 to 1000. Defaults to `10` |
 
 An invalid value stops startup with a message that names it. See [Agents](docs/architecture.md#agents).
+
+#### Roles
+
+Each agent has a model per role on its AI council, and optionally a fallback model that takes over when the model fails. A role is offered only the models the user's valid keys can use that can give structured answers, which every role needs. A model whose structured output nobody has stated counts as able, because only Anthropic reports it, so set `"StructuredOutput": false` in `Catalog:Overrides` to rule a model out. The Sentiment Analyst's models with live search come first, and activating one without it warns. Using the same provider for the Strategist and the Risk Critic is allowed, so one AI key is enough, but it warns, because the critique is less independent.
+
+The `RoleDefaults` section gives each role a default provider by strength (FR-ROLE-03), and optionally a model:
+
+```json
+"RoleDefaults": {
+  "TechnicalAnalyst": "Google",
+  "SentimentAnalyst": "xAI",
+  "Strategist": "OpenAI",
+  "RiskCritic": { "Provider": "Anthropic", "Model": "claude-opus-5-5" },
+  "Reviewer": "Google"
+}
+```
+
+| Setting | Meaning |
+|---|---|
+| `RoleDefaults:<Role>` | `TechnicalAnalyst`, `SentimentAnalyst`, `Strategist`, `RiskCritic` or `Reviewer`. A provider's name, as in `AiProviders`, or an object with `Provider` and `Model`. A role that's missing or blank has no default |
+| `RoleDefaults:<Role>:Model` | Optional. One model's exact ID, as the provider lists it |
+
+`appsettings.json` ships SRS 7.3's providers and no models. A new agent's roles start from the models the user's keys can use. Each role takes its default model, else its default provider's newest, else another provider's newest, so a user with one key gets every role from it. The Risk Critic takes a provider other than the Strategist's when the user has one, and each fallback comes from a provider other than its role's where possible.
+
+The first start copies the section into the `role_defaults` table (NFR-DEP-02), and from then on a role keeps its row: a change to the section reaches only a role that has none, so administrators' edits (#26) aren't overwritten. To change a default before that page exists, edit its row.
 
 ## Security
 

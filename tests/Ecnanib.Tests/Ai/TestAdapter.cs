@@ -12,7 +12,8 @@ namespace Ecnanib.Tests.Ai;
 /// interface (NFR-MNT-02).
 /// </summary>
 /// <remarks>
-/// Model list: GET /v1/models, ?page= for later pages, answering {"models":[{"id","name"}],"next"}.
+/// Model list: GET /v1/models, ?page= for later pages, answering {"models":[{"id","name","created"}],"next"},
+/// where created is optional, in Unix seconds.
 /// Completion: POST /v1/complete, answering {"text","input_tokens","output_tokens","stop"}, where stop is
 /// "end", "max_tokens" or "refusal". Error: {"error":{"type","message"}}, where the type "busy" is an
 /// overload, whatever the status.
@@ -36,7 +37,10 @@ public sealed class TestAdapter(string name = "Test") : IAiProviderAdapter
     {
         var root = JsonNode.Parse(body)!.AsObject();
         var models = root["models"]!.AsArray()
-            .Select(model => new AiModel(model!["id"]!.GetValue<string>(), model["name"]?.GetValue<string>()))
+            .Select(model => new AiModel(
+                model!["id"]!.GetValue<string>(),
+                model["name"]?.GetValue<string>(),
+                model["created"] is { } created ? DateTimeOffset.FromUnixTimeSeconds(created.GetValue<long>()) : null))
             .ToList();
 
         return new AiModelPage(models, root["next"]?.GetValue<string>());

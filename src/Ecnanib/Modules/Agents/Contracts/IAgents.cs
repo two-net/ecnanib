@@ -17,6 +17,12 @@ public interface IAgents
     Task<AgentRecord?> FindAsync(Guid userId, Guid id, CancellationToken cancellationToken);
 
     /// <summary>
+    /// The models the user's valid AI keys can give each role, and the assignment a new agent starts with,
+    /// from the default role assignments (FR-ROLE-02 to FR-ROLE-05). Only the user's own keys (NFR-SEC-04).
+    /// </summary>
+    Task<RoleChoices> ListRoleChoicesAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Creates a Draft. The pair is checked against Binance's symbols (FR-AGT-02), and the exchange key, when
     /// one is chosen, must be the user's Binance key for the agent's environment. Only Demo is accepted until
     /// switching to Live exists (#39).

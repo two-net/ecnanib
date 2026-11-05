@@ -286,6 +286,10 @@
   <data name="ProviderAnthropic" xml:space="preserve">
     <value>Anthropic Claude</value>
   </data>
+  <data name="RolesNoDefault" xml:space="preserve">
+    <value>Any your keys can use</value>
+    <comment>In the default provider column, for a role with no default provider.</comment>
+  </data>
 
   <data name="PrinciplesHeading" xml:space="preserve">
     <value>Ground rules</value>
@@ -1940,7 +1944,7 @@
     <value>AI council</value>
   </data>
   <data name="AgentSettingsRolesHint" xml:space="preserve">
-    <value>Models your valid AI keys can use. If one is missing, sync your keys' models on the API keys page. A fallback takes over when a model fails.</value>
+    <value>Models your valid AI keys can use that can give structured answers. A new agent starts with the recommended model for each role, and a Risk Critic from a different provider than the Strategist where you have one. If a model is missing, sync your keys' models on the API keys page. A fallback takes over when a model fails.</value>
   </data>
   <data name="AgentSettingsRoleRequired" xml:space="preserve">
     <value>Required</value>
@@ -1960,6 +1964,13 @@
   <data name="AgentSettingsModelOption" xml:space="preserve">
     <value>{0} ({1})</value>
     <comment>{0} is the model's name, and {1} its provider.</comment>
+  </data>
+  <data name="AgentSettingsModelOptionLiveSearch" xml:space="preserve">
+    <value>{0} ({1}), with live search</value>
+    <comment>{0} is the model's name, and {1} its provider. Live search is the provider's own web or X search.</comment>
+  </data>
+  <data name="AgentSettingsRiskCriticSharesProvider" xml:space="preserve">
+    <value>The Strategist and the Risk Critic use the same provider. A model from another provider gives a more independent check, if you have a key for one.</value>
   </data>
   <data name="AgentSettingsModelUnavailable" xml:space="preserve">
     <value>{0} (your keys can't use it now)</value>
@@ -2156,6 +2167,10 @@
     <value>None of your valid AI keys can use the {0}'s model.</value>
     <comment>{0} is a role on the AI council, such as Strategist.</comment>
   </data>
+  <data name="AgentProblemModelLacksStructuredOutput" xml:space="preserve">
+    <value>The {0}'s model can't give structured answers. Choose another.</value>
+    <comment>{0} is a role on the AI council, such as Strategist. Structured answers follow a fixed format the council can check.</comment>
+  </data>
   <data name="AgentProblemNoCapitalAllocation" xml:space="preserve">
     <value>Set the capital it may commit.</value>
   </data>
@@ -2173,6 +2188,20 @@
   <data name="AgentWarningFallbackUnavailable" xml:space="preserve">
     <value>The {0}'s fallback model isn't available to your keys.</value>
     <comment>{0} is a role on the AI council, such as Strategist.</comment>
+  </data>
+  <data name="AgentWarningOptionalModelLacksStructuredOutput" xml:space="preserve">
+    <value>The {0} will be skipped, because its model can't give structured answers.</value>
+    <comment>{0} is a role on the AI council, such as Sentiment Analyst.</comment>
+  </data>
+  <data name="AgentWarningFallbackLacksStructuredOutput" xml:space="preserve">
+    <value>The {0}'s fallback model can't give structured answers, so it won't be used.</value>
+    <comment>{0} is a role on the AI council, such as Strategist.</comment>
+  </data>
+  <data name="AgentWarningRiskCriticSharesProvider" xml:space="preserve">
+    <value>The Strategist and the Risk Critic use the same provider, so the critique is less independent.</value>
+  </data>
+  <data name="AgentWarningSentimentWithoutLiveSearch" xml:space="preserve">
+    <value>The Sentiment Analyst's model can't search the web, so it can only judge sentiment from what it already knows.</value>
   </data>
   <data name="AgentWarningCapitalExceedsBalance" xml:space="preserve">
     <value>This key's active agents have {0} {2} allocated, more than the {1} {2} available on the account.</value>

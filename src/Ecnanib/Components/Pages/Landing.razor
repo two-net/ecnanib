@@ -1,6 +1,7 @@
 ﻿@page "/"
 @attribute [AllowAnonymous]
 @using Ecnanib.Components.Notices
+@inject ICatalog Catalog
 
 <PageTitle>@Strings.LandingPageTitle</PageTitle>
 
@@ -111,27 +112,27 @@
             <tr>
                 <th scope="row">@Strings.RoleTechnicalAnalyst</th>
                 <td>@Strings.RoleTechnicalAnalystJob</td>
-                <td>@Strings.ProviderGoogle</td>
+                <td>@DefaultOf(AiRole.TechnicalAnalyst)</td>
             </tr>
             <tr>
                 <th scope="row">@Strings.RoleSentimentAnalyst</th>
                 <td>@Strings.RoleSentimentAnalystJob</td>
-                <td>@Strings.ProviderXai</td>
+                <td>@DefaultOf(AiRole.SentimentAnalyst)</td>
             </tr>
             <tr>
                 <th scope="row">@Strings.RoleStrategist</th>
                 <td>@Strings.RoleStrategistJob</td>
-                <td>@Strings.ProviderOpenAi</td>
+                <td>@DefaultOf(AiRole.Strategist)</td>
             </tr>
             <tr>
                 <th scope="row">@Strings.RoleRiskCritic</th>
                 <td>@Strings.RoleRiskCriticJob</td>
-                <td>@Strings.ProviderAnthropic</td>
+                <td>@DefaultOf(AiRole.RiskCritic)</td>
             </tr>
             <tr>
                 <th scope="row">@Strings.RoleReviewer</th>
                 <td>@Strings.RoleReviewerJob</td>
-                <td>@Strings.ProviderGoogle</td>
+                <td>@DefaultOf(AiRole.Reviewer)</td>
             </tr>
         </tbody>
     </table>
@@ -158,3 +159,24 @@
         </li>
     </ul>
 </section>
+
+@code {
+    private IReadOnlyList<RoleDefault> _defaults = [];
+
+    protected override async Task OnInitializedAsync() =>
+        _defaults = await Catalog.ListRoleDefaultsAsync(CancellationToken.None);
+
+    /// <summary>
+    /// The role's default provider (FR-ROLE-03), as administrators set it, so the page never claims a default
+    /// that isn't one. The four providers the product launched with have their product's name.
+    /// </summary>
+    private string DefaultOf(AiRole role) => _defaults.FirstOrDefault(value => value.Role == role)?.Provider switch
+    {
+        null => Strings.RolesNoDefault,
+        "Google" => Strings.ProviderGoogle,
+        "xAI" => Strings.ProviderXai,
+        "OpenAI" => Strings.ProviderOpenAi,
+        "Anthropic" => Strings.ProviderAnthropic,
+        var provider => provider,
+    };
+}

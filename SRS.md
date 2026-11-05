@@ -713,7 +713,7 @@ There are no tenants. Every user is an independent account, and no data is share
 | `Binance` | Live and Demo base URLs per market, market-data URL, receive window, request-weight headroom, exchange-info refresh, reconciliation interval |
 | `AiProviders` | Per provider: enabled, base URL, timeout, retries, retry backoff, concurrency per credential |
 | `Catalog` | Sync interval, retirement grace period, pricing and capability overrides |
-| `RoleDefaults` | Default provider per role |
+| `RoleDefaults` | Default provider per role, optionally with a model |
 | `Agents` | Maximum agents per user, default environment, candle-close delay, maximum concurrent cycles, catch-up grace windows, cycle deadlines, approval windows |
 | `RiskCaps` | Global hard caps |
 | `Experience` | Default reflections in prompts, shadow tracking, global leaderboard settings |
@@ -813,7 +813,7 @@ There are no tenants. Every user is an independent account, and no data is share
     "TechnicalAnalyst": "Google",
     "SentimentAnalyst": "xAI",
     "Strategist": "OpenAI",
-    "RiskCritic": "Anthropic",
+    "RiskCritic": { "Provider": "Anthropic", "Model": "<model ID>" },
     "Reviewer": "Google"
   },
   "Agents": {

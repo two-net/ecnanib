@@ -182,6 +182,7 @@ public static class AgentText
         ActivationProblemKind.RoleUnassigned => WithRole(Strings.AgentProblemRoleUnassigned, problem.Role),
         ActivationProblemKind.ModelNotActive => WithRole(Strings.AgentProblemModelNotActive, problem.Role),
         ActivationProblemKind.ModelNotAccessible => WithRole(Strings.AgentProblemModelNotAccessible, problem.Role),
+        ActivationProblemKind.ModelLacksStructuredOutput => WithRole(Strings.AgentProblemModelLacksStructuredOutput, problem.Role),
         ActivationProblemKind.NoCapitalAllocation => Strings.AgentProblemNoCapitalAllocation,
         ActivationProblemKind.RiskSettingsInvalid => Strings.AgentProblemRiskSettingsInvalid,
         ActivationProblemKind.SlotTaken => string.Format(CultureInfo.CurrentCulture, Strings.AgentProblemSlotTaken, problem.OtherAgent),
@@ -193,6 +194,10 @@ public static class AgentText
     {
         ActivationWarningKind.OptionalModelUnavailable => WithRole(Strings.AgentWarningOptionalModelUnavailable, warning.Role),
         ActivationWarningKind.FallbackUnavailable => WithRole(Strings.AgentWarningFallbackUnavailable, warning.Role),
+        ActivationWarningKind.OptionalModelLacksStructuredOutput => WithRole(Strings.AgentWarningOptionalModelLacksStructuredOutput, warning.Role),
+        ActivationWarningKind.FallbackLacksStructuredOutput => WithRole(Strings.AgentWarningFallbackLacksStructuredOutput, warning.Role),
+        ActivationWarningKind.RiskCriticSharesProvider => Strings.AgentWarningRiskCriticSharesProvider,
+        ActivationWarningKind.SentimentWithoutLiveSearch => Strings.AgentWarningSentimentWithoutLiveSearch,
         ActivationWarningKind.CapitalExceedsBalance => string.Format(
             CultureInfo.CurrentCulture, Strings.AgentWarningCapitalExceedsBalance, warning.Allocated, warning.Available, warning.Asset),
         _ => throw new ArgumentOutOfRangeException(nameof(warning), warning.Kind, "Give the warning its text in Strings.resx."),
@@ -258,6 +263,14 @@ public static class AgentText
     /// <summary>A model's option in the settings form: its name, then its provider.</summary>
     public static string ModelOption(string displayName, string provider) =>
         string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsModelOption, displayName, provider);
+
+    /// <summary>A model's option for a role that prefers live search, which says whether it has it.</summary>
+    public static string ModelOption(ModelChoice choice, AiRole role) =>
+        string.Format(
+            CultureInfo.CurrentCulture,
+            role == AiRole.SentimentAnalyst && choice.LiveSearch == true ? Strings.AgentSettingsModelOptionLiveSearch : Strings.AgentSettingsModelOption,
+            choice.DisplayName,
+            choice.Model.Provider);
 
     private static string? OnOff(string value) => value switch
     {

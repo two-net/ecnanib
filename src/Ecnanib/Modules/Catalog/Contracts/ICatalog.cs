@@ -1,3 +1,5 @@
+using Ecnanib.Kernel;
+
 namespace Ecnanib.Modules.Catalog.Contracts;
 
 /// <summary>
@@ -15,6 +17,12 @@ public interface ICatalog
     /// A key that was never synced has no rows.
     /// </summary>
     Task<IReadOnlyList<ModelAccess>> ListAccessAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The default provider, and optionally model, for each role that has one (FR-ROLE-03), in role order.
+    /// Seeded from the RoleDefaults section (NFR-DEP-02), and edited by administrators after that (#26).
+    /// </summary>
+    Task<IReadOnlyList<RoleDefault>> ListRoleDefaultsAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>A model, as FR-CAT-01 describes it.</summary>
@@ -72,3 +80,8 @@ public enum ModelStatus
 /// <param name="Available">False once the key stopped listing it, or stopped being valid.</param>
 /// <param name="CheckedAt">When the sync that wrote this began asking the provider.</param>
 public sealed record ModelAccess(Guid CredentialId, string Provider, string ModelId, bool Available, DateTimeOffset CheckedAt);
+
+/// <summary>A role's default (FR-ROLE-03): a provider by strength, and optionally the model to use from it.</summary>
+/// <param name="Provider">The AI provider's name, such as <c>OpenAI</c>.</param>
+/// <param name="ModelId">The model to use, or null for the provider's best one that the user can use.</param>
+public sealed record RoleDefault(AiRole Role, string Provider, string? ModelId);

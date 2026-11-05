@@ -136,9 +136,9 @@
             <fieldset class="field agent-role">
                 <legend>@AgentText.RoleOf(role) <span class="field-hint">@(AgentRoles.IsRequired(role) ? Strings.AgentSettingsRoleRequired : Strings.AgentSettingsRoleOptional)</span></legend>
                 <label for="@id">@Strings.AgentSettingsRoleModel</label>
-                <select id="@id" name="@($"Input.{role}")" aria-describedby="agent-roles-error">
+                <select id="@id" name="@($"Input.{role}")" aria-describedby="@DescribedBy(role)">
                     <option value="" selected="@string.IsNullOrEmpty(Input.RoleValue(role, false))">@Strings.AgentSettingsNoModel</option>
-                    @foreach (var option in OptionsWith(Input.RoleValue(role, false)))
+                    @foreach (var option in OptionsWith(role, Input.RoleValue(role, false)))
                     {
                         <option value="@option.Value" selected="@(option.Value == Input.RoleValue(role, false))">@option.Text</option>
                     }
@@ -146,11 +146,15 @@
                 <label for="@($"{id}-fallback")">@Strings.AgentSettingsRoleFallback</label>
                 <select id="@($"{id}-fallback")" name="@($"Input.{role}Fallback")">
                     <option value="" selected="@string.IsNullOrEmpty(Input.RoleValue(role, true))">@Strings.AgentSettingsNoModel</option>
-                    @foreach (var option in OptionsWith(Input.RoleValue(role, true)))
+                    @foreach (var option in OptionsWith(role, Input.RoleValue(role, true)))
                     {
                         <option value="@option.Value" selected="@(option.Value == Input.RoleValue(role, true))">@option.Text</option>
                     }
                 </select>
+                @if (role == AiRole.RiskCritic && RiskCriticSharesProvider)
+                {
+                    <p id="@SharedProviderId" class="field-hint">@Strings.AgentSettingsRiskCriticSharesProvider</p>
+                }
             </fieldset>
         }
 
@@ -244,7 +248,9 @@
 @code {
     private AgentRecord? _agent;
     private List<CredentialRecord> _exchangeKeys = [];
-    private List<(string Value, string Text)> _models = [];
+    private const string SharedProviderId = "agent-role-shared-provider";
+
+    private Dictionary<AiRole, List<(string Value, string Text)>> _options = [];
     private Dictionary<string, string> _modelNames = [];
     private HashSet<AgentField> _fields = [];
     private HashSet<RiskSetting> _riskSettings = [];
@@ -261,6 +267,11 @@
 
     [SupplyParameterFromForm(FormName = "agent-settings", Name = "Input")]
     private AgentForm Input { get; set; } = default!;
+
+    /// <summary>FR-ROLE-04 allows it, with a warning. Activation warns too.</summary>
+    private bool RiskCriticSharesProvider =>
+        ProviderOf(Input.RoleValue(AiRole.Strategist, false)) is { } strategist
+        && ProviderOf(Input.RoleValue(AiRole.RiskCritic, false)) == strategist;
 
     private static string InstructionsHint =>
         string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsInstructionsHint, AgentLimits.CustomInstructionsMaxLength);
@@ -304,8 +315,11 @@
             }
         }
 
+        var choices = await Agents.ListRoleChoicesAsync(userId, cancellationToken);
+
         if (!posted)
         {
+            // A new agent starts with the default role assignments (FR-ROLE-03), which the user can change.
             var settings = _agent?.Settings ?? new AgentSettings
             {
                 Name = "",
@@ -313,6 +327,7 @@
                 Symbol = "",
                 Timeframe = Timeframe.OneHour,
                 ExecutionMode = ExecutionMode.Confirm,
+                Roles = choices.Defaults,
             };
 
             Input = AgentForm.Of(settings, _agent?.Version);
@@ -324,7 +339,7 @@
             KeepLocked();
         }
 
-        await LoadOptionsAsync(userId, cancellationToken);
+        await LoadOptionsAsync(userId, choices, cancellationToken);
     }
 
     /// <summary>Shows the stored market, pair, timeframe and key, which can't change while the agent has positions or orders.</summary>
@@ -343,49 +358,47 @@
     }
 
     /// <summary>
-    /// The user's Binance Demo keys, and the Active models their valid AI keys can use. Validity comes from
-    /// Credentials, as activation reads it.
+    /// The user's Binance Demo keys, and the models their valid AI keys can give each role (FR-ROLE-02). The
+    /// catalog's names are kept for a chosen model that's no longer offered.
     /// </summary>
-    private async Task LoadOptionsAsync(Guid userId, CancellationToken cancellationToken)
+    private async Task LoadOptionsAsync(Guid userId, RoleChoices choices, CancellationToken cancellationToken)
     {
         var keys = await Credentials.ListAsync(userId, cancellationToken);
         _exchangeKeys = [.. keys.Where(key => key.Kind == CredentialKind.Exchange && key.Environment == TradingEnvironment.Demo)];
 
-        var validAi = keys.Where(key => key is { Kind: CredentialKind.Ai, Status: CredentialStatus.Valid }).Select(key => key.Id).ToHashSet();
-        var reachable = (await Catalog.ListAccessAsync(userId, cancellationToken))
-            .Where(access => access.Available && validAi.Contains(access.CredentialId))
-            .Select(access => (access.Provider, access.ModelId))
-            .ToHashSet();
         var models = await Catalog.ListAsync(cancellationToken);
-
         _modelNames = models.ToDictionary(model => AgentForm.ValueOf(new ModelRef(model.Provider, model.ModelId)), model => model.DisplayName);
-        _models =
-        [
-            .. models
-                .Where(model => model.Status == ModelStatus.Active && reachable.Contains((model.Provider, model.ModelId)))
-                .OrderBy(model => model.Provider, StringComparer.Ordinal)
-                .ThenBy(model => model.DisplayName, StringComparer.CurrentCulture)
-                .Select(model => (AgentForm.ValueOf(new ModelRef(model.Provider, model.ModelId)), AgentText.ModelOption(model.DisplayName, model.Provider))),
-        ];
+        _options = choices.Options.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Select(choice => (AgentForm.ValueOf(choice.Model), AgentText.ModelOption(choice, pair.Key))).ToList());
     }
 
     /// <summary>
-    /// The options, plus the chosen model when it isn't one of them, such as when its key stopped working.
-    /// Otherwise saving would quietly drop it.
+    /// The role's options, plus the chosen model when it isn't one of them, such as when its key stopped
+    /// working. Otherwise saving would quietly drop it.
     /// </summary>
-    private IEnumerable<(string Value, string Text)> OptionsWith(string? chosen)
+    private IEnumerable<(string Value, string Text)> OptionsWith(AiRole role, string? chosen)
     {
-        if (string.IsNullOrEmpty(chosen) || _models.Any(option => option.Value == chosen))
+        var options = _options.GetValueOrDefault(role) ?? [];
+
+        if (string.IsNullOrEmpty(chosen) || options.Any(option => option.Value == chosen))
         {
-            return _models;
+            return options;
         }
 
         var separator = chosen.IndexOf(AgentForm.ModelSeparator, StringComparison.Ordinal);
         var name = _modelNames.GetValueOrDefault(chosen) ?? (separator > 0 ? chosen[(separator + 1)..] : chosen);
         var unavailable = string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsModelUnavailable, name);
 
-        return [(chosen, unavailable), .. _models];
+        return [(chosen, unavailable), .. options];
     }
+
+    private string DescribedBy(AiRole role) =>
+        role == AiRole.RiskCritic && RiskCriticSharesProvider ? $"agent-roles-error {SharedProviderId}" : "agent-roles-error";
+
+    /// <summary>The provider of a model's option value, or null for none.</summary>
+    private static string? ProviderOf(string? value) =>
+        value?.IndexOf(AgentForm.ModelSeparator, StringComparison.Ordinal) is int separator and > 0 ? value[..separator] : null;
 
     private string? ErrorOf(AgentField field) => _fields.Contains(field) ? AgentText.FieldErrorOf(field) : null;
 

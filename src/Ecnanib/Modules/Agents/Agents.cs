@@ -16,6 +16,7 @@ internal sealed class Agents(
     IAuditTrail audit,
     ICredentials credentials,
     ActivationChecks checks,
+    RoleModels roleModels,
     IAgentExposure exposure,
     AgentsSettings settings,
     TimeProvider time,
@@ -48,6 +49,9 @@ internal sealed class Agents(
 
         return (await FindRowAsync(context, userId, id, cancellationToken))?.ToRecord();
     }
+
+    public Task<RoleChoices> ListRoleChoicesAsync(Guid userId, CancellationToken cancellationToken) =>
+        roleModels.ChoicesAsync(userId, cancellationToken);
 
     public async Task<AgentSaveResult> CreateAsync(Guid userId, AgentSettings input, CancellationToken cancellationToken)
     {

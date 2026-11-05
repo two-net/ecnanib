@@ -1,6 +1,7 @@
 using System.Net.Http;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
+using Ecnanib.Tests.Ai;
 using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Exchange;
 using Ecnanib.Tests.Persistence;
@@ -168,8 +169,125 @@ public sealed class AgentActivationTests(PostgresFixture postgres)
             [
                 new ActivationWarning(ActivationWarningKind.OptionalModelUnavailable, AiRole.SentimentAnalyst),
                 new ActivationWarning(ActivationWarningKind.FallbackUnavailable, AiRole.Strategist),
+                new ActivationWarning(ActivationWarningKind.RiskCriticSharesProvider, AiRole.RiskCritic),
             ],
             result.Warnings);
+    }
+
+    /// <summary>
+    /// FR-ROLE-02: every role needs structured output, which only an explicit false rules out. A required role
+    /// can't do without it, an optional role or a fallback only warns, and an Active agent can't be edited onto
+    /// such a model.
+    /// </summary>
+    [Fact]
+    public async Task A_model_that_cant_give_structured_answers_cant_fill_a_required_role()
+    {
+        await using var app = new AgentApp(postgres, new()
+        {
+            ["Catalog:Overrides:0:Provider"] = AgentApp.Provider,
+            ["Catalog:Overrides:0:Model"] = "model-b",
+            ["Catalog:Overrides:0:StructuredOutput"] = "false",
+        });
+        app.Ai.On(HttpMethod.Get, CredentialApp.ModelsPath, _ => FakeAiProvider.Models(null, AgentApp.Model, "model-b"));
+        var user = await app.UserAsync();
+        var model = new ModelRef(AgentApp.Provider, AgentApp.Model);
+        var unsuitable = new ModelRef(AgentApp.Provider, "model-b");
+
+        var refused = await app.CreateAsync(
+            user.Id,
+            AgentApp.Ready(user, "Refused") with
+            {
+                Roles = [new(AiRole.TechnicalAnalyst, unsuitable), new(AiRole.Strategist, model), new(AiRole.RiskCritic, model)],
+            });
+
+        Assert.Equal(
+            [new ActivationProblem(ActivationProblemKind.ModelLacksStructuredOutput, AiRole.TechnicalAnalyst)],
+            (await app.Agents.ActivateAsync(user.Id, refused.Id, Cancellation)).Problems);
+
+        var warned = await app.CreateAsync(
+            user.Id,
+            AgentApp.Ready(user, "Warned") with
+            {
+                Roles =
+                [
+                    new(AiRole.TechnicalAnalyst, model),
+                    new(AiRole.SentimentAnalyst, unsuitable),
+                    new(AiRole.Strategist, model, unsuitable),
+                    new(AiRole.RiskCritic, model),
+                ],
+            });
+        var result = await app.Agents.ActivateAsync(user.Id, warned.Id, Cancellation);
+
+        Assert.Equal(ActivationOutcome.Activated, result.Outcome);
+        Assert.Equal(
+            [
+                new ActivationWarning(ActivationWarningKind.OptionalModelLacksStructuredOutput, AiRole.SentimentAnalyst),
+                new ActivationWarning(ActivationWarningKind.FallbackLacksStructuredOutput, AiRole.Strategist),
+                new ActivationWarning(ActivationWarningKind.RiskCriticSharesProvider, AiRole.RiskCritic),
+            ],
+            result.Warnings);
+
+        var active = result.Agent!;
+        var edit = await app.Agents.UpdateAsync(
+            user.Id,
+            active.Id,
+            active.Version,
+            active.Settings with { Roles = [.. active.Settings.Roles.Select(role => role.Role == AiRole.RiskCritic ? role with { Model = unsuitable } : role)] },
+            Cancellation);
+
+        Assert.Equal(AgentSaveOutcome.WouldFailActivation, edit.Outcome);
+        Assert.Equal([new ActivationProblem(ActivationProblemKind.ModelLacksStructuredOutput, AiRole.RiskCritic)], edit.Problems);
+    }
+
+    /// <summary>
+    /// FR-ROLE-02 prefers live search for the Sentiment Analyst, so a model that says it has none warns. One
+    /// that nobody said anything about doesn't, and neither does a Strategist and Risk Critic on two providers.
+    /// </summary>
+    [Fact]
+    public async Task A_Sentiment_Analyst_that_cant_search_warns()
+    {
+        await using var app = new AgentApp(postgres, new()
+        {
+            ["Catalog:Overrides:0:Provider"] = AgentApp.Provider,
+            ["Catalog:Overrides:0:Model"] = "model-b",
+            ["Catalog:Overrides:0:LiveSearch"] = "false",
+        });
+        app.Ai.On(
+            HttpMethod.Get,
+            CredentialApp.ModelsPath,
+            request => FakeAiProvider.Models(null, request.Key == CredentialApp.OtherAiKey ? "model-x" : AgentApp.Model, "model-b"));
+        var user = await app.UserAsync();
+        await app.AddAiAsync(user.Id, AgentApp.Second, CredentialApp.OtherAiKey);
+        var model = new ModelRef(AgentApp.Provider, AgentApp.Model);
+        var critic = new ModelRef(AgentApp.Second, "model-x");
+
+        // Each agent stops after activating, so the next can take the same key, market and pair.
+        async Task<IReadOnlyList<ActivationWarning>> WarningsAsync(string name, ModelRef sentiment)
+        {
+            var agent = await app.CreateAsync(
+                user.Id,
+                AgentApp.Ready(user, name) with
+                {
+                    Roles =
+                    [
+                        new(AiRole.TechnicalAnalyst, model),
+                        new(AiRole.SentimentAnalyst, sentiment),
+                        new(AiRole.Strategist, model),
+                        new(AiRole.RiskCritic, critic),
+                    ],
+                });
+            var result = await app.Agents.ActivateAsync(user.Id, agent.Id, Cancellation);
+
+            Assert.Equal(ActivationOutcome.Activated, result.Outcome);
+            await app.Agents.StopAsync(user.Id, agent.Id, Cancellation);
+
+            return result.Warnings!;
+        }
+
+        Assert.Equal(
+            [new ActivationWarning(ActivationWarningKind.SentimentWithoutLiveSearch, AiRole.SentimentAnalyst)],
+            await WarningsAsync("Blind", new ModelRef(AgentApp.Provider, "model-b")));
+        Assert.Empty(await WarningsAsync("Unknown", model));
     }
 
     /// <summary>
@@ -195,12 +313,12 @@ public sealed class AgentActivationTests(PostgresFixture postgres)
         var beyond = await app.Agents.ActivateAsync(user.Id, bitcoin.Id, Cancellation);
 
         Assert.Equal(ActivationOutcome.Activated, withinBalance.Outcome);
-        Assert.Empty(withinBalance.Warnings!);
-        Assert.Empty(withinMargin.Warnings!);
+        Assert.Empty(Capital(withinBalance));
+        Assert.Empty(Capital(withinMargin));
         Assert.Equal(ActivationOutcome.Activated, beyond.Outcome);
         Assert.Equal(
             [new ActivationWarning(ActivationWarningKind.CapitalExceedsBalance, Asset: "BTC", Allocated: 0.01m, Available: 0.001m)],
-            beyond.Warnings);
+            Capital(beyond));
 
         // The balance is read at most once a minute per key and market, because every user shares the weight.
         Assert.Equal(reads + 1, app.Binance.To(CredentialApp.SpotAccountPath).Count);
@@ -215,8 +333,12 @@ public sealed class AgentActivationTests(PostgresFixture postgres)
         Assert.Equal(ActivationOutcome.Activated, resumed.Outcome);
         Assert.Equal(
             [new ActivationWarning(ActivationWarningKind.CapitalExceedsBalance, Asset: "USDT", Allocated: 300m, Available: 250.12m)],
-            resumed.Warnings);
+            Capital(resumed));
         Assert.Equal(reads + 2, app.Binance.To(CredentialApp.SpotAccountPath).Count);
+
+        // Ready puts every role on one provider, which has a warning of its own (FR-ROLE-04).
+        static IEnumerable<ActivationWarning> Capital(ActivationResult result) =>
+            result.Warnings!.Where(warning => warning.Kind == ActivationWarningKind.CapitalExceedsBalance);
     }
 
     /// <summary>AC-13.</summary>
