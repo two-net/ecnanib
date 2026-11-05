@@ -121,6 +121,81 @@ internal sealed class FuturesAssetBody
     public decimal AvailableBalance { get; init; }
 }
 
+/// <summary>One Spot symbol's 24-hour statistics, which hold the last price and the top of the book.</summary>
+internal sealed class SpotTicker24hBody
+{
+    public string Symbol { get; init; } = "";
+
+    public decimal LastPrice { get; init; }
+
+    public decimal BidPrice { get; init; }
+
+    public decimal BidQty { get; init; }
+
+    public decimal AskPrice { get; init; }
+
+    public decimal AskQty { get; init; }
+}
+
+internal sealed class FuturesBookTickerBody
+{
+    public string Symbol { get; init; } = "";
+
+    public decimal BidPrice { get; init; }
+
+    public decimal BidQty { get; init; }
+
+    public decimal AskPrice { get; init; }
+
+    public decimal AskQty { get; init; }
+}
+
+internal sealed class FuturesPriceBody
+{
+    public string Symbol { get; init; } = "";
+
+    public decimal Price { get; init; }
+}
+
+internal sealed class PremiumIndexBody
+{
+    public string Symbol { get; init; } = "";
+
+    public decimal MarkPrice { get; init; }
+
+    public decimal IndexPrice { get; init; }
+
+    /// <summary>Empty for a contract without funding, so it's read as text.</summary>
+    public string? LastFundingRate { get; init; }
+
+    /// <summary>0 for a contract without funding.</summary>
+    public long NextFundingTime { get; init; }
+}
+
+/// <summary>A Futures position, from GET /fapi/v3/positionRisk.</summary>
+internal sealed class PositionRiskBody
+{
+    public string Symbol { get; init; } = "";
+
+    public string PositionSide { get; init; } = "";
+
+    public decimal PositionAmt { get; init; }
+
+    public decimal EntryPrice { get; init; }
+
+    public decimal? BreakEvenPrice { get; init; }
+
+    public decimal MarkPrice { get; init; }
+
+    public decimal UnRealizedProfit { get; init; }
+
+    public decimal LiquidationPrice { get; init; }
+
+    public string MarginAsset { get; init; } = "";
+
+    public long? UpdateTime { get; init; }
+}
+
 /// <summary>An order on Spot or Futures, from placing, querying or cancelling it. Fields one market lacks stay null.</summary>
 internal sealed class OrderBody
 {

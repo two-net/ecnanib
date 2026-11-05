@@ -1,9 +1,123 @@
+using System.Globalization;
+
 namespace Ecnanib.Tests.Exchange;
 
 /// <summary>Bodies shaped like Binance's, trimmed from real Demo responses.</summary>
 internal static class BinanceSamples
 {
-    public static string SpotExchangeInfo(int weightLimit = 6000) => $$"""
+    /// <summary>Binance's weeks start on Monday. The Unix epoch was a Thursday.</summary>
+    private static readonly DateTimeOffset FirstMonday = new(1970, 1, 5, 0, 0, 0, TimeSpan.Zero);
+
+    public static TimeSpan IntervalLength(string interval) => interval switch
+    {
+        "15m" => TimeSpan.FromMinutes(15),
+        "1h" => TimeSpan.FromHours(1),
+        "4h" => TimeSpan.FromHours(4),
+        "1d" => TimeSpan.FromDays(1),
+        "1w" => TimeSpan.FromDays(7),
+        _ => throw new ArgumentOutOfRangeException(nameof(interval), interval, null),
+    };
+
+    /// <summary>The open time of the candle that contains <paramref name="at"/>, aligned as Binance aligns it.</summary>
+    public static DateTimeOffset Floor(string interval, DateTimeOffset at)
+    {
+        var anchor = interval == "1w" ? FirstMonday : DateTimeOffset.UnixEpoch;
+        var length = IntervalLength(interval).Ticks;
+
+        return new DateTimeOffset(at.UtcTicks - ((at.UtcTicks - anchor.UtcTicks) % length), TimeSpan.Zero);
+    }
+
+    /// <summary>
+    /// Answers GET klines as Binance does: candles whose open times are between startTime and endTime,
+    /// both included, the first <c>limit</c> of them from startTime, or the last <c>limit</c> up to endTime
+    /// without one. That includes the candle still open at <paramref name="now"/> when the range reaches
+    /// it. A candle <paramref name="missing"/> picks out isn't there, as during maintenance.
+    /// </summary>
+    public static string Klines(RecordedRequest request, DateTimeOffset now, Func<DateTimeOffset, bool>? missing = null)
+    {
+        var interval = request.Parameter("interval")!;
+        var length = IntervalLength(interval);
+        var limit = int.Parse(request.Parameter("limit") ?? "500", CultureInfo.InvariantCulture);
+        var end = Time(request.Parameter("endTime")) ?? now;
+        var last = Floor(interval, end < now ? end : now);
+        var opens = new List<DateTimeOffset>();
+
+        if (Time(request.Parameter("startTime")) is { } start)
+        {
+            var first = Floor(interval, start) < start ? Floor(interval, start) + length : start;
+
+            for (var open = first; open <= last && opens.Count < limit; open += length)
+            {
+                opens.Add(open);
+            }
+        }
+        else
+        {
+            for (var open = last; opens.Count < limit; open -= length)
+            {
+                opens.Insert(0, open);
+            }
+        }
+
+        return "[" + string.Join(",", opens.Where(open => missing?.Invoke(open) != true).Select(open => Kline(open, length))) + "]";
+    }
+
+    /// <summary>One candle, with prices that follow from its open time.</summary>
+    public static string Kline(DateTimeOffset open, TimeSpan length)
+    {
+        var step = open.ToUnixTimeSeconds() / (long)length.TotalSeconds;
+        var basePrice = 100m + (step % 40);
+        var volume = 10m + (step % 7);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"[{open.ToUnixTimeMilliseconds()},\"{basePrice:0.00000000}\",\"{basePrice + 2:0.00000000}\",\"{basePrice - 1:0.00000000}\",\"{basePrice + 0.5m:0.00000000}\","
+            + $"\"{volume:0.00000000}\",{(open + length).ToUnixTimeMilliseconds() - 1},\"{volume * basePrice:0.00000000}\",100,\"1.00000000\",\"100.00000000\",\"0\"]");
+    }
+
+    /// <summary>GET /api/v3/ticker/24hr for one symbol, in Binance's FULL form.</summary>
+    public const string SpotTicker24h = """
+        {"symbol":"BTCUSDT","priceChange":"-94.99999800","priceChangePercent":"-95.960","weightedAvgPrice":"0.29628482",
+         "prevClosePrice":"0.10002000","lastPrice":"60123.45000000","lastQty":"200.00000000","bidPrice":"60123.44000000",
+         "bidQty":"1.25000000","askPrice":"60123.46000000","askQty":"0.75000000","openPrice":"99.00000000",
+         "highPrice":"100.00000000","lowPrice":"0.10000000","volume":"8913.30000000","quoteVolume":"15.30000000",
+         "openTime":1499783499040,"closeTime":1499869899040,"firstId":28385,"lastId":28460,"count":76}
+        """;
+
+    public const string FuturesBookTicker = """
+        {"symbol":"BTCUSDT","bidPrice":"60120.10","bidQty":"3.512","askPrice":"60120.20","askQty":"0.041","time":1589437530011,"lastUpdateId":1027024}
+        """;
+
+    public const string FuturesPrice = """
+        {"symbol":"BTCUSDT","price":"60120.10","time":1589437530011}
+        """;
+
+    /// <summary>GET /fapi/v1/premiumIndex for one symbol. Without funding, as for a delivery contract, the rate is empty and the time is 0.</summary>
+    public static string PremiumIndex(bool funding = true) => $$"""
+        {"symbol":"BTCUSDT","markPrice":"60118.75000000","indexPrice":"60131.02340000","estimatedSettlePrice":"60129.11000000",
+         "lastFundingRate":"{{(funding ? "0.00010000" : "")}}","interestRate":"0.00010000",
+         "nextFundingTime":{{(funding ? "1793808000000" : "0")}},"time":1793804395002}
+        """;
+
+    /// <summary>GET /fapi/v3/positionRisk for BTCUSDT: a short, and an entry with only open orders, which has no amount.</summary>
+    public const string PositionRisk = """
+        [{"symbol":"BTCUSDT","positionSide":"BOTH","positionAmt":"-0.010","entryPrice":"60500.0","breakEvenPrice":"60530.25",
+          "markPrice":"60123.4","unRealizedProfit":"3.76600000","liquidationPrice":"66012.3","isolatedMargin":"60.50000000",
+          "notional":"-601.234","marginAsset":"USDT","isolatedWallet":"60.5","initialMargin":"120.2","maintMargin":"2.4",
+          "positionInitialMargin":"120.2","openOrderInitialMargin":"0","adl":1,"bidNotional":"0","askNotional":"0",
+          "updateTime":1720736417660},
+         {"symbol":"BTCUSDT","positionSide":"LONG","positionAmt":"0.000","entryPrice":"0.0","breakEvenPrice":"0.0",
+          "markPrice":"60123.4","unRealizedProfit":"0.00000000","liquidationPrice":"0","isolatedMargin":"0",
+          "notional":"0","marginAsset":"USDT","isolatedWallet":"0","initialMargin":"0","maintMargin":"0",
+          "positionInitialMargin":"0","openOrderInitialMargin":"12.1","adl":0,"bidNotional":"121","askNotional":"0",
+          "updateTime":0}]
+        """;
+
+    private static DateTimeOffset? Time(string? milliseconds) =>
+        milliseconds is null ? null : DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(milliseconds, CultureInfo.InvariantCulture));
+
+    /// <summary>GET /api/v3/exchangeInfo with BTCUSDT and, unless a test delists it, ETHBTC.</summary>
+    public static string SpotExchangeInfo(int weightLimit = 6000, string btcTickSize = "0.01000000", bool ethBtc = true) => $$"""
         {"timezone":"UTC","serverTime":1793801870500,
          "rateLimits":[
            {"rateLimitType":"REQUEST_WEIGHT","interval":"MINUTE","intervalNum":1,"limit":{{weightLimit}}},
@@ -14,13 +128,16 @@ internal static class BinanceSamples
          "symbols":[{"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","baseAssetPrecision":8,"quoteAsset":"USDT",
            "orderTypes":["LIMIT","LIMIT_MAKER","MARKET","STOP_LOSS","STOP_LOSS_LIMIT","TAKE_PROFIT","TAKE_PROFIT_LIMIT"],
            "filters":[
-             {"filterType":"PRICE_FILTER","minPrice":"0.01000000","maxPrice":"1000000.00000000","tickSize":"0.01000000"},
+             {"filterType":"PRICE_FILTER","minPrice":"0.01000000","maxPrice":"1000000.00000000","tickSize":"{{btcTickSize}}"},
              {"filterType":"LOT_SIZE","minQty":"0.00001000","maxQty":"9000.00000000","stepSize":"0.00001000"},
              {"filterType":"ICEBERG_PARTS","limit":100},
              {"filterType":"MARKET_LOT_SIZE","minQty":"0.00000000","maxQty":"127.44699891","stepSize":"0.00000000"},
              {"filterType":"NOTIONAL","minNotional":"5.00000000","applyMinToMarket":true,"maxNotional":"9000000.00000000","applyMaxToMarket":false,"avgPriceMins":5},
-             {"filterType":"MAX_NUM_ORDERS","maxNumOrders":200}]},
-           {"symbol":"ETHBTC","status":"BREAK","baseAsset":"ETH","quoteAsset":"BTC","orderTypes":["LIMIT","MARKET"],"filters":[]}]}
+             {"filterType":"MAX_NUM_ORDERS","maxNumOrders":200}]}{{(ethBtc ? EthBtc : "")}}]}
+        """;
+
+    private const string EthBtc = """
+        ,{"symbol":"ETHBTC","status":"BREAK","baseAsset":"ETH","quoteAsset":"BTC","orderTypes":["LIMIT","MARKET"],"filters":[]}
         """;
 
     public const string FuturesExchangeInfo = """

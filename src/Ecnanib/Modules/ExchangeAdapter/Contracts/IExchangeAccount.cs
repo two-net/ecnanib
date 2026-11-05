@@ -44,7 +44,39 @@ public interface IExchangeAccount
         OrderReference order,
         RequestPriority priority,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The key's open Futures positions in one symbol, with their liquidation prices (FR-CYC-02), from
+    /// <c>GET /fapi/v3/positionRisk</c>. It asks about the one symbol rather than the whole account
+    /// (NFR-PERF-05). Empty when there's no position. In one-way mode there's at most one, on side BOTH.
+    /// Use <see cref="RequestPriority.Protective"/> when a protective order depends on it.
+    /// </summary>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept, or an Ed25519 secret that isn't a PKCS#8 PEM private key. Nothing was sent.</exception>
+    /// <exception cref="ExchangeException">The call failed. An invalid key is <see cref="ExchangeFailure.Rejected"/>.</exception>
+    Task<IReadOnlyList<FuturesPosition>> GetPositionAsync(
+        ExchangeKey key,
+        string symbol,
+        RequestPriority priority,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>An open Futures position, as Binance last reported it. Prices and profit are in the margin asset.</summary>
+/// <param name="Side">BOTH in one-way mode, or LONG or SHORT in hedge mode.</param>
+/// <param name="Amount">The size in the base asset: positive for a long and negative for a short.</param>
+/// <param name="BreakEvenPrice">Null when Binance sends none.</param>
+/// <param name="LiquidationPrice">Null when Binance sends 0, which means the position can't be liquidated at any price.</param>
+/// <param name="UpdatedAt">Null when Binance sends none.</param>
+public sealed record FuturesPosition(
+    string Symbol,
+    string Side,
+    decimal Amount,
+    decimal EntryPrice,
+    decimal? BreakEvenPrice,
+    decimal MarkPrice,
+    decimal? LiquidationPrice,
+    decimal UnrealizedProfit,
+    string MarginAsset,
+    DateTimeOffset? UpdatedAt);
 
 /// <param name="CanTrade">Spot only. Binance's Futures account doesn't say.</param>
 /// <param name="Balances">Assets with a balance. Spot leaves out zero balances.</param>

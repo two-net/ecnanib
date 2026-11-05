@@ -30,7 +30,8 @@ public static class ExchangeAdapterModule
         services.AddSingleton<BinanceServers>();
         services.AddSingleton<IExchangeUsage>(provider => provider.GetRequiredService<BinanceServers>());
         services.AddSingleton<BinanceTransport>();
-        services.AddSingleton<IExchangeMarketData, ExchangeInfoCache>();
+        services.AddSingleton<ExchangeInfoCache>();
+        services.AddSingleton<IExchangeMarketData, BinanceMarketData>();
         services.AddSingleton<IExchangeAccount, BinanceAccount>();
         services.AddSingleton<IExchangeTrading, BinanceTrading>();
 

@@ -525,8 +525,8 @@ ASP.NET Data Protection protects the session cookie, antiforgery tokens and a ci
 
 | Contract | What | Who uses it |
 |---|---|---|
-| `IExchangeMarketData` | Public data, with no keys. So far, exchange information | Market Data, Credentials, Execution |
-| `IExchangeAccount` | Signed reads: the account, a Live key's restrictions, and an order by its client order ID | Credentials, Execution |
+| `IExchangeMarketData` | Public data, with no keys: exchange information, candles, prices, the top of the book and Futures funding | Market Data, Credentials, Execution |
+| `IExchangeAccount` | Signed reads: the account, a Live key's restrictions, an order by its client order ID, and a symbol's Futures positions | Credentials, Execution |
 | `IExchangeTrading` | Placing and cancelling orders | **Execution only** (AC-01). The map lets four units use the adapter, so `BannedApis` enforces this |
 | `IExchangeUsage` | Each server's weight, limits, backoff, ban and clock offset | Administration, for the health page (#49) |
 | `IExchangeBanObserver` | A port the adapter calls when Binance bans this server's address | Execution implements it |
@@ -594,11 +594,18 @@ The algo endpoint's own page couldn't be read, so its parameters come from Binan
 
 ### Exchange information
 
-- **It's held in memory per market and environment**, loaded on first use, and refreshed once it's older than `Binance:ExchangeInfoRefreshHours` (EXT-BIN-06). It's lazy rather than a job, because the adapter can't use Platform. Market Data persists `ExchangeSymbol` (#22).
+- **It's held in memory per market and environment**, loaded on first use, and refreshed once it's older than `Binance:ExchangeInfoRefreshHours` (EXT-BIN-06). It's lazy rather than a job, because the adapter can't use Platform. Market Data keeps a copy in `exchange_symbols`: see [Exchange symbols](#exchange-symbols).
 - **A failed refresh keeps the last copy**, with a Warning, and waits a minute before trying again. With no copy, it throws.
 - **Callers share one refresh, which none of them can cancel.** One that stops waiting gets the last copy if there is one, and the refresh carries on for the next caller. The transport's read timeout bounds it.
 - **Spot asks for `showPermissionSets=false`**, which cuts the full body from about 18 MB to 7 MB.
 - **Each refresh updates its servers' limits.**
+
+### Market data and positions
+
+- **Candles** come from `klines`, filtered by open time with both ends included. Binance's documentation doesn't say that, but a read-only call to it showed it, and the adapter drops anything outside the range anyway. A call returns at most 1000. Spot charges 2 whatever the limit. Futures charges by the limit: 1 below 100, 2 below 500, 5 up to 1000. The adapter reserves the matching weight.
+- **Quotes:** Spot reads the price and the top of the book from one `ticker/24hr`, which costs 2. Futures has no such ticker, so it reads `ticker/bookTicker` (2) and `ticker/price` (1), and its funding from `premiumIndex` (1).
+- **Positions:** `GetPositionAsync` reads `positionRisk` v3 for one symbol, not the whole account (NFR-PERF-05), signed, with an estimated weight of 5. Binance sends a liquidation price of 0 when nothing would liquidate the position, which becomes null. It also lists a symbol that has only open orders, with an amount of 0, which is left out.
+- **The Futures ticker and position pages couldn't be read** when this was written. Their weights are estimates, and the position's fields come from Binance's published examples. Check both against Futures Demo before #35 relies on them.
 
 ### Logging
 
@@ -609,6 +616,95 @@ The algo endpoint's own page couldn't be read, so its parameters come from Binan
 ### Testing it
 
 `FakeBinance` in `tests/Ecnanib.Tests/Exchange` replaces the named client's handler, and answers each method and path as a test says. `AppFactory` gives every application hosts under `.test`, which never resolve, so no test reaches Binance by accident. `ExchangeHarness` gives each test its own application, clock and fake, because the adapter's state is in memory. `RedirectTests` and `RetryTests` use `LoopbackServer`, a real socket, because redirects and retries happen inside the real handler, which the fake replaces.
+
+## Market data
+
+`Modules/MarketData` gives a decision cycle steps 3 and 4 of FR-CYC-02, and keeps Binance's symbols. It may use Platform and the exchange adapter, and nothing else. It holds no keys, so the liquidation price, which belongs to the account, comes from reconciliation (#35) through `IExchangeAccount.GetPositionAsync`.
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `IMarketData` | A snapshot for one symbol, timeframe and candle close: two candle series with their indicators, the quote, and Futures funding | DecisionCycle (#31) |
+| `IExchangeSymbols` | Binance's symbols and their filters, from `exchange_symbols` when Binance can't be reached | Agents (#23), the wizard (#40), and the Risk Engine's callers (#27, #34) |
+| `Indicators` | The indicator functions, pure and deterministic | Market Data, and anything that needs the same numbers, such as shadow outcomes (#44) |
+| `MarketDataException` | A failure in Market Data's terms: `Unavailable`, `Throttled` with `RetryAfter`, or `UnknownSymbol` | Its callers, which can't see the adapter's `ExchangeException` |
+
+### What a snapshot holds
+
+- **The caller passes the candle's close**, which is the cycle's scheduled time (FR-CYC-01). The last candle is the one that closed then, so every candle is final. A later time within the next candle means the same candle, and a close in the future is refused.
+- **The higher timeframe follows SRS A.1:** 1H for 15m, 1D for 1H and 4H, and 1W for 1D. Weeks start on Monday at 00:00 UTC, as Binance's do. The 200-day average that A.1 asks of 4H and 1D is the 1D series' EMA 200.
+- **Each series is the last 500 closed candles** (`CandleSeries.Window`), enough for EMA 200 with 300 candles to settle. A newer symbol has fewer. When Binance has no candle for a time, as during maintenance, there's a gap, so a caller compares the last candle with `LastOpenTime`.
+- **The caller gets the whole window.** How many candles a prompt or a trace keeps is for #28 and #31 to decide.
+
+### Sharing
+
+FR-CYC-09 asks for one fetch per symbol, timeframe and candle, whatever the number of agents.
+
+| Data | Shared by | Reused while |
+|---|---|---|
+| Candles | Market, environment, symbol and interval | It's the same candle. Memory keeps one load per series, for its latest candle |
+| Quote and funding | Market, environment and symbol | The fetch began at or after the candle's close, and is less than a minute old |
+
+- **A load runs with no caller's token.** Callers wait with `WaitAsync`, so one that stops waiting can't cancel it for the others, as with [exchange information](#exchange-information). The adapter's read timeout and the database's command timeout bound it.
+- **A failed load isn't kept.** The next caller starts another.
+- **A load for an older candle**, such as a catch-up cycle's, runs on its own and leaves the latest in place.
+- **Loads of one series run one at a time**, so two can't write the same rows. The lock is in process, which is enough with one instance (ASM-06).
+- **A shared load logs under the scope of the caller that started it**, so its `Exchange` events carry that cycle's correlation ID.
+- **Memory** holds the latest load of each series in use, about 70 KB each.
+
+### The candle cache
+
+`candle_cache` is SRS 6.1's CandleCache. It holds closed candles, keyed by market, environment, symbol, interval and open time. A load:
+
+1. Reads its window from the table.
+2. If the last candle and the start are both there, uses them, and Binance isn't asked.
+3. If the start is there but newer candles are missing, asks only for those, from the newest cached one on. That's usually one candle, which costs 1 on Futures.
+4. Otherwise, asks for the whole window.
+5. Writes in one transaction: deletes the fetched range, and inserts what came back, with `fetched_at`.
+
+- **A candle that's still open is never stored.** The range ends at the last closed candle, and anything whose close time hasn't passed is dropped as well.
+- **"The start is there"** means the window's first candle is cached. When the last full fetch came back short, it means the first candle Binance had is cached instead. That's kept in memory, so a new symbol or a weekly series isn't fetched whole every time. A restart costs one full fetch per series.
+- **A missing candle at the end** is asked for again with the next candle, not on every call.
+- **Retention (#50) purges by `fetched_at`.** A daily window spans more than a year, so purging by `open_time` would leave every 1D cycle fetching its whole window. A purged start is fetched again with its window.
+
+### Exchange symbols
+
+`exchange_symbols` is SRS 6.1's ExchangeSymbol. It holds Binance's latest list per market and environment, with each symbol's filters as decimal columns and its order types as `text[]`.
+
+- **It reads through, with no job.** `IExchangeSymbols` asks the adapter, whose copy refreshes itself after `Binance:ExchangeInfoRefreshHours` (EXT-BIN-06). When that copy is newer than the stored one, it replaces the rows in one transaction, deleting the symbols Binance dropped. A job would call Binance at startup, from every test application too.
+- **When Binance can't be reached, the table answers**, with its `RefreshedAt`, and there's a Warning. With nothing stored, it throws `Unavailable`.
+- **Failing to store doesn't fail the read.** The table is a copy, and the caller already has the data. There's a Warning, and the next read tries again.
+
+### Indicators
+
+They're computed in `decimal`, so the same candles give the same values on any machine, and they're never rounded. EMA, RSI and ATR follow TA-Lib, and `IndicatorTests` checks them against TA-Lib's output for 300 real candles.
+
+| Indicator | Definition |
+|---|---|
+| EMA 20, 50 and 200 | Starts at the simple average of the first n closes, then moves by 2 / (n + 1) of each difference |
+| RSI 14 | Wilder's: 100 × average gain / (average gain + average loss). The first averages are simple means of the first 14 changes, then each change is smoothed in by 1/14. A flat series is 50, where TA-Lib gives 0 |
+| ATR 14 | Wilder's average of the true range, which counts the gap from the previous close |
+| Swing highs and lows | Above each of the 3 candles before, and no lower than each of the 3 after, so a flat top counts once. The last 3 aren't confirmed. The newest 5 of each |
+| Volume | The last candle's volume, the mean of the last 20, and their ratio |
+
+An indicator without enough candles is null: EMA n needs n candles, RSI and ATR need 15, and volume needs 20.
+
+### Request weight per candle
+
+This adds to the model in [Request weight and priority](#request-weight-and-priority). The cost is per symbol, market, environment and candle, however many agents share it:
+
+| | Spot | Futures |
+|---|---|---|
+| The agent's timeframe, once cached | 2 | 1 |
+| The higher timeframe, once per its own candle | 2 | 1 |
+| Price and top of book | 2 | 3 |
+| Funding | | 1 |
+| A whole window, on a cold cache or after a purge | 2 | 5 |
+
+So a cycle on a symbol no other agent trades costs about 4 on Spot and 5 on Futures, and more agents on the same symbol cost nothing more. #56 measures it.
+
+### Testing it
+
+`MarketDataApp` in `tests/Ecnanib.Tests/MarketData` gives each test its own application, clock, database and `FakeBinance`. The fake answers candles from `BinanceSamples.Klines` the way Binance does, including a candle that's still open when the range reaches it. A second app on the same database stands in for a restart. The reference candles in `MarketData/Samples` are real BTCUSDT 1h candles, and the expected values in `IndicatorTests` came from TA-Lib 0.8.3, as its comment shows. If you change either, regenerate the other.
 
 ## AI adapters
 
@@ -1392,8 +1488,15 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Account deletion (#51):** delete a user's secrets through the modules that own them, in the transaction that deletes the rows that refer to them. Nothing else can find them. That includes the TOTP key in `totp_authenticators.secret_id`: the row cascades with the user, but the secret doesn't.
 - **Data export (#51):** include the user's preferences from `IPreferences.GetAsync`, and their email choices from `IPreferences.GetEmailNotificationsAsync` (FR-DATA-03). Deleting the account deletes their row through its foreign key.
 - **Account deletion (#51):** delete the user's `notifications` through the port Identity declares, which Notifications implements. There's no foreign key to do it.
-- **Exchange endpoints (#22, #33, #35):** add each one to `BinanceEndpoint` with its weight, and call it through `BinanceTransport`, so it shares the budget, the clock, the outcomes and the logging. Put reads on `IExchangeAccount` or `IExchangeMarketData`, and anything that changes the account, such as leverage or margin mode (#33), on `IExchangeTrading`, which only Execution may use. See [Exchange adapter](#exchange-adapter).
-- **Market Data (#22):** persist `ExchangeSymbol` from `IExchangeMarketData.GetExchangeInfoAsync`, which refreshes itself. Candles and prices are normal priority.
+- **Exchange endpoints (#33, #35):** add each one to `BinanceEndpoint` with its weight, and call it through `BinanceTransport`, so it shares the budget, the clock, the outcomes and the logging. Put reads on `IExchangeAccount` or `IExchangeMarketData`, and anything that changes the account, such as leverage or margin mode (#33), on `IExchangeTrading`, which only Execution may use. See [Exchange adapter](#exchange-adapter).
+- **Decision cycles (#30, #31):** `Timeframe` is in `Kernel`. Pass the cycle's scheduled candle close to `IMarketData.CollectAsync`, not the time it started, so every agent on a candle shares one fetch. A catch-up cycle passes its own close too. See [Market data](#market-data).
+- **The decision cycle (#31):** catch `MarketDataException`. `Throttled` has a `RetryAfter`, which may fit the cycle's deadline (FR-CYC-06), and `UnknownSymbol` means the agent's pair is gone. Take the liquidation price from the position that reconciliation reads (#35), because Market Data has no keys. A snapshot holds 500 candles per series, so decide how many go into the prompt (#28) and into the trace's input snapshot. Compare the last candle with `CandleSeries.LastOpenTime`, because Binance can have a gap.
+- **Agents and the wizard (#23, #40):** validate the trading pair with `IExchangeSymbols.FindAsync`, which is null for a symbol Binance doesn't list, and check `IsTrading` (FR-AGT-02). Decide whether a Futures agent may only use a `PERPETUAL` contract, because a delivery contract has no funding.
+- **The Risk Engine's inputs (#27, #34):** take the tick size, step sizes and minimum notional from `IExchangeSymbols`, and pass them in, because the engine depends on `Kernel` only. A null filter means Binance sent none.
+- **Reconciliation (#35):** read a position with `IExchangeAccount.GetPositionAsync` for the agent's symbol, not the whole account (NFR-PERF-05). It's empty when there's no position, and its liquidation price is null when Binance sends 0. Check `positionRisk`'s weight and fields against Futures Demo first, because its page couldn't be read.
+- **Retention (#50):** purge `candle_cache` by `fetched_at`, using `Retention:CandleCacheDays`, never by `open_time`, which would make every 1D cycle fetch its whole window. Batch the deletes. `exchange_symbols` needs no purge, because it only ever holds Binance's latest list.
+- **Shadow outcomes (#44):** the candles after a proposal are in `candle_cache` for `Retention:CandleCacheDays`, but nothing reads a range after a time yet, so add that read to `IMarketData`. Use `Indicators` for any indicator, so the numbers match what the cycle saw.
+- **Capacity (#56):** start from [Request weight per candle](#request-weight-per-candle).
 - **Order execution (#34):** derive client order IDs that match `^[.A-Z:/a-z0-9_-]{1,36}$` (FR-EXE-04). Use `RequestPriority.Protective` for stops, closes and their queries. On `MayHaveExecuted`, query with `IExchangeAccount.GetOrderAsync` before sending again: only null allows it. Persist `SettlesAt` with the order, and don't send it again before then, even after a restart, which the adapter's memory doesn't survive. Check the Futures algo order parameters against Demo first, and add Spot OCO if it's wanted.
 - **System health (#49):** show `IExchangeUsage.Current()` for FR-ADM-04's exchange usage and bans, at `/admin/health`, which ban notifications already link to.
 - **Pausing agents (#23):** subscribe to `ICredentialObserver`, which tells you about every add, rotation, check that got an answer and deletion, with the status before and after. Register it in `AddAgents`, and start a job and return, as `CatalogCredentialObserver` does. The revalidation schedule is the recovery path.
@@ -1419,7 +1522,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync` and `ICatalogAdministration` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment` and `AiRole` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync` and `ICatalogAdministration` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 

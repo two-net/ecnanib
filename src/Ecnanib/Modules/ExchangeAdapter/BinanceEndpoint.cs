@@ -28,6 +28,12 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     /// </summary>
     public static readonly BinanceEndpoint SpotApiRestrictions = new(HttpMethod.Get, "/sapi/v1/account/apiRestrictions", 1, Signed: true);
 
+    /// <summary>Candles. Spot charges the same whatever the limit.</summary>
+    public static readonly BinanceEndpoint SpotKlines = new(HttpMethod.Get, "/api/v3/klines", 2, Signed: false);
+
+    /// <summary>One symbol's 24-hour statistics, which include the last price and the top of the book.</summary>
+    public static readonly BinanceEndpoint SpotTicker24h = new(HttpMethod.Get, "/api/v3/ticker/24hr", 2, Signed: false);
+
     public static readonly BinanceEndpoint FuturesTime = new(HttpMethod.Get, "/fapi/v1/time", 1, Signed: false);
     public static readonly BinanceEndpoint FuturesExchangeInfo = new(HttpMethod.Get, "/fapi/v1/exchangeInfo", 1, Signed: false);
     public static readonly BinanceEndpoint FuturesAccount = new(HttpMethod.Get, "/fapi/v3/account", 5, Signed: true);
@@ -39,4 +45,33 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     public static readonly BinanceEndpoint FuturesNewAlgoOrder = new(HttpMethod.Post, "/fapi/v1/algoOrder", 1, Signed: true, Trade: true, PlacesOrder: true);
     public static readonly BinanceEndpoint FuturesQueryAlgoOrder = new(HttpMethod.Get, "/fapi/v1/algoOrder", 1, Signed: true);
     public static readonly BinanceEndpoint FuturesCancelAlgoOrder = new(HttpMethod.Delete, "/fapi/v1/algoOrder", 1, Signed: true, Trade: true);
+
+    /// <summary>One symbol's best bid and ask.</summary>
+    public static readonly BinanceEndpoint FuturesBookTicker = new(HttpMethod.Get, "/fapi/v1/ticker/bookTicker", 2, Signed: false);
+
+    /// <summary>One symbol's last price.</summary>
+    public static readonly BinanceEndpoint FuturesPrice = new(HttpMethod.Get, "/fapi/v1/ticker/price", 1, Signed: false);
+
+    /// <summary>One symbol's mark price, index price and funding.</summary>
+    public static readonly BinanceEndpoint FuturesPremiumIndex = new(HttpMethod.Get, "/fapi/v1/premiumIndex", 1, Signed: false);
+
+    /// <summary>One symbol's positions, with their liquidation prices.</summary>
+    public static readonly BinanceEndpoint FuturesPositionRisk = new(HttpMethod.Get, "/fapi/v3/positionRisk", 5, Signed: true);
+
+    private static readonly BinanceEndpoint[] FuturesKlinesByWeight =
+    [
+        new(HttpMethod.Get, "/fapi/v1/klines", 1, Signed: false),
+        new(HttpMethod.Get, "/fapi/v1/klines", 2, Signed: false),
+        new(HttpMethod.Get, "/fapi/v1/klines", 5, Signed: false),
+        new(HttpMethod.Get, "/fapi/v1/klines", 10, Signed: false),
+    ];
+
+    /// <summary>Candles. Futures charges by the limit: 1 below 100, 2 below 500, 5 up to 1000, and 10 above.</summary>
+    public static BinanceEndpoint FuturesKlines(int limit) => limit switch
+    {
+        < 100 => FuturesKlinesByWeight[0],
+        < 500 => FuturesKlinesByWeight[1],
+        <= 1000 => FuturesKlinesByWeight[2],
+        _ => FuturesKlinesByWeight[3],
+    };
 }

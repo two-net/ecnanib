@@ -9,7 +9,7 @@ namespace Ecnanib.Modules.ExchangeAdapter;
 /// <summary>
 /// Exchange information, held in memory per market and environment, and refreshed once it's older than
 /// Binance:ExchangeInfoRefreshHours (EXT-BIN-06). It loads lazily rather than on a schedule, because the
-/// adapter can't use Platform's jobs. Market Data (#22) persists the symbols. A failed refresh keeps the
+/// adapter can't use Platform's jobs. Market Data keeps a copy of the symbols. A failed refresh keeps the
 /// last copy and waits a minute before trying again, so an outage doesn't turn every call into a request.
 /// Each refresh also updates the servers' limits. Callers share one refresh, which none of them can
 /// cancel, so one that stops waiting still gets the last copy when there is one.
@@ -20,14 +20,13 @@ internal sealed class ExchangeInfoCache(
     BinanceSettings settings,
     TimeProvider time,
     ILoggerFactory loggerFactory)
-    : IExchangeMarketData
 {
     private static readonly TimeSpan RetryAfterFailure = TimeSpan.FromMinutes(1);
 
     private readonly ConcurrentDictionary<(Market, TradingEnvironment), Entry> _entries = new();
     private readonly ILogger _logger = loggerFactory.CreateLogger(BinanceTransport.Category);
 
-    public async Task<ExchangeInfo> GetExchangeInfoAsync(Market market, TradingEnvironment environment, CancellationToken cancellationToken)
+    public async Task<ExchangeInfo> GetAsync(Market market, TradingEnvironment environment, CancellationToken cancellationToken)
     {
         var entry = _entries.GetOrAdd((market, environment), _ => new Entry());
         Task<ExchangeInfo> refresh;

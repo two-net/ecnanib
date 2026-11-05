@@ -63,6 +63,34 @@ public sealed class ExchangeLoggingTests(PostgresFixture postgres)
         Assert.DoesNotContain("recvWindow", everything, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_position_read_is_logged_by_its_endpoint_and_never_its_query_key_or_signature()
+    {
+        var cancellation = TestContext.Current.CancellationToken;
+        var apiKey = CanaryCases.NewCanary();
+        var secret = CanaryCases.NewCanary();
+        var clock = new TestClock();
+        var binance = new FakeBinance(clock);
+        binance.On(HttpMethod.Get, "/fapi/v3/positionRisk", _ => FakeBinance.Json(BinanceSamples.PositionRisk, headers: ("X-MBX-USED-WEIGHT-1M", "7")));
+
+        await using var app = new LoggedApp(postgres.NewConnectionString(), configureServices: services => ExchangeHarness.Use(services, binance, clock));
+        using var apiKeyValue = SecretValue.FromString(apiKey);
+        using var secretValue = SecretValue.FromString(secret);
+        var key = new ExchangeKey(Guid.NewGuid(), TradingEnvironment.Live, ExchangeKeyType.Hmac, apiKeyValue, secretValue);
+
+        await app.App.Services.GetRequiredService<IExchangeAccount>().GetPositionAsync(key, "BTCUSDT", RequestPriority.Normal, cancellation);
+        var signature = binance.To("/fapi/v3/positionRisk").Single().Parameter("signature")!;
+        await app.StopAsync();
+
+        var read = Assert.Single(
+            app.FileEvents(),
+            entry => Property(entry, "SourceContext") == "Exchange" && Property(entry, "Endpoint") == "/fapi/v3/positionRisk");
+        Assert.Equal(("Information", "FuturesLive", "200", "7"), (read.GetProperty("Level").GetString(), Property(read, "Server"), Property(read, "StatusCode"), Property(read, "UsedWeight")));
+
+        var everything = app.FileText() + await app.TableTextAsync(cancellation);
+        Assert.All([apiKey, secret, signature, "symbol=", "recvWindow"], value => Assert.DoesNotContain(value, everything, StringComparison.Ordinal));
+    }
+
     private static string? Property(JsonElement entry, string name) =>
         entry.GetProperty("Properties").TryGetProperty(name, out var value)
             ? value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText()

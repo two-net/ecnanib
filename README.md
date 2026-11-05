@@ -183,12 +183,14 @@ The `Binance` section names the servers the app calls. Users can't supply their 
 |---|---|
 | `Spot:LiveBaseUrl`, `Spot:DemoBaseUrl` | Required. `https://api.binance.com` and `https://demo-api.binance.com` |
 | `Futures:LiveBaseUrl`, `Futures:DemoBaseUrl` | Required. `https://fapi.binance.com` and `https://demo-fapi.binance.com` |
-| `MarketDataBaseUrl` | Required. Public Spot Live data, `https://data-api.binance.vision` |
+| `MarketDataBaseUrl` | Required. Public Spot Live data, such as candles, prices and the order book, `https://data-api.binance.vision` |
 | `RecvWindowMs` | How long a signed request stays valid, 1 to 10000. Defaults to `5000` |
 | `WeightHeadroomPercent` | The share of each server's request-weight limit kept for protective orders, 0 to 90. Defaults to `30` |
-| `ExchangeInfoRefreshHours` | How long symbols and their filters are kept before they're fetched again, 1 to 168. Defaults to `24` |
+| `ExchangeInfoRefreshHours` | How long symbols and their filters are kept before they're fetched again, 1 to 168. Defaults to `24`. The latest copy is also stored, and answers while Binance can't be reached |
 
 Each URL is a server's address only, with no path, and must use https outside Development. Binance limits request weight per IP address, so every user shares the server's budget.
+
+To stay within that budget, market data is shared. Agents trading the same symbol on the same market and environment share one fetch per candle. Candles are kept in the `candle_cache` table, so only new ones are fetched. Demo data always comes from the Demo servers, because Demo prices aren't Live ones. See [Market data](docs/architecture.md#market-data).
 
 `App:EgressIpAddresses` lists the addresses the server's requests to Binance come from, such as `[ "203.0.113.10" ]`. Users are told to restrict their Binance keys to them, so that a stolen copy of a key is no use anywhere else. Each entry is one IPv4 or IPv6 address, with no range or port. It's optional, and without it users are told to ask you. Keep it up to date when the server's address changes, or every restricted key stops working. If Binance bans the address from one of its servers, requests to that server stop until the ban ends, and administrators are notified. See [Exchange adapter](docs/architecture.md#exchange-adapter).
 

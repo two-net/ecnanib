@@ -595,6 +595,172 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("user_preferences", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.MarketData.CachedCandle", b =>
+                {
+                    b.Property<string>("Market")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("market");
+
+                    b.Property<string>("Environment")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("environment");
+
+                    b.Property<string>("Symbol")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("symbol");
+
+                    b.Property<string>("Interval")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("interval");
+
+                    b.Property<DateTimeOffset>("OpenTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("open_time");
+
+                    b.Property<decimal>("Close")
+                        .HasColumnType("numeric")
+                        .HasColumnName("close");
+
+                    b.Property<DateTimeOffset>("FetchedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fetched_at");
+
+                    b.Property<decimal>("High")
+                        .HasColumnType("numeric")
+                        .HasColumnName("high");
+
+                    b.Property<decimal>("Low")
+                        .HasColumnType("numeric")
+                        .HasColumnName("low");
+
+                    b.Property<decimal>("Open")
+                        .HasColumnType("numeric")
+                        .HasColumnName("open");
+
+                    b.Property<decimal>("QuoteVolume")
+                        .HasColumnType("numeric")
+                        .HasColumnName("quote_volume");
+
+                    b.Property<long>("Trades")
+                        .HasColumnType("bigint")
+                        .HasColumnName("trades");
+
+                    b.Property<decimal>("Volume")
+                        .HasColumnType("numeric")
+                        .HasColumnName("volume");
+
+                    b.HasKey("Market", "Environment", "Symbol", "Interval", "OpenTime")
+                        .HasName("pk_candle_cache");
+
+                    b.HasIndex("FetchedAt")
+                        .HasDatabaseName("ix_candle_cache_fetched_at");
+
+                    b.ToTable("candle_cache", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.MarketData.ExchangeSymbol", b =>
+                {
+                    b.Property<string>("Market")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("market");
+
+                    b.Property<string>("Environment")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("environment");
+
+                    b.Property<string>("Symbol")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("symbol");
+
+                    b.Property<string>("BaseAsset")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("base_asset");
+
+                    b.Property<string>("ContractType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("contract_type");
+
+                    b.Property<decimal?>("MarketMaxQuantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("market_max_quantity");
+
+                    b.Property<decimal?>("MarketMinQuantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("market_min_quantity");
+
+                    b.Property<decimal?>("MarketStepSize")
+                        .HasColumnType("numeric")
+                        .HasColumnName("market_step_size");
+
+                    b.Property<decimal?>("MaxNotional")
+                        .HasColumnType("numeric")
+                        .HasColumnName("max_notional");
+
+                    b.Property<decimal?>("MaxPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("max_price");
+
+                    b.Property<decimal?>("MaxQuantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("max_quantity");
+
+                    b.Property<decimal?>("MinNotional")
+                        .HasColumnType("numeric")
+                        .HasColumnName("min_notional");
+
+                    b.Property<decimal?>("MinPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("min_price");
+
+                    b.Property<decimal?>("MinQuantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("min_quantity");
+
+                    b.PrimitiveCollection<string[]>("OrderTypes")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("order_types");
+
+                    b.Property<string>("QuoteAsset")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("quote_asset");
+
+                    b.Property<DateTimeOffset>("RefreshedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("refreshed_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<decimal?>("StepSize")
+                        .HasColumnType("numeric")
+                        .HasColumnName("step_size");
+
+                    b.Property<decimal?>("TickSize")
+                        .HasColumnType("numeric")
+                        .HasColumnName("tick_size");
+
+                    b.HasKey("Market", "Environment", "Symbol")
+                        .HasName("pk_exchange_symbols");
+
+                    b.ToTable("exchange_symbols", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Notifications.Notification", b =>
                 {
                     b.Property<long>("Id")

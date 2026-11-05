@@ -106,6 +106,43 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
         }
     }
 
+    public async Task<IReadOnlyList<FuturesPosition>> GetPositionAsync(
+        ExchangeKey key,
+        string symbol,
+        RequestPriority priority,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceMarketData.CheckSymbol(symbol);
+
+        var positions = await transport.SendAsync<List<PositionRiskBody>>(
+            ExchangeServers.Trading(Market.Futures, key.Environment),
+            BinanceEndpoint.FuturesPositionRisk,
+            [("symbol", symbol)],
+            key,
+            priority,
+            clientOrderId: null,
+            cancellationToken);
+
+        // Binance also lists a symbol that has only open orders, with an amount of 0.
+        return
+        [
+            .. positions
+                .Where(position => position.Symbol == symbol && position.PositionAmt != 0)
+                .Select(position => new FuturesPosition(
+                    position.Symbol,
+                    position.PositionSide,
+                    position.PositionAmt,
+                    position.EntryPrice,
+                    position.BreakEvenPrice,
+                    position.MarkPrice,
+                    position.LiquidationPrice > 0 ? position.LiquidationPrice : null,
+                    position.UnRealizedProfit,
+                    position.MarginAsset,
+                    position.UpdateTime is > 0 and var updated ? DateTimeOffset.FromUnixTimeMilliseconds(updated) : null)),
+        ];
+    }
+
     internal static void Check(OrderReference order)
     {
         ArgumentNullException.ThrowIfNull(order);
