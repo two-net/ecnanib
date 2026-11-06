@@ -70,6 +70,7 @@ Some needs run in both directions, and a reference can't solve that. Separating 
 | Identity, data owners | Account deletion and export (FR-AUTH-09, FR-DATA-03) | Port declared by Identity, implemented by each owner |
 | DecisionCycle, Administration | Emergency pause (FR-ADM-05) | DecisionCycle owns the state; Administration only commands it |
 | Modules, Web UI | Live updates (FR-UI-05, FR-ROLE-08) | Events that the Web UI subscribes to |
+| Agents, DecisionCycle | An approval whose agent was paused or stopped can't be approved (FR-APR-03) | No call: approving and `approval-expiry` read the agent's status through `IAgents`. See [Approvals](#approvals) |
 
 In-process events are lost on a crash, so each one needs a recovery path, such as periodic revalidation or reconciliation.
 
@@ -394,6 +395,8 @@ await transaction.CommitAsync(cancellationToken);
 | `CatalogModelEdited` | `CatalogAdministration.SaveModelAsync` | By an administrator, with no user, in the transaction that writes `model_overrides`. The target is the model, as `provider/model` when that fits 128 characters. `Changes` has the provider and model, and each field that changed, before and after, with a null for inherited. Not recorded when nothing changed |
 | `RoleDefaultChanged` | `CatalogAdministration.SaveRoleDefaultsAsync` | By an administrator, with no user, one per role that changed, in the transaction that saves them all. The role is the target, and `Changes` has the provider and model, before and after |
 | `CatalogSyncRequested` | `CatalogAdministration.SyncAllAsync` | By an administrator, with no user, when the sync starts. Not when one is already running |
+| `TradeApproved` | `Approvals.ApproveAsync` | In the transaction of the conditional update from `Pending` to `Approving`, on the user's circuit, so it keeps their address, before the Risk Engine looks again. The approval is the target. `Changes` has the action, the pair and the status before and after. See [Approvals](#approvals) |
+| `TradeRejected` | `Approvals.RejectAsync`, and `Approvals` when the Risk Engine's second look fails | By the user, from `Pending` to `Rejected`, or by the system, from `Approving` to `Invalid`, in the transaction that changes the status. `Changes` as for `TradeApproved`. An expiry isn't recorded, because nobody decided it |
 
 **Visitors write `SignInFailed` rows,** one per attempt, whether or not the address has an account. FR-AUD-01 asks for them, and the sign-in [rate limit](#rate-limiting) bounds how fast they arrive.
 
@@ -1724,7 +1727,7 @@ The wizard (#40) will take over `/agents/new`, and the agent's own page (#41) `/
 
 | Contract | What | Who uses it |
 |---|---|---|
-| `IRiskEngine` | `Evaluate(intent, inputs)`, and `CheckLossLimits` for the start of each cycle | The decision cycle (#31), approvals' re-validation (#38), and Execution for the emergency close and the kill switch |
+| `IRiskEngine` | `Evaluate(intent, inputs)`, and `CheckLossLimits` for the start of each cycle | The decision cycle (#31), [approvals](#approvals)' second look, and Execution for the emergency close and the kill switch |
 | `OrderIntent`, `RiskInputs` | What's asked, and everything the rules look at | Their callers build them |
 | `RiskEvaluation`, `SizedOrder` | Every rule's outcome, reason and inputs (FR-RISK-10), and what a passing evaluation allows to be sent | The decision trace (#31) and [Execution](#order-execution) |
 | `RiskCaps` | FR-RISK-11's global hard caps, from the `RiskCaps` section, with SRS 7.3's values when it's missing. An invalid one stops startup and is named (CFG-03) | The engine, Agents and the settings page share one instance |
@@ -1851,7 +1854,7 @@ A run looks only at the latest close, so an agent gets at most one catch-up:
 
 ### Settings
 
-They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A missing value takes its default, and an invalid one stops startup with a message that names it (CFG-03). `CatchUpGraceMinutes` and `CycleDeadlineMinutes` take one value per timeframe, keyed `15m`, `1H`, `4H` and `1D`, and any other key is refused.
+They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A missing value takes its default, and an invalid one stops startup with a message that names it (CFG-03). `CatchUpGraceMinutes` and `CycleDeadlineMinutes` take one value per timeframe, keyed `15m`, `1H`, `4H` and `1D`, and any other key is refused. `SettingValues` in `Platform/Contracts` reads them, and the decision cycle's `ApprovalWindowMinutes` the same way ([Approvals](#approvals)), because the decision cycle can't use the scheduler.
 
 | Setting | Default | Range |
 |---|---|---|
@@ -1867,7 +1870,7 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 
 ## Decision cycle
 
-`Modules/DecisionCycle` runs an agent's decision cycle (FR-CYC-02) when the [scheduler](#scheduler) starts it. It checks the loss limits and the AI budget, collects the market and the account, and asks the AI council's roles. The Risk Engine then checks what they propose. Every step is saved in a decision trace as it happens. An Autonomous agent's cycle ends by [executing](#order-execution) the order the engine sized, and a Confirm agent's waits for approval (#38).
+`Modules/DecisionCycle` runs an agent's decision cycle (FR-CYC-02) when the [scheduler](#scheduler) starts it. It checks the loss limits and the AI budget, collects the market and the account, and asks the AI council's roles. The Risk Engine then checks what they propose. Every step is saved in a decision trace as it happens. An Autonomous agent's cycle ends by [executing](#order-execution) the order the engine sized, and a Confirm agent's waits for its user's [approval](#approvals), unless it reduces risk and the agent lets those through (FR-APR-04).
 
 | Contract | What | Who uses it |
 |---|---|---|
@@ -1877,7 +1880,8 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 | `IAiSpending`, `AiSpend`, `BudgetCheck` | Each agent's AI spend this UTC day and month, for its user only (NFR-SEC-04), and whether its budget has run out (FR-CYC-07). See [Budgets](#budgets) | The decision cycle, and the Web UI's agent list and settings page |
 | `ICouncil`, in `AiCouncil/Contracts` | Asks one role, with its fallback, and returns the answer or the failure, with every call it made | The decision cycle. It spends the user's money, so `BannedApis` allows it only in AiCouncil and DecisionCycle |
 | `IAgentAccounts`, in `Execution/Contracts` | Reconciles the agent's orders with Binance (FR-EXE-06), then reads its balances through its key, the symbol's leverage brackets on Futures, which cost 1 more each cycle, and its position and pending entry from Execution's records. See [Reconciliation](#reconciliation) | The decision cycle |
-| `IOrderExecution`, in `Execution/Contracts` | Sends the sized order and protects what fills. See [Order execution](#order-execution) | The decision cycle, and approvals (#38), which `BannedApis` enforces |
+| `IOrderExecution`, in `Execution/Contracts` | Sends the sized order and protects what fills. See [Order execution](#order-execution) | The decision cycle and [approvals](#approvals), which `BannedApis` enforces |
+| `IApprovals`, `ApprovalRecord` | A user's pending and decided approvals, and approving or rejecting one, for its user only (NFR-SEC-04). See [Approvals](#approvals) | The Web UI's `/approvals` pages |
 | `ITradeJournal`, in `Execution/Contracts` | The agent's realized P&L today and this week, its losses in a row since it last became Active, its entries today and when its last loss closed. See [The trade journal](#the-trade-journal) | The decision cycle, for `TradingRecord` |
 | `IAgents.EnterErrorAsync`, `IAgentHistory`, in `Agents/Contracts` | Error after repeated failures, and deleting the agent's cycles with it | The decision cycle, and `Agents.DeleteAsync` |
 
@@ -1899,8 +1903,8 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 | 7 | The Risk Critic rejected | `RejectedByCritic` |
 | 8 | The proposal, with the Risk Critic's changes, becomes an `OrderIntent`, which `IRiskEngine.Evaluate` checks against `RiskInputs`. The evaluation is saved. A loss limit it finds pauses the agent | `BlockedByRiskEngine` when it fails |
 | 8 | It passed, but it's an entry and `CycleRequest.AllowsNewEntry` says the deadline has passed (FR-CYC-06) | `PastDeadline` |
-| 8 | It passed, and the agent is in Confirm mode | `ReadyToExecute`, for approval (#38) |
-| 9 | Autonomous: `IOrderExecution` sent it, and it took effect: placed, filled and protected, closed when its stop couldn't be placed, an exit sold, a stop or target moved, or an unfilled entry cancelled. Nothing is sent once shutdown has begun | `Executed` |
+| 9 | Confirm mode, unless the action reduces risk and the agent lets those through (FR-APR-04): the order waits for its user as an [approval](#approvals), which commits with the cycle's end | `AwaitingApproval` |
+| 9 | Autonomous, or a risk-reducing action as above: `IOrderExecution` sent it, and it took effect: placed, filled and protected, closed when its stop couldn't be placed, an exit sold, a stop or target moved, or an unfilled entry cancelled. Nothing is sent once shutdown has begun | `Executed` |
 | 9 | Nothing took effect: Binance rejected it or couldn't be reached, the key can't be used, the Futures account isn't ready, or the entry's outcome is still unknown | `ExecutionFailed`, with `Execution` |
 | 9 | Nothing was sent because there was no unfilled entry to cancel, the agent no longer holds the position it would exit or adjust, or Binance's position in the pair isn't only the agent's | `ExecutionFailed` |
 | 9 | The deadline passed while the entry was checked | `PastDeadline` |
@@ -1986,9 +1990,53 @@ A cycle errored when it ended without a decision: `Failed`, or `Hold` because a 
 
 `CycleRun` keeps the roles' states in memory, and after each save tells every `ICycleObserver` through `CycleObservers`, which resolves them on first use and logs one that throws. An observer hears every user's cycles, on the cycle's own thread, so it filters and returns at once. Events are lost on a crash, so a page reads `IDecisionTraces.FindLatestAsync` when it opens. A summary is the analyst's own, or the action or verdict with its rationale, cut to 600 characters. A model wrote it, so it's only ever shown as text.
 
+### Approvals
+
+In Confirm mode, the order the Risk Engine sized waits for its user (SRS 3.11). `Approvals`, in this module because an approval hangs off a cycle, keeps them, and `IApprovals` lets the Web UI list, approve and reject them, always for one user (NFR-SEC-04).
+
+**What waits.** `ApprovalPolicy.NeedsApproval` decides at step 9. An Autonomous agent's order never waits. A Confirm agent's does, unless it reduces risk and the agent's "Reduce risk without asking" is on, which is the default (FR-APR-04). Those go at once, as an Autonomous agent's would:
+
+| Reduces risk | Waits |
+|---|---|
+| `AdjustStop`, which the engine allows only toward less risk (FR-RISK-06), `Sell` and `Close`, whole or part, and `CancelPending` | `AdjustTarget`, and every entry: `Buy`, `OpenLong`, `OpenShort` and adds |
+
+**One pending per agent.** The approval, the `ApprovalPending` notice and the expiry of the agent's older pending approval, as `Superseded`, commit with the cycle's end in `CycleRun.FinishAsync`. A newer proposal is on fresher data, and a partial unique index on `agent_id` for `Pending` holds it. A superseded approval raises no notice, because its user hears of the new one.
+
+| Status | Means |
+|---|---|
+| `Pending` | Waiting, until `expires_at`: its cycle's end plus `Agents:ApprovalWindowMinutes` for the timeframe |
+| `Approving` | Approved, and being checked again and sent. A partial unique index allows one per agent |
+| `Executed` | Sent, and it took effect. `execution` says how |
+| `Invalid` | The Risk Engine's second look failed: rejected automatically, with its rules in `revalidation` (FR-APR-03) |
+| `Failed` | Approved but not sent: Binance couldn't be read, nothing took effect, or shutdown began. `end` says which |
+| `Rejected` | By its user |
+| `Expired` | `end` says why: `WindowEnded`, `AgentNotActive`, `AgentChanged` or `Superseded` |
+| `Interrupted` | The process stopped while it was `Approving`. What was sent, if anything, is in the agent's orders, which reconciliation settles, so it's never sent again |
+
+**Approving** is single-shot, because the entry's client order ID comes from its cycle's candle close, and a second send would collide:
+
+1. A pending approval that has expired, whose agent isn't Active, or whose agent's market, environment, pair or timeframe has changed, is expired with its notice instead. An agent's pair can change while it holds nothing (FR-AGT-03).
+2. A conditional update from `Pending` to `Approving`, with `TradeApproved` in the same transaction, on the user's circuit, so the record keeps their address. Of two clicks, one moves it, and the other is `NotPending`. Another approval of the agent's already `Approving` is `Busy`, so two approved entries can't both pass the engine before either is on record.
+3. The rest runs through `IJobRunner.RunAsync` as `approval`, and the page waits for it. That gives it a correlation ID, a `job_runs` row, a place in the shutdown drain, and a token that's safe for Binance, which a circuit's isn't (NFR-REL-04).
+4. **The second look** (FR-APR-03). `CycleData` reads the pair, the market at the cycle's candle close and the account, which reconciles it, as the cycle did, and the trading record now. So the ATR is the one the proposal saw, the prices are at most a minute old (`QuoteFeed.MaximumAge`), and the position, pending entry, balances and loss limits are as they are now. The cooldown counts the cycles before the approval's, which is stricter than the cycle was: a loss since then leaves none. `IRiskEngine.Evaluate` takes the stored `OrderIntent`, which it trusts no more than the first time, and sizes it again, so the quantity and money at risk can change. A loss limit it finds pauses the agent. A failure is `Invalid`, with `TradeRejected` by the system, in one transaction.
+5. **Sending.** `IOrderExecution` gets what the engine sized now, with the cycle's ID and candle close, the Strategist's time-to-live, and an entry deadline a minute after the approval (`Approvals.SendWindow`). So an approval made in the window's last seconds isn't refused for the time its check takes, and an entry never goes on prices older than that. The executor checks the agent is Active and the deadline again, readies a Futures symbol, and records its orders as the cycle's. `AgentNotActive` expires the approval, and a Futures account only its user can fix puts the agent in Error, as for a cycle.
+6. How it went is written with a time limit of its own, because an order may have gone. An exception after the order was handed to the executor leaves it `Interrupted`, not `Failed`, because only the orders know what was sent.
+
+**The cycle's outcome stays `AwaitingApproval`.** The approval's row says what happened next, so the cooldown, the error run and the budget notice, which read outcomes, see a decision whatever the user does. `decision_cycles.execution` is only for what the cycle sent itself.
+
+**Expiry.** `approval-expiry` runs every minute and expires each pending approval whose window has ended, or whose agent isn't Active or has changed, with `ApprovalExpired` in the same transaction, linking to the approval. Approving checks the same itself, so the job only decides when the status and notice appear. Agents can't call this module, so this is also how a paused or stopped agent's approval ends ([Inversions](#inversions)). At startup, `CycleRecovery` marks `Approving` rows `Interrupted`.
+
+| Table | What |
+|---|---|
+| `approvals` | SRS 6.1's Approval: the cycle, with a cascading foreign key and unique, so an agent's deletion, account deletion and retention take it with its cycle. The user and agent, the status and why it ended, when it was created and expires, who decided and when (null is the system), the `OrderIntent`, the time-to-live, the proposal the page shows, the second look as the whole `RiskEvaluation`, and the `ExecutionResult` |
+
+- **The proposal is a snapshot** taken when the cycle ends: what the engine sized then, the reference price for a market order (the ask to buy and the bid to sell), the Strategist's rationale, and the Risk Critic's verdict, rationale and concerns (FR-APR-01). Models wrote those, so the page shows them only as text.
+- **`Agents:ApprovalWindowMinutes`** takes one value per timeframe, as the scheduler's timings do, through `SettingValues`, which both share: 5, 20, 60 and 240 minutes by default (SRS 7.3), from 1 to less than the timeframe. A shorter window than the timeframe keeps a late-approved limit entry alive, because its time-to-live counts from its cycle's candle close.
+- **The pages.** `/approvals` lists the pending approvals, oldest first, then the latest 50 decided. `/approvals/{id}` is the one notifications and emails link to, and another user's is Not Found. Both are interactive: approving and rejecting take no secret, and two-factor isn't asked, because FR-AUTH-05 doesn't list approvals. A decided card stays where it is until the page opens again, so the announcement of how it went isn't lost.
+
 ### Testing it
 
-`CycleApp` in `tests/Ecnanib.Tests/DecisionCycle` builds on `AgentApp`, with Binance's candles and prices, and a model on both test providers. The model answers each role from the test's `Replies`, by the role in the request, or with a Spot market buy the Risk Critic approves and the engine passes. The sample candles move by about 3 an hour around 120, while the sample ticker is at about 60,123, so the buy's stop and targets are a few dollars from the ticker's ask, which keeps the stop within the engine's ATR bounds. Tests run cycles through `IDecisionCycles` themselves, and `Missing` takes candles away, as during maintenance. `BudgetTests` prices the test model through `Catalog:Overrides`, so a buy's cycle costs $6. It also moves the clock to noon mid-month, so that no day or month ends during a test unless the test moves the clock there.
+`CycleApp` in `tests/Ecnanib.Tests/DecisionCycle` builds on `AgentApp`, with Binance's candles and prices, and a model on both test providers. The model answers each role from the test's `Replies`, by the role in the request, or with a Spot market buy the Risk Critic approves and the engine passes. The sample candles move by about 3 an hour around 120, while the sample ticker is at about 60,123, so the buy's stop and targets are a few dollars from the ticker's ask, which keeps the stop within the engine's ATR bounds. Tests run cycles through `IDecisionCycles` themselves, and `Missing` takes candles away, as during maintenance. `BudgetTests` prices the test model through `Catalog:Overrides`, so a buy's cycle costs $6. It also moves the clock to noon mid-month, so that no day or month ends during a test unless the test moves the clock there. `ApprovalTests` approves, rejects and expires a Confirm agent's buy against a `FakeOrderBook`, moves the ticker through the stop to make the second look fail, and runs `approval-expiry` as a manual job. `ApprovalPageTests` reads the pages.
 
 ## Order execution
 
@@ -1996,7 +2044,7 @@ A cycle errored when it ended without a decision: `Failed`, or `Hold` because a 
 
 | Contract | What | Who uses it |
 |---|---|---|
-| `IOrderExecution` | `ExecuteAsync(ExecutionRequest)`: reconciles the agent's orders, then sends an entry, an exit or a stop or target adjustment, or cancels the agent's unfilled entry. It returns once what was sent has settled and anything filled is protected or closed. Returns an `ExecutionResult` for the trace | The decision cycle for an Autonomous agent, and approvals (#38). `BannedApis` allows it only in DecisionCycle and Execution |
+| `IOrderExecution` | `ExecuteAsync(ExecutionRequest)`: reconciles the agent's orders, then sends an entry, an exit or a stop or target adjustment, or cancels the agent's unfilled entry. It returns once what was sent has settled and anything filled is protected or closed. Returns an `ExecutionResult` for the trace | The decision cycle for an Autonomous agent and a Confirm agent's risk-reducing actions, and [approvals](#approvals). `BannedApis` allows it only in DecisionCycle and Execution |
 | `IAgentAccounts` | Reconciles, then reads the account. The position and the pending entry come from `orders` and `protections` | The decision cycle |
 | `IAgentExposure` | Open positions and orders, from `orders` and `protections` alone, which reconciliation keeps in line with Binance, because Agents asks inside its lock (FR-AGT-03) | Agents |
 | `IAgentLiquidation` | The kill switch's close. See [The kill switch](#the-kill-switch) | Agents |
@@ -2182,16 +2230,19 @@ Settling a trade costs once, when it closes: 5 per order with fills, usually 10 
 
 ### AC-01's audit query
 
-Every order cites a passing Risk Engine evaluation: one from the council cites its cycle's, and one of Ecnanib's own carries its own.
+Every order cites a passing Risk Engine evaluation: one from the council cites its cycle's, and, when its cycle waited for [approval](#approvals), the approval's passing second look, which sized what was sent. One of Ecnanib's own carries its own.
 
 ```sql
 SELECT count(*) FROM orders o
 WHERE NOT (
-    (o.origin = 'Council' AND EXISTS (SELECT 1 FROM risk_evaluations e WHERE e.cycle_id = o.cycle_id AND e.verdict = 'Pass'))
+    (o.origin = 'Council'
+        AND EXISTS (SELECT 1 FROM risk_evaluations e WHERE e.cycle_id = o.cycle_id AND e.verdict = 'Pass')
+        AND NOT EXISTS (SELECT 1 FROM approvals a WHERE a.cycle_id = o.cycle_id
+            AND (a.revalidation IS NULL OR a.revalidation ->> 'verdict' <> 'Pass')))
     OR (o.origin = 'System' AND o.system_evaluation ->> 'verdict' = 'Pass'))
 ```
 
-It should return 0. `CycleExecutionTests` runs it.
+It should return 0. `CycleExecutionTests` and `ApprovalTests` run it.
 
 ### Settings
 
@@ -2387,7 +2438,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **The dashboard (#41):** [idle means a user action](#idle-means-a-user-action), so a live page times out when nobody touches it. Don't call .NET from a timer in JS, because that would count as activity.
 - **Administrators and account deletion (#47, #51):** add a revoke-all to `ISessions` for FR-ADM-01, built on `Sessions.DeleteAllAsync`, and call it before deleting a user. The foreign key removes the rows, but only `SessionConnections.End` closes live connections, and [a circuit's connection](#ending-a-circuit) would otherwise run until its next user action. `account_tokens` goes with the user through its foreign key.
 - **User administration (#47):** use `IAdministrators` and `AccountPolicies.Administrator`, behind contracts as well as on pages. Add a way to remove an account, because a stranger who registers a listed address holds it until then. Link a user's page to `/admin/password-reset`, which issues reset links with email off. Decide whether an administrator can turn off a user's two-factor, for someone who has lost both their phone and their recovery codes. With email off, an administrator can already issue a reset link, so the two together would let an administrator take over any account: if it's added, audit it, and consider requiring the bootstrap secret.
-- **Audited actions (#39, #47, and the agent, approval and emergency pause issues):** record each FR-AUD-01 action with `IAuditTrail.Add` on the context that makes the change, in the same transaction. Add its `AuditAction` value and its text in `ActivityText`. Set `UserId` to the account it's about, and the actor to whoever did it: an administrator acting on someone else's account, or the system for a job or a risk limit (FR-AGT-04). A before/after summary in `Changes` shows on the activity page, so give each field its text in `ActivityText.FieldOf`, or it's left out. See [Audit](#audit).
+- **Audited actions (#39, #47, and the emergency pause issue):** record each FR-AUD-01 action with `IAuditTrail.Add` on the context that makes the change, in the same transaction. Add its `AuditAction` value and its text in `ActivityText`. Set `UserId` to the account it's about, and the actor to whoever did it: an administrator acting on someone else's account, or the system for a job or a risk limit (FR-AGT-04). A before/after summary in `Changes` shows on the activity page, so give each field its text in `ActivityText.FieldOf`, or it's left out. See [Audit](#audit).
 - **Account deletion (#51):** FR-AUTH-09 keeps audit records with the identity anonymized, and the [trigger](#append-only) refuses every `UPDATE`. Replace `audit_events_append_only()` in a new migration, so that an update can set `user_id`, `actor_id`, `ip_address` and `user_agent` to null and change nothing else, and add a test that it can't do more.
 - **Audit search (FR-ADM-06):** add a search to `IAuditTrail` and a page through Administration, which may use Platform. Show actor IDs and correlation IDs there, which `IAccountActivity` leaves out. Index whatever it filters on. The catalog's records have no user, so no activity page shows them yet: give `CatalogAuditFields` their text in `ActivityText.FieldOf` then.
 - **Raising notifications (FR-NTF-01):** raise each through `INotifications`, with `Add` on the context that makes the change it's about, so both commit together. Link to the page it's about, and set `Demo` for a Demo agent. See [Notifications](#notifications). Who raises what, by what `ModuleMap.cs` allows:
@@ -2400,7 +2451,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
   - Execution: `TradeOpened` is raised already, when an entry's first protection rests, and `TradeClosed` when what filled was closed because its stop couldn't be placed. See [Order execution](#order-execution)
   - Execution: `TradeClosed` for a stop or target that executed, an exit, and a close outside Ecnanib (FR-EXE-06), and `StopMoved` for a stop moved or placed again, are raised already, at most one of each per pass. See [Reconciliation](#reconciliation)
   - Agents: `KillSwitchExecuted` is raised already, by `Agents.StopAndCloseAsync` and `StopAllAsync`, one per agent. See [The kill switch](#the-kill-switch)
-  - DecisionCycle (#38): `ApprovalPending` and `ApprovalExpired`, linking to the approval page, which needs sign-in like every page (FR-APR-02)
+  - DecisionCycle: `ApprovalPending` is raised already, with the approval a Confirm agent's cycle ends with, and `ApprovalExpired` by `approval-expiry` and by approving one that can no longer be. Both link to `/approvals/{id}`. See [Approvals](#approvals)
   - Execution: `ExchangeRateLimitBan` is raised already, by `ExchangeBanNotifier`. See [Bans](#bans)
 - **Live updates (#41):** push a new notification to the menu's count and an open list. Today they only change on navigation.
 - **Retention (#50):** the SRS sets no period for `notifications`, so decide one, and purge in batches by `created_at`. With email on, the email job adds a `job_runs` row a minute, about 1,440 a day, plus a `send-email` row per message.
@@ -2439,9 +2490,10 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Metrics (#43, #46):** attribute a trade to the roles' models through `trade_cycles`, its entry's cycle first. Count only settled trades, keep Demo and Live apart (FR-EXP-08), and leave out `unpriced_quantity`. Add the reads to `ITradeJournal`, scoped by user (NFR-SEC-04).
 - **The dashboard (#41):** show the position from `IAgentAccounts`, or a read beside it over the same records (FR-AGT-11). `AgentAccount` has its opening time, targets and liquidation price.
 - **The dashboard (#41):** show realized P&L net of fees and funding from the journal (FR-AGT-11), and an open trade's funding to date, which the journal reads only once a trade closes. Add those reads to `ITradeJournal`, scoped by user.
-- **Approvals (#38):** re-evaluate on approval with fresh inputs (FR-APR-03): the size and prices may change, and a failure rejects the approval with its reasons. Show `SizedOrder.MoneyAtRisk` as the money at risk (FR-APR-01).
+- **The council view and the dashboard (#41, #53):** a Confirm agent's cycle ends `AwaitingApproval`, FR-ANI-01's "Awaiting approval" reveal. Read what happened next from `IApprovals`, and show the user's pending approvals on the dashboard, linking to `/approvals/{id}`. A new approval reaches an open page only on the next navigation until live updates push it.
+- **The trace viewer (#42):** show a cycle's approval with its trace: its status and end, who decided and when, the second look's rules from `approvals.revalidation`, and `approvals.execution`. `ApprovalText` already gives `RiskReason`, `ExecutionStatus` and `ExecutionReason` their text. `ReadyToExecute` appears only in older traces.
+- **Approvals and retention, export and metrics (#43, #44, #50, #51):** an approval goes with its decision cycle through its foreign key, so retention and account deletion need nothing more. Export a user's approvals with their cycles (FR-DATA-03). A proposal the user rejected, or that expired or failed its second look, was never executed: simulate it for shadow outcomes (FR-EXP-03), and count it apart from the Risk Critic's own rejections.
 - **The trace viewer (#42):** give `RiskRule`, `RuleOutcome` and `RiskReason` their text, and show each rule's inputs as recorded. The Settings rule's inputs show each capped setting, its cap and what was used.
-- **Approvals (#38):** a Confirm agent's cycle ends `ReadyToExecute`. Add `AwaitingApproval` to `CycleOutcome` for FR-ANI-01's reveal. On approval, re-evaluate, then send the new `SizedOrder` through `IOrderExecution` with the approval's deadline, which checks it again right before sending, readies a Futures symbol again (FR-RISK-09), and records the result. Put it in `decision_cycles.execution`, or the approval's own row. It sends nothing for an agent that's no longer Active (`AgentNotActive`), so an approval for an agent paused, stopped or killed meanwhile should say so, and expire.
 - **Per-agent catch-up (FR-CYC-04):** each agent's last cycle is now in `decision_cycles`, so a restart could catch up the agents whose close's job ran but whose cycle never started. See [Scheduler](#scheduler).
 - **Live updates and the council view (#41, #53):** subscribe an `ICycleObserver`, filter by the signed-in user, and read `IDecisionTraces.FindLatestAsync` when the page opens, because events are lost on a crash. A role's summary is a model's text, so show it only as text.
 - **The trace viewer (#42):** extend `IDecisionTraces` with the whole trace: the input snapshot, each AI call with its prompt, answer, violations, tokens, cost and latency, and the Risk Engine's rules. Every query takes the user (NFR-SEC-04), and administrators never see it (FR-ADM-01).
@@ -2456,7 +2508,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and `ICatalogControls` beside it, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync`, `ICatalogAdministration`, `CatalogAuditFields` and `IModelStatusObserver` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `IPrompts`, `PromptComposer`, `PromptRequest`, `PromptContext`, `ComposedPrompt`, `PromptTemplate`, `PromptTemplateKey`, `PromptWindows`, `OutputContracts`, `ContractContext`, `OutputContractException`, `TradeActions` and the five role outputs in `Modules/AiCouncil/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IActiveAgents`, `IAgentExposure`, `IAgentLiquidation`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `IAgentHistory` in `Modules/Agents/Contracts`, `IDecisionCycles`, `CycleRequest`, `CycleProgress`, `ICycleObserver` and `IDecisionTraces` in `Modules/DecisionCycle/Contracts`, `ICouncil` in `Modules/AiCouncil/Contracts`, `IAgentAccounts`, `IFuturesSetup` and `ITradeJournal` in `Modules/Execution/Contracts`, `RiskSettings`, `RiskCaps`, `IRiskEngine`, `OrderIntent`, `RiskInputs`, `RiskEvaluation`, `SizedOrder` and `RiskPeriods` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and `ICatalogControls` beside it, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync`, `ICatalogAdministration`, `CatalogAuditFields` and `IModelStatusObserver` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `IPrompts`, `PromptComposer`, `PromptRequest`, `PromptContext`, `ComposedPrompt`, `PromptTemplate`, `PromptTemplateKey`, `PromptWindows`, `OutputContracts`, `ContractContext`, `OutputContractException`, `TradeActions` and the five role outputs in `Modules/AiCouncil/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IActiveAgents`, `IAgentExposure`, `IAgentLiquidation`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `IAgentHistory` in `Modules/Agents/Contracts`, `IDecisionCycles`, `CycleRequest`, `CycleProgress`, `ICycleObserver`, `IDecisionTraces`, `IApprovals` and its records in `Modules/DecisionCycle/Contracts`, `ICouncil` in `Modules/AiCouncil/Contracts`, `IAgentAccounts`, `IFuturesSetup` and `ITradeJournal` in `Modules/Execution/Contracts`, `RiskSettings`, `RiskCaps`, `IRiskEngine`, `OrderIntent`, `RiskInputs`, `RiskEvaluation`, `SizedOrder` and `RiskPeriods` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49 and `SettingValues` for per-timeframe settings, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 

@@ -874,6 +874,105 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("ai_calls", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.DecisionCycle.ApprovalRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CycleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cycle_id");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at");
+
+                    b.Property<Guid?>("DecidedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("decided_by");
+
+                    b.Property<string>("End")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("end");
+
+                    b.Property<string>("Execution")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("execution");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Intent")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("intent");
+
+                    b.Property<int?>("LimitTtlCandles")
+                        .HasColumnType("integer")
+                        .HasColumnName("limit_ttl_candles");
+
+                    b.Property<string>("Proposal")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("proposal");
+
+                    b.Property<DateTimeOffset?>("RevalidatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revalidated_at");
+
+                    b.Property<string>("Revalidation")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("revalidation");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_approvals");
+
+                    b.HasIndex("CycleId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_approvals_cycle_id");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_approvals_pending_expires_at")
+                        .HasFilter("status = 'Pending'");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_approvals_user_id_created_at");
+
+                    b.HasIndex(new[] { "AgentId" }, "ix_approvals_agent_id_approving")
+                        .IsUnique()
+                        .HasDatabaseName("ix_approvals_agent_id_approving")
+                        .HasFilter("status = 'Approving'");
+
+                    b.HasIndex(new[] { "AgentId" }, "ix_approvals_agent_id_pending")
+                        .IsUnique()
+                        .HasDatabaseName("ix_approvals_agent_id_pending")
+                        .HasFilter("status = 'Pending'");
+
+                    b.ToTable("approvals", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.DecisionCycle.CycleRoleRow", b =>
                 {
                     b.Property<Guid>("CycleId")
@@ -2587,6 +2686,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_ai_calls_decision_cycles_cycle_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.DecisionCycle.ApprovalRow", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.DecisionCycle.DecisionCycleRow", null)
+                        .WithOne()
+                        .HasForeignKey("Ecnanib.Modules.DecisionCycle.ApprovalRow", "CycleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_approvals_decision_cycles_cycle_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.DecisionCycle.CycleRoleRow", b =>

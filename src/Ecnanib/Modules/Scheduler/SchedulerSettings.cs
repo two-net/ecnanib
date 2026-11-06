@@ -1,12 +1,12 @@
-using System.Globalization;
 using Ecnanib.Kernel;
+using Ecnanib.Platform.Contracts;
 
 namespace Ecnanib.Modules.Scheduler;
 
 /// <summary>
 /// The cycle timings in the Agents section (SRS 7.3). Read() is the only way in. A missing value takes its default,
 /// and an invalid one stops startup with a message that names it (CFG-03). The section's other settings belong to
-/// Agents, and its approval windows to #38.
+/// Agents, and its approval windows to the decision cycle.
 /// </summary>
 internal sealed class SchedulerSettings
 {
@@ -80,63 +80,15 @@ internal sealed class SchedulerSettings
     /// <exception cref="InvalidOperationException">A setting is invalid. The message names it.</exception>
     public static SchedulerSettings Read(IConfiguration configuration)
     {
-        var delay = ReadNumber(configuration, CandleCloseDelayKey, 10, 0, 300);
-        var concurrency = ReadNumber(configuration, MaxConcurrentCyclesKey, 50, 1, 1000);
-        var jitter = ReadNumber(configuration, MaxJitterKey, 10, 0, MaximumJitterSeconds);
+        var delay = SettingValues.WholeNumber(configuration, CandleCloseDelayKey, 10, 0, 300);
+        var concurrency = SettingValues.WholeNumber(configuration, MaxConcurrentCyclesKey, 50, 1, 1000);
+        var jitter = SettingValues.WholeNumber(configuration, MaxJitterKey, 10, 0, MaximumJitterSeconds);
 
         // The grace can't reach the close before, which is never caught up, and a deadline must end before the next close.
-        var grace = ReadPerTimeframe(configuration, CatchUpGraceKey, DefaultGraceMinutes, minimum: 0);
-        var deadlines = ReadPerTimeframe(configuration, CycleDeadlineKey, DefaultDeadlineMinutes, minimum: 1);
+        var grace = SettingValues.MinutesPerTimeframe(configuration, CatchUpGraceKey, DefaultGraceMinutes, 0, CandleCloses.Interval);
+        var deadlines = SettingValues.MinutesPerTimeframe(configuration, CycleDeadlineKey, DefaultDeadlineMinutes, 1, CandleCloses.Interval);
 
         return new SchedulerSettings(TimeSpan.FromSeconds(delay), concurrency, TimeSpan.FromSeconds(jitter), grace, deadlines);
-    }
-
-    private static Dictionary<Timeframe, TimeSpan> ReadPerTimeframe(
-        IConfiguration configuration,
-        string key,
-        Dictionary<Timeframe, int> defaults,
-        int minimum)
-    {
-        var labels = CandleCloses.Timeframes.Select(CandleCloses.Label).ToList();
-
-        foreach (var child in configuration.GetSection(key).GetChildren())
-        {
-            if (!labels.Contains(child.Key, StringComparer.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException($"{key}:{child.Key} isn't a timeframe. Use {string.Join(", ", labels)}.");
-            }
-        }
-
-        return CandleCloses.Timeframes.ToDictionary(
-            timeframe => timeframe,
-            timeframe => TimeSpan.FromMinutes(ReadNumber(
-                configuration,
-                $"{key}:{CandleCloses.Label(timeframe)}",
-                defaults[timeframe],
-                minimum,
-                (int)CandleCloses.Interval(timeframe).TotalMinutes - 1)));
-    }
-
-    private static int ReadNumber(IConfiguration configuration, string key, int fallback, int minimum, int maximum)
-    {
-        var value = configuration[key];
-
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return fallback;
-        }
-
-        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
-        {
-            throw new InvalidOperationException($"{key} must be a whole number.");
-        }
-
-        if (number < minimum || number > maximum)
-        {
-            throw new InvalidOperationException($"{key} must be between {minimum} and {maximum}.");
-        }
-
-        return number;
     }
 }
 
@@ -154,11 +106,11 @@ internal sealed class SchedulerStartup(SchedulerSettings settings, ILogger<Sched
             settings.MaxJitter.TotalSeconds,
             settings.MaxConcurrentCycles);
 
-        foreach (var timeframe in CandleCloses.Timeframes)
+        foreach (var timeframe in SettingValues.Timeframes)
         {
             logger.LogInformation(
                 "{Timeframe} cycles have a deadline of {CycleDeadlineMinutes} min, and catch up within {CatchUpGraceMinutes} min",
-                CandleCloses.Label(timeframe),
+                SettingValues.Label(timeframe),
                 settings.CycleDeadline(timeframe).TotalMinutes,
                 settings.CatchUpGrace(timeframe).TotalMinutes);
         }

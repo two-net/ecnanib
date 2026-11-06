@@ -1,0 +1,50 @@
+@page "/approvals/{Id:guid}"
+@inject IApprovals Approvals
+@inject IAgents Agents
+@inject NavigationManager Navigation
+
+@* One approval, which notifications and their emails link to (FR-APR-02). Like every page it needs sign-in, and another
+   user's approval is Not Found, as one that doesn't exist (NFR-SEC-04). *@
+
+<PageTitle>@Strings.ApprovalPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.ApprovalHeading</h1>
+    <p><a href="/approvals">@Strings.ApprovalAllLink</a></p>
+
+    @if (_approval is { } approval)
+    {
+        <ApprovalCard Approval="approval" Agent="_agent" UserId="_userId" Level="2" OnChanged="current => _approval = current" />
+    }
+</div>
+
+@code {
+    private Guid _userId;
+    private ApprovalRecord? _approval;
+    private AgentRecord? _agent;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AccountClaims.UserId((await AuthenticationState).User) is not { } userId)
+        {
+            return;
+        }
+
+        _userId = userId;
+        _approval = await Approvals.FindAsync(userId, Id, CancellationToken.None);
+
+        if (_approval is null)
+        {
+            Navigation.NotFound();
+            return;
+        }
+
+        _agent = await Agents.FindAsync(userId, _approval.AgentId, CancellationToken.None);
+    }
+}

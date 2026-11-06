@@ -27,7 +27,7 @@ public sealed class RoleFailureTests(PostgresFixture postgres)
 
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval"], await app.CyclesAsync(agent.Id));
         Assert.Contains("SentimentAnalyst Skipped fallback", await app.RolesAsync(user.Id, agent.Id));
 
         var calls = await app.CallsAsync(agent.Id);
@@ -59,7 +59,7 @@ public sealed class RoleFailureTests(PostgresFixture postgres)
 
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval"], await app.CyclesAsync(agent.Id));
         Assert.Contains("TechnicalAnalyst Done fallback", await app.RolesAsync(user.Id, agent.Id));
     }
 

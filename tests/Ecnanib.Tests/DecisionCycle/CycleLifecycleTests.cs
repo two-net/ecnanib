@@ -107,7 +107,7 @@ public sealed class CycleLifecycleTests(PostgresFixture postgres)
         await app.RunAsync(user, agent);
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval"], await app.CyclesAsync(agent.Id));
         Assert.Equal(3, (await app.CallsAsync(agent.Id)).Count);
     }
 

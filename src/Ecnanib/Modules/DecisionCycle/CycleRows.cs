@@ -72,7 +72,10 @@ internal sealed class DecisionCycleRow
     /// </summary>
     public string? Budget { get; set; }
 
-    /// <summary>What execution did with the sized order, as JSON, for an Autonomous agent's cycle (#34).</summary>
+    /// <summary>
+    /// What execution did with the sized order, as JSON, when the cycle sent it: an Autonomous agent's, or a Confirm
+    /// agent's risk-reducing action (FR-APR-04). An approval's execution is on its own row.
+    /// </summary>
     public string? Execution { get; set; }
 
     public long InputTokens { get; set; }
@@ -189,7 +192,7 @@ internal sealed class RiskEvaluationRow
 
     public required string Rules { get; init; }
 
-    /// <summary>What to send, when it passed, for execution (#34) or approval (#38).</summary>
+    /// <summary>What was sized, when it passed: what an Autonomous agent's cycle sent, or what a Confirm agent's approval showed.</summary>
     public string? SizedOrder { get; init; }
 
     public string? Breach { get; init; }

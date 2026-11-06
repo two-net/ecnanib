@@ -37,7 +37,7 @@ public sealed class FuturesCycleTests(PostgresFixture postgres)
 
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval"], await app.CyclesAsync(agent.Id));
         var evaluation = (await app.EvaluationAsync(agent.Id))!.Value;
         Assert.Equal("Pass", evaluation.GetProperty("verdict").GetString());
 

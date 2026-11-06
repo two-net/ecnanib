@@ -1,0 +1,95 @@
+@page "/approvals"
+@inject IApprovals Approvals
+@inject IAgents Agents
+
+@* Interactive: approving and rejecting take no secret. FR-APR-02: the user approves or rejects in the app. A decided
+   approval stays where it is until the page is opened again, so focus and the announcement of how it went aren't lost. *@
+
+<PageTitle>@Strings.ApprovalsPageTitle</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.ApprovalsHeading</h1>
+    <p>@Strings.ApprovalsIntro</p>
+
+    @if (_pending is not null && _decided is not null)
+    {
+        <section class="approvals-section" aria-labelledby="approvals-pending">
+            <h2 id="approvals-pending">@Strings.ApprovalsPendingHeading</h2>
+            @if (_pending.Count == 0)
+            {
+                <p>@Strings.ApprovalsPendingEmpty</p>
+            }
+            else
+            {
+                <ul class="approvals">
+                    @foreach (var approval in _pending)
+                    {
+                        <li @key="approval.Id">
+                            <ApprovalCard Approval="approval" Agent="AgentOf(approval)" UserId="_userId" OnChanged="Replace" />
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="approvals-section" aria-labelledby="approvals-decided">
+            <h2 id="approvals-decided">@Strings.ApprovalsDecidedHeading</h2>
+            @if (_decided.Count == 0)
+            {
+                <p>@Strings.ApprovalsDecidedEmpty</p>
+            }
+            else
+            {
+                <ul class="approvals">
+                    @foreach (var approval in _decided)
+                    {
+                        <li @key="approval.Id">
+                            <ApprovalCard Approval="approval" Agent="AgentOf(approval)" UserId="_userId" OnChanged="Replace" />
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private Guid _userId;
+    private List<ApprovalRecord>? _pending;
+    private List<ApprovalRecord>? _decided;
+    private Dictionary<Guid, AgentRecord> _agents = [];
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AccountClaims.UserId((await AuthenticationState).User) is not { } userId)
+        {
+            return;
+        }
+
+        _userId = userId;
+
+        var list = await Approvals.ListAsync(userId, CancellationToken.None);
+        _pending = [.. list.Pending];
+        _decided = [.. list.Decided];
+
+        // Archived ones too, because a decided approval's agent may have been archived since.
+        _agents = (await Agents.ListAsync(userId, includeArchived: true, CancellationToken.None)).ToDictionary(agent => agent.Id);
+    }
+
+    private AgentRecord? AgentOf(ApprovalRecord approval) => _agents.GetValueOrDefault(approval.AgentId);
+
+    /// <summary>In place, in whichever list it's in.</summary>
+    private void Replace(ApprovalRecord current)
+    {
+        foreach (var list in new[] { _pending, _decided })
+        {
+            if (list?.FindIndex(approval => approval.Id == current.Id) is { } index and >= 0)
+            {
+                list[index] = current;
+            }
+        }
+    }
+}

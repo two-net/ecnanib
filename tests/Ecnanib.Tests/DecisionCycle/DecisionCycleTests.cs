@@ -20,7 +20,7 @@ public sealed class DecisionCycleTests(PostgresFixture postgres)
 
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval"], await app.CyclesAsync(agent.Id));
         Assert.Equal(
             ["TechnicalAnalyst Test Answered", "Strategist Test Answered", "RiskCritic Test Answered"],
             await app.CallsAsync(agent.Id));
@@ -55,7 +55,7 @@ public sealed class DecisionCycleTests(PostgresFixture postgres)
         }
 
         var last = changes.Last();
-        Assert.Equal(CycleOutcome.ReadyToExecute, last.Outcome);
+        Assert.Equal(CycleOutcome.AwaitingApproval, last.Outcome);
         Assert.Equal("BUY: Momentum above the 20 EMA.", last.Roles.Single(role => role.Role == AiRole.Strategist).Summary);
         Assert.Equal(last, await app.Traces.FindLatestAsync(user.Id, agent.Id, CycleApp.Cancellation), CycleProgressComparer.Instance);
     }
@@ -158,7 +158,7 @@ public sealed class DecisionCycleTests(PostgresFixture postgres)
 
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval"], await app.CyclesAsync(agent.Id));
         var intent = (await app.EvaluationAsync(agent.Id))!.Value.GetProperty("intent");
         Assert.Equal(60119.5m, intent.GetProperty("stopPrice").GetDecimal());
         Assert.Equal(0.5m, intent.GetProperty("riskPercent").GetDecimal());

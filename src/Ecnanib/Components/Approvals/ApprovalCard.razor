@@ -1,0 +1,245 @@
+@using System.Globalization
+@inject IApprovals Approvals
+
+@* One approval (FR-APR-01): what the council proposed and the Risk Engine sized, and the user's choice while it's pending.
+   The rationale, the verdict and the concerns are what models wrote, so Razor encodes them and they're only text. *@
+
+<article class="approval" aria-labelledby="@HeadingId">
+    <div class="approval-heading">
+        @if (Level == 2)
+        {
+            <h2 id="@HeadingId" class="approval-title">@ApprovalText.TradeOf(Proposal)</h2>
+        }
+        else
+        {
+            <h3 id="@HeadingId" class="approval-title">@ApprovalText.TradeOf(Proposal)</h3>
+        }
+        @if (Proposal.Environment == TradingEnvironment.Demo)
+        {
+            @* Demo in words, wherever a Demo agent's trade appears (FR-UI-07). *@
+            <span class="approval-tag">@Strings.AgentDemo</span>
+        }
+    </div>
+
+    <dl class="facts">
+        <dt>@Strings.ApprovalFieldStatus</dt>
+        <dd>@ApprovalText.StatusOf(Approval.Status)</dd>
+        <dt>@Strings.ApprovalFieldAgent</dt>
+        @* The user chose the name. *@
+        <dd>@(Agent?.Settings.Name ?? Strings.ApprovalAgentGone)</dd>
+        <dt>@Strings.AgentFieldMarket</dt>
+        <dd>@AgentText.MarketOf(Proposal.Market)</dd>
+        <dt>@Strings.AgentFieldTimeframe</dt>
+        <dd>@AgentText.TimeframeOf(Proposal.Timeframe)</dd>
+        @if (Proposal.Quantity is { } quantity)
+        {
+            <dt>@Strings.ApprovalFieldSize</dt>
+            <dd>@SizeOf(quantity)</dd>
+        }
+        @if (IsEntry)
+        {
+            <dt>@Strings.ApprovalFieldEntry</dt>
+            <dd>@PriceOf(Proposal.LimitPrice)</dd>
+        }
+        else if (IsExit)
+        {
+            <dt>@Strings.ApprovalFieldPrice</dt>
+            <dd>@PriceOf(null)</dd>
+        }
+        @if (Proposal.StopPrice is { } stop)
+        {
+            <dt>@Strings.ApprovalFieldStop</dt>
+            <dd>@ApprovalText.AmountOf(stop, Proposal.QuoteAsset)</dd>
+        }
+        @if (IsEntry || Proposal.Action == IntentAction.AdjustTarget)
+        {
+            <dt>@Strings.ApprovalFieldTarget</dt>
+            <dd>@(Proposal.TargetPrice is { } target ? ApprovalText.AmountOf(target, Proposal.QuoteAsset) : Strings.ApprovalTargetNone)</dd>
+        }
+        @if (Proposal.MoneyAtRisk is { } atRisk)
+        {
+            <dt>@Strings.ApprovalFieldMoneyAtRisk</dt>
+            <dd>
+                @ApprovalText.AmountOf(atRisk, Proposal.QuoteAsset)
+                <span class="approval-hint">@Strings.ApprovalMoneyAtRiskHint</span>
+            </dd>
+        }
+        @if (Proposal.RewardToRisk is { } rewardToRisk)
+        {
+            <dt>@Strings.ApprovalFieldRewardToRisk</dt>
+            <dd>@string.Format(CultureInfo.CurrentCulture, Strings.ApprovalRewardToRiskOf, ApprovalText.Number(rewardToRisk))</dd>
+        }
+        @if (Proposal.Leverage is { } leverage)
+        {
+            <dt>@Strings.ApprovalFieldLeverage</dt>
+            <dd>@string.Format(CultureInfo.CurrentCulture, Strings.ApprovalLeverageOf, leverage)</dd>
+        }
+        <dt>@Strings.ApprovalFieldProposed</dt>
+        <dd>@Time.Format(Approval.CreatedAt)</dd>
+        @if (Approval.IsPending)
+        {
+            <dt>@Strings.ApprovalFieldExpires</dt>
+            <dd>@Time.Format(Approval.ExpiresAt)</dd>
+        }
+        else if (Approval.DecidedAt is { } decided)
+        {
+            <dt>@Strings.ApprovalFieldDecided</dt>
+            <dd>@Time.Format(decided)</dd>
+        }
+        <dt>@Strings.ApprovalFieldRationale</dt>
+        <dd class="approval-text">@Proposal.StrategistRationale</dd>
+        <dt>@Strings.ApprovalFieldVerdict</dt>
+        <dd class="approval-text">@string.Format(CultureInfo.CurrentCulture, Strings.ApprovalVerdictOf, ApprovalText.VerdictOf(Proposal.Verdict), Proposal.CriticRationale)</dd>
+        @if (Proposal.Concerns.Count > 0)
+        {
+            <dt>@Strings.ApprovalFieldConcerns</dt>
+            <dd>
+                <ul class="facts-list">
+                    @foreach (var concern in Proposal.Concerns)
+                    {
+                        <li class="approval-text">@concern</li>
+                    }
+                </ul>
+            </dd>
+        }
+    </dl>
+
+    @if (Approval.IsPending)
+    {
+        @if (!AgentActive)
+        {
+            <p class="approval-problem">@Strings.ApprovalAgentNotActive</p>
+        }
+        <div class="approval-actions">
+            <button type="button" class="button" disabled="@(_busy || !AgentActive)" aria-label="@Labelled(Strings.ApprovalApproveLabel)"
+                    @onclick="ApproveAsync">
+                @Strings.ApprovalApprove
+            </button>
+            <button type="button" class="button" disabled="@_busy" aria-label="@Labelled(Strings.ApprovalRejectLabel)" @onclick="RejectAsync">
+                @Strings.ApprovalReject
+            </button>
+        </div>
+    }
+
+    @* Always there, so a screen reader announces how it went when that appears. *@
+    <div class="approval-result" role="status">
+        @if (_message is not null)
+        {
+            <p>@_message</p>
+        }
+        @if (!Approval.IsPending && !_busy)
+        {
+            <p>@ApprovalText.OutcomeOf(Approval)</p>
+            @if (Approval.Status == ApprovalStatus.Invalid && Approval.Revalidation is { } revalidation)
+            {
+                <ul class="facts-list">
+                    @foreach (var rule in revalidation.Failures)
+                    {
+                        if (rule.Reason is { } reason)
+                        {
+                            <li>@ApprovalText.ReasonOf(reason)</li>
+                        }
+                    }
+                </ul>
+            }
+            @if (Approval.Status == ApprovalStatus.Executed && Approval.Revalidation is { Quantity: { } sent })
+            {
+                <p>@ResizedOf(sent, Approval.Revalidation.MoneyAtRisk)</p>
+            }
+        }
+    </div>
+</article>
+
+@code {
+    private bool _busy;
+    private string? _message;
+
+    [Parameter, EditorRequired]
+    public ApprovalRecord Approval { get; set; } = default!;
+
+    /// <summary>The approval's agent, for its name and whether it can trade. Null when it's gone.</summary>
+    [Parameter]
+    public AgentRecord? Agent { get; set; }
+
+    [Parameter, EditorRequired]
+    public Guid UserId { get; set; }
+
+    /// <summary>The heading's level: 2 on the approval's own page, 3 in the list's sections.</summary>
+    [Parameter]
+    public int Level { get; set; } = 3;
+
+    /// <summary>The approval as it is now, after the user decided, or when it changed meanwhile.</summary>
+    [Parameter]
+    public EventCallback<ApprovalRecord> OnChanged { get; set; }
+
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    private ApprovalProposal Proposal => Approval.Proposal;
+
+    private string HeadingId => $"approval-{Approval.Id:N}";
+
+    private bool AgentActive => Agent?.Status == AgentStatus.Active;
+
+    private bool IsEntry => Proposal.Action is IntentAction.Buy or IntentAction.OpenLong or IntentAction.OpenShort;
+
+    private bool IsExit => Proposal.Action is IntentAction.Sell or IntentAction.Close;
+
+    private string SizeOf(decimal quantity) => Proposal.Notional is { } notional
+        ? string.Format(
+            CultureInfo.CurrentCulture,
+            Strings.ApprovalSizeWorthOf,
+            ApprovalText.AmountOf(quantity, Proposal.BaseAsset),
+            ApprovalText.AmountOf(notional, Proposal.QuoteAsset))
+        : ApprovalText.AmountOf(quantity, Proposal.BaseAsset);
+
+    /// <summary>A limit order's price, or the market's on the side it would trade, which can move before it's sent.</summary>
+    private string PriceOf(decimal? limit) => limit is { } price
+        ? string.Format(CultureInfo.CurrentCulture, Strings.ApprovalEntryLimitOf, ApprovalText.AmountOf(price, Proposal.QuoteAsset))
+        : Proposal.ReferencePrice is { } reference
+            ? string.Format(CultureInfo.CurrentCulture, Strings.ApprovalAtMarketOf, ApprovalText.AmountOf(reference, Proposal.QuoteAsset))
+            : Strings.ApprovalAtMarket;
+
+    private string ResizedOf(decimal quantity, decimal? atRisk) => atRisk is { } risk
+        ? string.Format(
+            CultureInfo.CurrentCulture,
+            Strings.ApprovalResizedWithRiskOf,
+            ApprovalText.AmountOf(quantity, Proposal.BaseAsset),
+            ApprovalText.AmountOf(risk, Proposal.QuoteAsset))
+        : string.Format(CultureInfo.CurrentCulture, Strings.ApprovalResizedOf, ApprovalText.AmountOf(quantity, Proposal.BaseAsset));
+
+    private string Labelled(string format) => string.Format(CultureInfo.CurrentCulture, format, ApprovalText.TradeOf(Proposal));
+
+    private Task ApproveAsync() => DecideAsync(Approvals.ApproveAsync, Strings.ApprovalWorking);
+
+    private Task RejectAsync() => DecideAsync(Approvals.RejectAsync, null);
+
+    private async Task DecideAsync(Func<Guid, Guid, CancellationToken, Task<ApprovalResult>> decide, string? working)
+    {
+        _busy = true;
+        _message = working;
+
+        try
+        {
+            var result = await decide(UserId, Approval.Id, CancellationToken.None);
+
+            _message = result.Outcome switch
+            {
+                ApprovalOutcome.NotFound => Strings.ApprovalGone,
+                ApprovalOutcome.Busy => Strings.ApprovalBusy,
+                ApprovalOutcome.NotPending => Strings.ApprovalNotPending,
+                _ => null,
+            };
+
+            if (result.Approval is { } current)
+            {
+                await OnChanged.InvokeAsync(current);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

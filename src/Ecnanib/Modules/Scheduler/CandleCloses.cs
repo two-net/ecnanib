@@ -9,24 +9,12 @@ namespace Ecnanib.Modules.Scheduler;
 /// </summary>
 internal static class CandleCloses
 {
-    public static readonly Timeframe[] Timeframes = [Timeframe.FifteenMinutes, Timeframe.OneHour, Timeframe.FourHours, Timeframe.OneDay];
-
     public static TimeSpan Interval(Timeframe timeframe) => timeframe switch
     {
         Timeframe.FifteenMinutes => TimeSpan.FromMinutes(15),
         Timeframe.OneHour => TimeSpan.FromHours(1),
         Timeframe.FourHours => TimeSpan.FromHours(4),
         Timeframe.OneDay => TimeSpan.FromDays(1),
-        _ => throw new ArgumentOutOfRangeException(nameof(timeframe), timeframe, null),
-    };
-
-    /// <summary>The name the configuration uses for <paramref name="timeframe"/>, as in SRS 7.3.</summary>
-    public static string Label(Timeframe timeframe) => timeframe switch
-    {
-        Timeframe.FifteenMinutes => "15m",
-        Timeframe.OneHour => "1H",
-        Timeframe.FourHours => "4H",
-        Timeframe.OneDay => "1D",
         _ => throw new ArgumentOutOfRangeException(nameof(timeframe), timeframe, null),
     };
 

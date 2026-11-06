@@ -60,10 +60,16 @@ public enum CycleOutcome
     PastDeadline,
 
     /// <summary>
-    /// The Risk Engine sized the intent, and it waits for the user's approval in Confirm mode (#38). An Autonomous
-    /// agent's cycle goes on to <see cref="Executed"/> or <see cref="ExecutionFailed"/>.
+    /// Older traces only: a Confirm agent's sized intent, from before approvals existed. Cycles now end
+    /// <see cref="AwaitingApproval"/>.
     /// </summary>
     ReadyToExecute,
+
+    /// <summary>
+    /// The Risk Engine sized the intent, and in Confirm mode it became a pending approval, which the user approves or
+    /// rejects, or which expires (FR-APR-01). <see cref="IApprovals"/> says how it went.
+    /// </summary>
+    AwaitingApproval,
 
     /// <summary>A loss limit was reached, so the agent was paused (FR-RISK-08).</summary>
     PausedForLossLimit,

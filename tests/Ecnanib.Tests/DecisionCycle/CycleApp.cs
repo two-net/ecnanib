@@ -52,7 +52,11 @@ internal sealed class CycleApp : IAsyncDisposable
 
     public CycleApp(PostgresFixture postgres, Dictionary<string, string?>? settings = null)
     {
-        Agents = new AgentApp(postgres, settings, services: services => services.AddSingleton<ICycleObserver>(Observer));
+        Agents = new AgentApp(
+            postgres,
+            settings,
+            services: services => services.AddSingleton<ICycleObserver>(Observer),
+            manualJobs: ["ApprovalExpiryJob"]);
 
         foreach (var path in new[] { "/api/v3/klines", "/fapi/v1/klines" })
         {
@@ -85,6 +89,12 @@ internal sealed class CycleApp : IAsyncDisposable
     public Func<DateTimeOffset, bool>? Missing { get; set; }
 
     public IDecisionTraces Traces => Agents.App.Services.GetRequiredService<IDecisionTraces>();
+
+    public IApprovals Approvals => Agents.App.Services.GetRequiredService<IApprovals>();
+
+    /// <summary>The user's one pending approval, which a Confirm agent's cycle left.</summary>
+    public async Task<ApprovalRecord> PendingAsync(AgentApp.User user) =>
+        Assert.Single((await Approvals.ListAsync(user.Id, Cancellation)).Pending);
 
     /// <summary>The close of the last hourly candle, which a cycle now would decide on.</summary>
     public DateTimeOffset LastClose => BinanceSamples.Floor("1h", Clock.GetUtcNow());

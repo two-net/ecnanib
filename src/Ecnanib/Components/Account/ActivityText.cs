@@ -1,5 +1,6 @@
 using System.Globalization;
 using Ecnanib.Components.Agents;
+using Ecnanib.Components.Approvals;
 using Ecnanib.Components.Credentials;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Credentials.Contracts;
@@ -48,6 +49,8 @@ public static class ActivityText
         AuditAction.CatalogModelEdited => Strings.ActivityActionCatalogModelEdited,
         AuditAction.RoleDefaultChanged => Strings.ActivityActionRoleDefaultChanged,
         AuditAction.CatalogSyncRequested => Strings.ActivityActionCatalogSyncRequested,
+        AuditAction.TradeApproved => Strings.ActivityActionTradeApproved,
+        AuditAction.TradeRejected => Strings.ActivityActionTradeRejected,
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Give the action its text in Strings.resx."),
     };
 
@@ -62,7 +65,7 @@ public static class ActivityText
         CredentialAuditFields.Label => Strings.ActivityFieldLabel,
         CredentialAuditFields.Status => Strings.ActivityFieldStatus,
         CredentialAuditFields.Ending => Strings.ActivityFieldEnding,
-        _ => AgentText.AuditFieldOf(field),
+        _ => AgentText.AuditFieldOf(field) ?? ApprovalText.AuditFieldOf(field),
     };
 
     /// <summary>
@@ -93,7 +96,7 @@ public static class ActivityText
         (CredentialAuditFields.Environment, _) when Enum.GetNames<TradingEnvironment>().Contains(value, StringComparer.Ordinal) =>
             CredentialText.EnvironmentOf(Enum.Parse<TradingEnvironment>(value)),
         (CredentialAuditFields.Ending, _) => CredentialText.Ending(value),
-        _ => AgentText.AuditValueOf(field, value) ?? value,
+        _ => AgentText.AuditValueOf(field, value) ?? ApprovalText.AuditValueOf(field, value) ?? value,
     };
 
     /// <summary>Null when the user or a visitor acted, which the action already says.</summary>

@@ -14,17 +14,15 @@ namespace Ecnanib.Modules.DecisionCycle;
 /// <summary>
 /// A decision cycle (FR-CYC-02): the loss limits, the AI budget, the market and the account, the analysts at once, the
 /// Strategist, the Risk Critic for a trade action, then the Risk Engine, with every step in the trace as it happens.
-/// An Autonomous agent's sized order is then executed (#34), and a Confirm agent's waits for approval (#38). A failed
+/// An Autonomous agent's sized order is then executed (#34), and a Confirm agent's waits for its user's approval, unless
+/// it reduces risk and the agent lets those through (FR-APR-01, FR-APR-04). A failed
 /// role uses its fallback model, and a required one that fails holds (FR-ROLE-06). See Decision cycle in
 /// docs/architecture.md.
 /// </summary>
 internal sealed class DecisionCycles(
     IAgents agents,
-    IExchangeSymbols symbols,
-    IMarketData marketData,
-    IAgentAccounts accounts,
+    CycleData data,
     IOrderExecution execution,
-    ITradeJournal journal,
     ICouncil council,
     IRiskEngine riskEngine,
     IDbContextFactory<EcnanibDbContext> contextFactory,
@@ -126,7 +124,7 @@ internal sealed class DecisionCycles(
         var effective = riskEngine.Caps.Apply(agentSettings.Risk);
 
         // FR-RISK-08: every cycle, whatever the council decides, so a stop that filled between cycles pauses at once.
-        var record = await RecordAsync(request, agent, cancellationToken);
+        var record = await data.RecordAsync(request.UserId, agent, request.CandleClose, cancellationToken);
         var limits = riskEngine.CheckLossLimits(agentSettings.Risk, capital, record, time.GetUtcNow());
         await cycle.SaveLossLimitsAsync(limits.Rules, cancellationToken);
 
@@ -155,7 +153,7 @@ internal sealed class DecisionCycles(
         }
 
         // Steps 2 to 4: the pair, the market at the candle's close, and the account.
-        var collected = await CollectAsync(request, agent, context, cancellationToken);
+        var collected = await data.CollectAsync(request.UserId, agent, request.CandleClose, request.Deadline, context, cancellationToken);
 
         if (collected.Failure is { } failure)
         {
@@ -167,7 +165,7 @@ internal sealed class DecisionCycles(
 
         // Reading the account reconciled it, which books a trade whose stop executed since the last pass. Its loss
         // counts now, so this cycle neither enters on it nor skips its cooldown.
-        var current = await RecordAsync(request, agent, cancellationToken);
+        var current = await data.RecordAsync(request.UserId, agent, request.CandleClose, cancellationToken);
 
         if (current != record)
         {
@@ -269,13 +267,19 @@ internal sealed class DecisionCycles(
             return (CycleOutcome.PastDeadline, null);
         }
 
-        // Confirm mode waits for the user's approval (#38).
-        if (agentSettings.ExecutionMode != ExecutionMode.Autonomous)
+        // Step 9. Confirm mode waits for the user's approval, unless the action reduces risk and the agent lets those
+        // through (FR-APR-01, FR-APR-04). The approval commits with the cycle's end.
+        if (ApprovalPolicy.NeedsApproval(agentSettings, intent.Action))
         {
-            return (CycleOutcome.ReadyToExecute, null);
+            var approval = NewApproval(cycle, request, agent, symbol, snapshot, intent, evaluation.Order!, proposal, verdict);
+            cycle.Await(
+                approval,
+                new Notice(NotificationType.ApprovalPending, request.UserId, Approvals.Link(approval.Id), agentSettings.Name, agent.IsDemo));
+
+            return (CycleOutcome.AwaitingApproval, null);
         }
 
-        // Step 9. Nothing new is sent once shutdown has begun. What's sent is seen through on the run's token (NFR-REL-04).
+        // Nothing new is sent once shutdown has begun. What's sent is seen through on the run's token (NFR-REL-04).
         context.Stopping.ThrowIfCancellationRequested();
 
         return await ExecuteAsync(cycle, request, agent, symbol, evaluation.Order!, proposal, cancellationToken);
@@ -333,93 +337,13 @@ internal sealed class DecisionCycles(
             case ExecutionReason.NothingToCancel or ExecutionReason.NoPosition or ExecutionReason.ForeignPosition:
                 return (CycleOutcome.ExecutionFailed, null);
 
-            case ExecutionReason.FuturesSetup when result.FuturesSetup is FuturesSetupOutcome.HedgeMode
-                or FuturesSetupOutcome.MultiAssetsMode or FuturesSetupOutcome.TradingDisabled:
+            case ExecutionReason.FuturesSetup when ApprovalPolicy.AccountNeedsItsUser(result):
                 logger.LogWarning("The Futures account needs its user: {FuturesSetup}, so the agent goes to Error", result.FuturesSetup);
                 await agents.EnterErrorAsync(request.UserId, request.AgentId, cancellationToken);
                 return (CycleOutcome.ExecutionFailed, CycleFailure.Execution);
 
             default:
                 return (CycleOutcome.ExecutionFailed, CycleFailure.Execution);
-        }
-    }
-
-    private async Task<Collected> CollectAsync(CycleRequest request, AgentRecord agent, JobContext context, CancellationToken cancellationToken)
-    {
-        var agentSettings = agent.Settings;
-        ExchangeSymbolInfo? symbol;
-        MarketSnapshot snapshot;
-
-        try
-        {
-            symbol = await symbols.FindAsync(agentSettings.Market, agentSettings.Environment, agentSettings.Symbol, cancellationToken);
-
-            if (symbol is null)
-            {
-                logger.LogWarning("Binance no longer lists the agent's pair {Symbol}", agentSettings.Symbol);
-
-                return Collected.Failed(CycleFailure.MarketData);
-            }
-
-            snapshot = await SnapshotAsync(request, agentSettings, context, cancellationToken);
-        }
-        catch (MarketDataException exception)
-        {
-            logger.LogWarning("Binance couldn't give the market for the cycle: {Failure}", exception.Failure);
-
-            return Collected.Failed(CycleFailure.MarketData);
-        }
-
-        // During maintenance Binance can have no candle for a time, and an analysis of the one before would be stale.
-        if (snapshot.Candles.Candles.Count == 0 || snapshot.Candles.Candles[^1].OpenTime != snapshot.Candles.LastOpenTime)
-        {
-            logger.LogWarning("Binance has no candle for the close at {CandleClose}", request.CandleClose);
-
-            return Collected.Failed(CycleFailure.MarketData);
-        }
-
-        if (agentSettings.ExchangeCredentialId is not { } credentialId)
-        {
-            logger.LogWarning("The agent has no exchange key, so its account can't be read");
-
-            return Collected.Failed(CycleFailure.Account);
-        }
-
-        try
-        {
-            var account = await accounts.ReadAsync(
-                request.UserId, request.AgentId, credentialId, agentSettings.Market, symbol.Symbol, symbol.BaseAsset, symbol.QuoteAsset, cancellationToken);
-
-            return new Collected(symbol, snapshot, account, null);
-        }
-        catch (AgentAccountException exception)
-        {
-            logger.LogWarning("The agent's account couldn't be read: {Failure}", exception.Failure);
-
-            return Collected.Failed(CycleFailure.Account);
-        }
-    }
-
-    /// <summary>The market at the candle's close. Binance's limit is waited out once, when that fits before the deadline.</summary>
-    private async Task<MarketSnapshot> SnapshotAsync(
-        CycleRequest request, AgentSettings agentSettings, JobContext context, CancellationToken cancellationToken)
-    {
-        var marketRequest = new MarketDataRequest(
-            agentSettings.Market, agentSettings.Environment, agentSettings.Symbol, agentSettings.Timeframe, request.CandleClose);
-
-        try
-        {
-            return await marketData.CollectAsync(marketRequest, cancellationToken);
-        }
-        catch (MarketDataException exception) when (exception is { Failure: MarketDataFailure.Throttled, RetryAfter: { } wait }
-            && time.GetUtcNow() + wait < request.Deadline)
-        {
-            logger.LogInformation("Binance is limiting requests, so the cycle waits {RetryAfterMs:0} ms and tries again", wait.TotalMilliseconds);
-
-            // Waiting is safe to abandon, so it ends when shutdown begins.
-            await Task.Delay(wait, time, context.Stopping);
-
-            return await marketData.CollectAsync(marketRequest, cancellationToken);
         }
     }
 
@@ -460,33 +384,6 @@ internal sealed class DecisionCycles(
         await cycle.FinishRoleAsync(answer, state, SummaryOf(answer.Output), stopping);
 
         return answer;
-    }
-
-    /// <summary>
-    /// The agent's results from its trade journal (#36), for the loss limits, the entries-per-day cap and the cooldown
-    /// (FR-RISK-02, FR-RISK-08). Its streak counts from when it last became Active, so a resumed agent doesn't pause
-    /// again at once. The cooldown counts the cycles that started after the losing trade closed and have finished, so the
-    /// cycle whose reconciliation found the loss isn't one of them, and neither is this one.
-    /// </summary>
-    private async Task<TradingRecord> RecordAsync(CycleRequest request, AgentRecord agent, CancellationToken cancellationToken)
-    {
-        var results = await journal.ReadResultsAsync(request.UserId, request.AgentId, time.GetUtcNow(), agent.StatusChangedAt, cancellationToken);
-        int? cyclesSinceLoss = null;
-
-        if (results.LastLossClosedAt is { } lossClosedAt)
-        {
-            await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-
-            cyclesSinceLoss = await context.Set<DecisionCycleRow>()
-                .CountAsync(
-                    cycle => cycle.UserId == request.UserId && cycle.AgentId == agent.Id
-                        && cycle.StartedAt > lossClosedAt
-                        && cycle.CandleClose < request.CandleClose
-                        && cycle.Outcome != null && cycle.Outcome != CycleOutcome.Interrupted,
-                    cancellationToken);
-        }
-
-        return new TradingRecord(results.RealizedToday, results.RealizedThisWeek, results.ConsecutiveLosses, results.EntriesToday, cyclesSinceLoss);
     }
 
     /// <summary>
@@ -579,6 +476,74 @@ internal sealed class DecisionCycles(
         }
     }
 
+    /// <summary>
+    /// The approval a Confirm agent's sized order waits as (FR-APR-01): the intent, which approving evaluates again, and
+    /// what the user decides on, which is what the Risk Engine sized now, the Strategist's rationale and the Risk Critic's
+    /// verdict. It expires after its timeframe's window (FR-APR-03).
+    /// </summary>
+    private ApprovalRow NewApproval(
+        CycleRun cycle,
+        CycleRequest request,
+        AgentRecord agent,
+        ExchangeSymbolInfo symbol,
+        MarketSnapshot snapshot,
+        OrderIntent intent,
+        SizedOrder order,
+        TradeProposal proposal,
+        CriticVerdict verdict)
+    {
+        var agentSettings = agent.Settings;
+        var now = time.GetUtcNow();
+
+        // A market entry or an exit goes at the price on the other side of the book: the ask to buy and the bid to sell.
+        var reference = order.Kind is SizedOrderKind.Entry or SizedOrderKind.Exit && order.EntryType != EntryType.Limit
+            ? order.Side switch
+            {
+                OrderSide.Buy => snapshot.Quote.AskPrice,
+                OrderSide.Sell => snapshot.Quote.BidPrice,
+                _ => (decimal?)null,
+            }
+            : null;
+
+        var display = new ApprovalProposal(
+            agentSettings.Market,
+            agentSettings.Environment,
+            symbol.Symbol,
+            symbol.BaseAsset,
+            symbol.QuoteAsset,
+            agentSettings.Timeframe,
+            order.Action,
+            order.Side,
+            order.EntryType,
+            order.Quantity,
+            order.LimitPrice,
+            reference,
+            order.StopPrice,
+            order.TargetPrice,
+            order.Notional,
+            order.MoneyAtRisk,
+            order.RewardToRisk,
+            order.Leverage,
+            proposal.Rationale,
+            verdict.Verdict,
+            verdict.Rationale,
+            verdict.Concerns);
+
+        return new ApprovalRow
+        {
+            Id = Guid.NewGuid(),
+            CycleId = cycle.Id,
+            UserId = request.UserId,
+            AgentId = request.AgentId,
+            Status = ApprovalStatus.Pending,
+            CreatedAt = now,
+            ExpiresAt = now + settings.ApprovalWindow(agentSettings.Timeframe),
+            Intent = TraceJson.Write(intent),
+            LimitTtlCandles = proposal.LimitTtlCandles,
+            Proposal = TraceJson.Write(display),
+        };
+    }
+
     private DecisionCycleRow NewRow(CycleRequest request, AgentRecord agent) => new()
     {
         Id = Guid.NewGuid(),
@@ -614,9 +579,4 @@ internal sealed class DecisionCycles(
         CriticVerdict verdict => $"{verdict.Verdict.ToString().ToUpperInvariant()}: {verdict.Rationale}",
         _ => null,
     };
-
-    private sealed record Collected(ExchangeSymbolInfo? Symbol, MarketSnapshot? Snapshot, AgentAccount? Account, CycleFailure? Failure)
-    {
-        public static Collected Failed(CycleFailure failure) => new(null, null, null, failure);
-    }
 }

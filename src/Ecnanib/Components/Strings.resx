@@ -2115,7 +2115,7 @@
     <value>Execution</value>
   </data>
   <data name="AgentSettingsAutoExecuteHint" xml:space="preserve">
-    <value>With Confirm each trade, tightening a stop or closing a position at a loss limit still happens at once.</value>
+    <value>With Confirm each trade, tightening a stop, selling or closing all or part of a position, and cancelling an unfilled entry still happen at once. Moving a target and every entry wait for you.</value>
   </data>
   <data name="AgentSettingsBudgetHeading" xml:space="preserve">
     <value>AI budget and memory</value>
@@ -2738,5 +2738,475 @@
   </data>
   <data name="AdminModelSave" xml:space="preserve">
     <value>Save the model</value>
+  </data>
+  <data name="NavApprovals" xml:space="preserve">
+    <value>Approvals</value>
+  </data>
+  <data name="ApprovalsPageTitle" xml:space="preserve">
+    <value>Approvals | Ecnanib</value>
+  </data>
+  <data name="ApprovalsHeading" xml:space="preserve">
+    <value>Approvals</value>
+  </data>
+  <data name="ApprovalsIntro" xml:space="preserve">
+    <value>An agent in Confirm mode asks you before it trades. Approve, and Ecnanib checks the trade again against the current price and the agent's risk rules before anything goes to Binance. If it no longer passes, it's rejected and you see why. Each one expires if you don't decide in time.</value>
+  </data>
+  <data name="ApprovalsPendingHeading" xml:space="preserve">
+    <value>Waiting for you</value>
+  </data>
+  <data name="ApprovalsPendingEmpty" xml:space="preserve">
+    <value>Nothing is waiting for your approval.</value>
+  </data>
+  <data name="ApprovalsDecidedHeading" xml:space="preserve">
+    <value>Recent</value>
+  </data>
+  <data name="ApprovalsDecidedEmpty" xml:space="preserve">
+    <value>No approvals yet.</value>
+  </data>
+  <data name="ApprovalPageTitle" xml:space="preserve">
+    <value>Approval | Ecnanib</value>
+  </data>
+  <data name="ApprovalHeading" xml:space="preserve">
+    <value>Trade approval</value>
+  </data>
+  <data name="ApprovalAllLink" xml:space="preserve">
+    <value>All approvals</value>
+  </data>
+  <data name="ApprovalTradeOf" xml:space="preserve">
+    <value>{0} {1}</value>
+    <comment>{0} is the action, such as Buy, and {1} the pair, such as BTCUSDT.</comment>
+  </data>
+  <data name="ApprovalFieldStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="ApprovalFieldAgent" xml:space="preserve">
+    <value>Agent</value>
+  </data>
+  <data name="ApprovalAgentGone" xml:space="preserve">
+    <value>No longer exists</value>
+  </data>
+  <data name="ApprovalFieldSize" xml:space="preserve">
+    <value>Size</value>
+  </data>
+  <data name="ApprovalSizeWorthOf" xml:space="preserve">
+    <value>{0}, worth {1}</value>
+    <comment>{0} is the quantity with its asset, and {1} its value with the quote asset, such as 1,000 USDT.</comment>
+  </data>
+  <data name="ApprovalFieldEntry" xml:space="preserve">
+    <value>Entry</value>
+  </data>
+  <data name="ApprovalFieldPrice" xml:space="preserve">
+    <value>Price</value>
+  </data>
+  <data name="ApprovalEntryLimitOf" xml:space="preserve">
+    <value>Limit order at {0}</value>
+    <comment>{0} is a price with its asset.</comment>
+  </data>
+  <data name="ApprovalAtMarketOf" xml:space="preserve">
+    <value>At market, about {0} when proposed</value>
+    <comment>{0} is a price with its asset.</comment>
+  </data>
+  <data name="ApprovalAtMarket" xml:space="preserve">
+    <value>At market</value>
+  </data>
+  <data name="ApprovalFieldStop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="ApprovalFieldTarget" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="ApprovalTargetNone" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="ApprovalFieldMoneyAtRisk" xml:space="preserve">
+    <value>Money at risk</value>
+  </data>
+  <data name="ApprovalMoneyAtRiskHint" xml:space="preserve">
+    <value>What the position loses if its stop fills, before fees and slippage.</value>
+  </data>
+  <data name="ApprovalFieldRewardToRisk" xml:space="preserve">
+    <value>Reward to risk</value>
+  </data>
+  <data name="ApprovalRewardToRiskOf" xml:space="preserve">
+    <value>{0} to 1</value>
+    <comment>{0} is a number, such as 1.5.</comment>
+  </data>
+  <data name="ApprovalFieldLeverage" xml:space="preserve">
+    <value>Leverage</value>
+  </data>
+  <data name="ApprovalLeverageOf" xml:space="preserve">
+    <value>{0}x</value>
+    <comment>{0} is a whole number, such as 2.</comment>
+  </data>
+  <data name="ApprovalFieldProposed" xml:space="preserve">
+    <value>Proposed</value>
+  </data>
+  <data name="ApprovalFieldExpires" xml:space="preserve">
+    <value>Expires</value>
+  </data>
+  <data name="ApprovalFieldDecided" xml:space="preserve">
+    <value>Decided</value>
+  </data>
+  <data name="ApprovalFieldRationale" xml:space="preserve">
+    <value>Strategist's reasoning</value>
+  </data>
+  <data name="ApprovalFieldVerdict" xml:space="preserve">
+    <value>Risk Critic's verdict</value>
+  </data>
+  <data name="ApprovalVerdictOf" xml:space="preserve">
+    <value>{0}: {1}</value>
+    <comment>{0} is the verdict, such as Approved, and {1} what the Risk Critic wrote.</comment>
+  </data>
+  <data name="ApprovalFieldConcerns" xml:space="preserve">
+    <value>Risk Critic's concerns</value>
+  </data>
+  <data name="ApprovalAgentNotActive" xml:space="preserve">
+    <value>The agent isn't active, so this trade can't be approved. It expires within a minute.</value>
+  </data>
+  <data name="ApprovalApprove" xml:space="preserve">
+    <value>Approve</value>
+  </data>
+  <data name="ApprovalApproveLabel" xml:space="preserve">
+    <value>Approve {0}</value>
+    <comment>{0} is the trade, such as Buy BTCUSDT.</comment>
+  </data>
+  <data name="ApprovalReject" xml:space="preserve">
+    <value>Reject</value>
+  </data>
+  <data name="ApprovalRejectLabel" xml:space="preserve">
+    <value>Reject {0}</value>
+    <comment>{0} is the trade, such as Buy BTCUSDT.</comment>
+  </data>
+  <data name="ApprovalWorking" xml:space="preserve">
+    <value>Checking it again and sending it to Binance…</value>
+  </data>
+  <data name="ApprovalGone" xml:space="preserve">
+    <value>This approval no longer exists.</value>
+  </data>
+  <data name="ApprovalBusy" xml:space="preserve">
+    <value>The agent's previous approval is still being sent. Try again in a moment.</value>
+  </data>
+  <data name="ApprovalNotPending" xml:space="preserve">
+    <value>It was no longer waiting for you.</value>
+  </data>
+  <data name="ApprovalResizedOf" xml:space="preserve">
+    <value>Sized again when it was checked: {0}.</value>
+    <comment>{0} is a quantity with its asset.</comment>
+  </data>
+  <data name="ApprovalResizedWithRiskOf" xml:space="preserve">
+    <value>Sized again when it was checked: {0}, with {1} at risk.</value>
+    <comment>{0} is a quantity with its asset, and {1} an amount with the quote asset.</comment>
+  </data>
+  <data name="ApprovalStatusPending" xml:space="preserve">
+    <value>Waiting for you</value>
+  </data>
+  <data name="ApprovalStatusApproving" xml:space="preserve">
+    <value>Being sent</value>
+  </data>
+  <data name="ApprovalStatusExecuted" xml:space="preserve">
+    <value>Sent</value>
+  </data>
+  <data name="ApprovalStatusInvalid" xml:space="preserve">
+    <value>Rejected by the risk rules</value>
+  </data>
+  <data name="ApprovalStatusFailed" xml:space="preserve">
+    <value>Not sent</value>
+  </data>
+  <data name="ApprovalStatusRejected" xml:space="preserve">
+    <value>Rejected</value>
+  </data>
+  <data name="ApprovalStatusExpired" xml:space="preserve">
+    <value>Expired</value>
+  </data>
+  <data name="ApprovalStatusInterrupted" xml:space="preserve">
+    <value>Interrupted</value>
+  </data>
+  <data name="ApprovalOutcomePending" xml:space="preserve">
+    <value>Waiting for you.</value>
+  </data>
+  <data name="ApprovalOutcomeApproving" xml:space="preserve">
+    <value>Approved, and being checked again and sent.</value>
+  </data>
+  <data name="ApprovalOutcomeExecuted" xml:space="preserve">
+    <value>Approved, checked again and sent to Binance.</value>
+  </data>
+  <data name="ApprovalOutcomeInvalid" xml:space="preserve">
+    <value>Approved, but rejected automatically: when it was checked again on the current price, it no longer passed these risk rules. Nothing was sent.</value>
+  </data>
+  <data name="ApprovalOutcomeFailed" xml:space="preserve">
+    <value>Approved, but it wasn't sent.</value>
+  </data>
+  <data name="ApprovalOutcomeRejected" xml:space="preserve">
+    <value>Rejected. Nothing was sent.</value>
+  </data>
+  <data name="ApprovalOutcomeExpired" xml:space="preserve">
+    <value>It expired, and nothing was sent.</value>
+  </data>
+  <data name="ApprovalOutcomeInterrupted" xml:space="preserve">
+    <value>Ecnanib restarted while it was being sent. The agent's orders show what reached Binance, and its stops stay in place.</value>
+  </data>
+  <data name="ApprovalEndWindowEnded" xml:space="preserve">
+    <value>Its time ran out before it was approved.</value>
+  </data>
+  <data name="ApprovalEndAgentNotActive" xml:space="preserve">
+    <value>Its agent was paused or stopped.</value>
+  </data>
+  <data name="ApprovalEndSuperseded" xml:space="preserve">
+    <value>A newer proposal from its agent replaced it.</value>
+  </data>
+  <data name="ApprovalEndAgentChanged" xml:space="preserve">
+    <value>Its agent's market, pair or timeframe changed.</value>
+  </data>
+  <data name="ApprovalEndMarketData" xml:space="preserve">
+    <value>Binance couldn't give the prices to check it again.</value>
+  </data>
+  <data name="ApprovalEndAccount" xml:space="preserve">
+    <value>The agent's Binance account couldn't be read to check it again.</value>
+  </data>
+  <data name="ApprovalEndExecution" xml:space="preserve">
+    <value>Binance didn't take it.</value>
+  </data>
+  <data name="ApprovalEndShuttingDown" xml:space="preserve">
+    <value>Ecnanib was shutting down.</value>
+  </data>
+  <data name="ApprovalEndUnexpected" xml:space="preserve">
+    <value>Something unexpected went wrong.</value>
+  </data>
+  <data name="ApprovalActionBuy" xml:space="preserve">
+    <value>Buy</value>
+  </data>
+  <data name="ApprovalActionSell" xml:space="preserve">
+    <value>Sell</value>
+  </data>
+  <data name="ApprovalActionOpenLong" xml:space="preserve">
+    <value>Open long</value>
+  </data>
+  <data name="ApprovalActionOpenShort" xml:space="preserve">
+    <value>Open short</value>
+  </data>
+  <data name="ApprovalActionClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="ApprovalActionAdjustStop" xml:space="preserve">
+    <value>Move stop</value>
+  </data>
+  <data name="ApprovalActionAdjustTarget" xml:space="preserve">
+    <value>Move target</value>
+  </data>
+  <data name="ApprovalActionCancelPending" xml:space="preserve">
+    <value>Cancel unfilled entry</value>
+  </data>
+  <data name="ApprovalVerdictApprove" xml:space="preserve">
+    <value>Approved</value>
+  </data>
+  <data name="ApprovalVerdictModify" xml:space="preserve">
+    <value>Approved with changes</value>
+  </data>
+  <data name="ApprovalVerdictReject" xml:space="preserve">
+    <value>Rejected</value>
+  </data>
+  <data name="ActivityActionTradeApproved" xml:space="preserve">
+    <value>Approved a trade</value>
+  </data>
+  <data name="ActivityActionTradeRejected" xml:space="preserve">
+    <value>Rejected a trade</value>
+  </data>
+  <data name="ActivityFieldTradeAction" xml:space="preserve">
+    <value>Trade</value>
+  </data>
+  <data name="ActivityFieldApprovalStatus" xml:space="preserve">
+    <value>Approval</value>
+  </data>
+  <data name="RiskReasonSettingsOutOfRange" xml:space="preserve">
+    <value>A risk setting is outside its allowed range.</value>
+  </data>
+  <data name="RiskReasonNoCapital" xml:space="preserve">
+    <value>The agent has no capital allocated.</value>
+  </data>
+  <data name="RiskReasonInputInvalid" xml:space="preserve">
+    <value>A number from Binance or the agent's records can't be right.</value>
+  </data>
+  <data name="RiskReasonActionNotForMarket" xml:space="preserve">
+    <value>The action isn't one this market allows.</value>
+  </data>
+  <data name="RiskReasonEntryTypeMissing" xml:space="preserve">
+    <value>The entry has no order type.</value>
+  </data>
+  <data name="RiskReasonOppositePosition" xml:space="preserve">
+    <value>The agent holds a position the other way.</value>
+  </data>
+  <data name="RiskReasonNoPosition" xml:space="preserve">
+    <value>The agent no longer holds a position to act on.</value>
+  </data>
+  <data name="RiskReasonNoPendingEntry" xml:space="preserve">
+    <value>There's no unfilled entry to cancel.</value>
+  </data>
+  <data name="RiskReasonSymbolNotTrading" xml:space="preserve">
+    <value>Binance isn't trading the pair.</value>
+  </data>
+  <data name="RiskReasonDailyLossLimitReached" xml:space="preserve">
+    <value>The agent has reached its daily loss limit.</value>
+  </data>
+  <data name="RiskReasonWeeklyLossLimitReached" xml:space="preserve">
+    <value>The agent has reached its weekly loss limit.</value>
+  </data>
+  <data name="RiskReasonConsecutiveLossesReached" xml:space="preserve">
+    <value>The agent has lost too many trades in a row.</value>
+  </data>
+  <data name="RiskReasonEntriesPerDayReached" xml:space="preserve">
+    <value>The agent has made all the entries it may make today.</value>
+  </data>
+  <data name="RiskReasonCoolingDown" xml:space="preserve">
+    <value>The agent is waiting out its cooldown after a loss.</value>
+  </data>
+  <data name="RiskReasonEntryPending" xml:space="preserve">
+    <value>Another entry is still unfilled.</value>
+  </data>
+  <data name="RiskReasonFundingAgainstPosition" xml:space="preserve">
+    <value>Funding against the position is above the agent's limit.</value>
+  </data>
+  <data name="RiskReasonFilterMissing" xml:space="preserve">
+    <value>Binance hasn't given a rule the check needs.</value>
+  </data>
+  <data name="RiskReasonPriceMissing" xml:space="preserve">
+    <value>There's no current price.</value>
+  </data>
+  <data name="RiskReasonMarkPriceMissing" xml:space="preserve">
+    <value>There's no mark price.</value>
+  </data>
+  <data name="RiskReasonPriceOutOfRange" xml:space="preserve">
+    <value>A price is outside what Binance allows for the pair.</value>
+  </data>
+  <data name="RiskReasonPriceOutsideBand" xml:space="preserve">
+    <value>A price is too far from the market.</value>
+  </data>
+  <data name="RiskReasonStopMissing" xml:space="preserve">
+    <value>There's no protective stop.</value>
+  </data>
+  <data name="RiskReasonStopWrongSide" xml:space="preserve">
+    <value>The stop is on the wrong side of the price, or the price has already passed it.</value>
+  </data>
+  <data name="RiskReasonAtrUnavailable" xml:space="preserve">
+    <value>The average true range couldn't be worked out.</value>
+  </data>
+  <data name="RiskReasonStopTooClose" xml:space="preserve">
+    <value>The stop is closer to the entry than the agent allows.</value>
+  </data>
+  <data name="RiskReasonStopTooFar" xml:space="preserve">
+    <value>The stop is farther from the entry than the agent allows.</value>
+  </data>
+  <data name="RiskReasonStopWidened" xml:space="preserve">
+    <value>The new stop would add risk.</value>
+  </data>
+  <data name="RiskReasonStopUnchanged" xml:space="preserve">
+    <value>The new stop isn't any tighter.</value>
+  </data>
+  <data name="RiskReasonTargetWrongSide" xml:space="preserve">
+    <value>The target is on the wrong side of the price.</value>
+  </data>
+  <data name="RiskReasonRewardToRiskTooLow" xml:space="preserve">
+    <value>The reward to risk is below the agent's minimum.</value>
+  </data>
+  <data name="RiskReasonAveragingDown" xml:space="preserve">
+    <value>The position is at a loss, and adding to it would average down.</value>
+  </data>
+  <data name="RiskReasonRiskPercentInvalid" xml:space="preserve">
+    <value>The risk asked for isn't valid.</value>
+  </data>
+  <data name="RiskReasonCloseFractionInvalid" xml:space="preserve">
+    <value>The share of the position to close isn't valid.</value>
+  </data>
+  <data name="RiskReasonBudgetUsed" xml:space="preserve">
+    <value>At this stop, the position already risks all the agent may risk per trade.</value>
+  </data>
+  <data name="RiskReasonNoCapacity" xml:space="preserve">
+    <value>The agent's caps on size, capital or balance leave no room.</value>
+  </data>
+  <data name="RiskReasonQuantityTooSmall" xml:space="preserve">
+    <value>The size is below Binance's minimum.</value>
+  </data>
+  <data name="RiskReasonNotionalTooSmall" xml:space="preserve">
+    <value>The order's value is below Binance's minimum.</value>
+  </data>
+  <data name="RiskReasonNotionalTooLarge" xml:space="preserve">
+    <value>The order's value is above Binance's maximum.</value>
+  </data>
+  <data name="RiskReasonDust" xml:space="preserve">
+    <value>The position is too small for Binance to sell.</value>
+  </data>
+  <data name="RiskReasonLiquidationUnknown" xml:space="preserve">
+    <value>The liquidation price can't be estimated.</value>
+  </data>
+  <data name="RiskReasonLeverageAboveBracket" xml:space="preserve">
+    <value>The leverage is above what Binance allows at this size.</value>
+  </data>
+  <data name="RiskReasonLiquidationTooClose" xml:space="preserve">
+    <value>The liquidation price is too close to the stop.</value>
+  </data>
+  <data name="ExecutionStatusPlaced" xml:space="preserve">
+    <value>The limit order rests on Binance until it fills or its time runs out.</value>
+  </data>
+  <data name="ExecutionStatusProtected" xml:space="preserve">
+    <value>It filled, and its stop rests on Binance.</value>
+  </data>
+  <data name="ExecutionStatusClosed" xml:space="preserve">
+    <value>It filled, but its stop couldn't be placed, so it was closed at market.</value>
+  </data>
+  <data name="ExecutionStatusUnprotected" xml:space="preserve">
+    <value>It filled, but its stop couldn't be placed, and closing it hasn't worked yet. Ecnanib keeps trying.</value>
+  </data>
+  <data name="ExecutionStatusCancelled" xml:space="preserve">
+    <value>The unfilled entry was cancelled.</value>
+  </data>
+  <data name="ExecutionStatusNotSent" xml:space="preserve">
+    <value>Nothing was sent.</value>
+  </data>
+  <data name="ExecutionStatusRejected" xml:space="preserve">
+    <value>Binance rejected the order.</value>
+  </data>
+  <data name="ExecutionStatusNotPlaced" xml:space="preserve">
+    <value>Binance never placed the order, and it won't be sent again.</value>
+  </data>
+  <data name="ExecutionStatusUnsettled" xml:space="preserve">
+    <value>Binance hasn't confirmed it yet. Ecnanib checks in the background, and protects anything that fills.</value>
+  </data>
+  <data name="ExecutionStatusExited" xml:space="preserve">
+    <value>It was sold at market.</value>
+  </data>
+  <data name="ExecutionStatusAdjusted" xml:space="preserve">
+    <value>The stop or target was moved on Binance.</value>
+  </data>
+  <data name="ExecutionReasonPastDeadline" xml:space="preserve">
+    <value>Its time to be sent ran out.</value>
+  </data>
+  <data name="ExecutionReasonPositionOpen" xml:space="preserve">
+    <value>The agent already held a position.</value>
+  </data>
+  <data name="ExecutionReasonFuturesSetup" xml:space="preserve">
+    <value>The Futures account or pair couldn't be readied.</value>
+  </data>
+  <data name="ExecutionReasonKeyUnusable" xml:space="preserve">
+    <value>The agent's Binance key was deleted or stopped working.</value>
+  </data>
+  <data name="ExecutionReasonExchangeUnavailable" xml:space="preserve">
+    <value>Binance couldn't be reached, or is limiting requests.</value>
+  </data>
+  <data name="ExecutionReasonOrderTypeUnsupported" xml:space="preserve">
+    <value>Binance doesn't take the orders its protection needs on this pair.</value>
+  </data>
+  <data name="ExecutionReasonNothingToCancel" xml:space="preserve">
+    <value>There was no unfilled entry to cancel.</value>
+  </data>
+  <data name="ExecutionReasonUnsupported" xml:space="preserve">
+    <value>This action couldn't be sent then.</value>
+  </data>
+  <data name="ExecutionReasonNoPosition" xml:space="preserve">
+    <value>The agent no longer held the position.</value>
+  </data>
+  <data name="ExecutionReasonForeignPosition" xml:space="preserve">
+    <value>Binance holds a position in the pair that isn't only the agent's.</value>
+  </data>
+  <data name="ExecutionReasonAgentNotActive" xml:space="preserve">
+    <value>The agent was paused or stopped.</value>
   </data>
 </root>

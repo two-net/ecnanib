@@ -30,6 +30,8 @@ internal sealed class CycleRun(
     private readonly Dictionary<AiRole, RoleProgress> _roles = roles.ToDictionary(
         role => role, role => new RoleProgress(role, RoleState.Queued, null, null, false, null));
 
+    private (ApprovalRow Row, Notice Notice)? _approval;
+
     public Guid Id => row.Id;
 
     /// <summary>Inserts the cycle with every role queued. False when the agent already has a cycle for this candle.</summary>
@@ -153,8 +155,14 @@ internal sealed class CycleRun(
     }
 
     /// <summary>
-    /// Ends the cycle, and marks every role it never reached as skipped. A notification about how it ended commits
-    /// with it, or neither does.
+    /// The approval the cycle ends with, when it ends <see cref="CycleOutcome.AwaitingApproval"/>, and the notice that tells
+    /// its user (FR-APR-01, FR-NTF-01). Both commit with the cycle's end.
+    /// </summary>
+    public void Await(ApprovalRow approval, Notice notice) => _approval = (approval, notice);
+
+    /// <summary>
+    /// Ends the cycle, and marks every role it never reached as skipped. A notification about how it ended, and the
+    /// approval it waits for, commit with it, or none does.
     /// </summary>
     public async Task FinishAsync(CycleOutcome outcome, CycleFailure? failure, Notice? notice, CancellationToken cancellationToken)
     {
@@ -185,12 +193,29 @@ internal sealed class CycleRun(
                     .SetProperty(cycle => cycle.Cost, cost),
                 cancellationToken);
 
+            if (outcome == CycleOutcome.AwaitingApproval && _approval is var (approval, approvalNotice))
+            {
+                // One pending approval per agent: a newer proposal replaces the older one, which can no longer be
+                // approved. Its user hears of the new one, which is enough.
+                await context.Set<ApprovalRow>()
+                    .Where(entry => entry.AgentId == row.AgentId && entry.Status == ApprovalStatus.Pending)
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(entry => entry.Status, ApprovalStatus.Expired)
+                            .SetProperty(entry => entry.End, ApprovalEnd.Superseded)
+                            .SetProperty(entry => entry.DecidedAt, now),
+                        cancellationToken);
+
+                context.Add(approval);
+                notifications.Add(context, approvalNotice);
+            }
+
             if (notice is not null)
             {
                 notifications.Add(context, notice);
-                await context.SaveChangesAsync(cancellationToken);
             }
 
+            await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
 

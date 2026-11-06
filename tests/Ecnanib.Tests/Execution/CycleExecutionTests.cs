@@ -9,18 +9,22 @@ namespace Ecnanib.Tests.Execution;
 
 /// <summary>
 /// FR-CYC-02 step 9: an Autonomous agent's cycle executes what the Risk Engine sized, and records how it went. A
-/// Confirm agent's waits for approval (#38). AC-01: every order on record cites a passing Risk Engine evaluation.
+/// Confirm agent's waits for approval (ApprovalTests). AC-01: every order on record cites a passing Risk Engine evaluation.
 /// </summary>
 public sealed class CycleExecutionTests(PostgresFixture postgres)
 {
     /// <summary>
     /// The audit query AC-01 asks for, over the decision traces and the orders: an order from the council cites its
-    /// cycle's passing evaluation, and one of Ecnanib's own carries its own. It counts the orders that do neither.
+    /// cycle's passing evaluation, and, when its cycle waited for approval, the approval's passing second look, which
+    /// sized what was sent. One of Ecnanib's own carries its own. It counts the orders that do neither.
     /// </summary>
     public const string Ac01 = """
         SELECT count(*) FROM orders o
         WHERE NOT (
-            (o.origin = 'Council' AND EXISTS (SELECT 1 FROM risk_evaluations e WHERE e.cycle_id = o.cycle_id AND e.verdict = 'Pass'))
+            (o.origin = 'Council'
+                AND EXISTS (SELECT 1 FROM risk_evaluations e WHERE e.cycle_id = o.cycle_id AND e.verdict = 'Pass')
+                AND NOT EXISTS (SELECT 1 FROM approvals a WHERE a.cycle_id = o.cycle_id
+                    AND (a.revalidation IS NULL OR a.revalidation ->> 'verdict' <> 'Pass')))
             OR (o.origin = 'System' AND o.system_evaluation ->> 'verdict' = 'Pass'))
         """;
 
@@ -80,7 +84,7 @@ public sealed class CycleExecutionTests(PostgresFixture postgres)
 
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval"], await app.CyclesAsync(agent.Id));
         Assert.Empty(book.Placed);
         Assert.Equal(0L, await ScalarAsync(app, $"SELECT count(*) FROM orders WHERE agent_id = '{agent.Id}'"));
     }

@@ -1,0 +1,75 @@
+.approval {
+    display: grid;
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 1rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+}
+
+.approval-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.625rem;
+}
+
+.approval-title {
+    min-width: 0;
+    margin: 0;
+    font-size: 1.25rem;
+    overflow-wrap: anywhere;
+}
+
+/* Demo in words, wherever a Demo agent's trade appears (FR-UI-07). */
+.approval-tag {
+    padding: 0 0.375rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+}
+
+/* What models wrote can be long, and can be one long word. */
+.approval-text {
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+}
+
+.approval-hint {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+/* A thicker edge as well as the words, so the problem doesn't rely on color. */
+.approval-problem {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--caution);
+    border-inline-start-width: 4px;
+    border-radius: var(--radius);
+}
+
+.approval-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+}
+
+.approval-result {
+    display: grid;
+    gap: 0.5rem;
+}
+
+    .approval-result:empty {
+        display: none;
+    }
+
+    .approval-result p,
+    .approval-result ul {
+        margin: 0;
+    }

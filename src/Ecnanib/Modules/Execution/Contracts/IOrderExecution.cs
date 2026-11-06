@@ -8,7 +8,7 @@ namespace Ecnanib.Modules.Execution.Contracts;
 /// exchange-resting stop, or closes it at market when the stop can't be placed (FR-EXE-02, AC-02). It executes
 /// entries and adds, exits, stop and target adjustments, and CANCEL_PENDING, each after reconciling the agent's orders
 /// with Binance (FR-EXE-06). Only a <see cref="SizedOrder"/> is sent, which only a passing evaluation makes (AC-01). The decision cycle calls it for an
-/// Autonomous agent, and approvals (#38) will, so <c>BannedApis</c> allows it only in DecisionCycle and Execution. See
+/// Autonomous agent, and approvals, so <c>BannedApis</c> allows it only in DecisionCycle and Execution. See
 /// Order execution in docs/architecture.md.
 /// </summary>
 public interface IOrderExecution

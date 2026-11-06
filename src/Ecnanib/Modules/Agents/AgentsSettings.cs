@@ -6,7 +6,7 @@ namespace Ecnanib.Modules.Agents;
 /// The Agents section (SRS 7.3). Read() is the only way in. A missing value takes its default, and an invalid
 /// one stops startup with a message that names it (CFG-03). The section's other settings belong to the
 /// issues that use them: the default environment to switching to Live (#39), the cycle timings to the
-/// scheduler's <c>SchedulerSettings</c>, and the approval windows to approvals (#38).
+/// scheduler's <c>SchedulerSettings</c>, and the approval windows to the decision cycle's <c>DecisionCycleSettings</c>.
 /// </summary>
 internal sealed class AgentsSettings
 {

@@ -48,7 +48,7 @@ public sealed class BudgetTests(PostgresFixture postgres)
         await NextHourAsync(app, user, agent);
         await NextHourAsync(app, user, agent);
 
-        Assert.Equal(["OverBudget", "OverBudget", "ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["OverBudget", "OverBudget", "AwaitingApproval"], await app.CyclesAsync(agent.Id));
         Assert.Equal(3, Completions(app));
         Assert.Equal(["TechnicalAnalyst Skipped", "Strategist Skipped", "RiskCritic Skipped"], await app.RolesAsync(user.Id, agent.Id));
         Assert.Equal(AgentStatus.Active, await app.Agents.StatusAsync(user.Id, agent.Id));
@@ -81,7 +81,7 @@ public sealed class BudgetTests(PostgresFixture postgres)
         await app.RunAsync(user, agent);
         await NextHourAsync(app, user, agent);
 
-        Assert.Equal(["OverBudget", "ReadyToExecute", "OverBudget", "ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["OverBudget", "AwaitingApproval", "OverBudget", "AwaitingApproval"], await app.CyclesAsync(agent.Id));
         Assert.Equal(2, (await NoticesAsync(app, user)).Count);
     }
 
@@ -105,7 +105,7 @@ public sealed class BudgetTests(PostgresFixture postgres)
         app.Clock.Advance(BudgetPeriods.NextMonth(now) + Hour - now);
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute", "OverBudget", "ReadyToExecute", "ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval", "OverBudget", "AwaitingApproval", "AwaitingApproval"], await app.CyclesAsync(agent.Id));
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class BudgetTests(PostgresFixture postgres)
         await app.RunAsync(user, agent);
         await NextHourAsync(app, user, agent);
 
-        Assert.Equal(["OverBudget", "ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["OverBudget", "AwaitingApproval"], await app.CyclesAsync(agent.Id));
 
         var budget = await LatestBudgetAsync(app, agent.Id);
         Assert.Equal("DailyTokens", budget.GetProperty("reached").GetString());
@@ -135,7 +135,7 @@ public sealed class BudgetTests(PostgresFixture postgres)
         await app.RunAsync(user, agent);
         await NextHourAsync(app, user, agent);
 
-        Assert.Equal(["ReadyToExecute", "ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval", "AwaitingApproval"], await app.CyclesAsync(agent.Id));
 
         var budget = await LatestBudgetAsync(app, agent.Id);
         Assert.Equal(JsonValueKind.Null, budget.GetProperty("reached").ValueKind);
@@ -174,7 +174,7 @@ public sealed class BudgetTests(PostgresFixture postgres)
 
         await NextHourAsync(app, user, agent);
 
-        Assert.Equal(["ReadyToExecute", "OverBudget", "ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval", "OverBudget", "AwaitingApproval"], await app.CyclesAsync(agent.Id));
     }
 
     [Fact]
@@ -186,7 +186,7 @@ public sealed class BudgetTests(PostgresFixture postgres)
         await app.RunAsync(user, agent);
         await NextHourAsync(app, user, agent);
 
-        Assert.Equal(["ReadyToExecute", "ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval", "AwaitingApproval"], await app.CyclesAsync(agent.Id));
         Assert.Equal(["", ""], await BudgetsAsync(app, agent.Id));
     }
 
@@ -201,7 +201,7 @@ public sealed class BudgetTests(PostgresFixture postgres)
         await app.RunAsync(user, agent);
         await app.RunAsync(other, otherAgent);
 
-        Assert.Equal(["ReadyToExecute"], await app.CyclesAsync(otherAgent.Id));
+        Assert.Equal(["AwaitingApproval"], await app.CyclesAsync(otherAgent.Id));
 
         var spending = app.Agents.App.Services.GetRequiredService<IAiSpending>();
         var spend = Assert.Single(await spending.ListAsync(user.Id, Cancellation));

@@ -77,7 +77,7 @@ public sealed class TradingRecordTests(PostgresFixture postgres)
         app.Clock.Advance(TimeSpan.FromHours(1));
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute", "BlockedByRiskEngine"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval", "BlockedByRiskEngine"], await app.CyclesAsync(agent.Id));
         Assert.Contains("cycles_since_last_loss: 1\n", (await app.CallColumnAsync(agent.Id, AiRole.Strategist, "message"))[^1], StringComparison.Ordinal);
     }
 
@@ -94,7 +94,7 @@ public sealed class TradingRecordTests(PostgresFixture postgres)
 
         await app.RunAsync(user, agent);
 
-        Assert.Equal(["ReadyToExecute"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(["AwaitingApproval"], await app.CyclesAsync(agent.Id));
         Assert.Equal(AgentStatus.Active, await app.Agents.StatusAsync(user.Id, agent.Id));
     }
 

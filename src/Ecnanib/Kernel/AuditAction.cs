@@ -110,4 +110,16 @@ public enum AuditAction
 
     /// <summary>An administrator started a sync of every user's AI keys (FR-CAT-03). Platform-wide.</summary>
     CatalogSyncRequested,
+
+    /// <summary>
+    /// The user approved a Confirm agent's trade (FR-APR-02, FR-AUD-01). The Risk Engine then checks it again before
+    /// anything is sent, which can still reject it.
+    /// </summary>
+    TradeApproved,
+
+    /// <summary>
+    /// A Confirm agent's trade was rejected: by the user, or by the system when the Risk Engine's second look at an
+    /// approved one failed (FR-APR-03, FR-AUD-01). Nothing was sent.
+    /// </summary>
+    TradeRejected,
 }
