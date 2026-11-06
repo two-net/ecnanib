@@ -41,6 +41,8 @@ public sealed class AgentTextTests
         Distinct(Enum.GetValues<RiskSetting>().Select(AgentText.RiskHintOf));
         Distinct(Enum.GetValues<AgentField>().Select(AgentText.FieldErrorOf));
         Distinct(Enum.GetValues<TransitionOutcome>().Select(AgentText.TransitionErrorOf).OfType<string>());
+        Distinct(Enum.GetValues<KillOutcome>().Select(AgentText.KillOutcomeOf));
+        Distinct([AgentText.TwoFactorRefusalOf(TwoFactorCheck.Refused), AgentText.TwoFactorRefusalOf(TwoFactorCheck.Throttled)]);
         Distinct(Enum.GetValues<ActivationWarningKind>().Select(kind => AgentText.WarningOf(new ActivationWarning(kind, AiRole.Strategist))));
 
         // A refusal of the pair reads the same whether it came from saving or activating.

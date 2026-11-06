@@ -63,3 +63,11 @@
     .agent-result:empty {
         display: none;
     }
+
+/* FR-AGT-07's two choices, each a sentence. */
+.agent-choices {
+    display: grid;
+    gap: 0.375rem;
+    margin: 0;
+    padding-inline-start: 1.25rem;
+}

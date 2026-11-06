@@ -79,9 +79,39 @@
     {
         <div class="agent-confirm">
             <p>@Labelled(ConfirmOf(pending))</p>
+            @if (pending == Step.Stop)
+            {
+                @* FR-AGT-07's choice. Closing is the kill switch (FR-AGT-08), so it's the one that asks for a code. *@
+                <ul class="agent-choices">
+                    <li>@Strings.AgentStopKeepExplained</li>
+                    <li>@Strings.AgentStopCloseExplained</li>
+                </ul>
+            }
+            @if (Closes(pending) && TwoFactorOn)
+            {
+                @* On the circuit, as docs/architecture.md says for the kill switch: ITwoFactor.CheckAsync has its own throttle. *@
+                <div class="field">
+                    <label for="@CodeId">@Strings.FieldTwoFactorCode</label>
+                    <input id="@CodeId" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="64"
+                           aria-describedby="@($"{CodeId}-hint")" @bind="_code" @bind:event="oninput" @ref="_codeInput" />
+                    <p id="@($"{CodeId}-hint")" class="field-hint">@Strings.AgentKillCodeHint</p>
+                </div>
+            }
             <div class="agent-actions">
-                <button type="button" class="button" disabled="@_busy" @ref="_confirm" @onclick="() => RunAsync(pending)">@SubmitOf(pending)</button>
-                <button type="button" class="button" @onclick="Cancel">@Strings.AgentConfirmCancel</button>
+                @switch (pending)
+                {
+                    case Step.Stop:
+                        <button type="button" class="button" disabled="@_busy" @ref="_confirm" @onclick="() => RunAsync(pending)">@Strings.AgentStopSubmit</button>
+                        <button type="button" class="button" disabled="@_busy" @onclick="KillAsync">@Strings.AgentStopCloseSubmit</button>
+                        break;
+                    case Step.CloseAll:
+                        <button type="button" class="button" disabled="@_busy" @ref="_confirm" @onclick="KillAsync">@Strings.AgentCloseAllSubmit</button>
+                        break;
+                    default:
+                        <button type="button" class="button" disabled="@_busy" @ref="_confirm" @onclick="() => RunAsync(pending)">@SubmitOf(pending)</button>
+                        break;
+                }
+                <button type="button" class="button" disabled="@_busy" @onclick="Cancel">@Strings.AgentConfirmCancel</button>
             </div>
         </div>
     }
@@ -122,7 +152,12 @@
     private Step? _confirming;
     private Step? _focusAction;
     private bool _focusConfirm;
+    private bool _focusCode;
     private ElementReference _confirm;
+    private ElementReference _codeInput;
+
+    /// <summary>What the user typed for the kill switch. Cleared after each try, because a code works once.</summary>
+    private string? _code;
     private readonly Dictionary<Step, ElementReference> _actionButtons = [];
 
     [Parameter, EditorRequired]
@@ -130,6 +165,14 @@
 
     [Parameter, EditorRequired]
     public Guid UserId { get; set; }
+
+    /// <summary>Whether the user has two-factor on, so closing everything asks for a code (FR-AUTH-05).</summary>
+    [Parameter]
+    public bool TwoFactorOn { get; set; }
+
+    /// <summary>A Stopped agent still holds positions or orders on Binance, so the kill switch can close them.</summary>
+    [Parameter]
+    public bool HoldsPositions { get; set; }
 
     /// <summary>What the agent has spent on AI this day and month, or null when it has spent nothing.</summary>
     [Parameter]
@@ -153,7 +196,12 @@
     /// <summary>The changes that ask first, because they can't be taken back by the next click.</summary>
     private enum Step
     {
+        /// <summary>Stop, keeping its positions or closing everything (FR-AGT-07). Closing is the kill switch.</summary>
         Stop,
+
+        /// <summary>The kill switch for a Stopped agent that still holds something (FR-AGT-08).</summary>
+        CloseAll,
+
         Archive,
         Delete,
     }
@@ -162,10 +210,15 @@
     {
         AgentStatus.Active => [Step.Stop],
         AgentStatus.Paused or AgentStatus.Error => [Step.Stop, Step.Archive],
+        AgentStatus.Stopped when HoldsPositions => [Step.CloseAll, Step.Archive],
         AgentStatus.Draft or AgentStatus.Stopped => [Step.Archive],
         AgentStatus.Archived => [Step.Delete],
         _ => [],
     };
+
+    private static bool Closes(Step action) => action is Step.Stop or Step.CloseAll;
+
+    private string CodeId => $"agent-code-{Agent.Id:N}";
 
     /// <summary>When an Active agent's protective-only mode ends (FR-CYC-07), or null when its AI budget hasn't run out.</summary>
     private DateTimeOffset? BudgetUntil => Agent.Status == AgentStatus.Active ? Spend?.Check(Agent.Settings.Budget).Until : null;
@@ -176,7 +229,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_focusConfirm)
+        if (_focusCode)
+        {
+            _focusCode = false;
+            await _codeInput.FocusAsync();
+        }
+        else if (_focusConfirm)
         {
             _focusConfirm = false;
             await _confirm.FocusAsync();
@@ -223,13 +281,51 @@
     private void Confirm(Step action)
     {
         _confirming = action;
-        _focusConfirm = true;
+        _code = null;
+
+        // Straight to the code when one is needed. Otherwise to the first button, which never closes anything.
+        _focusCode = action == Step.CloseAll && TwoFactorOn;
+        _focusConfirm = !_focusCode;
     }
 
     private void Cancel()
     {
         _focusAction = _confirming;
         _confirming = null;
+        _code = null;
+    }
+
+    /// <summary>
+    /// The kill switch (FR-AGT-08): stops the agent, cancels its orders and closes its positions. A refused code keeps
+    /// the panel open for another, and says when only a recovery code will do.
+    /// </summary>
+    private async Task KillAsync()
+    {
+        await BusyAsync(async () =>
+        {
+            var code = _code;
+            _code = null;
+            _problems = [];
+            _warnings = [];
+            _message = Strings.AgentKillWorking;
+
+            var result = await Agents.StopAndCloseAsync(UserId, Agent.Id, code, CancellationToken.None);
+
+            if (result.Outcome == KillOutcome.TwoFactorRefused)
+            {
+                _message = AgentText.TwoFactorRefusalOf(result.TwoFactor);
+                _focusCode = TwoFactorOn;
+                return;
+            }
+
+            _confirming = null;
+            _message = AgentText.KillOutcomeOf(result.Outcome);
+
+            if (result.Agent is { } current)
+            {
+                await OnChanged.InvokeAsync(current);
+            }
+        });
     }
 
     private async Task RunAsync(Step action)

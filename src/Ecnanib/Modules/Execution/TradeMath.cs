@@ -55,6 +55,7 @@ internal static class TradeMath
             ProtectionEnd.Unprotected => TradeExit.Unprotected,
             ProtectionEnd.ClosedOutside => TradeExit.ClosedOutside,
             ProtectionEnd.LeftToUser => TradeExit.LeftToUser,
+            ProtectionEnd.KillSwitch => TradeExit.KillSwitch,
             _ => throw new ArgumentException($"Part {leaf.Id} hasn't ended as a leaf does.", nameof(leaf)),
         },
     };

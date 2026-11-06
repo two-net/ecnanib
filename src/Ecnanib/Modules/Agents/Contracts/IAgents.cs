@@ -74,9 +74,28 @@ public interface IAgents
 
     /// <summary>
     /// Ends an Active, Paused or Error agent's decision cycles, and leaves its positions and orders as they
-    /// are. Closing them as it stops comes with the kill switch (FR-AGT-07, #37).
+    /// are, for the user to manage (FR-AGT-07). <see cref="StopAndCloseAsync"/> is the other choice.
     /// </summary>
     Task<TransitionResult> StopAsync(Guid userId, Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The agent's kill switch, which is also FR-AGT-07's choice to close as it stops (FR-AGT-08): it stops the agent,
+    /// then cancels the open orders it created and closes its positions at market, through
+    /// <see cref="IAgentLiquidation"/>. It needs a code when the user has two-factor on (FR-AUTH-05), and changes
+    /// nothing without one. An Active, Paused, Error or Stopped agent can be killed, a Stopped one for what it still
+    /// holds. It's audited, and raises <c>KillSwitchExecuted</c>. It returns once nothing is urgent, and whatever is
+    /// left, execution finishes on its own.
+    /// </summary>
+    /// <param name="twoFactorCode">A code from the user's authenticator, or a recovery code. Ignored when two-factor is off.</param>
+    Task<KillResult> StopAndCloseAsync(Guid userId, Guid id, string? twoFactorCode, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// "Stop all agents" (FR-AGT-08, UC-05): the kill switch for each of the user's agents that's Active, Paused or in
+    /// Error, or Stopped with something still open, one at a time, so one that fails doesn't keep the rest from
+    /// stopping. The code is checked once, before any of them.
+    /// </summary>
+    /// <param name="twoFactorCode">A code from the user's authenticator, or a recovery code. Ignored when two-factor is off.</param>
+    Task<StopAllResult> StopAllAsync(Guid userId, string? twoFactorCode, CancellationToken cancellationToken);
 
     /// <summary>
     /// Archives an agent that isn't Active and has no open positions or orders. This is how an agent is

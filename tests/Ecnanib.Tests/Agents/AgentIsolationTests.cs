@@ -29,6 +29,8 @@ public sealed class AgentIsolationTests(PostgresFixture postgres)
         Assert.Equal(ActivationOutcome.NotFound, (await app.Agents.ActivateAsync(stranger.Id, active.Id, Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.NotFound, (await app.Agents.PauseAsync(stranger.Id, active.Id, Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.NotFound, (await app.Agents.StopAsync(stranger.Id, active.Id, Cancellation)).Outcome);
+        Assert.Equal(KillOutcome.NotFound, (await app.Agents.StopAndCloseAsync(stranger.Id, active.Id, null, Cancellation)).Outcome);
+        Assert.Empty((await app.Agents.StopAllAsync(stranger.Id, null, Cancellation)).Agents);
         Assert.Equal(TransitionOutcome.NotFound, (await app.Agents.ArchiveAsync(stranger.Id, active.Id, Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.NotFound, (await app.Agents.DeleteAsync(stranger.Id, archived.Id, Cancellation)).Outcome);
         Assert.Empty(await app.Agents.ListUsingCredentialAsync(stranger.Id, owner.ExchangeKey, Cancellation));

@@ -1,5 +1,4 @@
 using Ecnanib.Kernel;
-using Ecnanib.Modules.Agents.Contracts;
 using Ecnanib.Modules.ExchangeAdapter.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 
@@ -16,18 +15,23 @@ internal sealed class Reconciler(
     OrderStore store,
     ProtectionKeeper keeper,
     IExchangeAccount accounts,
-    IAgents agents,
     ExecutionSettings settings,
     TimeProvider time,
     ILogger<Reconciler> logger)
 {
-    /// <summary>One pass, after the keeper's own.</summary>
+    /// <summary>
+    /// One pass, after the keeper's own. For an agent the kill switch stopped, each part still held is then closed at
+    /// market, once Binance has confirmed that its stop hasn't executed (FR-AGT-08). That's what finishes a kill switch
+    /// that was cut off, at the next sweep or at startup.
+    /// </summary>
     /// <param name="readPosition">Futures: read Binance's position even when the agent holds nothing, as an entry needs.</param>
     public async Task<Reconciliation> ReconcileAsync(AgentSession session, bool readPosition, CancellationToken cancellationToken)
     {
+        // The kill switch's reads lead to closes, which are protective actions (FR-EXE-09).
+        var priority = session.Liquidating ? RequestPriority.Protective : RequestPriority.Normal;
         var pass = await keeper.AdvanceAsync(session, cancellationToken);
         var orders = pass.Orders;
-        var verified = await ReadLegsAsync(session, orders, cancellationToken);
+        var verified = await ReadLegsAsync(session, orders, priority, cancellationToken);
 
         var changed = new List<ProtectionRow>();
         var added = new List<ProtectionRow>();
@@ -47,7 +51,7 @@ internal sealed class Reconciler(
         {
             try
             {
-                positions = await accounts.GetPositionAsync(session.Key, session.Symbol.Symbol, RequestPriority.Normal, cancellationToken);
+                positions = await accounts.GetPositionAsync(session.Key, session.Symbol.Symbol, priority, cancellationToken);
             }
             catch (ExchangeException exception)
             {
@@ -65,7 +69,7 @@ internal sealed class Reconciler(
         {
             try
             {
-                var account = await accounts.GetAccountAsync(Market.Spot, session.Key, RequestPriority.Normal, cancellationToken);
+                var account = await accounts.GetAccountAsync(Market.Spot, session.Key, priority, cancellationToken);
                 onBinance = account.Balances.FirstOrDefault(balance => balance.Asset == session.Symbol.BaseAsset)?.Total ?? 0m;
             }
             catch (ExchangeException exception)
@@ -88,7 +92,12 @@ internal sealed class Reconciler(
 
         if (lost.Count > 0)
         {
-            await RestoreAsync(session, orders, lost, changed, cancellationToken);
+            Restore(session, orders, lost, changed);
+        }
+
+        if (verified && session.Liquidating)
+        {
+            Liquidate(orders, changed);
         }
 
         if (changed.Count == 0 && added.Count == 0)
@@ -113,7 +122,7 @@ internal sealed class Reconciler(
     /// Reads the symbol's open orders once, and each of the agent's stops and targets that has left them, for how it
     /// ended. False when Binance couldn't say.
     /// </summary>
-    private async Task<bool> ReadLegsAsync(AgentSession session, AgentOrders orders, CancellationToken cancellationToken)
+    private async Task<bool> ReadLegsAsync(AgentSession session, AgentOrders orders, RequestPriority priority, CancellationToken cancellationToken)
     {
         var resting = orders.Legs
             .Where(leg => leg.Leg is OrderLeg.Stop or OrderLeg.Target && leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled or OrderStatus.Triggered)
@@ -129,7 +138,7 @@ internal sealed class Reconciler(
 
         try
         {
-            open = await accounts.GetOpenOrdersAsync(session.Market, session.Key, session.Symbol.Symbol, RequestPriority.Normal, cancellationToken);
+            open = await accounts.GetOpenOrdersAsync(session.Market, session.Key, session.Symbol.Symbol, priority, cancellationToken);
         }
         catch (ExchangeException exception)
         {
@@ -150,7 +159,7 @@ internal sealed class Reconciler(
 
             try
             {
-                if (await accounts.GetOrderAsync(session.Market, session.Key, ProtectionKeeper.Reference(leg), RequestPriority.Normal, cancellationToken) is { } read)
+                if (await accounts.GetOrderAsync(session.Market, session.Key, ProtectionKeeper.Reference(leg), priority, cancellationToken) is { } read)
                 {
                     ProtectionKeeper.Apply(leg, read, now);
                 }
@@ -300,18 +309,22 @@ internal sealed class Reconciler(
 
     /// <summary>
     /// A stop cancelled outside Ecnanib, whose part is still held, is placed again within the protection window, or the
-    /// part is closed at market, as for a fresh fill (FR-EXE-02, NFR-REL-02). A stopped agent leaves its orders as they
-    /// are (FR-AGT-07), so its part becomes the user's.
+    /// part is closed at market, as for a fresh fill (FR-EXE-02, NFR-REL-02). An agent the user stopped leaves its
+    /// orders as they are (FR-AGT-07), so its part becomes the user's. One the kill switch stopped closes it instead,
+    /// which <see cref="Liquidate"/> does.
     /// </summary>
-    private async Task RestoreAsync(AgentSession session, AgentOrders orders, List<ProtectionRow> lost, List<ProtectionRow> changed, CancellationToken cancellationToken)
+    private void Restore(AgentSession session, AgentOrders orders, List<ProtectionRow> lost, List<ProtectionRow> changed)
     {
         var now = time.GetUtcNow();
-        var agent = await agents.FindAsync(session.UserId, session.AgentId, cancellationToken);
-        var stopped = agent?.Status == AgentStatus.Stopped;
 
         foreach (var protection in lost.Where(protection => protection.Status == ProtectionStatus.Resting))
         {
-            if (stopped)
+            if (session.Liquidating)
+            {
+                continue;
+            }
+
+            if (session.LeftToUser)
             {
                 logger.LogWarning(
                     "The stop of protection {Sequence} of entry {ClientOrderId} was cancelled outside Ecnanib. The agent is stopped, so {Quantity} is left to the user",
@@ -332,6 +345,28 @@ internal sealed class Reconciler(
             protection.ProtectBy = now + settings.ProtectiveStop;
             protection.StopLostAt = now;
             protection.UpdatedAt = now;
+            changed.Add(protection);
+        }
+    }
+
+    /// <summary>
+    /// The kill switch (FR-AGT-08): every part that's still resting is closed at market, now that Binance has confirmed
+    /// its stop and target are where the records say. One whose stop or target is executing is left to finish, and
+    /// what's left of it is closed at the next pass. Parts waiting for a stop are the keeper's to close.
+    /// </summary>
+    private void Liquidate(AgentOrders orders, List<ProtectionRow> changed)
+    {
+        foreach (var protection in orders.Protections.Where(protection => protection.Status == ProtectionStatus.Resting).ToList())
+        {
+            var executing = orders.LegsOf(protection)
+                .Any(leg => leg.Leg is OrderLeg.Stop or OrderLeg.Target && (leg.IsUnsettled || leg.Status is OrderStatus.Triggered or OrderStatus.PartiallyFilled));
+
+            if (executing)
+            {
+                continue;
+            }
+
+            keeper.BeginKill(protection, orders.EntryOf(protection));
             changed.Add(protection);
         }
     }

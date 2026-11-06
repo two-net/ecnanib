@@ -5,7 +5,7 @@ namespace Ecnanib.Modules.Agents.Contracts;
 /// <summary>
 /// What an agent has on the exchange, and what its Futures account allows. Execution knows, and Agents may not
 /// depend on it, so Agents declares this port and Execution implements it (see Inversions in
-/// docs/architecture.md). The kill switch and stopping with a close (#37) will add to it.
+/// docs/architecture.md). The kill switch has a port of its own, <see cref="IAgentLiquidation"/>.
 /// </summary>
 public interface IAgentExposure
 {

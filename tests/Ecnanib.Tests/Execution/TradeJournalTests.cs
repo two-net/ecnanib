@@ -342,6 +342,7 @@ public sealed class TradeJournalTests(PostgresFixture postgres)
         await app.ReconcileAsync();
         await app.JournalAsync();
 
+        Assert.Equal(TransitionOutcome.Done, (await app.Agents.Agents.StopAsync(user.Id, agent.Id, Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.Done, (await app.Agents.Agents.ArchiveAsync(user.Id, agent.Id, Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.Done, (await app.Agents.Agents.DeleteAsync(user.Id, agent.Id, Cancellation)).Outcome);
 

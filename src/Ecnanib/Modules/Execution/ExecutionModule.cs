@@ -33,6 +33,7 @@ public static class ExecutionModule
         services.AddSingleton<IOrderExecution, OrderExecutor>();
         services.AddSingleton<IAgentHistory, OrderHistory>();
         services.AddSingleton<IAgentExposure, AgentExposure>();
+        services.AddSingleton<IAgentLiquidation, AgentLiquidation>();
         services.AddSingleton<IAgentAccounts, AgentAccounts>();
         services.AddSingleton<IFuturesSetup, FuturesSetup>();
 

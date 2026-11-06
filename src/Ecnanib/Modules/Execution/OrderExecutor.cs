@@ -98,6 +98,11 @@ internal sealed class OrderExecutor(
 
         using (session)
         {
+            if (NotActive(session) is { } refused)
+            {
+                return refused;
+            }
+
             if (!SupportsProtection(session.Symbol, request.Market, order.TargetPrice is not null))
             {
                 logger.LogWarning("Binance doesn't take the order types {Symbol} needs for a stop, so the entry isn't sent", request.Symbol);
@@ -187,6 +192,11 @@ internal sealed class OrderExecutor(
 
         using (session)
         {
+            if (NotActive(session) is { } refused)
+            {
+                return refused;
+            }
+
             var orders = await store.LoadAsync(request.UserId, request.AgentId, cancellationToken);
             var entry = orders.Entries.LastOrDefault(row => OrderStore.PendingEntryStatuses.Contains(row.Status));
 
@@ -243,6 +253,11 @@ internal sealed class OrderExecutor(
 
         using (session)
         {
+            if (NotActive(session) is { } refused)
+            {
+                return refused;
+            }
+
             var reconciled = await reconciler.ReconcileAsync(session, readPosition: false, cancellationToken);
 
             if (!reconciled.Verified)
@@ -376,6 +391,11 @@ internal sealed class OrderExecutor(
 
         using (session)
         {
+            if (NotActive(session) is { } refused)
+            {
+                return refused;
+            }
+
             var reconciled = await reconciler.ReconcileAsync(session, readPosition: false, cancellationToken);
 
             if (!reconciled.Verified)
@@ -510,18 +530,24 @@ internal sealed class OrderExecutor(
     /// Passes over the agent's orders until nothing is urgent: the entry's outcome is known, and every fill has a
     /// resting stop or has been closed. Whatever remains goes to the watch.
     /// </summary>
-    private async Task<KeeperPass> KeepAsync(AgentSession session, CancellationToken cancellationToken)
-    {
-        var until = time.GetUtcNow() + MaximumWait;
-        var pass = await keeper.AdvanceAsync(session, cancellationToken);
+    private Task<KeeperPass> KeepAsync(AgentSession session, CancellationToken cancellationToken) =>
+        keeper.KeepAsync(session, MaximumWait, UrgentPassDelay, cancellationToken);
 
-        while (pass.Urgent && time.GetUtcNow() < until)
+    /// <summary>
+    /// Nothing is sent for an agent that's no longer Active, read under its lock as the session opened: one paused or
+    /// stopped while its cycle ran sends nothing (FR-AGT-06, FR-AGT-07), and the kill switch closes what one it stopped
+    /// holds (FR-AGT-08). A change after the lock was taken waits for this to finish, and then acts on what it sent.
+    /// </summary>
+    private ExecutionResult? NotActive(AgentSession session)
+    {
+        if (session.Active)
         {
-            await Task.Delay(UrgentPassDelay, time, cancellationToken);
-            pass = await keeper.AdvanceAsync(session, cancellationToken);
+            return null;
         }
 
-        return pass;
+        logger.LogInformation("The agent is {Status} now, so nothing is sent", session.Agent?.Status);
+
+        return new ExecutionResult(ExecutionStatus.NotSent, ExecutionReason.AgentNotActive);
     }
 
     /// <summary>Opens the agent's session, or null when its key can't be used. Binance no longer listing the pair is logged and null too.</summary>

@@ -1,10 +1,13 @@
 @page "/agents"
 @using System.Globalization
 @inject IAgents Agents
+@inject IAgentExposure Exposure
 @inject IAiSpending Spending
+@inject ITwoFactor TwoFactor
 
-@* Interactive: activating, pausing, stopping, cloning, archiving and deleting take no secret. The settings
-   form is a static page, linked with a plain <a>. The agent detail page is #41's. *@
+@* Interactive: activating, pausing, stopping, cloning, archiving and deleting take no secret. The kill switch's
+   code is checked on the circuit, by ITwoFactor.CheckAsync, which has its own throttle (see Two-factor in
+   docs/architecture.md). The settings form is a static page, linked with a plain <a>. The agent detail page is #41's. *@
 
 <PageTitle>@Strings.AgentsPageTitle</PageTitle>
 
@@ -27,6 +30,61 @@
                 <p>@Strings.AgentsLimitReached</p>
             }
             <p class="agents-count">@string.Format(CultureInfo.CurrentCulture, Strings.AgentsCount, Current.Count(), Agents.MaxAgentsPerUser)</p>
+            @if (CanStopAll && !_confirmingStopAll)
+            {
+                <button type="button" class="button" @ref="_stopAllButton" @onclick="ConfirmStopAll">@Strings.AgentsStopAll</button>
+            }
+        </div>
+
+        @if (_confirmingStopAll)
+        {
+            @* UC-05: the kill switch for every agent, after confirmation, and a code when two-factor is on (FR-AGT-08). *@
+            <div class="agents-stop-all">
+                <p>@Strings.AgentsStopAllConfirm</p>
+                @if (_twoFactorOn)
+                {
+                    <div class="field">
+                        <label for="stop-all-code">@Strings.FieldTwoFactorCode</label>
+                        <input id="stop-all-code" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="64"
+                               aria-describedby="stop-all-code-hint" @bind="_stopAllCode" @bind:event="oninput" @ref="_stopAllCodeInput" />
+                        <p id="stop-all-code-hint" class="field-hint">@Strings.AgentKillCodeHint</p>
+                    </div>
+                }
+                <div class="agents-actions">
+                    <button type="button" class="button" disabled="@_stoppingAll" @ref="_stopAllConfirm" @onclick="StopAllAsync">@Strings.AgentsStopAllSubmit</button>
+                    <button type="button" class="button" disabled="@_stoppingAll" @onclick="CancelStopAll">@Strings.AgentConfirmCancel</button>
+                </div>
+            </div>
+        }
+
+        @* Always there, so a screen reader announces each step and the result per agent (UC-05). *@
+        <div class="agents-stop-all-result" role="status" tabindex="-1" @ref="_stopAllResult">
+            @if (_stoppingAll)
+            {
+                <p>@Strings.AgentsStopAllWorking</p>
+            }
+            else if (_stopAllError is not null)
+            {
+                <p>@_stopAllError</p>
+            }
+            else if (_stopAll is { } stopped)
+            {
+                @if (stopped.Agents.Count == 0)
+                {
+                    <p>@Strings.AgentsStopAllNone</p>
+                }
+                else
+                {
+                    <p>@Strings.AgentsStopAllHeading</p>
+                    <ul class="facts-list">
+                        @foreach (var agent in stopped.Agents)
+                        {
+                            @* The user chose the name. Razor encodes it, so it's only text. *@
+                            <li>@string.Format(CultureInfo.CurrentCulture, Strings.AgentsStopAllResult, agent.Name, AgentText.KillOutcomeOf(agent.Result.Outcome))</li>
+                        }
+                    </ul>
+                }
+            }
         </div>
 
         @if (!Current.Any())
@@ -38,7 +96,8 @@
             <ul class="agents">
                 @foreach (var agent in Current)
                 {
-                    <AgentCard @key="agent.Id" Agent="agent" UserId="_userId" Spend="@_spend.GetValueOrDefault(agent.Id)" OnChanged="Replace" OnClone="CloneAsync" OnRemoved="Remove" />
+                    <AgentCard @key="agent.Id" Agent="agent" UserId="_userId" Spend="@_spend.GetValueOrDefault(agent.Id)" TwoFactorOn="_twoFactorOn"
+                               HoldsPositions="@_holding.Contains(agent.Id)" OnChanged="ReplaceAsync" OnClone="CloneAsync" OnRemoved="Remove" />
                 }
             </ul>
         }
@@ -50,7 +109,7 @@
                 <ul class="agents">
                     @foreach (var agent in Archived)
                     {
-                        <AgentCard @key="agent.Id" Agent="agent" UserId="_userId" OnChanged="Replace" OnClone="CloneAsync" OnRemoved="Remove" />
+                        <AgentCard @key="agent.Id" Agent="agent" UserId="_userId" OnChanged="ReplaceAsync" OnClone="CloneAsync" OnRemoved="Remove" />
                     }
                 </ul>
             </details>
@@ -67,6 +126,24 @@
     private string? _message;
     private bool _focusNotice;
     private ElementReference _notice;
+
+    private bool _twoFactorOn;
+
+    /// <summary>The Stopped agents that still hold positions or orders on Binance, which the kill switch can close.</summary>
+    private HashSet<Guid> _holding = [];
+
+    private bool _confirmingStopAll;
+    private bool _stoppingAll;
+    private string? _stopAllCode;
+    private string? _stopAllError;
+    private StopAllResult? _stopAll;
+    private bool _focusStopAll;
+    private bool _focusStopAllButton;
+    private bool _focusStopAllResult;
+    private ElementReference _stopAllButton;
+    private ElementReference _stopAllConfirm;
+    private ElementReference _stopAllCodeInput;
+    private ElementReference _stopAllResult;
 
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
@@ -86,6 +163,10 @@
 
     private IEnumerable<AgentRecord> Archived => _agents?.Where(agent => agent.Status == AgentStatus.Archived) ?? [];
 
+    /// <summary>Whether "Stop all agents" would do anything: an agent runs, is paused or in error, or a stopped one holds something.</summary>
+    private bool CanStopAll => Current.Any(agent =>
+        agent.Status is AgentStatus.Active or AgentStatus.Paused or AgentStatus.Error || _holding.Contains(agent.Id));
+
     protected override async Task OnInitializedAsync()
     {
         if (AccountClaims.UserId((await AuthenticationState).User) is not { } userId)
@@ -96,6 +177,8 @@
         _userId = userId;
         _agents = [.. await Agents.ListAsync(userId, includeArchived: true, CancellationToken.None)];
         _spend = await Spending.ListAsync(userId, CancellationToken.None);
+        _twoFactorOn = await TwoFactor.IsEnabledAsync(userId, CancellationToken.None);
+        await FindHoldingAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -105,6 +188,49 @@
             _focusNotice = false;
             await _notice.FocusAsync();
         }
+        else if (_focusStopAll)
+        {
+            _focusStopAll = false;
+            await (_twoFactorOn ? _stopAllCodeInput : _stopAllConfirm).FocusAsync();
+        }
+        else if (_focusStopAllButton)
+        {
+            _focusStopAllButton = false;
+
+            if (CanStopAll)
+            {
+                await _stopAllButton.FocusAsync();
+            }
+        }
+        else if (_focusStopAllResult)
+        {
+            _focusStopAllResult = false;
+            await _stopAllResult.FocusAsync();
+        }
+    }
+
+    /// <summary>From Execution's records only, never Binance, so a page load costs no request weight.</summary>
+    private async Task FindHoldingAsync()
+    {
+        var holding = new HashSet<Guid>();
+
+        foreach (var agent in Current.Where(agent => agent.Status == AgentStatus.Stopped))
+        {
+            if (await Exposure.HasOpenPositionsOrOrdersAsync(_userId, agent.Id, CancellationToken.None))
+            {
+                holding.Add(agent.Id);
+            }
+        }
+
+        _holding = holding;
+    }
+
+    private async Task ReplaceAsync(AgentRecord agent)
+    {
+        Replace(agent);
+
+        // A stop, or the kill switch, changes whether a stopped agent still holds something.
+        await FindHoldingAsync();
     }
 
     private void Replace(AgentRecord agent)
@@ -114,6 +240,58 @@
         if (index >= 0)
         {
             _agents![index] = agent;
+        }
+    }
+
+    private void ConfirmStopAll()
+    {
+        _confirmingStopAll = true;
+        _stopAllCode = null;
+        _stopAllError = null;
+        _stopAll = null;
+        _focusStopAll = true;
+    }
+
+    private void CancelStopAll()
+    {
+        _confirmingStopAll = false;
+        _stopAllCode = null;
+        _stopAllError = null;
+        _focusStopAllButton = true;
+    }
+
+    /// <summary>
+    /// UC-05: the kill switch for each agent, one at a time, then the result per agent. A refused code keeps the panel
+    /// open for another, and says when only a recovery code will do.
+    /// </summary>
+    private async Task StopAllAsync()
+    {
+        var code = _stopAllCode;
+        _stopAllCode = null;
+        _stopAllError = null;
+        _stopAll = null;
+        _stoppingAll = true;
+
+        try
+        {
+            var result = await Agents.StopAllAsync(_userId, code, CancellationToken.None);
+
+            if (result.Refused)
+            {
+                _stopAllError = AgentText.TwoFactorRefusalOf(result.TwoFactor);
+                _focusStopAll = true;
+                return;
+            }
+
+            _stopAll = result;
+            _confirmingStopAll = false;
+            _agents = [.. await Agents.ListAsync(_userId, includeArchived: true, CancellationToken.None)];
+            await FindHoldingAsync();
+            _focusStopAllResult = true;
+        }
+        finally
+        {
+            _stoppingAll = false;
         }
     }
 

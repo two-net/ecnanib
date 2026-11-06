@@ -153,4 +153,10 @@ public enum ExecutionReason
     /// Mode would net an entry against it, so none is sent.
     /// </summary>
     ForeignPosition,
+
+    /// <summary>
+    /// The agent was paused or stopped while its cycle ran, so nothing was sent (FR-AGT-06, FR-AGT-07). After the kill
+    /// switch, Ecnanib closes what it holds instead (FR-AGT-08).
+    /// </summary>
+    AgentNotActive,
 }

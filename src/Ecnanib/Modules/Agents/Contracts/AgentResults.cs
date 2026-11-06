@@ -1,4 +1,5 @@
 using Ecnanib.Kernel;
+using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 
 namespace Ecnanib.Modules.Agents.Contracts;
@@ -112,6 +113,56 @@ public enum TransitionOutcome
 
 /// <param name="Agent">The agent as it is now, unless <see cref="TransitionOutcome.NotFound"/> or deleted.</param>
 public sealed record TransitionResult(TransitionOutcome Outcome, AgentRecord? Agent = null);
+
+/// <summary>What the kill switch did to one agent (FR-AGT-08, UC-05).</summary>
+public enum KillOutcome
+{
+    /// <summary>Stopped, and it had no open orders or positions.</summary>
+    NothingOpen,
+
+    /// <summary>Stopped, its open orders cancelled and its positions closed.</summary>
+    Closed,
+
+    /// <summary>Stopped, and closing is under way: Ecnanib finishes it on its own, and notifies each trade it closes.</summary>
+    Closing,
+
+    /// <summary>
+    /// Stopped, but Binance couldn't be reached or the key can't be used, so nothing was closed yet. Its stops stay on
+    /// Binance, and Ecnanib keeps trying.
+    /// </summary>
+    Unconfirmed,
+
+    /// <summary>A Draft or Archived agent, which can have nothing on the exchange. <see cref="KillResult.Agent"/> has its status.</summary>
+    NotAllowed,
+
+    NotFound,
+
+    /// <summary>The two-factor code was missing or wrong (FR-AUTH-05). Nothing changed. <see cref="KillResult.TwoFactor"/> says why.</summary>
+    TwoFactorRefused,
+
+    /// <summary>Something failed before the agent could be stopped, so it's as it was. "Stop all agents" went on with the rest.</summary>
+    Failed,
+}
+
+/// <param name="Agent">The agent as it is now, unless <see cref="KillOutcome.NotFound"/> or <see cref="KillOutcome.TwoFactorRefused"/>.</param>
+/// <param name="TwoFactor">The check that refused, when <see cref="KillOutcome.TwoFactorRefused"/>.</param>
+public sealed record KillResult(KillOutcome Outcome, AgentRecord? Agent = null, TwoFactorCheck? TwoFactor = null)
+{
+    /// <summary>Whether the agent is now stopped by the kill switch, whatever is still left to close.</summary>
+    public bool Stopped => Outcome is KillOutcome.NothingOpen or KillOutcome.Closed or KillOutcome.Closing or KillOutcome.Unconfirmed;
+}
+
+/// <summary>One agent's part in "Stop all agents".</summary>
+/// <param name="Name">The agent's name as it was read, for the report, even if the agent changed meanwhile.</param>
+public sealed record AgentKill(Guid Id, string Name, KillResult Result);
+
+/// <summary>What "Stop all agents" did (UC-05).</summary>
+/// <param name="TwoFactor">The check that refused, in which case nothing changed and <paramref name="Agents"/> is empty.</param>
+/// <param name="Agents">Each agent it went through, oldest first. Empty when the user had none to stop.</param>
+public sealed record StopAllResult(TwoFactorCheck? TwoFactor, IReadOnlyList<AgentKill> Agents)
+{
+    public bool Refused => TwoFactor is { } check && !check.Allows();
+}
 
 public enum ActivationOutcome
 {

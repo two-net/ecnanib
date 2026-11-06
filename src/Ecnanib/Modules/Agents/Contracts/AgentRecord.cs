@@ -37,7 +37,10 @@ public enum AgentStatus
     /// <summary>Runs no cycles. Its positions and protective orders stay, and reconciliation continues (FR-AGT-06).</summary>
     Paused,
 
-    /// <summary>Runs no cycles, and no longer manages what it left on the exchange (FR-AGT-07).</summary>
+    /// <summary>
+    /// Runs no cycles. Stopped by the user, it no longer manages what it left on the exchange. Stopped by the kill
+    /// switch, Ecnanib cancels its orders and closes its positions (FR-AGT-07, FR-AGT-08).
+    /// </summary>
     Stopped,
 
     /// <summary>Something went wrong that the user has to look at. Decision cycles set it (#31).</summary>
@@ -82,6 +85,12 @@ public enum AgentStatusReason
 
     /// <summary>In Error, because its decision cycles failed to reach a decision too many times in a row.</summary>
     RepeatedCycleErrors,
+
+    /// <summary>
+    /// Stopped by the kill switch (FR-AGT-08): Ecnanib cancels its open orders and closes its positions at market, and
+    /// keeps at it until nothing is left, across a restart too. See The kill switch in docs/architecture.md.
+    /// </summary>
+    KillSwitch,
 }
 
 /// <summary>The field names in an agent's audit summary (FR-AUD-02), which the Web UI gives text to.</summary>

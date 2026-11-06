@@ -69,9 +69,31 @@ internal sealed class ProtectionKeeper(
             await CheckEntryAsync(session, entry, cancellationToken);
         }
 
+        if (session.Liquidating)
+        {
+            // The kill switch (FR-AGT-08): no entry may fill any more. One whose outcome isn't known is cancelled too, in
+            // case Binance has it. What filled before the cancel becomes a part below, and is closed.
+            foreach (var entry in orders.Entries.Where(entry => !entry.Resolved && entry.IsLive && entry.Status != OrderStatus.Triggered).ToList())
+            {
+                logger.LogWarning("Entry {ClientOrderId} is cancelled, because the agent's kill switch was used", entry.ClientOrderId);
+                await CancelEntryAsync(session, entry, cancellationToken, RequestPriority.Protective);
+            }
+        }
+
         foreach (var entry in orders.Entries.Where(entry => !entry.Resolved).ToList())
         {
             await ProtectFillsAsync(session, orders, entry, cancellationToken);
+        }
+
+        if (session.Liquidating)
+        {
+            // A part waiting for its stop has nothing resting that could execute meanwhile, so it's closed at once. A
+            // resting part waits for reconciliation to confirm its stop hasn't executed (see Reconciler).
+            foreach (var protection in orders.Protections.Where(protection => protection.Status == ProtectionStatus.Pending).ToList())
+            {
+                BeginKill(protection, orders.EntryOf(protection));
+                await store.SaveAsync(protection);
+            }
         }
 
         foreach (var protection in orders.Protections.Where(protection => NeedsWork(session, orders, protection)).ToList())
@@ -114,13 +136,15 @@ internal sealed class ProtectionKeeper(
     /// Cancels an unfilled entry, at its time-to-live (FR-EXE-01) or for CANCEL_PENDING, then reads it again: whatever
     /// filled before the cancel needs protecting.
     /// </summary>
-    public async Task CancelEntryAsync(AgentSession session, OrderRow entry, CancellationToken cancellationToken)
+    /// <param name="priority">Normal, unless it's the kill switch's, which is a protective action (FR-EXE-09).</param>
+    public async Task CancelEntryAsync(
+        AgentSession session, OrderRow entry, CancellationToken cancellationToken, RequestPriority priority = RequestPriority.Normal)
     {
         var now = time.GetUtcNow();
 
         try
         {
-            await trading.CancelOrderAsync(session.Market, session.Key, Reference(entry), RequestPriority.Normal, cancellationToken);
+            await trading.CancelOrderAsync(session.Market, session.Key, Reference(entry), priority, cancellationToken);
             logger.LogInformation("Cancelled entry {ClientOrderId}", entry.ClientOrderId);
         }
         catch (ExchangeException exception) when (exception is { Failure: ExchangeFailure.Rejected, Code: UnknownOrder })
@@ -919,6 +943,23 @@ internal sealed class ProtectionKeeper(
         await store.SaveAsync(protection, notice);
     }
 
+    /// <summary>
+    /// Marks a held part to be closed at market for the kill switch (FR-AGT-08), which the next pass does. The caller
+    /// saves it.
+    /// </summary>
+    public void BeginKill(ProtectionRow protection, OrderRow entry)
+    {
+        protection.Status = ProtectionStatus.Closing;
+        protection.ClosingFor = ProtectionClosing.KillSwitch;
+        protection.UpdatedAt = time.GetUtcNow();
+
+        logger.LogWarning(
+            "Protection {Sequence} of entry {ClientOrderId} is closed at market, because the agent's kill switch was used. It holds {Quantity}",
+            protection.Sequence,
+            entry.ClientOrderId,
+            protection.Quantity);
+    }
+
     private async Task BeginCloseAsync(ProtectionRow protection, OrderRow entry, string reason, CancellationToken cancellationToken)
     {
         protection.Status = ProtectionStatus.Closing;
@@ -1120,7 +1161,12 @@ internal sealed class ProtectionKeeper(
         var exit = protection.ClosingFor == ProtectionClosing.Exit;
 
         protection.Status = ProtectionStatus.Closed;
-        protection.EndReason = exit ? ProtectionEnd.Exited : ProtectionEnd.Unprotected;
+        protection.EndReason = protection.ClosingFor switch
+        {
+            ProtectionClosing.Exit => ProtectionEnd.Exited,
+            ProtectionClosing.KillSwitch => ProtectionEnd.KillSwitch,
+            _ => ProtectionEnd.Unprotected,
+        };
         protection.EndedAt = now;
         protection.UpdatedAt = now;
 
@@ -1128,6 +1174,14 @@ internal sealed class ProtectionKeeper(
         {
             logger.LogInformation(
                 "Protection {Sequence} of entry {ClientOrderId} was sold at market at {AveragePrice} for the exit",
+                protection.Sequence,
+                entry.ClientOrderId,
+                close.AveragePrice);
+        }
+        else if (protection.ClosingFor == ProtectionClosing.KillSwitch)
+        {
+            logger.LogWarning(
+                "Protection {Sequence} of entry {ClientOrderId} was closed at market at {AveragePrice} for the kill switch",
                 protection.Sequence,
                 entry.ClientOrderId,
                 close.AveragePrice);
@@ -1288,6 +1342,24 @@ internal sealed class ProtectionKeeper(
         var agent = await agents.FindAsync(session.UserId, session.AgentId, cancellationToken);
 
         return agent is null ? null : new Notice(type, session.UserId, $"/agents/{session.AgentId}/settings", agent.Settings.Name, agent.IsDemo);
+    }
+
+    /// <summary>
+    /// Passes over the agent's orders until nothing is urgent or <paramref name="maximumWait"/> is up: every order's
+    /// outcome is known, and every fill has a resting stop or has been closed. Whatever remains is the watch's.
+    /// </summary>
+    public async Task<KeeperPass> KeepAsync(AgentSession session, TimeSpan maximumWait, TimeSpan between, CancellationToken cancellationToken)
+    {
+        var until = time.GetUtcNow() + maximumWait;
+        var pass = await AdvanceAsync(session, cancellationToken);
+
+        while (pass.Urgent && time.GetUtcNow() < until)
+        {
+            await Task.Delay(between, time, cancellationToken);
+            pass = await AdvanceAsync(session, cancellationToken);
+        }
+
+        return pass;
     }
 
     private static KeeperPass Summarize(AgentSession session, AgentOrders orders)

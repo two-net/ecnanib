@@ -55,14 +55,26 @@ internal sealed class ExecutionApp : IAsyncDisposable
 
     public IOrderExecution Execution => Agents.App.Services.GetRequiredService<IOrderExecution>();
 
-    /// <summary>A user with keys, and an Autonomous agent on BTCUSDT, which needn't be Active to execute.</summary>
+    /// <summary>
+    /// A user with keys, and an Active Autonomous agent on BTCUSDT, because only an Active agent's orders are sent. It's
+    /// made Active in the database, because activation's checks ask Binance and the catalog, which these tests aren't about.
+    /// </summary>
     public async Task<(AgentApp.User User, AgentRecord Agent)> AgentAsync(Market market = Market.Spot)
     {
         var user = await Agents.UserAsync();
         var agent = await Agents.CreateAsync(user.Id, AgentApp.Ready(user, market: market) with { ExecutionMode = ExecutionMode.Autonomous });
 
-        return (user, agent);
+        await SetStatusAsync(agent.Id, AgentStatus.Active);
+
+        return (user, (await Agents.Agents.FindAsync(user.Id, agent.Id, Cancellation))!);
     }
+
+    /// <summary>Puts the agent in <paramref name="status"/> for <paramref name="reason"/>, as if a user or the system had.</summary>
+    public Task SetStatusAsync(Guid agentId, AgentStatus status, AgentStatusReason reason = AgentStatusReason.User) =>
+        Sql.ExecuteAsync(
+            ConnectionString,
+            $"UPDATE agents SET status = '{status}', status_reason = '{reason}', version = version + 1 WHERE id = '{agentId}'",
+            Cancellation);
 
     /// <summary>A long the engine sized at <see cref="Price"/>, with its stop at <see cref="Stop"/> and a target unless left out.</summary>
     public static SizedOrder Long(Market market, EntryType type = EntryType.Market, decimal? limit = null, bool target = true) =>

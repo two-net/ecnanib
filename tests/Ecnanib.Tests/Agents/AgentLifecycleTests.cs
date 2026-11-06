@@ -323,16 +323,21 @@ public sealed class AgentLifecycleTests(PostgresFixture postgres)
         Assert.Equal(ActivationOutcome.Activated, (await app.Agents.ActivateAsync(user.Id, id, Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.Done, (await app.Agents.StopAsync(user.Id, id, Cancellation)).Outcome);
 
-        // Stopped
+        // Stopped. The kill switch still closes what it holds (FR-AGT-08), and it stays Stopped.
         Assert.Equal(TransitionOutcome.NotAllowed, (await app.Agents.StopAsync(user.Id, id, Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.NotAllowed, (await app.Agents.PauseAsync(user.Id, id, Cancellation)).Outcome);
+        Assert.Equal(KillOutcome.NothingOpen, (await app.Agents.StopAndCloseAsync(user.Id, id, null, Cancellation)).Outcome);
+        Assert.Equal(AgentStatus.Stopped, await app.StatusAsync(user.Id, id));
         Assert.Equal(TransitionOutcome.Done, (await app.Agents.ArchiveAsync(user.Id, id, Cancellation)).Outcome);
         Assert.Equal(AgentStatus.Archived, await app.StatusAsync(user.Id, id));
+
+        // Archived
+        Assert.Equal(KillOutcome.NotAllowed, (await app.Agents.StopAndCloseAsync(user.Id, id, null, Cancellation)).Outcome);
 
         var changes = (await app.AuditAsync(user.Id)).Where(row => row.Action.StartsWith("Agent", StringComparison.Ordinal)).ToList();
 
         Assert.Equal(
-            ["AgentCreated", "AgentActivated", "AgentPaused", "AgentActivated", "AgentStopped", "AgentArchived"],
+            ["AgentCreated", "AgentActivated", "AgentPaused", "AgentActivated", "AgentStopped", "AgentKillSwitch", "AgentArchived"],
             changes.Select(row => row.Action));
         Assert.All(changes, row => Assert.Equal("User", row.ActorKind));
         Assert.All(changes.Skip(1), row => Assert.Contains("\"Reason\"", row.Summary, StringComparison.Ordinal));

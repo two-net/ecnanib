@@ -82,6 +82,12 @@ public enum AuditAction
     AgentStopped,
 
     /// <summary>
+    /// The user used an agent's kill switch, alone or through "Stop all agents" (FR-AGT-08): it stopped, and its open
+    /// orders are cancelled and its positions closed at market.
+    /// </summary>
+    AgentKillSwitch,
+
+    /// <summary>
     /// The system put the agent in Error, because its decision cycles kept failing to reach a decision. Its
     /// positions and protective orders stay on the exchange.
     /// </summary>

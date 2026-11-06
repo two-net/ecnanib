@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ecnanib.Kernel;
+using Ecnanib.Modules.Agents.Contracts;
 using Ecnanib.Modules.Credentials.Contracts;
 using Ecnanib.Modules.ExchangeAdapter.Contracts;
 using Ecnanib.Modules.MarketData.Contracts;
@@ -19,7 +20,8 @@ internal sealed class AgentSession(
     Market market,
     TradingEnvironment environment,
     ExchangeKey key,
-    ExchangeSymbolInfo symbol) : IDisposable
+    ExchangeSymbolInfo symbol,
+    AgentRecord? agent) : IDisposable
 {
     public Guid UserId { get; } = userId;
 
@@ -37,6 +39,24 @@ internal sealed class AgentSession(
     public ExchangeSymbolInfo Symbol { get; private set; } = symbol;
 
     public bool Futures => Market == Market.Futures;
+
+    /// <summary>
+    /// The agent as it was when the session opened, which its holder does under the agent's lock. Null when it's been
+    /// deleted, which needs it archived, with nothing open.
+    /// </summary>
+    public AgentRecord? Agent { get; } = agent;
+
+    /// <summary>Whether the agent may trade: only an Active one sends an entry, an exit or an adjustment.</summary>
+    public bool Active => Agent?.Status == AgentStatus.Active;
+
+    /// <summary>
+    /// The kill switch stopped it (FR-AGT-08), so its open orders are cancelled and what it holds is closed, rather than
+    /// protected.
+    /// </summary>
+    public bool Liquidating => Agent is { Status: AgentStatus.Stopped, StatusReason: AgentStatusReason.KillSwitch };
+
+    /// <summary>The user stopped it and kept its positions (FR-AGT-07), so what it no longer protects is theirs.</summary>
+    public bool LeftToUser => Agent?.Status == AgentStatus.Stopped && !Liquidating;
 
     private readonly HashSet<NotificationType> _raised = [];
 
@@ -61,7 +81,7 @@ internal sealed class AgentSession(
 }
 
 /// <summary>Opens <see cref="AgentSession"/>s.</summary>
-internal sealed class AgentSessions(ICredentialKeys keys, IExchangeSymbols symbols)
+internal sealed class AgentSessions(ICredentialKeys keys, IExchangeSymbols symbols, IAgents agents)
 {
     /// <exception cref="AgentSessionException">The key can't be used, or Binance no longer lists the pair.</exception>
     public async Task<AgentSession> OpenAsync(
@@ -73,6 +93,9 @@ internal sealed class AgentSessions(ICredentialKeys keys, IExchangeSymbols symbo
         string symbol,
         CancellationToken cancellationToken)
     {
+        // First, so nothing holds the key open while it's read. Its holder has the agent's lock, so what it does next
+        // follows the status read here, and a status that changes after only takes effect at the next session.
+        var agent = await agents.FindAsync(userId, agentId, cancellationToken);
         var info = await symbols.FindAsync(market, environment, symbol, cancellationToken)
             ?? throw new AgentSessionException(AgentSessionFailure.SymbolMissing, $"Binance no longer lists {symbol}.");
 
@@ -87,7 +110,7 @@ internal sealed class AgentSessions(ICredentialKeys keys, IExchangeSymbols symbo
             throw new AgentSessionException(AgentSessionFailure.KeyUnusable, $"Exchange key {credentialId} can't be used: {exception.Reason}", exception);
         }
 
-        return new AgentSession(userId, agentId, credentialId, market, environment, key, info);
+        return new AgentSession(userId, agentId, credentialId, market, environment, key, info, agent);
     }
 }
 

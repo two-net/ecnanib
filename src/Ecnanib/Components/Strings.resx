@@ -1500,6 +1500,9 @@
   <data name="ActivityActionAgentStopped" xml:space="preserve">
     <value>Stopped an agent</value>
   </data>
+  <data name="ActivityActionAgentKillSwitch" xml:space="preserve">
+    <value>Used the kill switch on an agent</value>
+  </data>
   <data name="ActivityActionAgentArchived" xml:space="preserve">
     <value>Archived an agent</value>
   </data>
@@ -1583,6 +1586,28 @@
   <data name="AgentsEmpty" xml:space="preserve">
     <value>You haven't created an agent yet. An agent needs a Binance Demo key and at least one AI key, which you add on the API keys page.</value>
   </data>
+  <data name="AgentsStopAll" xml:space="preserve">
+    <value>Stop all agents</value>
+  </data>
+  <data name="AgentsStopAllConfirm" xml:space="preserve">
+    <value>Stop all your agents and close everything they hold? The kill switch stops each agent that's running, paused or in error, cancels the orders it placed and closes its positions at market, now. A stopped agent that still holds something is closed too. Your own orders and positions on Binance aren't touched.</value>
+  </data>
+  <data name="AgentsStopAllSubmit" xml:space="preserve">
+    <value>Stop all and close everything</value>
+  </data>
+  <data name="AgentsStopAllWorking" xml:space="preserve">
+    <value>Stopping your agents. This can take a little while.</value>
+  </data>
+  <data name="AgentsStopAllNone" xml:space="preserve">
+    <value>None of your agents was running or held anything on Binance, so there was nothing to stop.</value>
+  </data>
+  <data name="AgentsStopAllHeading" xml:space="preserve">
+    <value>Stop all agents:</value>
+  </data>
+  <data name="AgentsStopAllResult" xml:space="preserve">
+    <value>{0}: {1}</value>
+    <comment>{0} is the agent's name. {1} says what happened to it, as a sentence.</comment>
+  </data>
   <data name="AgentsArchivedHeading" xml:space="preserve">
     <value>Archived agents ({0})</value>
     <comment>{0} is how many there are.</comment>
@@ -1664,11 +1689,55 @@
     <comment>{0} is the agent's name.</comment>
   </data>
   <data name="AgentStopConfirm" xml:space="preserve">
-    <value>Stop {0}? It runs no more cycles until you activate it again, and it leaves any positions and orders on Binance as they are, for you to manage.</value>
+    <value>Stop {0}? It runs no more cycles until you activate it again. Choose what happens to what it holds on Binance.</value>
     <comment>{0} is the agent's name.</comment>
   </data>
   <data name="AgentStopSubmit" xml:space="preserve">
-    <value>Stop agent</value>
+    <value>Stop and keep positions</value>
+  </data>
+  <data name="AgentStopKeepExplained" xml:space="preserve">
+    <value>Keep positions: its positions and orders stay on Binance as they are, with their stops, for you to manage.</value>
+  </data>
+  <data name="AgentStopCloseExplained" xml:space="preserve">
+    <value>Close everything: the kill switch. Ecnanib cancels the orders the agent placed and closes its positions at market, now. Your own orders and positions aren't touched.</value>
+  </data>
+  <data name="AgentStopCloseSubmit" xml:space="preserve">
+    <value>Stop and close everything</value>
+  </data>
+  <data name="AgentCloseAll" xml:space="preserve">
+    <value>Close everything</value>
+  </data>
+  <data name="AgentCloseAllLabel" xml:space="preserve">
+    <value>Close everything {0} holds</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentCloseAllConfirm" xml:space="preserve">
+    <value>Close everything {0} still holds? The kill switch cancels the orders the agent placed and closes its positions at market, now. Your own orders and positions aren't touched.</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentCloseAllSubmit" xml:space="preserve">
+    <value>Close everything</value>
+  </data>
+  <data name="AgentKillCodeHint" xml:space="preserve">
+    <value>Closing everything needs the 6-digit code from your authenticator app, or one of your recovery codes.</value>
+  </data>
+  <data name="AgentKillWorking" xml:space="preserve">
+    <value>Stopping it and closing what it holds. This can take a few seconds.</value>
+  </data>
+  <data name="AgentKillClosed" xml:space="preserve">
+    <value>Stopped. Its orders are cancelled and its positions closed.</value>
+  </data>
+  <data name="AgentKillClosing" xml:space="preserve">
+    <value>Stopped. Its orders are being cancelled and its positions closed, which Ecnanib finishes on its own. You'll be notified as each trade closes.</value>
+  </data>
+  <data name="AgentKillNothingOpen" xml:space="preserve">
+    <value>Stopped. It had nothing open on Binance.</value>
+  </data>
+  <data name="AgentKillUnconfirmed" xml:space="preserve">
+    <value>Stopped, but Binance couldn't be reached, so nothing is closed yet. Its stops stay on Binance, and Ecnanib keeps trying until everything is closed.</value>
+  </data>
+  <data name="AgentKillFailed" xml:space="preserve">
+    <value>Something went wrong before it could be stopped, so it's as it was. Try again.</value>
   </data>
   <data name="AgentSettingsLink" xml:space="preserve">
     <value>Settings</value>
@@ -1736,7 +1805,7 @@
     <value>Paused. Its positions and protective orders stay on Binance.</value>
   </data>
   <data name="AgentStoppedNotice" xml:space="preserve">
-    <value>Stopped.</value>
+    <value>Stopped. Its positions and orders stay on Binance as they are, for you to manage.</value>
   </data>
   <data name="AgentNotAllowed" xml:space="preserve">
     <value>That isn't possible in the agent's current status, which the card now shows.</value>
@@ -1807,6 +1876,9 @@
   <data name="AgentReasonRepeatedCycleErrors" xml:space="preserve">
     <value>Cycles kept failing</value>
   </data>
+  <data name="AgentReasonKillSwitch" xml:space="preserve">
+    <value>Kill switch</value>
+  </data>
   <data name="AgentExplanationCredentialDeleted" xml:space="preserve">
     <value>Paused because its Binance key was deleted. Choose another key in its settings, then resume it.</value>
   </data>
@@ -1836,6 +1908,9 @@
   </data>
   <data name="AgentExplanationRepeatedCycleErrors" xml:space="preserve">
     <value>Stopped running decision cycles because several in a row failed to reach a decision. Check its AI keys, models and pair, then activate it again. Its open positions keep their stops.</value>
+  </data>
+  <data name="AgentExplanationKillSwitch" xml:space="preserve">
+    <value>Stopped by the kill switch, which cancels the orders it placed and closes its positions at market. Ecnanib keeps at it until nothing is left, and notifies each trade it closes.</value>
   </data>
   <data name="AgentLossLimitUntil" xml:space="preserve">
     <value>Resumes on its own at {0}.</value>

@@ -212,6 +212,9 @@ internal enum TradeExit
 
     /// <summary>Binance rejected every close, so the user must close it.</summary>
     Abandoned,
+
+    /// <summary>The kill switch closed it at market (FR-AGT-08).</summary>
+    KillSwitch,
 }
 
 /// <summary>Stored by name, so a value is never renamed.</summary>

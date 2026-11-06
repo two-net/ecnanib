@@ -249,7 +249,10 @@ internal enum OrderLeg
     Stop,
     Target,
 
-    /// <summary>The close at market when a stop couldn't be placed (FR-EXE-02).</summary>
+    /// <summary>
+    /// Ecnanib's own close at market, under an evaluation of its own: when a stop couldn't be placed (FR-EXE-02), or
+    /// for the kill switch (FR-AGT-08). The protection's <see cref="ProtectionRow.ClosingFor"/> says which.
+    /// </summary>
     EmergencyClose,
 
     /// <summary>The close at market of an exit the council proposed and the Risk Engine sized (SELL or CLOSE).</summary>
@@ -338,6 +341,9 @@ internal enum ProtectionClosing
 
     /// <summary>An exit the council proposed, under that cycle's evaluation.</summary>
     Exit,
+
+    /// <summary>The kill switch stopped the agent (FR-AGT-08), so it's closed under an evaluation of Ecnanib's own.</summary>
+    KillSwitch,
 }
 
 /// <summary>How a protection ended. Stored by name, so a value is never renamed.</summary>
@@ -366,6 +372,9 @@ internal enum ProtectionEnd
 
     /// <summary>Replaced by smaller protections, which together hold what it did.</summary>
     Split,
+
+    /// <summary>The kill switch closed it at market (FR-AGT-08).</summary>
+    KillSwitch,
 }
 
 internal sealed class OrderRowConfiguration : IEntityTypeConfiguration<OrderRow>

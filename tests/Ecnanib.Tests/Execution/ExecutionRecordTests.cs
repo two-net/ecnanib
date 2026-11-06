@@ -50,7 +50,8 @@ public sealed class ExecutionRecordTests(PostgresFixture postgres)
         // Another user never sees it (NFR-SEC-04).
         Assert.False(await exposure.HasOpenPositionsOrOrdersAsync(otherUser.Id, agent.Id, ExecutionApp.Cancellation));
 
-        // Agents won't archive an agent with a resting stop.
+        // Agents won't archive an agent with a resting stop, even once it's stopped.
+        Assert.Equal(TransitionOutcome.Done, (await app.Agents.Agents.StopAsync(user.Id, agent.Id, ExecutionApp.Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.OpenPositions, (await app.Agents.Agents.ArchiveAsync(user.Id, agent.Id, ExecutionApp.Cancellation)).Outcome);
     }
 
@@ -63,6 +64,7 @@ public sealed class ExecutionRecordTests(PostgresFixture postgres)
         await app.ExecuteAsync(app.Request(user, agent, ExecutionApp.Long(Market.Spot)));
         Assert.Equal(1L, await app.CountAsync(agent.Id, "true"));
 
+        Assert.Equal(TransitionOutcome.Done, (await app.Agents.Agents.StopAsync(user.Id, agent.Id, ExecutionApp.Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.Done, (await app.Agents.Agents.ArchiveAsync(user.Id, agent.Id, ExecutionApp.Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.Done, (await app.Agents.Agents.DeleteAsync(user.Id, agent.Id, ExecutionApp.Cancellation)).Outcome);
 

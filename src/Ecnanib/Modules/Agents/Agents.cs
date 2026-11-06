@@ -1,6 +1,7 @@
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
 using Ecnanib.Modules.Credentials.Contracts;
+using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Modules.Notifications.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 using Ecnanib.Platform.Contracts;
@@ -23,6 +24,7 @@ internal sealed class Agents(
     AgentsSettings settings,
     RiskCaps caps,
     INotifications notifications,
+    ITwoFactor twoFactor,
     TimeProvider time,
     IServiceProvider services,
     ILogger<Agents> logger) : IAgents
@@ -33,9 +35,15 @@ internal sealed class Agents(
     /// </summary>
     private readonly Lazy<IReadOnlyList<IAgentHistory>> _history = new(() => [.. services.GetServices<IAgentHistory>()]);
 
+    /// <summary>Execution's side of the kill switch, resolved on first use for the same reason.</summary>
+    private readonly Lazy<IAgentLiquidation> _liquidation = new(services.GetRequiredService<IAgentLiquidation>);
+
     private static readonly AgentStatus[] Activatable = [AgentStatus.Draft, AgentStatus.Paused, AgentStatus.Stopped, AgentStatus.Error];
     private static readonly AgentStatus[] Pausable = [AgentStatus.Active];
     private static readonly AgentStatus[] Stoppable = [AgentStatus.Active, AgentStatus.Paused, AgentStatus.Error];
+
+    /// <summary>A Stopped agent too, for what it still holds. Draft and Archived agents can have nothing on the exchange.</summary>
+    private static readonly AgentStatus[] Killable = [AgentStatus.Active, AgentStatus.Paused, AgentStatus.Error, AgentStatus.Stopped];
     private static readonly AgentStatus[] Archivable = [AgentStatus.Draft, AgentStatus.Paused, AgentStatus.Stopped, AgentStatus.Error];
     private static readonly AgentStatus[] Deletable = [AgentStatus.Archived];
 
@@ -520,6 +528,65 @@ internal sealed class Agents(
     public Task<TransitionResult> StopAsync(Guid userId, Guid id, CancellationToken cancellationToken) =>
         TransitionAsync(userId, id, Stoppable, AgentStatus.Stopped, AuditAction.AgentStopped, checkExposure: false, cancellationToken);
 
+    public async Task<KillResult> StopAndCloseAsync(Guid userId, Guid id, string? twoFactorCode, CancellationToken cancellationToken)
+    {
+        // Before anything changes, as every sensitive action does (FR-AUTH-05).
+        var check = await twoFactor.CheckAsync(userId, twoFactorCode, cancellationToken);
+
+        if (!check.Allows())
+        {
+            return new KillResult(KillOutcome.TwoFactorRefused, TwoFactor: check);
+        }
+
+        return await KillAsync(userId, id, cancellationToken);
+    }
+
+    public async Task<StopAllResult> StopAllAsync(Guid userId, string? twoFactorCode, CancellationToken cancellationToken)
+    {
+        // Once for them all: a code works only once, so checking it per agent would refuse every one after the first.
+        var check = await twoFactor.CheckAsync(userId, twoFactorCode, cancellationToken);
+
+        if (!check.Allows())
+        {
+            return new StopAllResult(check, []);
+        }
+
+        var agents = await ListAsync(userId, includeArchived: false, cancellationToken);
+        var results = new List<AgentKill>();
+
+        logger.LogWarning("User {UserId} asked to stop all their agents", userId);
+
+        foreach (var agent in agents)
+        {
+            if (!Killable.Contains(agent.Status))
+            {
+                continue;
+            }
+
+            try
+            {
+                // A Stopped agent that holds nothing has nothing to stop.
+                if (agent.Status == AgentStatus.Stopped && !await exposure.HasOpenPositionsOrOrdersAsync(userId, agent.Id, cancellationToken))
+                {
+                    continue;
+                }
+
+                results.Add(new AgentKill(agent.Id, agent.Settings.Name, await KillAsync(userId, agent.Id, cancellationToken)));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                // One agent's failure never keeps the rest running (NFR-REL-05). If it stopped, execution finishes closing it.
+                logger.LogError(exception, "Stopping all agents of user {UserId} failed for agent {AgentId}, and goes on with the rest", userId, agent.Id);
+
+                var current = await TryFindAsync(userId, agent.Id);
+                var outcome = current is { Status: AgentStatus.Stopped, StatusReason: AgentStatusReason.KillSwitch } ? KillOutcome.Unconfirmed : KillOutcome.Failed;
+                results.Add(new AgentKill(agent.Id, agent.Settings.Name, new KillResult(outcome, current)));
+            }
+        }
+
+        return new StopAllResult(check, results);
+    }
+
     public Task<TransitionResult> ArchiveAsync(Guid userId, Guid id, CancellationToken cancellationToken) =>
         TransitionAsync(userId, id, Archivable, AgentStatus.Archived, AuditAction.AgentArchived, checkExposure: true, cancellationToken);
 
@@ -667,6 +734,109 @@ internal sealed class Agents(
         return outcome is not null || symbol is null
             ? (new AgentSaveResult(outcome ?? AgentSaveOutcome.SymbolUnknown, current), null, null, null)
             : (null, cleaned, symbol.QuoteAsset, exchangeKey);
+    }
+
+    /// <summary>The agent as it is now, for a report after a failure, or null when even that fails.</summary>
+    private async Task<AgentRecord?> TryFindAsync(Guid userId, Guid id)
+    {
+        try
+        {
+            return await FindAsync(userId, id, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Couldn't read agent {AgentId} of user {UserId} again", id, userId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// One agent's kill switch, once the code has passed. It stops the agent with <see cref="AgentStatusReason.KillSwitch"/>,
+    /// with its audit record and notice, in one transaction, before anything is sent: from then on no cycle runs, and
+    /// execution sends nothing for it but cancels and closes, so the close can't race a cycle, and a restart finishes
+    /// it. Then execution closes it.
+    /// </summary>
+    /// <param name="again">It changed under the first try, so this is the second, and the last.</param>
+    private async Task<KillResult> KillAsync(Guid userId, Guid id, CancellationToken cancellationToken, bool again = false)
+    {
+        var now = time.GetUtcNow();
+        const AgentStatusReason reason = AgentStatusReason.KillSwitch;
+        bool held;
+
+        await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+            var agent = await FindRowAsync(context, userId, id, cancellationToken);
+
+            if (agent is null)
+            {
+                return new KillResult(KillOutcome.NotFound);
+            }
+
+            if (!Killable.Contains(agent.Status))
+            {
+                return new KillResult(KillOutcome.NotAllowed, agent.ToRecord());
+            }
+
+            // From execution's records, before anything can close it: once it's stopped, the agent's watch or a sweep may
+            // close everything before execution is asked to, which must still read as closed, not as nothing open.
+            held = await exposure.HasOpenPositionsOrOrdersAsync(userId, id, cancellationToken);
+
+            var updated = await context.Set<Agent>()
+                .Where(row => row.Id == id && row.UserId == userId && row.Version == agent.Version && row.Status == agent.Status)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(row => row.Status, AgentStatus.Stopped)
+                        .SetProperty(row => row.StatusReason, reason)
+                        .SetProperty(row => row.StatusChangedAt, now)
+                        .SetProperty(row => row.Version, row => row.Version + 1),
+                    cancellationToken);
+
+            if (updated == 0)
+            {
+                // It changed meanwhile, such as by a system pause. Read it again and try once more: the kill switch
+                // shouldn't fail on a race the user can't see.
+                await transaction.RollbackAsync(cancellationToken);
+
+                return again
+                    ? new KillResult(KillOutcome.NotAllowed, await FindAsync(userId, id, cancellationToken))
+                    : await KillAsync(userId, id, cancellationToken, again: true);
+            }
+
+            audit.Add(context, AgentAudit.ByUser(AuditAction.AgentKillSwitch, userId, id, AgentAudit.StatusChange(agent.Status, AgentStatus.Stopped, reason)));
+            notifications.Add(
+                context,
+                new Notice(NotificationType.KillSwitchExecuted, userId, $"/agents/{id}/settings", agent.Name, agent.Environment == TradingEnvironment.Demo));
+
+            await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            logger.LogWarning("Used the kill switch on agent {AgentId} of user {UserId}, which was {From}", id, userId, agent.Status);
+        }
+
+        LiquidationOutcome closed;
+
+        try
+        {
+            closed = await _liquidation.Value.CloseAllAsync(userId, id, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // The agent is stopped by the kill switch, which reconciliation acts on at its next pass.
+            logger.LogError(exception, "Closing agent {AgentId} of user {UserId} after its kill switch failed, and is left to reconciliation", id, userId);
+            closed = LiquidationOutcome.Unconfirmed;
+        }
+
+        var outcome = closed switch
+        {
+            LiquidationOutcome.NothingOpen => held ? KillOutcome.Closed : KillOutcome.NothingOpen,
+            LiquidationOutcome.Closed => KillOutcome.Closed,
+            LiquidationOutcome.Closing => KillOutcome.Closing,
+            _ => KillOutcome.Unconfirmed,
+        };
+
+        return new KillResult(outcome, await FindAsync(userId, id, CancellationToken.None));
     }
 
     /// <summary>

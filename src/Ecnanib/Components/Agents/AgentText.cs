@@ -1,6 +1,7 @@
 using System.Globalization;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
+using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 
 namespace Ecnanib.Components.Agents;
@@ -36,6 +37,7 @@ public static class AgentText
         AgentStatusReason.ConsecutiveLosses => Strings.AgentReasonConsecutiveLosses,
         AgentStatusReason.LossLimitEnded => Strings.AgentReasonLossLimitEnded,
         AgentStatusReason.RepeatedCycleErrors => Strings.AgentReasonRepeatedCycleErrors,
+        AgentStatusReason.KillSwitch => Strings.AgentReasonKillSwitch,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Give the reason its text in Strings.resx."),
     };
 
@@ -53,6 +55,7 @@ public static class AgentText
         AgentStatusReason.ConsecutiveLosses => Strings.AgentExplanationConsecutiveLosses,
         AgentStatusReason.LossLimitEnded => Strings.AgentExplanationLossLimitEnded,
         AgentStatusReason.RepeatedCycleErrors => Strings.AgentExplanationRepeatedCycleErrors,
+        AgentStatusReason.KillSwitch => Strings.AgentExplanationKillSwitch,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Give the reason its explanation in Strings.resx."),
     };
 
@@ -188,6 +191,27 @@ public static class AgentText
         TransitionOutcome.NotFound => Strings.AgentGone,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Give the outcome its text in Strings.resx."),
     };
+
+    /// <summary>What the kill switch did to an agent, as a sentence (FR-AGT-08, UC-05).</summary>
+    public static string KillOutcomeOf(KillOutcome outcome) => outcome switch
+    {
+        KillOutcome.Closed => Strings.AgentKillClosed,
+        KillOutcome.Closing => Strings.AgentKillClosing,
+        KillOutcome.NothingOpen => Strings.AgentKillNothingOpen,
+        KillOutcome.Unconfirmed => Strings.AgentKillUnconfirmed,
+        KillOutcome.NotAllowed => Strings.AgentNotAllowed,
+        KillOutcome.NotFound => Strings.AgentGone,
+        KillOutcome.TwoFactorRefused => Strings.TwoFactorCodeRefused,
+        KillOutcome.Failed => Strings.AgentKillFailed,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Give the outcome its text in Strings.resx."),
+    };
+
+    /// <summary>
+    /// Why a code didn't let a sensitive action through (FR-AUTH-05). After too many wrong ones, it says recovery codes
+    /// still work, which is how an owner reaches the kill switch in a hurry.
+    /// </summary>
+    public static string TwoFactorRefusalOf(TwoFactorCheck? check) =>
+        check == TwoFactorCheck.Throttled ? Strings.TwoFactorCodeThrottled : Strings.TwoFactorCodeRefused;
 
     /// <summary>What has to be fixed before an agent can be activated.</summary>
     /// <param name="time">The user's time zone, for when a loss limit's pause ends. UTC without one.</param>
