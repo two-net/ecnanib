@@ -201,7 +201,7 @@ A change to the `Logging` section applies without a restart, for levels, overrid
 | HTTP request | `CorrelationMiddleware`, which also returns the ID as `X-Correlation-ID` |
 | Action on a circuit | `CorrelationCircuitHandler`, once per inbound activity |
 | Job run | `JobRunner`, once per run, so `job_runs.correlation_id` matches its logs |
-| Cycle | The code that runs it |
+| Cycle | `JobRunner`, because each cycle is a run of its own. See [Scheduler](#scheduler) |
 
 - **IDs are always generated here.** An inbound `X-Correlation-ID` is ignored: a client-chosen value could forge links between audit records, and a long one could fail a batch of log rows on the index. `TraceId` isn't used either, because a `traceparent` header sets it.
 - **`UseCorrelation` comes first in the pipeline.** Request logging needs the ID, and the exception handler and status pages run everything after them again, which would give a request two IDs.
@@ -299,7 +299,7 @@ The clock starts at `ApplicationStopping`, which SIGTERM fires. The numbers come
 - **Any start counts, whatever its outcome.** A failed job waits for its next tick, so one that fails instantly can't spin. An interrupted job waits too, so one that kills the process can't crash-loop it. An interrupted daily job therefore waits a day. A job that can't accept that retries within itself.
 - **Missed ticks collapse into one run.** There's no backfill.
 - **Nothing runs before `ApplicationStarted`,** so a failed start runs nothing, and any hosted service's `StartAsync` finishes before the first scheduled run. `RunAsync` works by then.
-- **A candle schedule belongs to #30.** `JobSchedule` is abstract so that `Modules/Scheduler` can derive one.
+- **A module can derive its own `JobSchedule`.** `CandleSchedule` in `Modules/Scheduler` does, for candle closes. See [Scheduler](#scheduler).
 - **Queued work isn't durable.** There's no queue. Anything `RunAsync` would have done is recovered by a schedule, as [Inversions](#inversions) requires of events.
 
 `Running` rows at start belong to a process that's gone, because there's one instance (ASM-06). `StartAsync` marks them `Interrupted` before anything runs, and a failure there stops startup. Their `finished_at` stays null, because a sweep time would overstate how long they ran. Running several instances would need a rethink.
@@ -1516,11 +1516,12 @@ One Information event per provider run, with its counts, one per change of a mod
 
 ## Agents
 
-`Modules/Agents` holds users' trading agents: their settings (FR-AGT-02) and their lifecycle (FR-AGT-04). Running them is later issues' work: the scheduler (#30), the council (#31) and execution (#34).
+`Modules/Agents` holds users' trading agents: their settings (FR-AGT-02) and their lifecycle (FR-AGT-04). The [scheduler](#scheduler) runs the Active ones. What a cycle does is later issues' work: the council (#31) and execution (#34).
 
 | Contract | What | Who uses it |
 |---|---|---|
-| `IAgents` | Listing, creating, editing, cloning, activating, pausing, stopping, archiving and deleting a user's agents, which agents use a credential (FR-KEY-10), and the models the user can give each role with the assignment a new agent starts with (FR-ROLE-02, FR-ROLE-03). Every call takes the user, so another user's agent behaves like one that doesn't exist (NFR-SEC-04) | The Web UI now. The wizard, the scheduler, the council and execution later |
+| `IAgents` | Listing, creating, editing, cloning, activating, pausing, stopping, archiving and deleting a user's agents, which agents use a credential (FR-KEY-10), and the models the user can give each role with the assignment a new agent starts with (FR-ROLE-02, FR-ROLE-03). Every call takes the user, so another user's agent behaves like one that doesn't exist (NFR-SEC-04) | The Web UI and the decision cycle now. The wizard, the council and execution later |
+| `IActiveAgents` | Every user's Active agents on a timeframe, for the scheduler. It isn't scoped to a user, so `BannedApis` allows it only in Agents and Scheduler (NFR-SEC-04) | The scheduler |
 | `IAgentExposure` | Whether an agent has open positions or orders, and an account's available balance. A port Agents declares and Execution implements ([Inversions](#inversions)) | Agents, and the settings page, which locks fields with it |
 | `RiskSettings`, in `RiskEngine/Contracts` | FR-RISK-02's settings, their defaults and each one's own range. Only numbers, so the engine still depends on Kernel alone (rule 4) | Agents stores them, and checks them against `RiskCaps` (FR-RISK-11). The engine takes them as input. See [Risk Engine](#risk-engine) |
 
@@ -1731,6 +1732,69 @@ The engine can't read them itself, so the decision cycle builds them (#31):
 - **Fees and slippage aren't in the size.** FR-RISK-03's formula is followed as written, so the loss if the stop fills is the agent's risk per trade plus the fees on both legs and a stop-market's slippage: on a tight Futures stop, roughly a tenth to a fifth more. A fee-aware size would need the account's commission rate as an input.
 - **Spot's price band uses the last price**, where Binance uses an average over a few minutes. A rare rejection is refreshed and recorded (#34).
 - **An add's liquidation price assumes the whole position posts notional ÷ leverage**, which is what Binance's isolated margin holds unless margin was added by hand, which an agent never does.
+
+## Scheduler
+
+`Modules/Scheduler` starts each Active agent's decision cycle when a candle of its timeframe closes (FR-CYC-01). It handles a concurrency limit, a fair queue and jitter (FR-CYC-08), the cycle's deadline (FR-CYC-06) and a catch-up after downtime (FR-CYC-04). What a cycle does belongs to DecisionCycle (#31).
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `IActiveAgents`, in `Agents/Contracts` | Every user's Active agents on a timeframe. It isn't scoped to a user, so `BannedApis` allows it only in Agents and Scheduler (NFR-SEC-04) | The scheduler |
+| `IDecisionCycles`, `CycleRequest`, in `DecisionCycle/Contracts` | One cycle: the agent and its user, the candle's close, the deadline, and whether it's a catch-up. `BannedApis` allows it only in DecisionCycle and Scheduler, so no cycle starts outside the limit, the queue and the one-per-agent rule | The scheduler. Until #31, `DecisionCycles` only checks that the agent is still Active |
+
+### When cycles run
+
+Each timeframe has its own recurring job: `cycles-15m`, `cycles-1h`, `cycles-4h` and `cycles-1d`. Each job has its own loop, so a long queue at a daily close can't hold up the next 15-minute one. A schedule finds its last run by its job's name, so the names never change.
+
+- **Closes are aligned to UTC.** `CandleCloses` counts intervals from the Unix epoch, which is a midnight. That gives 15m at :00, :15, :30 and :45, 1H every hour, 4H at 00:00, 04:00 and so on to 20:00, and 1D at 00:00. A close's run is due `CandleCloseDelaySeconds` after it, so the candle is final.
+- **`CandleSchedule` works out the next run from the last start.** That start handled the last close at or before it, less the delay, so the next close after that is due. This holds even when the start was late. A job that has never run waits for the next close, so a new installation doesn't run a cycle for a close it wasn't there for. A restart that changes the delay can move one close either way.
+- **After downtime, the due time is in the past.** The runner runs it once, however many closes were missed.
+
+A run looks only at the latest close, so an agent gets at most one catch-up:
+
+| The run is late by | Its cycles | Deadline |
+|---|---|---|
+| Up to 30 seconds (NFR-PERF-01) | Run on time | Close + delay + `CycleDeadlineMinutes` |
+| Up to `CatchUpGraceMinutes` | Run as a catch-up, with `CycleRequest.CatchUp` set | Now + `CycleDeadlineMinutes`, because counting from the close would leave a catch-up no time |
+| More | Skipped, with a Warning per agent | None |
+
+- **A late run is a catch-up whatever made it late.** The application may have been down, or the database may have been down when the run tried to start.
+- **The deadline counts from the close, so time in the queue counts against it.** After the deadline a cycle executes no new entry (FR-CYC-06). The cycle checks with `CycleRequest.AllowsNewEntry` right before an entry. Managing a position isn't an entry.
+
+### Dispatching
+
+`CycleDispatcher` takes each agent through four steps:
+
+1. **One cycle per agent.** If the agent's last cycle is still queued or running, the new one is skipped, with a Warning. Nothing else starts cycles, so this is FR-CYC-02's agent lock. It's kept in memory, which is enough for one instance (ASM-06).
+2. **Jitter.** A random wait of up to `MaxCycleJitterSeconds` spreads exchange requests (NFR-PERF-05). The setting is capped at 20 seconds, so cycles still start within NFR-PERF-01's 30.
+3. **A slot.** `CycleSlots` has `MaxConcurrentCycles` of them, and orders waiters by three things:
+   - Their deadline, so a 15m cycle goes before a 1D one at midnight.
+   - Their user's round, which is how many cycles the user already had queued or running when the waiter arrived. Users take turns, so one user's agents can't crowd out another's.
+   - When they arrived.
+
+   A waiter still queued at its deadline is dropped, with a Warning. It could enter nothing, and its stop rests on the exchange (NFR-REL-02).
+4. **A run of its own.** The cycle runs through `IJobRunner.RunAsync` as `decision-cycle`, so it gets its own correlation ID, `job_runs` row and error boundary (NFR-REL-05). It also gets the runner's two signals and a place in the shutdown drain (NFR-REL-04). Its timeout is the time left to its deadline plus two minutes to wind down. The start is logged with `StartDelayMs`, measured from close + delay, and with a Warning past 30 seconds, which is what #56 measures for NFR-PERF-01.
+
+- **A job returns once each cycle has started or been dropped,** without waiting for the cycles to finish, so a slow cycle can't hold up the next close. Its `details` give the counts: due, started, still running, past deadline and not started.
+- **A hung cycle frees its slot five seconds after its timeout,** with an Error. The runner keeps waiting for work that ignores its token, and without this a few hung cycles would stop everyone else's. The agent keeps its place until the work really ends, because two cycles at once for one agent would be worse than a stalled one.
+- **Shutdown starts nothing more.** Whatever is still waiting is abandoned, and the job ends as `Interrupted`. Cycles that had started drain like any other run.
+- **Catch-up is per close, not per agent.** Suppose a cycle was still waiting when shutdown began, or its start couldn't be recorded. After a restart it isn't caught up, because the job for its close already ran. Catching up per agent needs each agent's last cycle, which `decision_cycles` (#31) will have.
+
+### Settings
+
+They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A missing value takes its default, and an invalid one stops startup with a message that names it (CFG-03). `CatchUpGraceMinutes` and `CycleDeadlineMinutes` take one value per timeframe, keyed `15m`, `1H`, `4H` and `1D`, and any other key is refused.
+
+| Setting | Default | Range |
+|---|---|---|
+| `CandleCloseDelaySeconds` | 10 | 0 to 300 |
+| `MaxConcurrentCycles` | 50 | 1 to 1000 |
+| `MaxCycleJitterSeconds` | 10 | 0 to 20. Not in SRS 7.3 |
+| `CatchUpGraceMinutes` | 5, 15, 60, 180 | 0, which turns catch-up off, to less than the interval |
+| `CycleDeadlineMinutes` | 3, 10, 20, 30 (NFR-PERF-02) | 1 to less than the interval |
+
+### Testing it
+
+`SchedulerApp` in `tests/Ecnanib.Tests/Scheduler` gives each test its own application, clock and database. It turns jitter off, keeps the four jobs for the test to run, and replaces `IActiveAgents` and `IDecisionCycles` with fakes. A fake cycle can be held at a `Gate` or made to fail. `TestClock` moves only the time code reads, and its timers still run in real time. So the test for dropping a cycle at its deadline moves the clock past it and then frees a slot, rather than waiting for the timer.
 
 ## Web UI
 
@@ -1958,13 +2022,15 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **The kill switch (#37):** evaluate each close as a `Close` or `Sell` with `Origin = System` and no fraction, which only the structural rules can stop, and send its `SizedOrder`.
 - **Approvals (#38):** re-evaluate on approval with fresh inputs (FR-APR-03): the size and prices may change, and a failure rejects the approval with its reasons. Show `SizedOrder.MoneyAtRisk` as the money at risk (FR-APR-01).
 - **The trace viewer (#42):** give `RiskRule`, `RuleOutcome` and `RiskReason` their text, and show each rule's inputs as recorded. The Settings rule's inputs show each capped setting, its cap and what was used.
-- **Decision cycles (#30, #31):** call `ICorrelationContext.Begin()` around each cycle, and set `LogProperties.AgentId`, `CycleId` and `Environment` in a scope. Decide between one `job_runs` row per tick and one per cycle, which costs about 19,000 rows a day at 200 agents on 15m. `RunAsync` stays pending while hung work keeps its place, so a concurrency limit must bound its wait.
+- **The decision cycle (#31):** replace `DecisionCycles`, keeping its check that the agent is still Active, because the scheduler listed it a little earlier. Each cycle is a run of its own, so it already has a correlation ID, and a scope with `UserId` and `AgentId`: add `CycleId` and `Environment` once the agent is loaded. Call `CycleRequest.AllowsNewEntry` right before executing an entry, with the time then (FR-CYC-06), and record the cycle's correlation ID on its `decision_cycles` row, which links it to its `job_runs` row. Per-agent catch-up (FR-CYC-04) could then read each agent's last cycle. See [Scheduler](#scheduler).
+- **System health (#49):** FR-ADM-04's queued and running cycles are in `CycleSlots`, in memory. Add a Scheduler contract that reports them, and the scheduler's status from the four `cycles-*` jobs' last runs.
+- **Retention (#50):** every decision cycle adds a `decision-cycle` row to `job_runs`, about 19,000 a day at 200 agents on 15m, plus a row per timeframe per close.
 - **Order execution (#34):** pass `cancellationToken`, not `Stopping`, to exchange calls. Persist the intent before sending, or a cut send can't be recovered (FR-EXE-05, FR-EXE-08). Once an order is placed, save with a deadline of its own, or the end of the drain window could cancel the write.
 - **Reconciliation (#35):** run the startup pass from a hosted service's `StartAsync`, through `IJobRunner`, so it finishes before any scheduled cycle (FR-EXE-08).
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 
-Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and `ICatalogControls` beside it, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync`, `ICatalogAdministration`, `CatalogAuditFields` and `IModelStatusObserver` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `IPrompts`, `PromptComposer`, `PromptRequest`, `PromptContext`, `ComposedPrompt`, `PromptTemplate`, `PromptTemplateKey`, `PromptWindows`, `OutputContracts`, `ContractContext`, `OutputContractException`, `TradeActions` and the five role outputs in `Modules/AiCouncil/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IAgentExposure`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `RiskSettings`, `RiskCaps`, `IRiskEngine`, `OrderIntent`, `RiskInputs`, `RiskEvaluation`, `SizedOrder` and `RiskPeriods` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
+Other interfaces are defined by the issue that needs them. So far there's `ISystemInfo` in `Modules/Administration/Contracts`, which is part of FR-ADM-04 for #49 to build on, and `ICatalogControls` beside it, `IAccountActivity`, `IEmailVerification`, `IPasswordResets`, `ITwoFactor`, `IPreferences`, `IEmailRecipients`, `EmailNotificationChoices` and `TimeZones` in `Modules/Identity/Contracts`, `INotifications` in `Modules/Notifications/Contracts`, `ICatalog`, `ICatalogSync`, `ICatalogAdministration`, `CatalogAuditFields` and `IModelStatusObserver` in `Modules/Catalog/Contracts`, the exchange contracts in `Modules/ExchangeAdapter/Contracts`, including `IExchangeUsage` for #49, `IMarketData`, `IExchangeSymbols`, `Indicators` and `MarketDataException` in `Modules/MarketData/Contracts`, the AI contracts in `Modules/AiAdapters/Contracts`, `IPrompts`, `PromptComposer`, `PromptRequest`, `PromptContext`, `ComposedPrompt`, `PromptTemplate`, `PromptTemplateKey`, `PromptWindows`, `OutputContracts`, `ContractContext`, `OutputContractException`, `TradeActions` and the five role outputs in `Modules/AiCouncil/Contracts`, `ICredentials`, `ICredentialKeys`, `ICredentialObserver` and `CredentialAuditFields` in `Modules/Credentials/Contracts`, `IAgents`, `IActiveAgents`, `IAgentExposure`, `AgentSettings`, `RoleChoices` and `AgentAuditFields` in `Modules/Agents/Contracts`, `IDecisionCycles` and `CycleRequest` in `Modules/DecisionCycle/Contracts`, `RiskSettings`, `RiskCaps`, `IRiskEngine`, `OrderIntent`, `RiskInputs`, `RiskEvaluation`, `SizedOrder` and `RiskPeriods` in `Modules/RiskEngine/Contracts`, the persistence, logging, correlation, job, audit, secret, scrubbing and email contracts in `Platform/Contracts`, including `IMasterKeyRotation` for #49, and `SecretValue`, `NotificationType`, `Market`, `TradingEnvironment`, `Timeframe` and `AiRole` in `Kernel`.
 
 ## What the boundary tests can't see
 

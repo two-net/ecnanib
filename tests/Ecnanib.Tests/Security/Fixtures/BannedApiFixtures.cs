@@ -139,6 +139,48 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     {
         public static object Size() => new Modules.RiskEngine.Contracts.SizedOrder(1000m);
     }
+
+    public static class EveryAgentListedByTheWebUi
+    {
+        public static Task<IReadOnlyList<Guid>> ListAsync(Modules.Agents.Contracts.IActiveAgents agents) => agents.ListAsync();
+    }
+
+    public static class CycleStartedByTheWebUi
+    {
+        public static Task RunAsync(Modules.DecisionCycle.Contracts.IDecisionCycles cycles, Guid agentId) => cycles.RunAsync(agentId);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Agents.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface IActiveAgents
+    {
+        Task<IReadOnlyList<Guid>> ListAsync();
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.DecisionCycle.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface IDecisionCycles
+    {
+        Task RunAsync(Guid agentId);
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Scheduler
+{
+    public static class TheScheduler
+    {
+        public static async Task RunAsync(Agents.Contracts.IActiveAgents agents, DecisionCycle.Contracts.IDecisionCycles cycles)
+        {
+            foreach (var agentId in await agents.ListAsync())
+            {
+                await cycles.RunAsync(agentId);
+            }
+        }
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Modules.RiskEngine.Contracts

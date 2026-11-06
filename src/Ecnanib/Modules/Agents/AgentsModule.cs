@@ -18,6 +18,7 @@ public static class AgentsModule
         services.AddSingleton<AgentPrerequisites>();
         services.AddSingleton<Agents>();
         services.AddSingleton<IAgents>(provider => provider.GetRequiredService<Agents>());
+        services.AddSingleton<IActiveAgents, ActiveAgents>();
         services.AddSingleton<ICredentialObserver, AgentCredentialObserver>();
         services.AddSingleton<IRecurringJob, AgentPrerequisitesJob>();
         services.AddSingleton<ModelLifecycle>();
