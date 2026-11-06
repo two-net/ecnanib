@@ -172,7 +172,7 @@ public static class AgentText
         AgentSaveOutcome.SymbolNotTrading => Strings.AgentSymbolNotTrading,
         AgentSaveOutcome.SymbolNotPerpetual => Strings.AgentSymbolNotPerpetual,
         AgentSaveOutcome.SymbolUnverifiable => Strings.AgentSymbolUnverifiable,
-        AgentSaveOutcome.LiveNotAvailable => Strings.AgentLiveNotAvailable,
+        AgentSaveOutcome.EnvironmentNotEditable => Strings.AgentSaveEnvironmentNotEditable,
         AgentSaveOutcome.LockedByOpenPositions => Strings.AgentSaveLocked,
         AgentSaveOutcome.WouldFailActivation => Strings.AgentSaveWouldFailActivation,
         AgentSaveOutcome.SlotTaken => Strings.AgentSaveSlotTaken,
@@ -217,7 +217,6 @@ public static class AgentText
     /// <param name="time">The user's time zone, for when a loss limit's pause ends. UTC without one.</param>
     public static string ProblemOf(ActivationProblem problem, DisplayTime? time = null) => problem.Kind switch
     {
-        ActivationProblemKind.LiveNotAvailable => Strings.AgentLiveNotAvailable,
         ActivationProblemKind.NoExchangeKey => Strings.AgentProblemNoExchangeKey,
         ActivationProblemKind.ExchangeKeyMissing => Strings.AgentProblemExchangeKeyMissing,
         ActivationProblemKind.ExchangeKeyNotValid => Strings.AgentProblemExchangeKeyNotValid,
@@ -242,7 +241,48 @@ public static class AgentText
         ActivationProblemKind.FuturesMultiAssetsMode => Strings.AgentProblemFuturesMultiAssetsMode,
         ActivationProblemKind.FuturesMarginInsufficient => string.Format(
             CultureInfo.CurrentCulture, Strings.AgentProblemFuturesMarginInsufficient, problem.Required, problem.Available, problem.Asset),
+        ActivationProblemKind.EmailNotVerified => Strings.AgentProblemEmailNotVerified,
+        ActivationProblemKind.TwoFactorRequired => Strings.AgentProblemTwoFactorRequired,
+        ActivationProblemKind.RiskDisclosureNotAcknowledged => Strings.AgentProblemRiskDisclosureNotAcknowledged,
+        ActivationProblemKind.ExecutionModeNotAcknowledged => Strings.AgentProblemExecutionModeNotAcknowledged,
         _ => throw new ArgumentOutOfRangeException(nameof(problem), problem.Kind, "Give the problem its text in Strings.resx."),
+    };
+
+    /// <summary>
+    /// What has to be fixed before an agent can switch to Live. As <see cref="ProblemOf"/>, except that the key is chosen
+    /// on the switch's own page, not in the agent's settings.
+    /// </summary>
+    public static string LiveProblemOf(ActivationProblem problem, DisplayTime? time = null) => problem.Kind switch
+    {
+        ActivationProblemKind.NoExchangeKey => Strings.AgentLiveProblemNoKey,
+        ActivationProblemKind.ExchangeKeyMissing => Strings.AgentLiveProblemKeyMissing,
+        _ => ProblemOf(problem, time),
+    };
+
+    /// <summary>Why switching an agent to Live didn't happen, or null when it did (UC-04).</summary>
+    /// <param name="check">The two-factor check that refused, for <see cref="LiveSwitchOutcome.TwoFactorRefused"/>.</param>
+    public static string? LiveSwitchErrorOf(LiveSwitchOutcome outcome, TwoFactorCheck? check = null) => outcome switch
+    {
+        LiveSwitchOutcome.Switched => null,
+        LiveSwitchOutcome.Refused => Strings.AgentLiveRefused,
+        LiveSwitchOutcome.NotAllowed => Strings.AgentLiveNotAllowed,
+        LiveSwitchOutcome.OpenPositions => Strings.AgentLiveOpenPositions,
+        LiveSwitchOutcome.Changed => Strings.AgentLiveChanged,
+        LiveSwitchOutcome.NotFound => Strings.AgentGone,
+        LiveSwitchOutcome.TwoFactorRefused => TwoFactorRefusalOf(check),
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Give the outcome its text in Strings.resx."),
+    };
+
+    /// <summary>
+    /// What the user acknowledges about the execution mode when switching an agent to Live (FR-AGT-05): who decides
+    /// that a real order is sent. In Confirm mode, whether risk-reducing actions wait for them too (FR-APR-04).
+    /// </summary>
+    public static string LiveExecutionModeOf(ExecutionMode mode, bool autoExecuteRiskReducing) => mode switch
+    {
+        ExecutionMode.Autonomous => Strings.AgentLiveAcknowledgeAutonomous,
+        ExecutionMode.Confirm when autoExecuteRiskReducing => Strings.AgentLiveAcknowledgeConfirmAutoRiskReducing,
+        ExecutionMode.Confirm => Strings.AgentLiveAcknowledgeConfirm,
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Give the execution mode its acknowledgement in Strings.resx."),
     };
 
     /// <summary>What's worth knowing about an agent that was, or can be, activated.</summary>
@@ -301,6 +341,8 @@ public static class AgentText
             AgentAuditFields.Reason => Strings.ActivityFieldReason,
             AgentAuditFields.ClonedFrom => Strings.ActivityFieldClonedFrom,
             AgentAuditFields.PausedUntil => Strings.ActivityFieldPausedUntil,
+            AgentAuditFields.AcknowledgedRiskDisclosure => Strings.ActivityFieldAcknowledgedRiskDisclosure,
+            AgentAuditFields.AcknowledgedExecutionMode => Strings.ActivityFieldAcknowledgedExecutionMode,
             _ => null,
         };
     }
@@ -310,7 +352,7 @@ public static class AgentText
     {
         AgentAuditFields.Market when Parse<Market>(value) is { } market => MarketOf(market),
         AgentAuditFields.Timeframe when Parse<Timeframe>(value) is { } timeframe => TimeframeOf(timeframe),
-        AgentAuditFields.ExecutionMode when Parse<ExecutionMode>(value) is { } mode => ExecutionModeOf(mode),
+        AgentAuditFields.ExecutionMode or AgentAuditFields.AcknowledgedExecutionMode when Parse<ExecutionMode>(value) is { } mode => ExecutionModeOf(mode),
         AgentAuditFields.Status when Parse<AgentStatus>(value) is { } status => StatusOf(status),
         AgentAuditFields.Reason when Parse<AgentStatusReason>(value) is { } reason => ReasonOf(reason),
         AgentAuditFields.AutoExecuteRiskReducing or AgentAuditFields.ExperienceMemory => OnOff(value),

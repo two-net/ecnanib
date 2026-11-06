@@ -151,6 +151,12 @@ public static class AgentAuditFields
     /// <summary>When a loss limit's pause ends (FR-RISK-08), as an ISO 8601 time in UTC.</summary>
     public const string PausedUntil = nameof(PausedUntil);
 
+    /// <summary>The version of the Risk Disclosure the user acknowledged when switching the agent to Live (FR-AGT-05).</summary>
+    public const string AcknowledgedRiskDisclosure = nameof(AcknowledgedRiskDisclosure);
+
+    /// <summary>The <see cref="Contracts.ExecutionMode"/> name the user acknowledged when switching the agent to Live (FR-AGT-05).</summary>
+    public const string AcknowledgedExecutionMode = nameof(AcknowledgedExecutionMode);
+
     /// <summary>The prefix of a role's model field, such as <c>Role.Strategist</c>, holding the model as <see cref="ModelRef"/> writes it.</summary>
     public const string RolePrefix = "Role.";
 

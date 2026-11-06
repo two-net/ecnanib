@@ -1,4 +1,5 @@
 using Ecnanib.Modules.Agents.Contracts;
+using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Tests.Persistence;
 
 namespace Ecnanib.Tests.Agents;
@@ -30,6 +31,13 @@ public sealed class AgentIsolationTests(PostgresFixture postgres)
         Assert.Equal(TransitionOutcome.NotFound, (await app.Agents.PauseAsync(stranger.Id, active.Id, Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.NotFound, (await app.Agents.StopAsync(stranger.Id, active.Id, Cancellation)).Outcome);
         Assert.Equal(KillOutcome.NotFound, (await app.Agents.StopAndCloseAsync(stranger.Id, active.Id, null, Cancellation)).Outcome);
+        Assert.Equal(
+            LiveSwitchOutcome.NotFound,
+            (await app.Agents.SwitchToLiveAsync(
+                stranger.Id,
+                active.Id,
+                new LiveSwitchRequest(active.Version, stranger.ExchangeKey, active.Settings.ExecutionMode, LegalDocuments.RiskDisclosureVersion, true, true, null),
+                Cancellation)).Outcome);
         Assert.Empty((await app.Agents.StopAllAsync(stranger.Id, null, Cancellation)).Agents);
         Assert.Equal(TransitionOutcome.NotFound, (await app.Agents.ArchiveAsync(stranger.Id, active.Id, Cancellation)).Outcome);
         Assert.Equal(TransitionOutcome.NotFound, (await app.Agents.DeleteAsync(stranger.Id, archived.Id, Cancellation)).Outcome);

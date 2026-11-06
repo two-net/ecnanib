@@ -136,9 +136,9 @@ public sealed class AgentLifecycleTests(PostgresFixture postgres)
         Assert.Equal(AgentSaveOutcome.SymbolUnverifiable, result.Outcome);
     }
 
-    /// <summary>Switching to Live, with its own checks, is #39. Until then an agent is Demo only.</summary>
+    /// <summary>UC-04: an agent starts in Demo, and only switching makes it Live, never a new agent's settings or an edit.</summary>
     [Fact]
-    public async Task Live_is_refused()
+    public async Task Live_is_refused_on_creation_and_by_an_edit()
     {
         await using var app = new AgentApp(postgres);
         var user = await app.UserAsync();
@@ -148,8 +148,8 @@ public sealed class AgentLifecycleTests(PostgresFixture postgres)
         var updated = await app.Agents.UpdateAsync(
             user.Id, agent.Id, agent.Version, agent.Settings with { Environment = TradingEnvironment.Live }, Cancellation);
 
-        Assert.Equal(AgentSaveOutcome.LiveNotAvailable, created.Outcome);
-        Assert.Equal(AgentSaveOutcome.LiveNotAvailable, updated.Outcome);
+        Assert.Equal(AgentSaveOutcome.EnvironmentNotEditable, created.Outcome);
+        Assert.Equal(AgentSaveOutcome.EnvironmentNotEditable, updated.Outcome);
     }
 
     [Fact]

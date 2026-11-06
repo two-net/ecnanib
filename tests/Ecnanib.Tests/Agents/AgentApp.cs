@@ -93,11 +93,15 @@ internal sealed class AgentApp : IAsyncDisposable
     public void Lists(string key, params string[] ids) => _lists[key] = ids;
 
     /// <summary>
-    /// Binance takes a Demo key on the markets given. Its Spot account holds 250.12 USDT, and its Futures account
-    /// 103.12345678 USDT, in One-way and Single-Asset Mode (EXT-BIN-07).
+    /// Binance takes a Demo or Live key on the markets given, and a Live key can't withdraw. Its Spot account holds
+    /// 250.12 USDT, and its Futures account 103.12345678 USDT, in One-way and Single-Asset Mode (EXT-BIN-07).
     /// </summary>
     public void BinanceAccepts(bool spot = true, bool futures = true)
     {
+        Binance.On(
+            HttpMethod.Get,
+            CredentialApp.RestrictionsPath,
+            _ => FakeBinance.Json(BinanceSamples.ApiRestrictions(spot: spot, futures: futures)));
         Binance.On(
             HttpMethod.Get,
             CredentialApp.SpotAccountPath,
@@ -124,13 +128,14 @@ internal sealed class AgentApp : IAsyncDisposable
         return user with { ExchangeKey = exchange, AiKey = ai };
     }
 
-    public async Task<Guid> AddBinanceAsync(Guid userId, string label = "Demo account")
+    public async Task<Guid> AddBinanceAsync(
+        Guid userId, string label = "Demo account", TradingEnvironment environment = TradingEnvironment.Demo, string? code = null)
     {
         using var key = SecretValue.FromString(ExchangeHarness.ExampleApiKey);
         using var secret = SecretValue.FromString(ExchangeHarness.ExampleSecret);
 
         var result = await Credentials.AddBinanceKeyAsync(
-            userId, TradingEnvironment.Demo, label, BinanceKeyType.Hmac, key, secret, null, Cancellation);
+            userId, environment, label, BinanceKeyType.Hmac, key, secret, code, Cancellation);
 
         Assert.Equal(SaveOutcome.Saved, result.Outcome);
         Assert.Equal(CredentialStatus.Valid, result.Credential!.Status);

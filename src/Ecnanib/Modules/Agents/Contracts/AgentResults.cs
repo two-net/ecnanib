@@ -30,8 +30,11 @@ public enum AgentSaveOutcome
     /// <summary>Binance can't be reached, and its symbols aren't stored yet. Try again later.</summary>
     SymbolUnverifiable,
 
-    /// <summary>Switching to Live comes later (#39), so an agent can only be Demo.</summary>
-    LiveNotAvailable,
+    /// <summary>
+    /// A new agent that isn't Demo, or an edit that changes the environment. Every agent starts in Demo, and becomes
+    /// Live only through <see cref="IAgents.SwitchToLiveAsync"/> (UC-04).
+    /// </summary>
+    EnvironmentNotEditable,
 
     /// <summary>The market, environment, pair, timeframe or exchange key changed while the agent has open positions or orders (FR-AGT-03).</summary>
     LockedByOpenPositions,
@@ -188,12 +191,9 @@ public sealed record ActivationResult(
     IReadOnlyList<ActivationProblem>? Problems = null,
     IReadOnlyList<ActivationWarning>? Warnings = null);
 
-/// <summary>Something that stops an agent being activated (FR-AGT-05, FR-AGT-10).</summary>
+/// <summary>Something that stops an agent being activated, or switched to Live (FR-AGT-05, FR-AGT-10).</summary>
 public enum ActivationProblemKind
 {
-    /// <summary>Switching to Live comes later (#39).</summary>
-    LiveNotAvailable,
-
     /// <summary>No exchange key is chosen.</summary>
     NoExchangeKey,
 
@@ -264,6 +264,21 @@ public enum ActivationProblemKind
     /// and <see cref="ActivationProblem.Available"/> say how much.
     /// </summary>
     FuturesMarginInsufficient,
+
+    /// <summary>Email is on, and the user hasn't verified their address, which switching to Live needs (FR-AUTH-03).</summary>
+    EmailNotVerified,
+
+    /// <summary>
+    /// <c>Security:RequireTwoFactorForLive</c> is on, and the user hasn't turned on two-factor authentication, which
+    /// switching to Live then needs (FR-AGT-05).
+    /// </summary>
+    TwoFactorRequired,
+
+    /// <summary>The user didn't acknowledge the Risk Disclosure when switching to Live (FR-AGT-05).</summary>
+    RiskDisclosureNotAcknowledged,
+
+    /// <summary>The user didn't acknowledge the agent's execution mode when switching to Live (FR-AGT-05).</summary>
+    ExecutionModeNotAcknowledged,
 }
 
 /// <param name="Role">Which role, for the role problems.</param>
@@ -318,3 +333,64 @@ public sealed record ActivationWarning(
     string? Asset = null,
     decimal? Allocated = null,
     decimal? Available = null);
+
+/// <summary>
+/// What the user saw and agreed to when switching an agent to Live (UC-04). The page sends back the version, execution
+/// mode and Risk Disclosure version it showed, so the switch is refused when any has changed since.
+/// </summary>
+/// <param name="Version">The agent's version the page showed.</param>
+/// <param name="ExchangeCredentialId">The user's Binance Live key the agent will trade with.</param>
+/// <param name="ExecutionMode">The execution mode the page showed and the user acknowledged.</param>
+/// <param name="RiskDisclosureVersion">The version of the Risk Disclosure the page showed and the user acknowledged.</param>
+/// <param name="RiskDisclosureAcknowledged">The user ticked the Risk Disclosure's acknowledgement.</param>
+/// <param name="ExecutionModeAcknowledged">The user ticked the execution mode's acknowledgement.</param>
+/// <param name="TwoFactorCode">A code from the user's authenticator, or a recovery code. Ignored when two-factor is off.</param>
+public sealed record LiveSwitchRequest(
+    int Version,
+    Guid? ExchangeCredentialId,
+    ExecutionMode ExecutionMode,
+    string RiskDisclosureVersion,
+    bool RiskDisclosureAcknowledged,
+    bool ExecutionModeAcknowledged,
+    string? TwoFactorCode)
+{
+    /// <summary>Never the code, which a log or an exception message could otherwise carry.</summary>
+    public override string ToString() => $"{nameof(LiveSwitchRequest)} {{ {nameof(Version)} = {Version} }}";
+}
+
+public enum LiveSwitchOutcome
+{
+    /// <summary>The agent is Live and Active. <see cref="LiveSwitchResult.Warnings"/> may say what's worth knowing.</summary>
+    Switched,
+
+    /// <summary><see cref="LiveSwitchResult.Problems"/> says what has to be fixed first. Nothing changed, and the code wasn't used.</summary>
+    Refused,
+
+    /// <summary>The agent isn't a Paused or Stopped Demo agent. <see cref="LiveSwitchResult.Agent"/> has what it is.</summary>
+    NotAllowed,
+
+    /// <summary>The agent has open positions or orders, which have to be closed first (UC-04).</summary>
+    OpenPositions,
+
+    /// <summary>
+    /// The agent, its execution mode or the Risk Disclosure changed since the page showed them, so nothing changed.
+    /// Show it again.
+    /// </summary>
+    Changed,
+
+    NotFound,
+
+    /// <summary>The two-factor code was missing or wrong (FR-AUTH-05). Nothing changed. <see cref="LiveSwitchResult.TwoFactor"/> says why.</summary>
+    TwoFactorRefused,
+}
+
+/// <param name="Agent">The agent as it is now, unless <see cref="LiveSwitchOutcome.NotFound"/>.</param>
+/// <param name="Problems">Why it was refused, when <see cref="LiveSwitchOutcome.Refused"/>.</param>
+/// <param name="Warnings">Things worth knowing that didn't stop it.</param>
+/// <param name="TwoFactor">The check that refused, when <see cref="LiveSwitchOutcome.TwoFactorRefused"/>.</param>
+public sealed record LiveSwitchResult(
+    LiveSwitchOutcome Outcome,
+    AgentRecord? Agent = null,
+    IReadOnlyList<ActivationProblem>? Problems = null,
+    IReadOnlyList<ActivationWarning>? Warnings = null,
+    TwoFactorCheck? TwoFactor = null);

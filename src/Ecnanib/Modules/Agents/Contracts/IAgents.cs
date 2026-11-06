@@ -13,6 +13,12 @@ public interface IAgents
     /// <summary>The most agents one user may have that aren't archived, from <c>Agents:MaxAgentsPerUser</c>.</summary>
     int MaxAgentsPerUser { get; }
 
+    /// <summary>
+    /// <c>Security:RequireTwoFactorForLive</c>: whether switching an agent to Live needs two-factor turned on, so a
+    /// page can say so before the user tries (FR-AGT-05).
+    /// </summary>
+    bool TwoFactorRequiredForLive { get; }
+
     /// <summary>The user's agents, oldest first. Archived ones only when <paramref name="includeArchived"/> is set.</summary>
     Task<IReadOnlyList<AgentRecord>> ListAsync(Guid userId, bool includeArchived, CancellationToken cancellationToken);
 
@@ -26,22 +32,23 @@ public interface IAgents
 
     /// <summary>
     /// Creates a Draft. The pair is checked against Binance's symbols (FR-AGT-02), and the exchange key, when
-    /// one is chosen, must be the user's Binance key for the agent's environment. Only Demo is accepted until
-    /// switching to Live exists (#39).
+    /// one is chosen, must be the user's Binance key for the agent's environment. Every agent starts in Demo,
+    /// and <see cref="SwitchToLiveAsync"/> is the only way to Live (UC-04).
     /// </summary>
     Task<AgentSaveResult> CreateAsync(Guid userId, AgentSettings settings, CancellationToken cancellationToken);
 
     /// <summary>
     /// Replaces the agent's settings, if it's still at <paramref name="version"/>. The market, environment,
     /// pair, timeframe and exchange key can't change while the agent has open positions or orders
-    /// (FR-AGT-03). An Active agent's new settings must still pass the activation checks. An archived agent
-    /// can't be changed.
+    /// (FR-AGT-03). The environment never changes by an edit: <see cref="SwitchToLiveAsync"/> does that. An
+    /// Active agent's new settings must still pass the activation checks. An archived agent can't be changed.
     /// </summary>
     Task<AgentSaveResult> UpdateAsync(Guid userId, Guid id, int version, AgentSettings settings, CancellationToken cancellationToken);
 
     /// <summary>
     /// A new Draft with the same settings and none of the history (FR-AGT-12). An archived agent can be cloned
-    /// too. The caller names it, because the name is text the user reads.
+    /// too. The caller names it, because the name is text the user reads. A Live agent's clone is a Demo Draft
+    /// with no exchange key, because only <see cref="SwitchToLiveAsync"/> makes an agent Live.
     /// </summary>
     Task<AgentSaveResult> CloneAsync(Guid userId, Guid id, string name, CancellationToken cancellationToken);
 
@@ -50,6 +57,16 @@ public interface IAgents
     /// and no other agent holds its exchange key, market and pair (FR-AGT-10).
     /// </summary>
     Task<ActivationResult> ActivateAsync(Guid userId, Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Switches a Paused or Stopped Demo agent with no open positions or orders to Live, with one of the user's Binance
+    /// Live keys, and makes it Active (UC-04). On top of the activation checks, run against the Live key, pair and
+    /// account (FR-AGT-05), it needs a verified address when email is on, two-factor turned on when
+    /// <see cref="TwoFactorRequiredForLive"/>, and the user's acknowledgement of the Risk Disclosure and the execution
+    /// mode. The code is checked last, once nothing else refuses, so a refusal doesn't use it. It's audited as
+    /// <c>AgentSwitchedToLive</c> and <c>AgentActivated</c>. There's no way back to Demo: clone the agent for that.
+    /// </summary>
+    Task<LiveSwitchResult> SwitchToLiveAsync(Guid userId, Guid id, LiveSwitchRequest request, CancellationToken cancellationToken);
 
     /// <summary>Stops new decision cycles of an Active agent. Its positions and protective orders stay (FR-AGT-06).</summary>
     Task<TransitionResult> PauseAsync(Guid userId, Guid id, CancellationToken cancellationToken);

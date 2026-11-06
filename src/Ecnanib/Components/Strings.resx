@@ -1571,7 +1571,7 @@
     <value>Agents</value>
   </data>
   <data name="AgentsIntro" xml:space="preserve">
-    <value>Each agent trades one pair on Binance, with a council of AI models proposing and a set of fixed rules deciding. Agents run in Demo, with test funds and no real money.</value>
+    <value>Each agent trades one pair on Binance, with a council of AI models proposing and a set of fixed rules deciding. Agents start in Demo, with test funds and no real money. A paused or stopped agent can then switch to Live.</value>
   </data>
   <data name="AgentsAddLink" xml:space="preserve">
     <value>New agent</value>
@@ -2047,9 +2047,6 @@
   <data name="AgentSettingsMarketHeading" xml:space="preserve">
     <value>Market and pair</value>
   </data>
-  <data name="AgentSettingsDemoOnly" xml:space="preserve">
-    <value>Agents trade in Demo, on Binance's demo exchange with test funds. Switching an agent to Live isn't available yet.</value>
-  </data>
   <data name="AgentSettingsMarketHint" xml:space="preserve">
     <value>Spot buys and sells the coin itself. USDⓈ-M Futures trades contracts settled in a stablecoin, which can go short and use leverage, and can be liquidated.</value>
   </data>
@@ -2261,9 +2258,6 @@
   </data>
   <data name="AgentSymbolUnverifiable" xml:space="preserve">
     <value>Binance can't be reached to check the pair. Try again later.</value>
-  </data>
-  <data name="AgentLiveNotAvailable" xml:space="preserve">
-    <value>Switching an agent to Live isn't available yet.</value>
   </data>
   <data name="AgentSaveLocked" xml:space="preserve">
     <value>The market, pair, timeframe and Binance key can't change while the agent has open positions or orders.</value>
@@ -3208,5 +3202,140 @@
   </data>
   <data name="ExecutionReasonAgentNotActive" xml:space="preserve">
     <value>The agent was paused or stopped.</value>
+  </data>
+  <data name="AgentLive" xml:space="preserve">
+    <value>Live</value>
+  </data>
+  <data name="AgentSwitchToLive" xml:space="preserve">
+    <value>Switch to Live</value>
+  </data>
+  <data name="AgentSwitchToLiveLabel" xml:space="preserve">
+    <value>Switch {0} to Live</value>
+  </data>
+  <data name="AgentSettingsEnvironmentNew" xml:space="preserve">
+    <value>New agents start in Demo, on Binance's demo exchange with test funds. Once it has run, you can pause or stop it and switch it to Live from the agents page.</value>
+  </data>
+  <data name="AgentSettingsEnvironmentDemo" xml:space="preserve">
+    <value>This agent trades in Demo, on Binance's demo exchange with test funds. To trade real money, pause or stop it, then use Switch to Live on the agents page.</value>
+  </data>
+  <data name="AgentSettingsEnvironmentLive" xml:space="preserve">
+    <value>This agent trades in Live, on your Binance account with real money. It can't go back to Demo: clone it for a Demo copy.</value>
+  </data>
+  <data name="AgentSettingsExchangeKeyHintLive" xml:space="preserve">
+    <value>One of your Binance Live keys. The agent can't be activated without one.</value>
+  </data>
+  <data name="AgentSaveEnvironmentNotEditable" xml:space="preserve">
+    <value>An agent starts in Demo, and its settings can't change that. To trade real money, pause or stop it, then use Switch to Live on the agents page.</value>
+  </data>
+  <data name="AgentProblemEmailNotVerified" xml:space="preserve">
+    <value>Verify your email address first, from your account page.</value>
+  </data>
+  <data name="AgentProblemTwoFactorRequired" xml:space="preserve">
+    <value>Turn on two-factor authentication first, from your account page. Live trading needs it here.</value>
+  </data>
+  <data name="AgentProblemRiskDisclosureNotAcknowledged" xml:space="preserve">
+    <value>Confirm that you've read the Risk Disclosure.</value>
+  </data>
+  <data name="AgentProblemExecutionModeNotAcknowledged" xml:space="preserve">
+    <value>Confirm that you understand how this agent sends its trades.</value>
+  </data>
+  <data name="AgentLiveRefused" xml:space="preserve">
+    <value>Not switched to Live. Fix these first:</value>
+  </data>
+  <data name="AgentLiveNotAllowed" xml:space="preserve">
+    <value>Only a paused or stopped Demo agent can switch to Live.</value>
+  </data>
+  <data name="AgentLiveOpenPositions" xml:space="preserve">
+    <value>The agent still has open positions or orders on Binance's demo exchange. Close them first, with Close everything on the agents page, then come back.</value>
+  </data>
+  <data name="AgentLiveChanged" xml:space="preserve">
+    <value>The agent, its execution mode or the Risk Disclosure changed since you opened this page. Read it again, then switch.</value>
+  </data>
+  <data name="AgentLiveAlreadyLive" xml:space="preserve">
+    <value>This agent already trades in Live.</value>
+  </data>
+  <data name="AgentLivePageTitle" xml:space="preserve">
+    <value>Switch to Live</value>
+  </data>
+  <data name="AgentLiveHeading" xml:space="preserve">
+    <value>Switch {0} to Live</value>
+  </data>
+  <data name="AgentLiveIntro" xml:space="preserve">
+    <value>In Live, this agent trades on your Binance account, with real money. It becomes active as soon as it switches, and decides at the next candle close. It can't go back to Demo, so clone it first if you want to keep a Demo copy.</value>
+  </data>
+  <data name="AgentLiveAgentHeading" xml:space="preserve">
+    <value>The agent</value>
+  </data>
+  <data name="AgentLiveSettingsLink" xml:space="preserve">
+    <value>Change its settings first</value>
+  </data>
+  <data name="AgentLiveDisclosureLink" xml:space="preserve">
+    <value>Read the full Risk Disclosure</value>
+  </data>
+  <data name="AgentLiveEmailNeeded" xml:space="preserve">
+    <value>Live trading needs a verified email address.</value>
+  </data>
+  <data name="AgentLiveTwoFactorNeeded" xml:space="preserve">
+    <value>Live trading needs two-factor authentication turned on.</value>
+  </data>
+  <data name="AgentLiveAccountLink" xml:space="preserve">
+    <value>Go to your account</value>
+  </data>
+  <data name="AgentLiveTwoFactorLink" xml:space="preserve">
+    <value>Set up two-factor authentication</value>
+  </data>
+  <data name="AgentLiveKeyHeading" xml:space="preserve">
+    <value>Binance account</value>
+  </data>
+  <data name="FieldAgentLiveKey" xml:space="preserve">
+    <value>Binance Live key</value>
+  </data>
+  <data name="AgentLiveKeyHint" xml:space="preserve">
+    <value>The agent trades on this key's account from now on. The key needs trading enabled for the agent's market.</value>
+  </data>
+  <data name="AgentLiveNoKeys" xml:space="preserve">
+    <value>You have no Binance Live key yet.</value>
+  </data>
+  <data name="AgentLiveAddKey" xml:space="preserve">
+    <value>Add a Binance Live key</value>
+  </data>
+  <data name="AgentLiveAcknowledgeHeading" xml:space="preserve">
+    <value>Your acknowledgement</value>
+  </data>
+  <data name="AgentLiveAcknowledgeRisk" xml:space="preserve">
+    <value>I've read the Risk Disclosure, and I understand that this agent can lose all of the capital I give it.</value>
+  </data>
+  <data name="AgentLiveAcknowledgeAutonomous" xml:space="preserve">
+    <value>I understand that this agent runs Autonomous: it places real orders with my money without asking me first.</value>
+  </data>
+  <data name="AgentLiveAcknowledgeConfirm" xml:space="preserve">
+    <value>I understand that this agent runs Confirm each trade: it asks me before every real order, and sends only what I approve.</value>
+  </data>
+  <data name="AgentLiveAcknowledgeConfirmAutoRiskReducing" xml:space="preserve">
+    <value>I understand that this agent runs Confirm each trade: it asks me before every entry and target change, and tightens stops, sells and closes positions with my money without asking.</value>
+  </data>
+  <data name="AgentLiveCodeHint" xml:space="preserve">
+    <value>Switching to Live needs the 6-digit code from your authenticator app, or one of your recovery codes.</value>
+  </data>
+  <data name="AgentLiveSubmit" xml:space="preserve">
+    <value>Switch to Live and activate</value>
+  </data>
+  <data name="AgentLiveSwitched" xml:space="preserve">
+    <value>{0} is now active in Live.</value>
+  </data>
+  <data name="ActivityActionAgentSwitchedToLive" xml:space="preserve">
+    <value>Switched an agent to Live</value>
+  </data>
+  <data name="ActivityFieldAcknowledgedRiskDisclosure" xml:space="preserve">
+    <value>Risk Disclosure acknowledged</value>
+  </data>
+  <data name="ActivityFieldAcknowledgedExecutionMode" xml:space="preserve">
+    <value>Execution mode acknowledged</value>
+  </data>
+  <data name="AgentLiveProblemNoKey" xml:space="preserve">
+    <value>Choose one of your Binance Live keys.</value>
+  </data>
+  <data name="AgentLiveProblemKeyMissing" xml:space="preserve">
+    <value>That isn't one of your Binance Live keys. Choose another.</value>
   </data>
 </root>

@@ -1,3 +1,5 @@
+using Ecnanib.Kernel;
+
 namespace Ecnanib.Modules.Execution.Contracts;
 
 /// <summary>
@@ -12,11 +14,15 @@ public interface ITradeJournal
     /// The agent's closed trades' realized P&amp;L, net of fees and funding once settled, counted on the day each
     /// closed. Losing trades in a row, newest first, among those closed since <paramref name="activeSince"/>, where a
     /// trade with nothing priced, such as one the user closed by transferring the asset, counts neither way. Entry
-    /// orders created today that Binance may have taken, adds included. And when the newest losing trade closed.
+    /// orders created today that Binance may have taken, adds included. And when the newest losing trade closed. Only
+    /// what the agent did in <paramref name="environment"/> counts, so an agent switched to Live today isn't held to, or
+    /// let off by, its Demo results (FR-EXP-08).
     /// </summary>
+    /// <param name="environment">The agent's environment now.</param>
     /// <param name="now">The caller's time, which <c>RiskPeriods</c> turns into the day and the week.</param>
     /// <param name="activeSince">When the agent last became Active, so a resumed agent's streak starts again.</param>
-    Task<TradeResults> ReadResultsAsync(Guid userId, Guid agentId, DateTimeOffset now, DateTimeOffset activeSince, CancellationToken cancellationToken);
+    Task<TradeResults> ReadResultsAsync(
+        Guid userId, Guid agentId, TradingEnvironment environment, DateTimeOffset now, DateTimeOffset activeSince, CancellationToken cancellationToken);
 }
 
 /// <param name="RealizedToday">Since <c>RiskPeriods.DayStart</c>, in the quote asset. A loss is negative.</param>

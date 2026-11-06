@@ -10,6 +10,11 @@
             @* Demo in words, wherever a Demo agent appears (FR-UI-07). *@
             <span class="agent-tag">@Strings.AgentDemo</span>
         }
+        else
+        {
+            @* And Live, so real money is never a matter of noticing a missing label. *@
+            <span class="agent-tag">@Strings.AgentLive</span>
+        }
     </div>
 
     <dl class="facts">
@@ -59,6 +64,11 @@
         {
             @* A plain link, because the settings page is static. *@
             <a href="@($"/agents/{Agent.Id}/settings")" aria-label="@Labelled(Strings.AgentSettingsLabel)">@Strings.AgentSettingsLink</a>
+        }
+        @if (Agent.IsDemo && Agent.Status is AgentStatus.Paused or AgentStatus.Stopped)
+        {
+            @* UC-04. A plain link to a static page, because it takes a two-factor code. It says what's missing, such as closing what's open. *@
+            <a href="@($"/agents/{Agent.Id}/live")" aria-label="@Labelled(Strings.AgentSwitchToLiveLabel)">@Strings.AgentSwitchToLive</a>
         }
         <button type="button" class="button" disabled="@_busy" aria-label="@Labelled(Strings.AgentCloneLabel)" @onclick="CloneAsync">
             @Strings.AgentClone

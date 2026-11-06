@@ -1,0 +1,342 @@
+@page "/agents/{Id:guid}/live"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [EnableRateLimiting(RateLimits.Authentication)]
+@using System.Globalization
+@using Ecnanib.Components.Notices
+@inject IAgents Agents
+@inject ICredentials Credentials
+@inject IAgentExposure Exposure
+@inject IEmailVerification EmailVerification
+@inject ITwoFactor TwoFactor
+@inject NavigationManager Navigation
+
+@* UC-04: a paused or stopped Demo agent switches to Live. Static, like every form that takes a code: a post goes
+   through the HTTP rate limiter, and the code is never written back into the page. The notices are EXT-UI-03's.
+   IAgents.SwitchToLiveAsync checks everything again, so what this page shows up front only spares the user a
+   refusal. See Switching to Live in docs/architecture.md. *@
+
+<PageTitle>@Strings.AgentLivePageTitle</PageTitle>
+
+<div class="page form-page">
+    @if (_agent is not null)
+    {
+        @* The user chose the name. Razor encodes it, so it's only text. *@
+        <h1 class="agent-live-heading">@string.Format(CultureInfo.CurrentCulture, Strings.AgentLiveHeading, _agent.Settings.Name)</h1>
+        <p><a href="/agents">@Strings.AgentSettingsBack</a></p>
+
+        @if (_switched)
+        {
+            <div class="form-notice" role="status">
+                <p>@string.Format(CultureInfo.CurrentCulture, Strings.AgentLiveSwitched, _agent.Settings.Name)</p>
+                @if (_warnings.Count > 0)
+                {
+                    <p>@Strings.AgentActivationWarnings</p>
+                    <ul class="facts-list">
+                        @foreach (var warning in _warnings)
+                        {
+                            <li>@AgentText.WarningOf(warning)</li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+        else if (_blocked is not null)
+        {
+            <p class="form-error" role="alert">@_blocked</p>
+        }
+        else
+        {
+            <p>@Strings.AgentLiveIntro</p>
+
+            <h2>@Strings.AgentLiveAgentHeading</h2>
+            <dl class="facts">
+                <dt>@Strings.AgentFieldStatus</dt>
+                <dd>@AgentText.StatusOf(_agent.Status)</dd>
+                <dt>@Strings.AgentFieldMarket</dt>
+                <dd>@AgentText.MarketOf(_agent.Settings.Market)</dd>
+                <dt>@Strings.AgentFieldPair</dt>
+                <dd><code>@_agent.Settings.Symbol</code></dd>
+                <dt>@Strings.AgentFieldTimeframe</dt>
+                <dd>@AgentText.TimeframeOf(_agent.Settings.Timeframe)</dd>
+                <dt>@Strings.AgentFieldExecutionMode</dt>
+                <dd>@AgentText.ExecutionModeOf(_agent.Settings.ExecutionMode)</dd>
+                <dt>@Strings.AgentFieldCapital</dt>
+                <dd>@Capital</dd>
+            </dl>
+            @* A plain link, because the settings page is static too. *@
+            <p><a href="@($"/agents/{_agent.Id}/settings")">@Strings.AgentLiveSettingsLink</a></p>
+
+            <div class="agent-live-notices">
+                <MandatoryNotices />
+                @* A new tab, so reading it doesn't lose the form, as at registration. *@
+                <p><a href="/legal/risk-disclosure" target="_blank" rel="noopener">@Strings.AgentLiveDisclosureLink</a></p>
+            </div>
+
+            @if (!_emailSatisfied)
+            {
+                <p class="agent-live-needed">@Strings.AgentLiveEmailNeeded <a href="/account">@Strings.AgentLiveAccountLink</a></p>
+            }
+            @if (Agents.TwoFactorRequiredForLive && !_twoFactorOn)
+            {
+                <p class="agent-live-needed">@Strings.AgentLiveTwoFactorNeeded <a href="/account/two-factor">@Strings.AgentLiveTwoFactorLink</a></p>
+            }
+
+            <EditForm Model="Input" FormName="agent-live" OnSubmit="SubmitAsync" class="form">
+                @* What the user saw, so the switch is refused if any of it changed before they submitted. *@
+                <input type="hidden" name="Input.Version" value="@Input.Version" />
+                <input type="hidden" name="Input.ExecutionMode" value="@Input.ExecutionMode" />
+                <input type="hidden" name="Input.RiskDisclosureVersion" value="@LegalDocuments.RiskDisclosureVersion" />
+
+                @if (_error is not null)
+                {
+                    <div class="form-error" role="alert">
+                        <p>@_error</p>
+                        @if (_problems.Count > 0)
+                        {
+                            <ul class="facts-list">
+                                @foreach (var problem in _problems)
+                                {
+                                    <li>@AgentText.LiveProblemOf(problem, Time)</li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+
+                <h2>@Strings.AgentLiveKeyHeading</h2>
+                @if (_liveKeys.Count == 0)
+                {
+                    <p>@Strings.AgentLiveNoKeys <a href="/credentials/add">@Strings.AgentLiveAddKey</a></p>
+                }
+                else
+                {
+                    <div class="field">
+                        <label for="agent-live-key">@Strings.FieldAgentLiveKey</label>
+                        @* A plain select, as on the settings page. *@
+                        <select id="agent-live-key" name="Input.ExchangeKey" required aria-describedby="agent-live-key-hint">
+                            @foreach (var key in _liveKeys)
+                            {
+                                <option value="@key.Id" selected="@(key.Id.ToString() == Input.ExchangeKey)">@key.Label</option>
+                            }
+                        </select>
+                        <p id="agent-live-key-hint" class="field-hint">@Strings.AgentLiveKeyHint</p>
+                    </div>
+                }
+
+                <fieldset class="field checks">
+                    <legend>@Strings.AgentLiveAcknowledgeHeading</legend>
+
+                    <div class="check">
+                        <input id="agent-live-risk" name="Input.AcknowledgeRiskDisclosure" type="checkbox" value="true"
+                               checked="@(Input.AcknowledgeRiskDisclosure == "true")" required />
+                        <label for="agent-live-risk">@Strings.AgentLiveAcknowledgeRisk</label>
+                    </div>
+
+                    <div class="check">
+                        <input id="agent-live-mode" name="Input.AcknowledgeExecutionMode" type="checkbox" value="true"
+                               checked="@(Input.AcknowledgeExecutionMode == "true")" required />
+                        <label for="agent-live-mode">@AgentText.LiveExecutionModeOf(_agent.Settings.ExecutionMode, _agent.Settings.AutoExecuteRiskReducing)</label>
+                    </div>
+                </fieldset>
+
+                @if (_twoFactorOn)
+                {
+                    <div class="field">
+                        <label for="agent-live-code">@Strings.FieldTwoFactorCode</label>
+                        @* Not InputText, which would write the code back into the page after a refusal. Not numeric, because a recovery code has letters. *@
+                        <input id="agent-live-code" name="Input.TwoFactorCode" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false"
+                               required maxlength="64" aria-describedby="agent-live-code-hint" />
+                        <p id="agent-live-code-hint" class="field-hint">@Strings.AgentLiveCodeHint</p>
+                    </div>
+                }
+
+                <button type="submit" class="button">@Strings.AgentLiveSubmit</button>
+            </EditForm>
+        }
+    }
+</div>
+
+@code {
+    private AgentRecord? _agent;
+    private List<CredentialRecord> _liveKeys = [];
+    private bool _twoFactorOn;
+    private bool _emailSatisfied = true;
+    private bool _switched;
+
+    /// <summary>Why this agent can't switch at all now, so the page shows no form.</summary>
+    private string? _blocked;
+
+    private string? _error;
+    private IReadOnlyList<ActivationProblem> _problems = [];
+    private IReadOnlyList<ActivationWarning> _warnings = [];
+    private Guid _userId;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    [SupplyParameterFromForm(FormName = "agent-live")]
+    private LiveForm Input { get; set; } = default!;
+
+    private string Capital => _agent?.Settings.CapitalAllocation is { } capital
+        ? string.Format(CultureInfo.CurrentCulture, Strings.AgentCapitalOf, capital, _agent.QuoteAsset)
+        : Strings.AgentCapitalNone;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var posted = Input is not null;
+        Input ??= new LiveForm();
+
+        if (AccountClaims.UserId(HttpContext.User) is not { } userId)
+        {
+            return;
+        }
+
+        _userId = userId;
+        var cancellationToken = HttpContext.RequestAborted;
+
+        _agent = await Agents.FindAsync(userId, Id, cancellationToken);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+            return;
+        }
+
+        if (!posted)
+        {
+            Input.Version = _agent.Version.ToString(CultureInfo.InvariantCulture);
+            Input.ExecutionMode = _agent.Settings.ExecutionMode.ToString();
+        }
+
+        _blocked = await BlockedAsync(_agent, cancellationToken);
+
+        if (_blocked is not null)
+        {
+            return;
+        }
+
+        _twoFactorOn = await TwoFactor.IsEnabledAsync(userId, cancellationToken);
+        _emailSatisfied = await EmailVerification.IsSatisfiedAsync(userId, cancellationToken);
+
+        var keys = await Credentials.ListAsync(userId, cancellationToken);
+        _liveKeys = [.. keys.Where(key => key.Kind == CredentialKind.Exchange && key.Environment == TradingEnvironment.Live)];
+
+        // The first key that can trade on the agent's market, unless the user already chose one.
+        if (string.IsNullOrEmpty(Input.ExchangeKey))
+        {
+            var market = _agent.Settings.Market;
+            var usable = _liveKeys.FirstOrDefault(key => key.Status == CredentialStatus.Valid
+                && (market == Market.Spot ? key.SpotEnabled : key.FuturesEnabled) == true);
+            Input.ExchangeKey = (usable ?? _liveKeys.FirstOrDefault())?.Id.ToString();
+        }
+    }
+
+    /// <summary>Why the agent can't switch whatever the user does here, or null when it can try.</summary>
+    private async Task<string?> BlockedAsync(AgentRecord agent, CancellationToken cancellationToken)
+    {
+        if (!agent.IsDemo)
+        {
+            return Strings.AgentLiveAlreadyLive;
+        }
+
+        if (agent.Status is not (AgentStatus.Paused or AgentStatus.Stopped))
+        {
+            return Strings.AgentLiveNotAllowed;
+        }
+
+        return await Exposure.HasOpenPositionsOrOrdersAsync(_userId, agent.Id, cancellationToken) ? Strings.AgentLiveOpenPositions : null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_agent is null || _blocked is not null)
+        {
+            return;
+        }
+
+        var cancellationToken = HttpContext.RequestAborted;
+
+        // What doesn't parse is what the page never sent, so it reads as a page that changed.
+        if (!int.TryParse(Input.Version, NumberStyles.Integer, CultureInfo.InvariantCulture, out var version)
+            || !Enum.TryParse<ExecutionMode>(Input.ExecutionMode, ignoreCase: false, out var mode) || !Enum.IsDefined(mode))
+        {
+            await ShowAgainAsync(_agent, cancellationToken);
+            return;
+        }
+
+        var request = new LiveSwitchRequest(
+            version,
+            Guid.TryParse(Input.ExchangeKey, out var key) ? key : null,
+            mode,
+            Input.RiskDisclosureVersion ?? "",
+            Input.AcknowledgeRiskDisclosure == "true",
+            Input.AcknowledgeExecutionMode == "true",
+            Input.TwoFactorCode);
+
+        var result = await Agents.SwitchToLiveAsync(_userId, _agent.Id, request, cancellationToken);
+
+        switch (result.Outcome)
+        {
+            case LiveSwitchOutcome.Switched:
+                _switched = true;
+                _agent = result.Agent ?? _agent;
+                _warnings = result.Warnings ?? [];
+                return;
+
+            case LiveSwitchOutcome.Refused:
+            case LiveSwitchOutcome.TwoFactorRefused:
+                _error = AgentText.LiveSwitchErrorOf(result.Outcome, result.TwoFactor);
+                _problems = result.Problems ?? [];
+                return;
+
+            case LiveSwitchOutcome.Changed when result.Agent is { } current:
+                await ShowAgainAsync(current, cancellationToken);
+                return;
+
+            default:
+                _blocked = AgentText.LiveSwitchErrorOf(result.Outcome, result.TwoFactor);
+                _agent = result.Agent ?? _agent;
+                return;
+        }
+    }
+
+    /// <summary>The agent as it is now, to read and acknowledge again, because what the user agreed to has changed.</summary>
+    private async Task ShowAgainAsync(AgentRecord current, CancellationToken cancellationToken)
+    {
+        _agent = current;
+        Input.Version = current.Version.ToString(CultureInfo.InvariantCulture);
+        Input.ExecutionMode = current.Settings.ExecutionMode.ToString();
+        Input.AcknowledgeRiskDisclosure = null;
+        Input.AcknowledgeExecutionMode = null;
+        _blocked = await BlockedAsync(current, cancellationToken);
+        _error = Strings.AgentLiveChanged;
+    }
+
+    /// <summary>
+    /// The form as posted. The code is read once and never rendered. Strings, so a value that doesn't parse reaches
+    /// <see cref="SubmitAsync"/> rather than failing the binding.
+    /// </summary>
+    private sealed class LiveForm
+    {
+        public string? Version { get; set; }
+
+        public string? ExecutionMode { get; set; }
+
+        public string? RiskDisclosureVersion { get; set; }
+
+        public string? ExchangeKey { get; set; }
+
+        public string? AcknowledgeRiskDisclosure { get; set; }
+
+        public string? AcknowledgeExecutionMode { get; set; }
+
+        public string? TwoFactorCode { get; set; }
+    }
+}

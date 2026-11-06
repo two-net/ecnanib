@@ -66,8 +66,8 @@
         </div>
 
         <h2>@Strings.AgentSettingsMarketHeading</h2>
-        @* Demo is the only environment until switching to Live comes (#39). *@
-        <p class="field-hint">@Strings.AgentSettingsDemoOnly</p>
+        @* The environment isn't a field: every agent starts in Demo, and only Switch to Live changes it (UC-04). *@
+        <p class="field-hint">@EnvironmentHint</p>
 
         <div class="field">
             <label for="agent-market">@Strings.FieldAgentMarket</label>
@@ -114,7 +114,7 @@
                     <option value="@key.Id" selected="@(key.Id.ToString() == Input.ExchangeKey)">@key.Label</option>
                 }
             </select>
-            <p id="agent-exchange-key-hint" class="field-hint">@Strings.AgentSettingsExchangeKeyHint</p>
+            <p id="agent-exchange-key-hint" class="field-hint">@(AgentEnvironment == TradingEnvironment.Live ? Strings.AgentSettingsExchangeKeyHintLive : Strings.AgentSettingsExchangeKeyHint)</p>
             <FieldError Id="agent-exchange-key-error" Message="@ErrorOf(AgentField.ExchangeCredential)" />
         </div>
 
@@ -296,6 +296,13 @@
         ProviderOf(Input.RoleValue(AiRole.Strategist, false)) is { } strategist
         && ProviderOf(Input.RoleValue(AiRole.RiskCritic, false)) == strategist;
 
+    /// <summary>The agent's environment, or the one a new agent starts in, which the page never changes.</summary>
+    private TradingEnvironment AgentEnvironment => _agent?.Settings.Environment ?? TradingEnvironment.Demo;
+
+    private string EnvironmentHint => _agent is null ? Strings.AgentSettingsEnvironmentNew
+        : AgentEnvironment == TradingEnvironment.Live ? Strings.AgentSettingsEnvironmentLive
+        : Strings.AgentSettingsEnvironmentDemo;
+
     private static string InstructionsHint =>
         string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsInstructionsHint, AgentLimits.CustomInstructionsMaxLength);
 
@@ -390,13 +397,13 @@
     }
 
     /// <summary>
-    /// The user's Binance Demo keys, and the models their valid AI keys can give each role (FR-ROLE-02). The
-    /// catalog's names are kept for a chosen model that's no longer offered, and which models are hidden.
+    /// The user's Binance keys for the agent's environment, and the models their valid AI keys can give each role
+    /// (FR-ROLE-02). The catalog's names are kept for a chosen model that's no longer offered, and which models are hidden.
     /// </summary>
     private async Task LoadOptionsAsync(Guid userId, RoleChoices choices, CancellationToken cancellationToken)
     {
         var keys = await Credentials.ListAsync(userId, cancellationToken);
-        _exchangeKeys = [.. keys.Where(key => key.Kind == CredentialKind.Exchange && key.Environment == TradingEnvironment.Demo)];
+        _exchangeKeys = [.. keys.Where(key => key.Kind == CredentialKind.Exchange && key.Environment == AgentEnvironment)];
 
         var models = await Catalog.ListAsync(cancellationToken);
         _modelNames = models.ToDictionary(model => AgentForm.ValueOf(new ModelRef(model.Provider, model.ModelId)), model => model.DisplayName);
@@ -448,7 +455,7 @@
             return;
         }
 
-        var (settings, fields, riskSettings) = Input.ToSettings();
+        var (settings, fields, riskSettings) = Input.ToSettings(AgentEnvironment);
 
         if (settings is null)
         {

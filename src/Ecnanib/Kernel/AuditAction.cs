@@ -75,6 +75,13 @@ public enum AuditAction
     /// <summary>The agent passed its activation checks and became Active, from Draft or to resume it.</summary>
     AgentActivated,
 
+    /// <summary>
+    /// The user switched a Paused or Stopped Demo agent to Live, with a Live Binance key, after acknowledging the Risk
+    /// Disclosure and its execution mode (UC-04, FR-AGT-05). It became Active in the same change, which
+    /// <see cref="AgentActivated"/> records beside it.
+    /// </summary>
+    AgentSwitchedToLive,
+
     /// <summary>By the user, or by the system with a reason, such as a credential that stopped working.</summary>
     AgentPaused,
 

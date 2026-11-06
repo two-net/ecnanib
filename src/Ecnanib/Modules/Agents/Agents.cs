@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Ecnanib.Modules.Agents;
 
 /// <summary>
-/// A user's agents and their lifecycle (FR-AGT-01 to FR-AGT-05, FR-AGT-10, FR-AGT-12). Every query filters on
+/// A user's agents and their lifecycle (FR-AGT-01 to FR-AGT-05, FR-AGT-10, FR-AGT-12, UC-04). Every query filters on
 /// the user (NFR-SEC-04). Each change commits with its audit record, and writes that could break a rule
 /// across rows take the user's <see cref="AgentLock"/>. See Agents in docs/architecture.md.
 /// </summary>
@@ -25,6 +25,7 @@ internal sealed class Agents(
     RiskCaps caps,
     INotifications notifications,
     ITwoFactor twoFactor,
+    IEmailVerification emailVerification,
     TimeProvider time,
     IServiceProvider services,
     ILogger<Agents> logger) : IAgents
@@ -47,7 +48,12 @@ internal sealed class Agents(
     private static readonly AgentStatus[] Archivable = [AgentStatus.Draft, AgentStatus.Paused, AgentStatus.Stopped, AgentStatus.Error];
     private static readonly AgentStatus[] Deletable = [AgentStatus.Archived];
 
+    /// <summary>UC-04's: an agent that isn't running, and that the user stopped or paused, rather than a Draft that never ran in Demo.</summary>
+    private static readonly AgentStatus[] Switchable = [AgentStatus.Paused, AgentStatus.Stopped];
+
     public int MaxAgentsPerUser => settings.MaxAgentsPerUser;
+
+    public bool TwoFactorRequiredForLive => settings.RequireTwoFactorForLive;
 
     public async Task<IReadOnlyList<AgentRecord>> ListAsync(Guid userId, bool includeArchived, CancellationToken cancellationToken)
     {
@@ -269,8 +275,15 @@ internal sealed class Agents(
             return new AgentSaveResult(AgentSaveOutcome.NameTaken);
         }
 
-        // The same settings and none of the history (FR-AGT-12).
+        // The same settings and none of the history (FR-AGT-12). Only switching makes an agent Live (UC-04), so a Live
+        // agent's clone starts in Demo, without the Live key, which a Demo agent can't use.
         var copy = source.Settings with { Name = cleaned };
+
+        if (copy.Environment != settings.DefaultEnvironment)
+        {
+            copy = copy with { Environment = settings.DefaultEnvironment, ExchangeCredentialId = null };
+        }
+
         var clone = NewDraft(cloneId, userId, copy, source.QuoteAsset, now);
         context.Set<Agent>().Add(clone);
         context.Set<AgentRoleAssignment>().AddRange(copy.Roles.Select(role => AgentRoleAssignment.Of(cloneId, role)));
@@ -316,10 +329,9 @@ internal sealed class Agents(
         var (problems, warnings) = await checks.CheckAsync(userId, before.Settings, cancellationToken);
         var now = time.GetUtcNow();
 
-        // A loss limit's pause lasts its whole period, whatever the status, so stopping the agent can't end it early.
-        if (before.LossLimitUntil is { } until && until > now)
+        if (LossLimitProblem(before, now) is { } pause)
         {
-            problems.Insert(0, new ActivationProblem(ActivationProblemKind.LossLimitPause, Until: until));
+            problems.Insert(0, pause);
         }
 
         var reason = bySystem ? AgentStatusReason.LossLimitEnded : AgentStatusReason.User;
@@ -377,20 +389,181 @@ internal sealed class Agents(
             return new ActivationResult(ActivationOutcome.Activated, activated, [], warnings);
         }
 
-        // The agent is active whatever happens here, so a failure only loses a warning the SRS says "should" give.
-        try
-        {
-            if (activated is not null && await CapitalWarningAsync(userId, activated, cancellationToken) is { } warning)
-            {
-                warnings.Add(warning);
-            }
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            logger.LogWarning(exception, "Checking the capital of agent {AgentId} against its account failed", id);
-        }
+        await AddCapitalWarningAsync(userId, activated, warnings, cancellationToken);
 
         return new ActivationResult(ActivationOutcome.Activated, activated, [], warnings);
+    }
+
+    public async Task<LiveSwitchResult> SwitchToLiveAsync(Guid userId, Guid id, LiveSwitchRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var before = await FindAsync(userId, id, cancellationToken);
+
+        if (before is null)
+        {
+            return new LiveSwitchResult(LiveSwitchOutcome.NotFound);
+        }
+
+        if (!before.IsDemo || !Switchable.Contains(before.Status))
+        {
+            return new LiveSwitchResult(LiveSwitchOutcome.NotAllowed, before);
+        }
+
+        // The user agreed to what the page showed, so anything that changed since needs showing again.
+        if (before.Version != request.Version || before.Settings.ExecutionMode != request.ExecutionMode
+            || request.RiskDisclosureVersion != LegalDocuments.RiskDisclosureVersion)
+        {
+            return new LiveSwitchResult(LiveSwitchOutcome.Changed, before);
+        }
+
+        // UC-04 starts from an agent with nothing open, so nothing it holds came from Demo's account.
+        if (await exposure.HasOpenPositionsOrOrdersAsync(userId, id, cancellationToken))
+        {
+            return new LiveSwitchResult(LiveSwitchOutcome.OpenPositions, before);
+        }
+
+        var live = before.Settings with { Environment = TradingEnvironment.Live, ExchangeCredentialId = request.ExchangeCredentialId };
+        var now = time.GetUtcNow();
+
+        // Everything that can refuse comes before the code, so a refusal doesn't use it up. The activation checks can call
+        // Binance, so these run before the transaction, which is conditional on the version they checked.
+        var problems = new List<ActivationProblem>();
+
+        if (!request.RiskDisclosureAcknowledged)
+        {
+            problems.Add(new ActivationProblem(ActivationProblemKind.RiskDisclosureNotAcknowledged));
+        }
+
+        if (!request.ExecutionModeAcknowledged)
+        {
+            problems.Add(new ActivationProblem(ActivationProblemKind.ExecutionModeNotAcknowledged));
+        }
+
+        if (!await emailVerification.IsSatisfiedAsync(userId, cancellationToken))
+        {
+            problems.Add(new ActivationProblem(ActivationProblemKind.EmailNotVerified));
+        }
+
+        if (settings.RequireTwoFactorForLive && !await twoFactor.IsEnabledAsync(userId, cancellationToken))
+        {
+            problems.Add(new ActivationProblem(ActivationProblemKind.TwoFactorRequired));
+        }
+
+        if (LossLimitProblem(before, now) is { } pause)
+        {
+            problems.Add(pause);
+        }
+
+        var (checkProblems, warnings) = await checks.CheckAsync(userId, live, cancellationToken);
+        problems.AddRange(checkProblems);
+
+        // The capital is an amount in the quote asset, which is stored from the pair as the Live exchange lists it.
+        string? quoteAsset = null;
+
+        if (checkProblems.Count == 0)
+        {
+            var (symbol, symbolProblem) = await checks.FindSymbolAsync(live.Market, live.Environment, live.Symbol, cancellationToken);
+            quoteAsset = symbol?.QuoteAsset;
+
+            if (quoteAsset is null)
+            {
+                problems.Add(new ActivationProblem(symbolProblem ?? ActivationProblemKind.SymbolUnverifiable));
+            }
+        }
+
+        // Without the lock, so the code isn't spent on a slot that's plainly taken. It's checked again under the lock.
+        await using (var reading = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            if (await SlotHolderAsync(reading, live, except: id, cancellationToken) is { } taken)
+            {
+                problems.Add(new ActivationProblem(ActivationProblemKind.SlotTaken, OtherAgent: taken));
+            }
+        }
+
+        if (problems.Count > 0)
+        {
+            logger.LogInformation(
+                "Refused to switch agent {AgentId} of user {UserId} to Live: {Problems}", id, userId, problems.Select(problem => problem.Kind));
+            return new LiveSwitchResult(LiveSwitchOutcome.Refused, before, problems, warnings);
+        }
+
+        // Before anything changes, as every sensitive action does (FR-AUTH-05).
+        var check = await twoFactor.CheckAsync(userId, request.TwoFactorCode, cancellationToken);
+
+        if (!check.Allows())
+        {
+            return new LiveSwitchResult(LiveSwitchOutcome.TwoFactorRefused, before, TwoFactor: check);
+        }
+
+        var demoKey = await LabelAsync(userId, before.Settings.ExchangeCredentialId, cancellationToken);
+        var liveKey = await LabelAsync(userId, live.ExchangeCredentialId, cancellationToken);
+
+        await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+            await AgentLock.TakeAsync(context, userId, cancellationToken);
+
+            if (await SlotHolderAsync(context, live, except: id, cancellationToken) is { } holder)
+            {
+                return new LiveSwitchResult(
+                    LiveSwitchOutcome.Refused, before, [new ActivationProblem(ActivationProblemKind.SlotTaken, OtherAgent: holder)], warnings);
+            }
+
+            // Execution sends nothing for an agent that isn't Active, so this only finds what reconciliation found meanwhile.
+            if (await exposure.HasOpenPositionsOrOrdersAsync(userId, id, cancellationToken))
+            {
+                return new LiveSwitchResult(LiveSwitchOutcome.OpenPositions, before);
+            }
+
+            var updated = await context.Set<Agent>()
+                .Where(agent => agent.Id == id && agent.UserId == userId && agent.Version == before.Version && agent.Status == before.Status
+                    && agent.Environment == TradingEnvironment.Demo)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(agent => agent.Environment, TradingEnvironment.Live)
+                        .SetProperty(agent => agent.ExchangeCredentialId, live.ExchangeCredentialId)
+                        .SetProperty(agent => agent.QuoteAsset, quoteAsset!)
+                        .SetProperty(agent => agent.Status, AgentStatus.Active)
+                        .SetProperty(agent => agent.StatusReason, AgentStatusReason.User)
+                        .SetProperty(agent => agent.StatusChangedAt, now)
+                        .SetProperty(agent => agent.UpdatedAt, now)
+                        .SetProperty(agent => agent.LossLimitUntil, (DateTimeOffset?)null)
+                        .SetProperty(agent => agent.Version, agent => agent.Version + 1),
+                    cancellationToken);
+
+            if (updated == 0)
+            {
+                return new LiveSwitchResult(LiveSwitchOutcome.Changed, await FindAsync(userId, id, cancellationToken));
+            }
+
+            // FR-AUD-01 names switches to Live, and activations, so each has its record, as an edit's execution mode does.
+            audit.Add(
+                context,
+                AgentAudit.ByUser(
+                    AuditAction.AgentSwitchedToLive,
+                    userId,
+                    id,
+                    [
+                        new(AgentAuditFields.Environment, before.Settings.Environment.ToString(), live.Environment.ToString()),
+                        new(AgentAuditFields.ExchangeKey, demoKey, liveKey),
+                        new(AgentAuditFields.AcknowledgedRiskDisclosure, null, request.RiskDisclosureVersion),
+                        new(AgentAuditFields.AcknowledgedExecutionMode, null, request.ExecutionMode.ToString()),
+                    ]));
+            audit.Add(
+                context,
+                AgentAudit.ByUser(AuditAction.AgentActivated, userId, id, AgentAudit.StatusChange(before.Status, AgentStatus.Active, AgentStatusReason.User)));
+
+            await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        logger.LogInformation("Switched agent {AgentId} of user {UserId} to Live, from {Status}", id, userId, before.Status);
+
+        var switched = await FindAsync(userId, id, cancellationToken);
+        await AddCapitalWarningAsync(userId, switched, warnings, cancellationToken);
+
+        return new LiveSwitchResult(LiveSwitchOutcome.Switched, switched, [], warnings);
     }
 
     public async Task<bool> PauseForLossLimitAsync(Guid userId, Guid id, LossLimitBreach breach, CancellationToken cancellationToken)
@@ -688,9 +861,10 @@ internal sealed class Agents(
             return (new AgentSaveResult(AgentSaveOutcome.Invalid, current, verdict.Fields, verdict.RiskSettings), null, null, null);
         }
 
-        if (cleaned.Environment != TradingEnvironment.Demo)
+        // A new agent starts in Demo, and an edit keeps the environment: only switching makes an agent Live (UC-04).
+        if (cleaned.Environment != (current?.Settings.Environment ?? settings.DefaultEnvironment))
         {
-            return (new AgentSaveResult(AgentSaveOutcome.LiveNotAvailable, current), null, null, null);
+            return (new AgentSaveResult(AgentSaveOutcome.EnvironmentNotEditable, current), null, null, null);
         }
 
         string? exchangeKey = null;
@@ -897,6 +1071,37 @@ internal sealed class Agents(
         logger.LogInformation("Agent {AgentId} of user {UserId} went from {From} to {To}", id, userId, agent.Status, to);
 
         return new TransitionResult(TransitionOutcome.Done, await FindAsync(userId, id, cancellationToken));
+    }
+
+    /// <summary>
+    /// A daily or weekly loss limit's pause that hasn't ended, or null. It lasts its whole period, whatever the status, so
+    /// stopping the agent, or switching it to Live, can't end it early (FR-RISK-08).
+    /// </summary>
+    private static ActivationProblem? LossLimitProblem(AgentRecord agent, DateTimeOffset now) =>
+        agent.LossLimitUntil is { } until && until > now ? new ActivationProblem(ActivationProblemKind.LossLimitPause, Until: until) : null;
+
+    /// <summary>
+    /// Adds FR-AGT-13's warning for an agent that just became Active, when there is one. The agent is active whatever
+    /// happens here, so a failure only loses a warning the SRS says "should" give.
+    /// </summary>
+    private async Task AddCapitalWarningAsync(Guid userId, AgentRecord? agent, List<ActivationWarning> warnings, CancellationToken cancellationToken)
+    {
+        if (agent is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (await CapitalWarningAsync(userId, agent, cancellationToken) is { } warning)
+            {
+                warnings.Add(warning);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "Checking the capital of agent {AgentId} against its account failed", agent.Id);
+        }
     }
 
     /// <summary>

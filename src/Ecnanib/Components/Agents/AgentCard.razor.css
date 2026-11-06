@@ -23,7 +23,7 @@
     overflow-wrap: anywhere;
 }
 
-/* Demo in words, wherever a Demo agent appears (FR-UI-07). */
+/* Demo in words, wherever a Demo agent appears (FR-UI-07), and Live in words too. */
 .agent-tag {
     padding: 0 0.375rem;
     border: 1px solid var(--rule);

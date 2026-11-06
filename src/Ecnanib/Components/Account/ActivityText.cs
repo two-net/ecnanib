@@ -40,6 +40,7 @@ public static class ActivityText
         AuditAction.AgentUpdated => Strings.ActivityActionAgentUpdated,
         AuditAction.AgentExecutionModeChanged => Strings.ActivityActionAgentExecutionModeChanged,
         AuditAction.AgentActivated => Strings.ActivityActionAgentActivated,
+        AuditAction.AgentSwitchedToLive => Strings.ActivityActionAgentSwitchedToLive,
         AuditAction.AgentPaused => Strings.ActivityActionAgentPaused,
         AuditAction.AgentStopped => Strings.ActivityActionAgentStopped,
         AuditAction.AgentKillSwitch => Strings.ActivityActionAgentKillSwitch,

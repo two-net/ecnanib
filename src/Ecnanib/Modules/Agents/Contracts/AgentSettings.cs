@@ -17,7 +17,10 @@ public sealed record AgentSettings
 
     public required Market Market { get; init; }
 
-    /// <summary>Demo by default. Live is refused until switching to Live exists (#39).</summary>
+    /// <summary>
+    /// Demo, which every agent starts in. An agent becomes Live only through <see cref="IAgents.SwitchToLiveAsync"/>
+    /// (UC-04), and an edit never changes it.
+    /// </summary>
     public TradingEnvironment Environment { get; init; } = TradingEnvironment.Demo;
 
     /// <summary>One Binance symbol, such as BTCUSDT, which Binance must list as trading (FR-AGT-02).</summary>

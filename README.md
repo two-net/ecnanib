@@ -255,11 +255,14 @@ When a scheduled sync finds that no key lists a model any more, and none can use
 
 ### Agents
 
-Users create agents on the **Agents** page. Each trades one pair on Binance Spot or USDⓈ-M Futures, in Demo only for now, with a model chosen per role from those their AI keys can use. A new agent is a draft, and activating it checks that its Binance key is valid for its market, that each required role has a model one of the user's valid keys can use, and that its capital and risk settings are set and within the [risk caps](#risk-caps). Only one agent at a time may be active, paused or in error per Binance key, market and pair, because they'd share the position. Archiving removes an agent and frees its name. An archived agent can be deleted for good.
+Users create agents on the **Agents** page. Each trades one pair on Binance Spot or USDⓈ-M Futures, with a model chosen per role from those their AI keys can use. A new agent is a draft in Demo, and activating it checks that its Binance key is valid for its market, that each required role has a model one of the user's valid keys can use, and that its capital and risk settings are set and within the [risk caps](#risk-caps). Only one agent at a time may be active, paused or in error per Binance key, market and pair, because they'd share the position. Archiving removes an agent and frees its name. An archived agent can be deleted for good.
+
+**Switch to Live** moves a paused or stopped Demo agent with nothing open to one of the user's Binance Live keys, where it trades real money. It shows the risk notices, runs the activation checks against the Live key, pair and account, and needs a verified email address when email is on, two-factor turned on when `Security:RequireTwoFactorForLive` is set, a code when two-factor is on, and the user's acknowledgement of the Risk Disclosure and the agent's execution mode. The agent becomes active, and the switch is in the audit trail. There's no way back to Demo: a clone of a Live agent is a Demo draft. See [Switching to Live](docs/architecture.md#switching-to-live).
 
 | Setting | Meaning |
 |---|---|
 | `Agents:MaxAgentsPerUser` | The most agents a user may have that aren't archived, 1 to 1000. Defaults to `10` |
+| `Agents:DefaultEnvironment` | The environment a new agent starts in. Only `Demo` is accepted, because each agent goes Live through **Switch to Live**. Defaults to `Demo` |
 | `Agents:CandleCloseDelaySeconds` | How long after a candle closes its cycles start, so the candle is final, 0 to 300. Defaults to `10` |
 | `Agents:MaxConcurrentCycles` | The most decision cycles that run at once, 1 to 1000. The rest queue. Defaults to `50` |
 | `Agents:MaxCycleJitterSeconds` | The most a cycle waits at random before it queues, to spread exchange requests, 0 to 20. Defaults to `10` |
@@ -361,6 +364,7 @@ A value that isn't valid stops startup. Set `AllowedHosts` to your public host t
 | `Security:LockoutMinutes` | How long a lock lasts, and how long sensitive actions stop taking authenticator codes after too many wrong ones. Defaults to 15 |
 | `Security:SessionIdleTimeoutMinutes` | How long a session can last without a request or a user action. A page that's only showing live data doesn't count. Defaults to 60 |
 | `Security:SessionAbsoluteTimeoutHours` | The longest a session can last, however active it is. Defaults to 24 |
+| `Security:RequireTwoFactorForLive` | Whether switching an agent to Live needs two-factor turned on. With two-factor on, switching always needs a code. Defaults to `false` |
 | `Admin:AdminEmails` | Addresses that get administrator rights once verified. Defaults to none |
 | `Admin:BootstrapSecret` | At least 32 random characters. Required when an address is listed and `Email:Enabled` is false |
 | `Email:Enabled` | Defaults to `false`. See [Email](#email) |

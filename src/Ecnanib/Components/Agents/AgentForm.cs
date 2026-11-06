@@ -187,7 +187,11 @@ internal sealed class AgentForm
     /// The settings, or null with the fields that couldn't be read. A number that isn't one is refused here, and
     /// one out of range by the contract.
     /// </summary>
-    public (AgentSettings? Settings, HashSet<AgentField> Fields, HashSet<RiskSetting> RiskSettings) ToSettings()
+    /// <param name="environment">
+    /// The agent's environment, which the form doesn't post: an edit never changes it, and only switching makes an agent
+    /// Live (UC-04).
+    /// </param>
+    public (AgentSettings? Settings, HashSet<AgentField> Fields, HashSet<RiskSetting> RiskSettings) ToSettings(TradingEnvironment environment)
     {
         var fields = new HashSet<AgentField>();
         var riskSettings = new HashSet<RiskSetting>();
@@ -295,8 +299,7 @@ internal sealed class AgentForm
             Description = Description,
             Market = market!.Value,
 
-            // Demo only, until switching to Live exists (#39).
-            Environment = TradingEnvironment.Demo,
+            Environment = environment,
             Symbol = Symbol ?? "",
             Timeframe = timeframe!.Value,
             ExchangeCredentialId = exchangeKey,

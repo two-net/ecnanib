@@ -1,3 +1,4 @@
+using Ecnanib.Kernel;
 using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 using Ecnanib.Platform.Contracts;
@@ -12,7 +13,7 @@ internal sealed class TradeJournal(IDbContextFactory<EcnanibDbContext> contextFa
     private static readonly OrderStatus[] NeverPlaced = [OrderStatus.NotPlaced, OrderStatus.Rejected];
 
     public async Task<TradeResults> ReadResultsAsync(
-        Guid userId, Guid agentId, DateTimeOffset now, DateTimeOffset activeSince, CancellationToken cancellationToken)
+        Guid userId, Guid agentId, TradingEnvironment environment, DateTimeOffset now, DateTimeOffset activeSince, CancellationToken cancellationToken)
     {
         var dayStart = RiskPeriods.DayStart(now);
         var weekStart = RiskPeriods.WeekStart(now);
@@ -21,7 +22,7 @@ internal sealed class TradeJournal(IDbContextFactory<EcnanibDbContext> contextFa
 
         var closed = context.Set<TradeRow>()
             .AsNoTracking()
-            .Where(trade => trade.UserId == userId && trade.AgentId == agentId && trade.Status == TradeStatus.Closed);
+            .Where(trade => trade.UserId == userId && trade.AgentId == agentId && trade.Environment == environment && trade.Status == TradeStatus.Closed);
 
         var week = await closed
             .Where(trade => trade.ClosedAt >= weekStart)
@@ -42,7 +43,7 @@ internal sealed class TradeJournal(IDbContextFactory<EcnanibDbContext> contextFa
 
         var entries = await context.Set<OrderRow>()
             .CountAsync(
-                row => row.UserId == userId && row.AgentId == agentId && row.Leg == OrderLeg.Entry
+                row => row.UserId == userId && row.AgentId == agentId && row.Environment == environment && row.Leg == OrderLeg.Entry
                     && row.CreatedAt >= dayStart && !NeverPlaced.Contains(row.Status),
                 cancellationToken);
 

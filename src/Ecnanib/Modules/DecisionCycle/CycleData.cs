@@ -98,7 +98,8 @@ internal sealed class CycleData(
     /// </summary>
     public async Task<TradingRecord> RecordAsync(Guid userId, AgentRecord agent, DateTimeOffset candleClose, CancellationToken cancellationToken)
     {
-        var results = await journal.ReadResultsAsync(userId, agent.Id, time.GetUtcNow(), agent.StatusChangedAt, cancellationToken);
+        var results = await journal.ReadResultsAsync(
+            userId, agent.Id, agent.Settings.Environment, time.GetUtcNow(), agent.StatusChangedAt, cancellationToken);
         int? cyclesSinceLoss = null;
 
         if (results.LastLossClosedAt is { } lossClosedAt)

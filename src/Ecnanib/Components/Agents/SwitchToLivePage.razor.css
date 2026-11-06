@@ -1,0 +1,26 @@
+/* The user chose the name, and it can be one long word on a narrow phone. */
+.agent-live-heading {
+    overflow-wrap: anywhere;
+}
+
+/* EXT-UI-03's notices, set apart from the agent above and the form below. */
+.agent-live-notices {
+    display: grid;
+    gap: 1.25rem;
+    padding-block: 1.25rem;
+    border-block: 1px solid var(--rule);
+}
+
+    /* One column at any width: this page is a form's width, too narrow for the landing page's three. */
+    .agent-live-notices ::deep .notices {
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+    }
+
+/* As the agent list's problems: a thicker edge as well as the words, so it doesn't rely on color. */
+.agent-live-needed {
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--caution);
+    border-inline-start-width: 4px;
+    border-radius: var(--radius);
+}

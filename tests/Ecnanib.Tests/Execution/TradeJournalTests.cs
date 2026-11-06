@@ -323,13 +323,35 @@ public sealed class TradeJournalTests(PostgresFixture postgres)
 
         var journal = app.Agents.App.Services.GetRequiredService<ITradeJournal>();
         var now = app.Clock.GetUtcNow();
-        var results = await journal.ReadResultsAsync(user.Id, agent.Id, now, now.AddHours(-1), Cancellation);
-        var afterward = await journal.ReadResultsAsync(user.Id, agent.Id, now.AddDays(8), now.AddDays(8), Cancellation);
+        var results = await journal.ReadResultsAsync(user.Id, agent.Id, TradingEnvironment.Demo, now, now.AddHours(-1), Cancellation);
+        var afterward = await journal.ReadResultsAsync(user.Id, agent.Id, TradingEnvironment.Demo, now.AddDays(8), now.AddDays(8), Cancellation);
 
         Assert.Equal((-200m * q, -200m * q, 1, 1), (results.RealizedToday, results.RealizedThisWeek, results.ConsecutiveLosses, results.EntriesToday));
         Assert.NotNull(results.LastLossClosedAt);
         Assert.Equal((0m, 0m, 0, 0), (afterward.RealizedToday, afterward.RealizedThisWeek, afterward.ConsecutiveLosses, afterward.EntriesToday));
         Assert.Equal(results.LastLossClosedAt, afterward.LastLossClosedAt);
+    }
+
+    /// <summary>
+    /// FR-EXP-08: an agent switched to Live today is held to its Live results only, so its Demo losses don't pause it, and
+    /// its Demo profits don't loosen its limits.
+    /// </summary>
+    [Fact]
+    public async Task The_results_count_only_what_the_agent_did_in_the_environment_asked_for()
+    {
+        await using var app = new ExecutionApp(postgres);
+        var (user, agent) = await app.AgentAsync(Market.Futures);
+        await app.ExecuteAsync(app.Request(user, agent, ExecutionApp.Long(Market.Futures)));
+        app.Book.Trigger(app.FuturesLong().Stop);
+        await app.ReconcileAsync();
+
+        var journal = app.Agents.App.Services.GetRequiredService<ITradeJournal>();
+        var now = app.Clock.GetUtcNow();
+        var demo = await journal.ReadResultsAsync(user.Id, agent.Id, TradingEnvironment.Demo, now, now.AddHours(-1), Cancellation);
+        var live = await journal.ReadResultsAsync(user.Id, agent.Id, TradingEnvironment.Live, now, now.AddHours(-1), Cancellation);
+
+        Assert.Equal((1, 1), (demo.ConsecutiveLosses, demo.EntriesToday));
+        Assert.Equal((0m, 0m, 0, 0, (DateTimeOffset?)null), (live.RealizedToday, live.RealizedThisWeek, live.ConsecutiveLosses, live.EntriesToday, live.LastLossClosedAt));
     }
 
     [Fact]

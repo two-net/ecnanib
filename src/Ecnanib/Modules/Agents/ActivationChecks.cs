@@ -7,11 +7,11 @@ using Ecnanib.Modules.RiskEngine.Contracts;
 namespace Ecnanib.Modules.Agents;
 
 /// <summary>
-/// FR-AGT-05's checks for a Demo agent, apart from the pair's slot (FR-AGT-10), which needs the caller's
-/// lock, and EXT-BIN-07's for a Futures agent. They read the user's credentials, the catalog, Binance's
+/// FR-AGT-05's checks for an agent in its environment, apart from the pair's slot (FR-AGT-10), which needs the
+/// caller's lock, and EXT-BIN-07's for a Futures agent. They read the user's credentials, the catalog, Binance's
 /// symbols and the Futures account, so they run before the caller opens a transaction: a symbol lookup or an
-/// account read can call Binance, and a transaction is never held across an exchange call. Switching to Live,
-/// with its own checks, is #39.
+/// account read can call Binance, and a transaction is never held across an exchange call. Switching to Live runs
+/// them on the Live settings, with its own checks on top (<see cref="Agents.SwitchToLiveAsync"/>).
 /// </summary>
 internal sealed class ActivationChecks(
     ICredentials credentials,
@@ -26,11 +26,6 @@ internal sealed class ActivationChecks(
     {
         var problems = new List<ActivationProblem>();
         var warnings = new List<ActivationWarning>();
-
-        if (settings.Environment != TradingEnvironment.Demo)
-        {
-            problems.Add(new ActivationProblem(ActivationProblemKind.LiveNotAvailable));
-        }
 
         var keys = await credentials.ListAsync(userId, cancellationToken);
 
