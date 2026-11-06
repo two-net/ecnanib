@@ -1841,6 +1841,10 @@
     <value>Resumes on its own at {0}.</value>
     <comment>{0} is a time, written as DisplayTime writes it.</comment>
   </data>
+  <data name="AgentBudgetReachedUntil" xml:space="preserve">
+    <value>Its AI budget has run out, so it asks no AI and opens no trades until {0}, or until you raise the limit in its settings. Its open positions keep their stops.</value>
+    <comment>{0} is a time, written as DisplayTime writes it. FR-CYC-07's protective-only mode: the agent stays Active.</comment>
+  </data>
   <data name="AgentMarketSpot" xml:space="preserve">
     <value>Spot</value>
   </data>

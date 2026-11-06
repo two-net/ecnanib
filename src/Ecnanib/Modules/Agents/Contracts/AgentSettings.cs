@@ -63,7 +63,9 @@ public sealed record RoleAssignment(AiRole Role, ModelRef Model, ModelRef? Fallb
 
 /// <summary>
 /// The most an agent may spend on AI (FR-AGT-02), per UTC day and month, in US dollars, or in tokens where
-/// a model's price isn't known. Every limit is optional. Enforcing them comes with cost tracking (#32).
+/// a model's price isn't known: a call to a priced model counts its estimated cost, and a call to one without a
+/// price counts its tokens. Every limit is optional. Once one is reached, the agent's cycles ask no AI and make
+/// no new entry until its period ends (FR-CYC-07). See Budgets in docs/architecture.md.
 /// </summary>
 public sealed record AiBudget(decimal? DailyUsd, decimal? MonthlyUsd, long? DailyTokens, long? MonthlyTokens)
 {

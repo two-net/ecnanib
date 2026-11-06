@@ -6,6 +6,7 @@
 @inject ICredentials Credentials
 @inject ICatalog Catalog
 @inject IAgentExposure Exposure
+@inject IAiSpending Spending
 @inject RiskCaps Caps
 @inject NavigationManager Navigation
 
@@ -212,6 +213,11 @@
         </div>
 
         <h2>@Strings.AgentSettingsBudgetHeading</h2>
+        @if (_budgetUntil is { } budgetUntil)
+        {
+            @* The budget notification links here (FR-CYC-07), so the page says what it means. *@
+            <p class="agent-budget-reached">@string.Format(CultureInfo.CurrentCulture, Strings.AgentBudgetReachedUntil, Time.Format(budgetUntil))</p>
+        }
         <p id="agent-budget-hint" class="field-hint">@Strings.AgentSettingsBudgetHint</p>
         <FieldError Id="agent-budget-error" Message="@ErrorOf(AgentField.Budget)" />
 
@@ -255,6 +261,10 @@
 
 @code {
     private AgentRecord? _agent;
+
+    /// <summary>When an Active agent's protective-only mode ends (FR-CYC-07), or null when its AI budget hasn't run out.</summary>
+    private DateTimeOffset? _budgetUntil;
+
     private List<CredentialRecord> _exchangeKeys = [];
     private const string SharedProviderId = "agent-role-shared-provider";
 
@@ -325,6 +335,12 @@
             if (_agent.Status == AgentStatus.Archived)
             {
                 _error = Strings.AgentSaveArchived;
+            }
+
+            if (_agent.Status == AgentStatus.Active)
+            {
+                var spend = await Spending.FindAsync(userId, id, cancellationToken);
+                _budgetUntil = spend.Check(_agent.Settings.Budget).Until;
             }
         }
 

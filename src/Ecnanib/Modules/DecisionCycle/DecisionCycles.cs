@@ -4,6 +4,7 @@ using Ecnanib.Modules.AiCouncil.Contracts;
 using Ecnanib.Modules.DecisionCycle.Contracts;
 using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.MarketData.Contracts;
+using Ecnanib.Modules.Notifications.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -11,10 +12,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Ecnanib.Modules.DecisionCycle;
 
 /// <summary>
-/// A decision cycle (FR-CYC-02): the loss limits, the market and the account, the analysts at once, the Strategist,
-/// the Risk Critic for a trade action, then the Risk Engine, with every step in the trace as it happens. It ends with
-/// a sized order for execution (#34) or approval (#38). A failed role uses its fallback model, and a required one that
-/// fails holds (FR-ROLE-06). See Decision cycle in docs/architecture.md.
+/// A decision cycle (FR-CYC-02): the loss limits, the AI budget, the market and the account, the analysts at once, the
+/// Strategist, the Risk Critic for a trade action, then the Risk Engine, with every step in the trace as it happens.
+/// It ends with a sized order for execution (#34) or approval (#38). A failed role uses its fallback model, and a
+/// required one that fails holds (FR-ROLE-06). See Decision cycle in docs/architecture.md.
 /// </summary>
 internal sealed class DecisionCycles(
     IAgents agents,
@@ -25,6 +26,7 @@ internal sealed class DecisionCycles(
     IRiskEngine riskEngine,
     IDbContextFactory<EcnanibDbContext> contextFactory,
     CycleObservers observers,
+    INotifications notifications,
     ICorrelationContext correlation,
     DecisionCycleSettings settings,
     TimeProvider time,
@@ -50,7 +52,7 @@ internal sealed class DecisionCycles(
             return;
         }
 
-        var cycle = new CycleRun(NewRow(request, agent), Roles(agent.Settings), contextFactory, observers, time);
+        var cycle = new CycleRun(NewRow(request, agent), Roles(agent.Settings), contextFactory, observers, notifications, time);
 
         using var scope = logger.BeginScope(new Dictionary<string, object?>
         {
@@ -72,7 +74,9 @@ internal sealed class DecisionCycles(
         {
             (outcome, failure) = await DecideAsync(cycle, request, agent, context, cancellationToken);
 
-            await cycle.FinishAsync(outcome, failure, cancellationToken);
+            var notice = outcome == CycleOutcome.OverBudget ? await BudgetNoticeAsync(request, agent, cancellationToken) : null;
+
+            await cycle.FinishAsync(outcome, failure, notice, cancellationToken);
         }
         catch (OperationCanceledException) when (context.Stopping.IsCancellationRequested)
         {
@@ -127,6 +131,23 @@ internal sealed class DecisionCycles(
             await agents.PauseForLossLimitAsync(request.UserId, request.AgentId, breach, cancellationToken);
 
             return (CycleOutcome.PausedForLossLimit, null);
+        }
+
+        // FR-CYC-07: once the AI budget has run out, the cycle asks no role, so it makes no entry. The agent stays
+        // Active and each cycle checks again, so a new day, a new month or a higher limit ends it. Its positions and
+        // their protective orders stay as they are.
+        if (agentSettings.Budget != AiBudget.None)
+        {
+            var budget = await CheckBudgetAsync(request, agentSettings.Budget, cancellationToken);
+            await cycle.SaveBudgetAsync(budget, cancellationToken);
+
+            if (budget.RanOut)
+            {
+                logger.LogInformation(
+                    "The agent's AI budget has run out, its {Limit} limit, until {Until}, so the cycle asks no role", budget.Reached, budget.Until);
+
+                return (CycleOutcome.OverBudget, null);
+            }
         }
 
         // Steps 2 to 4: the pair, the market at the candle's close, and the account.
@@ -382,13 +403,49 @@ internal sealed class DecisionCycles(
         }
     }
 
+    /// <summary>The agent's spend this UTC day and month against its budget. Nothing of this cycle's has been spent yet.</summary>
+    private async Task<BudgetCheck> CheckBudgetAsync(CycleRequest request, AiBudget budget, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var spend = await AiSpendings.FindAsync(context, request.UserId, request.AgentId, time.GetUtcNow(), cancellationToken);
+
+        return spend.Check(budget);
+    }
+
+    /// <summary>
+    /// The notification that the agent has entered protective-only mode (FR-CYC-07, FR-NTF-01). Null when its last
+    /// cycle since it became Active was over budget too, so its user has been told already.
+    /// </summary>
+    private async Task<Notice?> BudgetNoticeAsync(CycleRequest request, AgentRecord agent, CancellationToken cancellationToken)
+    {
+        CycleOutcome? previous;
+
+        await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            previous = await context.Set<DecisionCycleRow>()
+                .AsNoTracking()
+                .Where(cycle => cycle.UserId == request.UserId && cycle.AgentId == agent.Id
+                    && cycle.StartedAt >= agent.StatusChangedAt
+                    && cycle.CandleClose < request.CandleClose
+                    && cycle.Outcome != null && cycle.Outcome != CycleOutcome.Interrupted)
+                .OrderByDescending(cycle => cycle.CandleClose)
+                .Select(cycle => cycle.Outcome)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        return previous == CycleOutcome.OverBudget
+            ? null
+            : new Notice(NotificationType.AgentPausedBudget, request.UserId, $"/agents/{agent.Id}/settings", agent.Settings.Name, agent.IsDemo);
+    }
+
     /// <summary>Records how the cycle ended when its own tokens may have fired. False when even that failed.</summary>
     private async Task<bool> LastWriteAsync(CycleRun cycle, CycleOutcome outcome, CycleFailure? failure)
     {
         try
         {
             using var limit = new CancellationTokenSource(LastWriteLimit);
-            await cycle.FinishAsync(outcome, failure, limit.Token).WaitAsync(limit.Token);
+            await cycle.FinishAsync(outcome, failure, null, limit.Token).WaitAsync(limit.Token);
 
             return true;
         }

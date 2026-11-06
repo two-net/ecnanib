@@ -313,6 +313,8 @@ An invalid value stops startup with a message that names it. Users see each cap 
 
 When an agent reaches its daily or weekly loss limit, it pauses until the next UTC day, or Monday 00:00 UTC, and its owner is notified. It can't be resumed before then, and resumes on its own after, if it still passes the activation checks. Reaching the losing-trades-in-a-row count pauses it until its owner resumes it. Agents don't trade yet, so nothing reaches a limit until decision cycles arrive. See [Loss limits](docs/architecture.md#loss-limits).
 
+An agent's AI budget sets the most it may spend per UTC day and per month. It's in US dollars for models with a price, and in tokens for models without one. Every billed AI call counts, failed ones included. Once a limit is reached, the agent's cycles ask no AI and open no trades until the day or month ends, or until its owner raises the limit. The agent stays Active, its open positions keep their stops, and its owner is notified once. See [Budgets](docs/architecture.md#budgets).
+
 ## Security
 
 Outside Development the application won't start until it knows its public address. It must use `https`:

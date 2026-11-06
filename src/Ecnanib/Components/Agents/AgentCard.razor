@@ -35,6 +35,10 @@
     {
         <p class="agent-problem">@string.Format(CultureInfo.CurrentCulture, Strings.AgentLossLimitUntil, Time.Format(until))</p>
     }
+    @if (BudgetUntil is { } budgetUntil)
+    {
+        <p class="agent-problem">@string.Format(CultureInfo.CurrentCulture, Strings.AgentBudgetReachedUntil, Time.Format(budgetUntil))</p>
+    }
 
     <div class="agent-actions">
         @if (Agent.Status is AgentStatus.Draft or AgentStatus.Stopped or AgentStatus.Error or AgentStatus.Paused)
@@ -127,6 +131,10 @@
     [Parameter, EditorRequired]
     public Guid UserId { get; set; }
 
+    /// <summary>What the agent has spent on AI this day and month, or null when it has spent nothing.</summary>
+    [Parameter]
+    public AiSpend? Spend { get; set; }
+
     /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
     [CascadingParameter]
     private DisplayTime Time { get; set; } = DisplayTime.Utc;
@@ -158,6 +166,9 @@
         AgentStatus.Archived => [Step.Delete],
         _ => [],
     };
+
+    /// <summary>When an Active agent's protective-only mode ends (FR-CYC-07), or null when its AI budget hasn't run out.</summary>
+    private DateTimeOffset? BudgetUntil => Agent.Status == AgentStatus.Active ? Spend?.Check(Agent.Settings.Budget).Until : null;
 
     private string Capital => Agent.Settings.CapitalAllocation is { } capital
         ? string.Format(CultureInfo.CurrentCulture, Strings.AgentCapitalOf, capital, Agent.QuoteAsset)

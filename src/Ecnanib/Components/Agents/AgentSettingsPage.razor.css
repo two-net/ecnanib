@@ -20,3 +20,11 @@
 .agent-check-hint {
     grid-column: 2;
 }
+
+/* As the agent list's problems: a thicker edge as well as the words, so it doesn't rely on color. */
+.agent-budget-reached {
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--caution);
+    border-inline-start-width: 4px;
+    border-radius: var(--radius);
+}

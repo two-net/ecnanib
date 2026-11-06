@@ -1800,13 +1800,14 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 
 ## Decision cycle
 
-`Modules/DecisionCycle` runs an agent's decision cycle (FR-CYC-02) when the [scheduler](#scheduler) starts it. It checks the loss limits, collects the market and the account, and asks the AI council's roles. The Risk Engine then checks what they propose. Every step is saved in a decision trace as it happens. A cycle ends with an order the engine sized, which execution (#34) or an approval (#38) takes from there.
+`Modules/DecisionCycle` runs an agent's decision cycle (FR-CYC-02) when the [scheduler](#scheduler) starts it. It checks the loss limits and the AI budget, collects the market and the account, and asks the AI council's roles. The Risk Engine then checks what they propose. Every step is saved in a decision trace as it happens. A cycle ends with an order the engine sized, which execution (#34) or an approval (#38) takes from there.
 
 | Contract | What | Who uses it |
 |---|---|---|
 | `IDecisionCycles`, `CycleRequest` | One cycle, for one agent and candle | The scheduler only, which `BannedApis` enforces |
 | `ICycleObserver`, `CycleProgress` | Each change to a cycle's progress, after it commits: each role's state, model and summary, and the outcome (FR-ROLE-08) | The Web UI (#41, #53). Nothing subscribes yet |
 | `IDecisionTraces` | An agent's latest cycle, for its user only (NFR-SEC-04) | The Web UI. The trace viewer (#42) extends it |
+| `IAiSpending`, `AiSpend`, `BudgetCheck` | Each agent's AI spend this UTC day and month, for its user only (NFR-SEC-04), and whether its budget has run out (FR-CYC-07). See [Budgets](#budgets) | The decision cycle, and the Web UI's agent list and settings page |
 | `ICouncil`, in `AiCouncil/Contracts` | Asks one role, with its fallback, and returns the answer or the failure, with every call it made | The decision cycle. It spends the user's money, so `BannedApis` allows it only in AiCouncil and DecisionCycle |
 | `IAgentAccounts`, in `Execution/Contracts` | The agent's balances, read through its key, and its own position and pending entry, which are always none until #34 and #35 record orders | The decision cycle |
 | `IAgents.EnterErrorAsync`, `IAgentHistory`, in `Agents/Contracts` | Error after repeated failures, and deleting the agent's cycles with it | The decision cycle, and `Agents.DeleteAsync` |
@@ -1818,6 +1819,7 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 | 1 | The agent is read again. If it isn't Active, nothing is recorded. Otherwise the cycle's row is inserted with its roles queued | — |
 | 1 | The agent already has a cycle for this candle, through the unique index on agent and candle close. Nothing more happens | — |
 | 2 | `IRiskEngine.CheckLossLimits`, whose rules are saved on the row. A breach pauses the agent through `IAgents.PauseForLossLimitAsync` (FR-RISK-08) | `PausedForLossLimit` |
+| 2 | The agent has an AI budget, and its spend this UTC day or month has reached a limit. The check is saved on the row, and no role is asked. See [Budgets](#budgets) (FR-CYC-07) | `OverBudget` |
 | 3 | The pair from `IExchangeSymbols`, the market from `IMarketData` at the candle's close, then the account from `IAgentAccounts`. Binance's `Throttled` is waited out once, when its `RetryAfter` fits before the deadline. A last candle that isn't `LastOpenTime` is a gap, as during maintenance | `Failed`, with `MarketData` or `Account` |
 | 4 | The Technical Analyst, and the Sentiment Analyst when it's assigned, at once | — |
 | 5 | The Technical Analyst failed | `Hold`, with `RoleFailed` |
@@ -1856,16 +1858,40 @@ A missing prompt template fails the role without trying the fallback, which coul
 - **A role's answer lists every call it made**, billed or not, for the trace. A call holds the composed instructions and message, the answer, the parsed output, the violations, the tokens, the cost, the latency, the provider's attempts and the template versions. A retry also sent the first answer and its violations, which are on the call before it.
 - **Calls are logged by the adapter**, with provider, model, role, latency, tokens, cost and outcome (FR-LOG-07). The council logs only which role failed on which model. Prompts and answers are never logged.
 
+### Budgets
+
+An agent's AI budget (FR-AGT-02) is checked at the start of each cycle, after the loss limits and before anything else. Once it has run out, the cycle asks no role and ends as `OverBudget`, which is FR-CYC-07's protective-only mode. An agent with no limit isn't checked.
+
+- **Spend is summed from the trace**, `ai_calls` joined to `decision_cycles`, because every billed call is there. That includes failed calls and contract retries, each saved as its role finished. A call counts in the UTC day and month its cycle started in, which the cycles' index on user, agent and start finds, so a cycle still running at midnight counts in the day it started. One query sums the month, with the day as a `FILTER`.
+- **Dollars and tokens are counted apart.**
+  - A call to a priced model counts its estimated [cost](#cost).
+  - A call to an unpriced model counts its input and output tokens, which is all that token caps limit.
+  - So a dollar limit never stops an unpriced model, and a token cap never stops a priced one.
+- **A limit runs out once the spend reaches it**, until the end of its UTC day or month. When several have run out, a monthly one's end is given, because it's later.
+- **There's one check per cycle.** A cycle that starts within budget runs to the end, so spend can pass a limit by up to one cycle's calls. Checking between roles would waste what the cycle had already spent.
+- **Protective-only isn't a status.**
+  - The agent stays Active and keeps running cycles, so each one checks again, and a new day, a new month or a higher limit ends it at the next close.
+  - It isn't paused, so there's no audit record.
+  - Its positions and their exchange-resting stops stay as they are. Managing them is for Execution and reconciliation (#34, #35), which don't ask the council.
+- **Its user is told once.**
+  - `AgentPausedBudget` is raised when the agent's previous cycle since it became Active wasn't `OverBudget`. That's by candle close, not counting `Interrupted`.
+  - It's added in `CycleRun.FinishAsync`'s transaction, so it commits with the outcome.
+  - Running out again after a cycle within budget tells the user again.
+- **The check is saved on the cycle**, as `budget`, when the agent has a limit. It holds the limits, the spend, the limit reached and when it ends, for the trace viewer (#42).
+- **`IAiSpending` reads the same sums for the pages.**
+  - The agent list and the settings page, which the notification links to, say until when an Active agent can't use AI.
+  - The page and the cycle both decide with `AiSpend.Check`.
+
 ### The trace
 
 | Table | What |
 |---|---|
-| `decision_cycles` | SRS 6.1's DecisionCycle: the agent, its pair and timeframe, the candle's close, whether it's a catch-up, the deadline, the start and end, the outcome and failure, an input snapshot, the loss limits' rule results, the token and cost totals, and the correlation ID, which links it to its logs and its `job_runs` row. Unique on agent and candle close |
+| `decision_cycles` | SRS 6.1's DecisionCycle: the agent, its pair and timeframe, the candle's close, whether it's a catch-up, the deadline, the start and end, the outcome and failure, an input snapshot, the loss limits' rule results, the [budget](#budgets) check, the token and cost totals, and the correlation ID, which links it to its logs and its `job_runs` row. Unique on agent and candle close |
 | `cycle_roles` | Each role's state, model, whether the fallback answered, and its summary (FR-ROLE-08) |
 | `ai_calls` | SRS 6.1's AiCall, one row per call (FR-UI-04, FR-PRM-03, FR-EXP-01), with the provider's own error message, which can quote the prompt, so it's never logged |
 | `risk_evaluations` | SRS 6.1's RiskEvaluation: the intent, the caps, the effective settings, every rule's inputs, outcome and reason (FR-RISK-10), the sized order, and any loss limit reached |
 
-- **Each step saves as it ends**, on a context of its own, so a crash loses only the step under way. A role's calls and its state save in one transaction, so every billed call is on record, which budgets (#32) count.
+- **Each step saves as it ends**, on a context of its own, so a crash loses only the step under way. A role's calls and its state save in one transaction, so every billed call is on record, which [budgets](#budgets) count.
 - **The input snapshot keeps each series' latest candle**, the indicators, the prices, the account and the effective risk settings. The candles each role saw are in its prompt.
 - **JSON columns write enums by name.** An AI call's output is in the contract's names, as the model would write it.
 - **A trace holds the user's prompts and models' answers**, so only its user may read it, and never an administrator (FR-ADM-01). Agents' deletion reaches it through `IAgentHistory`, account deletion through #51, and retention through #50.
@@ -1884,7 +1910,7 @@ A cycle errored when it ended without a decision: `Failed`, or `Hold` because a 
 
 ### Testing it
 
-`CycleApp` in `tests/Ecnanib.Tests/DecisionCycle` builds on `AgentApp`, with Binance's candles and prices, and a model on both test providers. The model answers each role from the test's `Replies`, by the role in the request, or with a Spot market buy the Risk Critic approves and the engine passes. The sample candles move by about 3 an hour around 120, while the sample ticker is at about 60,123, so the buy's stop and targets are a few dollars from the ticker's ask, which keeps the stop within the engine's ATR bounds. Tests run cycles through `IDecisionCycles` themselves, and `Missing` takes candles away, as during maintenance.
+`CycleApp` in `tests/Ecnanib.Tests/DecisionCycle` builds on `AgentApp`, with Binance's candles and prices, and a model on both test providers. The model answers each role from the test's `Replies`, by the role in the request, or with a Spot market buy the Risk Critic approves and the engine passes. The sample candles move by about 3 an hour around 120, while the sample ticker is at about 60,123, so the buy's stop and targets are a few dollars from the ticker's ask, which keeps the stop within the engine's ATR bounds. Tests run cycles through `IDecisionCycles` themselves, and `Missing` takes candles away, as during maintenance. `BudgetTests` prices the test model through `Catalog:Overrides`, so a buy's cycle costs $6. It also moves the clock to noon mid-month, so that no day or month ends during a test unless the test moves the clock there.
 
 ## Web UI
 
@@ -2060,7 +2086,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
   - Agents: `ModelDeprecated` and `ModelRetired` are raised already, by `ModelLifecycle`. See [Acting on retired models](#acting-on-retired-models)
   - Agents: `AgentPausedLossLimit` is raised already, by `Agents.PauseForLossLimitAsync`. See [Loss limits](#loss-limits)
   - Agents: `AgentPausedErrors` is raised already, by `Agents.EnterErrorAsync`, which the decision cycle calls. See [Decision cycle](#decision-cycle)
-  - DecisionCycle (#32): `AgentPausedBudget` (FR-CYC-07), because AI Council can't use Notifications
+  - DecisionCycle: `AgentPausedBudget` is raised already, when a cycle finds the agent's AI budget has run out (FR-CYC-07). See [Budgets](#budgets)
   - Execution (#34, #35, #36): `TradeOpened`, `TradeClosed` (including a close outside Ecnanib, FR-EXE-06) and `StopMoved`
   - Agents (#37): `KillSwitchExecuted`
   - DecisionCycle (#38): `ApprovalPending` and `ApprovalExpired`, linking to the approval page, which needs sign-in like every page (FR-APR-02)
@@ -2094,7 +2120,10 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Binance Demo restrictions:** Binance doesn't document `/sapi` on its Demo servers, so a Demo key's restrictions aren't read. Try `apiRestrictions` against Demo with a real key, and if it answers, read them there too.
 - **Account deletion (#51):** delete the user's credentials with `ICredentials.DeleteAsync`, which removes their secrets in the same transaction, through the port Identity declares. There's no foreign key to `users`.
 - **Data isolation (#55):** `CredentialIsolationTests` and `AgentIsolationTests` cover every Credentials and Agents call. Add the credentials pages and `/agents/{id}/settings` to the HTTP suite. The settings page already answers 404 for another user's agent.
-- **Budgets (#32):** sum an agent's spend from `ai_calls`, joined to `decision_cycles` for the agent, over the budget's period: every billed call is there, failed ones included, because each was saved as its role finished. A model with no price has a null cost, so its token caps are what limit it. Check the budget before asking the council, enter protective-only mode (FR-CYC-07) as a cycle outcome, and raise `AgentPausedBudget` from DecisionCycle.
+- **AI cost and budgets (#41, #42):**
+  - Show FR-AGT-11's AI cost to date from `IAiSpending`, and add a longer period to it if "to date" means more than the month.
+  - Show an `OverBudget` cycle's `budget` in the trace viewer.
+  - The agent stays Active in protective-only mode, so the dashboard should say so beside the status, as the agent list does. See [Budgets](#budgets).
 - **Output contracts:** changing a schema or a template means changing the other, and running `LiveProviderTests`. A seeded template change reaches only a database that has never had its key, so publish it as a new version (#48) once one exists. See [Output contracts](#output-contracts).
 - **Charts:** FR-ROLE-02 allows the Technical Analyst an image. To add one, render the chart and pass it as an `AiImage` part of the first user message, in `Council`, for models whose catalog capabilities say they take images.
 - **Reflections (#45):** fill `PromptContext.Reflections` for the Strategist and Risk Critic, newest first, up to the agent's count, leaving out excluded ones (FR-EXP-04, FR-EXP-05). They're untrusted content, so a user's edit can't become an instruction. The Reviewer's prompt needs the trade's lifecycle: add it to `PromptContext` then, as data, with any text a model wrote as untrusted. Keep the trade journal's R-multiple and P&L rather than the `TradeOutcome` the Reviewer copied, which the contract can't check.

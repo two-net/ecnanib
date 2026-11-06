@@ -1,6 +1,7 @@
 using Ecnanib.Kernel;
 using Ecnanib.Modules.AiCouncil.Contracts;
 using Ecnanib.Modules.DecisionCycle.Contracts;
+using Ecnanib.Modules.Notifications.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +19,7 @@ internal sealed class CycleRun(
     IReadOnlyList<AiRole> roles,
     IDbContextFactory<EcnanibDbContext> contextFactory,
     CycleObservers observers,
+    INotifications notifications,
     TimeProvider time)
 {
     /// <summary>A summary's length, as Appendix B allows the analysts.</summary>
@@ -116,6 +118,9 @@ internal sealed class CycleRun(
         Change(answer.Role, _ => new RoleProgress(answer.Role, state, model?.Provider, model?.ModelId, answer.UsedFallback, cut));
     }
 
+    public Task SaveBudgetAsync(BudgetCheck check, CancellationToken cancellationToken) =>
+        UpdateCycleAsync(setters => setters.SetProperty(cycle => cycle.Budget, TraceJson.Write(check)), cancellationToken);
+
     public async Task SaveEvaluationAsync(RiskEvaluation evaluation, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -136,8 +141,11 @@ internal sealed class CycleRun(
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    /// <summary>Ends the cycle, and marks every role it never reached as skipped.</summary>
-    public async Task FinishAsync(CycleOutcome outcome, CycleFailure? failure, CancellationToken cancellationToken)
+    /// <summary>
+    /// Ends the cycle, and marks every role it never reached as skipped. A notification about how it ended commits
+    /// with it, or neither does.
+    /// </summary>
+    public async Task FinishAsync(CycleOutcome outcome, CycleFailure? failure, Notice? notice, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
         long inputTokens, outputTokens;
@@ -165,6 +173,12 @@ internal sealed class CycleRun(
                     .SetProperty(cycle => cycle.OutputTokens, outputTokens)
                     .SetProperty(cycle => cycle.Cost, cost),
                 cancellationToken);
+
+            if (notice is not null)
+            {
+                notifications.Add(context, notice);
+                await context.SaveChangesAsync(cancellationToken);
+            }
 
             await transaction.CommitAsync(cancellationToken);
         }

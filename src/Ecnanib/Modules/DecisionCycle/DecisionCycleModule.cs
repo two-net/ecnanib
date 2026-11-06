@@ -14,6 +14,7 @@ public static class DecisionCycleModule
         services.AddSingleton<CycleObservers>();
         services.AddSingleton<IDecisionCycles, DecisionCycles>();
         services.AddSingleton<IDecisionTraces, DecisionTraces>();
+        services.AddSingleton<IAiSpending, AiSpendings>();
         services.AddSingleton<IAgentHistory, AgentCycleHistory>();
 
         return services;

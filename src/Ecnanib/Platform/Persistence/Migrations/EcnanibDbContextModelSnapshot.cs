@@ -934,6 +934,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("agent_id");
 
+                    b.Property<string>("Budget")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("budget");
+
                     b.Property<DateTimeOffset>("CandleClose")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("candle_close");

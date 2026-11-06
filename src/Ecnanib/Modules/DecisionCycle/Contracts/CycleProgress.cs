@@ -65,6 +65,12 @@ public enum CycleOutcome
     /// <summary>A loss limit was reached, so the agent was paused (FR-RISK-08).</summary>
     PausedForLossLimit,
 
+    /// <summary>
+    /// The agent's AI budget for the day or month had run out, so the cycle asked no role and made no entry:
+    /// protective-only mode (FR-CYC-07). The agent stays Active, and its positions and protective orders stay.
+    /// </summary>
+    OverBudget,
+
     /// <summary>The cycle couldn't decide: <see cref="CycleFailure"/> says why.</summary>
     Failed,
 

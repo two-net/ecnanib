@@ -64,6 +64,11 @@ internal sealed class DecisionCycleRow
     /// <summary>The loss limits' rule results at the start of the cycle, as JSON (FR-RISK-08, FR-RISK-10).</summary>
     public string? LossLimits { get; set; }
 
+    /// <summary>
+    /// The agent's AI budget against its spend at the start of the cycle, as JSON, when it has a limit (FR-CYC-07).
+    /// </summary>
+    public string? Budget { get; set; }
+
     public long InputTokens { get; set; }
 
     public long OutputTokens { get; set; }
@@ -200,6 +205,7 @@ internal sealed class DecisionCycleRowConfiguration : IEntityTypeConfiguration<D
         builder.Property(row => row.Symbol).HasMaxLength(DecisionCycleRow.SymbolMaxLength);
         builder.Property(row => row.InputSnapshot).HasColumnType("jsonb");
         builder.Property(row => row.LossLimits).HasColumnType("jsonb");
+        builder.Property(row => row.Budget).HasColumnType("jsonb");
         builder.HasIndex(row => new { row.AgentId, row.CandleClose }).IsUnique().HasDatabaseName(DecisionCycleRow.CandleIndex);
         builder.HasIndex(row => new { row.UserId, row.AgentId, row.StartedAt });
 
