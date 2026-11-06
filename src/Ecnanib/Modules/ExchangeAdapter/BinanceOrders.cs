@@ -33,6 +33,21 @@ internal static class BinanceOrders
         _ => throw new ArgumentOutOfRangeException(nameof(timeInForce)),
     };
 
+    public static string MarginType(FuturesMarginType marginType) => marginType switch
+    {
+        FuturesMarginType.Isolated => "ISOLATED",
+        FuturesMarginType.Crossed => "CROSSED",
+        _ => throw new ArgumentOutOfRangeException(nameof(marginType)),
+    };
+
+    /// <summary>Binance's name for a margin type, or null for one this version doesn't know.</summary>
+    public static FuturesMarginType? MarginType(string marginType) => marginType.ToUpperInvariant() switch
+    {
+        "ISOLATED" => FuturesMarginType.Isolated,
+        "CROSSED" or "CROSS" => FuturesMarginType.Crossed,
+        _ => null,
+    };
+
     /// <summary>Plain digits, never an exponent.</summary>
     public static string Number(decimal value) => value.ToString(CultureInfo.InvariantCulture);
 

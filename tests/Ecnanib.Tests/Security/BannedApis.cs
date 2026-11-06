@@ -50,6 +50,10 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     private const string CouncilAsked =
         "asks the AI council, which spends the user's money, and only the decision cycle may, inside the agent's budget (FR-CYC-07)";
 
+    private const string AccountChanged =
+        "changes a Futures symbol's margin type and leverage on a user's account, which only order execution may do, before "
+        + "an entry that passed the Risk Engine (FR-RISK-09, AC-01)";
+
     private static readonly string[] NoExceptions = [];
     private static readonly string[] Adapters = ["Modules.ExchangeAdapter.", "Modules.AiAdapters."];
     private static readonly string[] Email = ["Platform.Email."];
@@ -81,6 +85,9 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     /// <summary>AiCouncil, which implements it, and the decision cycle, which asks each role.</summary>
     private static readonly string[] CouncilAskers = ["Modules.AiCouncil.", "Modules.DecisionCycle."];
 
+    /// <summary>Execution, which implements it and sends entries, and the decision cycle, which approvals (#38) belong to.</summary>
+    private static readonly string[] EntrySenders = ["Modules.Execution.", "Modules.DecisionCycle."];
+
     private static readonly (string Reference, string Risk, string[] AllowedIn)[] Rules =
     [
         ("Microsoft.AspNetCore.Components.MarkupString", Xss, NoExceptions),
@@ -104,6 +111,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         (".Modules.Agents.Contracts.IActiveAgents::", EveryAgent, AgentListers),
         (".Modules.DecisionCycle.Contracts.IDecisionCycles::", CycleStarted, CycleStarters),
         (".Modules.AiCouncil.Contracts.ICouncil::", CouncilAsked, CouncilAskers),
+        (".Modules.Execution.Contracts.IFuturesSetup::", AccountChanged, EntrySenders),
     ];
 
     private readonly string _prefix = rootNamespace + ".";

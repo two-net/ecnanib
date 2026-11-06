@@ -493,7 +493,7 @@ internal sealed class Agents(
         var result = await ActivateAsync(userId, id, reason, cancellationToken);
 
         if (result is { Outcome: ActivationOutcome.Refused, Agent: { } agent, Problems: { } problems }
-            && problems.Any(problem => problem.Kind != ActivationProblemKind.SymbolUnverifiable))
+            && problems.Any(problem => problem.Kind is not (ActivationProblemKind.SymbolUnverifiable or ActivationProblemKind.FuturesAccountUnverifiable)))
         {
             await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
             await context.Set<Agent>()

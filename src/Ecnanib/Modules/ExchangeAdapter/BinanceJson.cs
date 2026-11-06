@@ -262,3 +262,63 @@ internal sealed class AlgoOrderBody
 
     public long? CreateTime { get; init; }
 }
+
+/// <summary>A Futures account's settings, from GET /fapi/v1/accountConfig.</summary>
+internal sealed class FuturesAccountConfigBody
+{
+    public bool CanTrade { get; init; }
+
+    public bool DualSidePosition { get; init; }
+
+    public bool MultiAssetsMargin { get; init; }
+}
+
+/// <summary>One symbol's settings, from GET /fapi/v1/symbolConfig.</summary>
+internal sealed class FuturesSymbolConfigBody
+{
+    public string Symbol { get; init; } = "";
+
+    /// <summary>ISOLATED or CROSSED.</summary>
+    public string MarginType { get; init; } = "";
+
+    public int Leverage { get; init; }
+}
+
+/// <summary>One symbol's brackets, from GET /fapi/v1/leverageBracket.</summary>
+internal sealed class LeverageBracketsBody
+{
+    public string Symbol { get; init; } = "";
+
+    public List<LeverageBracketBody> Brackets { get; init; } = [];
+}
+
+internal sealed class LeverageBracketBody
+{
+    public int Bracket { get; init; }
+
+    public int InitialLeverage { get; init; }
+
+    public decimal NotionalCap { get; init; }
+
+    public decimal NotionalFloor { get; init; }
+
+    public decimal MaintMarginRatio { get; init; }
+
+    public decimal Cum { get; init; }
+}
+
+/// <summary>A symbol whose funding Binance adjusted, from GET /fapi/v1/fundingInfo.</summary>
+internal sealed class FundingInfoBody
+{
+    public string Symbol { get; init; } = "";
+
+    public int FundingIntervalHours { get; init; }
+}
+
+/// <summary>The answer to POST /fapi/v1/leverage.</summary>
+internal sealed class LeverageBody
+{
+    public string Symbol { get; init; } = "";
+
+    public int Leverage { get; init; }
+}

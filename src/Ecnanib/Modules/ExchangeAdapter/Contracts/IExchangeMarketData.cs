@@ -13,6 +13,9 @@ public interface IExchangeMarketData
     /// <summary>The most candles one call returns.</summary>
     const int MaximumCandles = 1000;
 
+    /// <summary>The funding interval of a Futures symbol Binance hasn't adjusted.</summary>
+    const int DefaultFundingIntervalHours = 8;
+
     /// <summary>
     /// The market's symbols and their filters (EXT-BIN-06). Held in memory and refreshed once it's older
     /// than Binance:ExchangeInfoRefreshHours. When a refresh fails, the last copy is returned.
@@ -58,6 +61,14 @@ public interface IExchangeMarketData
     /// <exception cref="ArgumentException">A symbol Binance wouldn't accept.</exception>
     /// <exception cref="ExchangeException">The call failed. An unknown symbol is <see cref="ExchangeFailure.Rejected"/> with -1121.</exception>
     Task<ExchangePremiumIndex> GetPremiumIndexAsync(TradingEnvironment environment, string symbol, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The Futures symbols whose funding interval Binance adjusted, with the interval in hours, from
+    /// <c>GET /fapi/v1/fundingInfo</c>. Binance lists only those, so any other symbol's is
+    /// <see cref="DefaultFundingIntervalHours"/>. It's one list for every symbol, so ask once and share it.
+    /// </summary>
+    /// <exception cref="ExchangeException">The call failed.</exception>
+    Task<IReadOnlyDictionary<string, int>> GetFundingIntervalsAsync(TradingEnvironment environment, CancellationToken cancellationToken);
 }
 
 /// <summary>A candle length Binance serves, and Ecnanib uses: each agent timeframe, and 1W for a 1D agent's higher timeframe.</summary>

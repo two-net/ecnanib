@@ -58,6 +58,30 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     /// <summary>One symbol's positions, with their liquidation prices.</summary>
     public static readonly BinanceEndpoint FuturesPositionRisk = new(HttpMethod.Get, "/fapi/v3/positionRisk", 5, Signed: true);
 
+    /// <summary>The account's position mode, Multi-Assets mode and whether it may trade (EXT-BIN-07).</summary>
+    public static readonly BinanceEndpoint FuturesAccountConfig = new(HttpMethod.Get, "/fapi/v1/accountConfig", 5, Signed: true);
+
+    /// <summary>A symbol's margin type and leverage on the account (FR-RISK-09).</summary>
+    public static readonly BinanceEndpoint FuturesSymbolConfig = new(HttpMethod.Get, "/fapi/v1/symbolConfig", 5, Signed: true);
+
+    /// <summary>A symbol's notional and leverage brackets, which can differ per account.</summary>
+    public static readonly BinanceEndpoint FuturesLeverageBracket = new(HttpMethod.Get, "/fapi/v1/leverageBracket", 1, Signed: true);
+
+    /// <summary>
+    /// The symbols whose funding interval, cap or floor Binance adjusted. Binance gives it weight 0, under a
+    /// limit of its own of 500 per 5 minutes shared with the funding history, so reserving 1 is an overestimate.
+    /// </summary>
+    public static readonly BinanceEndpoint FuturesFundingInfo = new(HttpMethod.Get, "/fapi/v1/fundingInfo", 1, Signed: false);
+
+    /// <summary>
+    /// Changes a symbol's margin type. It places no order and is safe to send again, so it isn't a trade:
+    /// it keeps the caller's token and the read timeout.
+    /// </summary>
+    public static readonly BinanceEndpoint FuturesMarginType = new(HttpMethod.Post, "/fapi/v1/marginType", 1, Signed: true);
+
+    /// <summary>Changes a symbol's leverage. Like the margin type, it isn't a trade.</summary>
+    public static readonly BinanceEndpoint FuturesLeverage = new(HttpMethod.Post, "/fapi/v1/leverage", 1, Signed: true);
+
     private static readonly BinanceEndpoint[] FuturesKlinesByWeight =
     [
         new(HttpMethod.Get, "/fapi/v1/klines", 1, Signed: false),

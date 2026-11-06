@@ -294,7 +294,7 @@ internal sealed class DecisionCycles(
         try
         {
             var account = await accounts.ReadAsync(
-                request.UserId, credentialId, agentSettings.Market, symbol.BaseAsset, symbol.QuoteAsset, cancellationToken);
+                request.UserId, credentialId, agentSettings.Market, symbol.Symbol, symbol.BaseAsset, symbol.QuoteAsset, cancellationToken);
 
             return new Collected(symbol, snapshot, account, null);
         }

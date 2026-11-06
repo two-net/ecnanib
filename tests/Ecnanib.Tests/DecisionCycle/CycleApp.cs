@@ -63,6 +63,8 @@ internal sealed class CycleApp : IAsyncDisposable
         Agents.Binance.On(HttpMethod.Get, "/fapi/v1/ticker/bookTicker", _ => FakeBinance.Json(BinanceSamples.FuturesBookTicker));
         Agents.Binance.On(HttpMethod.Get, "/fapi/v1/ticker/price", _ => FakeBinance.Json(BinanceSamples.FuturesPrice));
         Agents.Binance.On(HttpMethod.Get, "/fapi/v1/premiumIndex", _ => FakeBinance.Json(BinanceSamples.PremiumIndex()));
+        Agents.Binance.On(HttpMethod.Get, "/fapi/v1/fundingInfo", _ => FakeBinance.Json(BinanceSamples.FundingInfo));
+        Agents.Binance.On(HttpMethod.Get, "/fapi/v1/leverageBracket", _ => FakeBinance.Json(BinanceSamples.LeverageBrackets()));
         Agents.Ai.On(HttpMethod.Post, "/v1/complete", Answer);
     }
 

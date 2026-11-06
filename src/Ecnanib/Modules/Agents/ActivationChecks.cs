@@ -8,11 +8,17 @@ namespace Ecnanib.Modules.Agents;
 
 /// <summary>
 /// FR-AGT-05's checks for a Demo agent, apart from the pair's slot (FR-AGT-10), which needs the caller's
-/// lock. They read the user's credentials, the catalog and Binance's symbols, so they run before the caller
-/// opens a transaction: a symbol lookup can call Binance, and a transaction is never held across an
-/// exchange call. Switching to Live, with its own checks, is #39.
+/// lock, and EXT-BIN-07's for a Futures agent. They read the user's credentials, the catalog, Binance's
+/// symbols and the Futures account, so they run before the caller opens a transaction: a symbol lookup or an
+/// account read can call Binance, and a transaction is never held across an exchange call. Switching to Live,
+/// with its own checks, is #39.
 /// </summary>
-internal sealed class ActivationChecks(ICredentials credentials, RoleModels roleModels, IExchangeSymbols symbols, RiskCaps caps)
+internal sealed class ActivationChecks(
+    ICredentials credentials,
+    RoleModels roleModels,
+    IExchangeSymbols symbols,
+    IAgentExposure exposure,
+    RiskCaps caps)
 {
     /// <summary>Everything that stops the agent being activated, and what's worth a warning.</summary>
     public async Task<(List<ActivationProblem> Problems, List<ActivationWarning> Warnings)> CheckAsync(
@@ -28,6 +34,8 @@ internal sealed class ActivationChecks(ICredentials credentials, RoleModels role
 
         var keys = await credentials.ListAsync(userId, cancellationToken);
 
+        var keyUsable = false;
+
         if (settings.ExchangeCredentialId is not { } exchangeId)
         {
             problems.Add(new ActivationProblem(ActivationProblemKind.NoExchangeKey));
@@ -36,10 +44,22 @@ internal sealed class ActivationChecks(ICredentials credentials, RoleModels role
         {
             problems.Add(new ActivationProblem(problem));
         }
-
-        if (await SymbolProblemAsync(settings.Market, settings.Environment, settings.Symbol, cancellationToken) is { } symbolProblem)
+        else
         {
-            problems.Add(new ActivationProblem(symbolProblem));
+            keyUsable = true;
+        }
+
+        var (symbol, symbolProblem) = await FindSymbolAsync(settings.Market, settings.Environment, settings.Symbol, cancellationToken);
+
+        if (symbolProblem is not null)
+        {
+            problems.Add(new ActivationProblem(symbolProblem.Value));
+        }
+
+        // EXT-BIN-07 asks Binance about the account, which is only worth it once the key and the pair are good.
+        if (settings.Market == Market.Futures && keyUsable && symbolProblem is null && symbol is not null)
+        {
+            problems.AddRange(await FuturesProblemsAsync(userId, settings, symbol, cancellationToken));
         }
 
         await CheckRolesAsync(userId, settings, keys, problems, warnings, cancellationToken);
@@ -74,14 +94,9 @@ internal sealed class ActivationChecks(ICredentials credentials, RoleModels role
         (market == Market.Spot ? key.SpotEnabled : key.FuturesEnabled) == true;
 
     /// <summary>
-    /// What's wrong with the pair, or null when Binance lists it as trading, and as a perpetual contract on
-    /// Futures. <paramref name="symbol"/> is the cleaned pair.
+    /// Binance's record of the pair, and what's wrong with it, which is null when Binance lists it as trading, and
+    /// as a perpetual contract on Futures. <paramref name="symbol"/> is the cleaned pair.
     /// </summary>
-    public async Task<ActivationProblemKind?> SymbolProblemAsync(
-        Market market, TradingEnvironment environment, string symbol, CancellationToken cancellationToken) =>
-        (await FindSymbolAsync(market, environment, symbol, cancellationToken)).Problem;
-
-    /// <summary>Binance's record of the pair, or what's wrong with it.</summary>
     public async Task<(ExchangeSymbolInfo? Symbol, ActivationProblemKind? Problem)> FindSymbolAsync(
         Market market, TradingEnvironment environment, string symbol, CancellationToken cancellationToken)
     {
@@ -104,6 +119,70 @@ internal sealed class ActivationChecks(ICredentials credentials, RoleModels role
             _ => (info, null),
         };
     }
+
+    /// <summary>
+    /// EXT-BIN-07's prerequisites, now, from the account behind the agent's key: Futures enabled, One-way Mode, and
+    /// margin enough for the smallest position Binance accepts for the pair, which is its minimum notional over the
+    /// agent's leverage after the caps. More capital than the account has is FR-AGT-13's warning, not a problem.
+    /// Multi-Assets Mode is refused too, because it allows cross margin only, and FR-RISK-09 sets isolated before
+    /// every entry.
+    /// </summary>
+    private async Task<List<ActivationProblem>> FuturesProblemsAsync(
+        Guid userId, AgentSettings settings, ExchangeSymbolInfo symbol, CancellationToken cancellationToken)
+    {
+        var read = await exposure.ReadFuturesAccountAsync(userId, settings.ExchangeCredentialId!.Value, symbol.QuoteAsset, cancellationToken);
+
+        if (read.State is not { } account)
+        {
+            return
+            [
+                new ActivationProblem(read.Failure == FuturesAccountFailure.KeyRefused
+                    ? ActivationProblemKind.MarketNotEnabled
+                    : ActivationProblemKind.FuturesAccountUnverifiable),
+            ];
+        }
+
+        if (!account.CanTrade)
+        {
+            return [new ActivationProblem(ActivationProblemKind.MarketNotEnabled)];
+        }
+
+        var problems = new List<ActivationProblem>();
+
+        if (account.HedgeMode)
+        {
+            problems.Add(new ActivationProblem(ActivationProblemKind.FuturesHedgeMode));
+        }
+
+        if (account.MultiAssetsMode)
+        {
+            problems.Add(new ActivationProblem(ActivationProblemKind.FuturesMultiAssetsMode));
+        }
+
+        var required = RequiredMargin(symbol, caps.Apply(settings.Risk).MaxLeverage);
+
+        // Without a minimum notional, any margin at all opens something.
+        if (required > 0m ? account.AvailableMargin < required : account.AvailableMargin <= 0m)
+        {
+            problems.Add(new ActivationProblem(
+                ActivationProblemKind.FuturesMarginInsufficient,
+                Asset: symbol.QuoteAsset,
+                Required: required,
+                Available: account.AvailableMargin));
+        }
+
+        return problems;
+    }
+
+    /// <summary>
+    /// The margin the smallest position Binance accepts for the pair needs: its minimum notional over the leverage,
+    /// rounded up to Binance's 8 decimal places, so the amount the user reads is enough. Zero when Binance sets no
+    /// minimum.
+    /// </summary>
+    public static decimal RequiredMargin(ExchangeSymbolInfo symbol, int leverage) =>
+        symbol.Notional is { Minimum: > 0m } notional
+            ? decimal.Round(notional.Minimum / Math.Max(leverage, 1), 8, MidpointRounding.ToPositiveInfinity)
+            : 0m;
 
     /// <summary>
     /// Each required role needs a model that's Active in the catalog, that one of the user's valid AI keys can

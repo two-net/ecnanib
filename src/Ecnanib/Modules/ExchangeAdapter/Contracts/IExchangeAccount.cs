@@ -58,7 +58,73 @@ public interface IExchangeAccount
         string symbol,
         RequestPriority priority,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The Futures account's settings that EXT-BIN-07 and FR-RISK-09 depend on, from
+    /// <c>GET /fapi/v1/accountConfig</c>: whether it may trade, its position mode and its Multi-Assets mode.
+    /// </summary>
+    /// <exception cref="ArgumentException">An Ed25519 secret that isn't a PKCS#8 PEM private key. Nothing was sent.</exception>
+    /// <exception cref="ExchangeException">The call failed. An invalid key, or one Futures isn't enabled for, is <see cref="ExchangeFailure.Rejected"/>.</exception>
+    Task<FuturesAccountConfig> GetFuturesAccountConfigAsync(ExchangeKey key, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// One symbol's margin type and leverage on the key's Futures account, from <c>GET /fapi/v1/symbolConfig</c>.
+    /// Null when Binance lists nothing for it.
+    /// </summary>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept, or an Ed25519 secret that isn't a PKCS#8 PEM private key. Nothing was sent.</exception>
+    /// <exception cref="ExchangeException">The call failed.</exception>
+    Task<FuturesSymbolConfig?> GetFuturesSymbolConfigAsync(ExchangeKey key, string symbol, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// One symbol's notional and leverage brackets for the key's account, lowest first, from
+    /// <c>GET /fapi/v1/leverageBracket</c>. Binance can adjust them per account, which is why it's signed. Empty
+    /// when Binance lists none for the symbol.
+    /// </summary>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept, or an Ed25519 secret that isn't a PKCS#8 PEM private key. Nothing was sent.</exception>
+    /// <exception cref="ExchangeException">The call failed.</exception>
+    Task<IReadOnlyList<ExchangeLeverageBracket>> GetLeverageBracketsAsync(ExchangeKey key, string symbol, CancellationToken cancellationToken);
 }
+
+/// <summary>A Futures account's settings, from <c>GET /fapi/v1/accountConfig</c>.</summary>
+/// <param name="CanTrade">Whether Binance lets the account trade Futures.</param>
+/// <param name="HedgeMode">
+/// True in Hedge Mode, where a symbol can hold a long and a short at once. Ecnanib needs One-way Mode
+/// (FR-RISK-09). Binance calls it <c>dualSidePosition</c>.
+/// </param>
+/// <param name="MultiAssetsMode">
+/// True in Multi-Assets Mode, where Binance allows cross margin only, so a symbol can't be set to isolated
+/// (Binance's -4168).
+/// </param>
+public sealed record FuturesAccountConfig(bool CanTrade, bool HedgeMode, bool MultiAssetsMode);
+
+/// <summary>How a Futures symbol's position is margined.</summary>
+public enum FuturesMarginType
+{
+    /// <summary>The position's margin is its own, so a liquidation loses only that. The only type Ecnanib sets (FR-RISK-02).</summary>
+    Isolated,
+
+    /// <summary>The position shares the account's margin.</summary>
+    Crossed,
+}
+
+/// <summary>A symbol's settings on a Futures account, from <c>GET /fapi/v1/symbolConfig</c>.</summary>
+/// <param name="MarginType">Null when it's a type this version doesn't know.</param>
+public sealed record FuturesSymbolConfig(string Symbol, FuturesMarginType? MarginType, int Leverage);
+
+/// <summary>One of a symbol's leverage brackets on a Futures account, from <c>GET /fapi/v1/leverageBracket</c>.</summary>
+/// <param name="Bracket">Binance's number for it, from 1.</param>
+/// <param name="InitialLeverage">The highest leverage a position in this bracket may use.</param>
+/// <param name="NotionalFloor">The bracket applies from this position notional.</param>
+/// <param name="NotionalCap">Up to this one.</param>
+/// <param name="MaintenanceMarginRate">As a fraction, such as 0.004. Binance's <c>maintMarginRatio</c>.</param>
+/// <param name="MaintenanceAmount">Binance's <c>cum</c>, which the liquidation price needs.</param>
+public sealed record ExchangeLeverageBracket(
+    int Bracket,
+    int InitialLeverage,
+    decimal NotionalFloor,
+    decimal NotionalCap,
+    decimal MaintenanceMarginRate,
+    decimal MaintenanceAmount);
 
 /// <summary>An open Futures position, as Binance last reported it. Prices and profit are in the margin asset.</summary>
 /// <param name="Side">BOTH in one-way mode, or LONG or SHORT in hedge mode.</param>

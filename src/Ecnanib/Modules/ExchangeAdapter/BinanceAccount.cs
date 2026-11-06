@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.ExchangeAdapter.Contracts;
 
@@ -141,6 +142,95 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
                     position.MarginAsset,
                     position.UpdateTime is > 0 and var updated ? DateTimeOffset.FromUnixTimeMilliseconds(updated) : null)),
         ];
+    }
+
+    public async Task<FuturesAccountConfig> GetFuturesAccountConfigAsync(ExchangeKey key, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        var body = await transport.SendAsync<FuturesAccountConfigBody>(
+            ExchangeServers.Trading(Market.Futures, key.Environment),
+            BinanceEndpoint.FuturesAccountConfig,
+            [],
+            key,
+            RequestPriority.Normal,
+            clientOrderId: null,
+            cancellationToken);
+
+        return new FuturesAccountConfig(body.CanTrade, body.DualSidePosition, body.MultiAssetsMargin);
+    }
+
+    public async Task<FuturesSymbolConfig?> GetFuturesSymbolConfigAsync(ExchangeKey key, string symbol, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceMarketData.CheckSymbol(symbol);
+
+        var configs = await transport.SendAsync<List<FuturesSymbolConfigBody>>(
+            ExchangeServers.Trading(Market.Futures, key.Environment),
+            BinanceEndpoint.FuturesSymbolConfig,
+            [("symbol", symbol)],
+            key,
+            RequestPriority.Normal,
+            clientOrderId: null,
+            cancellationToken);
+
+        return configs.FirstOrDefault(config => config.Symbol == symbol) is { } found
+            ? new FuturesSymbolConfig(found.Symbol, BinanceOrders.MarginType(found.MarginType), found.Leverage)
+            : null;
+    }
+
+    public async Task<IReadOnlyList<ExchangeLeverageBracket>> GetLeverageBracketsAsync(
+        ExchangeKey key, string symbol, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceMarketData.CheckSymbol(symbol);
+
+        var server = ExchangeServers.Trading(Market.Futures, key.Environment);
+        var endpoint = BinanceEndpoint.FuturesLeverageBracket;
+        var body = await transport.SendAsync(server, endpoint, [("symbol", symbol)], key, RequestPriority.Normal, clientOrderId: null, cancellationToken);
+
+        try
+        {
+            return ReadBrackets(body, symbol);
+        }
+        catch (Exception exception) when (exception is JsonException or FormatException or InvalidOperationException)
+        {
+            throw BinanceMarketData.Unreadable(server, endpoint, exception);
+        }
+    }
+
+    /// <summary>
+    /// Binance documents the answer as either an array of symbols or one symbol on its own, without saying which
+    /// comes when one symbol is asked for, so both are read.
+    /// </summary>
+    private static List<ExchangeLeverageBracket> ReadBrackets(byte[] body, string symbol)
+    {
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+
+        var entry = root.ValueKind switch
+        {
+            JsonValueKind.Array => root.EnumerateArray()
+                .Select(element => element.Deserialize<LeverageBracketsBody>(BinanceJson.Options))
+                .FirstOrDefault(found => found?.Symbol == symbol),
+            JsonValueKind.Object => root.Deserialize<LeverageBracketsBody>(BinanceJson.Options) is { } single && single.Symbol == symbol ? single : null,
+            _ => throw new FormatException("Leverage brackets are neither an array nor an object."),
+        };
+
+        return entry is null
+            ? []
+            :
+            [
+                .. entry.Brackets
+                    .OrderBy(bracket => bracket.NotionalFloor)
+                    .Select(bracket => new ExchangeLeverageBracket(
+                        bracket.Bracket,
+                        bracket.InitialLeverage,
+                        bracket.NotionalFloor,
+                        bracket.NotionalCap,
+                        bracket.MaintMarginRatio,
+                        bracket.Cum)),
+            ];
     }
 
     internal static void Check(OrderReference order)

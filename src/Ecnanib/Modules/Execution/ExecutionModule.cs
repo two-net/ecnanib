@@ -13,6 +13,7 @@ public static class ExecutionModule
         services.AddSingleton<IExchangeBanObserver, ExchangeBanNotifier>();
         services.AddSingleton<IAgentExposure, AgentExposure>();
         services.AddSingleton<IAgentAccounts, AgentAccounts>();
+        services.AddSingleton<IFuturesSetup, FuturesSetup>();
 
         return services;
     }

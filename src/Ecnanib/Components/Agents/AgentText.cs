@@ -213,6 +213,11 @@ public static class AgentText
             ? string.Format(CultureInfo.CurrentCulture, Strings.AgentProblemLossLimitPause, (time ?? DisplayTime.Utc).Format(until))
             : Strings.AgentProblemLossLimitPauseOpen,
         ActivationProblemKind.SlotTaken => string.Format(CultureInfo.CurrentCulture, Strings.AgentProblemSlotTaken, problem.OtherAgent),
+        ActivationProblemKind.FuturesAccountUnverifiable => Strings.AgentProblemFuturesAccountUnverifiable,
+        ActivationProblemKind.FuturesHedgeMode => Strings.AgentProblemFuturesHedgeMode,
+        ActivationProblemKind.FuturesMultiAssetsMode => Strings.AgentProblemFuturesMultiAssetsMode,
+        ActivationProblemKind.FuturesMarginInsufficient => string.Format(
+            CultureInfo.CurrentCulture, Strings.AgentProblemFuturesMarginInsufficient, problem.Required, problem.Available, problem.Asset),
         _ => throw new ArgumentOutOfRangeException(nameof(problem), problem.Kind, "Give the problem its text in Strings.resx."),
     };
 
