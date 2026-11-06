@@ -65,6 +65,14 @@ public interface IAgents
     Task<bool> PauseForLossLimitAsync(Guid userId, Guid id, LossLimitBreach breach, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Puts an Active agent in Error, by the system, because its decision cycles kept failing to reach a decision,
+    /// and tells its user, in one transaction (FR-AGT-04, FR-NTF-01). Its positions and protective orders stay on
+    /// the exchange. The user activates it again once they've fixed what was wrong. The decision cycle calls it.
+    /// </summary>
+    /// <returns>False when the agent isn't Active, so nothing was done.</returns>
+    Task<bool> EnterErrorAsync(Guid userId, Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Ends an Active, Paused or Error agent's decision cycles, and leaves its positions and orders as they
     /// are. Closing them as it stops comes with the kill switch (FR-AGT-07, #37).
     /// </summary>

@@ -263,10 +263,13 @@ Users create agents on the **Agents** page. Each trades one pair on Binance Spot
 | `Agents:MaxCycleJitterSeconds` | The most a cycle waits at random before it queues, to spread exchange requests, 0 to 20. Defaults to `10` |
 | `Agents:CatchUpGraceMinutes:{15m,1H,4H,1D}` | How late a missed cycle may still run after Ecnanib was down, less than the timeframe. `0` turns catch-up off. Defaults to `5`, `15`, `60` and `180` |
 | `Agents:CycleDeadlineMinutes:{15m,1H,4H,1D}` | How long after its candle closes a cycle may still open or add to a position, 1 to less than the timeframe. Defaults to `3`, `10`, `20` and `30` |
+| `Agents:CycleErrorsBeforePause` | How many cycles in a row may end without a decision before the agent goes to Error, 0 to 100. `0` never does. Defaults to `3` |
 
 An invalid value stops startup with a message that names it. See [Agents](docs/architecture.md#agents).
 
 An active agent runs a decision cycle each time a candle of its timeframe closes, in UTC: every 15 minutes, every hour, every four hours from midnight, or at midnight. A cycle that's still queued at its deadline is dropped, because it couldn't open a position any more. If Ecnanib was down at a close, it runs that close's cycles once when it starts, if it's within the grace, and only the latest close. See [Scheduler](docs/architecture.md#scheduler).
+
+In a cycle, the Technical Analyst and Sentiment Analyst assess the market, the Strategist proposes an action, the Risk Critic challenges a trade, and the Risk Engine sizes it or blocks it. Each role answers on one of the user's own AI keys, with its fallback model when its model fails. A cycle whose required role fails holds, and an agent whose cycles keep ending without a decision goes to Error, and its owner is notified. Every cycle's trace keeps each role's prompt and answer, the Risk Engine's rules and the tokens and cost, for its user only. Placing orders comes later. See [Decision cycle](docs/architecture.md#decision-cycle).
 
 #### Roles
 

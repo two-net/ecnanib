@@ -41,6 +41,18 @@ public static class OutputContracts
     }
 
     /// <summary>
+    /// <paramref name="output"/> as JSON in its contract's names, which <see cref="Check"/> reads back as the same
+    /// output. It's how a validated output is stored in the trace and given to the next roles, rather than the raw
+    /// answer, which may hold what the check cleared.
+    /// </summary>
+    public static string Write(RoleOutput output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+
+        return ContractReader.Write(output);
+    }
+
+    /// <summary>
     /// Sends <paramref name="request"/> with its role's schema, and checks the answer. An answer that breaks the
     /// contract is sent back once, as two more turns after the composed message: the answer, then the violations
     /// (FR-CYC-05). A second violation means the role failed (FR-ROLE-06), and so does a retry that fails at the

@@ -1494,6 +1494,9 @@
   <data name="ActivityActionAgentPaused" xml:space="preserve">
     <value>Paused an agent</value>
   </data>
+  <data name="ActivityActionAgentErrored" xml:space="preserve">
+    <value>Put an agent in Error</value>
+  </data>
   <data name="ActivityActionAgentStopped" xml:space="preserve">
     <value>Stopped an agent</value>
   </data>
@@ -1801,6 +1804,9 @@
   <data name="AgentReasonLossLimitEnded" xml:space="preserve">
     <value>Loss limit pause ended</value>
   </data>
+  <data name="AgentReasonRepeatedCycleErrors" xml:space="preserve">
+    <value>Cycles kept failing</value>
+  </data>
   <data name="AgentExplanationCredentialDeleted" xml:space="preserve">
     <value>Paused because its Binance key was deleted. Choose another key in its settings, then resume it.</value>
   </data>
@@ -1827,6 +1833,9 @@
   </data>
   <data name="AgentExplanationLossLimitEnded" xml:space="preserve">
     <value>Resumed on its own when its loss limit pause ended.</value>
+  </data>
+  <data name="AgentExplanationRepeatedCycleErrors" xml:space="preserve">
+    <value>Stopped running decision cycles because several in a row failed to reach a decision. Check its AI keys, models and pair, then activate it again. Its open positions keep their stops.</value>
   </data>
   <data name="AgentLossLimitUntil" xml:space="preserve">
     <value>Resumes on its own at {0}.</value>

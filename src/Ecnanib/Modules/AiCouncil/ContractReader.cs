@@ -40,6 +40,18 @@ internal static class ContractReader
         },
     };
 
+    /// <summary>
+    /// The output in its contract's names, as <see cref="Read"/> takes it, so writing then reading gives the same
+    /// output. Without the role, which isn't in any contract.
+    /// </summary>
+    public static string Write(RoleOutput output)
+    {
+        var node = JsonSerializer.SerializeToNode(output, output.GetType(), Options)!.AsObject();
+        node.Remove(JsonNamingPolicy.SnakeCaseLower.ConvertName(nameof(RoleOutput.Role)));
+
+        return node.ToJsonString();
+    }
+
     public static ContractCheck Read(AiRole role, string answer, ContractContext context, bool truncated)
     {
         var violations = new Violations();

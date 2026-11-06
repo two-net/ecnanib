@@ -35,6 +35,7 @@ public static class AgentText
         AgentStatusReason.WeeklyLossLimit => Strings.AgentReasonWeeklyLossLimit,
         AgentStatusReason.ConsecutiveLosses => Strings.AgentReasonConsecutiveLosses,
         AgentStatusReason.LossLimitEnded => Strings.AgentReasonLossLimitEnded,
+        AgentStatusReason.RepeatedCycleErrors => Strings.AgentReasonRepeatedCycleErrors,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Give the reason its text in Strings.resx."),
     };
 
@@ -51,6 +52,7 @@ public static class AgentText
         AgentStatusReason.WeeklyLossLimit => Strings.AgentExplanationWeeklyLossLimit,
         AgentStatusReason.ConsecutiveLosses => Strings.AgentExplanationConsecutiveLosses,
         AgentStatusReason.LossLimitEnded => Strings.AgentExplanationLossLimitEnded,
+        AgentStatusReason.RepeatedCycleErrors => Strings.AgentExplanationRepeatedCycleErrors,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Give the reason its explanation in Strings.resx."),
     };
 

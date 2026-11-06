@@ -81,6 +81,12 @@ public enum AuditAction
     /// <summary>The agent stopped running cycles, and left its positions and orders as they were.</summary>
     AgentStopped,
 
+    /// <summary>
+    /// The system put the agent in Error, because its decision cycles kept failing to reach a decision. Its
+    /// positions and protective orders stay on the exchange.
+    /// </summary>
+    AgentErrored,
+
     /// <summary>The agent was archived, which is how agents are removed by default (DATA-R-04).</summary>
     AgentArchived,
 

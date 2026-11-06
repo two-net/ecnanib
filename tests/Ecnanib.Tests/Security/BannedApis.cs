@@ -47,6 +47,9 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         "starts a decision cycle, which only the scheduler may do, so that each goes through its limit, its queue and "
         + "one cycle per agent (FR-CYC-08)";
 
+    private const string CouncilAsked =
+        "asks the AI council, which spends the user's money, and only the decision cycle may, inside the agent's budget (FR-CYC-07)";
+
     private static readonly string[] NoExceptions = [];
     private static readonly string[] Adapters = ["Modules.ExchangeAdapter.", "Modules.AiAdapters."];
     private static readonly string[] Email = ["Platform.Email."];
@@ -75,6 +78,9 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     /// <summary>DecisionCycle, which implements it, and the scheduler, which starts every cycle.</summary>
     private static readonly string[] CycleStarters = ["Modules.DecisionCycle.", "Modules.Scheduler."];
 
+    /// <summary>AiCouncil, which implements it, and the decision cycle, which asks each role.</summary>
+    private static readonly string[] CouncilAskers = ["Modules.AiCouncil.", "Modules.DecisionCycle."];
+
     private static readonly (string Reference, string Risk, string[] AllowedIn)[] Rules =
     [
         ("Microsoft.AspNetCore.Components.MarkupString", Xss, NoExceptions),
@@ -97,6 +103,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         (".Modules.RiskEngine.Contracts.SizedOrder::.ctor", Unchecked, RiskEngine),
         (".Modules.Agents.Contracts.IActiveAgents::", EveryAgent, AgentListers),
         (".Modules.DecisionCycle.Contracts.IDecisionCycles::", CycleStarted, CycleStarters),
+        (".Modules.AiCouncil.Contracts.ICouncil::", CouncilAsked, CouncilAskers),
     ];
 
     private readonly string _prefix = rootNamespace + ".";

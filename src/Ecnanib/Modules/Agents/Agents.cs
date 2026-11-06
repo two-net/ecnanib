@@ -24,8 +24,15 @@ internal sealed class Agents(
     RiskCaps caps,
     INotifications notifications,
     TimeProvider time,
+    IServiceProvider services,
     ILogger<Agents> logger) : IAgents
 {
+    /// <summary>
+    /// The modules that keep an agent's history. Resolved on first use, because they sit above Agents and use its
+    /// contracts, so a constructor parameter would make a cycle.
+    /// </summary>
+    private readonly Lazy<IReadOnlyList<IAgentHistory>> _history = new(() => [.. services.GetServices<IAgentHistory>()]);
+
     private static readonly AgentStatus[] Activatable = [AgentStatus.Draft, AgentStatus.Paused, AgentStatus.Stopped, AgentStatus.Error];
     private static readonly AgentStatus[] Pausable = [AgentStatus.Active];
     private static readonly AgentStatus[] Stoppable = [AgentStatus.Active, AgentStatus.Paused, AgentStatus.Error];
@@ -429,6 +436,53 @@ internal sealed class Agents(
         return true;
     }
 
+    public async Task<bool> EnterErrorAsync(Guid userId, Guid id, CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow();
+        const AgentStatusReason reason = AgentStatusReason.RepeatedCycleErrors;
+
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        await AgentLock.TakeAsync(context, userId, cancellationToken);
+
+        var agent = await context.Set<Agent>().AsNoTracking().SingleOrDefaultAsync(row => row.Id == id && row.UserId == userId, cancellationToken);
+
+        if (agent is not { Status: AgentStatus.Active })
+        {
+            return false;
+        }
+
+        // Conditional on what was read, as pauses are, so a user's change at the same moment wins or loses whole.
+        var updated = await context.Set<Agent>()
+            .Where(row => row.Id == id && row.UserId == userId && row.Version == agent.Version && row.Status == AgentStatus.Active)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(row => row.Status, AgentStatus.Error)
+                    .SetProperty(row => row.StatusReason, reason)
+                    .SetProperty(row => row.StatusChangedAt, now)
+                    .SetProperty(row => row.Version, row => row.Version + 1),
+                cancellationToken);
+
+        if (updated == 0)
+        {
+            return false;
+        }
+
+        audit.Add(
+            context,
+            AgentAudit.BySystem(AuditAction.AgentErrored, userId, id, AgentAudit.StatusChange(AgentStatus.Active, AgentStatus.Error, reason)));
+        notifications.Add(
+            context,
+            new Notice(NotificationType.AgentPausedErrors, userId, $"/agents/{id}/settings", agent.Name, agent.Environment == TradingEnvironment.Demo));
+
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        logger.LogWarning("Put agent {AgentId} of user {UserId} in Error, because its decision cycles kept failing", id, userId);
+
+        return true;
+    }
+
     /// <summary>
     /// Resumes an agent whose daily or weekly loss limit's pause has ended (FR-RISK-08), by the system. When the
     /// activation checks fail, it stays paused for its user to resume, and is left alone from then on, unless all
@@ -487,7 +541,12 @@ internal sealed class Agents(
             return new TransitionResult(TransitionOutcome.NotAllowed, agent.ToRecord());
         }
 
-        // The roles go with it, through their foreign key.
+        // Its history first, in this transaction, so nothing is left behind. The roles go with it, through their foreign key.
+        foreach (var history in _history.Value)
+        {
+            await history.DeleteAsync(context, userId, id, cancellationToken);
+        }
+
         await context.Set<Agent>().Where(row => row.Id == id && row.UserId == userId).ExecuteDeleteAsync(cancellationToken);
 
         audit.Add(

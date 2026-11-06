@@ -41,6 +41,7 @@ public static class ActivityText
         AuditAction.AgentActivated => Strings.ActivityActionAgentActivated,
         AuditAction.AgentPaused => Strings.ActivityActionAgentPaused,
         AuditAction.AgentStopped => Strings.ActivityActionAgentStopped,
+        AuditAction.AgentErrored => Strings.ActivityActionAgentErrored,
         AuditAction.AgentArchived => Strings.ActivityActionAgentArchived,
         AuditAction.AgentDeleted => Strings.ActivityActionAgentDeleted,
         AuditAction.CatalogModelEdited => Strings.ActivityActionCatalogModelEdited,

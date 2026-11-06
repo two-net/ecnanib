@@ -79,6 +79,9 @@ public enum AgentStatusReason
 
     /// <summary>Active again because a loss limit's pause ended (FR-RISK-08).</summary>
     LossLimitEnded,
+
+    /// <summary>In Error, because its decision cycles failed to reach a decision too many times in a row.</summary>
+    RepeatedCycleErrors,
 }
 
 /// <summary>The field names in an agent's audit summary (FR-AUD-02), which the Web UI gives text to.</summary>

@@ -10,6 +10,7 @@ public static class AiCouncilModule
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IPrompts, Prompts>();
+        services.AddSingleton<ICouncil, Council>();
         services.AddSingleton<IReferenceDataSeeder, PromptTemplateSeeder>();
         return services;
     }
