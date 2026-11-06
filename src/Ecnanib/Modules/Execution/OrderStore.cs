@@ -77,6 +77,27 @@ internal sealed class OrderStore(IDbContextFactory<EcnanibDbContext> contextFact
 
     public Task SaveAsync(OrderRow order, Notice? notice = null) => SaveAsync([order], [], notice);
 
+    /// <summary>
+    /// Saves changed protections and inserts new ones in one transaction, with a notification about them (FR-NTF-01), so
+    /// a protection that's split or ended never leaves its parts half recorded. It has its own time limit, like
+    /// <see cref="SaveAsync(IEnumerable{OrderRow}, IEnumerable{ProtectionRow}, Notice?)"/>.
+    /// </summary>
+    public async Task ReplaceAsync(IEnumerable<ProtectionRow> changed, IEnumerable<ProtectionRow> added, Notice? notice = null)
+    {
+        using var limit = new CancellationTokenSource(WriteLimit);
+        await using var context = await contextFactory.CreateDbContextAsync(limit.Token);
+
+        context.UpdateRange(changed);
+        context.AddRange(added);
+
+        if (notice is not null)
+        {
+            notifications.Add(context, notice);
+        }
+
+        await context.SaveChangesAsync(limit.Token).WaitAsync(limit.Token);
+    }
+
     public Task SaveAsync(ProtectionRow protection, Notice? notice = null) => SaveAsync([], [protection], notice);
 
     /// <summary>
@@ -168,6 +189,32 @@ internal sealed class OrderStore(IDbContextFactory<EcnanibDbContext> contextFact
 
         var fromProtections = context.Set<ProtectionRow>()
             .Where(row => UnsettledProtections.Contains(row.Status))
+            .Select(row => new { row.UserId, row.AgentId });
+
+        var agents = await fromOrders.Union(fromProtections).Distinct().ToListAsync(cancellationToken);
+
+        return [.. agents.Select(agent => new AgentKey(agent.UserId, agent.AgentId))];
+    }
+
+    /// <summary>
+    /// Every agent with an open position or order in Execution's records, whatever its status: what
+    /// <see cref="HasOpenPositionsOrOrdersAsync"/> answers for one agent, for all of them. Reconciliation goes through
+    /// these (FR-EXE-06, FR-EXE-08, FR-AGT-06). It isn't scoped to a user, because the sweep looks after everyone's.
+    /// </summary>
+    public async Task<IReadOnlyList<AgentKey>> ListAgentsToReconcileAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        // Written out, so the statuses are constants that the partial indexes ix_orders_live, ix_orders_unresolved_entries
+        // and ix_protections_held match.
+        var fromOrders = context.Set<OrderRow>()
+            .Where(row => row.Status == OrderStatus.Sending || row.Status == OrderStatus.Unknown || row.Status == OrderStatus.Open
+                || row.Status == OrderStatus.PartiallyFilled || row.Status == OrderStatus.Triggered
+                || (row.Leg == OrderLeg.Entry && !row.Resolved))
+            .Select(row => new { row.UserId, row.AgentId });
+
+        var fromProtections = context.Set<ProtectionRow>()
+            .Where(row => row.Status == ProtectionStatus.Pending || row.Status == ProtectionStatus.Resting || row.Status == ProtectionStatus.Closing)
             .Select(row => new { row.UserId, row.AgentId });
 
         var agents = await fromOrders.Union(fromProtections).Distinct().ToListAsync(cancellationToken);

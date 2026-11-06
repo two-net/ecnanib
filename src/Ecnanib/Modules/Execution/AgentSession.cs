@@ -38,6 +38,14 @@ internal sealed class AgentSession(
 
     public bool Futures => Market == Market.Futures;
 
+    private readonly HashSet<NotificationType> _raised = [];
+
+    /// <summary>
+    /// Whether a notice of this type is the session's first. A pass raises at most one <c>TradeClosed</c> and one
+    /// <c>StopMoved</c>, however many parts of the position it touched.
+    /// </summary>
+    public bool FirstNotice(NotificationType type) => _raised.Add(type);
+
     /// <summary>After Binance rejected an order on a filter (FR-RISK-04).</summary>
     public async Task RefreshSymbolAsync(IExchangeSymbols symbols, CancellationToken cancellationToken)
     {

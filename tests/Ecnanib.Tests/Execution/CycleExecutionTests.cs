@@ -30,6 +30,12 @@ public sealed class CycleExecutionTests(PostgresFixture postgres)
          "invalidation":"A close below 60115.","rationale":"Momentum above the 20 EMA.","confidence":0.6}
         """;
 
+    private const string Sell = """
+        {"action":"SELL","side":null,"entry_type":null,"entry_price":null,"stop_price":null,"target_prices":[],
+         "risk_percent":null,"limit_ttl_candles":null,"close_fraction":null,"invalidation":null,
+         "rationale":"Momentum has faded.","confidence":0.6}
+        """;
+
     private static CancellationToken Cancellation => CycleApp.Cancellation;
 
     [Fact]
@@ -111,6 +117,33 @@ public sealed class CycleExecutionTests(PostgresFixture postgres)
         Assert.Equal(["MARKET", "STOP_MARKET", "TAKE_PROFIT_MARKET"], book.Placed.Select(sent => sent.Type));
         Assert.Single(app.Agents.Binance.To("/fapi/v1/symbolConfig"));
         Assert.Equal(0L, await ScalarAsync(app, Ac01));
+    }
+
+    [Fact]
+    public async Task The_next_cycle_shows_the_position_to_the_Strategist_and_Risk_Critic_and_executes_their_exit()
+    {
+        await using var app = new CycleApp(postgres);
+        var book = new FakeOrderBook(app.Agents.Binance, app.Clock) { Price = CycleApp.Ask };
+        var (user, agent) = await app.ActiveAgentAsync((_, settings) => settings with { ExecutionMode = ExecutionMode.Autonomous });
+        await app.RunAsync(user, agent);
+
+        app.Clock.Advance(TimeSpan.FromHours(1));
+        app.Replies[AiRole.Strategist] = _ => CycleApp.Reply(Sell);
+        await app.RunAsync(user, agent);
+
+        Assert.Equal(["Executed", "Executed"], await app.CyclesAsync(agent.Id));
+        Assert.Equal(
+            ["Protected", "Exited"],
+            await ColumnAsync(app, $"SELECT execution ->> 'status' FROM decision_cycles WHERE agent_id = '{agent.Id}' ORDER BY candle_close"));
+        var strategist = await app.CallColumnAsync(agent.Id, AiRole.Strategist, "message");
+        Assert.Contains("<position>\nnone\n</position>", strategist[0], StringComparison.Ordinal);
+        Assert.Contains("<position side=\"Long\">", strategist[1], StringComparison.Ordinal);
+        Assert.Contains("stop: 60118\n", strategist[1], StringComparison.Ordinal);
+        Assert.Contains("targets: 60135\n", strategist[1], StringComparison.Ordinal);
+        Assert.Contains("<position side=\"Long\">", (await app.CallColumnAsync(agent.Id, AiRole.RiskCritic, "message"))[^1], StringComparison.Ordinal);
+        Assert.Single(book.SentTo(FakeOrderBook.SpotOrder), sent => sent.Side == "SELL");
+        Assert.Equal(0L, await ScalarAsync(app, Ac01));
+        Assert.Equal(1L, await ScalarAsync(app, $"SELECT count(*) FROM orders WHERE agent_id = '{agent.Id}' AND leg = 'Exit' AND origin = 'Council'"));
     }
 
     private static Task<List<string>> ColumnAsync(CycleApp app, string sql) => Sql.ColumnAsync(app.ConnectionString, sql, Cancellation);

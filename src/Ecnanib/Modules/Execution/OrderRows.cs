@@ -27,14 +27,18 @@ internal sealed class OrderRow
     public required Guid AgentId { get; init; }
 
     /// <summary>
-    /// The cycle whose passing evaluation the order cites (AC-01). A stop, target or close cites its entry's cycle,
-    /// and a <see cref="OrderOrigin.System"/> close carries its own evaluation too.
+    /// The cycle whose passing evaluation the order cites (AC-01). A stop, target or close cites its protection's
+    /// <see cref="ProtectionRow.CycleId"/>: its entry's, or the add, exit or adjustment that changed it. A
+    /// <see cref="OrderOrigin.System"/> close carries its own evaluation too.
     /// </summary>
     public required Guid CycleId { get; init; }
 
     public required OrderOrigin Origin { get; init; }
 
-    /// <summary>The candle close of <see cref="CycleId"/>, which client order IDs are derived from (FR-EXE-04).</summary>
+    /// <summary>
+    /// The candle close its client order ID is derived from (FR-EXE-04): its cycle's, or for a stop or target, its
+    /// protection's <see cref="ProtectionRow.IdCandleClose"/>.
+    /// </summary>
     public required DateTimeOffset CandleClose { get; init; }
 
     /// <summary>A System order's own passing evaluation, as JSON, which the AC-01 audit query reads.</summary>
@@ -165,8 +169,52 @@ internal sealed class ProtectionRow
     /// <summary>Binance refused the target, so only a stop protects it (FR-EXE-03).</summary>
     public bool TargetDropped { get; set; }
 
-    /// <summary>The attempts at a stop so far, which client order IDs include.</summary>
+    /// <summary>The attempts at a stop so far under <see cref="IdCandleClose"/>, which client order IDs include.</summary>
     public int Attempts { get; set; }
+
+    /// <summary>
+    /// The stop its part should have, which its stop legs are brought in line with. One stop guards the whole
+    /// position: an add or an adjustment moves it, never wider (FR-RISK-06).
+    /// </summary>
+    public required decimal StopPrice { get; set; }
+
+    /// <summary>Its take-profit, or null for none (FR-EXE-03). <see cref="TargetDropped"/> says Binance refused it.</summary>
+    public decimal? TargetPrice { get; set; }
+
+    /// <summary>What its part cost, per unit of the base asset: its entry's average price.</summary>
+    public required decimal EntryPrice { get; init; }
+
+    /// <summary>When its part filled. The position opened at the earliest of its parts.</summary>
+    public required DateTimeOffset OpenedAt { get; init; }
+
+    /// <summary>
+    /// The cycle whose passing evaluation its stops, targets and closes cite (AC-01): its entry's, or that of the
+    /// add, exit or adjustment that last changed it.
+    /// </summary>
+    public required Guid CycleId { get; set; }
+
+    /// <summary>
+    /// The candle close its legs' client order IDs are derived from (FR-EXE-04): its entry's, or that of the exit or
+    /// adjustment that last rebased it. See <see cref="ClientOrderIds"/>.
+    /// </summary>
+    public required DateTimeOffset IdCandleClose { get; set; }
+
+    /// <summary>The index its legs' client order IDs carry: its sequence, or its place among a rebasing cycle's.</summary>
+    public required int IdIndex { get; set; }
+
+    /// <summary>A stop of it has rested on Binance, so the next one to rest replaces it rather than opening a trade.</summary>
+    public bool Rested { get; set; }
+
+    /// <summary>When reconciliation found its stop cancelled outside Ecnanib while its part was still held.</summary>
+    public DateTimeOffset? StopLostAt { get; set; }
+
+    /// <summary>Why it's <see cref="ProtectionStatus.Closing"/>.</summary>
+    public ProtectionClosing? ClosingFor { get; set; }
+
+    /// <summary>How it ended, once it's <see cref="ProtectionStatus.Closed"/> or <see cref="ProtectionStatus.Ended"/>.</summary>
+    public ProtectionEnd? EndReason { get; set; }
+
+    public DateTimeOffset? EndedAt { get; set; }
 
     public required DateTimeOffset CreatedAt { get; init; }
 
@@ -192,6 +240,9 @@ internal enum OrderLeg
 
     /// <summary>The close at market when a stop couldn't be placed (FR-EXE-02).</summary>
     EmergencyClose,
+
+    /// <summary>The close at market of an exit the council proposed and the Risk Engine sized (SELL or CLOSE).</summary>
+    Exit,
 }
 
 /// <summary>Stored by name, so a value is never renamed.</summary>
@@ -262,10 +313,48 @@ internal enum ProtectionStatus
     Abandoned,
 
     /// <summary>
-    /// What it protected is gone: its stop or target executed, or the position was found closed and its orders were
-    /// cancelled. Reconciliation (#35) records how.
+    /// What it protected is gone: its stop or target executed, it was closed outside Ecnanib, it was left to the
+    /// user, or it was split into smaller protections. <see cref="ProtectionRow.EndReason"/> says which.
     /// </summary>
     Ended,
+}
+
+/// <summary>Why a protection is being closed at market. Stored by name, so a value is never renamed.</summary>
+internal enum ProtectionClosing
+{
+    /// <summary>Its stop couldn't be placed in time, so it's closed under an evaluation of Ecnanib's own (FR-EXE-02).</summary>
+    Unprotected,
+
+    /// <summary>An exit the council proposed, under that cycle's evaluation.</summary>
+    Exit,
+}
+
+/// <summary>How a protection ended. Stored by name, so a value is never renamed.</summary>
+internal enum ProtectionEnd
+{
+    /// <summary>Its stop executed on Binance.</summary>
+    StopFilled,
+
+    /// <summary>Its take-profit executed on Binance.</summary>
+    TargetFilled,
+
+    /// <summary>An exit closed it at market.</summary>
+    Exited,
+
+    /// <summary>Its stop couldn't be placed, so it was closed at market (FR-EXE-02).</summary>
+    Unprotected,
+
+    /// <summary>What it held was closed outside Ecnanib, such as by the user on Binance (FR-EXE-06).</summary>
+    ClosedOutside,
+
+    /// <summary>
+    /// Its stop was cancelled outside Ecnanib after the agent was stopped, which leaves what it holds as it is
+    /// (FR-AGT-07), so the user now manages it.
+    /// </summary>
+    LeftToUser,
+
+    /// <summary>Replaced by smaller protections, which together hold what it did.</summary>
+    Split,
 }
 
 internal sealed class OrderRowConfiguration : IEntityTypeConfiguration<OrderRow>
@@ -293,10 +382,10 @@ internal sealed class OrderRowConfiguration : IEntityTypeConfiguration<OrderRow>
         builder.HasIndex(row => row.EntryId);
         builder.HasIndex(row => row.AgentId).HasDatabaseName("ix_orders_unresolved_entries").HasFilter("leg = 'Entry' AND NOT resolved");
 
-        // What the sweep looks for: orders whose outcome or fill isn't settled yet.
+        // What the sweeps look for: orders whose outcome or fill isn't settled yet, or that may still rest.
         builder.HasIndex(row => row.Status)
             .HasDatabaseName("ix_orders_live")
-            .HasFilter("status IN ('Sending', 'Unknown', 'Open', 'PartiallyFilled')");
+            .HasFilter("status IN ('Sending', 'Unknown', 'Open', 'PartiallyFilled', 'Triggered')");
     }
 }
 
@@ -307,11 +396,18 @@ internal sealed class ProtectionRowConfiguration : IEntityTypeConfiguration<Prot
         builder.ToTable("protections");
         builder.HasKey(row => row.Id);
         builder.Property(row => row.Status).HasConversion<string>().HasMaxLength(OrderRow.EnumMaxLength);
+        builder.Property(row => row.ClosingFor).HasConversion<string>().HasMaxLength(OrderRow.EnumMaxLength);
+        builder.Property(row => row.EndReason).HasConversion<string>().HasMaxLength(OrderRow.EnumMaxLength);
         builder.HasIndex(row => new { row.EntryId, row.Sequence }).IsUnique();
         builder.HasIndex(row => new { row.UserId, row.AgentId, row.Status });
 
         builder.HasIndex(row => row.Status)
             .HasDatabaseName("ix_protections_unsettled")
             .HasFilter("status IN ('Pending', 'Closing')");
+
+        // What reconciliation's sweep looks for: parts of a position that may still be held.
+        builder.HasIndex(row => row.AgentId)
+            .HasDatabaseName("ix_protections_held")
+            .HasFilter("status IN ('Pending', 'Resting', 'Closing')");
     }
 }

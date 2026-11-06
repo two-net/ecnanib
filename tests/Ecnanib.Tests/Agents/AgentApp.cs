@@ -38,7 +38,8 @@ internal sealed class AgentApp : IAsyncDisposable
         FakeExposure? exposure = null,
         Action<IServiceCollection>? services = null,
         string? connectionString = null,
-        IReadOnlyCollection<string>? manualJobs = null)
+        IReadOnlyCollection<string>? manualJobs = null,
+        Action<AgentApp>? beforeStart = null)
     {
         Binance = new FakeBinance(Clock);
         App = AccountApp.Create(
@@ -66,6 +67,9 @@ internal sealed class AgentApp : IAsyncDisposable
         Binance.On(HttpMethod.Get, "/api/v3/exchangeInfo", _ => FakeBinance.Json(BinanceSamples.SpotExchangeInfo()));
         Binance.On(HttpMethod.Get, "/fapi/v1/exchangeInfo", _ => FakeBinance.Json(BinanceSamples.FuturesExchangeInfo));
         BinanceAccepts();
+
+        // Hosted services start with the application, so what they find on Binance is set up first.
+        beforeStart?.Invoke(this);
         App.Start();
     }
 

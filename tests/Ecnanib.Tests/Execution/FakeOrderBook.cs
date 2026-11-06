@@ -24,6 +24,9 @@ internal sealed class FakeOrderBook
     public const string FuturesAlgo = "/fapi/v1/algoOrder";
     public const string FuturesPosition = "/fapi/v3/positionRisk";
     public const string FuturesTrades = "/fapi/v1/userTrades";
+    public const string SpotOpenOrders = "/api/v3/openOrders";
+    public const string FuturesOpenOrders = "/fapi/v1/openOrders";
+    public const string FuturesOpenAlgoOrders = "/fapi/v1/openAlgoOrders";
 
     private readonly ConcurrentDictionary<string, Order> _orders = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, OrderList> _lists = new(StringComparer.Ordinal);
@@ -44,6 +47,7 @@ internal sealed class FakeOrderBook
         binance.On(HttpMethod.Delete, SpotListQuery, request => CancelList(request, request.Parameter("listClientOrderId")!));
         binance.On(HttpMethod.Get, SpotTrades, request => Trades(request, futures: false));
         binance.On(HttpMethod.Get, SpotAccount, request => Account(request));
+        binance.On(HttpMethod.Get, SpotOpenOrders, request => Open(request, order => !order.Futures));
 
         binance.On(HttpMethod.Post, FuturesOrder, request => Place(request, futures: true, algo: false));
         binance.On(HttpMethod.Get, FuturesOrder, request => Read(request, request.Parameter("origClientOrderId")!, futures: true));
@@ -53,6 +57,8 @@ internal sealed class FakeOrderBook
         binance.On(HttpMethod.Delete, FuturesAlgo, request => Cancel(request, request.Parameter("clientAlgoId")!, futures: true));
         binance.On(HttpMethod.Get, FuturesPosition, Position);
         binance.On(HttpMethod.Get, FuturesTrades, request => Trades(request, futures: true));
+        binance.On(HttpMethod.Get, FuturesOpenOrders, request => Open(request, order => order.Futures && !order.Algo));
+        binance.On(HttpMethod.Get, FuturesOpenAlgoOrders, request => Open(request, order => order.Algo));
 
         // The Futures symbol is ready at the default leverage, so FR-RISK-09's setup changes nothing.
         binance.On(HttpMethod.Get, "/fapi/v1/symbolConfig", _ => FakeBinance.Json(BinanceSamples.SymbolConfig("ISOLATED", leverage: 2)));
@@ -71,6 +77,9 @@ internal sealed class FakeOrderBook
 
     /// <summary>A Futures position the agent didn't open, such as the user's own.</summary>
     public decimal FuturesPositionOwned { get; set; }
+
+    /// <summary>What Binance reports as the Futures position's liquidation price: 0 when nothing would liquidate it.</summary>
+    public decimal LiquidationPrice { get; set; }
 
     /// <summary>Every order, list and close sent, in order, with Binance's answer, whether it failed or not.</summary>
     public IReadOnlyList<Sent> Placed => [.. _sent];
@@ -102,6 +111,39 @@ internal sealed class FakeOrderBook
         };
         Fill(clientOrderId, price: Price);
     }
+
+    /// <summary>A Futures conditional order as Binance holds it, such as one placed before a restart, filled or not.</summary>
+    public void SeedAlgo(string clientOrderId, string side, string type, decimal quantity, decimal stopPrice, bool finished)
+    {
+        _orders[clientOrderId] = new Order(clientOrderId, Interlocked.Increment(ref _ids), true, true, side, type, quantity)
+        {
+            StopPrice = stopPrice,
+            Status = "NEW",
+            UpdatedAt = _clock.GetUtcNow(),
+        };
+
+        if (finished)
+        {
+            Trigger(clientOrderId);
+        }
+    }
+
+    /// <summary>The user cancels an order on Binance, or a whole OCO list through one of its orders.</summary>
+    public void CancelOutside(string clientOrderId)
+    {
+        var order = _orders[clientOrderId];
+        IEnumerable<string> ids = order.ListId is { } listId ? _lists[listId].Orders : [clientOrderId];
+
+        foreach (var id in ids)
+        {
+            _orders[id].Status = "CANCELED";
+            _orders[id].UpdatedAt = _clock.GetUtcNow();
+        }
+    }
+
+    /// <summary>The user trades on Binance at market, outside Ecnanib, such as to close the agent's position.</summary>
+    public void TradeOutside(bool futures, string side, decimal quantity) =>
+        Seed($"user-{Interlocked.Increment(ref _ids)}", futures, side, quantity);
 
     /// <summary>What was sent to one endpoint, in order.</summary>
     public IReadOnlyList<Sent> SentTo(string path) => [.. _sent.Where(sent => sent.Path == path)];
@@ -378,8 +420,20 @@ internal sealed class FakeOrderBook
 
         return FakeBinance.Json($$"""
             [{"symbol":"BTCUSDT","positionSide":"BOTH","positionAmt":"{{N(FuturesAmount)}}","entryPrice":"{{N(Price)}}","breakEvenPrice":"{{N(Price)}}",
-              "markPrice":"{{N(Price)}}","unRealizedProfit":"0","liquidationPrice":"0","marginAsset":"USDT","updateTime":{{_clock.GetUtcNow().ToUnixTimeMilliseconds()}}}]
+              "markPrice":"{{N(Price)}}","unRealizedProfit":"0","liquidationPrice":"{{N(LiquidationPrice)}}","marginAsset":"USDT","updateTime":{{_clock.GetUtcNow().ToUnixTimeMilliseconds()}}}]
             """);
+    }
+
+    private HttpResponseMessage Open(RecordedRequest request, Func<Order, bool> market)
+    {
+        if (Next(request) is { Respond: { } respond })
+        {
+            return respond();
+        }
+
+        var open = _orders.Values.Where(market).Where(order => order.Status is "NEW" or "PARTIALLY_FILLED").OrderBy(order => order.Id);
+
+        return FakeBinance.Json($"[{string.Join(",", open.Select(Json))}]");
     }
 
     private Fault? Next(RecordedRequest request)

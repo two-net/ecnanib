@@ -55,6 +55,21 @@ public interface IExchangeAccount
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Every order that rests in one symbol, the user's own included: <c>GET /api/v3/openOrders</c> on Spot (weight
+    /// 6), which lists an OCO list's members as ordinary orders, and on Futures <c>GET /fapi/v1/openOrders</c> and
+    /// <c>GET /fapi/v1/openAlgoOrders</c> (1 each), whose conditional orders come back with their client algo IDs as
+    /// client order IDs. Reconciliation reads this once, then queries only the orders that have left it.
+    /// </summary>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept. Nothing was sent.</exception>
+    /// <exception cref="ExchangeException">The call failed, which says nothing about any order.</exception>
+    Task<IReadOnlyList<ExchangeOrder>> GetOpenOrdersAsync(
+        Market market,
+        ExchangeKey key,
+        string symbol,
+        RequestPriority priority,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// A Spot order list by its client order ID, or null when Binance says it doesn't exist and it can't appear later,
     /// with the same rules as <see cref="GetOrderAsync"/>. Binance gives each order's ID, but not its state.
     /// </summary>

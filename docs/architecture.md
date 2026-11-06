@@ -535,7 +535,7 @@ ASP.NET Data Protection protects the session cookie, antiforgery tokens and a ci
 | Contract | What | Who uses it |
 |---|---|---|
 | `IExchangeMarketData` | Public data, with no keys: exchange information, candles, prices, the top of the book, Futures funding and the funding intervals Binance adjusted | Market Data, Credentials, Execution |
-| `IExchangeAccount` | Signed reads: the account, a Live key's restrictions, an order or a Spot order list by its client order ID, an order's trades, a symbol's Futures positions, the Futures account's settings, a symbol's margin type and leverage, and its leverage brackets | Credentials, Execution |
+| `IExchangeAccount` | Signed reads: the account, a Live key's restrictions, an order or a Spot order list by its client order ID, a symbol's open orders, an order's trades, a symbol's Futures positions, the Futures account's settings, a symbol's margin type and leverage, and its leverage brackets | Credentials, Execution |
 | `IExchangeTrading` | Placing and cancelling orders and Spot OCO lists, and setting a Futures symbol's margin type and leverage | **Execution only** (AC-01). The map lets four units use the adapter, so `BannedApis` enforces this |
 | `IExchangeUsage` | Each server's weight, limits, backoff, ban and clock offset | Administration, for the health page (#49) |
 | `IExchangeBanObserver` | A port the adapter calls when Binance bans this server's address | Execution implements it |
@@ -616,6 +616,20 @@ A Spot entry with a target is protected by a one-cancels-the-other list (FR-EXE-
 
 `GetOrderTradesAsync` reads one order's fills, `GET /api/v3/myTrades?orderId=` on Spot and `/fapi/v1/userTrades?orderId=` on Futures, each weight 5. Spot takes a buy's commission from the base asset bought unless BNB pays it, so what a Spot position holds is the executed quantity less that, which is what its stop sells (FR-AGT-09). The trade journal (#36) reads the same for its fills.
 
+### Open orders
+
+`GetOpenOrdersAsync` reads what rests in one symbol, the user's own orders included, for [reconciliation](#reconciliation):
+
+| Market | Endpoints | Weight with a symbol | Without |
+|---|---|---|---|
+| Spot | `GET /api/v3/openOrders` | 6 | 80 |
+| Futures | `GET /fapi/v1/openOrders` and `GET /fapi/v1/openAlgoOrders`, together | 1 + 1 | 40 + 40 |
+
+- **The symbol is always sent**, which keeps the weight low. The Spot weights come from Binance's Spot pages, and the Futures ones from its USDⓈ-M OpenAPI schema.
+- **A Spot OCO list's members are ordinary open orders**, with their `orderListId`, so one read covers stops, targets and lists. A target's `LIMIT_MAKER` reads as `Limit`.
+- **Futures conditional orders come back by their `clientAlgoId`**, as the client order ID, with their algo status, as `GetOrderAsync` reads them. Both reads end before either's failure is seen, and either failing fails the call, so nothing is taken as gone because one list couldn't be read.
+- **An order that has left the list is read on its own**, by its client order ID, for how it ended.
+
 ### Futures account settings
 
 EXT-BIN-07 and FR-RISK-09 need the Futures account's settings, and change a symbol's. The weights and codes come from Binance's USDⓈ-M pages:
@@ -648,7 +662,7 @@ EXT-BIN-07 and FR-RISK-09 need the Futures account's settings, and change a symb
 - **Candles** come from `klines`, filtered by open time with both ends included. Binance's documentation doesn't say that, but a read-only call to it showed it, and the adapter drops anything outside the range anyway. A call returns at most 1000. Spot charges 2 whatever the limit. Futures charges by the limit: 1 below 100, 2 below 500, 5 up to 1000. The adapter reserves the matching weight.
 - **Quotes:** Spot reads the price and the top of the book from one `ticker/24hr`, which costs 2. Futures has no such ticker, so it reads `ticker/bookTicker` (2) and `ticker/price` (1), and its funding from `premiumIndex` (1).
 - **Positions:** `GetPositionAsync` reads `positionRisk` v3 for one symbol, not the whole account (NFR-PERF-05), signed, with an estimated weight of 5. Binance sends a liquidation price of 0 when nothing would liquidate the position, which becomes null. It also lists a symbol that has only open orders, with an amount of 0, which is left out.
-- **The Futures ticker and position pages couldn't be read** when this was written. Their weights are estimates, and the position's fields come from Binance's published examples. Check both against Futures Demo before #35 relies on them.
+- **`positionRisk` v3's weight, 5, and its fields come from Binance's USDⓈ-M OpenAPI schema**, read for #35. The Futures ticker's page couldn't be read, so its weights are still estimates. Neither is checked against Futures Demo yet.
 
 ### Logging
 
@@ -664,7 +678,7 @@ EXT-BIN-07 and FR-RISK-09 need the Futures account's settings, and change a symb
 
 ## Market data
 
-`Modules/MarketData` gives a decision cycle steps 3 and 4 of FR-CYC-02, and keeps Binance's symbols. It may use Platform and the exchange adapter, and nothing else. It holds no keys, so the liquidation price, which belongs to the account, comes from reconciliation (#35) through `IExchangeAccount.GetPositionAsync`.
+`Modules/MarketData` gives a decision cycle steps 3 and 4 of FR-CYC-02, and keeps Binance's symbols. It may use Platform and the exchange adapter, and nothing else. It holds no keys, so the liquidation price, which belongs to the account, comes from [reconciliation](#reconciliation), through `IExchangeAccount.GetPositionAsync`, as `AgentAccount.LiquidationPrice`.
 
 | Contract | What | Who uses it |
 |---|---|---|
@@ -1766,7 +1780,7 @@ The engine can't read them itself, so the decision cycle builds them (#31):
 | `Atr` | `snapshot.Candles.Indicators.Atr14` |
 | `Funding` | `snapshot.Futures.FundingRate`, with `FundingIntervalHours`, from `/fapi/v1/fundingInfo`, which is 8 hours for a symbol Binance hasn't adjusted |
 | `AvailableQuote`, `BaseHeld` | `IExchangeAccount.GetAccountAsync`: the quote asset's available balance on Spot, `AvailableBalance` on Futures, and the base asset's total on Spot |
-| `Position` | Reconciliation (#35), from Execution's records: the agent's own quantity and average entry, its stop and target. On Futures, Binance's `BreakEvenPrice` too |
+| `Position` | Execution's records, as [reconciliation](#reconciliation) left them: the quantity the agent's protections hold, their average entry weighted by quantity, the tightest stop and the nearest target. On Futures, Binance's `BreakEvenPrice` too, when Binance's position is the agent's own |
 | `HasPendingEntry` | Execution's records: an entry being sent, unknown, or resting unfilled or partly filled |
 | `Record` | The trade journal (#36), over `RiskPeriods` |
 | `Brackets` | `AgentAccount.Brackets`: the symbol's brackets on the agent's account, from `/fapi/v1/leverageBracket` through its key. Empty when Binance couldn't give them, which fails every Futures entry but no exit |
@@ -1851,7 +1865,7 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 | `IDecisionTraces` | An agent's latest cycle, for its user only (NFR-SEC-04) | The Web UI. The trace viewer (#42) extends it |
 | `IAiSpending`, `AiSpend`, `BudgetCheck` | Each agent's AI spend this UTC day and month, for its user only (NFR-SEC-04), and whether its budget has run out (FR-CYC-07). See [Budgets](#budgets) | The decision cycle, and the Web UI's agent list and settings page |
 | `ICouncil`, in `AiCouncil/Contracts` | Asks one role, with its fallback, and returns the answer or the failure, with every call it made | The decision cycle. It spends the user's money, so `BannedApis` allows it only in AiCouncil and DecisionCycle |
-| `IAgentAccounts`, in `Execution/Contracts` | The agent's balances, read through its key, the symbol's leverage brackets on Futures, which cost 1 more each cycle, and its pending entry from Execution's records. Its position is always none until reconciliation (#35) | The decision cycle |
+| `IAgentAccounts`, in `Execution/Contracts` | Reconciles the agent's orders with Binance (FR-EXE-06), then reads its balances through its key, the symbol's leverage brackets on Futures, which cost 1 more each cycle, and its position and pending entry from Execution's records. See [Reconciliation](#reconciliation) | The decision cycle |
 | `IOrderExecution`, in `Execution/Contracts` | Sends the sized order and protects what fills. See [Order execution](#order-execution) | The decision cycle, and approvals (#38), which `BannedApis` enforces |
 | `IAgents.EnterErrorAsync`, `IAgentHistory`, in `Agents/Contracts` | Error after repeated failures, and deleting the agent's cycles with it | The decision cycle, and `Agents.DeleteAsync` |
 
@@ -1863,7 +1877,7 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 | 1 | The agent already has a cycle for this candle, through the unique index on agent and candle close. Nothing more happens | — |
 | 2 | `IRiskEngine.CheckLossLimits`, whose rules are saved on the row. A breach pauses the agent through `IAgents.PauseForLossLimitAsync` (FR-RISK-08) | `PausedForLossLimit` |
 | 2 | The agent has an AI budget, and its spend this UTC day or month has reached a limit. The check is saved on the row, and no role is asked. See [Budgets](#budgets) (FR-CYC-07) | `OverBudget` |
-| 3 | The pair from `IExchangeSymbols`, the market from `IMarketData` at the candle's close, then the account from `IAgentAccounts`. Binance's `Throttled` is waited out once, when its `RetryAfter` fits before the deadline. A last candle that isn't `LastOpenTime` is a gap, as during maintenance | `Failed`, with `MarketData` or `Account` |
+| 3 | The pair from `IExchangeSymbols`, the market from `IMarketData` at the candle's close, then the account from `IAgentAccounts`, which reconciles the agent's orders first. Binance's `Throttled` is waited out once, when its `RetryAfter` fits before the deadline. A last candle that isn't `LastOpenTime` is a gap, as during maintenance | `Failed`, with `MarketData` or `Account` |
 | 4 | The Technical Analyst, and the Sentiment Analyst when it's assigned, at once | — |
 | 5 | The Technical Analyst failed | `Hold`, with `RoleFailed` |
 | 6 | The Strategist failed | `Hold`, with `RoleFailed` |
@@ -1873,14 +1887,15 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 | 8 | The proposal, with the Risk Critic's changes, becomes an `OrderIntent`, which `IRiskEngine.Evaluate` checks against `RiskInputs`. The evaluation is saved. A loss limit it finds pauses the agent | `BlockedByRiskEngine` when it fails |
 | 8 | It passed, but it's an entry and `CycleRequest.AllowsNewEntry` says the deadline has passed (FR-CYC-06) | `PastDeadline` |
 | 8 | It passed, and the agent is in Confirm mode | `ReadyToExecute`, for approval (#38) |
-| 9 | Autonomous: `IOrderExecution` sent it, and it took effect: placed, filled and protected, closed when its stop couldn't be placed, or an unfilled entry cancelled. Nothing is sent once shutdown has begun | `Executed` |
+| 9 | Autonomous: `IOrderExecution` sent it, and it took effect: placed, filled and protected, closed when its stop couldn't be placed, an exit sold, a stop or target moved, or an unfilled entry cancelled. Nothing is sent once shutdown has begun | `Executed` |
 | 9 | Nothing took effect: Binance rejected it or couldn't be reached, the key can't be used, the Futures account isn't ready, or the entry's outcome is still unknown | `ExecutionFailed`, with `Execution` |
-| 9 | Nothing was sent because the agent holds a position (until #35), or there was no unfilled entry to cancel | `ExecutionFailed` |
+| 9 | Nothing was sent because there was no unfilled entry to cancel, the agent no longer holds the position it would exit or adjust, or Binance's position in the pair isn't only the agent's | `ExecutionFailed` |
 | 9 | The deadline passed while the entry was checked | `PastDeadline` |
 
 - **An optional role that fails is skipped**, and the cycle goes on without its output (FR-ROLE-06). A required one makes the cycle hold. The Sentiment Analyst is the only optional role in a cycle: the Reviewer works after a trade closes (#45).
 - **The intent takes the nearest target**, the lowest for a long and the highest for a short, which gives the lowest reward-to-risk. The Risk Critic's stop, targets and risk replace the proposal's, and `OutputContracts` has already refused any change that adds risk. The engine trusts none of it anyway (NFR-SEC-08).
-- **`RiskInputs` follow the Risk Engine's [Inputs](#inputs)**, with what doesn't exist yet left out. The pending entry comes from Execution's records. The position comes from #35, and the record from #36. Until then there's no position, and the record is `TradingRecord.None`. The brackets come with the account, and the funding interval with the snapshot. When Binance can't give the brackets, the cycle goes on without them, and every Futures entry fails `LiquidationUnknown`, while an exit or a tighter stop doesn't need them.
+- **`RiskInputs` follow the Risk Engine's [Inputs](#inputs)**, with what doesn't exist yet left out. The position and the pending entry come from Execution's records, as reconciliation left them, and the record from #36. Until then the record is `TradingRecord.None`. The brackets come with the account, and the funding interval with the snapshot. When Binance can't give the brackets, the cycle goes on without them, and every Futures entry fails `LiquidationUnknown`, while an exit or a tighter stop doesn't need them.
+- **The Strategist and the Risk Critic see the position and the pending entry**, as `PromptPosition` and `PromptPendingEntry`. The position's unrealized P&L is s × (price − average entry) × quantity, to 8 places, at the mark price on Futures, and on Spot at the bid or ask it would close at. Its liquidation price is Binance's, on Futures, when Binance's position is the agent's own.
 - **AI calls get `JobContext.Stopping`**, because they're safe to abandon. Binance calls get the run's token (NFR-REL-04).
 - **An unexpected exception ends the cycle as `Failed`, with `Unexpected`**, and is thrown again, so its job run is Failed too. Shutdown during a cycle ends it as `Interrupted`, and that last write has its own five seconds.
 
@@ -1919,7 +1934,7 @@ An agent's AI budget (FR-AGT-02) is checked at the start of each cycle, after th
 - **Protective-only isn't a status.**
   - The agent stays Active and keeps running cycles, so each one checks again, and a new day, a new month or a higher limit ends it at the next close.
   - It isn't paused, so there's no audit record.
-  - Its positions and their exchange-resting stops stay as they are. Managing them is for [Execution](#order-execution) and reconciliation (#35), which don't ask the council.
+  - Its positions and their exchange-resting stops stay as they are. Managing them is for [Execution](#order-execution) and [reconciliation](#reconciliation), which don't ask the council.
 - **Its user is told once.**
   - `AgentPausedBudget` is raised when the agent's previous cycle since it became Active wasn't `OverBudget`. That's by candle close, not counting `Interrupted`.
   - It's added in `CycleRun.FinishAsync`'s transaction, so it commits with the outcome.
@@ -1964,27 +1979,29 @@ A cycle errored when it ended without a decision: `Failed`, or `Hold` because a 
 
 ## Order execution
 
-`Modules/Execution` sends what the Risk Engine sized, once (FR-EXE-04, FR-EXE-05), and protects every fill with a stop that rests on Binance, so a position stays protected whether or not Ecnanib is running (FR-EXE-02, NFR-REL-02). When the stop can't be placed in time, what filled is closed at market and the user is told. For now that's entries, their protection, a limit entry's time-to-live (FR-EXE-01) and CANCEL_PENDING. Exits and stop or target adjustments need the position, which reconciliation (#35) gives the Risk Engine, and the engine refuses them until then.
+`Modules/Execution` sends what the Risk Engine sized, once (FR-EXE-04, FR-EXE-05), and protects every fill with a stop that rests on Binance, so a position stays protected whether or not Ecnanib is running (FR-EXE-02, NFR-REL-02). When the stop can't be placed in time, what filled is closed at market and the user is told. That's entries and adds, their protection, a limit entry's time-to-live (FR-EXE-01), exits, stop and target adjustments, CANCEL_PENDING, and [reconciliation](#reconciliation) with Binance at every cycle, on an interval and at startup (FR-EXE-06, FR-EXE-08).
 
 | Contract | What | Who uses it |
 |---|---|---|
-| `IOrderExecution` | `ExecuteAsync(ExecutionRequest)`: sends an entry and returns once it's placed and anything filled is protected or closed, or cancels the agent's unfilled entry. Returns an `ExecutionResult` for the trace | The decision cycle for an Autonomous agent, and approvals (#38). `BannedApis` allows it only in DecisionCycle and Execution |
-| `IAgentAccounts` | The pending entry, from `orders` | The decision cycle |
-| `IAgentExposure` | Open positions and orders, from `orders` and `protections` alone, because Agents asks inside its lock (FR-AGT-03) | Agents |
+| `IOrderExecution` | `ExecuteAsync(ExecutionRequest)`: reconciles the agent's orders, then sends an entry, an exit or a stop or target adjustment, or cancels the agent's unfilled entry. It returns once what was sent has settled and anything filled is protected or closed. Returns an `ExecutionResult` for the trace | The decision cycle for an Autonomous agent, and approvals (#38). `BannedApis` allows it only in DecisionCycle and Execution |
+| `IAgentAccounts` | Reconciles, then reads the account. The position and the pending entry come from `orders` and `protections` | The decision cycle |
+| `IAgentExposure` | Open positions and orders, from `orders` and `protections` alone, which reconciliation keeps in line with Binance, because Agents asks inside its lock (FR-AGT-03) | Agents |
 | `IAgentHistory` | `OrderHistory` deletes an agent's orders and protections with it | Agents |
 
 ### Tables
 
 | Table | What |
 |---|---|
-| `orders` | SRS 6.1's Order: each order, list order and close, with the cycle whose evaluation it cites, its client order ID, Binance's ID, type, side, prices, quantity, status, what executed and at what average, `settles_at`, and timestamps. An entry also keeps its protective stop and target from its `SizedOrder`, its net quantity, and its expiry |
-| `protections` | One per part of an entry that filled: its quantity, its status (`Pending`, `Resting`, `Closing`, `Closed`, `Dust`, `Ended`, `Abandoned`), when its stop must rest by, its attempts, and whether its target was dropped |
+| `orders` | SRS 6.1's Order: each order, list order, close and exit, with the cycle whose evaluation it cites, its client order ID, Binance's ID, type, side, prices, quantity, status, what executed and at what average, `settles_at`, and timestamps. An entry also keeps its protective stop and target from its `SizedOrder`, its net quantity, and its expiry |
+| `protections` | One per part of an entry that filled: its quantity, its status (`Pending`, `Resting`, `Closing`, `Closed`, `Dust`, `Ended`, `Abandoned`), when its stop must rest by, its attempts, and whether its target was dropped. Also its stop and target, its cost and when it filled, the cycle its orders cite and the candle and index their client order IDs derive from, whether a stop of it has rested, when a stop was cancelled outside Ecnanib, why it's `Closing` (`Unprotected` or `Exit`), and how and when it ended (`StopFilled`, `TargetFilled`, `Exited`, `Unprotected`, `ClosedOutside`, `LeftToUser`, `Split`) |
 
 Neither has a foreign key to agents, users or cycles, which other modules own. Prices are in the quote asset and quantities in the base asset (DATA-R-02).
 
 ### Client order IDs
 
-`ClientOrderIds` derives each from the agent, the cycle and the leg (FR-EXE-04): `e`, the agent's ID in base64url, the cycle's candle close in Unix minutes in base 36, then one character each for the leg (`E` entry, `S` stop, `T` target, `L` OCO list, `X` close), the protection and the attempt. That's 32 characters, in the set both markets accept. An agent has one cycle per candle, so IDs are unique, and the unique index on `client_order_id` refuses a second entry for the same cycle before anything is sent. `AgentPrefix`, the first 23 characters, tells an agent's orders from the user's own (FR-AGT-09), which #35 and #37 filter Binance's lists by.
+`ClientOrderIds` derives each from the agent, the cycle and the leg (FR-EXE-04): `e`, the agent's ID in base64url, the cycle's candle close in Unix minutes in base 36, then one character each for the leg (`E` entry, `S` stop, `T` target, `L` OCO list, `X` close), the protection and the attempt. That's 32 characters, in the set both markets accept. An agent has one cycle per candle, so IDs are unique, and the unique index on `client_order_id` refuses a second entry for the same cycle before anything is sent. `AgentPrefix`, the first 23 characters, tells an agent's orders from the user's own (FR-AGT-09).
+
+A protection's orders take their IDs from **its own base**: a candle close and an index, which start as its entry's candle and its sequence. An exit or an adjustment **rebases** every part it touches onto its own cycle: the cycle's candle, the part's place among the cycle's, and attempts from 0. Such a cycle has no entry, so no other order shares those IDs, and a stop trailed every cycle never runs out of attempts. An add moves earlier parts' stops under their own bases, with their next attempt. A part split off outside a cycle takes its entry's candle and the next sequence of its entry, which no other part has.
 
 ### Sending once
 
@@ -2000,7 +2017,7 @@ Before an entry is sent, with the agent's lock held:
 
 1. The cycle's deadline, again (FR-CYC-06).
 2. Binance must take the stop the pair needs: `STOP_LOSS`, and `LIMIT_MAKER` for a target, on Spot; `STOP_MARKET` and `TAKE_PROFIT_MARKET` on Futures.
-3. **No position may be held, until #35.** The Risk Engine's `Position` is null until reconciliation, so it would size every entry as a new one, past the notional and capital caps. So the agent's resting stops and targets are read again, and a protection whose stop or target has ended is `Ended`. On Spot any protection still held refuses the entry. On Futures Binance's position for the pair decides, and when it's zero, orders left from an earlier position are cancelled, so a take-profit can't close a new one. A position the user holds in the pair refuses it too, because One-way Mode would net them.
+3. **The agent's orders are [reconciled](#reconciliation)**, with the Futures position read, so orders a gone position left are cancelled first, and a stop that executed since the cycle saw the position only makes the add smaller than it could be. If Binance couldn't confirm them, nothing is sent (`ExchangeUnavailable`). On Futures, when Binance's position in the pair isn't exactly the agent's own, such as one the user opened, nothing is sent (`ForeignPosition`), because One-way Mode would net them.
 4. Futures: `IFuturesSetup.PrepareEntryAsync` must be `Ready` (FR-RISK-09).
 
 The entry goes at normal priority. A filter rejection refreshes the pair's filters (FR-RISK-04). A market entry that Binance answers as not yet filled is read again on every pass, half a second apart, so its stop doesn't wait for a limit entry's interval. A limit entry expires at its cycle's candle close plus its time-to-live in candles of the agent's timeframe, which the Strategist proposes and `Agents:MaxLimitTtlCandles` caps.
@@ -2011,9 +2028,10 @@ The entry goes at normal priority. A filter rejection refreshes the pair's filte
 
 - **Each part of an entry that fills gets a protection of its own**, so nothing that filled waits for the rest. A market entry has one. On Futures it's the executed quantity. On Spot it's what the fills left after Binance's commission in the base asset, from the order's trades, rounded down to the stricter of `LOT_SIZE` and `MARKET_LOT_SIZE`, so a stop never sells more than the agent's own fills gave it (FR-AGT-09). When the trades can't be read, the highest standard fee, 0.1%, is assumed. A part below Binance's minimums waits for more fills, and what's left when the entry ends is logged.
 - **Its stop must rest by `protect_by`**: Binance's time of the fill plus `Agents:ProtectiveStopSeconds`, 9 by default, so AC-02's 10 seconds hold. A fill found late, after a restart for example, still gets three seconds, and a restart gives every protection waiting for its stop a full window again.
+- **Each part has its own stop and target**, which start as its entry's. One stop guards the whole position, as the Risk Engine sizes an add (`StopNotWidened`): an add's first part moves every earlier part's stop to its own where that's tighter, citing the add's cycle, and the keeper moves their orders as an [adjustment](#exits-and-adjustments) does.
 - **The stop is reduce-only on Futures**, on the mark price, with a reduce-only take-profit once it rests (FR-EXE-03). **On Spot, a target makes it an OCO list.** A rejected attempt is tried again a second later under a new ID.
 - **A target never causes a close.** An OCO Binance refuses for any reason but its stop is tried again as a plain stop, and a Futures take-profit it refuses is dropped. The result says `TargetNotPlaced`.
-- **`TradeOpened`** is raised when the entry's first protection rests, in the same transaction.
+- **`TradeOpened`** is raised when the entry's first part rests, in the same transaction. A part whose stop rested before and rests again raises `StopMoved` instead, when it rests at another price or replaces one cancelled outside Ecnanib. A pass raises at most one `TradeClosed` and one `StopMoved`.
 
 ### Closing what can't be protected
 
@@ -2028,21 +2046,63 @@ A protection whose stop hasn't rested by `protect_by`, or whose stop Binance ref
 
 Cancels only the agent's unfilled entry, never a stop or target, then reads it again, so whatever filled before the cancel is protected.
 
+### Exits and adjustments
+
+Each reconciles the agent's orders first, and sends nothing when Binance couldn't confirm them (`ExchangeUnavailable`). With nothing held, it's `NoPosition`. `EntryDeadline` is for entries only (FR-CYC-06).
+
+- **SELL and CLOSE sell what the Risk Engine sized**, or what's still held if a stop took some meanwhile, never more (AC-01).
+  - The parts are taken oldest first and rebased onto the exit's cycle. Each is closed as an [emergency close](#closing-what-cant-be-protected) is, but under the exit's evaluation, as an `Exit` leg with `Origin = Council`: Spot cancels its stop or list first, and Futures sends the reduce-only close and cancels after. Each ends `Closed`, `Exited`.
+  - A part taken only in part is split: it ends as `Split`, one new part is sold, and the other gets a stop of its own within a fresh window, as a fill does (FR-EXE-02). On Spot the part's list is cancelled before anything changes, and if that can't be done, the exit isn't sent. A rest below Binance's minimums is `Dust`, with an Error.
+  - The result is `Exited` once every part sold, and `Unsettled` while a close is still being settled or tried.
+- **ADJUST_STOP and ADJUST_TARGET rebase every held part**, and set its stop, only where that tightens it, or its target, where null removes it. The Risk Engine checked the stop against the tightest part's, which is `Position.Stop`, so no part's stop is ever widened (FR-RISK-06). The keeper brings their orders in line:
+  - Futures: the new stop is placed, and the old one cancelled once it rests, so the position is never without one. A target that moved or went is cancelled, then the new one placed.
+  - Spot: the stop or list is cancelled, which frees the base it locks, and the part waits for a new one within a fresh window, as a fill does. A moved target replaces the list too.
+  - A new stop Binance refuses as `WouldTriggerImmediately` closes the part at market, as a fill's would. One it keeps refusing otherwise leaves the old stop resting, and the part's stop goes back to it.
+  - The result is `Adjusted`, `Closed` when the price had already passed the new stop, or `Unprotected` while a Spot part waits for its new stop. `StopMoved` is raised once a moved stop rests.
+
+### Reconciliation
+
+`Reconciler` brings an agent's `orders` and `protections` in line with Binance (FR-EXE-06). Its caller holds the agent's lock, so it never acts at the same time as the executor or the watch. The key, market and pair come from the agent's newest entry, as the watch's do, and the key is opened for the pass only (FR-KEY-09). One pass:
+
+1. **The keeper's pass**, as above: unknown outcomes settled, entries checked, fills protected, stops placed, and what parts that ended left cancelled.
+2. **The open orders, once.** When anything rests, `GetOpenOrdersAsync` lists the symbol's. Each of the agent's stops and targets on the list is updated from it, and each that has left it is read on its own for how it ended. One Binance no longer has at all is taken as cancelled.
+3. **Each resting part is classified.** Its target executed: `Ended`, `TargetFilled`. Its stop executed: `Ended`, `StopFilled`. A stop or target still executing, `Triggered` or partly filled: nothing is decided, because the position is moving. Its stop cancelled or expired without either executing: the stop was **lost**, which happens only outside Ecnanib, because Ecnanib records its own cancels.
+4. **What Binance holds.** On Futures the position is read whenever the agent holds a part: what's on the agent's side, or 0. On Spot the account is read only when a stop was lost: a resting stop locks its base, so the user can't sell the agent's without cancelling its order first. While a stop executes or a close is under way, this waits.
+5. **Less than the records hold was closed outside Ecnanib.** Parts end as `ClosedOutside` until what's left fits: those whose stop was lost first, then the newest. A part only partly gone is split into one that ends as `ClosedOutside` and one that gets a stop of its own. A rest too small for a stop ends too, and is the user's.
+6. **A lost stop whose part is still held is placed again** within a fresh window, or the part is closed at market, as for a fill (FR-EXE-02, NFR-REL-02). It raises `StopMoved` when it rests. A stopped agent leaves its orders as they are (FR-AGT-07), so its part ends as `LeftToUser`, and its other orders stay.
+7. **The changes are saved in one transaction**, with one `TradeClosed` when anything ended. Then the keeper passes again, which places the lost stops and cancels at once what ended parts left, such as a take-profit after its stop executed.
+
+A read that fails leaves the records as they were. The pass says so, and the executor sends nothing on it.
+
+| When | How | Which agents |
+|---|---|---|
+| Every cycle (FR-CYC-02 step 2) | `IAgentAccounts.ReadAsync`, before the account is read. Execution reconciles again, under the lock, before it sends anything | The cycle's |
+| Every `Binance:ReconcileIntervalSeconds` | `reconcile-sweep`, up to 4 agents at a time, each on its own: one that fails is logged, and the rest go on (NFR-REL-05). An agent whose lock is held is skipped, because its holder reconciles. A key that can't be used is logged at Information, because the credential's checks pause the agent | Every agent with an open position or order in the records, whatever its status, so a paused agent's too (FR-AGT-06) |
+| At startup (FR-EXE-08) | `ReconcileStartup`, a hosted service, waits in its `StartAsync` for a `reconcile-startup` run of up to 2 minutes. The runner starts recurring jobs, `cycles-*` included, only once every `StartAsync` has finished. Protections waiting for a stop get a full window again first, and each agent's watch starts when it has work. If the run ends early, startup goes on, and each cycle reconciles its own agent anyway | The same |
+
+- **The records drive it, not the agent's status.** An Active agent with nothing recorded has nothing on Binance to reconcile, because every order is written before it's sent, so it isn't read.
+- **A stop that executed is seen within the interval**, or at the agent's next cycle, entry, exit or adjustment, whichever comes first. There's no user data stream. On Futures a take-profit left behind is reduce-only, so it can't open a position meanwhile, and it's cancelled before any new entry.
+
 ### The watch
 
 - **`OrderWatch` runs one `order-watch` job per agent with work left**: an unfilled entry, an unsettled order, a protection not yet resting, or a target to place. Each pass holds the agent's lock, so it never overlaps the executor, and the executor starts the watch while still holding it, so a watch that has just found nothing to do can't miss it.
 - **An unfilled entry is checked every `Agents:PendingEntryCheckSeconds`**, 5 by default, at normal priority, and at protective priority once part of it has filled. When its time-to-live ends it's cancelled, at normal priority, and read again.
 - **A run lasts an hour at most**, then hands over to a new one. On shutdown it makes no new pass, but a pass under way finishes on the run's token, so a stop being placed is recorded (NFR-REL-04).
-- **`OrderWatchSweep`** starts a watch for every agent with work that has none, every minute as `order-watch-sweep`, and once at startup as `order-watch-resume` when there's anything to resume. The watch registry is in memory, so the sweep is its recovery path (see [Inversions](#inversions)).
+- **`OrderWatchSweep`** starts a watch for every agent with work that has none, every minute as `order-watch-sweep`. At startup, [reconciliation](#reconciliation) starts them. The watch registry is in memory, so the sweep is its recovery path (see [Inversions](#inversions)).
 
 ### Request weight
 
-Each unfilled limit entry costs a query per `PendingEntryCheckSeconds`: 4 weight on Spot and 1 on Futures, or 48 and 12 a minute at the default of 5 seconds. An entry that fills at once costs nothing more to watch. A protected Spot fill costs a trades read, 5. #56 measures the whole.
+Each unfilled limit entry costs a query per `PendingEntryCheckSeconds`: 4 weight on Spot and 1 on Futures, or 48 and 12 a minute at the default of 5 seconds. An entry that fills at once costs nothing more to watch. A protected Spot fill costs a trades read, 5.
+
+Reconciliation costs, per agent with an open position or order, per pass: 2 on Futures for the open orders and 5 for the position, and 6 on Spot for the open orders, plus 20 for the account when a stop was lost. Each order that has left the list costs a read, 4 on Spot and 1 on Futures. At the default of 60 seconds, 200 Futures agents with positions cost 1,400 a minute of Futures Live's 2,400, on top of their cycles. #56 measures the whole.
 
 ### Known limits
 
 - **A fill while Ecnanib is down has no stop** until the next start, when it gets a few seconds to rest one before it's closed. A Spot limit entry could carry its stop with it as a one-triggers-the-other list, which would close this on Spot.
-- **Until #35, an agent with a position opens no other**, because the Risk Engine doesn't see the position. It also doesn't see a stop that filled until the next entry reads it, and Futures orders left by a gone position are only cancelled then.
+- **A stop or target that executed is seen within `ReconcileIntervalSeconds`**, or at the agent's next cycle or execution, not at once, because there's no user data stream. Its notice waits for that too.
+- **Binance's position is the account's.** With the user's own position in the pair, the agent's part can't be told from theirs, so its break-even and liquidation prices are left out and no entry is sent, and a close outside Ecnanib is seen only once Binance holds less than the agent's part.
+- **A part an exit splits can leave a rest below Binance's minimums**, which is `Dust`, with an Error, and the user's to close.
+- **`openOrders` and `openAlgoOrders` aren't checked against Demo yet.** Their weights and fields come from Binance's documentation and schema.
 - **A Spot target is checked against the last price**, where Binance checks against its average price, so its `LIMIT_MAKER` can be refused. The stop still rests.
 
 ### AC-01's audit query
@@ -2060,19 +2120,22 @@ It should return 0. `CycleExecutionTests` runs it.
 
 ### Settings
 
-They're in the `Agents` section, and `ExecutionSettings` reads them. An invalid one stops startup and is named (CFG-03).
+They're in the `Agents` section, apart from reconciliation's interval, and `ExecutionSettings` reads them. An invalid one stops startup and is named (CFG-03).
 
 | Setting | Default | Range |
 |---|---|---|
 | `PendingEntryCheckSeconds` | 5 | 1 to 5 |
 | `ProtectiveStopSeconds` | 9 | 5 to 10, and at least 3 more than `PendingEntryCheckSeconds`, so a fill seen late can still be protected |
 | `MaxLimitTtlCandles` | 10 | 1 to 100 |
+| `Binance:ReconcileIntervalSeconds` | 60 | 30 to 3600. It's in the Binance section, where SRS 7.2 puts it, and `ExecutionSettings` reads it |
 
 `Binance:ProtectiveRecvWindowMs`, 1000 to 5000 and 2000 by default, is the [adapter's](#request-weight-and-priority).
 
 ### Testing it
 
-`ExecutionApp` in `tests/Ecnanib.Tests/Execution` builds on `AgentApp` with a `FakeOrderBook`, which keeps orders, algo orders and OCO lists by client order ID, so placing, reading and cancelling agree. Market orders fill at once, and a test fills or triggers the rest. A test makes the next calls to an endpoint fail, and says whether Binance took the order anyway, which is how `IdempotencyTests` (AC-14) and `ProtectionTests` (AC-02) inject faults. Positions, trades and the Spot balance follow the fills. `CycleExecutionTests` runs whole cycles and the AC-01 query. A test starts a second application on the same database to see what a restart does.
+`ExecutionApp` in `tests/Ecnanib.Tests/Execution` builds on `AgentApp` with a `FakeOrderBook`, which keeps orders, algo orders and OCO lists by client order ID, so placing, reading and cancelling agree. Market orders fill at once, and a test fills or triggers the rest. A test makes the next calls to an endpoint fail, and says whether Binance took the order anyway, which is how `IdempotencyTests` (AC-14) and `ProtectionTests` (AC-02) inject faults. Positions, trades and the Spot balance follow the fills. `CycleExecutionTests` runs whole cycles, an exit among them, and the AC-01 query. A test starts a second application on the same database to see what a restart does, and `ExecutionApp`'s `prepare` sets the book up before it starts, which is how the startup pass is tested.
+
+`ReconciliationTests`, `ReconcileScheduleTests`, `ExitTests`, `AdjustmentTests` and `AgentPositionTests` cover reconciliation, exits, adjustments and the position. The book lists open orders, and its `CancelOutside` and `TradeOutside` act as the user on Binance.
 
 ## Web UI
 
@@ -2250,7 +2313,7 @@ The reconnect modal was checked in the published build, by stopping the server. 
   - Agents: `AgentPausedErrors` is raised already, by `Agents.EnterErrorAsync`, which the decision cycle calls. See [Decision cycle](#decision-cycle)
   - DecisionCycle: `AgentPausedBudget` is raised already, when a cycle finds the agent's AI budget has run out (FR-CYC-07). See [Budgets](#budgets)
   - Execution: `TradeOpened` is raised already, when an entry's first protection rests, and `TradeClosed` when what filled was closed because its stop couldn't be placed. See [Order execution](#order-execution)
-  - Execution (#35, #36): `TradeClosed` for a stop or target that filled and a close outside Ecnanib (FR-EXE-06), and `StopMoved`
+  - Execution: `TradeClosed` for a stop or target that executed, an exit, and a close outside Ecnanib (FR-EXE-06), and `StopMoved` for a stop moved or placed again, are raised already, at most one of each per pass. See [Reconciliation](#reconciliation)
   - Agents (#37): `KillSwitchExecuted`
   - DecisionCycle (#38): `ApprovalPending` and `ApprovalExpired`, linking to the approval page, which needs sign-in like every page (FR-APR-02)
   - Execution: `ExchangeRateLimitBan` is raised already, by `ExchangeBanNotifier`. See [Bans](#bans)
@@ -2261,24 +2324,19 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Account deletion (#51):** delete a user's secrets through the modules that own them, in the transaction that deletes the rows that refer to them. Nothing else can find them. That includes the TOTP key in `totp_authenticators.secret_id`: the row cascades with the user, but the secret doesn't.
 - **Data export (#51):** include the user's preferences from `IPreferences.GetAsync`, and their email choices from `IPreferences.GetEmailNotificationsAsync` (FR-DATA-03). Deleting the account deletes their row through its foreign key.
 - **Account deletion (#51):** delete the user's `notifications` through the port Identity declares, which Notifications implements. There's no foreign key to do it.
-- **Exchange endpoints (#35):** add each one to `BinanceEndpoint` with its weight, and call it through `BinanceTransport`, so it shares the budget, the clock, the outcomes and the logging. Put reads on `IExchangeAccount` or `IExchangeMarketData`, and anything that changes the account, as the margin type and leverage do, on `IExchangeTrading`, which only Execution may use. See [Exchange adapter](#exchange-adapter).
-- **Reconciliation (#35):** take the liquidation price from the position it reads, because Market Data has no keys. Fill `AgentAccount.Position` and `HasPendingEntry` in `AgentAccounts` from Execution's records, add the position's opening time, and pass it to the Strategist and Risk Critic as a `PromptPosition`, with the pending entry as a `PromptPendingEntry`: `DecisionCycles` passes none yet.
 - **The wizard (#40):** fill the roles step from `IAgents.ListRoleChoicesAsync`, whose `Defaults` a user can accept as they are, and show the activation warnings from `AgentText`, including FR-ROLE-04's. Create through `IAgents.CreateAsync`, which checks the pair with Binance and takes only Demo and perpetual Futures contracts, and replace `/agents/new`. Offer pairs from `IExchangeSymbols.ListAsync`, which `AgentSettingsPage` doesn't. Its risk hints in `AgentText.RiskHintOf` are a start on NFR-USA-03. Activate from the last step with `IAgents.ActivateAsync`, and show its problems and warnings with `AgentText`.
-- **Reconciliation (#35):** read a position with `IExchangeAccount.GetPositionAsync` for the agent's symbol, not the whole account (NFR-PERF-05). It's empty when there's no position, and its liquidation price is null when Binance sends 0. Check `positionRisk`'s weight and fields against Futures Demo first, because its page couldn't be read.
 - **Retention (#50):** purge `candle_cache` by `fetched_at`, using `Retention:CandleCacheDays`, never by `open_time`, which would make every 1D cycle fetch its whole window. Batch the deletes. `exchange_symbols` needs no purge, because it only ever holds Binance's latest list.
 - **Shadow outcomes (#44):** the candles after a proposal are in `candle_cache` for `Retention:CandleCacheDays`, but nothing reads a range after a time yet, so add that read to `IMarketData`. Use `Indicators` for any indicator, so the numbers match what the cycle saw.
 - **Capacity (#56):** start from [Request weight per candle](#request-weight-per-candle).
-- **Binance Demo (#34):** run `LiveBinanceTests` with Demo keys before the first Live order, and fix whatever it disproves: the algo service's parameters and its code for a missing order, -2021, Spot's messages for a stop that would trigger and a target that would match, the code for a missing OCO list, and the filter codes. See [Testing it](#testing-it).
+- **Binance Demo (#34, #35):** run `LiveBinanceTests` with Demo keys before the first Live order, and fix whatever it disproves: the open order lists and the position, which reconciliation reads, the algo service's parameters and its code for a missing order, -2021, Spot's messages for a stop that would trigger and a target that would match, the code for a missing OCO list, and the filter codes. See [Testing it](#testing-it).
 - **System health (#49):** show `IExchangeUsage.Current()` for FR-ADM-04's exchange usage and bans, at `/admin/health`, which ban notifications already link to.
 - **Suggest assignment (#46):** start from `RoleModels`, which already filters and ranks each role's models, and replace "newest first" with the trading-experience metrics (FR-ROLE-07). Keep the Risk Critic off the Strategist's provider (FR-ROLE-04).
 - **Anthropic's model lifecycle:** Anthropic's list also has `lifecycle`, `deprecated_at` and `retires_at`, which the adapter doesn't read yet. Reading them into `AiModel` would let the catalog deprecate a model before it disappears, ahead of [Deprecation and retirement](#deprecation-and-retirement)'s rule, and warn its agents sooner.
 - **Switching to Live (#39):** `AgentInput` and `ActivationChecks` refuse Live, and `AgentForm.ToSettings` always sends Demo. Make the switch an action of its own (UC-04), for a Paused or Stopped agent with no open positions or orders, with its checks on top of [Activation](#activation)'s, and audit it with its own `AuditAction`. Add `Agents:DefaultEnvironment` from SRS 7.3 then. The slot and the exchange key's environment already follow the agent's environment.
 - **An agent's history (#36, #45):** implement `IAgentHistory` for each table that keeps an agent's history, such as trades and reflections, as `AgentCycleHistory` and `OrderHistory` do, so deleting an agent leaves nothing behind.
-- **Reconciliation (#35):** keep `orders` and `protections` in line with Binance, because `HasOpenPositionsOrOrdersAsync` answers FR-AGT-03's lock from them alone. Hold `AgentLocks` for the agent while reconciling, as the watch does, so the two never act on the same orders.
 - **Stop and the kill switch (#37):** `IAgents.StopAsync` leaves positions and orders as they are. Add FR-AGT-07's choice to close them, and the kill switch, through `IAgentExposure` or a port beside it that Execution implements. "Stop all agents" should go through the user's agents one at a time, so one failure doesn't stop the rest.
 - **The agent's page (#41):** `/agents/{id}` is free. Link the list's names to it, and move the actions there as well, using the same contract calls and `AgentText`.
 - **Account deletion (#51):** stop the user's agents first, with their choice to close or keep positions (FR-AUTH-09), then delete them through the port Identity declares. There's no foreign key to `users`.
-- **Reconciliation (#35):** open a key with `ICredentialKeys` for each use, never cache it, and dispose its secrets after, as `AgentAccounts` does. `CredentialUnusableException` means the credential changed since the agent was activated: treat it as a paused agent's cause, not a provider failure, and don't retry it. `BannedApis` lets only Catalog, AiCouncil and Execution use `ICredentialKeys`, and only Credentials build a key.
 - **Binance Demo restrictions:** Binance doesn't document `/sapi` on its Demo servers, so a Demo key's restrictions aren't read. Try `apiRestrictions` against Demo with a real key, and if it answers, read them there too.
 - **Account deletion (#51):** delete the user's credentials with `ICredentials.DeleteAsync`, which removes their secrets in the same transaction, through the port Identity declares. There's no foreign key to `users`.
 - **Data isolation (#55):** `CredentialIsolationTests` and `AgentIsolationTests` cover every Credentials and Agents call. Add the credentials pages and `/agents/{id}/settings` to the HTTP suite. The settings page already answers 404 for another user's agent.
@@ -2294,10 +2352,11 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Account deletion (#51):** delete the user's `model_availability` rows by `user_id`. `catalog_sync_runs.errors` holds credential IDs, and nothing else about anybody.
 - **xAI prices:** confirm the unit of the prices in xAI's model list with `LiveProviderTests`, then read them into `AiModel`, below the configuration's.
 - **The trade journal (#36):** replace `TradingRecord.None` in `DecisionCycles`, for the loss limits and `RiskInputs.Record`. Count `TradingRecord.ConsecutiveLosses` from the agent's last `StatusChangedAt` into Active, or a resumed agent pauses again at once.
-- **Reconciliation (#35):** give the Risk Engine `AgentAccount.Position` from `protections` and `orders`, and then remove the interim guard in `ProtectionKeeper.HoldsPositionAsync`, which refuses every entry while a position is held, so adds and exits can work. Detect a stop or target that filled, mark its protection `Ended`, raise `TradeClosed`, and on Futures cancel the other at once: a take-profit left behind could close a new position, and today only the next entry cancels it. Execute exits and stop and target adjustments through `IOrderExecution`: `OrderExecutor` returns `Unsupported` for them. On Spot, an OCO's stop and target are one list, so moving either replaces the list.
 - **The trade journal (#36):** read each fill with `IExchangeAccount.GetOrderTradesAsync`, which gives commissions, for `Fill`, and count `EntriesToday` from entry rows in `orders`. An entry's protections, and their closes, are its trade's exits.
+- **The trade journal (#36):** a trade's exits are its entry's parts in `protections`. `end_reason` says how each ended: `StopFilled`, `TargetFilled`, `Exited`, `Unprotected`, `ClosedOutside` or `LeftToUser`. A `Split` part is replaced by its parts, which keep its `entry_price` and `opened_at`. An exit's fills are its `Exit` legs, an emergency close's its `EmergencyClose` legs, and a stop's or target's its own leg, read on Futures by the `TriggeredOrderId` it became. A close outside Ecnanib has no fill of the agent's, so its price comes from the user's trades or is left out.
+- **The dashboard (#41):** show the position from `IAgentAccounts`, or a read beside it over the same records (FR-AGT-11). `AgentAccount` has its opening time, targets and liquidation price.
 - **The trade journal (#36):** sum `TradingRecord`'s P&L over `RiskPeriods.DayStart` and `WeekStart`, net of fees and funding. A loss is net P&L below zero, and any other trade ends a streak. `EntriesToday` counts entry orders placed, adds included. `CyclesSinceLastLoss` counts cycles finished since the losing trade closed.
-- **The kill switch (#37):** evaluate each close as a `Close` or `Sell` with `Origin = System` and no fraction, which only the structural rules can stop, and send its `SizedOrder`, as `ProtectionKeeper`'s close does, storing the evaluation on the order row for AC-01. Hold `AgentLocks` so the watch can't act at the same time. Cancel the agent's open orders, which `ClientOrderIds.AgentPrefix` tells from the user's own (FR-AGT-09): on Spot an OCO list is cancelled whole.
+- **The kill switch (#37):** evaluate each close as a `Close` or `Sell` with `Origin = System` and no fraction, which only the structural rules can stop, and send its `SizedOrder`, as `ProtectionKeeper`'s close does, storing the evaluation on the order row for AC-01. Hold `AgentLocks` so the watch can't act at the same time. Cancel the agent's open orders, which `ClientOrderIds.AgentPrefix` tells from the user's own (FR-AGT-09): on Spot an OCO list is cancelled whole. Reconcile the agent first, as the executor does, and close its held parts through the keeper's close, as `Closing` with `closing_for = Unprotected` or a reason of its own. `OrderStore.ListAgentsToReconcileAsync` finds every agent with something on Binance.
 - **Approvals (#38):** re-evaluate on approval with fresh inputs (FR-APR-03): the size and prices may change, and a failure rejects the approval with its reasons. Show `SizedOrder.MoneyAtRisk` as the money at risk (FR-APR-01).
 - **The trace viewer (#42):** give `RiskRule`, `RuleOutcome` and `RiskReason` their text, and show each rule's inputs as recorded. The Settings rule's inputs show each capped setting, its cap and what was used.
 - **Approvals (#38):** a Confirm agent's cycle ends `ReadyToExecute`. Add `AwaitingApproval` to `CycleOutcome` for FR-ANI-01's reveal. On approval, re-evaluate, then send the new `SizedOrder` through `IOrderExecution` with the approval's deadline, which checks it again right before sending, readies a Futures symbol again (FR-RISK-09), and records the result. Put it in `decision_cycles.execution`, or the approval's own row.
@@ -2307,10 +2366,9 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Account deletion (#51):** delete the user's `decision_cycles` by `user_id`, through the port Identity declares. Their roles, AI calls and evaluations go with them.
 - **System health (#49):** FR-ADM-04's queued and running cycles are in `CycleSlots`, in memory. Add a Scheduler contract that reports them, and the scheduler's status from the four `cycles-*` jobs' last runs.
 - **Retention (#50):** every decision cycle adds a `decision-cycle` row to `job_runs`, about 19,000 a day at 200 agents on 15m, plus a row per timeframe per close. Purge `decision_cycles` by `started_at`, using `Retention:DecisionTraceDays` (FR-DATA-01): its roles, AI calls and evaluations go through their foreign keys. A trace keeps every prompt, so at 200 agents on 15m it's of the order of 1 GB a day before PostgreSQL compresses it. Most of a prompt's instructions are its templates', which the call's `templates` identify, so storing them once per version is the first saving if that's too much.
-- **Retention (#50):** `order-watch-sweep` adds a `job_runs` row a minute, and each agent's watch one per hour it runs. The SRS sets no period for `orders` and `protections`, which the trade journal (#36) and the trace viewer (#42) read.
-- **Capacity (#56):** count each unfilled limit entry's checks, 48 weight a minute on Spot and 12 on Futures at the default interval, and a Spot fill's trades read. See [Request weight](#request-weight).
-- **The trace viewer (#42):** show `decision_cycles.execution`, with `ExecutionStatus`, `ExecutionReason` and `FuturesSetupOutcome` given their text, and the agent's orders from `orders`.
-- **Reconciliation (#35):** run the startup pass from a hosted service's `StartAsync`, through `IJobRunner`, so it finishes before any scheduled cycle (FR-EXE-08).
+- **Retention (#50):** `order-watch-sweep` adds a `job_runs` row a minute, `reconcile-sweep` one per interval, 1,440 a day at 60 seconds, `reconcile-startup` one per start with anything to reconcile, and each agent's watch one per hour it runs. The SRS sets no period for `orders` and `protections`, which the trade journal (#36) and the trace viewer (#42) read.
+- **Capacity (#56):** count each unfilled limit entry's checks, 48 weight a minute on Spot and 12 on Futures at the default interval, and a Spot fill's trades read. See [Request weight](#request-weight). Count reconciliation too: per agent with something on Binance, per interval, 7 on Futures and 6 on Spot.
+- **The trace viewer (#42):** show `decision_cycles.execution`, with `ExecutionStatus`, `ExecutionReason` and `FuturesSetupOutcome` given their text, and the agent's orders from `orders`. `Exited`, `Adjusted`, `NoPosition` and `ForeignPosition` are new with #35, and `PositionOpen` and `Unsupported` appear only in older traces.
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.
 

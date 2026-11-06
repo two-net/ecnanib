@@ -9,10 +9,10 @@ using Microsoft.Extensions.Hosting.Internal;
 namespace Ecnanib.Tests.Exchange;
 
 /// <summary>
-/// What order execution (#34) relies on, against Binance's Demo servers at the URLs appsettings.json ships, through the
-/// real adapter. They pin what the fakes take from Binance's documentation and its official connectors: the algo order
-/// service's parameters and codes, Spot OCO lists, the trades' shape, the rejection codes Execution acts on, and the
-/// Futures account endpoints. Each market needs ECNANIB_LIVE_BINANCE_SPOT_KEY and _SECRET, or
+/// What order execution (#34) and reconciliation (#35) rely on, against Binance's Demo servers at the URLs
+/// appsettings.json ships, through the real adapter. They pin what the fakes take from Binance's documentation and its
+/// official connectors: the algo order service's parameters and codes, Spot OCO lists, the trades' shape, the
+/// rejection codes Execution acts on, the open order lists and the position, and the Futures account endpoints. Each market needs ECNANIB_LIVE_BINANCE_SPOT_KEY and _SECRET, or
 /// ECNANIB_LIVE_BINANCE_FUTURES_KEY and _SECRET, for HMAC Demo keys, and is skipped without them, so CI never calls
 /// Binance. Orders rest far from the price and are cancelled. A Futures check opens and closes the smallest position,
 /// and a Spot one buys about 6 USDT of BTC, with Demo funds.
@@ -56,6 +56,12 @@ public sealed class LiveBinanceTests : IDisposable
 
             var stop = await Account.GetOrderAsync(Market.Spot, key, new OrderReference(Symbol, ids[2], OrderType.StopMarket), RequestPriority.Protective, Cancellation);
             Assert.Equal((ExchangeOrderStatus.New, OrderType.StopMarket), (stop!.Status, stop.Type));
+
+            // Reconciliation reads a list's members among the symbol's open orders.
+            var open = await Account.GetOpenOrdersAsync(Market.Spot, key, Symbol, RequestPriority.Normal, Cancellation);
+            Assert.Equal(
+                [(ids[1], OrderType.Limit), (ids[2], OrderType.StopMarket)],
+                open.Where(order => order.ClientOrderId == ids[1] || order.ClientOrderId == ids[2]).OrderBy(order => order.ClientOrderId).Select(order => (order.ClientOrderId, order.Type!.Value)));
         }
         finally
         {
@@ -158,6 +164,13 @@ public sealed class LiveBinanceTests : IDisposable
             Assert.Equal((ExchangeOrderStatus.New, ExchangeOrderStatus.New), (stop.Status, target.Status));
             var read = await Account.GetOrderAsync(Market.Futures, key, new OrderReference(Symbol, ids[1], OrderType.StopMarket), RequestPriority.Protective, Cancellation);
             Assert.Equal(ExchangeOrderStatus.New, read!.Status);
+
+            // What reconciliation reads: the conditional orders among the open ones, and the position.
+            var open = await Account.GetOpenOrdersAsync(Market.Futures, key, Symbol, RequestPriority.Normal, Cancellation);
+            Assert.Contains(open, order => order is { ClientOrderId: var id, Type: OrderType.StopMarket, Status: ExchangeOrderStatus.New } && id == ids[1]);
+            Assert.Contains(open, order => order is { ClientOrderId: var id, Type: OrderType.TakeProfitMarket } && id == ids[2]);
+            var position = Assert.Single(await Account.GetPositionAsync(key, Symbol, RequestPriority.Normal, Cancellation));
+            Assert.True(position.Amount >= entry.ExecutedQuantity && position.BreakEvenPrice > 0m && position.MarkPrice > 0m, $"Unexpected position: {position}");
 
             var trades = await Account.GetOrderTradesAsync(Market.Futures, key, Symbol, entry.ExchangeOrderId, RequestPriority.Normal, Cancellation);
             Assert.Equal(entry.ExecutedQuantity, trades.Sum(trade => trade.Quantity));

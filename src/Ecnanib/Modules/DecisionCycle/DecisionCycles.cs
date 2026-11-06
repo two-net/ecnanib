@@ -192,9 +192,9 @@ internal sealed class DecisionCycles(
             Snapshot = snapshot,
             Account = CycleInputs.Account(agentSettings.Market, symbol, capital, account, effective),
 
-            // Reconciliation (#35) gives the position, with when it opened, which the prompt needs. None exists before #34.
-            Position = null,
-            PendingEntry = null,
+            // As reconciliation left them at step 2, and the Risk Critic sees the same.
+            Position = CycleInputs.Position(agentSettings.Market, snapshot, account),
+            PendingEntry = CycleInputs.PendingEntry(account),
             Record = TradingRecord.None,
             Risk = effective,
             External = external,
@@ -309,8 +309,8 @@ internal sealed class DecisionCycles(
             case ExecutionReason.PastDeadline:
                 return (CycleOutcome.PastDeadline, null);
 
-            // Not errors: the agent holds a position, the entry filled meanwhile, or the action waits for #35.
-            case ExecutionReason.PositionOpen or ExecutionReason.NothingToCancel or ExecutionReason.Unsupported:
+            // Not errors: the entry filled or the position closed meanwhile, or the user holds a position in the pair.
+            case ExecutionReason.NothingToCancel or ExecutionReason.NoPosition or ExecutionReason.ForeignPosition:
                 return (CycleOutcome.ExecutionFailed, null);
 
             case ExecutionReason.FuturesSetup when result.FuturesSetup is FuturesSetupOutcome.HedgeMode

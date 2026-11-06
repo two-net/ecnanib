@@ -1295,7 +1295,7 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
                     b.HasIndex("Status")
                         .HasDatabaseName("ix_orders_live")
-                        .HasFilter("status IN ('Sending', 'Unknown', 'Open', 'PartiallyFilled')");
+                        .HasFilter("status IN ('Sending', 'Unknown', 'Open', 'PartiallyFilled', 'Triggered')");
 
                     b.HasIndex("UserId", "AgentId", "Status")
                         .HasDatabaseName("ix_orders_user_id_agent_id_status");
@@ -1318,13 +1318,47 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("attempts");
 
+                    b.Property<string>("ClosingFor")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("closing_for");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<Guid>("CycleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cycle_id");
+
+                    b.Property<string>("EndReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("end_reason");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
                     b.Property<Guid>("EntryId")
                         .HasColumnType("uuid")
                         .HasColumnName("entry_id");
+
+                    b.Property<decimal>("EntryPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("entry_price");
+
+                    b.Property<DateTimeOffset>("IdCandleClose")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("id_candle_close");
+
+                    b.Property<int>("IdIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_index");
+
+                    b.Property<DateTimeOffset>("OpenedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opened_at");
 
                     b.Property<DateTimeOffset>("ProtectBy")
                         .HasColumnType("timestamp with time zone")
@@ -1333,6 +1367,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.Property<decimal>("Quantity")
                         .HasColumnType("numeric")
                         .HasColumnName("quantity");
+
+                    b.Property<bool>("Rested")
+                        .HasColumnType("boolean")
+                        .HasColumnName("rested");
 
                     b.Property<int>("Sequence")
                         .HasColumnType("integer")
@@ -1344,9 +1382,21 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("status");
 
+                    b.Property<DateTimeOffset?>("StopLostAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("stop_lost_at");
+
+                    b.Property<decimal>("StopPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("stop_price");
+
                     b.Property<bool>("TargetDropped")
                         .HasColumnType("boolean")
                         .HasColumnName("target_dropped");
+
+                    b.Property<decimal?>("TargetPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("target_price");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1358,6 +1408,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_protections");
+
+                    b.HasIndex("AgentId")
+                        .HasDatabaseName("ix_protections_held")
+                        .HasFilter("status IN ('Pending', 'Resting', 'Closing')");
 
                     b.HasIndex("Status")
                         .HasDatabaseName("ix_protections_unsettled")

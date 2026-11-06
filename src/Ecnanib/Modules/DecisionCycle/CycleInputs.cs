@@ -109,6 +109,35 @@ internal static class CycleInputs
             Leverage = market == Market.Futures ? effective.MaxLeverage : null,
         };
 
+    /// <summary>
+    /// The agent's position as the Strategist and Risk Critic see it, with what it would make or lose closed now: at the
+    /// mark price on Futures, and at the best price it could sell or buy at on Spot.
+    /// </summary>
+    public static PromptPosition? Position(Market market, MarketSnapshot snapshot, AgentAccount account)
+    {
+        if (account is not { Position: { } position, PositionOpenedAt: { } openedAt })
+        {
+            return null;
+        }
+
+        var price = market == Market.Futures
+            ? snapshot.Futures?.MarkPrice
+            : position.Side == PositionSide.Long ? snapshot.Quote.BidPrice : snapshot.Quote.AskPrice;
+        var sign = position.Side == PositionSide.Long ? 1m : -1m;
+
+        return new PromptPosition(position.Side, position.Quantity, position.AverageEntry, openedAt)
+        {
+            Stop = position.Stop,
+            Targets = account.Targets,
+            UnrealizedPnl = price is { } at && at > 0m ? Math.Round(sign * (at - position.AverageEntry) * position.Quantity, 8) : null,
+            LiquidationPrice = market == Market.Futures ? account.LiquidationPrice : null,
+        };
+    }
+
+    /// <summary>The agent's entry that hasn't filled, as the Strategist and Risk Critic see it.</summary>
+    public static PromptPendingEntry? PendingEntry(AgentAccount account) =>
+        account.PendingEntry is { } entry ? new PromptPendingEntry(entry.Side, entry.Type, entry.Price, entry.Quantity, entry.PlacedAt) : null;
+
     public static InputSnapshot Snapshot(
         MarketSnapshot snapshot, AgentAccount account, decimal capitalAllocation, RiskSettings effective) => new(
         snapshot.Symbol,

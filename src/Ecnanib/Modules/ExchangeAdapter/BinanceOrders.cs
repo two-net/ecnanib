@@ -127,7 +127,7 @@ internal static class BinanceOrders
     private static OrderType? ParseType(string type) => type switch
     {
         "MARKET" => OrderType.Market,
-        "LIMIT" => OrderType.Limit,
+        "LIMIT" or "LIMIT_MAKER" => OrderType.Limit,
         "STOP_LOSS" or "STOP_MARKET" => OrderType.StopMarket,
         "TAKE_PROFIT" or "TAKE_PROFIT_MARKET" => OrderType.TakeProfitMarket,
         _ => null,

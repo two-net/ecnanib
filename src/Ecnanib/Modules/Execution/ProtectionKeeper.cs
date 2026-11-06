@@ -12,9 +12,11 @@ namespace Ecnanib.Modules.Execution;
 /// <summary>
 /// Keeps an agent's fills protected (FR-EXE-02, AC-02, NFR-REL-02). One pass settles every order whose outcome isn't
 /// known by its client order ID (FR-EXE-05), checks unfilled entries and cancels them at their time-to-live (FR-EXE-01),
-/// gives each new fill a protection, places stops and targets, closes at market what can't get a stop in time, and
-/// cancels orders whose position is gone. Its caller holds the agent's lock, so passes never overlap. Nothing is sent
-/// again unless Binance has shown it was never placed (NFR-REL-03). See Order execution in docs/architecture.md.
+/// gives each new fill a protection, places stops and targets, brings resting ones in line with a moved stop or
+/// target, closes at market what can't get a stop in time or what an exit sells, and cancels orders whose position is
+/// gone. Its caller holds the agent's lock, so passes never overlap. Nothing is sent again unless Binance has shown it
+/// was never placed (NFR-REL-03). What happened outside Ecnanib is <see cref="Reconciler"/>'s. See Order execution in
+/// docs/architecture.md.
 /// </summary>
 internal sealed class ProtectionKeeper(
     OrderStore store,
@@ -104,90 +106,6 @@ internal sealed class ProtectionKeeper(
     }
 
     /// <summary>
-    /// Whether the agent still holds a position from an earlier entry, which no new entry may be sized against until
-    /// reconciliation (#35) gives the Risk Engine the position. Its stops and targets are read again first, so a
-    /// position they closed doesn't count. On Futures, Binance's position for the pair decides, and orders left from
-    /// a position that's gone are cancelled, so they can't act on a new one.
-    /// </summary>
-    /// <returns>True when a position is held, or when that can't be ruled out.</returns>
-    public async Task<bool> HoldsPositionAsync(AgentSession session, CancellationToken cancellationToken)
-    {
-        var pass = await AdvanceAsync(session, cancellationToken);
-        var orders = pass.Orders;
-        var now = time.GetUtcNow();
-        var held = orders.Protections.Where(protection => OrderStore.HeldProtections.Contains(protection.Status)).ToList();
-
-        if (orders.Entries.Any(entry => entry.IsLive))
-        {
-            return true;
-        }
-
-        foreach (var protection in held.Where(protection => protection.Status == ProtectionStatus.Resting))
-        {
-            var legs = orders.LegsOf(protection).Where(leg => leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled or OrderStatus.Triggered).ToList();
-
-            foreach (var leg in legs)
-            {
-                await ReadAsync(session, leg, RequestPriority.Normal, now, cancellationToken);
-            }
-
-            if (Ended(orders, protection))
-            {
-                protection.Status = ProtectionStatus.Ended;
-                protection.UpdatedAt = now;
-                logger.LogInformation(
-                    "Protection {Sequence} of entry {ClientOrderId} has ended: its stop or target is no longer open",
-                    protection.Sequence,
-                    orders.EntryOf(protection).ClientOrderId);
-            }
-
-            await store.SaveAsync(legs, [protection]);
-        }
-
-        if (!session.Futures)
-        {
-            return held.Any(protection => OrderStore.HeldProtections.Contains(protection.Status));
-        }
-
-        IReadOnlyList<FuturesPosition> positions;
-
-        try
-        {
-            positions = await accounts.GetPositionAsync(session.Key, session.Symbol.Symbol, RequestPriority.Protective, cancellationToken);
-        }
-        catch (ExchangeException exception)
-        {
-            logger.LogWarning("Binance couldn't give the {Symbol} position, so no entry is sent: {Failure}", session.Symbol.Symbol, exception.Failure);
-            return true;
-        }
-
-        if (positions.Any(position => position.Amount != 0m))
-        {
-            return true;
-        }
-
-        // Nothing is held, so whatever still rests from an earlier entry is an orphan that could act on a new one, such as a
-        // take-profit whose stop has filled.
-        foreach (var protection in orders.Protections.Where(protection => protection.Status is ProtectionStatus.Resting or ProtectionStatus.Ended))
-        {
-            if (orders.LegsOf(protection).Any(leg => leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled))
-            {
-                await CancelLegsAsync(session, orders, protection, includeUnsettled: false, cancellationToken);
-            }
-
-            if (protection.Status == ProtectionStatus.Resting && !orders.LegsOf(protection).Any(leg => leg.IsLive))
-            {
-                protection.Status = ProtectionStatus.Ended;
-                protection.UpdatedAt = time.GetUtcNow();
-                await store.SaveAsync(protection);
-            }
-        }
-
-        return orders.Protections.Any(protection => OrderStore.HeldProtections.Contains(protection.Status))
-            || orders.Legs.Any(leg => leg.IsLive);
-    }
-
-    /// <summary>
     /// Cancels an unfilled entry, at its time-to-live (FR-EXE-01) or for CANCEL_PENDING, then reads it again: whatever
     /// filled before the cancel needs protecting.
     /// </summary>
@@ -212,6 +130,22 @@ internal sealed class ProtectionKeeper(
 
         await ReadAsync(session, entry, RequestPriority.Protective, now, cancellationToken);
         await store.SaveAsync(entry);
+    }
+
+    /// <summary>
+    /// Cancels the protection's stop and target. With <paramref name="includeUnsettled"/>, orders whose outcome isn't
+    /// known are cancelled too, in case they rest. A cancel that finds nothing leaves such an order to be settled, and
+    /// reads one known to rest, which may have filled meanwhile.
+    /// </summary>
+    public async Task CancelLegsAsync(
+        AgentSession session, AgentOrders orders, ProtectionRow protection, bool includeUnsettled, CancellationToken cancellationToken)
+    {
+        var legs = orders.LegsOf(protection)
+            .Where(leg => leg.Leg is OrderLeg.Stop or OrderLeg.Target
+                && (leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled || (includeUnsettled && leg.IsUnsettled)))
+            .ToList();
+
+        await CancelAsync(session, legs, cancellationToken);
     }
 
     /// <summary>Settles one order, or one Spot list, whose outcome isn't known, by its client order ID.</summary>
@@ -359,7 +293,8 @@ internal sealed class ProtectionKeeper(
 
     /// <summary>
     /// Gives the part of an entry that filled since its last protection a protection of its own, and resolves the entry
-    /// once it has ended and every part has one.
+    /// once it has ended and every part has one. An add's first protection moves the rest of the position's stops to
+    /// its own, which the Risk Engine sized it against: one stop guards the whole position.
     /// </summary>
     private async Task ProtectFillsAsync(AgentSession session, AgentOrders orders, OrderRow entry, CancellationToken cancellationToken)
     {
@@ -370,7 +305,9 @@ internal sealed class ProtectionKeeper(
 
         var now = time.GetUtcNow();
         var existing = orders.ProtectionsOf(entry).ToList();
-        var assigned = existing.Sum(protection => protection.Quantity);
+
+        // A split protection's parts hold what it did, so it isn't counted twice.
+        var assigned = existing.Where(protection => protection.EndReason != ProtectionEnd.Split).Sum(protection => protection.Quantity);
         var changed = false;
         var remainder = 0m;
 
@@ -387,6 +324,11 @@ internal sealed class ProtectionKeeper(
 
             if (Lots.Placeable(increment, stop, session) && existing.Count <= ClientOrderIds.MaximumIndex)
             {
+                if (existing.Count == 0)
+                {
+                    await AlignStopsAsync(orders, entry, stop, now);
+                }
+
                 var protection = new ProtectionRow
                 {
                     Id = Guid.NewGuid(),
@@ -399,6 +341,13 @@ internal sealed class ProtectionKeeper(
 
                     // AC-02 counts from the fill. One found late still gets a few seconds for its stop.
                     ProtectBy = Max((entry.FilledAt ?? now) + settings.ProtectiveStop, now + MinimumProtecting),
+                    StopPrice = stop,
+                    TargetPrice = entry.Target,
+                    EntryPrice = entry.AveragePrice ?? entry.Price ?? stop,
+                    OpenedAt = entry.FilledAt ?? now,
+                    CycleId = entry.CycleId,
+                    IdCandleClose = entry.CandleClose,
+                    IdIndex = existing.Count,
                     CreatedAt = now,
                     UpdatedAt = now,
                 };
@@ -445,6 +394,38 @@ internal sealed class ProtectionKeeper(
     }
 
     /// <summary>
+    /// An add's stop guards the whole position (FR-RISK-06), so the parts held from earlier entries take it wherever it's
+    /// tighter, citing the add's cycle. Their stops are moved on Binance by <see cref="ConvergeAsync"/>.
+    /// </summary>
+    private async Task AlignStopsAsync(AgentOrders orders, OrderRow add, decimal stop, DateTimeOffset now)
+    {
+        var side = SideOf(add);
+        var older = orders.Protections
+            .Where(protection => protection.EntryId != add.Id && protection.Status is ProtectionStatus.Pending or ProtectionStatus.Resting)
+            .Where(protection => Tightens(side, protection.StopPrice, stop))
+            .ToList();
+
+        foreach (var protection in older)
+        {
+            logger.LogInformation(
+                "Entry {ClientOrderId} adds to the position, so protection {Sequence} of an earlier entry moves its stop from {From} to {To}",
+                add.ClientOrderId,
+                protection.Sequence,
+                protection.StopPrice,
+                stop);
+
+            protection.StopPrice = stop;
+            protection.CycleId = add.CycleId;
+            protection.UpdatedAt = now;
+        }
+
+        if (older.Count > 0)
+        {
+            await store.SaveAsync([], older);
+        }
+    }
+
+    /// <summary>
     /// What a Spot buy left in the account: the executed quantity, less the commission Binance took in the base asset.
     /// When the trades are behind the order, the fee seen so far is scaled up to the whole.
     /// </summary>
@@ -477,29 +458,61 @@ internal sealed class ProtectionKeeper(
         return executed - (executed * AssumedSpotFee);
     }
 
-    private bool NeedsWork(AgentSession session, AgentOrders orders, ProtectionRow protection) =>
+    private static bool NeedsWork(AgentSession session, AgentOrders orders, ProtectionRow protection) =>
         protection.Status is ProtectionStatus.Pending or ProtectionStatus.Closing
-        || (protection.Status == ProtectionStatus.Resting && NeedsTarget(session, orders, protection));
+        || (protection.Status == ProtectionStatus.Resting && (NeedsTarget(session, orders, protection) || !Converged(session, orders, protection)));
 
-    /// <summary>A Futures target is its own order, placed once the stop rests. Spot's is in its OCO list.</summary>
+    /// <summary>
+    /// A Futures target is its own order, placed once the stop rests. Spot's is in its OCO list. One that executed, or
+    /// that Binance refused, isn't placed again.
+    /// </summary>
     private static bool NeedsTarget(AgentSession session, AgentOrders orders, ProtectionRow protection) =>
         session.Futures
         && !protection.TargetDropped
-        && orders.EntryOf(protection).Target is not null
-        && !orders.LegsOf(protection).Any(leg => leg.Leg == OrderLeg.Target && leg.Status is not (OrderStatus.NotPlaced or OrderStatus.Rejected));
+        && protection.TargetPrice is { } target
+        && !orders.LegsOf(protection).Any(leg => leg.Leg == OrderLeg.Target && leg.StopPrice == target
+            && (leg.IsLive || leg.Status is OrderStatus.Filled or OrderStatus.Finished));
+
+    /// <summary>
+    /// Whether a resting protection's orders match its stop and target. One whose stop no longer rests is left to
+    /// reconciliation, which finds out whether it executed or was cancelled outside Ecnanib.
+    /// </summary>
+    private static bool Converged(AgentSession session, AgentOrders orders, ProtectionRow protection)
+    {
+        var legs = orders.LegsOf(protection).Where(leg => leg.Leg is OrderLeg.Stop or OrderLeg.Target).ToList();
+        var stops = legs.Where(leg => leg.Leg == OrderLeg.Stop && leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled).ToList();
+
+        if (stops.Count == 0 || legs.Any(leg => leg.IsUnsettled))
+        {
+            return true;
+        }
+
+        var target = protection.TargetDropped ? null : protection.TargetPrice;
+        var targets = legs.Where(leg => leg.Leg == OrderLeg.Target && leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled).ToList();
+
+        return session.Futures
+            ? stops.Count == 1 && stops[0].StopPrice == protection.StopPrice && targets.All(leg => leg.StopPrice == target)
+            : stops[^1].StopPrice == protection.StopPrice && (target is null ? targets.Count == 0 : targets.Any(leg => leg.Price == target));
+    }
 
     private async Task AdvanceAsync(AgentSession session, AgentOrders orders, ProtectionRow protection, CancellationToken cancellationToken)
     {
         var entry = orders.EntryOf(protection);
         var now = time.GetUtcNow();
 
+        if (protection.Status == ProtectionStatus.Resting && !Converged(session, orders, protection))
+        {
+            await ConvergeAsync(session, orders, protection, entry, cancellationToken);
+        }
+
         if (protection.Status == ProtectionStatus.Pending)
         {
             var stop = Latest(orders, protection, OrderLeg.Stop);
 
-            if (stop is { Status: OrderStatus.Open or OrderStatus.PartiallyFilled or OrderStatus.Triggered or OrderStatus.Filled or OrderStatus.Finished })
+            if (stop is { Status: OrderStatus.Open or OrderStatus.PartiallyFilled or OrderStatus.Triggered or OrderStatus.Filled or OrderStatus.Finished }
+                && stop.StopPrice == protection.StopPrice)
             {
-                await RestAsync(session, protection, cancellationToken);
+                await RestAsync(session, orders, protection, cancellationToken);
             }
             else if (stop is { IsUnsettled: true })
             {
@@ -519,7 +532,7 @@ internal sealed class ProtectionKeeper(
                 switch (await PlaceStopAsync(session, orders, protection, entry, cancellationToken))
                 {
                     case StopOutcome.Rested:
-                        await RestAsync(session, protection, cancellationToken);
+                        await RestAsync(session, orders, protection, cancellationToken);
                         break;
                     case StopOutcome.WouldTrigger:
                         await BeginCloseAsync(protection, entry, "the price has already passed its stop", cancellationToken);
@@ -543,8 +556,98 @@ internal sealed class ProtectionKeeper(
     }
 
     /// <summary>
-    /// Places a stop for the protection, or on Spot with a target an OCO list (FR-EXE-02, FR-EXE-03). An attempt that
-    /// Binance never received keeps its client order ID. Any other gets a new one, so no ID is sent twice.
+    /// Brings a resting protection's orders in line with its stop and target, after an add or an adjustment moved them
+    /// (FR-CYC-03). On Futures the new stop is placed first and the old one cancelled once it rests, so the position is
+    /// never without one, and a target that's moved or removed is cancelled. On Spot the stop and target lock the same
+    /// base, so the stop or OCO list is cancelled, and the protection waits for a new one, with a fresh window, as a
+    /// fill does (FR-EXE-02).
+    /// </summary>
+    private async Task ConvergeAsync(
+        AgentSession session, AgentOrders orders, ProtectionRow protection, OrderRow entry, CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow();
+
+        if (!session.Futures)
+        {
+            await CancelLegsAsync(session, orders, protection, includeUnsettled: false, cancellationToken);
+
+            var legs = orders.LegsOf(protection).Where(leg => leg.Leg is OrderLeg.Stop or OrderLeg.Target).ToList();
+
+            // A cancel that didn't go through is tried again, and one that found an order already executed is
+            // reconciliation's to record.
+            if (legs.Any(leg => leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled or OrderStatus.Filled or OrderStatus.Finished)
+                || legs.Any(leg => leg.IsUnsettled))
+            {
+                return;
+            }
+
+            protection.Status = ProtectionStatus.Pending;
+            protection.ProtectBy = now + settings.ProtectiveStop;
+            protection.UpdatedAt = now;
+            logger.LogInformation(
+                "Protection {Sequence} of entry {ClientOrderId} takes a stop at {Stop} and a target at {Target}, so its orders are replaced",
+                protection.Sequence,
+                entry.ClientOrderId,
+                protection.StopPrice,
+                protection.TargetPrice);
+            await store.SaveAsync(protection);
+            return;
+        }
+
+        var stops = orders.LegsOf(protection)
+            .Where(leg => leg.Leg == OrderLeg.Stop && leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled)
+            .ToList();
+        var stale = stops.Where(leg => leg.StopPrice != protection.StopPrice).ToList();
+
+        if (stops.Count == stale.Count)
+        {
+            var previous = stops[^1].StopPrice;
+
+            switch (await PlaceStopAsync(session, orders, protection, entry, cancellationToken))
+            {
+                case StopOutcome.Rested:
+                    logger.LogInformation(
+                        "Protection {Sequence} of entry {ClientOrderId} moved its stop from {From} to {To}",
+                        protection.Sequence,
+                        entry.ClientOrderId,
+                        previous,
+                        protection.StopPrice);
+                    await CancelAsync(session, stale, cancellationToken);
+                    await NotifyAsync(session, protection, NotificationType.StopMoved, cancellationToken);
+                    break;
+                case StopOutcome.WouldTrigger:
+                    await BeginCloseAsync(protection, entry, "the price has already passed its new stop", cancellationToken);
+                    return;
+                case StopOutcome.Exhausted:
+                    logger.LogError(
+                        "Binance rejected every attempt to move the stop of protection {Sequence} of entry {ClientOrderId} to {To}, so it stays at {From}",
+                        protection.Sequence,
+                        entry.ClientOrderId,
+                        protection.StopPrice,
+                        previous);
+                    protection.StopPrice = previous!.Value;
+                    protection.UpdatedAt = now;
+                    await store.SaveAsync(protection);
+                    break;
+            }
+        }
+        else if (stale.Count > 0)
+        {
+            await CancelAsync(session, stale, cancellationToken);
+        }
+
+        var target = protection.TargetDropped ? null : protection.TargetPrice;
+        var staleTargets = orders.LegsOf(protection)
+            .Where(leg => leg.Leg == OrderLeg.Target && leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled && leg.StopPrice != target)
+            .ToList();
+
+        await CancelAsync(session, staleTargets, cancellationToken);
+    }
+
+    /// <summary>
+    /// Places a stop for the protection, or on Spot with a target an OCO list (FR-EXE-02, FR-EXE-03), at the
+    /// protection's prices. An attempt that Binance never received keeps its client order ID. Any other gets a new one,
+    /// so no ID is sent twice.
     /// </summary>
     private async Task<StopOutcome> PlaceStopAsync(
         AgentSession session, AgentOrders orders, ProtectionRow protection, OrderRow entry, CancellationToken cancellationToken)
@@ -552,16 +655,18 @@ internal sealed class ProtectionKeeper(
         var now = time.GetUtcNow();
         var latest = Latest(orders, protection, OrderLeg.Stop);
 
-        if (latest is { Status: OrderStatus.Rejected } && now - latest.UpdatedAt < RetryPause)
+        if (latest is { Status: OrderStatus.Rejected } && latest.StopPrice == protection.StopPrice && now - latest.UpdatedAt < RetryPause)
         {
             return StopOutcome.Waiting;
         }
 
-        var oco = !session.Futures && entry.Target is not null && !protection.TargetDropped;
+        var target = protection.TargetDropped ? null : protection.TargetPrice;
+        var oco = !session.Futures && target is not null;
         var side = Closing(entry.Side);
         List<OrderRow> rows;
 
-        if (latest is { Status: OrderStatus.NotPlaced, SentAt: null } && (latest.ListClientOrderId is not null) == oco)
+        if (latest is { Status: OrderStatus.NotPlaced, SentAt: null } && (latest.ListClientOrderId is not null) == oco
+            && SamePrices(orders, protection, latest, target))
         {
             rows = latest.ListClientOrderId is { } listId ? [.. orders.LegsOf(protection).Where(leg => leg.ListClientOrderId == listId)] : [latest];
 
@@ -581,15 +686,15 @@ internal sealed class ProtectionKeeper(
 
             var attempt = protection.Attempts++;
             protection.UpdatedAt = now;
-            var stopId = ClientOrderIds.Stop(entry.AgentId, Candle(entry), protection.Sequence, attempt);
-            var listId = oco ? ClientOrderIds.List(entry.AgentId, Candle(entry), protection.Sequence, attempt) : null;
+            var stopId = ClientOrderIds.Stop(entry.AgentId, protection.IdCandleClose, protection.IdIndex, attempt);
+            var listId = oco ? ClientOrderIds.List(entry.AgentId, protection.IdCandleClose, protection.IdIndex, attempt) : null;
 
-            rows = [Leg(entry, protection, OrderLeg.Stop, OrderKind.StopMarket, stopId, side, stopPrice: entry.ProtectiveStop, listId: listId, now: now)];
+            rows = [Leg(entry, protection, OrderLeg.Stop, OrderKind.StopMarket, stopId, side, stopPrice: protection.StopPrice, listId: listId, now: now)];
 
             if (oco)
             {
-                var targetId = ClientOrderIds.Target(entry.AgentId, Candle(entry), protection.Sequence, attempt);
-                rows.Add(Leg(entry, protection, OrderLeg.Target, OrderKind.LimitMaker, targetId, side, price: entry.Target, listId: listId, now: now));
+                var targetId = ClientOrderIds.Target(entry.AgentId, protection.IdCandleClose, protection.IdIndex, attempt);
+                rows.Add(Leg(entry, protection, OrderLeg.Target, OrderKind.LimitMaker, targetId, side, price: target, listId: listId, now: now));
             }
 
             await store.InsertAsync(rows, protection, cancellationToken);
@@ -609,8 +714,8 @@ internal sealed class ProtectionKeeper(
                         entry.Symbol,
                         side,
                         protection.Quantity,
-                        entry.Target!.Value,
-                        entry.ProtectiveStop!.Value,
+                        targetRow.Price!.Value,
+                        stopRow.StopPrice!.Value,
                         list,
                         targetRow.ClientOrderId,
                         stopRow.ClientOrderId,
@@ -636,7 +741,7 @@ internal sealed class ProtectionKeeper(
                         protection.Quantity,
                         stopRow.ClientOrderId,
                         RequestPriority.Protective,
-                        stopPrice: entry.ProtectiveStop,
+                        stopPrice: stopRow.StopPrice,
                         reduceOnly: session.Futures),
                     cancellationToken);
 
@@ -679,12 +784,19 @@ internal sealed class ProtectionKeeper(
         return stopRow.Status is OrderStatus.Rejected or OrderStatus.Canceled or OrderStatus.Expired ? StopOutcome.Failed : StopOutcome.Rested;
     }
 
+    /// <summary>Whether an attempt Binance never received still has the protection's prices, so it can be sent again as it is.</summary>
+    private static bool SamePrices(AgentOrders orders, ProtectionRow protection, OrderRow stop, decimal? target) =>
+        stop.StopPrice == protection.StopPrice
+        && (stop.ListClientOrderId is not { } listId
+            || orders.LegsOf(protection).Any(leg => leg.ListClientOrderId == listId && leg.Leg == OrderLeg.Target && leg.Price == target));
+
     /// <summary>A Futures target, reduce-only on the mark price like the stop (FR-EXE-03). One Binance refuses is dropped.</summary>
     private async Task PlaceTargetAsync(
         AgentSession session, AgentOrders orders, ProtectionRow protection, OrderRow entry, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
-        var latest = Latest(orders, protection, OrderLeg.Target);
+        var price = protection.TargetPrice!.Value;
+        var latest = orders.LegsOf(protection).Where(leg => leg.Leg == OrderLeg.Target && leg.StopPrice == price).OrderBy(leg => leg.CreatedAt).LastOrDefault();
         OrderRow row;
 
         if (latest is { Status: OrderStatus.NotPlaced, SentAt: null })
@@ -695,16 +807,31 @@ internal sealed class ProtectionKeeper(
         }
         else if (latest is not null)
         {
-            // Rejected, or shown never to have been placed: it isn't tried again.
+            // Rejected, shown never to have been placed, or cancelled outside Ecnanib: it isn't tried again.
             protection.TargetDropped = true;
             protection.UpdatedAt = now;
+            logger.LogInformation(
+                "The target of protection {Sequence} of entry {ClientOrderId} is {Status} on Binance, so only its stop rests",
+                protection.Sequence,
+                entry.ClientOrderId,
+                latest.Status);
             await store.SaveAsync(protection);
             return;
         }
         else
         {
-            var id = ClientOrderIds.Target(entry.AgentId, Candle(entry), protection.Sequence, 0);
-            row = Leg(entry, protection, OrderLeg.Target, OrderKind.TakeProfitMarket, id, Closing(entry.Side), stopPrice: entry.Target, now: now);
+            var attempt = orders.LegsOf(protection).Count(leg => leg.Leg == OrderLeg.Target && leg.CandleClose == protection.IdCandleClose);
+
+            if (attempt > ClientOrderIds.MaximumIndex)
+            {
+                protection.TargetDropped = true;
+                protection.UpdatedAt = now;
+                await store.SaveAsync(protection);
+                return;
+            }
+
+            var id = ClientOrderIds.Target(entry.AgentId, protection.IdCandleClose, protection.IdIndex, attempt);
+            row = Leg(entry, protection, OrderLeg.Target, OrderKind.TakeProfitMarket, id, Closing(entry.Side), stopPrice: price, now: now);
             await store.InsertAsync([row], cancellationToken);
             orders.Legs.Add(row);
         }
@@ -721,7 +848,7 @@ internal sealed class ProtectionKeeper(
                     protection.Quantity,
                     row.ClientOrderId,
                     RequestPriority.Normal,
-                    stopPrice: entry.Target,
+                    stopPrice: row.StopPrice,
                     reduceOnly: true),
                 cancellationToken);
 
@@ -753,21 +880,44 @@ internal sealed class ProtectionKeeper(
         }
     }
 
-    private async Task RestAsync(AgentSession session, ProtectionRow protection, CancellationToken cancellationToken)
+    /// <summary>
+    /// The protection's stop rests. The first part of an entry to rest opens its trade. A part whose stop rested before
+    /// has had it replaced, which the user hears of when it was cancelled outside Ecnanib or now rests at another price.
+    /// </summary>
+    private async Task RestAsync(AgentSession session, AgentOrders orders, ProtectionRow protection, CancellationToken cancellationToken)
     {
+        var entry = orders.EntryOf(protection);
+        var stops = orders.LegsOf(protection)
+            .Where(leg => leg.Leg == OrderLeg.Stop && leg.SentAt is not null && leg.Status is not (OrderStatus.NotPlaced or OrderStatus.Rejected))
+            .OrderBy(leg => leg.CreatedAt)
+            .ToList();
+        var moved = protection.StopLostAt is not null || (stops.Count > 1 && stops[^2].StopPrice != stops[^1].StopPrice);
+
+        Notice? notice = null;
+
+        if (!protection.Rested && !orders.ProtectionsOf(entry).Any(other => other.Rested))
+        {
+            notice = await NoticeAsync(session, NotificationType.TradeOpened, cancellationToken);
+        }
+        else if (protection.Rested && moved && session.FirstNotice(NotificationType.StopMoved))
+        {
+            notice = await NoticeAsync(session, NotificationType.StopMoved, cancellationToken);
+        }
+
         protection.Status = ProtectionStatus.Resting;
+        protection.Rested = true;
+        protection.StopLostAt = null;
         protection.UpdatedAt = time.GetUtcNow();
 
         logger.LogInformation("Protection {Sequence} rests on Binance", protection.Sequence);
 
-        // The trade opened once its first part is protected.
-        var notice = protection.Sequence == 0 ? await NoticeAsync(session, NotificationType.TradeOpened, cancellationToken) : null;
         await store.SaveAsync(protection, notice);
     }
 
     private async Task BeginCloseAsync(ProtectionRow protection, OrderRow entry, string reason, CancellationToken cancellationToken)
     {
         protection.Status = ProtectionStatus.Closing;
+        protection.ClosingFor = ProtectionClosing.Unprotected;
         protection.UpdatedAt = time.GetUtcNow();
 
         logger.LogError(
@@ -782,14 +932,17 @@ internal sealed class ProtectionKeeper(
     }
 
     /// <summary>
-    /// Closes the protection's quantity at market, after a passing evaluation of its own (FR-EXE-02, AC-01). On Spot its
-    /// stop is cancelled first, which frees the base a resting stop locks. On Futures the reduce-only close goes at once,
-    /// and the stop is cancelled after.
+    /// Closes the protection's quantity at market. An exit cites its own cycle's passing evaluation. A close because the
+    /// stop couldn't be placed has a passing evaluation of its own (FR-EXE-02, AC-01). On Spot the stop is cancelled
+    /// first, which frees the base a resting stop locks. On Futures the reduce-only close goes at once, and the stop is
+    /// cancelled after.
     /// </summary>
     private async Task CloseAsync(AgentSession session, AgentOrders orders, ProtectionRow protection, OrderRow entry, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
-        var latest = Latest(orders, protection, OrderLeg.EmergencyClose);
+        var exit = protection.ClosingFor == ProtectionClosing.Exit;
+        var leg = exit ? OrderLeg.Exit : OrderLeg.EmergencyClose;
+        var latest = orders.LegsOf(protection).Where(IsClose).OrderBy(row => row.CreatedAt).LastOrDefault();
 
         if (latest is { Status: OrderStatus.Open or OrderStatus.PartiallyFilled })
         {
@@ -811,26 +964,54 @@ internal sealed class ProtectionKeeper(
         if (!session.Futures)
         {
             await CancelLegsAsync(session, orders, protection, includeUnsettled: true, cancellationToken);
+
+            // A stop that still rests locks the base, so a sell now would be refused. The next pass tries again.
+            if (orders.LegsOf(protection).Any(row => row.Leg is OrderLeg.Stop or OrderLeg.Target && row.Status is OrderStatus.Open or OrderStatus.PartiallyFilled))
+            {
+                return;
+            }
         }
 
-        var evaluation = await EvaluateCloseAsync(session, protection, entry, cancellationToken);
+        decimal quantity;
+        ExchangeSide side;
+        bool reduceOnly;
+        string? evaluationJson = null;
 
-        if (evaluation.Order is not { Quantity: > 0m } sized)
+        if (exit)
         {
-            protection.Status = ProtectionStatus.Dust;
-            protection.UpdatedAt = now;
-            logger.LogError(
-                "Protection {Sequence} of entry {ClientOrderId} can't be closed: the Risk Engine failed the close: {Failures}",
-                protection.Sequence,
-                entry.ClientOrderId,
-                string.Join(", ", evaluation.Failures.Select(rule => $"{rule.Rule} {rule.Reason}")));
-            await store.SaveAsync(protection);
-            return;
+            // The exit's own evaluation sized it, and the protection holds its share.
+            quantity = protection.Quantity;
+            side = Closing(entry.Side);
+            reduceOnly = session.Futures;
+        }
+        else
+        {
+            var evaluation = await EvaluateCloseAsync(session, protection, entry, cancellationToken);
+
+            if (evaluation.Order is not { Quantity: > 0m } sized)
+            {
+                protection.Status = ProtectionStatus.Dust;
+                protection.UpdatedAt = now;
+                logger.LogError(
+                    "Protection {Sequence} of entry {ClientOrderId} can't be closed: the Risk Engine failed the close: {Failures}",
+                    protection.Sequence,
+                    entry.ClientOrderId,
+                    string.Join(", ", evaluation.Failures.Select(rule => $"{rule.Rule} {rule.Reason}")));
+                await store.SaveAsync(protection);
+                return;
+            }
+
+            quantity = sized.Quantity.Value;
+            side = sized.Side == SizedSide.Buy ? ExchangeSide.Buy : ExchangeSide.Sell;
+
+            // The engine marks every exit reduce-only. Spot has no such thing, and the adapter refuses it.
+            reduceOnly = session.Futures && sized.ReduceOnly;
+            evaluationJson = ExecutionJson.Write(evaluation);
         }
 
         OrderRow row;
 
-        if (latest is { Status: OrderStatus.NotPlaced, SentAt: null } && latest.Quantity == sized.Quantity)
+        if (latest is { Status: OrderStatus.NotPlaced, SentAt: null } && latest.Quantity == quantity && latest.Leg == leg)
         {
             row = latest;
             Resend(row, now);
@@ -838,14 +1019,14 @@ internal sealed class ProtectionKeeper(
         }
         else
         {
-            var attempt = orders.LegsOf(protection).Count(leg => leg.Leg == OrderLeg.EmergencyClose);
+            var attempt = orders.LegsOf(protection).Count(row => IsClose(row) && row.CandleClose == protection.IdCandleClose);
 
             if (attempt > ClientOrderIds.MaximumIndex)
             {
                 protection.Status = ProtectionStatus.Abandoned;
                 protection.UpdatedAt = now;
                 logger.LogCritical(
-                    "Binance rejected every close of protection {Sequence} of entry {ClientOrderId}. {Quantity} has no stop, and the user must close it",
+                    "Binance rejected every close of protection {Sequence} of entry {ClientOrderId}. {Quantity} is still held, and the user must close it",
                     protection.Sequence,
                     entry.ClientOrderId,
                     protection.Quantity);
@@ -858,24 +1039,22 @@ internal sealed class ProtectionKeeper(
                 Id = Guid.NewGuid(),
                 UserId = entry.UserId,
                 AgentId = entry.AgentId,
-                CycleId = entry.CycleId,
-                CandleClose = entry.CandleClose,
-                Origin = OrderOrigin.System,
-                SystemEvaluation = ExecutionJson.Write(evaluation),
+                CycleId = protection.CycleId,
+                CandleClose = protection.IdCandleClose,
+                Origin = exit ? OrderOrigin.Council : OrderOrigin.System,
+                SystemEvaluation = evaluationJson,
                 CredentialId = entry.CredentialId,
                 Market = entry.Market,
                 Environment = entry.Environment,
                 Symbol = entry.Symbol,
-                Leg = OrderLeg.EmergencyClose,
+                Leg = leg,
                 EntryId = entry.Id,
                 ProtectionId = protection.Id,
-                ClientOrderId = ClientOrderIds.Close(entry.AgentId, Candle(entry), protection.Sequence, attempt),
+                ClientOrderId = ClientOrderIds.Close(entry.AgentId, protection.IdCandleClose, protection.IdIndex, attempt),
                 Type = OrderKind.Market,
-                Side = sized.Side == SizedSide.Buy ? ExchangeSide.Buy : ExchangeSide.Sell,
-                Quantity = sized.Quantity.Value,
-
-                // The engine marks every exit reduce-only. Spot has no such thing, and the adapter refuses it.
-                ReduceOnly = session.Futures && sized.ReduceOnly,
+                Side = side,
+                Quantity = quantity,
+                ReduceOnly = reduceOnly,
                 Status = OrderStatus.Sending,
                 SettlesAt = now + SendWindow,
                 CreatedAt = now,
@@ -930,28 +1109,45 @@ internal sealed class ProtectionKeeper(
 
     private async Task ClosedAsync(AgentSession session, ProtectionRow protection, OrderRow entry, OrderRow close, CancellationToken cancellationToken)
     {
+        var now = time.GetUtcNow();
+        var exit = protection.ClosingFor == ProtectionClosing.Exit;
+
         protection.Status = ProtectionStatus.Closed;
-        protection.UpdatedAt = time.GetUtcNow();
+        protection.EndReason = exit ? ProtectionEnd.Exited : ProtectionEnd.Unprotected;
+        protection.EndedAt = now;
+        protection.UpdatedAt = now;
 
-        logger.LogWarning(
-            "Protection {Sequence} of entry {ClientOrderId} was closed at market at {AveragePrice}, because its stop couldn't be placed",
-            protection.Sequence,
-            entry.ClientOrderId,
-            close.AveragePrice);
+        if (exit)
+        {
+            logger.LogInformation(
+                "Protection {Sequence} of entry {ClientOrderId} was sold at market at {AveragePrice} for the exit",
+                protection.Sequence,
+                entry.ClientOrderId,
+                close.AveragePrice);
+        }
+        else
+        {
+            logger.LogWarning(
+                "Protection {Sequence} of entry {ClientOrderId} was closed at market at {AveragePrice}, because its stop couldn't be placed",
+                protection.Sequence,
+                entry.ClientOrderId,
+                close.AveragePrice);
+        }
 
-        await store.SaveAsync(protection, await NoticeAsync(session, NotificationType.TradeClosed, cancellationToken));
+        var notice = session.FirstNotice(NotificationType.TradeClosed) ? await NoticeAsync(session, NotificationType.TradeClosed, cancellationToken) : null;
+        await store.SaveAsync(protection, notice);
     }
 
     /// <summary>
     /// The close's own evaluation (AC-01), as an exit of <see cref="IntentOrigin.System"/> that only the structural rules
-    /// can stop. On Spot the position is what the agent's fills gave it (FR-AGT-09). The price is the entry's, which is
+    /// can stop. On Spot the position is what the agent's fills gave it (FR-AGT-09). The price is the part's, which is
     /// all the exit rules use, for Spot's dust check, and Binance measures again anyway.
     /// </summary>
     private async Task<RiskEvaluation> EvaluateCloseAsync(
         AgentSession session, ProtectionRow protection, OrderRow entry, CancellationToken cancellationToken)
     {
         var agent = await agents.FindAsync(session.UserId, session.AgentId, cancellationToken);
-        var price = entry.AveragePrice ?? entry.Price ?? entry.ProtectiveStop!.Value;
+        var price = protection.EntryPrice;
         decimal? baseHeld = null;
 
         if (!session.Futures)
@@ -979,11 +1175,11 @@ internal sealed class ProtectionKeeper(
             AvailableQuote = 0m,
             BaseHeld = baseHeld,
             Position = new OpenPosition(
-                entry.Side == ExchangeSide.Buy ? PositionSide.Long : PositionSide.Short,
+                SideOf(entry),
                 protection.Quantity,
                 price,
-                Stop: entry.ProtectiveStop,
-                Target: entry.Target),
+                Stop: protection.StopPrice,
+                Target: protection.TargetPrice),
         };
 
         return engine.Evaluate(
@@ -992,17 +1188,12 @@ internal sealed class ProtectionKeeper(
     }
 
     /// <summary>
-    /// Cancels the protection's stop and target. With <paramref name="includeUnsettled"/>, orders whose outcome isn't
-    /// known are cancelled too, in case they rest. A cancel that finds nothing leaves such an order to be settled.
+    /// Cancels the given stops and targets, a Spot list whole. A cancel that finds nothing reads an order known to rest,
+    /// which has ended meanwhile, perhaps by executing.
     /// </summary>
-    private async Task CancelLegsAsync(
-        AgentSession session, AgentOrders orders, ProtectionRow protection, bool includeUnsettled, CancellationToken cancellationToken)
+    private async Task CancelAsync(AgentSession session, IReadOnlyList<OrderRow> legs, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
-        var legs = orders.LegsOf(protection)
-            .Where(leg => leg.Leg is OrderLeg.Stop or OrderLeg.Target
-                && (leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled || (includeUnsettled && leg.IsUnsettled)))
-            .ToList();
 
         foreach (var group in legs.GroupBy(leg => leg.ListClientOrderId ?? leg.ClientOrderId).Select(group => group.ToList()))
         {
@@ -1030,7 +1221,6 @@ internal sealed class ProtectionKeeper(
             }
             catch (ExchangeException exception) when (exception is { Failure: ExchangeFailure.Rejected, Code: UnknownOrder })
             {
-                // Nothing open has that ID. One known to rest has ended meanwhile, perhaps by filling, which a read tells.
                 foreach (var leg in group.Where(leg => !leg.IsUnsettled))
                 {
                     await ReadAsync(session, leg, RequestPriority.Protective, now, cancellationToken);
@@ -1045,11 +1235,16 @@ internal sealed class ProtectionKeeper(
         }
     }
 
-    /// <summary>Stops and targets still resting for a part of a position that's gone: closed, ended, or abandoned.</summary>
+    /// <summary>
+    /// Stops and targets still resting for a part of a position that's gone: closed, ended or split. On Futures that's the
+    /// take-profit left when the stop executed, which could otherwise close a new position. What a stopped agent left to
+    /// the user stays as it is (FR-AGT-07).
+    /// </summary>
     private async Task CancelOrphansAsync(AgentSession session, AgentOrders orders, CancellationToken cancellationToken)
     {
         foreach (var protection in orders.Protections
             .Where(protection => protection.Status is ProtectionStatus.Closed or ProtectionStatus.Ended or ProtectionStatus.Dust)
+            .Where(protection => protection.EndReason != ProtectionEnd.LeftToUser)
             .Where(protection => orders.LegsOf(protection).Any(leg => leg.Leg is OrderLeg.Stop or OrderLeg.Target && leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled))
             .ToList())
         {
@@ -1074,37 +1269,38 @@ internal sealed class ProtectionKeeper(
         }
     }
 
-    private async Task<Notice?> NoticeAsync(AgentSession session, NotificationType type, CancellationToken cancellationToken)
+    /// <summary>Saves the protection with a notice of this type, unless the session has raised one already.</summary>
+    private async Task NotifyAsync(AgentSession session, ProtectionRow protection, NotificationType type, CancellationToken cancellationToken)
+    {
+        var notice = session.FirstNotice(type) ? await NoticeAsync(session, type, cancellationToken) : null;
+        await store.SaveAsync(protection, notice);
+    }
+
+    public async Task<Notice?> NoticeAsync(AgentSession session, NotificationType type, CancellationToken cancellationToken)
     {
         var agent = await agents.FindAsync(session.UserId, session.AgentId, cancellationToken);
 
         return agent is null ? null : new Notice(type, session.UserId, $"/agents/{session.AgentId}/settings", agent.Settings.Name, agent.IsDemo);
     }
 
-    private KeeperPass Summarize(AgentSession session, AgentOrders orders)
+    private static KeeperPass Summarize(AgentSession session, AgentOrders orders)
     {
         var urgent = orders.Protections.Any(protection => protection.Status is ProtectionStatus.Pending or ProtectionStatus.Closing)
             || orders.Entries.Concat(orders.Legs).Any(row => row.IsUnsettled)
-            || orders.Entries.Any(entry => entry.Type == OrderKind.Market && entry.IsLive);
+            || orders.Entries.Any(entry => entry.Type == OrderKind.Market && entry.IsLive)
+            || orders.Protections.Any(protection => protection.Status == ProtectionStatus.Resting && !Converged(session, orders, protection));
 
         var hasWork = urgent
             || orders.Entries.Any(entry => !entry.Resolved)
             || orders.Protections.Any(protection => protection.Status == ProtectionStatus.Resting && NeedsTarget(session, orders, protection))
             || orders.Protections.Any(protection => protection.Status is ProtectionStatus.Closed or ProtectionStatus.Ended or ProtectionStatus.Dust
+                && protection.EndReason != ProtectionEnd.LeftToUser
                 && orders.LegsOf(protection).Any(leg => leg.Status is OrderStatus.Open or OrderStatus.PartiallyFilled));
 
         return new KeeperPass(orders, hasWork, urgent);
     }
 
-    /// <summary>Whether a resting protection's stop or target has ended, so what it protected is no longer held.</summary>
-    private static bool Ended(AgentOrders orders, ProtectionRow protection)
-    {
-        var legs = orders.LegsOf(protection).Where(leg => leg.Leg is OrderLeg.Stop or OrderLeg.Target && leg.Status is not (OrderStatus.NotPlaced or OrderStatus.Rejected)).ToList();
-        var stop = legs.LastOrDefault(leg => leg.Leg == OrderLeg.Stop);
-
-        return stop is not null && !stop.IsLive
-            || legs.Any(leg => leg.Leg == OrderLeg.Target && leg.Status is OrderStatus.Filled or OrderStatus.Finished);
-    }
+    private static bool IsClose(OrderRow row) => row.Leg is OrderLeg.EmergencyClose or OrderLeg.Exit;
 
     private static OrderRow? Latest(AgentOrders orders, ProtectionRow protection, OrderLeg leg) =>
         orders.LegsOf(protection).Where(row => row.Leg == leg).OrderBy(row => row.CreatedAt).LastOrDefault();
@@ -1124,8 +1320,8 @@ internal sealed class ProtectionKeeper(
         Id = Guid.NewGuid(),
         UserId = entry.UserId,
         AgentId = entry.AgentId,
-        CycleId = entry.CycleId,
-        CandleClose = entry.CandleClose,
+        CycleId = protection.CycleId,
+        CandleClose = protection.IdCandleClose,
         Origin = OrderOrigin.Council,
         CredentialId = entry.CredentialId,
         Market = entry.Market,
@@ -1241,6 +1437,13 @@ internal sealed class ProtectionKeeper(
         symbol.Notional is { } notional ? new NotionalRule(notional.Minimum, notional.Maximum) : null,
         symbol.PercentPrice is { } band ? new PercentPriceRule(band.BuyUp, band.BuyDown, band.SellUp, band.SellDown) : null);
 
+    /// <summary>The side of the position an entry opens or adds to.</summary>
+    public static PositionSide SideOf(OrderRow entry) => entry.Side == ExchangeSide.Buy ? PositionSide.Long : PositionSide.Short;
+
+    /// <summary>Whether <paramref name="proposed"/> is strictly closer to the price than <paramref name="current"/>, for a position on this side.</summary>
+    public static bool Tightens(PositionSide side, decimal current, decimal proposed) =>
+        side == PositionSide.Long ? proposed > current : proposed < current;
+
     /// <summary>A row sent again under its own client order ID, which Binance never received.</summary>
     private static void Resend(OrderRow row, DateTimeOffset now)
     {
@@ -1256,10 +1459,7 @@ internal sealed class ProtectionKeeper(
         row.UpdatedAt = now;
     }
 
-    private static ExchangeSide Closing(ExchangeSide entrySide) => entrySide == ExchangeSide.Buy ? ExchangeSide.Sell : ExchangeSide.Buy;
-
-    /// <summary>The cycle an entry's IDs are derived from, which its own ID holds.</summary>
-    private static DateTimeOffset Candle(OrderRow entry) => entry.CandleClose;
+    public static ExchangeSide Closing(ExchangeSide entrySide) => entrySide == ExchangeSide.Buy ? ExchangeSide.Sell : ExchangeSide.Buy;
 
     private static DateTimeOffset Max(DateTimeOffset first, DateTimeOffset second) => first > second ? first : second;
 
@@ -1275,5 +1475,5 @@ internal sealed class ProtectionKeeper(
 
 /// <summary>What one pass found.</summary>
 /// <param name="HasWork">Something still needs a pass: an unfilled entry, a stop not yet resting, an unsettled order.</param>
-/// <param name="Urgent">A fill waits for its stop, a close is under way, or an order's outcome isn't known.</param>
+/// <param name="Urgent">A fill waits for its stop, a close is under way, a stop is being moved, or an order's outcome isn't known.</param>
 internal sealed record KeeperPass(AgentOrders Orders, bool HasWork, bool Urgent);

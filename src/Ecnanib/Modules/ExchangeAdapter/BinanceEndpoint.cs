@@ -25,6 +25,9 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     public static readonly BinanceEndpoint SpotNewOrderList = new(HttpMethod.Post, "/api/v3/orderList/oco", 1, Signed: true, Trade: true, PlacesOrder: true);
 
     public static readonly BinanceEndpoint SpotQueryOrderList = new(HttpMethod.Get, "/api/v3/orderList", 4, Signed: true);
+
+    /// <summary>One symbol's open orders, order lists' members included. Binance charges 6 with a symbol, and 80 without.</summary>
+    public static readonly BinanceEndpoint SpotOpenOrders = new(HttpMethod.Get, "/api/v3/openOrders", 6, Signed: true);
     public static readonly BinanceEndpoint SpotCancelOrderList = new(HttpMethod.Delete, "/api/v3/orderList", 1, Signed: true, Trade: true);
 
     /// <summary>One order's fills. Binance charges 5 when an order ID is given, and 20 otherwise.</summary>
@@ -50,6 +53,9 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     public static readonly BinanceEndpoint FuturesQueryOrder = new(HttpMethod.Get, "/fapi/v1/order", 1, Signed: true);
     public static readonly BinanceEndpoint FuturesCancelOrder = new(HttpMethod.Delete, "/fapi/v1/order", 1, Signed: true, Trade: true);
 
+    /// <summary>One symbol's open orders, conditional ones aside. Binance charges 1 with a symbol, and 40 without.</summary>
+    public static readonly BinanceEndpoint FuturesOpenOrders = new(HttpMethod.Get, "/fapi/v1/openOrders", 1, Signed: true);
+
     /// <summary>One order's fills.</summary>
     public static readonly BinanceEndpoint FuturesUserTrades = new(HttpMethod.Get, "/fapi/v1/userTrades", 5, Signed: true);
 
@@ -57,6 +63,9 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     public static readonly BinanceEndpoint FuturesNewAlgoOrder = new(HttpMethod.Post, "/fapi/v1/algoOrder", 1, Signed: true, Trade: true, PlacesOrder: true);
     public static readonly BinanceEndpoint FuturesQueryAlgoOrder = new(HttpMethod.Get, "/fapi/v1/algoOrder", 1, Signed: true);
     public static readonly BinanceEndpoint FuturesCancelAlgoOrder = new(HttpMethod.Delete, "/fapi/v1/algoOrder", 1, Signed: true, Trade: true);
+
+    /// <summary>One symbol's open conditional orders. Binance charges 1 with a symbol, and 40 without.</summary>
+    public static readonly BinanceEndpoint FuturesOpenAlgoOrders = new(HttpMethod.Get, "/fapi/v1/openAlgoOrders", 1, Signed: true);
 
     /// <summary>One symbol's best bid and ask.</summary>
     public static readonly BinanceEndpoint FuturesBookTicker = new(HttpMethod.Get, "/fapi/v1/ticker/bookTicker", 2, Signed: false);

@@ -25,18 +25,28 @@ internal sealed class ExecutionApp : IAsyncDisposable
 
     public const decimal Target = 60_400m;
 
-    public ExecutionApp(PostgresFixture postgres, Dictionary<string, string?>? settings = null, string? connectionString = null)
+    /// <param name="prepare">Sets up Binance's books before the application starts, as they are when it restarts.</param>
+    public ExecutionApp(
+        PostgresFixture postgres, Dictionary<string, string?>? settings = null, string? connectionString = null, Action<FakeOrderBook>? prepare = null)
     {
-        // The sweep runs only when a test runs it.
-        Agents = new AgentApp(postgres, settings, connectionString: connectionString, manualJobs: ["OrderWatchSweep"]);
-        Book = new FakeOrderBook(Agents.Binance, Agents.Clock) { Price = Price };
+        // The sweeps run only when a test runs them.
+        Agents = new AgentApp(
+            postgres,
+            settings,
+            connectionString: connectionString,
+            manualJobs: ["OrderWatchSweep", "ReconcileSweep"],
+            beforeStart: agents =>
+            {
+                Book = new FakeOrderBook(agents.Binance, agents.Clock) { Price = Price };
+                prepare?.Invoke(Book);
+            });
     }
 
     public static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     public AgentApp Agents { get; }
 
-    public FakeOrderBook Book { get; }
+    public FakeOrderBook Book { get; private set; } = null!;
 
     public TestClock Clock => Agents.Clock;
 
@@ -75,6 +85,45 @@ internal sealed class ExecutionApp : IAsyncDisposable
     /// <summary>CANCEL_PENDING, which the engine passes while the agent has an unfilled entry.</summary>
     public static SizedOrder CancelPending(Market market) =>
         RiskHarness.Evaluate(new OrderIntent { Action = IntentAction.CancelPending }, Inputs(market) with { HasPendingEntry = true }).Passes();
+
+    /// <summary>A long the agent holds, bought at <see cref="Price"/>, with its stop and target.</summary>
+    public static OpenPosition Held(decimal quantity, decimal stop = Stop, decimal? target = Target) =>
+        new(PositionSide.Long, quantity, Price, Stop: stop, Target: target);
+
+    /// <summary>
+    /// An add to <paramref name="position"/>, sized with the price at <paramref name="price"/> and a stop that guards the
+    /// whole position. The capital is raised, because a first entry takes all of the usual one's notional.
+    /// </summary>
+    public static SizedOrder Add(Market market, OpenPosition position, decimal price, decimal stop) =>
+        RiskHarness.Evaluate(
+            new OrderIntent
+            {
+                Action = market == Market.Spot ? IntentAction.Buy : IntentAction.OpenLong,
+                EntryType = EntryType.Market,
+                StopPrice = stop,
+            },
+            Holding(Inputs(market), market, position) with
+            {
+                Prices = new MarketPrices(price - 0.1m, price, price, market == Market.Futures ? price : null),
+                CapitalAllocation = 5000m,
+            }).Passes();
+
+    /// <summary>SELL or CLOSE of <paramref name="position"/>: all of it, or <paramref name="fraction"/>.</summary>
+    public static SizedOrder Exit(Market market, OpenPosition position, decimal? fraction = null) =>
+        RiskHarness.Evaluate(
+            new OrderIntent { Action = market == Market.Spot ? IntentAction.Sell : IntentAction.Close, CloseFraction = fraction },
+            Holding(Inputs(market), market, position)).Passes();
+
+    /// <summary>ADJUST_STOP of <paramref name="position"/>.</summary>
+    public static SizedOrder MoveStop(Market market, OpenPosition position, decimal stop) =>
+        RiskHarness.Evaluate(new OrderIntent { Action = IntentAction.AdjustStop, StopPrice = stop }, Holding(Inputs(market), market, position)).Passes();
+
+    /// <summary>ADJUST_TARGET of <paramref name="position"/>, or removing its target.</summary>
+    public static SizedOrder MoveTarget(Market market, OpenPosition position, decimal? target) =>
+        RiskHarness.Evaluate(new OrderIntent { Action = IntentAction.AdjustTarget, TargetPrice = target }, Holding(Inputs(market), market, position)).Passes();
+
+    private static RiskInputs Holding(RiskInputs inputs, Market market, OpenPosition position) =>
+        inputs with { Position = position, BaseHeld = market == Market.Spot ? position.Quantity : null };
 
     /// <summary>What the fake's exchange information says of BTCUSDT, at <see cref="Price"/>.</summary>
     public static RiskInputs Inputs(Market market) => market == Market.Spot
@@ -138,6 +187,18 @@ internal sealed class ExecutionApp : IAsyncDisposable
 
     public Task<ExecutionResult> ExecuteAsync(ExecutionRequest request) => Execution.ExecuteAsync(request, Cancellation);
 
+    /// <summary>The client order IDs and quantity of the Futures long on the book, with its stop and take-profit, if it has one.</summary>
+    public Placed FuturesLong()
+    {
+        var stop = Book.Orders.Single(order => order.Type == "STOP_MARKET");
+
+        return new Placed(
+            Book.Orders.Single(order => order is { Futures: true, Algo: false, Type: "MARKET", Side: "BUY" }).ClientOrderId,
+            stop.ClientOrderId,
+            Book.Orders.SingleOrDefault(order => order.Type == "TAKE_PROFIT_MARKET")?.ClientOrderId ?? "",
+            stop.Quantity);
+    }
+
     /// <summary>The agent's orders, oldest first, as leg, type, side, status and quantity.</summary>
     public Task<List<string>> OrdersAsync(Guid agentId) =>
         Sql.ColumnAsync(
@@ -155,6 +216,16 @@ internal sealed class ExecutionApp : IAsyncDisposable
             $"SELECT concat_ws(' ', sequence, status, trim_scale(quantity)::text) FROM protections WHERE agent_id = '{agentId}' ORDER BY created_at, sequence",
             Cancellation);
 
+    /// <summary>The agent's protections, as status, quantity, stop, target and how they ended, oldest first.</summary>
+    public Task<List<string>> PartsAsync(Guid agentId) =>
+        Sql.ColumnAsync(
+            ConnectionString,
+            $"""
+            SELECT concat_ws(' ', status, trim_scale(quantity)::text, trim_scale(stop_price)::text, coalesce(trim_scale(target_price)::text, '-'), end_reason)
+            FROM protections WHERE agent_id = '{agentId}' ORDER BY created_at, sequence
+            """,
+            Cancellation);
+
     public Task<List<string>> NotificationsAsync(Guid userId) =>
         Sql.ColumnAsync(ConnectionString, $"SELECT type FROM notifications WHERE user_id = '{userId}' ORDER BY id", Cancellation);
 
@@ -165,4 +236,7 @@ internal sealed class ExecutionApp : IAsyncDisposable
     public static Task UntilAsync(Func<Task<bool>> condition) => LoggedApp.UntilAsync(async () => await condition());
 
     public ValueTask DisposeAsync() => Agents.DisposeAsync();
+
+    /// <summary>An entry, its stop and its target, by client order ID.</summary>
+    public sealed record Placed(string Entry, string Stop, string Target, decimal Quantity);
 }

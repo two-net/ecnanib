@@ -6,7 +6,7 @@ namespace Ecnanib.Modules.ExchangeAdapter;
 /// The Binance section (SRS 7.3). Read() is the only way in. The base URLs come from here and nowhere
 /// else (NFR-SEC-10), so they're required, with no defaults in code. A missing or invalid value stops
 /// startup with a message that names the setting (CFG-03). The section isn't bound strictly, because
-/// reconciliation (#35) reads Binance:ReconcileIntervalSeconds from it.
+/// Execution reads Binance:ReconcileIntervalSeconds from it, in ExecutionSettings.
 /// </summary>
 internal sealed class BinanceSettings
 {

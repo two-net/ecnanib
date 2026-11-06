@@ -5,17 +5,19 @@ namespace Ecnanib.Modules.Execution.Contracts;
 
 /// <summary>
 /// Sends what the Risk Engine sized to Binance, once (FR-EXE-04, FR-EXE-05), and protects every fill with an
-/// exchange-resting stop, or closes it at market when the stop can't be placed (FR-EXE-02, AC-02). Only a
-/// <see cref="SizedOrder"/> is sent, which only a passing evaluation makes (AC-01). The decision cycle calls it for an
+/// exchange-resting stop, or closes it at market when the stop can't be placed (FR-EXE-02, AC-02). It executes
+/// entries and adds, exits, stop and target adjustments, and CANCEL_PENDING, each after reconciling the agent's orders
+/// with Binance (FR-EXE-06). Only a <see cref="SizedOrder"/> is sent, which only a passing evaluation makes (AC-01). The decision cycle calls it for an
 /// Autonomous agent, and approvals (#38) will, so <c>BannedApis</c> allows it only in DecisionCycle and Execution. See
 /// Order execution in docs/architecture.md.
 /// </summary>
 public interface IOrderExecution
 {
     /// <summary>
-    /// Sends an entry and protects what fills, or cancels the agent's unfilled entry. It returns once the entry is
-    /// placed and anything filled is protected or closed. What's left, such as a resting limit order, is watched in
-    /// the background. Pass the run's token, never <c>Stopping</c>: a trade once sent is seen through (NFR-REL-04).
+    /// Sends an entry and protects what fills, sells an exit, moves the position's stop or target, or cancels the
+    /// agent's unfilled entry. It returns once what was sent has settled and anything filled is protected or closed.
+    /// What's left, such as a resting limit order, is watched in the background. Pass the run's token, never
+    /// <c>Stopping</c>: a trade once sent is seen through (NFR-REL-04).
     /// </summary>
     /// <exception cref="ArgumentException">The order isn't one this version executes for the request's market.</exception>
     Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, CancellationToken cancellationToken);
@@ -25,7 +27,7 @@ public interface IOrderExecution
 /// <param name="CycleId">The cycle whose passing evaluation sized the order, which every order it leads to cites (AC-01).</param>
 /// <param name="CandleClose">The cycle's candle close, which client order IDs are derived from (FR-EXE-04).</param>
 /// <param name="CredentialId">The agent's exchange key, opened for this use only (FR-KEY-09).</param>
-/// <param name="EntryDeadline">After this, no entry is sent (FR-CYC-06). It's checked right before sending.</param>
+/// <param name="EntryDeadline">After this, no entry is sent (FR-CYC-06). It's checked right before sending. Exits and adjustments ignore it.</param>
 public sealed record ExecutionRequest(
     Guid UserId,
     Guid AgentId,
@@ -64,7 +66,7 @@ public sealed record ExecutionResult(ExecutionStatus Status, ExecutionReason? Re
 
     /// <summary>Whether an order went to Binance and took effect, which is what the cycle's outcome says.</summary>
     public bool Executed => Status is ExecutionStatus.Placed or ExecutionStatus.Protected or ExecutionStatus.Closed
-        or ExecutionStatus.Unprotected or ExecutionStatus.Cancelled;
+        or ExecutionStatus.Unprotected or ExecutionStatus.Cancelled or ExecutionStatus.Exited or ExecutionStatus.Adjusted;
 }
 
 /// <summary>Stored by name, so a value is never renamed.</summary>
@@ -97,8 +99,17 @@ public enum ExecutionStatus
     /// <summary>The entry's outcome was unknown, and Binance then showed it was never placed. It isn't sent again.</summary>
     NotPlaced,
 
-    /// <summary>The entry's outcome is still unknown. It's settled in the background, and protected if it filled.</summary>
+    /// <summary>
+    /// The entry's or the exit's outcome is still unknown, or the exit's close is still being tried. It's settled in the
+    /// background, and an entry's fill is protected.
+    /// </summary>
     Unsettled,
+
+    /// <summary>The exit sold what it was sized for, or what was still held, at market.</summary>
+    Exited,
+
+    /// <summary>The position's stop or target was moved on Binance, or removed.</summary>
+    Adjusted,
 }
 
 /// <summary>Why nothing was sent. Stored by name, so a value is never renamed.</summary>
@@ -108,8 +119,8 @@ public enum ExecutionReason
     PastDeadline,
 
     /// <summary>
-    /// The agent still holds a position from an earlier entry. Until reconciliation (#35) tells the Risk Engine about
-    /// it, an entry can't be sized against it, so none is sent.
+    /// No longer given: before reconciliation (#35), an entry wasn't sent while the agent held a position. Kept for
+    /// traces that recorded it.
     /// </summary>
     PositionOpen,
 
@@ -128,6 +139,18 @@ public enum ExecutionReason
     /// <summary>There's no unfilled entry to cancel.</summary>
     NothingToCancel,
 
-    /// <summary>Exits and stop or target adjustments wait for reconciliation (#35), which knows the position.</summary>
+    /// <summary>
+    /// No longer given: before reconciliation (#35), exits and stop or target adjustments weren't executed. Kept for
+    /// traces that recorded it.
+    /// </summary>
     Unsupported,
+
+    /// <summary>The agent no longer holds a position to exit or adjust: its stop or target executed, or it was closed outside Ecnanib.</summary>
+    NoPosition,
+
+    /// <summary>
+    /// Futures: Binance holds a position in the pair that isn't only the agent's, such as one the user opened. One-way
+    /// Mode would net an entry against it, so none is sent.
+    /// </summary>
+    ForeignPosition,
 }

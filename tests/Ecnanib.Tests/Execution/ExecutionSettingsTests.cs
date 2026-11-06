@@ -2,7 +2,10 @@ using Ecnanib.Tests.Persistence;
 
 namespace Ecnanib.Tests.Execution;
 
-/// <summary>CFG-03: order execution's settings in the Agents section stop startup when invalid, and say which.</summary>
+/// <summary>
+/// CFG-03: order execution's settings in the Agents section, and reconciliation's interval in the Binance section, stop
+/// startup when invalid, and say which.
+/// </summary>
 public sealed class ExecutionSettingsTests(PostgresFixture postgres)
 {
     public static TheoryData<string, string, string> InvalidSettings => new()
@@ -14,6 +17,9 @@ public sealed class ExecutionSettingsTests(PostgresFixture postgres)
         { "Agents:ProtectiveStopSeconds", "ten", "Agents:ProtectiveStopSeconds" },
         { "Agents:MaxLimitTtlCandles", "0", "Agents:MaxLimitTtlCandles" },
         { "Agents:MaxLimitTtlCandles", "101", "Agents:MaxLimitTtlCandles" },
+        { "Binance:ReconcileIntervalSeconds", "29", "Binance:ReconcileIntervalSeconds" },
+        { "Binance:ReconcileIntervalSeconds", "3601", "Binance:ReconcileIntervalSeconds" },
+        { "Binance:ReconcileIntervalSeconds", "soon", "Binance:ReconcileIntervalSeconds" },
     };
 
     [Theory]

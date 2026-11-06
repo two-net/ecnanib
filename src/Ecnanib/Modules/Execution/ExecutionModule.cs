@@ -18,10 +18,14 @@ public static class ExecutionModule
         services.AddSingleton<OrderStore>();
         services.AddSingleton<ProtectionKeeper>();
         services.AddSingleton<OrderWatch>();
+        services.AddSingleton<Reconciler>();
+        services.AddSingleton<AgentReconciliation>();
 
-        // The sweep runs every minute, and once at startup when there's anything to resume.
+        // The watch's sweep runs every minute. Reconciliation runs on its interval, and once at startup, before any
+        // scheduled cycle (FR-EXE-08).
         services.AddSingleton<IRecurringJob, OrderWatchSweep>();
-        services.AddHostedService<OrderWatchSweep>();
+        services.AddSingleton<IRecurringJob, ReconcileSweep>();
+        services.AddHostedService<ReconcileStartup>();
         services.AddSingleton<IOrderExecution, OrderExecutor>();
         services.AddSingleton<IAgentHistory, OrderHistory>();
         services.AddSingleton<IAgentExposure, AgentExposure>();

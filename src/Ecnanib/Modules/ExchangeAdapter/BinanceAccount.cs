@@ -143,6 +143,41 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
         }
     }
 
+    public async Task<IReadOnlyList<ExchangeOrder>> GetOpenOrdersAsync(
+        Market market,
+        ExchangeKey key,
+        string symbol,
+        RequestPriority priority,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceMarketData.CheckSymbol(symbol);
+
+        var server = ExchangeServers.Trading(market, key.Environment);
+
+        if (market == Market.Spot)
+        {
+            var spot = await transport.SendAsync<List<OrderBody>>(
+                server, BinanceEndpoint.SpotOpenOrders, [("symbol", symbol)], key, priority, clientOrderId: null, cancellationToken);
+
+            return [.. spot.Where(order => order.Symbol == symbol).Select(order => BinanceOrders.FromOrder(server, order))];
+        }
+
+        // Both end before either's failure is seen, so neither is left running.
+        var orders = transport.SendAsync<List<OrderBody>>(
+            server, BinanceEndpoint.FuturesOpenOrders, [("symbol", symbol)], key, priority, clientOrderId: null, cancellationToken);
+        var algos = transport.SendAsync<List<AlgoOrderBody>>(
+            server, BinanceEndpoint.FuturesOpenAlgoOrders, [("symbol", symbol)], key, priority, clientOrderId: null, cancellationToken);
+
+        await ((Task)Task.WhenAll(orders, algos)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+        return
+        [
+            .. (await orders).Where(order => order.Symbol == symbol).Select(order => BinanceOrders.FromOrder(server, order)),
+            .. (await algos).Where(algo => algo.Symbol == symbol).Select(algo => BinanceOrders.FromAlgo(server, algo)),
+        ];
+    }
+
     public async Task<IReadOnlyList<ExchangeTrade>> GetOrderTradesAsync(
         Market market,
         ExchangeKey key,

@@ -9,8 +9,8 @@ namespace Ecnanib.Tests.Execution;
 
 /// <summary>
 /// What's checked right before an entry is sent: the cycle's deadline (FR-CYC-06), the Futures account and symbol
-/// (FR-RISK-09), the protection the pair can take, and, until reconciliation (#35) gives the Risk Engine the position,
-/// that the agent holds none. Orders a gone Futures position left behind are cancelled first.
+/// (FR-RISK-09), the protection the pair can take, and that Binance's position is the agent's own. The agent's orders
+/// are reconciled first, so an add is sent against the position, and orders a gone Futures position left are cancelled.
 /// </summary>
 public sealed class EntryGuardTests(PostgresFixture postgres)
 {
@@ -48,27 +48,42 @@ public sealed class EntryGuardTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task No_Spot_entry_is_sent_while_the_agent_holds_a_position_and_one_is_once_its_stop_has_filled()
+    public async Task A_Spot_add_is_sent_while_the_agent_holds_a_position_and_the_earlier_part_takes_its_tighter_stop()
     {
         await using var app = new ExecutionApp(postgres);
         var (user, agent) = await app.AgentAsync();
         Assert.Equal(ExecutionStatus.Protected, (await app.ExecuteAsync(app.Request(user, agent, ExecutionApp.Long(Market.Spot)))).Status);
 
-        var second = await app.ExecuteAsync(app.Request(user, agent, ExecutionApp.Long(Market.Spot), close: app.LastClose.AddHours(1)));
+        // The position is in profit, so it may be added to, with one stop for all of it (FR-RISK-06, FR-RISK-07).
+        app.Book.Price = 60_100m;
+        var add = ExecutionApp.Add(Market.Spot, ExecutionApp.Held(0.01664m), price: 60_100m, stop: 59_850m);
+        var second = await app.ExecuteAsync(app.Request(user, agent, add, close: app.LastClose.AddHours(1)));
 
-        Assert.Equal((ExecutionStatus.NotSent, ExecutionReason.PositionOpen), (second.Status, second.Reason));
-        Assert.Single(app.Book.SentTo(FakeOrderBook.SpotOrder));
-
-        // The stop filled, so the OCO's target expired and nothing is held any more.
-        app.Book.Trigger(app.Book.Orders.Single(order => order.Type == "STOP_LOSS").ClientOrderId);
-        var third = await app.ExecuteAsync(app.Request(user, agent, ExecutionApp.Long(Market.Spot), close: app.LastClose.AddHours(2)));
-
-        Assert.Equal(ExecutionStatus.Protected, third.Status);
-        Assert.Equal(["0 Ended 0.01664", "0 Resting 0.01664"], await app.ProtectionsAsync(agent.Id));
+        Assert.Equal(ExecutionStatus.Protected, second.Status);
+        Assert.Equal(2, app.Book.SentTo(FakeOrderBook.SpotOrder).Count(sent => sent.Type == "MARKET"));
+        await ExecutionApp.UntilAsync(async () => (await app.PartsAsync(agent.Id)).All(part => part.StartsWith("Resting", StringComparison.Ordinal) && part.Contains(" 59850 ", StringComparison.Ordinal)));
+        Assert.All(app.Book.Orders.Where(order => order.Type == "STOP_LOSS" && order.Status == "NEW"), stop => Assert.Equal(59_850m, stop.StopPrice));
+        Assert.Equal(2, app.Book.Orders.Count(order => order.Type == "STOP_LOSS" && order.Status == "NEW"));
     }
 
     [Fact]
-    public async Task No_Futures_entry_is_sent_while_the_account_holds_a_position_in_the_pair()
+    public async Task A_Spot_entry_after_the_stop_filled_is_sized_as_a_new_position()
+    {
+        await using var app = new ExecutionApp(postgres);
+        var (user, agent) = await app.AgentAsync();
+        Assert.Equal(ExecutionStatus.Protected, (await app.ExecuteAsync(app.Request(user, agent, ExecutionApp.Long(Market.Spot)))).Status);
+
+        // The stop filled, so the OCO's target expired and nothing is held any more.
+        app.Book.Trigger(app.Book.Orders.Single(order => order.Type == "STOP_LOSS").ClientOrderId);
+        var second = await app.ExecuteAsync(app.Request(user, agent, ExecutionApp.Long(Market.Spot), close: app.LastClose.AddHours(1)));
+
+        Assert.Equal(ExecutionStatus.Protected, second.Status);
+        Assert.Equal(["0 Ended 0.01664", "0 Resting 0.01664"], await app.ProtectionsAsync(agent.Id));
+        Assert.Equal("Ended 0.01664 59800 60400 StopFilled", (await app.PartsAsync(agent.Id))[0]);
+    }
+
+    [Fact]
+    public async Task No_Futures_entry_is_sent_while_the_account_holds_a_position_in_the_pair_that_isnt_the_agents()
     {
         await using var app = new ExecutionApp(postgres);
         var (user, agent) = await app.AgentAsync(Market.Futures);
@@ -76,7 +91,7 @@ public sealed class EntryGuardTests(PostgresFixture postgres)
 
         var result = await app.ExecuteAsync(app.Request(user, agent, ExecutionApp.Long(Market.Futures)));
 
-        Assert.Equal((ExecutionStatus.NotSent, ExecutionReason.PositionOpen), (result.Status, result.Reason));
+        Assert.Equal((ExecutionStatus.NotSent, ExecutionReason.ForeignPosition), (result.Status, result.Reason));
         Assert.Empty(app.Book.Placed);
     }
 

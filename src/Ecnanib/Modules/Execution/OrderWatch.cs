@@ -8,7 +8,7 @@ namespace Ecnanib.Modules.Execution;
 /// <see cref="ExecutionSettings.PendingEntryCheck"/> and cancelled at its time-to-live (FR-EXE-01), each fill is
 /// protected (FR-EXE-02, AC-02), and orders whose outcome isn't known are settled (FR-EXE-05). One run per agent at a
 /// time, each a recorded job run with its own correlation ID (NFR-REL-05). The sweep starts any that should be running,
-/// including after a restart. See Order execution in docs/architecture.md.
+/// and so does reconciliation, including after a restart. See Order execution in docs/architecture.md.
 /// </summary>
 internal sealed class OrderWatch(
     IJobRunner runner,
@@ -37,8 +37,7 @@ internal sealed class OrderWatch(
     /// Starts the agent's watch unless one is running. Call it while holding the agent's lock, so a run that's just
     /// found nothing to do can't miss what the caller left.
     /// </summary>
-    /// <param name="resume">After a restart: protections waiting for a stop get a full window again.</param>
-    public void Ensure(Guid userId, Guid agentId, bool resume = false)
+    public void Ensure(Guid userId, Guid agentId)
     {
         var token = new object();
 
@@ -49,7 +48,7 @@ internal sealed class OrderWatch(
 
         var more = new HandOver();
         var run = runner.RunAsync(JobName, RunLength + WindDown, (context, cancellationToken) =>
-            WatchAsync(userId, agentId, token, resume, more, context, cancellationToken));
+            WatchAsync(userId, agentId, token, more, context, cancellationToken));
 
         _ = run.ContinueWith(
             _ =>
@@ -67,7 +66,7 @@ internal sealed class OrderWatch(
     }
 
     private async Task WatchAsync(
-        Guid userId, Guid agentId, object token, bool resume, HandOver more, JobContext context, CancellationToken cancellationToken)
+        Guid userId, Guid agentId, object token, HandOver more, JobContext context, CancellationToken cancellationToken)
     {
         using var scope = logger.BeginScope(new Dictionary<string, object?> { [LogProperties.AgentId] = agentId });
 
@@ -105,11 +104,6 @@ internal sealed class OrderWatch(
 
                 using (session)
                 {
-                    if (resume && passes == 0)
-                    {
-                        await keeper.ResumeAsync(session, cancellationToken);
-                    }
-
                     pass = await keeper.AdvanceAsync(session, cancellationToken);
                 }
 
