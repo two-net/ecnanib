@@ -333,6 +333,7 @@ internal sealed class OrderExecutor(
                 else
                 {
                     rest.Status = ProtectionStatus.Dust;
+                    rest.EndedAt = now;
                     logger.LogError(
                         "The exit leaves {Quantity} of a part, which is too small for Binance to take a stop or a close for", keep);
                 }

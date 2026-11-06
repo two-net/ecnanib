@@ -115,7 +115,8 @@ internal static class BinanceOrders
             body.Commission,
             body.CommissionAsset,
             DateTimeOffset.FromUnixTimeMilliseconds(body.Time),
-            body.IsMaker ?? body.Maker ?? false);
+            body.IsMaker ?? body.Maker ?? false,
+            body.IsBuyer ?? body.Buyer ?? false);
 
     private static OrderSide ParseSide(ExchangeServer server, string side) => side switch
     {

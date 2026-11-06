@@ -9,6 +9,9 @@ namespace Ecnanib.Modules.ExchangeAdapter.Contracts;
 /// </summary>
 public interface IExchangeAccount
 {
+    /// <summary>The longest window <see cref="GetTradesAsync"/> may ask for: 24 hours on Spot and 7 days on Futures.</summary>
+    static TimeSpan MaximumTradeWindow(Market market) => market == Market.Spot ? TimeSpan.FromHours(24) : TimeSpan.FromDays(7);
+
     /// <summary>The account behind <paramref name="key"/>, on the key's environment (FR-KEY-04), at normal priority.</summary>
     /// <exception cref="ExchangeException">The call failed. An invalid key is <see cref="ExchangeFailure.Rejected"/>.</exception>
     /// <exception cref="ArgumentException">An Ed25519 secret that isn't a PKCS#8 PEM private key. Nothing was sent.</exception>
@@ -94,6 +97,40 @@ public interface IExchangeAccount
         string symbol,
         long exchangeOrderId,
         RequestPriority priority,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The account's trades in one symbol whose times fall between <paramref name="from"/> and <paramref name="to"/>,
+    /// both included, oldest first, the user's own orders included: <c>myTrades</c> on Spot (weight 20) and
+    /// <c>userTrades</c> on Futures (5), at most 1000. The trade journal prices a close made outside Ecnanib from
+    /// them. Binance allows a window of at most 24 hours on Spot and 7 days on Futures.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A symbol Binance wouldn't accept, <paramref name="from"/> after <paramref name="to"/>, or a window longer than
+    /// the market allows. Nothing was sent.
+    /// </exception>
+    /// <exception cref="ExchangeException">The call failed.</exception>
+    Task<IReadOnlyList<ExchangeTrade>> GetTradesAsync(
+        Market market,
+        ExchangeKey key,
+        string symbol,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        RequestPriority priority,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The funding the key's Futures account paid or received in one symbol between <paramref name="from"/> and
+    /// <paramref name="to"/>, both included, oldest first, from <c>GET /fapi/v1/income</c> with
+    /// <c>incomeType=FUNDING_FEE</c> (weight 30 a page of 1000). It reads every page. Binance keeps three months.
+    /// </summary>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept, or <paramref name="from"/> after <paramref name="to"/>. Nothing was sent.</exception>
+    /// <exception cref="ExchangeException">The call failed.</exception>
+    Task<IReadOnlyList<ExchangeFundingFee>> GetFundingFeesAsync(
+        ExchangeKey key,
+        string symbol,
+        DateTimeOffset from,
+        DateTimeOffset to,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -198,6 +235,7 @@ public sealed record FuturesPosition(
 /// <summary>One fill of an order.</summary>
 /// <param name="Commission">The fee, in <paramref name="CommissionAsset"/>.</param>
 /// <param name="Maker">Whether the order was the maker for this fill.</param>
+/// <param name="Buyer">Whether the order bought. Binance's <c>isBuyer</c> on Spot and <c>buyer</c> on Futures.</param>
 public sealed record ExchangeTrade(
     string Symbol,
     long TradeId,
@@ -207,7 +245,14 @@ public sealed record ExchangeTrade(
     decimal Commission,
     string CommissionAsset,
     DateTimeOffset Time,
-    bool Maker);
+    bool Maker,
+    bool Buyer);
+
+/// <summary>One funding payment on a Futures account, from <c>GET /fapi/v1/income</c>.</summary>
+/// <param name="TransactionId">Binance's <c>tranId</c>, unique to the account.</param>
+/// <param name="Time">When Binance settled it, which is the funding time.</param>
+/// <param name="Amount">Positive when the account received funding, negative when it paid, in <paramref name="Asset"/>.</param>
+public sealed record ExchangeFundingFee(string Symbol, long TransactionId, DateTimeOffset Time, decimal Amount, string Asset);
 
 /// <param name="CanTrade">Spot only. Binance's Futures account doesn't say.</param>
 /// <param name="Balances">Assets with a balance. Spot leaves out zero balances.</param>

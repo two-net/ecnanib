@@ -122,8 +122,47 @@ internal sealed class BinanceMarketData(BinanceTransport transport, ExchangeInfo
             .ToDictionary(group => group.Key, group => group.Last().FundingIntervalHours, StringComparer.Ordinal);
     }
 
+    public async Task<IReadOnlyList<ExchangeFundingRate>> GetFundingRatesAsync(
+        TradingEnvironment environment,
+        string symbol,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        CheckSymbol(symbol);
+
+        if (from > to)
+        {
+            throw new ArgumentException("The window starts after it ends.", nameof(from));
+        }
+
+        var rates = await transport.SendAsync<List<FundingRateBody>>(
+            ExchangeServers.Public(Market.Futures, environment),
+            BinanceEndpoint.FuturesFundingRate,
+            [
+                ("symbol", symbol),
+                ("startTime", Milliseconds(from)),
+                ("endTime", Milliseconds(to)),
+                ("limit", IExchangeMarketData.MaximumCandles.ToString(CultureInfo.InvariantCulture)),
+            ],
+            key: null,
+            RequestPriority.Normal,
+            clientOrderId: null,
+            cancellationToken);
+
+        return
+        [
+            .. rates
+                .Where(rate => rate.Symbol == symbol)
+                .Select(rate => new ExchangeFundingRate(rate.Symbol, DateTimeOffset.FromUnixTimeMilliseconds(rate.FundingTime), rate.FundingRate))
+                .Where(rate => rate.Time >= from && rate.Time <= to)
+                .OrderBy(rate => rate.Time),
+        ];
+    }
+
     internal static string Code(CandleInterval interval) => interval switch
     {
+        CandleInterval.OneMinute => "1m",
         CandleInterval.FifteenMinutes => "15m",
         CandleInterval.OneHour => "1h",
         CandleInterval.FourHours => "4h",

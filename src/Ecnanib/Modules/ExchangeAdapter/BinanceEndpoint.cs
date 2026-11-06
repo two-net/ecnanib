@@ -33,6 +33,9 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     /// <summary>One order's fills. Binance charges 5 when an order ID is given, and 20 otherwise.</summary>
     public static readonly BinanceEndpoint SpotMyTrades = new(HttpMethod.Get, "/api/v3/myTrades", 5, Signed: true);
 
+    /// <summary>The account's fills in a symbol over a window of at most 24 hours, without an order ID, which Binance charges 20.</summary>
+    public static readonly BinanceEndpoint SpotMyTradesByTime = new(HttpMethod.Get, "/api/v3/myTrades", 20, Signed: true);
+
     /// <summary>
     /// A key's permissions (FR-KEY-05), from the wallet API on the Spot Live server. Binance counts SAPI weight
     /// apart from /api weight and reports it in X-SAPI-USED-IP-WEIGHT-1M, so the response doesn't move the
@@ -56,8 +59,11 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     /// <summary>One symbol's open orders, conditional ones aside. Binance charges 1 with a symbol, and 40 without.</summary>
     public static readonly BinanceEndpoint FuturesOpenOrders = new(HttpMethod.Get, "/fapi/v1/openOrders", 1, Signed: true);
 
-    /// <summary>One order's fills.</summary>
+    /// <summary>One order's fills, or the account's in a symbol over a window of at most 7 days.</summary>
     public static readonly BinanceEndpoint FuturesUserTrades = new(HttpMethod.Get, "/fapi/v1/userTrades", 5, Signed: true);
+
+    /// <summary>The account's income history, such as funding fees, a page of up to 1000 at a time.</summary>
+    public static readonly BinanceEndpoint FuturesIncome = new(HttpMethod.Get, "/fapi/v1/income", 30, Signed: true);
 
     /// <summary>Conditional orders, since Binance moved them to its algo order service on 2025-12-09.</summary>
     public static readonly BinanceEndpoint FuturesNewAlgoOrder = new(HttpMethod.Post, "/fapi/v1/algoOrder", 1, Signed: true, Trade: true, PlacesOrder: true);
@@ -93,6 +99,9 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     /// limit of its own of 500 per 5 minutes shared with the funding history, so reserving 1 is an overestimate.
     /// </summary>
     public static readonly BinanceEndpoint FuturesFundingInfo = new(HttpMethod.Get, "/fapi/v1/fundingInfo", 1, Signed: false);
+
+    /// <summary>A symbol's funding rate history. Like the funding information, it's under the limit of 500 per 5 minutes, so 1 is reserved.</summary>
+    public static readonly BinanceEndpoint FuturesFundingRate = new(HttpMethod.Get, "/fapi/v1/fundingRate", 1, Signed: false);
 
     /// <summary>
     /// Changes a symbol's margin type. It places no order and is safe to send again, so it isn't a trade:

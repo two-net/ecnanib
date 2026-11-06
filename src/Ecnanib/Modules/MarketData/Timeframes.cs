@@ -29,6 +29,7 @@ internal static class Timeframes
 
     public static TimeSpan Length(CandleInterval interval) => interval switch
     {
+        CandleInterval.OneMinute => TimeSpan.FromMinutes(1),
         CandleInterval.FifteenMinutes => TimeSpan.FromMinutes(15),
         CandleInterval.OneHour => TimeSpan.FromHours(1),
         CandleInterval.FourHours => TimeSpan.FromHours(4),

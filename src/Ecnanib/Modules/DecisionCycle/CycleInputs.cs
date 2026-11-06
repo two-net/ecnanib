@@ -73,7 +73,8 @@ internal static class CycleInputs
         decimal capitalAllocation,
         ExchangeSymbolInfo symbol,
         MarketSnapshot snapshot,
-        AgentAccount account) => new()
+        AgentAccount account,
+        TradingRecord record) => new()
     {
         Market = market,
         Now = now,
@@ -95,8 +96,7 @@ internal static class CycleInputs
         Position = account.Position,
         HasPendingEntry = account.HasPendingEntry,
 
-        // The trade journal (#36) fills the record.
-        Record = TradingRecord.None,
+        Record = record,
         Brackets = account.Brackets,
     };
 

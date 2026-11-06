@@ -347,7 +347,7 @@ internal sealed class OrderListOrderBody
     public string ClientOrderId { get; init; } = "";
 }
 
-/// <summary>One fill, from Spot's myTrades or Futures' userTrades. Spot says isMaker, and Futures maker.</summary>
+/// <summary>One fill, from Spot's myTrades or Futures' userTrades. Spot says isMaker and isBuyer, and Futures maker and buyer.</summary>
 internal sealed class TradeBody
 {
     public string Symbol { get; init; } = "";
@@ -369,4 +369,35 @@ internal sealed class TradeBody
     public bool? IsMaker { get; init; }
 
     public bool? Maker { get; init; }
+
+    public bool? IsBuyer { get; init; }
+
+    public bool? Buyer { get; init; }
+}
+
+/// <summary>One entry of Futures' income history.</summary>
+internal sealed class IncomeBody
+{
+    public string Symbol { get; init; } = "";
+
+    /// <summary>FUNDING_FEE for funding.</summary>
+    public string IncomeType { get; init; } = "";
+
+    public decimal Income { get; init; }
+
+    public string Asset { get; init; } = "";
+
+    public long Time { get; init; }
+
+    public long TranId { get; init; }
+}
+
+/// <summary>One entry of Futures' funding rate history.</summary>
+internal sealed class FundingRateBody
+{
+    public string Symbol { get; init; } = "";
+
+    public decimal FundingRate { get; init; }
+
+    public long FundingTime { get; init; }
 }

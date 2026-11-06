@@ -69,9 +69,30 @@ public interface IExchangeMarketData
     /// </summary>
     /// <exception cref="ExchangeException">The call failed.</exception>
     Task<IReadOnlyDictionary<string, int>> GetFundingIntervalsAsync(TradingEnvironment environment, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// A Futures symbol's funding rates whose funding times fall between <paramref name="from"/> and
+    /// <paramref name="to"/>, both included, oldest first, from <c>GET /fapi/v1/fundingRate</c>, at most 1000. The
+    /// trade journal records the rate beside each payment.
+    /// </summary>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept, or <paramref name="from"/> after <paramref name="to"/>.</exception>
+    /// <exception cref="ExchangeException">The call failed.</exception>
+    Task<IReadOnlyList<ExchangeFundingRate>> GetFundingRatesAsync(
+        TradingEnvironment environment,
+        string symbol,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken);
 }
 
-/// <summary>A candle length Binance serves, and Ecnanib uses: each agent timeframe, and 1W for a 1D agent's higher timeframe.</summary>
+/// <summary>A Futures symbol's funding rate at one funding time.</summary>
+/// <param name="Rate">As a fraction, such as 0.0001. Positive means longs pay shorts.</param>
+public sealed record ExchangeFundingRate(string Symbol, DateTimeOffset Time, decimal Rate);
+
+/// <summary>
+/// A candle length Binance serves, and Ecnanib uses: each agent timeframe, 1W for a 1D agent's higher timeframe, and
+/// 1m for the trade journal's fee conversions and excursions.
+/// </summary>
 public enum CandleInterval
 {
     FifteenMinutes,
@@ -81,6 +102,8 @@ public enum CandleInterval
 
     /// <summary>Binance's weeks start on Monday at 00:00 UTC.</summary>
     OneWeek,
+
+    OneMinute,
 }
 
 /// <summary>One candle, as Binance sends it. Prices are in the quote asset, and <paramref name="Volume"/> in the base asset.</summary>

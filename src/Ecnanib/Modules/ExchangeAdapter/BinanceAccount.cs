@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.ExchangeAdapter.Contracts;
@@ -8,6 +9,9 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
 {
     /// <summary>Binance's code for an order it has no record of.</summary>
     private const int NoSuchOrder = -2013;
+
+    /// <summary>The most a page of trades or income holds.</summary>
+    private const int MaximumPage = 1000;
 
     public async Task<ExchangeAccount> GetAccountAsync(Market market, ExchangeKey key, RequestPriority priority, CancellationToken cancellationToken)
     {
@@ -193,13 +197,123 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
         var trades = await transport.SendAsync<List<TradeBody>>(
             ExchangeServers.Trading(market, key.Environment),
             market == Market.Spot ? BinanceEndpoint.SpotMyTrades : BinanceEndpoint.FuturesUserTrades,
-            [("symbol", symbol), ("orderId", exchangeOrderId.ToString(System.Globalization.CultureInfo.InvariantCulture))],
+            [("symbol", symbol), ("orderId", exchangeOrderId.ToString(CultureInfo.InvariantCulture))],
             key,
             priority,
             clientOrderId: null,
             cancellationToken);
 
         return [.. trades.Where(trade => trade.OrderId == exchangeOrderId).Select(BinanceOrders.FromTrade).OrderBy(trade => trade.Time)];
+    }
+
+    public async Task<IReadOnlyList<ExchangeTrade>> GetTradesAsync(
+        Market market,
+        ExchangeKey key,
+        string symbol,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        RequestPriority priority,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceMarketData.CheckSymbol(symbol);
+
+        if (from > to)
+        {
+            throw new ArgumentException("The window starts after it ends.", nameof(from));
+        }
+
+        if (to - from > IExchangeAccount.MaximumTradeWindow(market))
+        {
+            throw new ArgumentException($"Binance allows a window of at most {IExchangeAccount.MaximumTradeWindow(market)} on {market}.", nameof(to));
+        }
+
+        var trades = await transport.SendAsync<List<TradeBody>>(
+            ExchangeServers.Trading(market, key.Environment),
+            market == Market.Spot ? BinanceEndpoint.SpotMyTradesByTime : BinanceEndpoint.FuturesUserTrades,
+            [
+                ("symbol", symbol),
+                ("startTime", Milliseconds(from)),
+                ("endTime", Milliseconds(to)),
+                ("limit", MaximumPage.ToString(CultureInfo.InvariantCulture)),
+            ],
+            key,
+            priority,
+            clientOrderId: null,
+            cancellationToken);
+
+        return
+        [
+            .. trades
+                .Where(trade => trade.Symbol == symbol)
+                .Select(BinanceOrders.FromTrade)
+                .Where(trade => trade.Time >= from && trade.Time <= to)
+                .OrderBy(trade => trade.Time)
+                .ThenBy(trade => trade.TradeId),
+        ];
+    }
+
+    public async Task<IReadOnlyList<ExchangeFundingFee>> GetFundingFeesAsync(
+        ExchangeKey key,
+        string symbol,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceMarketData.CheckSymbol(symbol);
+
+        if (from > to)
+        {
+            throw new ArgumentException("The window starts after it ends.", nameof(from));
+        }
+
+        var server = ExchangeServers.Trading(Market.Futures, key.Environment);
+        var fees = new Dictionary<long, ExchangeFundingFee>();
+        var start = from;
+
+        // Binance answers a page of up to 1000, oldest first. The next page starts at the last one's time, which may
+        // repeat it, so they're kept by transaction ID.
+        while (true)
+        {
+            var page = await transport.SendAsync<List<IncomeBody>>(
+                server,
+                BinanceEndpoint.FuturesIncome,
+                [
+                    ("symbol", symbol),
+                    ("incomeType", "FUNDING_FEE"),
+                    ("startTime", Milliseconds(start)),
+                    ("endTime", Milliseconds(to)),
+                    ("limit", MaximumPage.ToString(CultureInfo.InvariantCulture)),
+                ],
+                key,
+                RequestPriority.Normal,
+                clientOrderId: null,
+                cancellationToken);
+
+            foreach (var income in page.Where(income => income.Symbol == symbol && income.IncomeType == "FUNDING_FEE"))
+            {
+                fees[income.TranId] = new ExchangeFundingFee(
+                    income.Symbol, income.TranId, DateTimeOffset.FromUnixTimeMilliseconds(income.Time), income.Income, income.Asset);
+            }
+
+            if (page.Count < MaximumPage)
+            {
+                break;
+            }
+
+            var last = DateTimeOffset.FromUnixTimeMilliseconds(page.Max(income => income.Time));
+
+            if (last <= start)
+            {
+                // A whole page at one millisecond would never move on.
+                break;
+            }
+
+            start = last;
+        }
+
+        return [.. fees.Values.Where(fee => fee.Time >= from && fee.Time <= to).OrderBy(fee => fee.Time).ThenBy(fee => fee.TransactionId)];
     }
 
     public async Task<IReadOnlyList<FuturesPosition>> GetPositionAsync(
@@ -327,6 +441,8 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
                         bracket.Cum)),
             ];
     }
+
+    private static string Milliseconds(DateTimeOffset at) => at.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
 
     internal static void Check(OrderListReference list)
     {

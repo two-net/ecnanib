@@ -20,11 +20,15 @@ public static class ExecutionModule
         services.AddSingleton<OrderWatch>();
         services.AddSingleton<Reconciler>();
         services.AddSingleton<AgentReconciliation>();
+        services.AddSingleton<TradeBook>();
+        services.AddSingleton<TradeSettlement>();
+        services.AddSingleton<ITradeJournal, TradeJournal>();
 
-        // The watch's sweep runs every minute. Reconciliation runs on its interval, and once at startup, before any
-        // scheduled cycle (FR-EXE-08).
+        // The watch's sweep and the trade journal's run every minute. Reconciliation runs on its interval, and once at
+        // startup, before any scheduled cycle (FR-EXE-08).
         services.AddSingleton<IRecurringJob, OrderWatchSweep>();
         services.AddSingleton<IRecurringJob, ReconcileSweep>();
+        services.AddSingleton<IRecurringJob, TradeJournalSweep>();
         services.AddHostedService<ReconcileStartup>();
         services.AddSingleton<IOrderExecution, OrderExecutor>();
         services.AddSingleton<IAgentHistory, OrderHistory>();

@@ -24,6 +24,7 @@ internal sealed class DecisionCycles(
     IMarketData marketData,
     IAgentAccounts accounts,
     IOrderExecution execution,
+    ITradeJournal journal,
     ICouncil council,
     IRiskEngine riskEngine,
     IDbContextFactory<EcnanibDbContext> contextFactory,
@@ -125,7 +126,8 @@ internal sealed class DecisionCycles(
         var effective = riskEngine.Caps.Apply(agentSettings.Risk);
 
         // FR-RISK-08: every cycle, whatever the council decides, so a stop that filled between cycles pauses at once.
-        var limits = riskEngine.CheckLossLimits(agentSettings.Risk, capital, TradingRecord.None, time.GetUtcNow());
+        var record = await RecordAsync(request, agent, cancellationToken);
+        var limits = riskEngine.CheckLossLimits(agentSettings.Risk, capital, record, time.GetUtcNow());
         await cycle.SaveLossLimitsAsync(limits.Rules, cancellationToken);
 
         if (limits.Breach is { } breach)
@@ -163,6 +165,24 @@ internal sealed class DecisionCycles(
         var (symbol, snapshot, account) = (collected.Symbol!, collected.Snapshot!, collected.Account!);
         await cycle.SaveSnapshotAsync(CycleInputs.Snapshot(snapshot, account, capital, effective), cancellationToken);
 
+        // Reading the account reconciled it, which books a trade whose stop executed since the last pass. Its loss
+        // counts now, so this cycle neither enters on it nor skips its cooldown.
+        var current = await RecordAsync(request, agent, cancellationToken);
+
+        if (current != record)
+        {
+            record = current;
+            limits = riskEngine.CheckLossLimits(agentSettings.Risk, capital, record, time.GetUtcNow());
+            await cycle.SaveLossLimitsAsync(limits.Rules, cancellationToken);
+
+            if (limits.Breach is { } late)
+            {
+                await agents.PauseForLossLimitAsync(request.UserId, request.AgentId, late, cancellationToken);
+
+                return (CycleOutcome.PausedForLossLimit, null);
+            }
+        }
+
         // Step 5: the analysts at once. An AI call is safe to abandon, so they get Stopping.
         var analysts = new PromptContext { Snapshot = snapshot };
         var technicalTask = AskAsync(cycle, request.UserId, agent, AiRole.TechnicalAnalyst, analysts, null, context.Stopping);
@@ -195,7 +215,7 @@ internal sealed class DecisionCycles(
             // As reconciliation left them at step 2, and the Risk Critic sees the same.
             Position = CycleInputs.Position(agentSettings.Market, snapshot, account),
             PendingEntry = CycleInputs.PendingEntry(account),
-            Record = TradingRecord.None,
+            Record = record,
             Risk = effective,
             External = external,
         };
@@ -228,7 +248,7 @@ internal sealed class DecisionCycles(
 
         // Step 8: the Risk Engine, which trusts none of it (FR-RISK-01, NFR-SEC-08).
         var intent = CycleInputs.Intent(proposal, verdict.Modifications, account.Position?.Side);
-        var inputs = CycleInputs.Risk(agentSettings.Market, time.GetUtcNow(), agentSettings.Risk, capital, symbol, snapshot, account);
+        var inputs = CycleInputs.Risk(agentSettings.Market, time.GetUtcNow(), agentSettings.Risk, capital, symbol, snapshot, account, record);
         var evaluation = riskEngine.Evaluate(intent, inputs);
 
         await cycle.SaveEvaluationAsync(evaluation, cancellationToken);
@@ -440,6 +460,33 @@ internal sealed class DecisionCycles(
         await cycle.FinishRoleAsync(answer, state, SummaryOf(answer.Output), stopping);
 
         return answer;
+    }
+
+    /// <summary>
+    /// The agent's results from its trade journal (#36), for the loss limits, the entries-per-day cap and the cooldown
+    /// (FR-RISK-02, FR-RISK-08). Its streak counts from when it last became Active, so a resumed agent doesn't pause
+    /// again at once. The cooldown counts the cycles that started after the losing trade closed and have finished, so the
+    /// cycle whose reconciliation found the loss isn't one of them, and neither is this one.
+    /// </summary>
+    private async Task<TradingRecord> RecordAsync(CycleRequest request, AgentRecord agent, CancellationToken cancellationToken)
+    {
+        var results = await journal.ReadResultsAsync(request.UserId, request.AgentId, time.GetUtcNow(), agent.StatusChangedAt, cancellationToken);
+        int? cyclesSinceLoss = null;
+
+        if (results.LastLossClosedAt is { } lossClosedAt)
+        {
+            await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+            cyclesSinceLoss = await context.Set<DecisionCycleRow>()
+                .CountAsync(
+                    cycle => cycle.UserId == request.UserId && cycle.AgentId == agent.Id
+                        && cycle.StartedAt > lossClosedAt
+                        && cycle.CandleClose < request.CandleClose
+                        && cycle.Outcome != null && cycle.Outcome != CycleOutcome.Interrupted,
+                    cancellationToken);
+        }
+
+        return new TradingRecord(results.RealizedToday, results.RealizedThisWeek, results.ConsecutiveLosses, results.EntriesToday, cyclesSinceLoss);
     }
 
     /// <summary>

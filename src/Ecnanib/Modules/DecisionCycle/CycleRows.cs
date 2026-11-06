@@ -61,7 +61,10 @@ internal sealed class DecisionCycleRow
     /// <summary>A summary of what the cycle saw, as JSON (FR-UI-04). The candles each role saw are in its prompt.</summary>
     public string? InputSnapshot { get; set; }
 
-    /// <summary>The loss limits' rule results at the start of the cycle, as JSON (FR-RISK-08, FR-RISK-10).</summary>
+    /// <summary>
+    /// The loss limits' rule results, as JSON (FR-RISK-08, FR-RISK-10): at the start of the cycle, or after its account
+    /// was read when that booked a trade that changed them.
+    /// </summary>
     public string? LossLimits { get; set; }
 
     /// <summary>

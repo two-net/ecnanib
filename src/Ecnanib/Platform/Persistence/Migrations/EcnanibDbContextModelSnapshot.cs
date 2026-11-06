@@ -1101,6 +1101,139 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("risk_evaluations", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Execution.FillRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("ExchangeOrderId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("exchange_order_id");
+
+                    b.Property<long>("ExchangeTradeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("exchange_trade_id");
+
+                    b.Property<decimal>("Fee")
+                        .HasColumnType("numeric")
+                        .HasColumnName("fee");
+
+                    b.Property<string>("FeeAsset")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("fee_asset");
+
+                    b.Property<decimal?>("FeeQuote")
+                        .HasColumnType("numeric")
+                        .HasColumnName("fee_quote");
+
+                    b.Property<DateTimeOffset>("FilledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("filled_at");
+
+                    b.Property<bool>("Maker")
+                        .HasColumnType("boolean")
+                        .HasColumnName("maker");
+
+                    b.Property<Guid?>("OrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("order_id");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("numeric")
+                        .HasColumnName("price");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("Side")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("side");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source");
+
+                    b.Property<Guid>("TradeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("trade_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_fills");
+
+                    b.HasIndex("OrderId")
+                        .HasDatabaseName("ix_fills_order_id");
+
+                    b.HasIndex("TradeId", "Source", "ExchangeTradeId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_fills_trade_id_source_exchange_trade_id");
+
+                    b.ToTable("fills", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Execution.FundingPaymentRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Asset")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("asset");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("ExchangeTransactionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("exchange_transaction_id");
+
+                    b.Property<DateTimeOffset>("PaidAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paid_at");
+
+                    b.Property<decimal>("PaymentAmount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("payment_amount");
+
+                    b.Property<decimal?>("Rate")
+                        .HasColumnType("numeric")
+                        .HasColumnName("rate");
+
+                    b.Property<Guid>("TradeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("trade_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_funding_payments");
+
+                    b.HasIndex("TradeId", "ExchangeTransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_funding_payments_trade_id_exchange_transaction_id");
+
+                    b.ToTable("funding_payments", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Execution.OrderRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1265,6 +1398,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("numeric")
                         .HasColumnName("target");
 
+                    b.Property<long?>("TriggeredOrderId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("triggered_order_id");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1425,6 +1562,192 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasDatabaseName("ix_protections_user_id_agent_id_status");
 
                     b.ToTable("protections", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Execution.TradeCycleRow", b =>
+                {
+                    b.Property<Guid>("TradeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("trade_id");
+
+                    b.Property<Guid>("CycleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cycle_id");
+
+                    b.HasKey("TradeId", "CycleId")
+                        .HasName("pk_trade_cycles");
+
+                    b.HasIndex("CycleId")
+                        .HasDatabaseName("ix_trade_cycles_cycle_id");
+
+                    b.ToTable("trade_cycles", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Execution.TradeRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal?>("AdverseExcursion")
+                        .HasColumnType("numeric")
+                        .HasColumnName("adverse_excursion");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("BaseAsset")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("base_asset");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CredentialId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credential_id");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("entry_id");
+
+                    b.Property<decimal>("EntryPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("entry_price");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("environment");
+
+                    b.Property<decimal?>("ExitPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("exit_price");
+
+                    b.Property<decimal>("ExitQuantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("exit_quantity");
+
+                    b.Property<string>("ExitReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("exit_reason");
+
+                    b.Property<decimal?>("FavorableExcursion")
+                        .HasColumnType("numeric")
+                        .HasColumnName("favorable_excursion");
+
+                    b.Property<decimal?>("Fees")
+                        .HasColumnType("numeric")
+                        .HasColumnName("fees");
+
+                    b.Property<decimal?>("Funding")
+                        .HasColumnType("numeric")
+                        .HasColumnName("funding");
+
+                    b.Property<decimal>("InitialStop")
+                        .HasColumnType("numeric")
+                        .HasColumnName("initial_stop");
+
+                    b.Property<string>("Market")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("market");
+
+                    b.Property<DateTimeOffset>("OpenedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opened_at");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("QuoteAsset")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("quote_asset");
+
+                    b.Property<decimal?>("RMultiple")
+                        .HasColumnType("numeric")
+                        .HasColumnName("r_multiple");
+
+                    b.Property<decimal?>("RealizedPnl")
+                        .HasColumnType("numeric")
+                        .HasColumnName("realized_pnl");
+
+                    b.Property<DateTimeOffset?>("SettleAfter")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("settle_after");
+
+                    b.Property<int>("SettleAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("settle_attempts");
+
+                    b.Property<DateTimeOffset?>("SettledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("settled_at");
+
+                    b.Property<string>("Side")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("side");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("symbol");
+
+                    b.Property<decimal>("UnpricedQuantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("unpriced_quantity");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_trades");
+
+                    b.HasIndex("AgentId")
+                        .HasDatabaseName("ix_trades_open")
+                        .HasFilter("status = 'Open'");
+
+                    b.HasIndex("EntryId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_trades_entry_id");
+
+                    b.HasIndex("SettleAfter")
+                        .HasDatabaseName("ix_trades_unsettled")
+                        .HasFilter("status = 'Closed' AND settled_at IS NULL");
+
+                    b.HasIndex("UserId", "AgentId", "ClosedAt")
+                        .HasDatabaseName("ix_trades_user_id_agent_id_closed_at");
+
+                    b.ToTable("trades", (string)null);
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.Identity.AccountToken", b =>
@@ -2284,6 +2607,36 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_risk_evaluations_decision_cycles_cycle_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Execution.FillRow", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Execution.TradeRow", null)
+                        .WithMany()
+                        .HasForeignKey("TradeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_fills_trades_trade_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Execution.FundingPaymentRow", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Execution.TradeRow", null)
+                        .WithMany()
+                        .HasForeignKey("TradeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_funding_payments_trades_trade_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Execution.TradeCycleRow", b =>
+                {
+                    b.HasOne("Ecnanib.Modules.Execution.TradeRow", null)
+                        .WithMany()
+                        .HasForeignKey("TradeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_trade_cycles_trades_trade_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.Identity.AccountToken", b =>

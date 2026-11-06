@@ -27,6 +27,13 @@ internal sealed class FakeOrderBook
     public const string SpotOpenOrders = "/api/v3/openOrders";
     public const string FuturesOpenOrders = "/fapi/v1/openOrders";
     public const string FuturesOpenAlgoOrders = "/fapi/v1/openAlgoOrders";
+    public const string FuturesIncome = "/fapi/v1/income";
+    public const string FuturesFundingRate = "/fapi/v1/fundingRate";
+    public const string SpotKlines = "/api/v3/klines";
+    public const string FuturesKlines = "/fapi/v1/klines";
+
+    /// <summary>What Binance's ID for the order a conditional order became is offset by, so it never meets another order's.</summary>
+    private const long TriggeredOffset = 1_000_000;
 
     private readonly ConcurrentDictionary<string, Order> _orders = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, OrderList> _lists = new(StringComparer.Ordinal);
@@ -35,7 +42,8 @@ internal sealed class FakeOrderBook
     private readonly TestClock _clock;
     private long _ids = 1000;
 
-    public FakeOrderBook(FakeBinance binance, TestClock clock)
+    /// <param name="candles">Answers for candles too, from <see cref="Candles"/>, where nothing else does, such as a cycle's.</param>
+    public FakeOrderBook(FakeBinance binance, TestClock clock, bool candles = false)
     {
         _clock = clock;
 
@@ -59,6 +67,14 @@ internal sealed class FakeOrderBook
         binance.On(HttpMethod.Get, FuturesTrades, request => Trades(request, futures: true));
         binance.On(HttpMethod.Get, FuturesOpenOrders, request => Open(request, order => order.Futures && !order.Algo));
         binance.On(HttpMethod.Get, FuturesOpenAlgoOrders, request => Open(request, order => order.Algo));
+        binance.On(HttpMethod.Get, FuturesIncome, Income);
+        binance.On(HttpMethod.Get, FuturesFundingRate, Rates);
+
+        if (candles)
+        {
+            binance.On(HttpMethod.Get, SpotKlines, Klines);
+            binance.On(HttpMethod.Get, FuturesKlines, Klines);
+        }
 
         // The Futures symbol is ready at the default leverage, so FR-RISK-09's setup changes nothing.
         binance.On(HttpMethod.Get, "/fapi/v1/symbolConfig", _ => FakeBinance.Json(BinanceSamples.SymbolConfig("ISOLATED", leverage: 2)));
@@ -69,8 +85,32 @@ internal sealed class FakeOrderBook
     /// <summary>What market orders fill at.</summary>
     public decimal Price { get; set; } = 60_000m;
 
-    /// <summary>Spot's commission on a buy, taken from the base asset bought.</summary>
-    public decimal SpotFee { get; set; } = 0.001m;
+    /// <summary>Spot's usual commission.</summary>
+    public const decimal SpotFeeDefault = 0.001m;
+
+    /// <summary>Spot's commission, taken on a buy from the base asset bought.</summary>
+    public decimal SpotFee { get; set; } = SpotFeeDefault;
+
+    /// <summary>Futures' commission, as a fraction of the notional.</summary>
+    public const decimal FuturesFee = 0.0004m;
+
+    /// <summary>
+    /// The asset the account pays its commissions in, such as BNB, at <see cref="FeeAssetPrice"/> in USDT, so a Spot buy
+    /// keeps all it bought. Null for Binance's usual: the base asset on a Spot buy, and USDT otherwise.
+    /// </summary>
+    public string? FeeAsset { get; set; }
+
+    /// <summary>The price of <see cref="FeeAsset"/> in USDT, which the candles give BNBUSDT.</summary>
+    public decimal FeeAssetPrice { get; set; } = 600m;
+
+    /// <summary>
+    /// Each pair's candles, by symbol, as every candle's low, high and close. A pair that isn't here is one Binance
+    /// doesn't list. BTCUSDT's defaults to 300 below and 200 above <see cref="Price"/>, and BNBUSDT's to <see cref="FeeAssetPrice"/>.
+    /// </summary>
+    public Dictionary<string, (decimal Low, decimal High, decimal Close)> Candles { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Funding the Futures account paid or received in BTCUSDT, with the rate at the time.</summary>
+    public List<(DateTimeOffset At, decimal Amount, decimal Rate)> Funding { get; } = [];
 
     /// <summary>Base asset the Spot account holds apart from the agent's fills, as if the user owned some.</summary>
     public decimal SpotBaseOwned { get; set; }
@@ -157,6 +197,7 @@ internal sealed class FakeOrderBook
         {
             var fill = Math.Min(quantity ?? order.Quantity - order.Executed, order.Quantity - order.Executed);
             order.Fills.Add((fill, price ?? order.Price ?? Price, _clock.GetUtcNow()));
+            order.FeeAssets.Add(FeeAsset);
             order.Executed += fill;
             order.Status = order.Executed >= order.Quantity ? "FILLED" : "PARTIALLY_FILLED";
             order.UpdatedAt = _clock.GetUtcNow();
@@ -191,7 +232,10 @@ internal sealed class FakeOrderBook
     /// <summary>What the Spot account holds of BTC: what the user owned, and the fills less Spot's fee.</summary>
     public decimal SpotBase => SpotBaseOwned + _orders.Values
         .Where(order => !order.Futures)
-        .Sum(order => order.Side == "BUY" ? order.Executed * (1 - SpotFee) : -order.Executed);
+        .Sum(order => order.Side == "BUY" ? order.Executed * (1 - (FeeAsset is null ? SpotFee : 0m)) : -order.Executed);
+
+    /// <summary>Binance's ID for the order a finished conditional order became, whose fills are filed under it.</summary>
+    public static long TriggeredId(Order order) => order.Id + TriggeredOffset;
 
     /// <summary>What resting Spot sells lock of BTC.</summary>
     private decimal SpotLocked => _orders.Values
@@ -378,22 +422,129 @@ internal sealed class FakeOrderBook
         return FakeBinance.Json(ListJson(list));
     }
 
+    /// <summary>
+    /// One order's fills by its ID, which a finished conditional order's are filed under the order it became, or every
+    /// fill in a window, the user's own included.
+    /// </summary>
     private HttpResponseMessage Trades(RecordedRequest request, bool futures)
     {
-        var orderId = long.Parse(request.Parameter("orderId")!, CultureInfo.InvariantCulture);
-        var order = _orders.Values.FirstOrDefault(order => order.Id == orderId && order.Futures == futures);
-
-        if (order is null)
+        if (Next(request) is { Respond: { } respond })
         {
-            return FakeBinance.Json("[]");
+            return respond();
         }
 
-        var trades = order.Fills.Select((fill, index) => futures
-            ? $$"""{"buyer":{{Bool(order.Side == "BUY")}},"commission":"{{N(fill.Quantity * fill.Price * 0.0004m)}}","commissionAsset":"USDT","id":{{orderId * 10 + index}},"maker":false,"orderId":{{orderId}},"price":"{{N(fill.Price)}}","qty":"{{N(fill.Quantity)}}","quoteQty":"{{N(fill.Quantity * fill.Price)}}","realizedPnl":"0","side":"{{order.Side}}","positionSide":"BOTH","symbol":"BTCUSDT","time":{{fill.At.ToUnixTimeMilliseconds()}}}"""
-            : $$"""{"symbol":"BTCUSDT","id":{{orderId * 10 + index}},"orderId":{{orderId}},"orderListId":-1,"price":"{{N(fill.Price)}}","qty":"{{N(fill.Quantity)}}","quoteQty":"{{N(fill.Quantity * fill.Price)}}","commission":"{{N(order.Side == "BUY" ? fill.Quantity * SpotFee : fill.Quantity * fill.Price * SpotFee)}}","commissionAsset":"{{(order.Side == "BUY" ? "BTC" : "USDT")}}","time":{{fill.At.ToUnixTimeMilliseconds()}},"isBuyer":{{Bool(order.Side == "BUY")}},"isMaker":false,"isBestMatch":true}""");
+        var orders = _orders.Values.Where(order => order.Futures == futures);
+        IEnumerable<(Order Order, long OrderId, int Index, (decimal Quantity, decimal Price, DateTimeOffset At) Fill)> fills;
+
+        if (request.Parameter("orderId") is { } id)
+        {
+            var orderId = long.Parse(id, CultureInfo.InvariantCulture);
+            var order = orders.FirstOrDefault(order => order.Algo ? order.Status == "FINISHED" && TriggeredId(order) == orderId : order.Id == orderId);
+            fills = order is null ? [] : order.Fills.Select((fill, index) => (order, orderId, index, fill));
+        }
+        else
+        {
+            var from = DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(request.Parameter("startTime")!, CultureInfo.InvariantCulture));
+            var to = DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(request.Parameter("endTime")!, CultureInfo.InvariantCulture));
+            fills = orders
+                .SelectMany(order => order.Fills.Select((fill, index) => (order, order.Algo ? TriggeredId(order) : order.Id, index, fill)))
+                .Where(found => found.fill.At >= from && found.fill.At <= to)
+                .OrderBy(found => found.fill.At);
+        }
+
+        var trades = fills.Select(found => TradeJson(found.Order, found.OrderId, found.Index, found.Fill, futures));
 
         return FakeBinance.Json($"[{string.Join(",", trades)}]");
     }
+
+    private string TradeJson(Order order, long orderId, int index, (decimal Quantity, decimal Price, DateTimeOffset At) fill, bool futures)
+    {
+        var notional = fill.Quantity * fill.Price;
+        var (commission, asset) = futures
+            ? (notional * FuturesFee, "USDT")
+            : order.Side == "BUY" ? (fill.Quantity * SpotFee, "BTC") : (notional * SpotFee, "USDT");
+
+        if (order.FeeAssets.ElementAtOrDefault(index) is { } other)
+        {
+            (commission, asset) = (notional * (futures ? FuturesFee : SpotFee) / FeeAssetPrice, other);
+        }
+
+        var (id, time) = (orderId * 10 + index, fill.At.ToUnixTimeMilliseconds());
+
+        return futures
+            ? $$"""{"buyer":{{Bool(order.Side == "BUY")}},"commission":"{{N(commission)}}","commissionAsset":"{{asset}}","id":{{id}},"maker":false,"orderId":{{orderId}},"price":"{{N(fill.Price)}}","qty":"{{N(fill.Quantity)}}","quoteQty":"{{N(notional)}}","realizedPnl":"0","side":"{{order.Side}}","positionSide":"BOTH","symbol":"BTCUSDT","time":{{time}}}"""
+            : $$"""{"symbol":"BTCUSDT","id":{{id}},"orderId":{{orderId}},"orderListId":-1,"price":"{{N(fill.Price)}}","qty":"{{N(fill.Quantity)}}","quoteQty":"{{N(notional)}}","commission":"{{N(commission)}}","commissionAsset":"{{asset}}","time":{{time}},"isBuyer":{{Bool(order.Side == "BUY")}},"isMaker":false,"isBestMatch":true}""";
+    }
+
+    private HttpResponseMessage Income(RecordedRequest request)
+    {
+        if (Next(request) is { Respond: { } respond })
+        {
+            return respond();
+        }
+
+        var (from, to) = Window(request);
+        var payments = Funding
+            .Select((payment, index) => (payment, index))
+            .Where(found => found.payment.At >= from && found.payment.At <= to)
+            .Select(found => $$"""{"symbol":"BTCUSDT","incomeType":"FUNDING_FEE","income":"{{N(found.payment.Amount)}}","asset":"USDT","info":"FUNDING_FEE","time":{{found.payment.At.ToUnixTimeMilliseconds()}},"tranId":{{9000 + found.index}},"tradeId":""}""");
+
+        return FakeBinance.Json($"[{string.Join(",", payments)}]");
+    }
+
+    private HttpResponseMessage Rates(RecordedRequest request)
+    {
+        var (from, to) = Window(request);
+        var rates = Funding
+            .Where(payment => payment.At >= from && payment.At <= to)
+            .Select(payment => $$"""{"symbol":"BTCUSDT","fundingRate":"{{N(payment.Rate)}}","fundingTime":{{payment.At.ToUnixTimeMilliseconds()}},"markPrice":"{{N(Price)}}"}""");
+
+        return FakeBinance.Json($"[{string.Join(",", rates)}]");
+    }
+
+    /// <summary>Candles from <see cref="Candles"/>, one for each open time the request covers, up to its limit.</summary>
+    private HttpResponseMessage Klines(RecordedRequest request)
+    {
+        if (Next(request) is { Respond: { } respond })
+        {
+            return respond();
+        }
+
+        var symbol = request.Parameter("symbol")!;
+        var candles = new Dictionary<string, (decimal Low, decimal High, decimal Close)>(Candles, StringComparer.Ordinal);
+        candles.TryAdd("BTCUSDT", (Price - 300m, Price + 200m, Price));
+        candles.TryAdd("BNBUSDT", (FeeAssetPrice, FeeAssetPrice, FeeAssetPrice));
+
+        if (!candles.TryGetValue(symbol, out var candle))
+        {
+            return FakeBinance.Error(HttpStatusCode.BadRequest, -1121, "Invalid symbol.");
+        }
+
+        var length = request.Parameter("interval") switch
+        {
+            "1m" => TimeSpan.FromMinutes(1),
+            "15m" => TimeSpan.FromMinutes(15),
+            "1h" => TimeSpan.FromHours(1),
+            "4h" => TimeSpan.FromHours(4),
+            _ => TimeSpan.FromDays(1),
+        };
+
+        var (from, to) = Window(request);
+        var limit = int.Parse(request.Parameter("limit")!, CultureInfo.InvariantCulture);
+        var rows = new List<string>();
+
+        for (var open = from; open <= to && rows.Count < limit; open += length)
+        {
+            var (o, h, l, c) = (N(candle.Close), N(candle.High), N(candle.Low), N(candle.Close));
+            rows.Add($"""[{open.ToUnixTimeMilliseconds()},"{o}","{h}","{l}","{c}","1",{(open + length).ToUnixTimeMilliseconds() - 1},"1",1,"0","0","0"]""");
+        }
+
+        return FakeBinance.Json($"[{string.Join(",", rows)}]");
+    }
+
+    private static (DateTimeOffset From, DateTimeOffset To) Window(RecordedRequest request) =>
+        (DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(request.Parameter("startTime")!, CultureInfo.InvariantCulture)),
+         DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(request.Parameter("endTime")!, CultureInfo.InvariantCulture)));
 
     private HttpResponseMessage Account(RecordedRequest request)
     {
@@ -459,8 +610,8 @@ internal sealed class FakeOrderBook
             return $$"""
                 {"algoId":{{order.Id}},"clientAlgoId":"{{order.ClientOrderId}}","algoType":"CONDITIONAL","orderType":"{{order.Type}}",
                  "symbol":"BTCUSDT","side":"{{order.Side}}","positionSide":"BOTH","quantity":"{{N(order.Quantity)}}","algoStatus":"{{order.Status}}",
-                 "actualOrderId":"{{(order.Status == "FINISHED" ? (order.Id + 1).ToString(CultureInfo.InvariantCulture) : "")}}",
-                 "triggerPrice":"{{N(order.StopPrice ?? 0m)}}","price":"0","actualQty":"{{N(order.Executed)}}","actualPrice":"{{N(average)}}",
+                 "actualOrderId":"{{(order.Status == "FINISHED" ? TriggeredId(order).ToString(CultureInfo.InvariantCulture) : "")}}",
+                 "triggerPrice":"{{N(order.StopPrice ?? 0m)}}","price":"0","actualPrice":"0",
                  "workingType":"MARK_PRICE","reduceOnly":true,"createTime":{{updated}},"updateTime":{{updated}}}
                 """;
         }
@@ -530,6 +681,9 @@ internal sealed class FakeOrderBook
         public DateTimeOffset UpdatedAt { get; set; }
 
         public List<(decimal Quantity, decimal Price, DateTimeOffset At)> Fills { get; } = [];
+
+        /// <summary>The asset each fill's commission was paid in, when it wasn't Binance's usual.</summary>
+        public List<string?> FeeAssets { get; } = [];
     }
 
     private sealed record OrderList(string ListClientOrderId, long Id, IReadOnlyList<string> Orders);

@@ -16,13 +16,20 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     /// <summary>
     /// Each test's database has its own connection pool, which stays open until it idles out, so the
-    /// whole run adds up to far more than the server's default limit of 100.
+    /// whole run adds up to far more than the server's default limit of 100. PostgreSQL keeps its
+    /// statistics for every table and index of every database in dynamic shared memory, and the run's
+    /// thousands of databases outgrow Docker's default /dev/shm of 64 MB, which fails whichever query
+    /// next needs more with "could not resize shared memory segment".
     /// </summary>
     public PostgresFixture() =>
         _container = new PostgreSqlBuilder("postgres:18-alpine")
             .WithPassword(Password)
             .WithCommand("-c", "max_connections=500")
+            .WithCreateParameterModifier(parameters => parameters.HostConfig!.ShmSize = SharedMemoryBytes)
             .Build();
+
+    /// <summary>The container's /dev/shm.</summary>
+    private const long SharedMemoryBytes = 512L * 1024 * 1024;
 
     /// <summary>Unique, so a test can prove it never reaches a log.</summary>
     public string Password { get; } = $"canary-{Guid.NewGuid():N}";

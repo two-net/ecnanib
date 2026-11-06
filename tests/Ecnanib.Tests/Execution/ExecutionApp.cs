@@ -2,6 +2,7 @@ using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
 using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
+using Ecnanib.Platform.Contracts;
 using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.Identity;
 using Ecnanib.Tests.Logging;
@@ -34,10 +35,10 @@ internal sealed class ExecutionApp : IAsyncDisposable
             postgres,
             settings,
             connectionString: connectionString,
-            manualJobs: ["OrderWatchSweep", "ReconcileSweep"],
+            manualJobs: ["OrderWatchSweep", "ReconcileSweep", "TradeJournalSweep"],
             beforeStart: agents =>
             {
-                Book = new FakeOrderBook(agents.Binance, agents.Clock) { Price = Price };
+                Book = new FakeOrderBook(agents.Binance, agents.Clock, candles: true) { Price = Price };
                 prepare?.Invoke(Book);
             });
     }
@@ -225,6 +226,40 @@ internal sealed class ExecutionApp : IAsyncDisposable
             FROM protections WHERE agent_id = '{agentId}' ORDER BY created_at, sequence
             """,
             Cancellation);
+
+    /// <summary>
+    /// The agent's trades, oldest first, as status, exit reason, quantity, entry and exit prices, unpriced quantity, fees,
+    /// funding, realized P&amp;L, R-multiple rounded to 4 places, excursions, and whether it's settled. A missing value is "-".
+    /// </summary>
+    public Task<List<string>> TradesAsync(Guid agentId) =>
+        Sql.ColumnAsync(
+            ConnectionString,
+            $"""
+            SELECT concat_ws(' ', status, coalesce(exit_reason, '-'), trim_scale(quantity)::text, trim_scale(entry_price)::text,
+                coalesce(trim_scale(exit_price)::text, '-'), trim_scale(unpriced_quantity)::text, coalesce(trim_scale(fees)::text, '-'),
+                coalesce(trim_scale(funding)::text, '-'), coalesce(trim_scale(realized_pnl)::text, '-'),
+                coalesce(trim_scale(round(r_multiple, 4))::text, '-'), coalesce(trim_scale(adverse_excursion)::text, '-'),
+                coalesce(trim_scale(favorable_excursion)::text, '-'), CASE WHEN settled_at IS NULL THEN 'Provisional' ELSE 'Settled' END)
+            FROM trades WHERE agent_id = '{agentId}' ORDER BY opened_at, created_at
+            """,
+            Cancellation);
+
+    /// <summary>The fills of the agent's trades, as source, side, price, quantity, fee, fee asset and fee in the quote asset.</summary>
+    public Task<List<string>> FillsAsync(Guid agentId) =>
+        Sql.ColumnAsync(
+            ConnectionString,
+            $"""
+            SELECT concat_ws(' ', f.source, f.side, trim_scale(f.price)::text, trim_scale(f.quantity)::text, trim_scale(f.fee)::text, f.fee_asset,
+                coalesce(trim_scale(f.fee_quote)::text, '-'))
+            FROM fills f JOIN trades t ON t.id = f.trade_id WHERE t.agent_id = '{agentId}' ORDER BY f.filled_at, f.exchange_trade_id
+            """,
+            Cancellation);
+
+    /// <summary>Runs the trade journal's sweep now, which books what's left and settles closed trades from Binance.</summary>
+    public async Task JournalAsync() => Assert.Equal(JobStatus.Succeeded, await Agents.RunJobAsync("TradeJournalSweep"));
+
+    /// <summary>Runs reconciliation's sweep now.</summary>
+    public async Task ReconcileAsync() => Assert.Equal(JobStatus.Succeeded, await Agents.RunJobAsync("ReconcileSweep"));
 
     public Task<List<string>> NotificationsAsync(Guid userId) =>
         Sql.ColumnAsync(ConnectionString, $"SELECT type FROM notifications WHERE user_id = '{userId}' ORDER BY id", Cancellation);

@@ -9,7 +9,7 @@ using Microsoft.Extensions.Hosting.Internal;
 namespace Ecnanib.Tests.Exchange;
 
 /// <summary>
-/// What order execution (#34) and reconciliation (#35) rely on, against Binance's Demo servers at the URLs
+/// What order execution (#34), reconciliation (#35) and the trade journal (#36) rely on, against Binance's Demo servers at the URLs
 /// appsettings.json ships, through the real adapter. They pin what the fakes take from Binance's documentation and its
 /// official connectors: the algo order service's parameters and codes, Spot OCO lists, the trades' shape, the
 /// rejection codes Execution acts on, the open order lists and the position, and the Futures account endpoints. Each market needs ECNANIB_LIVE_BINANCE_SPOT_KEY and _SECRET, or
@@ -116,6 +116,11 @@ public sealed class LiveBinanceTests : IDisposable
         Assert.Equal(ExchangeOrderStatus.Filled, order.Status);
         Assert.Equal(order.ExecutedQuantity, trades.Sum(trade => trade.Quantity));
         Assert.All(trades, trade => Assert.False(string.IsNullOrEmpty(trade.CommissionAsset)));
+
+        // The trade journal (#36) prices a close outside Ecnanib from the account's trades in a window.
+        var now = DateTimeOffset.UtcNow;
+        var window = await Account.GetTradesAsync(Market.Spot, key, Symbol, now.AddHours(-1), now.AddMinutes(1), RequestPriority.Normal, Cancellation);
+        Assert.All(trades, trade => Assert.Contains(window, found => found.TradeId == trade.TradeId && found.Buyer));
     }
 
     [Fact]
@@ -174,6 +179,13 @@ public sealed class LiveBinanceTests : IDisposable
 
             var trades = await Account.GetOrderTradesAsync(Market.Futures, key, Symbol, entry.ExchangeOrderId, RequestPriority.Normal, Cancellation);
             Assert.Equal(entry.ExecutedQuantity, trades.Sum(trade => trade.Quantity));
+
+            // What the trade journal (#36) reads: the account's trades in a window, funding paid and its rates.
+            var now = DateTimeOffset.UtcNow;
+            var window = await Account.GetTradesAsync(Market.Futures, key, Symbol, now.AddHours(-1), now.AddMinutes(1), RequestPriority.Normal, Cancellation);
+            Assert.All(trades, trade => Assert.Contains(window, found => found.TradeId == trade.TradeId && found.Buyer));
+            Assert.All(await Account.GetFundingFeesAsync(key, Symbol, now.AddDays(-7), now, Cancellation), fee => Assert.Equal(Symbol, fee.Symbol));
+            Assert.NotEmpty(await MarketData.GetFundingRatesAsync(TradingEnvironment.Demo, Symbol, now.AddDays(-2), now, Cancellation));
 
             // A stop above the mark price for a long would trigger at once.
             var passed = await Assert.ThrowsAsync<ExchangeException>(() => Trading.PlaceOrderAsync(

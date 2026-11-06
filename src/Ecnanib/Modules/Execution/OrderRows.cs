@@ -68,6 +68,12 @@ internal sealed class OrderRow
 
     public long? ExchangeOrderId { get; set; }
 
+    /// <summary>
+    /// A Futures stop's or target's: Binance's ID for the order it became when it triggered, whose fills the trade
+    /// journal reads. <see cref="ExchangeOrderId"/> is the algo order's.
+    /// </summary>
+    public long? TriggeredOrderId { get; set; }
+
     public required OrderKind Type { get; init; }
 
     public required OrderSide Side { get; init; }
@@ -214,6 +220,11 @@ internal sealed class ProtectionRow
     /// <summary>How it ended, once it's <see cref="ProtectionStatus.Closed"/> or <see cref="ProtectionStatus.Ended"/>.</summary>
     public ProtectionEnd? EndReason { get; set; }
 
+    /// <summary>
+    /// When it stopped being the agent's to look after: <see cref="ProtectionStatus.Closed"/>,
+    /// <see cref="ProtectionStatus.Ended"/>, <see cref="ProtectionStatus.Dust"/> or <see cref="ProtectionStatus.Abandoned"/>.
+    /// Dust and Abandoned parts from before #36 have none.
+    /// </summary>
     public DateTimeOffset? EndedAt { get; set; }
 
     public required DateTimeOffset CreatedAt { get; init; }

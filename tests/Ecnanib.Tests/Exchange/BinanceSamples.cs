@@ -287,6 +287,19 @@ internal static class BinanceSamples
           "commission":"0.0000004","commissionAsset":"BTC","time":1499865549591,"isBuyer":true,"isMaker":true,"isBestMatch":true}]
         """;
 
+    /// <summary>Futures' income history: two funding payments in BTCUSDT, one paid and one received, and a commission.</summary>
+    public const string FundingIncome = """
+        [{"symbol":"BTCUSDT","incomeType":"FUNDING_FEE","income":"-0.37500000","asset":"USDT","info":"FUNDING_FEE","time":1570608000000,"tranId":9689322392,"tradeId":""},
+         {"symbol":"BTCUSDT","incomeType":"COMMISSION","income":"-0.01000000","asset":"USDT","info":"COMMISSION","time":1570610000000,"tranId":9689322393,"tradeId":"2059192"},
+         {"symbol":"BTCUSDT","incomeType":"FUNDING_FEE","income":"0.12500000","asset":"USDT","info":"FUNDING_FEE","time":1570636800000,"tranId":9689322394,"tradeId":""}]
+        """;
+
+    /// <summary>Futures' funding rate history for BTCUSDT.</summary>
+    public const string FundingRates = """
+        [{"symbol":"BTCUSDT","fundingRate":"-0.03750000","fundingTime":1570608000000,"markPrice":"34287.54619963"},
+         {"symbol":"BTCUSDT","fundingRate":"0.00010000","fundingTime":1570636800000,"markPrice":"34651.40000000"}]
+        """;
+
     /// <summary>Futures' userTrades for order 22542179, with its commission in the margin asset.</summary>
     public const string FuturesTrades = """
         [{"buyer":false,"commission":"2.42","commissionAsset":"USDT","id":698759,"maker":false,"orderId":22542179,"price":"60500.00",

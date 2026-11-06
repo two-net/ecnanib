@@ -25,6 +25,7 @@ internal sealed class ProtectionKeeper(
     IExchangeSymbols symbols,
     IRiskEngine engine,
     IAgents agents,
+    TradeBook book,
     ExecutionSettings settings,
     TimeProvider time,
     ILogger<ProtectionKeeper> logger)
@@ -51,8 +52,8 @@ internal sealed class ProtectionKeeper(
     private const int UnknownOrder = -2011;
 
     /// <summary>
-    /// One pass over the agent's orders. Exchange failures are logged and left for the next pass. Only the database
-    /// failing throws.
+    /// One pass over the agent's orders, after which the agent's trades are booked. Exchange failures are logged and left
+    /// for the next pass. Only the database failing throws.
     /// </summary>
     public async Task<KeeperPass> AdvanceAsync(AgentSession session, CancellationToken cancellationToken)
     {
@@ -79,6 +80,10 @@ internal sealed class ProtectionKeeper(
         }
 
         await CancelOrphansAsync(session, orders, cancellationToken);
+
+        // Every part that ends, ends in a pass or between two of the reconciler's, so the journal hears of it here
+        // (FR-EXE-07). It's the database only, and never fails the pass.
+        await book.TryBookAsync(session.UserId, session.AgentId, session.Symbol, cancellationToken);
 
         return Summarize(session, orders);
     }
@@ -991,6 +996,7 @@ internal sealed class ProtectionKeeper(
             if (evaluation.Order is not { Quantity: > 0m } sized)
             {
                 protection.Status = ProtectionStatus.Dust;
+                protection.EndedAt = now;
                 protection.UpdatedAt = now;
                 logger.LogError(
                     "Protection {Sequence} of entry {ClientOrderId} can't be closed: the Risk Engine failed the close: {Failures}",
@@ -1024,6 +1030,7 @@ internal sealed class ProtectionKeeper(
             if (attempt > ClientOrderIds.MaximumIndex)
             {
                 protection.Status = ProtectionStatus.Abandoned;
+                protection.EndedAt = now;
                 protection.UpdatedAt = now;
                 logger.LogCritical(
                     "Binance rejected every close of protection {Sequence} of entry {ClientOrderId}. {Quantity} is still held, and the user must close it",
@@ -1350,6 +1357,13 @@ internal sealed class ProtectionKeeper(
         if (order.ExchangeOrderId > 0)
         {
             row.ExchangeOrderId ??= order.ExchangeOrderId;
+        }
+
+        // A Futures conditional order's: the order it became, whose fills the trade journal reads. An open order list
+        // reports none, so a known one is kept.
+        if (order.TriggeredOrderId is > 0)
+        {
+            row.TriggeredOrderId ??= order.TriggeredOrderId;
         }
 
         if (order.ExecutedQuantity > row.ExecutedQuantity)
