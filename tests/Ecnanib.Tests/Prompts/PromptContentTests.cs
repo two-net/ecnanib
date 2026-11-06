@@ -1,5 +1,7 @@
 using Ecnanib.Kernel;
+using Ecnanib.Modules.AiCouncil.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
+using Ecnanib.Tests.Council;
 using Ecnanib.Tests.Persistence;
 
 namespace Ecnanib.Tests.Prompts;
@@ -49,7 +51,7 @@ public sealed class PromptContentTests(SeededPrompts seeded) : IClassFixture<See
     {
         { AiRole.TechnicalAnalyst, ["trend", "htf_trend", "support_levels", "resistance_levels", "signals", "name", "direction", "strength", "volatility_regime", "setup_present", "confidence", "summary"] },
         { AiRole.SentimentAnalyst, ["score", "drivers", "sources", "title", "url", "published_at", "data_freshness", "confidence", "summary"] },
-        { AiRole.Strategist, ["action", "side", "entry_type", "entry_price", "stop_price", "target_prices", "risk_percent", "limit_ttl_candles", "invalidation", "rationale", "confidence"] },
+        { AiRole.Strategist, ["action", "side", "entry_type", "entry_price", "stop_price", "target_prices", "risk_percent", "limit_ttl_candles", "close_fraction", "invalidation", "rationale", "confidence"] },
         { AiRole.RiskCritic, ["verdict", "modifications", "concerns", "checklist", "trend_alignment", "reward_to_risk", "event_risk", "funding", "reflections", "rationale"] },
         { AiRole.Reviewer, ["setup_summary", "outcome", "r_multiple", "pnl", "what_worked", "what_failed", "lesson", "tags"] },
     };
@@ -105,6 +107,26 @@ public sealed class PromptContentTests(SeededPrompts seeded) : IClassFixture<See
 
         Assert.Contains("one JSON object and nothing else", contract, StringComparison.Ordinal);
         Assert.All(fields, field => Assert.Contains($"`{field}`", contract, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// FR-PRM-08: the prose contract and the schema ask for the same fields, because a provider that searches gets only
+    /// the prose (The four providers in docs/architecture.md). The prose lists the top-level fields in the schema's
+    /// order, and names every nested one.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(OutputSchemaTests.Contracts), MemberType = typeof(OutputSchemaTests))]
+    public async Task Each_output_contract_names_exactly_its_schemas_fields(AiRole role, Market market)
+    {
+        var contract = await seeded.ContentAsync($"layer = 'OutputContract' AND role = '{role}'", Cancellation);
+        var schema = OutputContracts.SchemaFor(role, market).Schema;
+
+        var listed = contract.Split('\n')
+            .Where(line => line.StartsWith("- `", StringComparison.Ordinal))
+            .Select(line => line[3..line.IndexOf('`', 3)]);
+
+        Assert.Equal(schema.GetProperty("properties").EnumerateObject().Select(property => property.Name), listed);
+        Assert.All(OutputSchemaTests.PropertyNames(schema), name => Assert.Contains($"`{name}`", contract, StringComparison.Ordinal));
     }
 
     /// <summary>FR-PRM-05 and FR-PRM-06: the system layer says how to treat each delimited part of the message.</summary>
