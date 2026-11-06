@@ -189,7 +189,15 @@ public sealed class FuturesAccountTests(PostgresFixture postgres)
         Assert.Equal(synced + weight, exchange.Usage(ExchangeServer.FuturesDemo).UsedWeight);
 
         release.SetResult();
-        await ((Task)call).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+        // The fake's answer is an empty array, which only the bracket and funding reads accept.
+        try
+        {
+            await call;
+        }
+        catch (ExchangeException)
+        {
+        }
     }
 
     private static IEnumerable<(string Name, string Value)> Unsigned(RecordedRequest request) =>
