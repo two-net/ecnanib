@@ -11,6 +11,7 @@ public sealed class BinanceSettingsTests(PostgresFixture postgres)
     private const string FuturesDemo = "Binance:Futures:DemoBaseUrl";
     private const string MarketData = "Binance:MarketDataBaseUrl";
     private const string RecvWindow = "Binance:RecvWindowMs";
+    private const string ProtectiveRecvWindow = "Binance:ProtectiveRecvWindowMs";
     private const string Headroom = "Binance:WeightHeadroomPercent";
     private const string Refresh = "Binance:ExchangeInfoRefreshHours";
 
@@ -26,6 +27,8 @@ public sealed class BinanceSettingsTests(PostgresFixture postgres)
         { RecvWindow, "0" },
         { RecvWindow, "10001" },
         { RecvWindow, "five seconds" },
+        { ProtectiveRecvWindow, "999" },
+        { ProtectiveRecvWindow, "5001" },
         { Headroom, "-1" },
         { Headroom, "91" },
         { Refresh, "0" },

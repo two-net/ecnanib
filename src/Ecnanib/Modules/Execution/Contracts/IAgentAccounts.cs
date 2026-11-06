@@ -5,9 +5,9 @@ namespace Ecnanib.Modules.Execution.Contracts;
 
 /// <summary>
 /// An agent's account, as a decision cycle needs it (FR-CYC-02 step 2): the balances on Binance, the symbol's leverage
-/// brackets on Futures, and the agent's own position and pending entry. Nothing places orders before #34, so there's
-/// never a position or a pending entry yet: order execution and reconciliation (#34, #35) answer those from what they
-/// record. See Decision cycle in docs/architecture.md.
+/// brackets on Futures, and the agent's own pending entry, from Execution's records. Its own position waits for
+/// reconciliation (#35), and until then execution refuses an entry while one is held. See Decision cycle in
+/// docs/architecture.md.
 /// </summary>
 public interface IAgentAccounts
 {
@@ -18,6 +18,7 @@ public interface IAgentAccounts
     /// <exception cref="AgentAccountException">The key can't be used, or Binance couldn't give the balances.</exception>
     Task<AgentAccount> ReadAsync(
         Guid userId,
+        Guid agentId,
         Guid credentialId,
         Market market,
         string symbol,
@@ -28,7 +29,10 @@ public interface IAgentAccounts
 
 /// <param name="AvailableQuote">Spot: the quote asset's free balance. Futures: the available margin balance.</param>
 /// <param name="BaseHeld">Spot only: all of the base asset, free or locked. Null on Futures.</param>
-/// <param name="Position">The agent's own open position, or null. On Spot, only what its own fills bought (FR-AGT-09).</param>
+/// <param name="Position">
+/// The agent's own open position, or null. On Spot, only what its own fills bought (FR-AGT-09). Always null until
+/// reconciliation (#35).
+/// </param>
 /// <param name="HasPendingEntry">The agent has an entry order that hasn't filled.</param>
 /// <param name="Brackets">
 /// Futures only: the symbol's leverage brackets on the account, lowest first, which the liquidation buffer needs.

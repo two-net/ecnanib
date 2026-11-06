@@ -1,6 +1,7 @@
 using Ecnanib.Kernel;
 using Ecnanib.Modules.AiCouncil.Contracts;
 using Ecnanib.Modules.DecisionCycle.Contracts;
+using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.Notifications.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 using Ecnanib.Platform.Contracts;
@@ -116,6 +117,16 @@ internal sealed class CycleRun(
         }
 
         Change(answer.Role, _ => new RoleProgress(answer.Role, state, model?.Provider, model?.ModelId, answer.UsedFallback, cut));
+    }
+
+    /// <summary>
+    /// Saves what execution did. An order may have been sent, so this write has its own time limit rather than the
+    /// cycle's token, which shutdown's drain could fire (NFR-REL-04).
+    /// </summary>
+    public async Task SaveExecutionAsync(ExecutionResult result)
+    {
+        using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await UpdateCycleAsync(setters => setters.SetProperty(cycle => cycle.Execution, TraceJson.Write(result)), limit.Token).WaitAsync(limit.Token);
     }
 
     public Task SaveBudgetAsync(BudgetCheck check, CancellationToken cancellationToken) =>

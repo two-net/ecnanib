@@ -43,12 +43,21 @@ internal sealed partial class BinanceTransport(
     /// <summary>Spot's code for an order it refused, which says "Duplicate order sent." for a client order ID in use.</summary>
     private const int NewOrderRejected = -2010;
 
+    /// <summary>Futures' code for a conditional order whose trigger price has already been passed.</summary>
+    private const int OrderWouldTrigger = -2021;
+
     private const int MaximumMessageLength = 200;
 
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>Short enough to fit the shutdown drain window. See Jobs in docs/architecture.md.</summary>
     private static readonly TimeSpan TradeTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// A protective order is waited for less, so that one with no answer can be settled and sent again, or the
+    /// position closed, within seconds of a fill (AC-02). See Order execution in docs/architecture.md.
+    /// </summary>
+    private static readonly TimeSpan ProtectiveTradeTimeout = TimeSpan.FromSeconds(4);
 
     /// <summary>How old the clock offset may be before a signed request syncs it again (FR-EXE-10).</summary>
     private static readonly TimeSpan ClockMaxAge = TimeSpan.FromMinutes(10);
@@ -267,15 +276,16 @@ internal sealed partial class BinanceTransport(
         try
         {
             // Signing failures, such as an unreadable key, happen here, before anything is sent.
-            using var request = BuildRequest(state, endpoint, parameters, key, out var signedAt);
-            var call = new Call(state, endpoint, key, clientOrderId, SettlesAt(endpoint, signedAt));
+            var recvWindowMs = RecvWindowMs(endpoint, priority);
+            using var request = BuildRequest(state, endpoint, parameters, key, recvWindowMs, out var signedAt);
+            var call = new Call(state, endpoint, key, clientOrderId, SettlesAt(endpoint, signedAt, recvWindowMs));
             var started = Stopwatch.GetTimestamp();
             HttpResponseMessage response;
             byte[] body;
 
             // A trade ignores the caller once it's sent, and has its own limit instead, so that a shutdown
             // can't cut it off (NFR-REL-04). A read follows the caller.
-            using (var timeout = endpoint.Trade ? new CancellationTokenSource(TradeTimeout) : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            using (var timeout = endpoint.Trade ? new CancellationTokenSource(TradeTimeoutOf(priority)) : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
                 if (!endpoint.Trade)
                 {
@@ -380,7 +390,8 @@ internal sealed partial class BinanceTransport(
 
                 LogResponse(LogLevel.Warning, call, status, latency, usedWeight, weightLimit, error.Code);
 
-                throw new ExchangeException(server, ExchangeFailure.Rejected, $"{description} rejected the request: {Message(error)}", error.Code);
+                throw new ExchangeException(
+                    server, ExchangeFailure.Rejected, $"{description} rejected the request: {Message(error)}", error.Code, rejection: RejectionOf(error));
         }
 
         // A server error, a timeout at Binance, a code that says Binance doesn't know either, or anything
@@ -415,9 +426,30 @@ internal sealed partial class BinanceTransport(
             || code == DuplicateClientOrderId
             || (code == NewOrderRejected && error.Msg?.Contains("Duplicate order", StringComparison.OrdinalIgnoreCase) == true));
 
+    /// <summary>
+    /// Why Binance rejected an order, where that changes what Execution does. Spot gives one code for many reasons, so
+    /// its message is read, as for a duplicate.
+    /// </summary>
+    private static OrderRejection RejectionOf(ErrorBody error) => error switch
+    {
+        { Code: OrderWouldTrigger } => OrderRejection.WouldTriggerImmediately,
+        { Code: NewOrderRejected, Msg: { } message } when message.Contains("trigger immediately", StringComparison.OrdinalIgnoreCase) =>
+            OrderRejection.WouldTriggerImmediately,
+        { Code: NewOrderRejected, Msg: { } message } when message.Contains("immediately match", StringComparison.OrdinalIgnoreCase) =>
+            OrderRejection.WouldMatchImmediately,
+        _ => OrderRejection.None,
+    };
+
+    /// <summary>A protective trade gets the shorter window, so an unknown one settles sooner (FR-EXE-09).</summary>
+    private int RecvWindowMs(BinanceEndpoint endpoint, RequestPriority priority) =>
+        endpoint.Trade && priority == RequestPriority.Protective ? settings.ProtectiveRecvWindowMs : settings.RecvWindowMs;
+
+    private static TimeSpan TradeTimeoutOf(RequestPriority priority) =>
+        priority == RequestPriority.Protective ? ProtectiveTradeTimeout : TradeTimeout;
+
     /// <summary>When a signed trade can no longer take effect, by this server's clock: its receive window, and a margin.</summary>
-    private DateTimeOffset? SettlesAt(BinanceEndpoint endpoint, DateTimeOffset? signedAt) =>
-        endpoint.Trade && signedAt is { } at ? at + TimeSpan.FromMilliseconds(settings.RecvWindowMs) + SettleMargin : null;
+    private static DateTimeOffset? SettlesAt(BinanceEndpoint endpoint, DateTimeOffset? signedAt, int recvWindowMs) =>
+        endpoint.Trade && signedAt is { } at ? at + TimeSpan.FromMilliseconds(recvWindowMs) + SettleMargin : null;
 
     /// <param name="signedAt">When the timestamp was taken, by this server's clock, for a signed request.</param>
     private HttpRequestMessage BuildRequest(
@@ -425,6 +457,7 @@ internal sealed partial class BinanceTransport(
         BinanceEndpoint endpoint,
         IReadOnlyList<(string Name, string Value)> parameters,
         ExchangeKey? key,
+        int recvWindowMs,
         out DateTimeOffset? signedAt)
     {
         var query = new StringBuilder();
@@ -440,7 +473,7 @@ internal sealed partial class BinanceTransport(
             var now = time.GetUtcNow();
             signedAt = now;
             query.Append("timestamp=").Append((now + state.ClockOffset).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture))
-                .Append("&recvWindow=").Append(settings.RecvWindowMs.ToString(CultureInfo.InvariantCulture));
+                .Append("&recvWindow=").Append(recvWindowMs.ToString(CultureInfo.InvariantCulture));
 
             // Signed exactly as sent, with the signature last.
             var signature = RequestSigner.Sign(key, query.ToString());

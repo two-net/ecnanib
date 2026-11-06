@@ -292,7 +292,7 @@ The clock starts at `ApplicationStopping`, which SIGTERM fires. The numbers come
 - **The final write uses no job token.** It would probably have fired, and then the record of a finished run would be lost. Each attempt has its own limit, enforced with `WaitAsync`, because Npgsql's cancellation can wait on a silent server. It keeps trying until the time runs out.
 - **Only one thing is left to a crash.** A SIGKILL or a power cut behaves the same as a run that outlives T+45, and the next start closes the row.
 
-**The runner supplies the time and the signals, but it can't finish NFR-REL-04 by itself.** "No trade left half-recorded" also needs the write order in Execution (#34): see the [constraints](#constraints-for-later-issues).
+**The runner supplies the time and the signals, but it can't finish NFR-REL-04 by itself.** "No trade left half-recorded" also needs the write order in Execution: see [Order execution](#order-execution).
 
 ### Schedules
 
@@ -535,8 +535,8 @@ ASP.NET Data Protection protects the session cookie, antiforgery tokens and a ci
 | Contract | What | Who uses it |
 |---|---|---|
 | `IExchangeMarketData` | Public data, with no keys: exchange information, candles, prices, the top of the book, Futures funding and the funding intervals Binance adjusted | Market Data, Credentials, Execution |
-| `IExchangeAccount` | Signed reads: the account, a Live key's restrictions, an order by its client order ID, a symbol's Futures positions, the Futures account's settings, a symbol's margin type and leverage, and its leverage brackets | Credentials, Execution |
-| `IExchangeTrading` | Placing and cancelling orders, and setting a Futures symbol's margin type and leverage | **Execution only** (AC-01). The map lets four units use the adapter, so `BannedApis` enforces this |
+| `IExchangeAccount` | Signed reads: the account, a Live key's restrictions, an order or a Spot order list by its client order ID, an order's trades, a symbol's Futures positions, the Futures account's settings, a symbol's margin type and leverage, and its leverage brackets | Credentials, Execution |
+| `IExchangeTrading` | Placing and cancelling orders and Spot OCO lists, and setting a Futures symbol's margin type and leverage | **Execution only** (AC-01). The map lets four units use the adapter, so `BannedApis` enforces this |
 | `IExchangeUsage` | Each server's weight, limits, backoff, ban and clock offset | Administration, for the health page (#49) |
 | `IExchangeBanObserver` | A port the adapter calls when Binance bans this server's address | Execution implements it |
 
@@ -565,6 +565,7 @@ This is the request-weight model NFR-PERF-04 asks for. #56 measures it.
 - **Binance reports used weight on every response**, in `X-MBX-USED-WEIGHT-1M`. The adapter keeps the latest figure for the current minute and adds the weight of requests in flight. `BinanceEndpoint` gives each endpoint's weight. Those are estimates, never below 1, because Binance charges a failed request even where a successful one is free. The header is what counts.
 - **The limit comes from exchange information's `rateLimits`**, and until that loads, from Binance's published defaults: 6000 a minute on Spot, 2400 on Futures.
 - **Normal requests stop at `limit × (100 − Binance:WeightHeadroomPercent) / 100`. Protective ones may use the headroom** (FR-EXE-09). Placing or moving a stop, closing a position, and the reads those depend on are protective. A clock sync takes the priority of the request that needed it.
+- **A protective trade signs with `Binance:ProtectiveRecvWindowMs`**, 2000 by default, rather than `RecvWindowMs`, and gives up after 4 seconds rather than 10. Its `SettlesAt` is then about 7 seconds after it was signed, so a stop whose answer is lost can be shown missing and placed again inside the [protection window](#protection), and one that hangs leaves time to close the position. A clock off by more than the window costs a -1021, a resync and one more send, which is safe because Binance refused the first.
 - **Nothing waits.** A refused request throws `Throttled` with `RetryAfter`, and the caller decides what to do, because a cycle has a deadline.
 - **HTTP 429** backs the whole server off until `Retry-After`, or until the minute ends. **-1015**, too many orders, backs off only that key.
 - **Order counts** come from `X-MBX-ORDER-COUNT-*`, per key, against the `ORDERS` limits, with the same headroom rule. Binance counts orders per account, but the adapter only knows keys, so two keys on one account are counted apart.
@@ -589,17 +590,31 @@ This is the request-weight model NFR-PERF-04 asks for. #56 measures it.
 - **An unknown order can still be accepted until its receive window has passed.** Binance checks the timestamp when a request arrives, so one held up on the way can arrive after the adapter gave up on it. `SettlesAt` is the timestamp plus the receive window, plus 5 seconds for clock error and Binance's queues, by this server's clock.
 - **`GetOrderAsync` returns null only for -2013**, Binance's "Order does not exist", and only after `SettlesAt` when this process sent the order with an unknown outcome. Before then it throws `Unknown` with the same `SettlesAt`. Null is what allows sending again, so nothing else returns it. The memory is per process, so Execution persists `SettlesAt` with the order to hold across a restart. The algo service's code for a missing order isn't documented, so a missing conditional order may throw `Rejected` instead, which is the safe direction.
 - **Messages hold the server, the path, and Binance's code and message**, never a URL, query, key or signature.
+- **`ExchangeException.Rejection` names the rejections Execution acts on.** `WouldTriggerImmediately` is a stop the price has already passed: Futures' -2021, or Spot's -2010 with "would trigger immediately" in its message, read like the duplicate. `WouldMatchImmediately` is a maker-only order that would trade at once: Spot's -2010 "Order would immediately match and take.", which an OCO's target gets when the price has already reached it. `LiveBinanceTests` checks both against Demo.
 
 ### Timeouts and cancellation
 
 - **Reads** give up after 15 seconds, and follow the caller's token throughout.
-- **Placing and cancelling** check the caller's token only until the send begins. After that, only the adapter's own 10 seconds applies, and running out is `Unknown`. That fits the [drain window](#shutdown), so a shutdown can't cut an order off half way (NFR-REL-04). The client's own timeout is off.
+- **Placing and cancelling** check the caller's token only until the send begins. After that, only the adapter's own 10 seconds applies, or 4 for a protective one, and running out is `Unknown`. That fits the [drain window](#shutdown), so a shutdown can't cut an order off half way (NFR-REL-04). The client's own timeout is off.
 
 ### Futures conditional orders
 
 Since 2025-12-09, Binance takes Futures `STOP_MARKET` and `TAKE_PROFIT_MARKET` only through its algo order service: `POST /fapi/v1/algoOrder` with `algoType=CONDITIONAL`, `triggerPrice` and `clientAlgoId`. `/fapi/v1/order` refuses them with -4120. So `OrderType.StopMarket` and `TakeProfitMarket` go there on Futures, and are read and cancelled there by client ID, which is why an `OrderReference` carries the type. Their statuses add `Triggered` and `Finished`, and `TriggeredOrderId` is the order a triggered one became. On Spot they're `STOP_LOSS` and `TAKE_PROFIT` on the ordinary endpoint.
 
-The algo endpoint's own page couldn't be read, so its parameters come from Binance's official generated connectors. Check them against Futures Demo before #34 relies on them.
+- **They trigger on the mark price**, `workingType=MARK_PRICE`, which the Risk Engine's `StopSide` checks a stop against. The last trade price would let a thin book's spike trigger one.
+- **The algo endpoint's own page couldn't be read**, so its parameters come from Binance's official generated connectors. `LiveBinanceTests` places, reads and cancels both types reduce-only against Futures Demo, and checks -2021 and a missing order's answer. Run it with Demo keys before the first Live order.
+
+### Spot order lists
+
+A Spot entry with a target is protected by a one-cancels-the-other list (FR-EXE-02), because a stop and a separate take-profit would each lock the same base asset, and the second would be refused. `PlaceOrderListAsync` sends `POST /api/v3/orderList/oco` with the new `aboveType`/`belowType` parameters: closing a long sells with a `LIMIT_MAKER` at the target above and a `STOP_LOSS` below, and closing a short buys the other way round. The list and each order have client order IDs of their own.
+
+- **A list follows an order's rules.** It's one send, with the same timeout and unknown outcome, keyed by the list's ID, and its two orders are remembered as unsettled with it, so a query of either can't say it's missing too early.
+- **`GetOrderListAsync` returns null only for -2013**, once the list has settled, like `GetOrderAsync`. Binance doesn't document the code for a missing list. -2013 is assumed, and any other code throws, which is the safe direction. `LiveBinanceTests` checks it.
+- **Binance gives a list's orders' IDs, not their states.** Read an order with `GetOrderAsync`, by its own client order ID.
+
+### An order's trades
+
+`GetOrderTradesAsync` reads one order's fills, `GET /api/v3/myTrades?orderId=` on Spot and `/fapi/v1/userTrades?orderId=` on Futures, each weight 5. Spot takes a buy's commission from the base asset bought unless BNB pays it, so what a Spot position holds is the executed quantity less that, which is what its stop sells (FR-AGT-09). The trade journal (#36) reads the same for its fills.
 
 ### Futures account settings
 
@@ -616,13 +631,13 @@ EXT-BIN-07 and FR-RISK-09 need the Futures account's settings, and change a symb
 
 - **The two changes aren't trades.** They place no order and are safe to send again, so they keep the caller's token and the read timeout, and a 5XX is an unknown outcome that the next read settles. They're on `IExchangeTrading` anyway, because they change the account, which only Execution may do.
 - **Binance documents the brackets' answer as an array of symbols or one symbol**, without saying which comes when one symbol is asked for, so both are read. It doesn't say whether `notionalCap` and `notionalFloor` already include `notionalCoef`. They're used as sent.
-- **Not checked against Futures Demo yet:** whether Demo serves `accountConfig`, `symbolConfig` and `fundingInfo`, the brackets' shape with `symbol`, and `notionalCoef`. Check them before #34 sends the first Futures entry.
+- **`LiveBinanceTests` checks against Futures Demo** that Demo serves `accountConfig`, `symbolConfig`, `leverageBracket` and `fundingInfo`. Whether `notionalCap` already includes `notionalCoef` isn't checked.
 
 ### Exchange information
 
 - **It's held in memory per market and environment**, loaded on first use, and refreshed once it's older than `Binance:ExchangeInfoRefreshHours` (EXT-BIN-06). It's lazy rather than a job, because the adapter can't use Platform. Market Data keeps a copy in `exchange_symbols`: see [Exchange symbols](#exchange-symbols).
 - **A failed refresh keeps the last copy**, with a Warning, and waits a minute before trying again. With no copy, it throws.
-- **A filter rejection can expire it early (FR-RISK-04).** `ExpireExchangeInfo` marks the copy stale, so the next read fetches, unless the copy is under a minute old, so a run of rejections can't spend the weight again and again. A failed refresh's minute still holds. `ExchangeException.IsFilterRejection` names the codes that count, from Binance's error code pages: check them against Demo when orders are first placed (#34).
+- **A filter rejection can expire it early (FR-RISK-04).** `ExpireExchangeInfo` marks the copy stale, so the next read fetches, unless the copy is under a minute old, so a run of rejections can't spend the weight again and again. A failed refresh's minute still holds. `ExchangeException.IsFilterRejection` names the codes that count, from Binance's error code pages. `LiveBinanceTests` checks one against Spot Demo.
 - **Price bands are kept as four multipliers**, a 0 meaning no bound: Spot's `PERCENT_PRICE_BY_SIDE` by side, Spot's older `PERCENT_PRICE` for both sides when there's no by-side filter, and Futures' `PERCENT_PRICE`, which bounds a buy from above and a sell from below around the mark price.
 - **Callers share one refresh, which none of them can cancel.** One that stops waiting gets the last copy if there is one, and the refresh carries on for the next caller. The transport's read timeout bounds it.
 - **Spot asks for `showPermissionSets=false`**, which cuts the full body from about 18 MB to 7 MB.
@@ -645,6 +660,8 @@ EXT-BIN-07 and FR-RISK-09 need the Futures account's settings, and change a symb
 
 `FakeBinance` in `tests/Ecnanib.Tests/Exchange` replaces the named client's handler, and answers each method and path as a test says. `AppFactory` gives every application hosts under `.test`, which never resolve, so no test reaches Binance by accident. `ExchangeHarness` gives each test its own application, clock and fake, because the adapter's state is in memory. `RedirectTests` and `RetryTests` use `LoopbackServer`, a real socket, because redirects and retries happen inside the real handler, which the fake replaces.
 
+`LiveBinanceTests` calls Binance's Demo servers at the URLs `appsettings.json` ships, through the real adapter, to pin what the fakes take from the documentation: the algo service's parameters and codes, OCO lists, the trades, and the rejection codes Execution acts on. It needs `ECNANIB_LIVE_BINANCE_SPOT_KEY` and `_SECRET`, or the `FUTURES` pair, for HMAC Demo keys, and skips without them, as `LiveProviderTests` does, so CI never calls Binance. Its orders rest far from the price and are cancelled, and it opens and closes the smallest Futures position.
+
 ## Market data
 
 `Modules/MarketData` gives a decision cycle steps 3 and 4 of FR-CYC-02, and keeps Binance's symbols. It may use Platform and the exchange adapter, and nothing else. It holds no keys, so the liquidation price, which belongs to the account, comes from reconciliation (#35) through `IExchangeAccount.GetPositionAsync`.
@@ -652,7 +669,7 @@ EXT-BIN-07 and FR-RISK-09 need the Futures account's settings, and change a symb
 | Contract | What | Who uses it |
 |---|---|---|
 | `IMarketData` | A snapshot for one symbol, timeframe and candle close: two candle series with their indicators, the quote, and Futures funding | DecisionCycle (#31) |
-| `IExchangeSymbols` | Binance's symbols and their filters, from `exchange_symbols` when Binance can't be reached, and a refresh after a filter rejection | Agents, the wizard (#40), and the Risk Engine's callers (#31, #34) |
+| `IExchangeSymbols` | Binance's symbols and their filters, from `exchange_symbols` when Binance can't be reached, and a refresh after a filter rejection | Agents, the wizard (#40), and the Risk Engine's callers (#31) and Execution |
 | `Indicators` | The indicator functions, pure and deterministic | Market Data, and anything that needs the same numbers, such as shadow outcomes (#44) |
 | `MarketDataException` | A failure in Market Data's terms: `Unavailable`, `Throttled` with `RetryAfter`, or `UnknownSymbol` | Its callers, which can't see the adapter's `ExchangeException` |
 
@@ -702,7 +719,7 @@ FR-CYC-09 asks for one fetch per symbol, timeframe and candle, whatever the numb
 - **It reads through, with no job.** `IExchangeSymbols` asks the adapter, whose copy refreshes itself after `Binance:ExchangeInfoRefreshHours` (EXT-BIN-06). When that copy is newer than the stored one, it replaces the rows in one transaction, deleting the symbols Binance dropped. A job would call Binance at startup, from every test application too.
 - **When Binance can't be reached, the table answers**, with its `RefreshedAt`, and there's a Warning. With nothing stored, it throws `Unavailable`.
 - **Failing to store doesn't fail the read.** The table is a copy, and the caller already has the data. There's a Warning, and the next read tries again.
-- **`RefreshAsync` fetches and stores again after a filter rejection** (FR-RISK-04), through the adapter's early expiry. Execution calls it (#34).
+- **`RefreshAsync` fetches and stores again after a filter rejection** (FR-RISK-04), through the adapter's early expiry. Execution calls it. See [Order execution](#order-execution).
 
 ### Indicators
 
@@ -1535,7 +1552,7 @@ One Information event per provider run, with its counts, one per change of a mod
 
 ## Agents
 
-`Modules/Agents` holds users' trading agents: their settings (FR-AGT-02) and their lifecycle (FR-AGT-04). The [scheduler](#scheduler) runs the Active ones. What a cycle does is later issues' work: the council (#31) and execution (#34).
+`Modules/Agents` holds users' trading agents: their settings (FR-AGT-02) and their lifecycle (FR-AGT-04). The [scheduler](#scheduler) runs the Active ones. What a cycle does belongs to the [decision cycle](#decision-cycle) and [order execution](#order-execution).
 
 | Contract | What | Who uses it |
 |---|---|---|
@@ -1682,9 +1699,9 @@ The wizard (#40) will take over `/agents/new`, and the agent's own page (#41) `/
 
 | Contract | What | Who uses it |
 |---|---|---|
-| `IRiskEngine` | `Evaluate(intent, inputs)`, and `CheckLossLimits` for the start of each cycle | The decision cycle (#31), approvals' re-validation (#38), and Execution for the kill switch and the emergency close (#34, #37) |
+| `IRiskEngine` | `Evaluate(intent, inputs)`, and `CheckLossLimits` for the start of each cycle | The decision cycle (#31), approvals' re-validation (#38), and Execution for the emergency close and the kill switch (#37) |
 | `OrderIntent`, `RiskInputs` | What's asked, and everything the rules look at | Their callers build them |
-| `RiskEvaluation`, `SizedOrder` | Every rule's outcome, reason and inputs (FR-RISK-10), and what a passing evaluation allows to be sent | The decision trace (#31) and Execution (#34) |
+| `RiskEvaluation`, `SizedOrder` | Every rule's outcome, reason and inputs (FR-RISK-10), and what a passing evaluation allows to be sent | The decision trace (#31) and [Execution](#order-execution) |
 | `RiskCaps` | FR-RISK-11's global hard caps, from the `RiskCaps` section, with SRS 7.3's values when it's missing. An invalid one stops startup and is named (CFG-03) | The engine, Agents and the settings page share one instance |
 | `RiskPeriods` | The UTC day and the week from Monday that the loss limits count over and pause until | Whoever sums P&L for `TradingRecord` (#31, #36) |
 
@@ -1736,7 +1753,7 @@ where WB = Q × EP ÷ leverage. The distance from the entry must be at least the
 ### Orders and AC-01
 
 - **Every order cites a passing evaluation.** An entry's protective stop and target are part of its `SizedOrder`, so they cite its evaluation. The kill switch and the emergency close are `Close` or `Sell` with `Origin = System`, which only the structural rules can stop. So the audit query over traces and orders that AC-01 asks for has no exceptions.
-- **Only the engine makes a `SizedOrder`.** Its constructor is internal, `BannedApis` refuses it anywhere else, and it's a class rather than a record, so nothing can copy one with a change. Execution sends only these (#34).
+- **Only the engine makes a `SizedOrder`.** Its constructor is internal, `BannedApis` refuses it anywhere else, and it's a class rather than a record, so nothing can copy one with a change. Execution sends only these. See [Order execution](#order-execution).
 
 ### Inputs
 
@@ -1749,15 +1766,15 @@ The engine can't read them itself, so the decision cycle builds them (#31):
 | `Atr` | `snapshot.Candles.Indicators.Atr14` |
 | `Funding` | `snapshot.Futures.FundingRate`, with `FundingIntervalHours`, from `/fapi/v1/fundingInfo`, which is 8 hours for a symbol Binance hasn't adjusted |
 | `AvailableQuote`, `BaseHeld` | `IExchangeAccount.GetAccountAsync`: the quote asset's available balance on Spot, `AvailableBalance` on Futures, and the base asset's total on Spot |
-| `Position` | Execution's records (#34, #35): the agent's own quantity and average entry, its stop and target. On Futures, Binance's `BreakEvenPrice` too |
-| `HasPendingEntry` | Execution's records (#34) |
+| `Position` | Reconciliation (#35), from Execution's records: the agent's own quantity and average entry, its stop and target. On Futures, Binance's `BreakEvenPrice` too |
+| `HasPendingEntry` | Execution's records: an entry being sent, unknown, or resting unfilled or partly filled |
 | `Record` | The trade journal (#36), over `RiskPeriods` |
 | `Brackets` | `AgentAccount.Brackets`: the symbol's brackets on the agent's account, from `/fapi/v1/leverageBracket` through its key. Empty when Binance couldn't give them, which fails every Futures entry but no exit |
 
 ### What it doesn't do
 
 - **Fees and slippage aren't in the size.** FR-RISK-03's formula is followed as written, so the loss if the stop fills is the agent's risk per trade plus the fees on both legs and a stop-market's slippage: on a tight Futures stop, roughly a tenth to a fifth more. A fee-aware size would need the account's commission rate as an input.
-- **Spot's price band uses the last price**, where Binance uses an average over a few minutes. A rare rejection is refreshed and recorded (#34).
+- **Spot's price band uses the last price**, where Binance uses an average over a few minutes. A rare rejection is refreshed and recorded by [Execution](#order-execution).
 - **An add's liquidation price assumes the whole position posts notional ÷ leverage**, which is what Binance's isolated margin holds unless margin was added by hand, which an agent never does.
 
 ## Scheduler
@@ -1825,7 +1842,7 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 
 ## Decision cycle
 
-`Modules/DecisionCycle` runs an agent's decision cycle (FR-CYC-02) when the [scheduler](#scheduler) starts it. It checks the loss limits and the AI budget, collects the market and the account, and asks the AI council's roles. The Risk Engine then checks what they propose. Every step is saved in a decision trace as it happens. A cycle ends with an order the engine sized, which execution (#34) or an approval (#38) takes from there.
+`Modules/DecisionCycle` runs an agent's decision cycle (FR-CYC-02) when the [scheduler](#scheduler) starts it. It checks the loss limits and the AI budget, collects the market and the account, and asks the AI council's roles. The Risk Engine then checks what they propose. Every step is saved in a decision trace as it happens. An Autonomous agent's cycle ends by [executing](#order-execution) the order the engine sized, and a Confirm agent's waits for approval (#38).
 
 | Contract | What | Who uses it |
 |---|---|---|
@@ -1834,7 +1851,8 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 | `IDecisionTraces` | An agent's latest cycle, for its user only (NFR-SEC-04) | The Web UI. The trace viewer (#42) extends it |
 | `IAiSpending`, `AiSpend`, `BudgetCheck` | Each agent's AI spend this UTC day and month, for its user only (NFR-SEC-04), and whether its budget has run out (FR-CYC-07). See [Budgets](#budgets) | The decision cycle, and the Web UI's agent list and settings page |
 | `ICouncil`, in `AiCouncil/Contracts` | Asks one role, with its fallback, and returns the answer or the failure, with every call it made | The decision cycle. It spends the user's money, so `BannedApis` allows it only in AiCouncil and DecisionCycle |
-| `IAgentAccounts`, in `Execution/Contracts` | The agent's balances, read through its key, the symbol's leverage brackets on Futures, which cost 1 more each cycle, and its own position and pending entry, which are always none until #34 and #35 record orders | The decision cycle |
+| `IAgentAccounts`, in `Execution/Contracts` | The agent's balances, read through its key, the symbol's leverage brackets on Futures, which cost 1 more each cycle, and its pending entry from Execution's records. Its position is always none until reconciliation (#35) | The decision cycle |
+| `IOrderExecution`, in `Execution/Contracts` | Sends the sized order and protects what fills. See [Order execution](#order-execution) | The decision cycle, and approvals (#38), which `BannedApis` enforces |
 | `IAgents.EnterErrorAsync`, `IAgentHistory`, in `Agents/Contracts` | Error after repeated failures, and deleting the agent's cycles with it | The decision cycle, and `Agents.DeleteAsync` |
 
 ### Steps
@@ -1854,11 +1872,15 @@ They're in the `Agents` section (SRS 7.3), and `SchedulerSettings` reads them. A
 | 7 | The Risk Critic rejected | `RejectedByCritic` |
 | 8 | The proposal, with the Risk Critic's changes, becomes an `OrderIntent`, which `IRiskEngine.Evaluate` checks against `RiskInputs`. The evaluation is saved. A loss limit it finds pauses the agent | `BlockedByRiskEngine` when it fails |
 | 8 | It passed, but it's an entry and `CycleRequest.AllowsNewEntry` says the deadline has passed (FR-CYC-06) | `PastDeadline` |
-| 8 | It passed | `ReadyToExecute` |
+| 8 | It passed, and the agent is in Confirm mode | `ReadyToExecute`, for approval (#38) |
+| 9 | Autonomous: `IOrderExecution` sent it, and it took effect: placed, filled and protected, closed when its stop couldn't be placed, or an unfilled entry cancelled. Nothing is sent once shutdown has begun | `Executed` |
+| 9 | Nothing took effect: Binance rejected it or couldn't be reached, the key can't be used, the Futures account isn't ready, or the entry's outcome is still unknown | `ExecutionFailed`, with `Execution` |
+| 9 | Nothing was sent because the agent holds a position (until #35), or there was no unfilled entry to cancel | `ExecutionFailed` |
+| 9 | The deadline passed while the entry was checked | `PastDeadline` |
 
 - **An optional role that fails is skipped**, and the cycle goes on without its output (FR-ROLE-06). A required one makes the cycle hold. The Sentiment Analyst is the only optional role in a cycle: the Reviewer works after a trade closes (#45).
 - **The intent takes the nearest target**, the lowest for a long and the highest for a short, which gives the lowest reward-to-risk. The Risk Critic's stop, targets and risk replace the proposal's, and `OutputContracts` has already refused any change that adds risk. The engine trusts none of it anyway (NFR-SEC-08).
-- **`RiskInputs` follow the Risk Engine's [Inputs](#inputs)**, with what doesn't exist yet left out. The position and pending entry come from #34 and #35, and the record from #36. Until then there's no position, and the record is `TradingRecord.None`. The brackets come with the account, and the funding interval with the snapshot. When Binance can't give the brackets, the cycle goes on without them, and every Futures entry fails `LiquidationUnknown`, while an exit or a tighter stop doesn't need them.
+- **`RiskInputs` follow the Risk Engine's [Inputs](#inputs)**, with what doesn't exist yet left out. The pending entry comes from Execution's records. The position comes from #35, and the record from #36. Until then there's no position, and the record is `TradingRecord.None`. The brackets come with the account, and the funding interval with the snapshot. When Binance can't give the brackets, the cycle goes on without them, and every Futures entry fails `LiquidationUnknown`, while an exit or a tighter stop doesn't need them.
 - **AI calls get `JobContext.Stopping`**, because they're safe to abandon. Binance calls get the run's token (NFR-REL-04).
 - **An unexpected exception ends the cycle as `Failed`, with `Unexpected`**, and is thrown again, so its job run is Failed too. Shutdown during a cycle ends it as `Interrupted`, and that last write has its own five seconds.
 
@@ -1897,7 +1919,7 @@ An agent's AI budget (FR-AGT-02) is checked at the start of each cycle, after th
 - **Protective-only isn't a status.**
   - The agent stays Active and keeps running cycles, so each one checks again, and a new day, a new month or a higher limit ends it at the next close.
   - It isn't paused, so there's no audit record.
-  - Its positions and their exchange-resting stops stay as they are. Managing them is for Execution and reconciliation (#34, #35), which don't ask the council.
+  - Its positions and their exchange-resting stops stay as they are. Managing them is for [Execution](#order-execution) and reconciliation (#35), which don't ask the council.
 - **Its user is told once.**
   - `AgentPausedBudget` is raised when the agent's previous cycle since it became Active wasn't `OverBudget`. That's by candle close, not counting `Interrupted`.
   - It's added in `CycleRun.FinishAsync`'s transaction, so it commits with the outcome.
@@ -1918,6 +1940,7 @@ An agent's AI budget (FR-AGT-02) is checked at the start of each cycle, after th
 
 - **Each step saves as it ends**, on a context of its own, so a crash loses only the step under way. A role's calls and its state save in one transaction, so every billed call is on record, which [budgets](#budgets) count.
 - **The input snapshot keeps each series' latest candle**, the indicators, the prices, the account and the effective risk settings. The candles each role saw are in its prompt.
+- **`decision_cycles.execution` holds what execution did**, as an `ExecutionResult`: its status and reason, Binance's code, the Futures setup's outcome, whether a target was refused, and the client order IDs. It's written with a time limit of its own, because an order may already have been sent (NFR-REL-04).
 - **JSON columns write enums by name.** An AI call's output is in the contract's names, as the model would write it.
 - **A trace holds the user's prompts and models' answers**, so only its user may read it, and never an administrator (FR-ADM-01). Agents' deletion reaches it through `IAgentHistory`, account deletion through #51, and retention through #50.
 - **`CycleRecovery` marks a cycle a crash left running as `Interrupted`** at the next start, with its unfinished roles skipped, as the job runner does with its runs. It works in `StartAsync`, after the migrations and before any scheduled cycle.
@@ -1928,6 +1951,8 @@ A cycle errored when it ended without a decision: `Failed`, or `Hold` because a 
 
 - **Only cycles since the agent last became Active count**, so activating it again starts afresh. A cycle that decides ends the run. An interrupted one doesn't count either way, because the application stopped it.
 - **`0` turns it off.** Startup refuses anything but a whole number from 0 to 100, and names the setting (CFG-03).
+- **Execution's failures count as errors**, with `CycleFailure.Execution`. Holding a position, or having nothing to cancel, doesn't.
+- **A Futures account only its user can fix puts the agent in Error at once**: Hedge Mode, Multi-Assets Mode, or trading turned off (FR-RISK-09). Every later cycle would spend AI on an entry that can't be sent, and the run of errors could be broken by HOLDs and never reach the count.
 
 ### Progress
 
@@ -1936,6 +1961,118 @@ A cycle errored when it ended without a decision: `Failed`, or `Hold` because a 
 ### Testing it
 
 `CycleApp` in `tests/Ecnanib.Tests/DecisionCycle` builds on `AgentApp`, with Binance's candles and prices, and a model on both test providers. The model answers each role from the test's `Replies`, by the role in the request, or with a Spot market buy the Risk Critic approves and the engine passes. The sample candles move by about 3 an hour around 120, while the sample ticker is at about 60,123, so the buy's stop and targets are a few dollars from the ticker's ask, which keeps the stop within the engine's ATR bounds. Tests run cycles through `IDecisionCycles` themselves, and `Missing` takes candles away, as during maintenance. `BudgetTests` prices the test model through `Catalog:Overrides`, so a buy's cycle costs $6. It also moves the clock to noon mid-month, so that no day or month ends during a test unless the test moves the clock there.
+
+## Order execution
+
+`Modules/Execution` sends what the Risk Engine sized, once (FR-EXE-04, FR-EXE-05), and protects every fill with a stop that rests on Binance, so a position stays protected whether or not Ecnanib is running (FR-EXE-02, NFR-REL-02). When the stop can't be placed in time, what filled is closed at market and the user is told. For now that's entries, their protection, a limit entry's time-to-live (FR-EXE-01) and CANCEL_PENDING. Exits and stop or target adjustments need the position, which reconciliation (#35) gives the Risk Engine, and the engine refuses them until then.
+
+| Contract | What | Who uses it |
+|---|---|---|
+| `IOrderExecution` | `ExecuteAsync(ExecutionRequest)`: sends an entry and returns once it's placed and anything filled is protected or closed, or cancels the agent's unfilled entry. Returns an `ExecutionResult` for the trace | The decision cycle for an Autonomous agent, and approvals (#38). `BannedApis` allows it only in DecisionCycle and Execution |
+| `IAgentAccounts` | The pending entry, from `orders` | The decision cycle |
+| `IAgentExposure` | Open positions and orders, from `orders` and `protections` alone, because Agents asks inside its lock (FR-AGT-03) | Agents |
+| `IAgentHistory` | `OrderHistory` deletes an agent's orders and protections with it | Agents |
+
+### Tables
+
+| Table | What |
+|---|---|
+| `orders` | SRS 6.1's Order: each order, list order and close, with the cycle whose evaluation it cites, its client order ID, Binance's ID, type, side, prices, quantity, status, what executed and at what average, `settles_at`, and timestamps. An entry also keeps its protective stop and target from its `SizedOrder`, its net quantity, and its expiry |
+| `protections` | One per part of an entry that filled: its quantity, its status (`Pending`, `Resting`, `Closing`, `Closed`, `Dust`, `Ended`, `Abandoned`), when its stop must rest by, its attempts, and whether its target was dropped |
+
+Neither has a foreign key to agents, users or cycles, which other modules own. Prices are in the quote asset and quantities in the base asset (DATA-R-02).
+
+### Client order IDs
+
+`ClientOrderIds` derives each from the agent, the cycle and the leg (FR-EXE-04): `e`, the agent's ID in base64url, the cycle's candle close in Unix minutes in base 36, then one character each for the leg (`E` entry, `S` stop, `T` target, `L` OCO list, `X` close), the protection and the attempt. That's 32 characters, in the set both markets accept. An agent has one cycle per candle, so IDs are unique, and the unique index on `client_order_id` refuses a second entry for the same cycle before anything is sent. `AgentPrefix`, the first 23 characters, tells an agent's orders from the user's own (FR-AGT-09), which #35 and #37 filter Binance's lists by.
+
+### Sending once
+
+- **The row is written before the order is sent**, as `Sending`, with `settles_at` two minutes on: longer than any send can be accepted, through a clock sync, the 10-second timeout and a receive window of up to 10 seconds. So an order cut off by a crash is settled by its client order ID after a restart (FR-EXE-08).
+- **The answer is saved on a token of its own**, five seconds, never the run's, which the end of the drain window could cancel (NFR-REL-04).
+- **An unknown outcome takes the adapter's `SettlesAt`**, and is settled by querying its client order ID. Nothing with that ID is sent again unless the query returns null and `settles_at` has passed, which holds after a restart, when the adapter's memory is gone (NFR-REL-03, AC-14).
+- **An entry is never sent again.** Shown missing, it's `NotPlaced`, and the cycle's chance has passed. A stop or close shown missing is tried again under the next attempt's ID. One Binance never received, because it was throttled, banned or the clock couldn't be synced, is sent again under its own ID.
+- **Pass the run's token, never `Stopping`.** The decision cycle checks `Stopping` before it calls, so nothing new starts during shutdown, and a trade under way is seen through.
+
+### Entries
+
+Before an entry is sent, with the agent's lock held:
+
+1. The cycle's deadline, again (FR-CYC-06).
+2. Binance must take the stop the pair needs: `STOP_LOSS`, and `LIMIT_MAKER` for a target, on Spot; `STOP_MARKET` and `TAKE_PROFIT_MARKET` on Futures.
+3. **No position may be held, until #35.** The Risk Engine's `Position` is null until reconciliation, so it would size every entry as a new one, past the notional and capital caps. So the agent's resting stops and targets are read again, and a protection whose stop or target has ended is `Ended`. On Spot any protection still held refuses the entry. On Futures Binance's position for the pair decides, and when it's zero, orders left from an earlier position are cancelled, so a take-profit can't close a new one. A position the user holds in the pair refuses it too, because One-way Mode would net them.
+4. Futures: `IFuturesSetup.PrepareEntryAsync` must be `Ready` (FR-RISK-09).
+
+The entry goes at normal priority. A filter rejection refreshes the pair's filters (FR-RISK-04). A market entry that Binance answers as not yet filled is read again on every pass, half a second apart, so its stop doesn't wait for a limit entry's interval. A limit entry expires at its cycle's candle close plus its time-to-live in candles of the agent's timeframe, which the Strategist proposes and `Agents:MaxLimitTtlCandles` caps.
+
+### Protection
+
+`ProtectionKeeper` makes passes over an agent's orders, holding its lock. Each settles what's unknown, checks unfilled entries, protects new fills, places stops and targets, closes what can't be protected, and cancels orders whose position is gone. The executor passes until nothing is urgent, every half second, and leaves the rest to the [watch](#the-watch).
+
+- **Each part of an entry that fills gets a protection of its own**, so nothing that filled waits for the rest. A market entry has one. On Futures it's the executed quantity. On Spot it's what the fills left after Binance's commission in the base asset, from the order's trades, rounded down to the stricter of `LOT_SIZE` and `MARKET_LOT_SIZE`, so a stop never sells more than the agent's own fills gave it (FR-AGT-09). When the trades can't be read, the highest standard fee, 0.1%, is assumed. A part below Binance's minimums waits for more fills, and what's left when the entry ends is logged.
+- **Its stop must rest by `protect_by`**: Binance's time of the fill plus `Agents:ProtectiveStopSeconds`, 9 by default, so AC-02's 10 seconds hold. A fill found late, after a restart for example, still gets three seconds, and a restart gives every protection waiting for its stop a full window again.
+- **The stop is reduce-only on Futures**, on the mark price, with a reduce-only take-profit once it rests (FR-EXE-03). **On Spot, a target makes it an OCO list.** A rejected attempt is tried again a second later under a new ID.
+- **A target never causes a close.** An OCO Binance refuses for any reason but its stop is tried again as a plain stop, and a Futures take-profit it refuses is dropped. The result says `TargetNotPlaced`.
+- **`TradeOpened`** is raised when the entry's first protection rests, in the same transaction.
+
+### Closing what can't be protected
+
+A protection whose stop hasn't rested by `protect_by`, or whose stop Binance refuses as `WouldTriggerImmediately`, is closed at market (FR-EXE-02, UC-02 A4):
+
+- **The close has its own evaluation**, an exit with `Origin = System`, which only the structural rules can stop. It's stored on the close's row, so the AC-01 audit query holds without exception. On Spot its position is the protection's quantity, and `BaseHeld` is read at protective priority, or left out if that fails. The engine marks every exit reduce-only, and Spot has none, so that's only sent on Futures.
+- **Futures closes at once**, reduce-only, without waiting for a stop whose outcome is unknown: a reduce-only stop that turns up later does nothing harmful, and is cancelled once it's found.
+- **Spot cancels the stop or OCO first**, which frees the base asset a resting stop locks. If its outcome is unknown and the cancel finds nothing, the sell goes anyway: a stop that arrives later can't lock base that's been sold.
+- **`TradeClosed`** is raised when the close fills, and an Error is logged. A close Binance keeps rejecting is tried under up to 36 IDs, then the protection is `Abandoned`, with a Critical log, and the user must close it.
+
+### CANCEL_PENDING
+
+Cancels only the agent's unfilled entry, never a stop or target, then reads it again, so whatever filled before the cancel is protected.
+
+### The watch
+
+- **`OrderWatch` runs one `order-watch` job per agent with work left**: an unfilled entry, an unsettled order, a protection not yet resting, or a target to place. Each pass holds the agent's lock, so it never overlaps the executor, and the executor starts the watch while still holding it, so a watch that has just found nothing to do can't miss it.
+- **An unfilled entry is checked every `Agents:PendingEntryCheckSeconds`**, 5 by default, at normal priority, and at protective priority once part of it has filled. When its time-to-live ends it's cancelled, at normal priority, and read again.
+- **A run lasts an hour at most**, then hands over to a new one. On shutdown it makes no new pass, but a pass under way finishes on the run's token, so a stop being placed is recorded (NFR-REL-04).
+- **`OrderWatchSweep`** starts a watch for every agent with work that has none, every minute as `order-watch-sweep`, and once at startup as `order-watch-resume` when there's anything to resume. The watch registry is in memory, so the sweep is its recovery path (see [Inversions](#inversions)).
+
+### Request weight
+
+Each unfilled limit entry costs a query per `PendingEntryCheckSeconds`: 4 weight on Spot and 1 on Futures, or 48 and 12 a minute at the default of 5 seconds. An entry that fills at once costs nothing more to watch. A protected Spot fill costs a trades read, 5. #56 measures the whole.
+
+### Known limits
+
+- **A fill while Ecnanib is down has no stop** until the next start, when it gets a few seconds to rest one before it's closed. A Spot limit entry could carry its stop with it as a one-triggers-the-other list, which would close this on Spot.
+- **Until #35, an agent with a position opens no other**, because the Risk Engine doesn't see the position. It also doesn't see a stop that filled until the next entry reads it, and Futures orders left by a gone position are only cancelled then.
+- **A Spot target is checked against the last price**, where Binance checks against its average price, so its `LIMIT_MAKER` can be refused. The stop still rests.
+
+### AC-01's audit query
+
+Every order cites a passing Risk Engine evaluation: one from the council cites its cycle's, and one of Ecnanib's own carries its own.
+
+```sql
+SELECT count(*) FROM orders o
+WHERE NOT (
+    (o.origin = 'Council' AND EXISTS (SELECT 1 FROM risk_evaluations e WHERE e.cycle_id = o.cycle_id AND e.verdict = 'Pass'))
+    OR (o.origin = 'System' AND o.system_evaluation ->> 'verdict' = 'Pass'))
+```
+
+It should return 0. `CycleExecutionTests` runs it.
+
+### Settings
+
+They're in the `Agents` section, and `ExecutionSettings` reads them. An invalid one stops startup and is named (CFG-03).
+
+| Setting | Default | Range |
+|---|---|---|
+| `PendingEntryCheckSeconds` | 5 | 1 to 5 |
+| `ProtectiveStopSeconds` | 9 | 5 to 10, and at least 3 more than `PendingEntryCheckSeconds`, so a fill seen late can still be protected |
+| `MaxLimitTtlCandles` | 10 | 1 to 100 |
+
+`Binance:ProtectiveRecvWindowMs`, 1000 to 5000 and 2000 by default, is the [adapter's](#request-weight-and-priority).
+
+### Testing it
+
+`ExecutionApp` in `tests/Ecnanib.Tests/Execution` builds on `AgentApp` with a `FakeOrderBook`, which keeps orders, algo orders and OCO lists by client order ID, so placing, reading and cancelling agree. Market orders fill at once, and a test fills or triggers the rest. A test makes the next calls to an endpoint fail, and says whether Binance took the order anyway, which is how `IdempotencyTests` (AC-14) and `ProtectionTests` (AC-02) inject faults. Positions, trades and the Spot balance follow the fills. `CycleExecutionTests` runs whole cycles and the AC-01 query. A test starts a second application on the same database to see what a restart does.
 
 ## Web UI
 
@@ -2112,7 +2249,8 @@ The reconnect modal was checked in the published build, by stopping the server. 
   - Agents: `AgentPausedLossLimit` is raised already, by `Agents.PauseForLossLimitAsync`. See [Loss limits](#loss-limits)
   - Agents: `AgentPausedErrors` is raised already, by `Agents.EnterErrorAsync`, which the decision cycle calls. See [Decision cycle](#decision-cycle)
   - DecisionCycle: `AgentPausedBudget` is raised already, when a cycle finds the agent's AI budget has run out (FR-CYC-07). See [Budgets](#budgets)
-  - Execution (#34, #35, #36): `TradeOpened`, `TradeClosed` (including a close outside Ecnanib, FR-EXE-06) and `StopMoved`
+  - Execution: `TradeOpened` is raised already, when an entry's first protection rests, and `TradeClosed` when what filled was closed because its stop couldn't be placed. See [Order execution](#order-execution)
+  - Execution (#35, #36): `TradeClosed` for a stop or target that filled and a close outside Ecnanib (FR-EXE-06), and `StopMoved`
   - Agents (#37): `KillSwitchExecuted`
   - DecisionCycle (#38): `ApprovalPending` and `ApprovalExpired`, linking to the approval page, which needs sign-in like every page (FR-APR-02)
   - Execution: `ExchangeRateLimitBan` is raised already, by `ExchangeBanNotifier`. See [Bans](#bans)
@@ -2130,17 +2268,17 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Retention (#50):** purge `candle_cache` by `fetched_at`, using `Retention:CandleCacheDays`, never by `open_time`, which would make every 1D cycle fetch its whole window. Batch the deletes. `exchange_symbols` needs no purge, because it only ever holds Binance's latest list.
 - **Shadow outcomes (#44):** the candles after a proposal are in `candle_cache` for `Retention:CandleCacheDays`, but nothing reads a range after a time yet, so add that read to `IMarketData`. Use `Indicators` for any indicator, so the numbers match what the cycle saw.
 - **Capacity (#56):** start from [Request weight per candle](#request-weight-per-candle).
-- **Order execution (#34):** derive client order IDs that match `^[.A-Z:/a-z0-9_-]{1,36}$` (FR-EXE-04). Use `RequestPriority.Protective` for stops, closes and their queries. On `MayHaveExecuted`, query with `IExchangeAccount.GetOrderAsync` before sending again: only null allows it. Persist `SettlesAt` with the order, and don't send it again before then, even after a restart, which the adapter's memory doesn't survive. Check the Futures algo order parameters against Demo first, and add Spot OCO if it's wanted.
+- **Binance Demo (#34):** run `LiveBinanceTests` with Demo keys before the first Live order, and fix whatever it disproves: the algo service's parameters and its code for a missing order, -2021, Spot's messages for a stop that would trigger and a target that would match, the code for a missing OCO list, and the filter codes. See [Testing it](#testing-it).
 - **System health (#49):** show `IExchangeUsage.Current()` for FR-ADM-04's exchange usage and bans, at `/admin/health`, which ban notifications already link to.
 - **Suggest assignment (#46):** start from `RoleModels`, which already filters and ranks each role's models, and replace "newest first" with the trading-experience metrics (FR-ROLE-07). Keep the Risk Critic off the Strategist's provider (FR-ROLE-04).
 - **Anthropic's model lifecycle:** Anthropic's list also has `lifecycle`, `deprecated_at` and `retires_at`, which the adapter doesn't read yet. Reading them into `AiModel` would let the catalog deprecate a model before it disappears, ahead of [Deprecation and retirement](#deprecation-and-retirement)'s rule, and warn its agents sooner.
 - **Switching to Live (#39):** `AgentInput` and `ActivationChecks` refuse Live, and `AgentForm.ToSettings` always sends Demo. Make the switch an action of its own (UC-04), for a Paused or Stopped agent with no open positions or orders, with its checks on top of [Activation](#activation)'s, and audit it with its own `AuditAction`. Add `Agents:DefaultEnvironment` from SRS 7.3 then. The slot and the exchange key's environment already follow the agent's environment.
-- **An agent's history (#34, #36, #45):** implement `IAgentHistory` for each table that keeps an agent's history, such as orders, trades and reflections, as `AgentCycleHistory` does, so deleting an agent leaves nothing behind.
-- **Order execution and reconciliation (#34, #35):** replace `AgentExposure.HasOpenPositionsOrOrdersAsync`, which is `false` while nothing places orders, with what Execution records. Answer from the database, without calling Binance, because Agents asks while it holds the user's lock. FR-AGT-03's lock and archiving both depend on it.
+- **An agent's history (#36, #45):** implement `IAgentHistory` for each table that keeps an agent's history, such as trades and reflections, as `AgentCycleHistory` and `OrderHistory` do, so deleting an agent leaves nothing behind.
+- **Reconciliation (#35):** keep `orders` and `protections` in line with Binance, because `HasOpenPositionsOrOrdersAsync` answers FR-AGT-03's lock from them alone. Hold `AgentLocks` for the agent while reconciling, as the watch does, so the two never act on the same orders.
 - **Stop and the kill switch (#37):** `IAgents.StopAsync` leaves positions and orders as they are. Add FR-AGT-07's choice to close them, and the kill switch, through `IAgentExposure` or a port beside it that Execution implements. "Stop all agents" should go through the user's agents one at a time, so one failure doesn't stop the rest.
 - **The agent's page (#41):** `/agents/{id}` is free. Link the list's names to it, and move the actions there as well, using the same contract calls and `AgentText`.
 - **Account deletion (#51):** stop the user's agents first, with their choice to close or keep positions (FR-AUTH-09), then delete them through the port Identity declares. There's no foreign key to `users`.
-- **Execution (#34, #35):** open a key with `ICredentialKeys` for each use, never cache it, and dispose its secrets after, as `AgentAccounts` does. `CredentialUnusableException` means the credential changed since the agent was activated: treat it as a paused agent's cause, not a provider failure, and don't retry it. `BannedApis` lets only Catalog, AiCouncil and Execution use `ICredentialKeys`, and only Credentials build a key.
+- **Reconciliation (#35):** open a key with `ICredentialKeys` for each use, never cache it, and dispose its secrets after, as `AgentAccounts` does. `CredentialUnusableException` means the credential changed since the agent was activated: treat it as a paused agent's cause, not a provider failure, and don't retry it. `BannedApis` lets only Catalog, AiCouncil and Execution use `ICredentialKeys`, and only Credentials build a key.
 - **Binance Demo restrictions:** Binance doesn't document `/sapi` on its Demo servers, so a Demo key's restrictions aren't read. Try `apiRestrictions` against Demo with a real key, and if it answers, read them there too.
 - **Account deletion (#51):** delete the user's credentials with `ICredentials.DeleteAsync`, which removes their secrets in the same transaction, through the port Identity declares. There's no foreign key to `users`.
 - **Data isolation (#55):** `CredentialIsolationTests` and `AgentIsolationTests` cover every Credentials and Agents call. Add the credentials pages and `/agents/{id}/settings` to the HTTP suite. The settings page already answers 404 for another user's agent.
@@ -2156,20 +2294,22 @@ The reconnect modal was checked in the published build, by stopping the server. 
 - **Account deletion (#51):** delete the user's `model_availability` rows by `user_id`. `catalog_sync_runs.errors` holds credential IDs, and nothing else about anybody.
 - **xAI prices:** confirm the unit of the prices in xAI's model list with `LiveProviderTests`, then read them into `AiModel`, below the configuration's.
 - **The trade journal (#36):** replace `TradingRecord.None` in `DecisionCycles`, for the loss limits and `RiskInputs.Record`. Count `TradingRecord.ConsecutiveLosses` from the agent's last `StatusChangedAt` into Active, or a resumed agent pauses again at once.
-- **Futures entries (#34, #38):** call `IFuturesSetup.PrepareEntryAsync` right before each Futures entry is sent, with its `SizedOrder`, and send nothing unless it's `Ready` (FR-RISK-09). It requires One-way Mode, and sets the symbol to isolated at `SizedOrder.Leverage`, which is the agent's after the caps. Record any other outcome on the cycle: `HedgeMode`, `MultiAssetsMode` and `TradingDisabled` need the user, so tell them. An approval (#38) calls it again when it sends, because the account may have changed while it waited. Check the [Futures account settings](#futures-account-settings) against Futures Demo first.
-- **Order execution and AC-01 (#34):** send only a `SizedOrder`, and record the evaluation it came from on each order row, the stop and target legs citing their entry's. Cancel only the unfilled entry for `CancelEntry`, never a protective order. Send Futures stops with `workingType=MARK_PRICE`, which `StopSide` assumes. On Spot, place the stop for the base quantity received after the fee, which Binance takes from it. On a rejection where `ExchangeException.IsFilterRejection`, call `IExchangeSymbols.RefreshAsync`. Evaluate the emergency close (FR-EXE-02) as a `Close` or `Sell` with `Origin = System`. Write AC-01's audit query: every order row has a passing evaluation.
+- **Reconciliation (#35):** give the Risk Engine `AgentAccount.Position` from `protections` and `orders`, and then remove the interim guard in `ProtectionKeeper.HoldsPositionAsync`, which refuses every entry while a position is held, so adds and exits can work. Detect a stop or target that filled, mark its protection `Ended`, raise `TradeClosed`, and on Futures cancel the other at once: a take-profit left behind could close a new position, and today only the next entry cancels it. Execute exits and stop and target adjustments through `IOrderExecution`: `OrderExecutor` returns `Unsupported` for them. On Spot, an OCO's stop and target are one list, so moving either replaces the list.
+- **The trade journal (#36):** read each fill with `IExchangeAccount.GetOrderTradesAsync`, which gives commissions, for `Fill`, and count `EntriesToday` from entry rows in `orders`. An entry's protections, and their closes, are its trade's exits.
 - **The trade journal (#36):** sum `TradingRecord`'s P&L over `RiskPeriods.DayStart` and `WeekStart`, net of fees and funding. A loss is net P&L below zero, and any other trade ends a streak. `EntriesToday` counts entry orders placed, adds included. `CyclesSinceLastLoss` counts cycles finished since the losing trade closed.
-- **The kill switch (#37):** evaluate each close as a `Close` or `Sell` with `Origin = System` and no fraction, which only the structural rules can stop, and send its `SizedOrder`.
+- **The kill switch (#37):** evaluate each close as a `Close` or `Sell` with `Origin = System` and no fraction, which only the structural rules can stop, and send its `SizedOrder`, as `ProtectionKeeper`'s close does, storing the evaluation on the order row for AC-01. Hold `AgentLocks` so the watch can't act at the same time. Cancel the agent's open orders, which `ClientOrderIds.AgentPrefix` tells from the user's own (FR-AGT-09): on Spot an OCO list is cancelled whole.
 - **Approvals (#38):** re-evaluate on approval with fresh inputs (FR-APR-03): the size and prices may change, and a failure rejects the approval with its reasons. Show `SizedOrder.MoneyAtRisk` as the money at risk (FR-APR-01).
 - **The trace viewer (#42):** give `RiskRule`, `RuleOutcome` and `RiskReason` their text, and show each rule's inputs as recorded. The Settings rule's inputs show each capped setting, its cap and what was used.
-- **Order execution and approvals (#34, #38):** take a `ReadyToExecute` cycle's sized order from its `risk_evaluations` row, and call `CycleRequest.AllowsNewEntry` again right before sending an entry, with the time then (FR-CYC-06). Record the outcome on the cycle: add `Executed` and `AwaitingApproval` to `CycleOutcome`, for FR-ANI-01's reveal.
+- **Approvals (#38):** a Confirm agent's cycle ends `ReadyToExecute`. Add `AwaitingApproval` to `CycleOutcome` for FR-ANI-01's reveal. On approval, re-evaluate, then send the new `SizedOrder` through `IOrderExecution` with the approval's deadline, which checks it again right before sending, readies a Futures symbol again (FR-RISK-09), and records the result. Put it in `decision_cycles.execution`, or the approval's own row.
 - **Per-agent catch-up (FR-CYC-04):** each agent's last cycle is now in `decision_cycles`, so a restart could catch up the agents whose close's job ran but whose cycle never started. See [Scheduler](#scheduler).
 - **Live updates and the council view (#41, #53):** subscribe an `ICycleObserver`, filter by the signed-in user, and read `IDecisionTraces.FindLatestAsync` when the page opens, because events are lost on a crash. A role's summary is a model's text, so show it only as text.
 - **The trace viewer (#42):** extend `IDecisionTraces` with the whole trace: the input snapshot, each AI call with its prompt, answer, violations, tokens, cost and latency, and the Risk Engine's rules. Every query takes the user (NFR-SEC-04), and administrators never see it (FR-ADM-01).
 - **Account deletion (#51):** delete the user's `decision_cycles` by `user_id`, through the port Identity declares. Their roles, AI calls and evaluations go with them.
 - **System health (#49):** FR-ADM-04's queued and running cycles are in `CycleSlots`, in memory. Add a Scheduler contract that reports them, and the scheduler's status from the four `cycles-*` jobs' last runs.
 - **Retention (#50):** every decision cycle adds a `decision-cycle` row to `job_runs`, about 19,000 a day at 200 agents on 15m, plus a row per timeframe per close. Purge `decision_cycles` by `started_at`, using `Retention:DecisionTraceDays` (FR-DATA-01): its roles, AI calls and evaluations go through their foreign keys. A trace keeps every prompt, so at 200 agents on 15m it's of the order of 1 GB a day before PostgreSQL compresses it. Most of a prompt's instructions are its templates', which the call's `templates` identify, so storing them once per version is the first saving if that's too much.
-- **Order execution (#34):** pass `cancellationToken`, not `Stopping`, to exchange calls. Persist the intent before sending, or a cut send can't be recovered (FR-EXE-05, FR-EXE-08). Once an order is placed, save with a deadline of its own, or the end of the drain window could cancel the write.
+- **Retention (#50):** `order-watch-sweep` adds a `job_runs` row a minute, and each agent's watch one per hour it runs. The SRS sets no period for `orders` and `protections`, which the trade journal (#36) and the trace viewer (#42) read.
+- **Capacity (#56):** count each unfilled limit entry's checks, 48 weight a minute on Spot and 12 on Futures at the default interval, and a Spot fill's trades read. See [Request weight](#request-weight).
+- **The trace viewer (#42):** show `decision_cycles.execution`, with `ExecutionStatus`, `ExecutionReason` and `FuturesSetupOutcome` given their text, and the agent's orders from `orders`.
 - **Reconciliation (#35):** run the startup pass from a hosted service's `StartAsync`, through `IJobRunner`, so it finishes before any scheduled cycle (FR-EXE-08).
 - **Retention (#50):** purge `log_events` by `timestamp`, using `Retention:DatabaseLogDays`, which FR-LOG-02 and FR-DATA-01 require, and `audit_events` by `timestamp`, using `Retention:AuditDays`. The audit trigger allows `DELETE` for this, and refuses `TRUNCATE`. `job_runs` needs purging too, and the SRS sets no period. Keep each job's newest row, or it runs early once.
 - **Deployment (#57):** a supervisor's stop timeout must be at least 60 seconds: 45 for the host, plus the final log flush. systemd's default of 90 is fine, and Docker's 10 and Kubernetes' 30 are too short. A SIGKILL behaves like a crash. A reverse proxy must send `X-Forwarded-For` and `X-Forwarded-Proto`, pass WebSocket upgrades, and be in `Security:TrustedProxies` unless it's on loopback. Set `AllowedHosts` to the public host, plus whatever host a local probe uses. The configuration file must be closed to everyone but the service account, such as with `chmod 600`, or startup is refused outside Development. Kubernetes mounts files that group and others can read by default, so set the mode. Install time zone data, or users can only choose UTC: Alpine and chiseled images need it added. Cover Windows ACLs, which aren't checked, and the [rotation steps](#rotating-the-master-key). The first start after #12 moves the Data Protection keys into the database under a new application name, so everyone signs in again once.

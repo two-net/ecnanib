@@ -154,6 +154,20 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     {
         public static Task RunAsync(Modules.DecisionCycle.Contracts.IDecisionCycles cycles, Guid agentId) => cycles.RunAsync(agentId);
     }
+
+    public static class OrderSentByTheWebUi
+    {
+        public static Task<string> ExecuteAsync(Modules.Execution.Contracts.IOrderExecution execution) => execution.ExecuteAsync("an order");
+    }
+}
+
+namespace Ecnanib.Tests.Security.Fixtures.Modules.Execution.Contracts
+{
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface IOrderExecution
+    {
+        Task<string> ExecuteAsync(string order);
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Modules.Agents.Contracts
@@ -188,6 +202,8 @@ namespace Ecnanib.Tests.Security.Fixtures.Modules.DecisionCycle
     public static class TheDecisionCycle
     {
         public static Task<string> AskAsync(AiCouncil.Contracts.ICouncil council) => council.AskAsync("a question");
+
+        public static Task<string> ExecuteAsync(Execution.Contracts.IOrderExecution execution) => execution.ExecuteAsync("a sized order");
     }
 }
 

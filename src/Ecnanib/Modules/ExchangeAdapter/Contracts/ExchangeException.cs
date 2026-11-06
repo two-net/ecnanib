@@ -44,7 +44,8 @@ public sealed class ExchangeException(
     int? code = null,
     TimeSpan? retryAfter = null,
     Exception? innerException = null,
-    DateTimeOffset? settlesAt = null)
+    DateTimeOffset? settlesAt = null,
+    OrderRejection rejection = OrderRejection.None)
     : Exception(message, innerException)
 {
     /// <summary>
@@ -65,6 +66,12 @@ public sealed class ExchangeException(
 
     /// <summary>How long until a throttled or banned request may be sent again.</summary>
     public TimeSpan? RetryAfter { get; } = retryAfter;
+
+    /// <summary>
+    /// For a rejected order, the reasons Execution acts on: a stop the price has already passed, or a maker-only
+    /// target the price has already reached. Read from Binance's code and message, which Demo should confirm (#34).
+    /// </summary>
+    public OrderRejection Rejection { get; } = rejection;
 
     /// <summary>True when the request may have taken effect, so an order must be queried before it's sent again.</summary>
     public bool MayHaveExecuted => Failure == ExchangeFailure.Unknown;
@@ -99,4 +106,19 @@ public sealed class ExchangeException(
         -4131, // The counterparty's best price doesn't meet the PERCENT_PRICE filter
         -4164, // Notional must be no smaller than the minimum
     ];
+}
+
+/// <summary>Why Binance rejected an order, where the reason changes what Execution does next.</summary>
+public enum OrderRejection
+{
+    None,
+
+    /// <summary>
+    /// The trigger price has already been passed, so a stop would fire at once: Futures' -2021, or Spot's -2010
+    /// "Order would trigger immediately." A protective stop refused this way means the position must be closed.
+    /// </summary>
+    WouldTriggerImmediately,
+
+    /// <summary>A maker-only order, such as an OCO's LIMIT_MAKER target, would trade at once: Spot's -2010 "Order would immediately match and take."</summary>
+    WouldMatchImmediately,
 }

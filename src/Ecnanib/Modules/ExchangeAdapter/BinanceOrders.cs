@@ -91,6 +91,32 @@ internal static class BinanceOrders
             OrderId(body.ActualOrderId),
             Time(body.UpdateTime ?? body.CreateTime));
 
+    public static ExchangeOrderList FromList(OrderListBody body) =>
+        new(
+            body.Symbol,
+            body.OrderListId,
+            body.ListClientOrderId,
+            body.ListOrderStatus switch
+            {
+                "EXECUTING" => OrderListStatus.Executing,
+                "ALL_DONE" => OrderListStatus.AllDone,
+                "REJECT" => OrderListStatus.Rejected,
+                _ => OrderListStatus.Unrecognized,
+            },
+            [.. body.Orders.Select(order => new OrderListMember(order.ClientOrderId, order.OrderId))]);
+
+    public static ExchangeTrade FromTrade(TradeBody body) =>
+        new(
+            body.Symbol,
+            body.Id,
+            body.OrderId,
+            body.Price,
+            body.Qty,
+            body.Commission,
+            body.CommissionAsset,
+            DateTimeOffset.FromUnixTimeMilliseconds(body.Time),
+            body.IsMaker ?? body.Maker ?? false);
+
     private static OrderSide ParseSide(ExchangeServer server, string side) => side switch
     {
         "BUY" => OrderSide.Buy,

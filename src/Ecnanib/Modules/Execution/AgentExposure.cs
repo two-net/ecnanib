@@ -7,15 +7,15 @@ using Ecnanib.Modules.ExchangeAdapter.Contracts;
 namespace Ecnanib.Modules.Execution;
 
 /// <summary>
-/// What an agent has on the exchange, for Agents (see Inversions in docs/architecture.md). Nothing places
-/// orders yet, so no agent has a position or an order: order execution and reconciliation (#34, #35) answer
-/// from what they record. The balance behind FR-AGT-13's warning, and the Futures account EXT-BIN-07 checks, are
+/// What an agent has on the exchange, for Agents (see Inversions in docs/architecture.md). Open positions and
+/// orders come from what execution records (#34), which reconciliation (#35) keeps in line with Binance. The balance behind FR-AGT-13's warning, and the Futures account EXT-BIN-07 checks, are
 /// read from Binance at most once a minute per key, because the weight is shared by every user and a page's
 /// clicks never reach the rate limiter. The cache is in memory, which is enough for one instance (ASM-06).
 /// </summary>
 internal sealed class AgentExposure(
     ICredentialKeys keys,
     IExchangeAccount accounts,
+    OrderStore orders,
     TimeProvider time,
     ILogger<AgentExposure> logger) : IAgentExposure
 {
@@ -24,10 +24,10 @@ internal sealed class AgentExposure(
     private readonly ConcurrentDictionary<(Guid UserId, Guid CredentialId, Market Market), Read<ExchangeAccount>> _balances = new();
     private readonly ConcurrentDictionary<(Guid UserId, Guid CredentialId), Read<FuturesAccountConfig>> _futuresConfigs = new();
 
-    // Nothing places orders before #34, so there's nothing to find. #34 and #35 answer from what they record,
-    // without calling Binance, because Agents asks inside its lock.
+    // From what Execution records, without calling Binance, because Agents asks inside its lock. A resting stop is an
+    // open order, so a protected position counts too.
     public Task<bool> HasOpenPositionsOrOrdersAsync(Guid userId, Guid agentId, CancellationToken cancellationToken) =>
-        Task.FromResult(false);
+        orders.HasOpenPositionsOrOrdersAsync(userId, agentId, cancellationToken);
 
     public async Task<decimal?> GetAvailableBalanceAsync(
         Guid userId, Guid credentialId, Market market, string asset, CancellationToken cancellationToken)

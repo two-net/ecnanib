@@ -22,6 +22,19 @@ public interface IExchangeTrading
     /// </exception>
     Task<ExchangeOrder> PlaceOrderAsync(Market market, ExchangeKey key, OrderRequest order, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Sends one Spot one-cancels-the-other list, once: a target and a stop that close a position, whichever comes
+    /// first (FR-EXE-02). It has the same timeout, cancellation and unknown-outcome rules as
+    /// <see cref="PlaceOrderAsync"/>, keyed by the list's client order ID. Settle an unknown one with
+    /// <see cref="IExchangeAccount.GetOrderListAsync"/>.
+    /// </summary>
+    /// <exception cref="ExchangeException">It failed. See <see cref="PlaceOrderAsync"/>.</exception>
+    Task<ExchangeOrderList> PlaceOrderListAsync(ExchangeKey key, OrderListRequest list, CancellationToken cancellationToken);
+
+    /// <summary>Cancels a Spot order list, both of its orders, with the same rules as cancelling an order.</summary>
+    /// <exception cref="ExchangeException">It failed. -2011 means Binance has no such open list.</exception>
+    Task CancelOrderListAsync(ExchangeKey key, OrderListReference list, RequestPriority priority, CancellationToken cancellationToken);
+
     /// <summary>Cancels an open order, with the same timeout and cancellation rules as placing one.</summary>
     /// <exception cref="ExchangeException">It failed. -2011 means Binance has no such open order.</exception>
     Task CancelOrderAsync(
@@ -238,5 +251,108 @@ public enum ExchangeOrderStatus
     Finished,
 
     /// <summary>A status this version doesn't know. Treat the order as open until it's read again.</summary>
+    Unrecognized,
+}
+
+/// <summary>Which Spot order list to read or cancel.</summary>
+public sealed record OrderListReference(string Symbol, string ListClientOrderId);
+
+/// <summary>
+/// A Spot one-cancels-the-other list that closes a position at a target or a stop, whichever comes first: a
+/// LIMIT_MAKER at the target and a STOP_LOSS at the stop. It checks itself as it's built, like <see cref="OrderRequest"/>.
+/// </summary>
+public sealed class OrderListRequest
+{
+    /// <param name="side">The side that closes the position: Sell for a long, with the target above the stop.</param>
+    /// <param name="listClientOrderId">The list's own ID. Each order has its own, and all three are unique (FR-EXE-04).</param>
+    /// <exception cref="ArgumentException">A value is missing, out of range, or on the wrong side.</exception>
+    public OrderListRequest(
+        string symbol,
+        OrderSide side,
+        decimal quantity,
+        decimal targetPrice,
+        decimal stopPrice,
+        string listClientOrderId,
+        string targetClientOrderId,
+        string stopClientOrderId,
+        RequestPriority priority)
+    {
+        Require(OrderRequest.IsSymbol(symbol), nameof(symbol), "A symbol is upper-case letters and digits, such as BTCUSDT.");
+        Require(quantity > 0, nameof(quantity), "The quantity must be positive.");
+        Require(targetPrice > 0 && stopPrice > 0, nameof(targetPrice), "The target and the stop must be positive.");
+        Require(
+            side == OrderSide.Sell ? targetPrice > stopPrice : targetPrice < stopPrice,
+            nameof(targetPrice),
+            "Closing a long sells above at the target and below at the stop, and closing a short the other way round.");
+
+        string[] ids = [listClientOrderId, targetClientOrderId, stopClientOrderId];
+        Require(ids.All(OrderRequest.IsClientOrderId), nameof(listClientOrderId), "A client order ID is 1 to 36 letters, digits, and . : / _ -.");
+        Require(ids.Distinct(StringComparer.Ordinal).Count() == ids.Length, nameof(listClientOrderId), "The list and its two orders need IDs of their own.");
+
+        Symbol = symbol;
+        Side = side;
+        Quantity = quantity;
+        TargetPrice = targetPrice;
+        StopPrice = stopPrice;
+        ListClientOrderId = listClientOrderId;
+        TargetClientOrderId = targetClientOrderId;
+        StopClientOrderId = stopClientOrderId;
+        Priority = priority;
+    }
+
+    public string Symbol { get; }
+
+    public OrderSide Side { get; }
+
+    public decimal Quantity { get; }
+
+    public decimal TargetPrice { get; }
+
+    public decimal StopPrice { get; }
+
+    public string ListClientOrderId { get; }
+
+    public string TargetClientOrderId { get; }
+
+    public string StopClientOrderId { get; }
+
+    public RequestPriority Priority { get; }
+
+    public OrderListReference Reference => new(Symbol, ListClientOrderId);
+
+    public override string ToString() => $"{nameof(OrderListRequest)} {ListClientOrderId}";
+
+    private static void Require(bool condition, string parameter, string message)
+    {
+        if (!condition)
+        {
+            throw new ArgumentException(message, parameter);
+        }
+    }
+}
+
+/// <summary>A Spot order list as Binance last reported it. Read each order's state with <see cref="IExchangeAccount.GetOrderAsync"/>.</summary>
+/// <param name="Orders">Its orders' client order IDs and Binance's IDs for them.</param>
+public sealed record ExchangeOrderList(
+    string Symbol,
+    long OrderListId,
+    string ListClientOrderId,
+    OrderListStatus Status,
+    IReadOnlyList<OrderListMember> Orders);
+
+public sealed record OrderListMember(string ClientOrderId, long ExchangeOrderId);
+
+/// <summary>Binance's <c>listOrderStatus</c>.</summary>
+public enum OrderListStatus
+{
+    /// <summary>Its orders are working, or it was just placed.</summary>
+    Executing,
+
+    /// <summary>One order filled or both were cancelled, so it's finished.</summary>
+    AllDone,
+
+    Rejected,
+
+    /// <summary>A status this version doesn't know. Treat the list as working until it's read again.</summary>
     Unrecognized,
 }

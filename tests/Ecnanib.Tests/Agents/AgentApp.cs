@@ -36,7 +36,9 @@ internal sealed class AgentApp : IAsyncDisposable
         PostgresFixture postgres,
         Dictionary<string, string?>? settings = null,
         FakeExposure? exposure = null,
-        Action<IServiceCollection>? services = null)
+        Action<IServiceCollection>? services = null,
+        string? connectionString = null,
+        IReadOnlyCollection<string>? manualJobs = null)
     {
         Binance = new FakeBinance(Clock);
         App = AccountApp.Create(
@@ -54,7 +56,8 @@ internal sealed class AgentApp : IAsyncDisposable
 
                 services?.Invoke(collection);
             },
-            manualJobs: ["CredentialRevalidationJob", "AgentPrerequisitesJob", "CatalogSyncJob", "ModelLifecycleJob", "LossLimitResumeJob"]);
+            connectionString: connectionString,
+            manualJobs: ["CredentialRevalidationJob", "AgentPrerequisitesJob", "CatalogSyncJob", "ModelLifecycleJob", "LossLimitResumeJob", .. manualJobs ?? []]);
 
         Ai.On(
             HttpMethod.Get,

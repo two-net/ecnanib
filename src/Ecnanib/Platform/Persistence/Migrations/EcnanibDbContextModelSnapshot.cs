@@ -964,6 +964,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("environment");
 
+                    b.Property<string>("Execution")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("execution");
+
                     b.Property<string>("Failure")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
@@ -1095,6 +1099,278 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasDatabaseName("ix_risk_evaluations_cycle_id");
 
                     b.ToTable("risk_evaluations", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Execution.OrderRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<decimal?>("AveragePrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("average_price");
+
+                    b.Property<DateTimeOffset>("CandleClose")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("candle_close");
+
+                    b.Property<string>("ClientOrderId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)")
+                        .HasColumnName("client_order_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CredentialId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credential_id");
+
+                    b.Property<Guid>("CycleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cycle_id");
+
+                    b.Property<Guid?>("EntryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("entry_id");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("environment");
+
+                    b.Property<int?>("ErrorCode")
+                        .HasColumnType("integer")
+                        .HasColumnName("error_code");
+
+                    b.Property<long?>("ExchangeOrderId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("exchange_order_id");
+
+                    b.Property<decimal>("ExecutedQuantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("executed_quantity");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset?>("FilledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("filled_at");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("Leg")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("leg");
+
+                    b.Property<string>("ListClientOrderId")
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)")
+                        .HasColumnName("list_client_order_id");
+
+                    b.Property<string>("Market")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("market");
+
+                    b.Property<decimal?>("NetBasis")
+                        .HasColumnType("numeric")
+                        .HasColumnName("net_basis");
+
+                    b.Property<decimal?>("NetQuantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("net_quantity");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("origin");
+
+                    b.Property<decimal?>("Price")
+                        .HasColumnType("numeric")
+                        .HasColumnName("price");
+
+                    b.Property<Guid?>("ProtectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("protection_id");
+
+                    b.Property<decimal?>("ProtectiveStop")
+                        .HasColumnType("numeric")
+                        .HasColumnName("protective_stop");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("quantity");
+
+                    b.Property<bool>("ReduceOnly")
+                        .HasColumnType("boolean")
+                        .HasColumnName("reduce_only");
+
+                    b.Property<bool>("Resolved")
+                        .HasColumnType("boolean")
+                        .HasColumnName("resolved");
+
+                    b.Property<DateTimeOffset?>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.Property<DateTimeOffset>("SettlesAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("settles_at");
+
+                    b.Property<string>("Side")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("side");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<decimal?>("StopPrice")
+                        .HasColumnType("numeric")
+                        .HasColumnName("stop_price");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("symbol");
+
+                    b.Property<string>("SystemEvaluation")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("system_evaluation");
+
+                    b.Property<decimal?>("Target")
+                        .HasColumnType("numeric")
+                        .HasColumnName("target");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("type");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_orders");
+
+                    b.HasIndex("AgentId")
+                        .HasDatabaseName("ix_orders_unresolved_entries")
+                        .HasFilter("leg = 'Entry' AND NOT resolved");
+
+                    b.HasIndex("ClientOrderId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_orders_client_order_id");
+
+                    b.HasIndex("EntryId")
+                        .HasDatabaseName("ix_orders_entry_id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_orders_live")
+                        .HasFilter("status IN ('Sending', 'Unknown', 'Open', 'PartiallyFilled')");
+
+                    b.HasIndex("UserId", "AgentId", "Status")
+                        .HasDatabaseName("ix_orders_user_id_agent_id_status");
+
+                    b.ToTable("orders", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Execution.ProtectionRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("entry_id");
+
+                    b.Property<DateTimeOffset>("ProtectBy")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("protect_by");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("quantity");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<bool>("TargetDropped")
+                        .HasColumnType("boolean")
+                        .HasColumnName("target_dropped");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_protections");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_protections_unsettled")
+                        .HasFilter("status IN ('Pending', 'Closing')");
+
+                    b.HasIndex("EntryId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ix_protections_entry_id_sequence");
+
+                    b.HasIndex("UserId", "AgentId", "Status")
+                        .HasDatabaseName("ix_protections_user_id_agent_id_status");
+
+                    b.ToTable("protections", (string)null);
                 });
 
             modelBuilder.Entity("Ecnanib.Modules.Identity.AccountToken", b =>

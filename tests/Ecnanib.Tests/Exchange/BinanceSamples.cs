@@ -270,4 +270,26 @@ internal static class BinanceSamples
          "workingType":"CONTRACT_PRICE","reduceOnly":true,"closePosition":false,"priceProtect":false,
          "createTime":1750485492076,"updateTime":1750485492076,"triggerTime":0}
         """;
+
+    public static string OrderList(string listClientOrderId, string targetClientOrderId, string stopClientOrderId, string status = "EXECUTING") => $$"""
+        {"orderListId":1929,"contingencyType":"OCO","listStatusType":"EXEC_STARTED","listOrderStatus":"{{status}}",
+         "listClientOrderId":"{{listClientOrderId}}","transactionTime":1711062760648,"symbol":"BTCUSDT",
+         "orders":[{"symbol":"BTCUSDT","orderId":31,"clientOrderId":"{{targetClientOrderId}}"},
+                   {"symbol":"BTCUSDT","orderId":32,"clientOrderId":"{{stopClientOrderId}}"}],
+         "orderReports":[]}
+        """;
+
+    /// <summary>Spot's myTrades for order 28, in two fills, each with its commission in the base asset.</summary>
+    public const string SpotTrades = """
+        [{"symbol":"BTCUSDT","id":28457,"orderId":28,"orderListId":-1,"price":"60000.00","qty":"0.0006","quoteQty":"36.00",
+          "commission":"0.0000006","commissionAsset":"BTC","time":1499865549590,"isBuyer":true,"isMaker":false,"isBestMatch":true},
+         {"symbol":"BTCUSDT","id":28458,"orderId":28,"orderListId":-1,"price":"60010.00","qty":"0.0004","quoteQty":"24.004",
+          "commission":"0.0000004","commissionAsset":"BTC","time":1499865549591,"isBuyer":true,"isMaker":true,"isBestMatch":true}]
+        """;
+
+    /// <summary>Futures' userTrades for order 22542179, with its commission in the margin asset.</summary>
+    public const string FuturesTrades = """
+        [{"buyer":false,"commission":"2.42","commissionAsset":"USDT","id":698759,"maker":false,"orderId":22542179,"price":"60500.00",
+          "qty":"0.100","quoteQty":"6050.00","realizedPnl":"0","side":"SELL","positionSide":"BOTH","symbol":"BTCUSDT","time":1569514978020}]
+        """;
 }

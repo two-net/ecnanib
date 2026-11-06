@@ -9,14 +9,14 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
     /// <summary>Binance's code for an order it has no record of.</summary>
     private const int NoSuchOrder = -2013;
 
-    public async Task<ExchangeAccount> GetAccountAsync(Market market, ExchangeKey key, CancellationToken cancellationToken)
+    public async Task<ExchangeAccount> GetAccountAsync(Market market, ExchangeKey key, RequestPriority priority, CancellationToken cancellationToken)
     {
         var server = ExchangeServers.Trading(market, key.Environment);
 
         if (market == Market.Spot)
         {
             var spot = await transport.SendAsync<SpotAccountBody>(
-                server, BinanceEndpoint.SpotAccount, [("omitZeroBalances", "true")], key, RequestPriority.Normal, clientOrderId: null, cancellationToken);
+                server, BinanceEndpoint.SpotAccount, [("omitZeroBalances", "true")], key, priority, clientOrderId: null, cancellationToken);
 
             return new ExchangeAccount(
                 market,
@@ -28,7 +28,7 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
         }
 
         var futures = await transport.SendAsync<FuturesAccountBody>(
-            server, BinanceEndpoint.FuturesAccount, [], key, RequestPriority.Normal, clientOrderId: null, cancellationToken);
+            server, BinanceEndpoint.FuturesAccount, [], key, priority, clientOrderId: null, cancellationToken);
 
         return new ExchangeAccount(
             market,
@@ -87,24 +87,84 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
         }
         catch (ExchangeException exception) when (exception is { Failure: ExchangeFailure.Rejected, Code: NoSuchOrder })
         {
-            // Only Binance's own answer means the order doesn't exist, and only once a send of it whose
-            // outcome was unknown can no longer be accepted. Anything else says nothing about it.
-            var now = time.GetUtcNow();
-
-            if (servers[server].UnsettledUntil(key.CredentialId, order.ClientOrderId, now) is { } settlesAt)
-            {
-                throw new ExchangeException(
-                    server,
-                    ExchangeFailure.Unknown,
-                    $"{ExchangeServers.Describe(server)} has no such order yet, but one sent with an unknown outcome could still be accepted.",
-                    NoSuchOrder,
-                    settlesAt - now,
-                    exception,
-                    settlesAt);
-            }
+            ThrowIfUnsettled(server, key, order.ClientOrderId, exception);
 
             return null;
         }
+    }
+
+    /// <summary>
+    /// Only Binance's own answer means an order or list doesn't exist, and only once a send of it whose outcome was
+    /// unknown can no longer be accepted. Anything else says nothing about it.
+    /// </summary>
+    /// <exception cref="ExchangeException">It could still appear.</exception>
+    private void ThrowIfUnsettled(ExchangeServer server, ExchangeKey key, string clientOrderId, ExchangeException exception)
+    {
+        var now = time.GetUtcNow();
+
+        if (servers[server].UnsettledUntil(key.CredentialId, clientOrderId, now) is { } settlesAt)
+        {
+            throw new ExchangeException(
+                server,
+                ExchangeFailure.Unknown,
+                $"{ExchangeServers.Describe(server)} has no such order yet, but one sent with an unknown outcome could still be accepted.",
+                NoSuchOrder,
+                settlesAt - now,
+                exception,
+                settlesAt);
+        }
+    }
+
+    public async Task<ExchangeOrderList?> GetOrderListAsync(
+        ExchangeKey key,
+        OrderListReference list,
+        RequestPriority priority,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        Check(list);
+
+        var server = ExchangeServers.Trading(Market.Spot, key.Environment);
+
+        try
+        {
+            var body = await transport.SendAsync<OrderListBody>(
+                server, BinanceEndpoint.SpotQueryOrderList, [("origClientOrderId", list.ListClientOrderId)], key, priority, list.ListClientOrderId, cancellationToken);
+
+            return BinanceOrders.FromList(body);
+        }
+        catch (ExchangeException exception) when (exception is { Failure: ExchangeFailure.Rejected, Code: NoSuchOrder })
+        {
+            // As for an order. Binance's code for a missing list isn't documented: -2013 is assumed, and anything else
+            // throws, which is the safe direction. LiveBinanceTests checks it against Demo.
+            ThrowIfUnsettled(server, key, list.ListClientOrderId, exception);
+
+            return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<ExchangeTrade>> GetOrderTradesAsync(
+        Market market,
+        ExchangeKey key,
+        string symbol,
+        long exchangeOrderId,
+        RequestPriority priority,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceMarketData.CheckSymbol(symbol);
+        ArgumentOutOfRangeException.ThrowIfLessThan(exchangeOrderId, 1);
+
+        var trades = await transport.SendAsync<List<TradeBody>>(
+            ExchangeServers.Trading(market, key.Environment),
+            market == Market.Spot ? BinanceEndpoint.SpotMyTrades : BinanceEndpoint.FuturesUserTrades,
+            [("symbol", symbol), ("orderId", exchangeOrderId.ToString(System.Globalization.CultureInfo.InvariantCulture))],
+            key,
+            priority,
+            clientOrderId: null,
+            cancellationToken);
+
+        return [.. trades.Where(trade => trade.OrderId == exchangeOrderId).Select(BinanceOrders.FromTrade).OrderBy(trade => trade.Time)];
     }
 
     public async Task<IReadOnlyList<FuturesPosition>> GetPositionAsync(
@@ -231,6 +291,16 @@ internal sealed class BinanceAccount(BinanceTransport transport, BinanceServers 
                         bracket.MaintMarginRatio,
                         bracket.Cum)),
             ];
+    }
+
+    internal static void Check(OrderListReference list)
+    {
+        ArgumentNullException.ThrowIfNull(list);
+
+        if (!OrderRequest.IsSymbol(list.Symbol) || !OrderRequest.IsClientOrderId(list.ListClientOrderId))
+        {
+            throw new ArgumentException("An order list reference needs a symbol and a client order ID that Binance accepts.", nameof(list));
+        }
     }
 
     internal static void Check(OrderReference order)

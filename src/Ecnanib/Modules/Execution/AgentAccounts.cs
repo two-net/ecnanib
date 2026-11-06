@@ -8,13 +8,15 @@ namespace Ecnanib.Modules.Execution;
 
 /// <summary>
 /// Reads an agent's balances, and on Futures the symbol's leverage brackets, through its own exchange key, for one
-/// use, and disposes the key after (FR-KEY-09). Position and pending entry come from Execution's records once orders
-/// exist (#34, #35). See Decision cycle in docs/architecture.md.
+/// use, and disposes the key after (FR-KEY-09). The pending entry comes from Execution's records. The position waits
+/// for reconciliation (#35). See Decision cycle in docs/architecture.md.
 /// </summary>
-internal sealed class AgentAccounts(ICredentialKeys keys, IExchangeAccount accounts, ILogger<AgentAccounts> logger) : IAgentAccounts
+internal sealed class AgentAccounts(ICredentialKeys keys, IExchangeAccount accounts, OrderStore orders, ILogger<AgentAccounts> logger)
+    : IAgentAccounts
 {
     public async Task<AgentAccount> ReadAsync(
         Guid userId,
+        Guid agentId,
         Guid credentialId,
         Market market,
         string symbol,
@@ -62,15 +64,18 @@ internal sealed class AgentAccounts(ICredentialKeys keys, IExchangeAccount accou
             key.Secret.Dispose();
         }
 
-        // Nothing places orders before #34, so the agent has no position and no pending entry of its own.
+        // The entry that hasn't ended yet, which the Risk Engine won't stack another on (RiskRule.PendingEntry). The
+        // position comes from reconciliation (#35), and until then execution refuses an entry while one is held.
+        var pending = await orders.HasPendingEntryAsync(userId, agentId, cancellationToken);
+
         return market == Market.Spot
             ? new AgentAccount(
                 Balance(account, quoteAsset)?.Available ?? 0m,
                 Balance(account, baseAsset)?.Total ?? 0m,
                 Position: null,
-                HasPendingEntry: false,
+                HasPendingEntry: pending,
                 Brackets: [])
-            : new AgentAccount(account.AvailableBalance ?? 0m, null, Position: null, HasPendingEntry: false, brackets);
+            : new AgentAccount(account.AvailableBalance ?? 0m, null, Position: null, HasPendingEntry: pending, brackets);
     }
 
     /// <summary>

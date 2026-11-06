@@ -16,6 +16,7 @@ internal sealed class BinanceSettings
     public const string FuturesDemoBaseUrlKey = "Binance:Futures:DemoBaseUrl";
     public const string MarketDataBaseUrlKey = "Binance:MarketDataBaseUrl";
     public const string RecvWindowKey = "Binance:RecvWindowMs";
+    public const string ProtectiveRecvWindowKey = "Binance:ProtectiveRecvWindowMs";
     public const string WeightHeadroomKey = "Binance:WeightHeadroomPercent";
     public const string ExchangeInfoRefreshKey = "Binance:ExchangeInfoRefreshHours";
 
@@ -29,6 +30,15 @@ internal sealed class BinanceSettings
     /// </summary>
     private const int MaximumRecvWindowMs = 10000;
 
+    /// <summary>
+    /// Placing a stop or closing a position is retried within seconds of a fill (AC-02), and an order whose outcome
+    /// is unknown can't be sent again until its receive window has passed. So protective orders get a shorter one.
+    /// </summary>
+    private const int DefaultProtectiveRecvWindowMs = 2000;
+
+    private const int MinimumProtectiveRecvWindowMs = 1000;
+    private const int MaximumProtectiveRecvWindowMs = 5000;
+
     private const int DefaultWeightHeadroomPercent = 30;
 
     /// <summary>Above this, normal requests would have almost nothing left.</summary>
@@ -40,11 +50,13 @@ internal sealed class BinanceSettings
     private BinanceSettings(
         IReadOnlyDictionary<ExchangeServer, Uri> baseUrls,
         int recvWindowMs,
+        int protectiveRecvWindowMs,
         int weightHeadroomPercent,
         TimeSpan exchangeInfoRefresh)
     {
         BaseUrls = baseUrls;
         RecvWindowMs = recvWindowMs;
+        ProtectiveRecvWindowMs = protectiveRecvWindowMs;
         WeightHeadroomPercent = weightHeadroomPercent;
         ExchangeInfoRefresh = exchangeInfoRefresh;
     }
@@ -53,6 +65,9 @@ internal sealed class BinanceSettings
 
     /// <summary>How long after its timestamp Binance still accepts a signed request (FR-EXE-10).</summary>
     public int RecvWindowMs { get; }
+
+    /// <summary>The receive window of a protective order: placing a stop, closing a position, or cancelling either (FR-EXE-09).</summary>
+    public int ProtectiveRecvWindowMs { get; }
 
     /// <summary>The share of each server's weight limit kept for protective requests (EXT-BIN-04, FR-EXE-09).</summary>
     public int WeightHeadroomPercent { get; }
@@ -72,10 +87,14 @@ internal sealed class BinanceSettings
         };
 
         var recvWindow = ReadInteger(configuration, RecvWindowKey, DefaultRecvWindowMs);
+        var protectiveRecvWindow = ReadInteger(configuration, ProtectiveRecvWindowKey, DefaultProtectiveRecvWindowMs);
         var headroom = ReadInteger(configuration, WeightHeadroomKey, DefaultWeightHeadroomPercent);
         var refreshHours = ReadInteger(configuration, ExchangeInfoRefreshKey, DefaultExchangeInfoRefreshHours);
 
         Require(recvWindow is >= 1 and <= MaximumRecvWindowMs, $"{RecvWindowKey} must be between 1 and {MaximumRecvWindowMs}.");
+        Require(
+            protectiveRecvWindow is >= MinimumProtectiveRecvWindowMs and <= MaximumProtectiveRecvWindowMs,
+            $"{ProtectiveRecvWindowKey} must be between {MinimumProtectiveRecvWindowMs} and {MaximumProtectiveRecvWindowMs}.");
         Require(
             headroom is >= 0 and <= MaximumWeightHeadroomPercent,
             $"{WeightHeadroomKey} must be between 0 and {MaximumWeightHeadroomPercent}.");
@@ -83,7 +102,7 @@ internal sealed class BinanceSettings
             refreshHours is >= 1 and <= MaximumExchangeInfoRefreshHours,
             $"{ExchangeInfoRefreshKey} must be between 1 and {MaximumExchangeInfoRefreshHours}.");
 
-        return new BinanceSettings(baseUrls, recvWindow, headroom, TimeSpan.FromHours(refreshHours));
+        return new BinanceSettings(baseUrls, recvWindow, protectiveRecvWindow, headroom, TimeSpan.FromHours(refreshHours));
     }
 
     /// <summary>

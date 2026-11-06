@@ -69,6 +69,9 @@ internal sealed class DecisionCycleRow
     /// </summary>
     public string? Budget { get; set; }
 
+    /// <summary>What execution did with the sized order, as JSON, for an Autonomous agent's cycle (#34).</summary>
+    public string? Execution { get; set; }
+
     public long InputTokens { get; set; }
 
     public long OutputTokens { get; set; }
@@ -206,6 +209,7 @@ internal sealed class DecisionCycleRowConfiguration : IEntityTypeConfiguration<D
         builder.Property(row => row.InputSnapshot).HasColumnType("jsonb");
         builder.Property(row => row.LossLimits).HasColumnType("jsonb");
         builder.Property(row => row.Budget).HasColumnType("jsonb");
+        builder.Property(row => row.Execution).HasColumnType("jsonb");
         builder.HasIndex(row => new { row.AgentId, row.CandleClose }).IsUnique().HasDatabaseName(DecisionCycleRow.CandleIndex);
         builder.HasIndex(row => new { row.UserId, row.AgentId, row.StartedAt });
 

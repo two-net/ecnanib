@@ -187,6 +187,7 @@ The `Binance` section names the servers the app calls. Users can't supply their 
 | `Futures:LiveBaseUrl`, `Futures:DemoBaseUrl` | Required. `https://fapi.binance.com` and `https://demo-fapi.binance.com` |
 | `MarketDataBaseUrl` | Required. Public Spot Live data, such as candles, prices and the order book, `https://data-api.binance.vision` |
 | `RecvWindowMs` | How long a signed request stays valid, 1 to 10000. Defaults to `5000` |
+| `ProtectiveRecvWindowMs` | The same for placing a stop or closing a position, 1000 to 5000, so one whose answer is lost can be settled and placed again within seconds. Defaults to `2000` |
 | `WeightHeadroomPercent` | The share of each server's request-weight limit kept for protective orders, 0 to 90. Defaults to `30` |
 | `ExchangeInfoRefreshHours` | How long symbols and their filters are kept before they're fetched again, 1 to 168. Defaults to `24`. The latest copy is also stored, and answers while Binance can't be reached |
 
@@ -264,12 +265,17 @@ Users create agents on the **Agents** page. Each trades one pair on Binance Spot
 | `Agents:CatchUpGraceMinutes:{15m,1H,4H,1D}` | How late a missed cycle may still run after Ecnanib was down, less than the timeframe. `0` turns catch-up off. Defaults to `5`, `15`, `60` and `180` |
 | `Agents:CycleDeadlineMinutes:{15m,1H,4H,1D}` | How long after its candle closes a cycle may still open or add to a position, 1 to less than the timeframe. Defaults to `3`, `10`, `20` and `30` |
 | `Agents:CycleErrorsBeforePause` | How many cycles in a row may end without a decision before the agent goes to Error, 0 to 100. `0` never does. Defaults to `3` |
+| `Agents:PendingEntryCheckSeconds` | How often an unfilled limit entry is checked for fills, 1 to 5. Defaults to `5` |
+| `Agents:ProtectiveStopSeconds` | How long after a fill its stop may take to rest on Binance before what filled is closed at market, 5 to 10, and at least 3 more than `PendingEntryCheckSeconds`. Defaults to `9` |
+| `Agents:MaxLimitTtlCandles` | The most candles a limit entry may wait to fill before it's cancelled, 1 to 100. A longer time-to-live from the Strategist is brought down to it. Defaults to `10` |
 
 An invalid value stops startup with a message that names it. See [Agents](docs/architecture.md#agents).
 
 An active agent runs a decision cycle each time a candle of its timeframe closes, in UTC: every 15 minutes, every hour, every four hours from midnight, or at midnight. A cycle that's still queued at its deadline is dropped, because it couldn't open a position any more. If Ecnanib was down at a close, it runs that close's cycles once when it starts, if it's within the grace, and only the latest close. See [Scheduler](docs/architecture.md#scheduler).
 
-In a cycle, the Technical Analyst and Sentiment Analyst assess the market, the Strategist proposes an action, the Risk Critic challenges a trade, and the Risk Engine sizes it or blocks it. Each role answers on one of the user's own AI keys, with its fallback model when its model fails. A cycle whose required role fails holds, and an agent whose cycles keep ending without a decision goes to Error, and its owner is notified. Every cycle's trace keeps each role's prompt and answer, the Risk Engine's rules and the tokens and cost, for its user only. Placing orders comes later. See [Decision cycle](docs/architecture.md#decision-cycle).
+In a cycle, the Technical Analyst and Sentiment Analyst assess the market, the Strategist proposes an action, the Risk Critic challenges a trade, and the Risk Engine sizes it or blocks it. Each role answers on one of the user's own AI keys, with its fallback model when its model fails. A cycle whose required role fails holds, and an agent whose cycles keep ending without a decision goes to Error, and its owner is notified. Every cycle's trace keeps each role's prompt and answer, the Risk Engine's rules and the tokens and cost, for its user only. See [Decision cycle](docs/architecture.md#decision-cycle).
+
+An Autonomous agent's cycle then sends the order the Risk Engine sized to Binance, once, and protects whatever fills with a stop that rests on Binance, plus its target if it has one: an OCO list on Spot, and a reduce-only stop and take-profit on Futures. If the stop can't be placed within `ProtectiveStopSeconds` of the fill, what filled is closed at market and the user is told. A limit entry waits for its fill, which is checked every `PendingEntryCheckSeconds`, until its time-to-live in candles ends. A Confirm agent's order waits for approval, which comes later, and so do exits and stop changes, which need reconciliation to know the position. Until then an agent that holds a position opens no other. See [Order execution](docs/architecture.md#order-execution).
 
 #### Roles
 

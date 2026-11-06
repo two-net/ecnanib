@@ -322,3 +322,51 @@ internal sealed class LeverageBody
 
     public int Leverage { get; init; }
 }
+
+/// <summary>A Spot order list, from placing, querying or cancelling it. Binance gives its orders' IDs, not their states.</summary>
+internal sealed class OrderListBody
+{
+    public long OrderListId { get; init; }
+
+    public string ListClientOrderId { get; init; } = "";
+
+    /// <summary>EXECUTING, ALL_DONE or REJECT.</summary>
+    public string ListOrderStatus { get; init; } = "";
+
+    public string Symbol { get; init; } = "";
+
+    public List<OrderListOrderBody> Orders { get; init; } = [];
+}
+
+internal sealed class OrderListOrderBody
+{
+    public string Symbol { get; init; } = "";
+
+    public long OrderId { get; init; }
+
+    public string ClientOrderId { get; init; } = "";
+}
+
+/// <summary>One fill, from Spot's myTrades or Futures' userTrades. Spot says isMaker, and Futures maker.</summary>
+internal sealed class TradeBody
+{
+    public string Symbol { get; init; } = "";
+
+    public long Id { get; init; }
+
+    public long OrderId { get; init; }
+
+    public decimal Price { get; init; }
+
+    public decimal Qty { get; init; }
+
+    public decimal Commission { get; init; }
+
+    public string CommissionAsset { get; init; } = "";
+
+    public long Time { get; init; }
+
+    public bool? IsMaker { get; init; }
+
+    public bool? Maker { get; init; }
+}

@@ -14,14 +14,16 @@ namespace Ecnanib.Modules.DecisionCycle;
 /// <summary>
 /// A decision cycle (FR-CYC-02): the loss limits, the AI budget, the market and the account, the analysts at once, the
 /// Strategist, the Risk Critic for a trade action, then the Risk Engine, with every step in the trace as it happens.
-/// It ends with a sized order for execution (#34) or approval (#38). A failed role uses its fallback model, and a
-/// required one that fails holds (FR-ROLE-06). See Decision cycle in docs/architecture.md.
+/// An Autonomous agent's sized order is then executed (#34), and a Confirm agent's waits for approval (#38). A failed
+/// role uses its fallback model, and a required one that fails holds (FR-ROLE-06). See Decision cycle in
+/// docs/architecture.md.
 /// </summary>
 internal sealed class DecisionCycles(
     IAgents agents,
     IExchangeSymbols symbols,
     IMarketData marketData,
     IAgentAccounts accounts,
+    IOrderExecution execution,
     ICouncil council,
     IRiskEngine riskEngine,
     IDbContextFactory<EcnanibDbContext> contextFactory,
@@ -241,13 +243,85 @@ internal sealed class DecisionCycles(
             return (CycleOutcome.BlockedByRiskEngine, null);
         }
 
-        // FR-CYC-06: no new entry after the deadline. Execution (#34) asks again, right before it sends.
+        // FR-CYC-06: no new entry after the deadline. Execution asks again, right before it sends.
         if (TradeActions.IsEntry(proposal.Action) && !request.AllowsNewEntry(time.GetUtcNow()))
         {
             return (CycleOutcome.PastDeadline, null);
         }
 
-        return (CycleOutcome.ReadyToExecute, null);
+        // Confirm mode waits for the user's approval (#38).
+        if (agentSettings.ExecutionMode != ExecutionMode.Autonomous)
+        {
+            return (CycleOutcome.ReadyToExecute, null);
+        }
+
+        // Step 9. Nothing new is sent once shutdown has begun. What's sent is seen through on the run's token (NFR-REL-04).
+        context.Stopping.ThrowIfCancellationRequested();
+
+        return await ExecuteAsync(cycle, request, agent, symbol, evaluation.Order!, proposal, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends the sized order and protects what fills (FR-EXE-01, FR-EXE-02), then records what happened on the cycle.
+    /// A Futures account only its user can fix puts the agent in Error at once, because every later cycle would spend AI
+    /// on an entry that can't be sent (FR-RISK-09).
+    /// </summary>
+    private async Task<(CycleOutcome Outcome, CycleFailure? Failure)> ExecuteAsync(
+        CycleRun cycle,
+        CycleRequest request,
+        AgentRecord agent,
+        ExchangeSymbolInfo symbol,
+        SizedOrder order,
+        TradeProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        var agentSettings = agent.Settings;
+        var result = await execution.ExecuteAsync(
+            new ExecutionRequest(
+                request.UserId,
+                request.AgentId,
+                cycle.Id,
+                request.CandleClose,
+                agentSettings.ExchangeCredentialId!.Value,
+                agentSettings.Market,
+                agentSettings.Environment,
+                symbol.Symbol,
+                agentSettings.Timeframe,
+                order,
+                request.Deadline)
+            {
+                LimitTtlCandles = proposal.LimitTtlCandles,
+            },
+            cancellationToken);
+
+        await cycle.SaveExecutionAsync(result);
+
+        logger.LogInformation(
+            "Execution ended as {ExecutionStatus}, reason {ExecutionReason}, code {ErrorCode}", result.Status, result.Reason, result.ExchangeCode);
+
+        if (result.Executed)
+        {
+            return (CycleOutcome.Executed, null);
+        }
+
+        switch (result.Reason)
+        {
+            case ExecutionReason.PastDeadline:
+                return (CycleOutcome.PastDeadline, null);
+
+            // Not errors: the agent holds a position, the entry filled meanwhile, or the action waits for #35.
+            case ExecutionReason.PositionOpen or ExecutionReason.NothingToCancel or ExecutionReason.Unsupported:
+                return (CycleOutcome.ExecutionFailed, null);
+
+            case ExecutionReason.FuturesSetup when result.FuturesSetup is FuturesSetupOutcome.HedgeMode
+                or FuturesSetupOutcome.MultiAssetsMode or FuturesSetupOutcome.TradingDisabled:
+                logger.LogWarning("The Futures account needs its user: {FuturesSetup}, so the agent goes to Error", result.FuturesSetup);
+                await agents.EnterErrorAsync(request.UserId, request.AgentId, cancellationToken);
+                return (CycleOutcome.ExecutionFailed, CycleFailure.Execution);
+
+            default:
+                return (CycleOutcome.ExecutionFailed, CycleFailure.Execution);
+        }
     }
 
     private async Task<Collected> CollectAsync(CycleRequest request, AgentRecord agent, JobContext context, CancellationToken cancellationToken)
@@ -294,7 +368,7 @@ internal sealed class DecisionCycles(
         try
         {
             var account = await accounts.ReadAsync(
-                request.UserId, credentialId, agentSettings.Market, symbol.Symbol, symbol.BaseAsset, symbol.QuoteAsset, cancellationToken);
+                request.UserId, request.AgentId, credentialId, agentSettings.Market, symbol.Symbol, symbol.BaseAsset, symbol.QuoteAsset, cancellationToken);
 
             return new Collected(symbol, snapshot, account, null);
         }

@@ -21,6 +21,15 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     public static readonly BinanceEndpoint SpotQueryOrder = new(HttpMethod.Get, "/api/v3/order", 4, Signed: true);
     public static readonly BinanceEndpoint SpotCancelOrder = new(HttpMethod.Delete, "/api/v3/order", 1, Signed: true, Trade: true);
 
+    /// <summary>A one-cancels-the-other list. It places two orders, so the order count goes up by two.</summary>
+    public static readonly BinanceEndpoint SpotNewOrderList = new(HttpMethod.Post, "/api/v3/orderList/oco", 1, Signed: true, Trade: true, PlacesOrder: true);
+
+    public static readonly BinanceEndpoint SpotQueryOrderList = new(HttpMethod.Get, "/api/v3/orderList", 4, Signed: true);
+    public static readonly BinanceEndpoint SpotCancelOrderList = new(HttpMethod.Delete, "/api/v3/orderList", 1, Signed: true, Trade: true);
+
+    /// <summary>One order's fills. Binance charges 5 when an order ID is given, and 20 otherwise.</summary>
+    public static readonly BinanceEndpoint SpotMyTrades = new(HttpMethod.Get, "/api/v3/myTrades", 5, Signed: true);
+
     /// <summary>
     /// A key's permissions (FR-KEY-05), from the wallet API on the Spot Live server. Binance counts SAPI weight
     /// apart from /api weight and reports it in X-SAPI-USED-IP-WEIGHT-1M, so the response doesn't move the
@@ -40,6 +49,9 @@ internal sealed record BinanceEndpoint(HttpMethod Method, string Path, int Weigh
     public static readonly BinanceEndpoint FuturesNewOrder = new(HttpMethod.Post, "/fapi/v1/order", 1, Signed: true, Trade: true, PlacesOrder: true);
     public static readonly BinanceEndpoint FuturesQueryOrder = new(HttpMethod.Get, "/fapi/v1/order", 1, Signed: true);
     public static readonly BinanceEndpoint FuturesCancelOrder = new(HttpMethod.Delete, "/fapi/v1/order", 1, Signed: true, Trade: true);
+
+    /// <summary>One order's fills.</summary>
+    public static readonly BinanceEndpoint FuturesUserTrades = new(HttpMethod.Get, "/fapi/v1/userTrades", 5, Signed: true);
 
     /// <summary>Conditional orders, since Binance moved them to its algo order service on 2025-12-09.</summary>
     public static readonly BinanceEndpoint FuturesNewAlgoOrder = new(HttpMethod.Post, "/fapi/v1/algoOrder", 1, Signed: true, Trade: true, PlacesOrder: true);

@@ -14,13 +14,14 @@ internal sealed class ExchangeAdapterStartup(BinanceSettings settings, ILogger<E
     {
         logger.LogInformation(
             "Binance servers: Spot Live {SpotLive}, Spot Demo {SpotDemo}, Futures Live {FuturesLive}, Futures Demo {FuturesDemo}, "
-            + "market data {MarketData}. Receive window {RecvWindowMs} ms, weight headroom {WeightHeadroomPercent}%",
+            + "market data {MarketData}. Receive window {RecvWindowMs} ms, {ProtectiveRecvWindowMs} ms for protective orders, weight headroom {WeightHeadroomPercent}%",
             settings.BaseUrls[ExchangeServer.SpotLive].Host,
             settings.BaseUrls[ExchangeServer.SpotDemo].Host,
             settings.BaseUrls[ExchangeServer.FuturesLive].Host,
             settings.BaseUrls[ExchangeServer.FuturesDemo].Host,
             settings.BaseUrls[ExchangeServer.SpotMarketData].Host,
             settings.RecvWindowMs,
+            settings.ProtectiveRecvWindowMs,
             settings.WeightHeadroomPercent);
 
         return Task.CompletedTask;

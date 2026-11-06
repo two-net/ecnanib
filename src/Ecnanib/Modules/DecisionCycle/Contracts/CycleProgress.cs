@@ -59,7 +59,10 @@ public enum CycleOutcome
     /// <summary>The intent passed, but it was an entry and the cycle's deadline had passed (FR-CYC-06).</summary>
     PastDeadline,
 
-    /// <summary>The Risk Engine sized the intent. Execution (#34) or an approval (#38) takes it from here.</summary>
+    /// <summary>
+    /// The Risk Engine sized the intent, and it waits for the user's approval in Confirm mode (#38). An Autonomous
+    /// agent's cycle goes on to <see cref="Executed"/> or <see cref="ExecutionFailed"/>.
+    /// </summary>
     ReadyToExecute,
 
     /// <summary>A loss limit was reached, so the agent was paused (FR-RISK-08).</summary>
@@ -76,6 +79,18 @@ public enum CycleOutcome
 
     /// <summary>The application stopped before the cycle finished.</summary>
     Interrupted,
+
+    /// <summary>
+    /// The order went to Binance and took effect: an entry placed, filled and protected, or closed when its stop
+    /// couldn't be placed, or an unfilled entry cancelled (FR-EXE-01, FR-EXE-02). The trace's execution says which.
+    /// </summary>
+    Executed,
+
+    /// <summary>
+    /// Nothing took effect: Binance rejected the order, couldn't be reached, or the Futures symbol couldn't be readied.
+    /// The trace's execution says why, and <see cref="CycleFailure.Execution"/> marks the ones that are errors.
+    /// </summary>
+    ExecutionFailed,
 }
 
 /// <summary>
@@ -95,4 +110,7 @@ public enum CycleFailure
 
     /// <summary>Something went wrong that the cycle doesn't expect, which the log has.</summary>
     Unexpected,
+
+    /// <summary>The order passed the Risk Engine, but Binance rejected it, couldn't be reached, or the account wasn't ready.</summary>
+    Execution,
 }

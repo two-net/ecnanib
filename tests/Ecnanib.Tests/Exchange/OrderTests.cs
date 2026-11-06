@@ -71,9 +71,12 @@ public sealed class OrderTests(PostgresFixture postgres)
         Assert.Equal(
             [
                 ("algoType", "CONDITIONAL"), ("symbol", "BTCUSDT"), ("side", "SELL"), ("type", "STOP_MARKET"), ("quantity", "0.1"),
-                ("triggerPrice", "58000"), ("reduceOnly", "true"), ("clientAlgoId", "a1-c2-stop"),
+                ("triggerPrice", "58000"), ("workingType", "MARK_PRICE"), ("reduceOnly", "true"), ("clientAlgoId", "a1-c2-stop"),
             ],
             request.Parameters.Where(parameter => parameter.Name is not ("timestamp" or "recvWindow" or "signature")));
+
+        // A protective order gets the shorter receive window, so one with an unknown outcome settles sooner.
+        Assert.Equal("2000", request.Parameter("recvWindow"));
         Assert.Empty(exchange.Binance.To("/fapi/v1/order"));
         Assert.Equal(
             (2146760L, "a1-c2-stop", OrderType.StopMarket, ExchangeOrderStatus.New, 58000m, (long?)null),

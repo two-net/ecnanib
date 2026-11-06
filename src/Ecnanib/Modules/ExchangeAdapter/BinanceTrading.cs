@@ -4,7 +4,7 @@ using Ecnanib.Modules.ExchangeAdapter.Contracts;
 
 namespace Ecnanib.Modules.ExchangeAdapter;
 
-internal sealed class BinanceTrading(BinanceTransport transport) : IExchangeTrading
+internal sealed class BinanceTrading(BinanceTransport transport, BinanceServers servers, TimeProvider time) : IExchangeTrading
 {
     public async Task<ExchangeOrder> PlaceOrderAsync(Market market, ExchangeKey key, OrderRequest order, CancellationToken cancellationToken)
     {
@@ -27,6 +27,10 @@ internal sealed class BinanceTrading(BinanceTransport transport) : IExchangeTrad
                 ("type", BinanceOrders.Type(market, order.Type)),
                 ("quantity", BinanceOrders.Number(order.Quantity)),
                 ("triggerPrice", BinanceOrders.Number(order.StopPrice!.Value)),
+
+                // The Risk Engine checks a stop against the mark price, so it triggers on it too, not on a last
+                // trade that a thin book can spike.
+                ("workingType", "MARK_PRICE"),
             ];
 
             if (order.ReduceOnly)
@@ -78,6 +82,70 @@ internal sealed class BinanceTrading(BinanceTransport transport) : IExchangeTrad
         var body = await transport.SendAsync<OrderBody>(server, endpoint, parameters, key, order.Priority, order.ClientOrderId, cancellationToken);
 
         return BinanceOrders.FromOrder(server, body);
+    }
+
+    public async Task<ExchangeOrderList> PlaceOrderListAsync(ExchangeKey key, OrderListRequest list, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(list);
+
+        var server = ExchangeServers.Trading(Market.Spot, key.Environment);
+        var sell = list.Side == OrderSide.Sell;
+
+        // Closing a long sells above at the target and below at the stop. Closing a short buys the other way round.
+        var (above, below) = sell
+            ? ((Type: "LIMIT_MAKER", Id: list.TargetClientOrderId, Price: "abovePrice", Value: list.TargetPrice),
+               (Type: "STOP_LOSS", Id: list.StopClientOrderId, Price: "belowStopPrice", Value: list.StopPrice))
+            : ((Type: "STOP_LOSS", Id: list.StopClientOrderId, Price: "aboveStopPrice", Value: list.StopPrice),
+               (Type: "LIMIT_MAKER", Id: list.TargetClientOrderId, Price: "belowPrice", Value: list.TargetPrice));
+
+        List<(string, string)> parameters =
+        [
+            ("symbol", list.Symbol),
+            ("listClientOrderId", list.ListClientOrderId),
+            ("side", BinanceOrders.Side(list.Side)),
+            ("quantity", BinanceOrders.Number(list.Quantity)),
+            ("aboveType", above.Type),
+            ("aboveClientOrderId", above.Id),
+            (above.Price, BinanceOrders.Number(above.Value)),
+            ("belowType", below.Type),
+            ("belowClientOrderId", below.Id),
+            (below.Price, BinanceOrders.Number(below.Value)),
+            ("newOrderRespType", "RESULT"),
+        ];
+
+        try
+        {
+            var body = await transport.SendAsync<OrderListBody>(
+                server, BinanceEndpoint.SpotNewOrderList, parameters, key, list.Priority, list.ListClientOrderId, cancellationToken);
+
+            return BinanceOrders.FromList(body);
+        }
+        catch (ExchangeException exception) when (exception is { MayHaveExecuted: true, SettlesAt: { } settlesAt })
+        {
+            // The transport remembers the list. Its orders can be queried by their own IDs too, and must not be said
+            // to be missing before the list could still be accepted.
+            var state = servers[server];
+            state.RecordUnsettled(key.CredentialId, list.TargetClientOrderId, settlesAt, time.GetUtcNow());
+            state.RecordUnsettled(key.CredentialId, list.StopClientOrderId, settlesAt, time.GetUtcNow());
+
+            throw;
+        }
+    }
+
+    public async Task CancelOrderListAsync(ExchangeKey key, OrderListReference list, RequestPriority priority, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceAccount.Check(list);
+
+        await transport.SendAsync(
+            ExchangeServers.Trading(Market.Spot, key.Environment),
+            BinanceEndpoint.SpotCancelOrderList,
+            [("symbol", list.Symbol), ("listClientOrderId", list.ListClientOrderId)],
+            key,
+            priority,
+            list.ListClientOrderId,
+            cancellationToken);
     }
 
     public async Task CancelOrderAsync(

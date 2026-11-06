@@ -9,10 +9,19 @@ namespace Ecnanib.Modules.ExchangeAdapter.Contracts;
 /// </summary>
 public interface IExchangeAccount
 {
-    /// <summary>The account behind <paramref name="key"/>, on the key's environment (FR-KEY-04).</summary>
+    /// <summary>The account behind <paramref name="key"/>, on the key's environment (FR-KEY-04), at normal priority.</summary>
     /// <exception cref="ExchangeException">The call failed. An invalid key is <see cref="ExchangeFailure.Rejected"/>.</exception>
     /// <exception cref="ArgumentException">An Ed25519 secret that isn't a PKCS#8 PEM private key. Nothing was sent.</exception>
-    Task<ExchangeAccount> GetAccountAsync(Market market, ExchangeKey key, CancellationToken cancellationToken);
+    Task<ExchangeAccount> GetAccountAsync(Market market, ExchangeKey key, CancellationToken cancellationToken) =>
+        GetAccountAsync(market, key, RequestPriority.Normal, cancellationToken);
+
+    /// <summary>
+    /// The account behind <paramref name="key"/>. Use <see cref="RequestPriority.Protective"/> when closing a position
+    /// depends on it (FR-EXE-09).
+    /// </summary>
+    /// <exception cref="ExchangeException">The call failed. An invalid key is <see cref="ExchangeFailure.Rejected"/>.</exception>
+    /// <exception cref="ArgumentException">An Ed25519 secret that isn't a PKCS#8 PEM private key. Nothing was sent.</exception>
+    Task<ExchangeAccount> GetAccountAsync(Market market, ExchangeKey key, RequestPriority priority, CancellationToken cancellationToken);
 
     /// <summary>
     /// What a Live key is allowed to do (FR-KEY-05), from <c>GET /sapi/v1/account/apiRestrictions</c> on the
@@ -42,6 +51,33 @@ public interface IExchangeAccount
         Market market,
         ExchangeKey key,
         OrderReference order,
+        RequestPriority priority,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// A Spot order list by its client order ID, or null when Binance says it doesn't exist and it can't appear later,
+    /// with the same rules as <see cref="GetOrderAsync"/>. Binance gives each order's ID, but not its state.
+    /// </summary>
+    /// <exception cref="ExchangeException">The call failed, which says nothing about whether the list exists.</exception>
+    Task<ExchangeOrderList?> GetOrderListAsync(
+        ExchangeKey key,
+        OrderListReference list,
+        RequestPriority priority,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The trades that filled one order, oldest first, with their commissions: <c>myTrades</c> on Spot and
+    /// <c>userTrades</c> on Futures. Spot takes a buy's commission from the base asset bought, unless BNB pays it,
+    /// so what a Spot position holds is the executed quantity less that (FR-AGT-09).
+    /// </summary>
+    /// <param name="exchangeOrderId">Binance's ID for the order, not its client order ID.</param>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept. Nothing was sent.</exception>
+    /// <exception cref="ExchangeException">The call failed.</exception>
+    Task<IReadOnlyList<ExchangeTrade>> GetOrderTradesAsync(
+        Market market,
+        ExchangeKey key,
+        string symbol,
+        long exchangeOrderId,
         RequestPriority priority,
         CancellationToken cancellationToken);
 
@@ -143,6 +179,20 @@ public sealed record FuturesPosition(
     decimal UnrealizedProfit,
     string MarginAsset,
     DateTimeOffset? UpdatedAt);
+
+/// <summary>One fill of an order.</summary>
+/// <param name="Commission">The fee, in <paramref name="CommissionAsset"/>.</param>
+/// <param name="Maker">Whether the order was the maker for this fill.</param>
+public sealed record ExchangeTrade(
+    string Symbol,
+    long TradeId,
+    long OrderId,
+    decimal Price,
+    decimal Quantity,
+    decimal Commission,
+    string CommissionAsset,
+    DateTimeOffset Time,
+    bool Maker);
 
 /// <param name="CanTrade">Spot only. Binance's Futures account doesn't say.</param>
 /// <param name="Balances">Assets with a balance. Spot leaves out zero balances.</param>
