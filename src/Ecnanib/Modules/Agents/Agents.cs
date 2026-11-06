@@ -78,6 +78,16 @@ internal sealed class Agents(
     public Task<RoleChoices> ListRoleChoicesAsync(Guid userId, CancellationToken cancellationToken) =>
         roleModels.ChoicesAsync(userId, cancellationToken);
 
+    public AgentInputCheck Check(AgentSettings settings)
+    {
+        var verdict = AgentInput.Check(settings, caps);
+
+        return new AgentInputCheck(verdict.Fields, verdict.RiskSettings);
+    }
+
+    public Task<PairChoices> ListPairsAsync(Market market, CancellationToken cancellationToken) =>
+        checks.ListPairsAsync(market, settings.DefaultEnvironment, cancellationToken);
+
     public async Task<AgentSaveResult> CreateAsync(Guid userId, AgentSettings input, CancellationToken cancellationToken)
     {
         var (refusal, cleaned, quoteAsset, exchangeKey) = await PrepareAsync(userId, input, current: null, cancellationToken);

@@ -92,6 +92,55 @@ public static class AgentText
         _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Give the role its text in Strings.resx."),
     };
 
+    /// <summary>What a market is, in plain language, for someone choosing one (FR-UI-02).</summary>
+    public static string MarketHintOf(Market market) => market switch
+    {
+        Market.Spot => Strings.AgentWizardSpotHint,
+        Market.Futures => Strings.AgentWizardFuturesHint,
+        _ => throw new ArgumentOutOfRangeException(nameof(market), market, "Give the market its hint in Strings.resx."),
+    };
+
+    /// <summary>How often a timeframe's agent decides, for someone choosing one.</summary>
+    public static string TimeframeHintOf(Timeframe timeframe) => timeframe switch
+    {
+        Timeframe.FifteenMinutes => Strings.AgentWizardTimeframeFifteenMinutesHint,
+        Timeframe.OneHour => Strings.AgentWizardTimeframeOneHourHint,
+        Timeframe.FourHours => Strings.AgentWizardTimeframeFourHoursHint,
+        Timeframe.OneDay => Strings.AgentWizardTimeframeOneDayHint,
+        _ => throw new ArgumentOutOfRangeException(nameof(timeframe), timeframe, "Give the timeframe its hint in Strings.resx."),
+    };
+
+    /// <summary>What a role does in a decision (FR-ROLE-01), in plain language.</summary>
+    public static string RoleHintOf(AiRole role) => role switch
+    {
+        AiRole.TechnicalAnalyst => Strings.AgentWizardRoleTechnicalAnalystHint,
+        AiRole.SentimentAnalyst => Strings.AgentWizardRoleSentimentAnalystHint,
+        AiRole.Strategist => Strings.AgentWizardRoleStrategistHint,
+        AiRole.RiskCritic => Strings.AgentWizardRoleRiskCriticHint,
+        AiRole.Reviewer => Strings.AgentWizardRoleReviewerHint,
+        _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Give the role its hint in Strings.resx."),
+    };
+
+    /// <summary>What an execution mode means for who sends a trade, in plain language.</summary>
+    public static string ExecutionModeHintOf(ExecutionMode mode) => mode switch
+    {
+        ExecutionMode.Autonomous => Strings.AgentWizardAutonomousHint,
+        ExecutionMode.Confirm => Strings.AgentWizardConfirmHint,
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Give the execution mode its hint in Strings.resx."),
+    };
+
+    /// <summary>A step of the agent wizard (FR-UI-02).</summary>
+    public static string StepOf(WizardStep step) => step switch
+    {
+        WizardStep.Market => Strings.AgentWizardStepMarket,
+        WizardStep.Pair => Strings.AgentWizardStepPair,
+        WizardStep.Roles => Strings.AgentWizardStepRoles,
+        WizardStep.Risk => Strings.AgentWizardStepRisk,
+        WizardStep.Execution => Strings.AgentWizardStepExecution,
+        WizardStep.Review => Strings.AgentWizardStepReview,
+        _ => throw new ArgumentOutOfRangeException(nameof(step), step, "Give the step its name in Strings.resx."),
+    };
+
     /// <summary>
     /// The global cap on a setting, for its hint (FR-RISK-11, NFR-USA-03): a most for risk and leverage, a least for
     /// the reward-to-risk and liquidation buffer. Null for a setting without one.

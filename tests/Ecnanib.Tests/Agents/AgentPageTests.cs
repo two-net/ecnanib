@@ -1,10 +1,7 @@
-using System.Net.Http;
 using Ecnanib.Components;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
-using Ecnanib.Tests.Ai;
-using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Identity;
 using Ecnanib.Tests.Persistence;
 using HttpStatusCode = System.Net.HttpStatusCode;
@@ -13,14 +10,13 @@ using WebUtility = System.Net.WebUtility;
 namespace Ecnanib.Tests.Agents;
 
 /// <summary>
-/// FR-AGT-01, FR-AGT-02 and FR-UI-07 through the pages: the settings form creates and edits agents, the list
-/// shows them, labelled Demo, and nobody reaches another user's. The list's buttons run on a circuit, which
-/// the contract tests cover.
+/// FR-AGT-01, FR-AGT-02 and FR-UI-07 through the pages: the settings form edits agents, the list shows them, and
+/// nobody reaches another user's. The wizard, which creates them, has AgentWizardTests. The list's buttons run on a
+/// circuit, which the contract tests cover.
 /// </summary>
 public sealed class AgentPageTests(PostgresFixture postgres)
 {
     private const string ListPage = "/agents";
-    private const string NewPage = "/agents/new";
     private const string Form = "agent-settings";
 
     private static CancellationToken Cancellation => AgentApp.Cancellation;
@@ -43,51 +39,26 @@ public sealed class AgentPageTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task An_agent_created_through_the_form_is_a_draft_listed_as_Demo()
-    {
-        await using var app = new AgentApp(postgres);
-        using var visitor = Visitor.To(app.App);
-        var user = await SignedUpAsync(app, visitor);
-
-        using var response = await visitor.SubmitAsync(NewPage, Form, Fields(user, ("Input.Name", "Patient <b>trader</b>")));
-
-        Assert.Equal($"{ListPage}?saved=created", Visitor.Target(response));
-
-        var page = WebUtility.HtmlDecode(await visitor.PageAsync($"{ListPage}?saved=created"));
-        var agent = Assert.Single(await app.Agents.ListAsync(user.Id, includeArchived: false, Cancellation));
-
-        Assert.Contains("Agent saved as a draft.", page, StringComparison.Ordinal);
-        Assert.Contains("Patient <b>trader</b>", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("<b>trader", await visitor.PageAsync(ListPage), StringComparison.Ordinal);
-        Assert.Contains("Demo", page, StringComparison.Ordinal);
-        Assert.Contains("Draft", page, StringComparison.Ordinal);
-        Assert.Equal(AgentStatus.Draft, agent.Status);
-        Assert.Equal(ExecutionMode.Confirm, agent.Settings.ExecutionMode);
-        Assert.Equal(3, agent.Settings.Roles.Count);
-        Assert.Equal(250m, agent.Settings.CapitalAllocation);
-        Assert.Equal(2, agent.Settings.Risk.MaxLeverage);
-    }
-
-    [Fact]
     public async Task A_refused_form_says_what_to_fix_and_saves_nothing()
     {
         await using var app = new AgentApp(postgres);
         using var visitor = Visitor.To(app.App);
         var user = await SignedUpAsync(app, visitor);
+        var agent = await app.CreateAsync(user.Id, AgentApp.Ready(user));
+        var page = $"/agents/{agent.Id}/settings";
 
-        using var response = await visitor.SubmitAsync(
-            NewPage, Form, Fields(user, ("Input.Symbol", "DOGEUSDT"), ("Input.MaxLeverage", "two")));
+        using var response = await visitor.SubmitAsync(page, Form, Fields(user, ("Input.Symbol", "DOGEUSDT"), ("Input.MaxLeverage", "two")));
         var invalid = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Cancellation));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("Some settings need fixing.", invalid, StringComparison.Ordinal);
         Assert.Contains("Enter a number in this setting's range.", invalid, StringComparison.Ordinal);
 
-        using var unknown = await visitor.SubmitAsync(NewPage, Form, Fields(user, ("Input.Symbol", "DOGEUSDT")));
+        using var unknown = await visitor.SubmitAsync(page, Form, Fields(user, ("Input.Symbol", "DOGEUSDT")));
         var refused = WebUtility.HtmlDecode(await unknown.Content.ReadAsStringAsync(Cancellation));
 
         Assert.Contains("Binance doesn't list this pair on this market.", refused, StringComparison.Ordinal);
-        Assert.Empty(await app.Agents.ListAsync(user.Id, includeArchived: true, Cancellation));
+        Assert.Equal(AgentApp.Symbol, (await app.Agents.FindAsync(user.Id, agent.Id, Cancellation))!.Settings.Symbol);
     }
 
     [Fact]
@@ -117,56 +88,28 @@ public sealed class AgentPageTests(PostgresFixture postgres)
         Assert.DoesNotContain("Renamed", body, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// FR-ROLE-03: a new agent starts with a default model for each role, from the models the user's keys can
-    /// use, and only the ones that can give structured answers are offered (FR-ROLE-02). With one provider for
-    /// every role, the page says the Risk Critic shares the Strategist's (FR-ROLE-04).
-    /// </summary>
+    /// <summary>The settings page shows each capped setting's global cap (FR-RISK-11), and refuses more.</summary>
     [Fact]
-    public async Task A_new_agent_starts_with_the_default_models_and_only_suitable_ones_are_offered()
-    {
-        await using var app = new AgentApp(postgres, new()
-        {
-            ["Catalog:Overrides:0:Provider"] = AgentApp.Provider,
-            ["Catalog:Overrides:0:Model"] = "model-b",
-            ["Catalog:Overrides:0:StructuredOutput"] = "false",
-        });
-        app.Ai.On(HttpMethod.Get, CredentialApp.ModelsPath, _ => FakeAiProvider.Models(null, AgentApp.Model, "model-b"));
-        using var visitor = Visitor.To(app.App);
-        await SignedUpAsync(app, visitor);
-
-        var page = WebUtility.HtmlDecode(await visitor.PageAsync(NewPage));
-        var chosen = $"<option value=\"{AgentApp.Provider}|{AgentApp.Model}\" selected";
-
-        Assert.Equal(Enum.GetValues<AiRole>().Length, page.Split(chosen).Length - 1);
-        Assert.DoesNotContain($"{AgentApp.Provider}|model-b", page, StringComparison.Ordinal);
-        Assert.Contains("The Strategist and the Risk Critic use the same provider.", page, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task The_form_shows_the_global_caps_starts_within_them_and_refuses_more()
+    public async Task The_settings_page_shows_the_global_caps_and_refuses_more()
     {
         await using var app = new AgentApp(postgres, new() { ["RiskCaps:MaxLeverage"] = "1" });
         using var visitor = Visitor.To(app.App);
         var user = await SignedUpAsync(app, visitor);
+        var agent = await app.CreateAsync(user.Id, AgentApp.Ready(user) with { Risk = RiskSettings.Default with { MaxLeverage = 1 } });
+        var page = $"/agents/{agent.Id}/settings";
 
-        var page = WebUtility.HtmlDecode(await visitor.PageAsync(NewPage));
+        var form = WebUtility.HtmlDecode(await visitor.PageAsync(page));
 
-        // The SRS's default of 2 is brought within the cap of 1 (FR-RISK-11), and each capped setting says its cap.
-        Assert.Contains("name=\"Input.MaxLeverage\" type=\"text\" inputmode=\"decimal\" value=\"1\"", page, StringComparison.Ordinal);
-        Assert.Contains("aria-describedby=\"agent-risk-MaxLeverage-hint agent-risk-MaxLeverage-cap agent-risk-MaxLeverage-error\"", page, StringComparison.Ordinal);
-        Assert.Contains("id=\"agent-risk-MaxLeverage-cap\"", page, StringComparison.Ordinal);
-        Assert.Contains("At most 1 on this site.", page, StringComparison.Ordinal);
-        Assert.Contains("At least 1 on this site.", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("agent-risk-CooldownCyclesAfterLoss-cap", page, StringComparison.Ordinal);
+        Assert.Contains("aria-describedby=\"agent-risk-MaxLeverage-hint agent-risk-MaxLeverage-cap agent-risk-MaxLeverage-error\"", form, StringComparison.Ordinal);
+        Assert.Contains("At most 1 on this site.", form, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-risk-CooldownCyclesAfterLoss-cap", form, StringComparison.Ordinal);
 
-        using var response = await visitor.SubmitAsync(NewPage, Form, Fields(user, ("Input.MaxLeverage", "2")));
+        using var response = await visitor.SubmitAsync(page, Form, Fields(user, ("Input.MaxLeverage", "2")));
         var refused = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Cancellation));
 
         Assert.Contains("Some settings need fixing.", refused, StringComparison.Ordinal);
-        Assert.Contains("id=\"agent-risk-MaxLeverage\"", refused, StringComparison.Ordinal);
         Assert.Contains("Enter a number in this setting's range.", refused, StringComparison.Ordinal);
-        Assert.Empty(await app.Agents.ListAsync(user.Id, includeArchived: true, Cancellation));
+        Assert.Equal(1, (await app.Agents.FindAsync(user.Id, agent.Id, Cancellation))!.Settings.Risk.MaxLeverage);
     }
 
     [Fact]

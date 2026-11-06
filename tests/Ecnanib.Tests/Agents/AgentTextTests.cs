@@ -39,6 +39,11 @@ public sealed class AgentTextTests
         Distinct(Enum.GetValues<AiRole>().Select(AgentText.RoleOf));
         Distinct(Enum.GetValues<RiskSetting>().Select(AgentText.RiskSettingOf));
         Distinct(Enum.GetValues<RiskSetting>().Select(AgentText.RiskHintOf));
+        Distinct(Enum.GetValues<Market>().Select(AgentText.MarketHintOf));
+        Distinct(Enum.GetValues<Timeframe>().Select(AgentText.TimeframeHintOf));
+        Distinct(Enum.GetValues<ExecutionMode>().Select(AgentText.ExecutionModeHintOf));
+        Distinct(Enum.GetValues<AiRole>().Select(AgentText.RoleHintOf));
+        Distinct(Enum.GetValues<WizardStep>().Select(AgentText.StepOf));
         Distinct(Enum.GetValues<AgentField>().Select(AgentText.FieldErrorOf));
         Distinct(Enum.GetValues<TransitionOutcome>().Select(AgentText.TransitionErrorOf).OfType<string>());
         Distinct(Enum.GetValues<KillOutcome>().Select(AgentText.KillOutcomeOf));

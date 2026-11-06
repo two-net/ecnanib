@@ -10,7 +10,7 @@ namespace Ecnanib.Components.Agents;
 /// a failure to bind. <see cref="ToSettings"/> turns it into <see cref="AgentSettings"/>, and says which fields
 /// it couldn't read. The contract checks everything else.
 /// </summary>
-internal sealed class AgentForm
+public sealed class AgentForm
 {
     /// <summary>Separates a model's provider from its ID in a select's value. No provider's name has one.</summary>
     public const char ModelSeparator = '|';
@@ -132,6 +132,43 @@ internal sealed class AgentForm
         _ => null,
     };
 
+    /// <summary>
+    /// Every setting's name, as posted without the <c>Input.</c> prefix, and its value: all but <see cref="Version"/>,
+    /// which only an edit posts. The wizard carries the steps it isn't showing in hidden fields from these.
+    /// </summary>
+    public IEnumerable<(string Name, string? Value)> Values()
+    {
+        yield return (nameof(Name), Name);
+        yield return (nameof(Description), Description);
+        yield return (nameof(Market), Market);
+        yield return (nameof(Symbol), Symbol);
+        yield return (nameof(Timeframe), Timeframe);
+        yield return (nameof(ExchangeKey), ExchangeKey);
+        yield return (nameof(ExecutionMode), ExecutionMode);
+        yield return (nameof(AutoExecuteRiskReducing), AutoExecuteRiskReducing);
+
+        foreach (var role in Enum.GetValues<AiRole>())
+        {
+            yield return (role.ToString(), RoleValue(role, false));
+            yield return ($"{role}Fallback", RoleValue(role, true));
+        }
+
+        yield return (nameof(CapitalAllocation), CapitalAllocation);
+
+        foreach (var setting in Enum.GetValues<RiskSetting>())
+        {
+            yield return (setting.ToString(), RiskValue(setting));
+        }
+
+        yield return (nameof(DailyBudgetUsd), DailyBudgetUsd);
+        yield return (nameof(MonthlyBudgetUsd), MonthlyBudgetUsd);
+        yield return (nameof(DailyTokens), DailyTokens);
+        yield return (nameof(MonthlyTokens), MonthlyTokens);
+        yield return (nameof(ExperienceEnabled), ExperienceEnabled);
+        yield return (nameof(ReflectionsInPrompt), ReflectionsInPrompt);
+        yield return (nameof(CustomInstructions), CustomInstructions);
+    }
+
     /// <summary>A form holding <paramref name="settings"/>, as the page first shows them.</summary>
     public static AgentForm Of(AgentSettings settings, int? version)
     {
@@ -156,11 +193,7 @@ internal sealed class AgentForm
             CustomInstructions = settings.CustomInstructions,
         };
 
-        foreach (var assignment in settings.Roles)
-        {
-            form.SetRole(assignment.Role, false, ValueOf(assignment.Model));
-            form.SetRole(assignment.Role, true, assignment.Fallback is { } fallback ? ValueOf(fallback) : null);
-        }
+        form.UseRoles(settings.Roles);
 
         var risk = settings.Risk;
         form.MaxRiskPerTradePercent = Number(risk.MaxRiskPerTradePercent);
@@ -321,6 +354,22 @@ internal sealed class AgentForm
             {
                 fields.Add(field);
             }
+        }
+    }
+
+    /// <summary>Replaces every role's model and fallback with <paramref name="roles"/>. A role they leave out has none.</summary>
+    public void UseRoles(IEnumerable<RoleAssignment> roles)
+    {
+        foreach (var role in Enum.GetValues<AiRole>())
+        {
+            SetRole(role, false, null);
+            SetRole(role, true, null);
+        }
+
+        foreach (var assignment in roles)
+        {
+            SetRole(assignment.Role, false, ValueOf(assignment.Model));
+            SetRole(assignment.Role, true, assignment.Fallback is { } fallback ? ValueOf(fallback) : null);
         }
     }
 

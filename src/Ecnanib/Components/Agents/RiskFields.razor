@@ -1,0 +1,37 @@
+@* Risk settings, each with its plain-language hint (NFR-USA-03) and, where there is one, the global cap that a save
+   refuses to go beyond (FR-RISK-11). The settings page and the wizard share it, so their names and ids are the same. *@
+
+@foreach (var setting in Settings)
+{
+    var id = $"agent-risk-{setting}";
+    var cap = AgentText.RiskCapOf(setting, Caps);
+
+    <div class="field">
+        <label for="@id">@AgentText.RiskSettingOf(setting)</label>
+        <input id="@id" name="@($"Input.{setting}")" type="text" inputmode="decimal" value="@Form.RiskValue(setting)" autocomplete="off"
+               aria-invalid="@(Invalid.Contains(setting) ? "true" : null)"
+               aria-describedby="@(cap is null ? $"{id}-hint {id}-error" : $"{id}-hint {id}-cap {id}-error")" />
+        <p id="@($"{id}-hint")" class="field-hint">@AgentText.RiskHintOf(setting)</p>
+        @if (cap is not null)
+        {
+            <p id="@($"{id}-cap")" class="field-hint">@cap</p>
+        }
+        <FieldError Id="@($"{id}-error")" Message="@(Invalid.Contains(setting) ? Strings.AgentFieldRiskError : null)" />
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public AgentForm Form { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public RiskCaps Caps { get; set; } = default!;
+
+    /// <summary>The settings to show, in this order.</summary>
+    [Parameter, EditorRequired]
+    public IEnumerable<RiskSetting> Settings { get; set; } = [];
+
+    /// <summary>The settings a save refused.</summary>
+    [Parameter]
+    public IReadOnlySet<RiskSetting> Invalid { get; set; } = new HashSet<RiskSetting>();
+}

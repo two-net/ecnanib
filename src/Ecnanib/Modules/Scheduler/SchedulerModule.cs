@@ -1,3 +1,4 @@
+using Ecnanib.Modules.Scheduler.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -10,6 +11,7 @@ public static class SchedulerModule
         services.AddSingleton(provider => SchedulerSettings.Read(provider.GetRequiredService<IConfiguration>()));
         services.AddHostedService<SchedulerStartup>();
         services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<ICycleTimes, CycleTimes>();
         services.AddSingleton<CycleSlots>();
         services.AddSingleton<CycleDispatcher>();
         services.AddSingleton<CycleScheduler>();

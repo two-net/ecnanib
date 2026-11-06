@@ -1,0 +1,825 @@
+@page "/agents/new"
+@attribute [ExcludeFromInteractiveRouting]
+@using System.Globalization
+@using Ecnanib.Modules.Scheduler.Contracts
+@inject IAgents Agents
+@inject ICredentials Credentials
+@inject ICatalog Catalog
+@inject ICycleTimes CycleTimes
+@inject RiskCaps Caps
+@inject NavigationManager Navigation
+
+@* FR-UI-02's wizard, static like every form here: each step is a post, which goes through the HTTP rate limiter, and the
+   page works without a script. A step shows its own settings and carries the rest in hidden fields, so nothing is
+   stored until the last step, whose create checks every setting again: the hidden ones are the user's to change.
+   See the agent wizard in docs/architecture.md. *@
+
+<PageTitle>@string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardPageTitle, AgentText.StepOf(_step))</PageTitle>
+
+<div class="page form-page">
+    <h1>@Strings.AgentSettingsNewHeading</h1>
+
+    @if (_created is { } created && _activation is { } activation)
+    {
+        <section class="wizard-result" aria-labelledby="wizard-result-heading">
+            @if (activation.Outcome == ActivationOutcome.Activated)
+            {
+                <h2 id="wizard-result-heading">@Strings.AgentWizardStartedHeading <span class="wizard-tag">@Strings.AgentDemo</span></h2>
+                @* The user chose the name. Razor encodes it, so it's only text. *@
+                <p class="wizard-name">@string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardStarted, created.Settings.Name, Time.Format(_nextCycle!.Value), AgentText.TimeframeOf(created.Settings.Timeframe))</p>
+                @if (created.Settings.ExecutionMode == ExecutionMode.Confirm)
+                {
+                    <p>@Strings.AgentWizardStartedConfirm <a href="/approvals">@Strings.AgentWizardToApprovals</a></p>
+                }
+                @if (activation.Warnings is { Count: > 0 } warnings)
+                {
+                    <p>@Strings.AgentWizardWarnings</p>
+                    <ul class="facts-list">
+                        @foreach (var warning in warnings)
+                        {
+                            <li>@AgentText.WarningOf(warning)</li>
+                        }
+                    </ul>
+                }
+                <p><a class="button" href="/agents">@Strings.AgentWizardToAgents</a></p>
+            }
+            else
+            {
+                <h2 id="wizard-result-heading">@Strings.AgentWizardNotStartedHeading <span class="wizard-tag">@Strings.AgentDemo</span></h2>
+                @if (activation.Problems is { Count: > 0 } problems)
+                {
+                    <div class="form-error" role="alert">
+                        <p class="wizard-name">@string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardNotStarted, created.Settings.Name)</p>
+                        <ul class="facts-list">
+                            @foreach (var problem in problems)
+                            {
+                                <li>@AgentText.ProblemOf(problem, Time)</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                else
+                {
+                    <p class="wizard-name">@string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardSavedNotStarted, created.Settings.Name)</p>
+                }
+                <p class="wizard-links">
+                    <a class="button" href="@($"/agents/{created.Id}/settings")">@Strings.AgentWizardFixSettings</a>
+                    <a href="/agents">@Strings.AgentWizardToAgents</a>
+                </p>
+            }
+        </section>
+    }
+    else
+    {
+        <p class="wizard-progress">@string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardProgress, (int)_step + 1, AgentWizard.Steps.Count)</p>
+        <ol class="wizard-steps" aria-label="@Strings.AgentWizardStepsLabel">
+            @foreach (var step in AgentWizard.Steps)
+            {
+                <li class="@(step < _step ? "wizard-step-done" : null)" aria-current="@(step == _step ? "step" : null)">@AgentText.StepOf(step)</li>
+            }
+        </ol>
+
+        <EditForm Model="Input" FormName="@FormName" OnSubmit="SubmitAsync" class="form">
+            @* Enter submits with a form's first button, so the first is this step's own, out of sight and out of the tab order. *@
+            <button type="submit" name="Wizard.Go" value="@PrimaryAction" class="wizard-default" tabindex="-1" aria-hidden="true">@PrimaryText</button>
+            <input type="hidden" name="Wizard.Step" value="@_step" />
+            @if (_reviewed)
+            {
+                <input type="hidden" name="Wizard.Reviewed" value="true" />
+            }
+            @foreach (var (name, value) in Input.Values())
+            {
+                @* A checkbox that isn't ticked posts nothing, so an empty value goes as nothing too. *@
+                if (!string.IsNullOrEmpty(value) && !AgentWizard.Shows(_step, CurrentMarket, name))
+                {
+                    <input type="hidden" name="@($"Input.{name}")" value="@value" />
+                }
+            }
+
+            <h2>@AgentText.StepOf(_step)</h2>
+
+            @if (_error is not null)
+            {
+                <p class="form-error" role="alert">@_error</p>
+            }
+
+            @switch (_step)
+            {
+                case WizardStep.Market:
+                    @if (_demoKeys.Count == 0 || !_roleOptions.Any)
+                    {
+                        <section class="wizard-note" aria-labelledby="wizard-before-heading">
+                            <h3 id="wizard-before-heading">@Strings.AgentWizardBeforeHeading</h3>
+                            <p>@Strings.AgentWizardBeforeIntro</p>
+                            <ul class="facts-list">
+                                @if (_demoKeys.Count == 0)
+                                {
+                                    <li>@Strings.AgentWizardNeedExchangeKey <a href="@AddKeyUrl">@Strings.AgentWizardAddExchangeKey</a></li>
+                                }
+                                @if (!_roleOptions.Any)
+                                {
+                                    <li>@Strings.AgentWizardNeedAiModels <a href="@AddKeyUrl">@Strings.AgentWizardAddAiKey</a></li>
+                                }
+                            </ul>
+                        </section>
+                    }
+
+                    <fieldset class="field checks">
+                        <legend>@Strings.FieldAgentMarket</legend>
+                        <p class="field-hint">@Strings.AgentWizardMarketIntro</p>
+                        @foreach (var market in Enum.GetValues<Market>())
+                        {
+                            var id = $"agent-market-{market}";
+
+                            <div class="check">
+                                <input id="@id" name="Input.Market" type="radio" value="@market" checked="@(market == CurrentMarket)"
+                                       aria-describedby="@($"{id}-hint")" required />
+                                <label for="@id">@AgentText.MarketOf(market)</label>
+                                <p id="@($"{id}-hint")" class="field-hint wizard-check-hint">@AgentText.MarketHintOf(market)</p>
+                            </div>
+                        }
+                        <FieldError Id="agent-market-error" Message="@ErrorOf(AgentField.Market)" />
+                    </fieldset>
+
+                    <MarketExplainer />
+
+                    <h3 class="wizard-subheading">@Strings.AgentWizardEnvironmentHeading <span class="wizard-tag">@Strings.AgentDemo</span></h3>
+                    @* Not a choice: every agent starts in Demo, and only Switch to Live changes it (UC-04, SRS 2.8). *@
+                    <p class="field-hint">@Strings.AgentWizardEnvironmentDemo</p>
+
+                    <div class="field">
+                        <label for="agent-exchange-key">@Strings.FieldAgentExchangeKey</label>
+                        <select id="agent-exchange-key" name="Input.ExchangeKey" aria-invalid="@Invalid(AgentField.ExchangeCredential)"
+                                aria-describedby="agent-exchange-key-hint agent-exchange-key-error">
+                            <option value="" selected="@string.IsNullOrEmpty(Input.ExchangeKey)">@Strings.AgentSettingsNoExchangeKey</option>
+                            @foreach (var key in _demoKeys)
+                            {
+                                <option value="@key.Id" selected="@(key.Id.ToString() == Input.ExchangeKey)">@KeyOption(key)</option>
+                            }
+                        </select>
+                        <p id="agent-exchange-key-hint" class="field-hint">@Strings.AgentWizardExchangeKeyHint</p>
+                        <FieldError Id="agent-exchange-key-error" Message="@ErrorOf(AgentField.ExchangeCredential)" />
+                    </div>
+                    break;
+
+                case WizardStep.Pair:
+                    <div class="field">
+                        <label for="agent-symbol">@Strings.FieldAgentPair</label>
+                        <input id="agent-symbol" name="Input.Symbol" type="text" value="@Input.Symbol" list="agent-pairs" autocomplete="off"
+                               autocapitalize="characters" spellcheck="false" required maxlength="@AgentLimits.SymbolMaxLength"
+                               aria-invalid="@Invalid(AgentField.Symbol)" aria-describedby="agent-symbol-hint agent-symbol-error" />
+                        <datalist id="agent-pairs">
+                            @foreach (var pair in _pairs?.Pairs ?? [])
+                            {
+                                <option value="@pair.Symbol"></option>
+                            }
+                        </datalist>
+                        <p id="agent-symbol-hint" class="field-hint">@(_pairs is { Available: false } ? Strings.AgentWizardPairsUnavailable : Strings.AgentWizardPairHint)</p>
+                        <FieldError Id="agent-symbol-error" Message="@ErrorOf(AgentField.Symbol)" />
+                    </div>
+
+                    <fieldset class="field checks">
+                        <legend>@Strings.FieldAgentTimeframe</legend>
+                        <p class="field-hint">@Strings.AgentSettingsTimeframeHint</p>
+                        @foreach (var timeframe in Enum.GetValues<Timeframe>())
+                        {
+                            var id = $"agent-timeframe-{timeframe}";
+
+                            <div class="check">
+                                <input id="@id" name="Input.Timeframe" type="radio" value="@timeframe" checked="@(timeframe == CurrentTimeframe)"
+                                       aria-describedby="@($"{id}-hint")" required />
+                                <label for="@id">@AgentText.TimeframeOf(timeframe)</label>
+                                <p id="@($"{id}-hint")" class="field-hint wizard-check-hint">@AgentText.TimeframeHintOf(timeframe)</p>
+                            </div>
+                        }
+                        <FieldError Id="agent-timeframe-error" Message="@ErrorOf(AgentField.Timeframe)" />
+                    </fieldset>
+                    break;
+
+                case WizardStep.Roles:
+                    <p>@Strings.AgentWizardRolesIntro</p>
+                    @if (!_roleOptions.Any)
+                    {
+                        <div class="wizard-note">
+                            <p>@Strings.AgentWizardNeedAiModels</p>
+                            <p class="wizard-links">
+                                <button type="submit" name="Wizard.Go" value="@WizardStep.Roles" class="wizard-secondary" formnovalidate>@Strings.AgentWizardCheckAgain</button>
+                                <a href="@AddKeyUrl">@Strings.AgentWizardAddAiKey</a>
+                                <a href="/credentials">@Strings.AgentWizardSyncModels</a>
+                            </p>
+                        </div>
+                    }
+                    <RoleFields Form="Input" Options="_roleOptions" Error="@ErrorOf(AgentField.Roles)" Explain="true" />
+                    break;
+
+                case WizardStep.Risk:
+                    <p>@Strings.AgentWizardRiskIntro</p>
+                    @if (CurrentMarket == Market.Futures)
+                    {
+                        <MarketExplainer />
+                    }
+
+                    <div class="field">
+                        <label for="agent-capital">@(QuoteAsset is { } asset ? string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardCapitalLabel, asset) : Strings.FieldAgentCapital)</label>
+                        <input id="agent-capital" name="Input.CapitalAllocation" type="text" inputmode="decimal" value="@Input.CapitalAllocation"
+                               autocomplete="off" aria-invalid="@Invalid(AgentField.CapitalAllocation)" aria-describedby="agent-capital-hint agent-capital-error" />
+                        <p id="agent-capital-hint" class="field-hint">@Strings.AgentWizardCapitalHint</p>
+                        <FieldError Id="agent-capital-error" Message="@ErrorOf(AgentField.CapitalAllocation)" />
+                    </div>
+
+                    <RiskFields Form="Input" Caps="Caps" Settings="RiskShown(main: true)" Invalid="_riskSettings" />
+
+                    <details class="wizard-more" open="@RiskShown(main: false).Any(_riskSettings.Contains)">
+                        <summary>@Strings.AgentWizardMoreLimits</summary>
+                        <div class="wizard-more-fields">
+                            <RiskFields Form="Input" Caps="Caps" Settings="RiskShown(main: false)" Invalid="_riskSettings" />
+                        </div>
+                    </details>
+                    break;
+
+                case WizardStep.Execution:
+                    <fieldset class="field checks">
+                        <legend>@Strings.FieldAgentExecutionMode</legend>
+                        @foreach (var mode in Enum.GetValues<ExecutionMode>())
+                        {
+                            var id = $"agent-mode-{mode}";
+
+                            <div class="check">
+                                <input id="@id" name="Input.ExecutionMode" type="radio" value="@mode" checked="@(mode.ToString() == Input.ExecutionMode)"
+                                       aria-describedby="@($"{id}-hint")" required />
+                                <label for="@id">@AgentText.ExecutionModeOf(mode)</label>
+                                <p id="@($"{id}-hint")" class="field-hint wizard-check-hint">@AgentText.ExecutionModeHintOf(mode)</p>
+                            </div>
+                        }
+                        <FieldError Id="agent-mode-error" Message="@ErrorOf(AgentField.ExecutionMode)" />
+                    </fieldset>
+
+                    <div class="field check">
+                        <input id="agent-auto-risk" name="Input.AutoExecuteRiskReducing" type="checkbox" value="true"
+                               checked="@(Input.AutoExecuteRiskReducing == "true")" aria-describedby="agent-auto-risk-hint" />
+                        <label for="agent-auto-risk">@Strings.FieldAgentAutoExecuteRiskReducing</label>
+                        <p id="agent-auto-risk-hint" class="field-hint wizard-check-hint">@Strings.AgentSettingsAutoExecuteHint</p>
+                    </div>
+
+                    <h3 class="wizard-subheading">@Strings.AgentSettingsBudgetHeading</h3>
+                    <p id="agent-budget-hint" class="field-hint">@Strings.AgentSettingsBudgetHint</p>
+                    @if (CurrentTimeframe is { } budgetTimeframe)
+                    {
+                        <p id="agent-budget-cycles" class="field-hint">@string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardBudgetCycles, AgentText.TimeframeOf(budgetTimeframe), CyclesPerDay(budgetTimeframe))</p>
+                    }
+                    <FieldError Id="agent-budget-error" Message="@ErrorOf(AgentField.Budget)" />
+
+                    @foreach (var (name, label, value, decimals) in BudgetFields)
+                    {
+                        <div class="field">
+                            <label for="@($"agent-{name}")">@label</label>
+                            <input id="@($"agent-{name}")" name="@($"Input.{name}")" type="text" inputmode="@(decimals ? "decimal" : "numeric")" value="@value"
+                                   autocomplete="off" aria-invalid="@Invalid(AgentField.Budget)" aria-describedby="agent-budget-hint agent-budget-cycles agent-budget-error" />
+                        </div>
+                    }
+
+                    <div class="field check">
+                        <input id="agent-experience" name="Input.ExperienceEnabled" type="checkbox" value="true"
+                               checked="@(Input.ExperienceEnabled == "true")" aria-describedby="agent-experience-hint" />
+                        <label for="agent-experience">@Strings.FieldAgentExperienceMemory</label>
+                        <p id="agent-experience-hint" class="field-hint wizard-check-hint">@Strings.AgentSettingsExperienceHint</p>
+                    </div>
+
+                    <div class="field">
+                        <label for="agent-reflections">@Strings.FieldAgentReflections</label>
+                        <input id="agent-reflections" name="Input.ReflectionsInPrompt" type="text" inputmode="numeric" value="@Input.ReflectionsInPrompt"
+                               autocomplete="off" aria-invalid="@Invalid(AgentField.ReflectionsInPrompt)" aria-describedby="agent-reflections-error" />
+                        <FieldError Id="agent-reflections-error" Message="@ErrorOf(AgentField.ReflectionsInPrompt)" />
+                    </div>
+                    break;
+
+                default:
+                    <p>@Strings.AgentWizardReviewIntro</p>
+
+                    <div class="field">
+                        <label for="agent-name">@Strings.FieldAgentName</label>
+                        <input id="agent-name" name="Input.Name" type="text" value="@Input.Name" autocomplete="off" required
+                               maxlength="@AgentLimits.NameMaxLength" aria-invalid="@Invalid(AgentField.Name)" aria-describedby="agent-name-error" />
+                        <FieldError Id="agent-name-error" Message="@ErrorOf(AgentField.Name)" />
+                    </div>
+
+                    <details class="wizard-more" open="@(_fields.Contains(AgentField.Description) || _fields.Contains(AgentField.CustomInstructions) || !string.IsNullOrEmpty(Input.Description) || !string.IsNullOrEmpty(Input.CustomInstructions))">
+                        <summary>@Strings.AgentWizardOptionalDetails</summary>
+                        <div class="wizard-more-fields">
+                            <div class="field">
+                                <label for="agent-description">@Strings.FieldAgentDescription</label>
+                                <textarea id="agent-description" name="Input.Description" rows="2" maxlength="@AgentLimits.DescriptionMaxLength"
+                                          aria-invalid="@Invalid(AgentField.Description)" aria-describedby="agent-description-error">@Input.Description</textarea>
+                                <FieldError Id="agent-description-error" Message="@ErrorOf(AgentField.Description)" />
+                            </div>
+                            <div class="field">
+                                <label for="agent-instructions">@Strings.FieldAgentCustomInstructions</label>
+                                <textarea id="agent-instructions" name="Input.CustomInstructions" rows="5" maxlength="@AgentLimits.CustomInstructionsMaxLength"
+                                          aria-invalid="@Invalid(AgentField.CustomInstructions)"
+                                          aria-describedby="agent-instructions-hint agent-instructions-error">@Input.CustomInstructions</textarea>
+                                <p id="agent-instructions-hint" class="field-hint">@string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsInstructionsHint, AgentLimits.CustomInstructionsMaxLength)</p>
+                                <FieldError Id="agent-instructions-error" Message="@ErrorOf(AgentField.CustomInstructions)" />
+                            </div>
+                        </div>
+                    </details>
+
+                    @if (MoneySummary() is { } money)
+                    {
+                        <p class="wizard-note">@money</p>
+                    }
+
+                    @foreach (var step in AgentWizard.Steps.Where(step => step != WizardStep.Review))
+                    {
+                        <section class="wizard-summary" aria-labelledby="@($"wizard-summary-{step}")">
+                            <div class="wizard-summary-heading">
+                                <h3 id="@($"wizard-summary-{step}")">@AgentText.StepOf(step)</h3>
+                                <button type="submit" name="Wizard.Go" value="@step" class="wizard-secondary" formnovalidate
+                                        aria-label="@string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardChangeLabel, AgentText.StepOf(step))">@Strings.AgentWizardChange</button>
+                            </div>
+                            <dl class="facts wizard-facts">
+                                @foreach (var (term, value) in SummaryOf(step))
+                                {
+                                    <dt>@term</dt>
+                                    <dd>@value</dd>
+                                }
+                            </dl>
+                        </section>
+                    }
+                    break;
+            }
+
+            <div class="wizard-actions">
+                @if (_step == WizardStep.Review)
+                {
+                    <button type="submit" name="Wizard.Go" value="@AgentWizard.Start" class="button">@Strings.AgentWizardStart</button>
+                    <button type="submit" name="Wizard.Go" value="@AgentWizard.Draft" class="wizard-secondary">@Strings.AgentWizardSaveDraft</button>
+                }
+                else if (_reviewed)
+                {
+                    <button type="submit" name="Wizard.Go" value="@AgentWizard.ToReview" class="button">@Strings.AgentWizardBackToReview</button>
+                    <button type="submit" name="Wizard.Go" value="@AgentWizard.Next" class="wizard-secondary">@Strings.AgentWizardNext</button>
+                }
+                else
+                {
+                    <button type="submit" name="Wizard.Go" value="@AgentWizard.Next" class="button">@Strings.AgentWizardNext</button>
+                }
+                @if (_step != WizardStep.Market)
+                {
+                    @* Back keeps what's on the step, unchecked, so a half-filled field doesn't trap the user. *@
+                    <button type="submit" name="Wizard.Go" value="@AgentWizard.Back" class="wizard-secondary" formnovalidate>@Strings.AgentWizardBack</button>
+                }
+            </div>
+        </EditForm>
+
+        <p><a href="/agents">@Strings.AgentWizardCancel</a></p>
+    }
+</div>
+
+@code {
+    private const string FormName = "agent-wizard";
+
+    private WizardStep _step = WizardStep.Market;
+    private bool _reviewed;
+    private Guid _userId;
+    private List<CredentialRecord> _demoKeys = [];
+    private RoleChoices? _choices;
+    private RoleOptions _roleOptions = RoleOptions.Empty;
+    private PairChoices? _pairs;
+    private HashSet<AgentField> _fields = [];
+    private HashSet<RiskSetting> _riskSettings = [];
+
+    /// <summary>A field's own message, where it says more than <see cref="AgentText.FieldErrorOf"/>.</summary>
+    private Dictionary<AgentField, string> _messages = [];
+
+    private string? _error;
+    private AgentRecord? _created;
+    private ActivationResult? _activation;
+    private DateTimeOffset? _nextCycle;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    [SupplyParameterFromForm(FormName = FormName, Name = "Input")]
+    private AgentForm Input { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = FormName, Name = "Wizard")]
+    private WizardNav Nav { get; set; } = default!;
+
+    private Market CurrentMarket => Parse<Market>(Input.Market) ?? Market.Spot;
+
+    private Timeframe? CurrentTimeframe => Parse<Timeframe>(Input.Timeframe);
+
+    private string AddKeyUrl => LocalUrl.WithReturn("/credentials/add", "/agents/new");
+
+    /// <summary>The asset the capital is in, from Binance's record of the pair, or null when it isn't known yet.</summary>
+    private string? QuoteAsset => _pairs?.Pairs.FirstOrDefault(pair => pair.Symbol == Input.Symbol)?.QuoteAsset;
+
+    private string PrimaryAction => _step == WizardStep.Review ? AgentWizard.Start : _reviewed ? AgentWizard.ToReview : AgentWizard.Next;
+
+    private string PrimaryText => _step == WizardStep.Review ? Strings.AgentWizardStart
+        : _reviewed ? Strings.AgentWizardBackToReview
+        : Strings.AgentWizardNext;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A post brings its own values. Anything else starts afresh. The form is there before the await, because the
+        // first render happens at it.
+        var posted = Input is not null;
+        Input ??= new AgentForm();
+        Nav ??= new WizardNav();
+
+        if (AccountClaims.UserId(HttpContext.User) is not { } userId)
+        {
+            return;
+        }
+
+        _userId = userId;
+        var cancellationToken = HttpContext.RequestAborted;
+
+        var keys = await Credentials.ListAsync(userId, cancellationToken);
+        _demoKeys = [.. keys.Where(key => key.Kind == CredentialKind.Exchange && key.Environment == TradingEnvironment.Demo)];
+        _choices = await Agents.ListRoleChoicesAsync(userId, cancellationToken);
+        _roleOptions = await RoleOptions.LoadAsync(Catalog, _choices, cancellationToken);
+
+        if (posted)
+        {
+            _step = AgentWizard.Parse(Nav.Step) ?? WizardStep.Market;
+            _reviewed = Nav.Reviewed == "true";
+            return;
+        }
+
+        // UC-01's suggestions: a working Demo key, the default role assignments (FR-ROLE-03), and the SRS's risk defaults
+        // within the caps when an administrator set them lower (FR-RISK-11).
+        Input = AgentForm.Of(
+            new AgentSettings
+            {
+                Name = "",
+                Market = Market.Spot,
+                Symbol = "",
+                Timeframe = Timeframe.OneHour,
+                ExchangeCredentialId = _demoKeys.FirstOrDefault(key => key.Status == CredentialStatus.Valid && key.SpotEnabled != false)?.Id,
+                ExecutionMode = ExecutionMode.Confirm,
+                Roles = _choices.Defaults,
+                Risk = Caps.Apply(RiskSettings.Default),
+            },
+            version: null);
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_userId == Guid.Empty)
+        {
+            return;
+        }
+
+        var cancellationToken = HttpContext.RequestAborted;
+        var go = Nav.Go;
+
+        // Whatever sends the user back from Review, a Change or a setting to fix, they can go straight back to it.
+        _reviewed |= _step == WizardStep.Review;
+
+        if (go == AgentWizard.Back)
+        {
+            _step = _step == WizardStep.Market ? WizardStep.Market : _step - 1;
+        }
+        else if (AgentWizard.Parse(go) is { } target)
+        {
+            // Back to a step already passed, from Review's Change or the roles step's Check again. Never ahead unchecked.
+            if (target <= _step)
+            {
+                _step = target;
+
+                // A key added since may have brought models: with no role filled, take the suggestions, as a new agent does.
+                if (target == WizardStep.Roles && _choices is { } choices
+                    && Enum.GetValues<AiRole>().All(role => string.IsNullOrEmpty(Input.RoleValue(role, false))))
+                {
+                    Input.UseRoles(choices.Defaults);
+                }
+            }
+        }
+        else if (go == AgentWizard.Next)
+        {
+            if (await FindErrorsAsync([_step], cancellationToken) is null)
+            {
+                _step = _step == WizardStep.Review ? WizardStep.Review : _step + 1;
+            }
+        }
+        else if (go == AgentWizard.ToReview)
+        {
+            _step = await FindErrorsAsync(AgentWizard.Steps, cancellationToken) ?? WizardStep.Review;
+        }
+        else if ((go == AgentWizard.Start || go == AgentWizard.Draft) && _step == WizardStep.Review)
+        {
+            if (await FindErrorsAsync(AgentWizard.Steps, cancellationToken) is { } invalid)
+            {
+                _step = invalid;
+            }
+            else
+            {
+                await CreateAsync(start: go == AgentWizard.Start, cancellationToken);
+            }
+        }
+
+        if (_step is WizardStep.Pair or WizardStep.Risk or WizardStep.Review)
+        {
+            await PairsAsync(cancellationToken);
+        }
+
+        if (_step == WizardStep.Review && string.IsNullOrWhiteSpace(Input.Name))
+        {
+            Input.Name = await SuggestedNameAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// What's wrong on <paramref name="steps"/>, as the contract would say on create, and the first of them that needs
+    /// fixing, or null. The pair is checked against Binance's list, and the key against the user's Demo keys and its
+    /// market, so a problem activation would find later is found on its own step.
+    /// </summary>
+    private async Task<WizardStep?> FindErrorsAsync(IReadOnlyCollection<WizardStep> steps, CancellationToken cancellationToken)
+    {
+        Input.Symbol = Input.Symbol?.Trim().ToUpperInvariant();
+
+        var (settings, fields, riskSettings) = Input.ToSettings(TradingEnvironment.Demo);
+        var messages = new Dictionary<AgentField, string>();
+
+        if (settings is not null)
+        {
+            var check = Agents.Check(settings);
+            fields.UnionWith(check.Fields);
+            riskSettings.UnionWith(check.RiskSettings);
+        }
+
+        if (steps.Contains(WizardStep.Pair) && !fields.Contains(AgentField.Symbol) && !fields.Contains(AgentField.Market))
+        {
+            var pairs = await PairsAsync(cancellationToken);
+
+            if (pairs.Available && pairs.Pairs.All(pair => pair.Symbol != Input.Symbol))
+            {
+                fields.Add(AgentField.Symbol);
+                messages[AgentField.Symbol] = Strings.AgentWizardPairNotOffered;
+            }
+        }
+
+        if (steps.Contains(WizardStep.Market) && settings?.ExchangeCredentialId is { } keyId && !fields.Contains(AgentField.ExchangeCredential))
+        {
+            var key = _demoKeys.FirstOrDefault(candidate => candidate.Id == keyId);
+
+            if (key is null)
+            {
+                fields.Add(AgentField.ExchangeCredential);
+            }
+            else if (EnabledFor(key, settings.Market) == false)
+            {
+                fields.Add(AgentField.ExchangeCredential);
+                messages[AgentField.ExchangeCredential] =
+                    string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardKeyNotEnabledError, AgentText.MarketOf(settings.Market));
+            }
+        }
+
+        _fields = [.. fields.Where(field => steps.Contains(AgentWizard.StepOf(field)))];
+        _riskSettings = _fields.Contains(AgentField.Risk) ? riskSettings : [];
+        _messages = messages;
+
+        if (_fields.Count == 0)
+        {
+            _error = null;
+            return null;
+        }
+
+        _error = Strings.AgentSaveInvalid;
+        return AgentWizard.Steps.First(step => _fields.Any(field => AgentWizard.StepOf(field) == step));
+    }
+
+    /// <summary>Creates the agent, and starts it when asked (UC-01). A refusal goes back to the step that can fix it.</summary>
+    private async Task CreateAsync(bool start, CancellationToken cancellationToken)
+    {
+        if (Input.ToSettings(TradingEnvironment.Demo).Settings is not { } settings)
+        {
+            return;
+        }
+
+        var result = await Agents.CreateAsync(_userId, settings, cancellationToken);
+
+        if (result is { Outcome: AgentSaveOutcome.Saved, Agent: { } agent })
+        {
+            if (!start)
+            {
+                Navigation.NavigateTo("/agents?saved=created");
+                return;
+            }
+
+            // It stays on this page rather than redirecting, which would lose the problems and warnings.
+            _created = agent;
+            _activation = await Agents.ActivateAsync(_userId, agent.Id, cancellationToken);
+
+            if (_activation.Outcome == ActivationOutcome.Activated)
+            {
+                _nextCycle = CycleTimes.NextCycleAt(agent.Settings.Timeframe);
+            }
+
+            return;
+        }
+
+        _error = AgentText.SaveErrorOf(result.Outcome);
+
+        switch (result.Outcome)
+        {
+            case AgentSaveOutcome.Invalid:
+                _fields = [.. result.Fields ?? []];
+                _riskSettings = [.. result.RiskSettings ?? []];
+                _step = AgentWizard.Steps.FirstOrDefault(step => _fields.Any(field => AgentWizard.StepOf(field) == step), WizardStep.Review);
+                break;
+            case AgentSaveOutcome.SymbolUnknown or AgentSaveOutcome.SymbolNotTrading or AgentSaveOutcome.SymbolNotPerpetual or AgentSaveOutcome.SymbolUnverifiable:
+                _fields = [AgentField.Symbol];
+                _messages[AgentField.Symbol] = _error!;
+                _step = WizardStep.Pair;
+                break;
+            case AgentSaveOutcome.NameTaken:
+                _fields = [AgentField.Name];
+                _messages[AgentField.Name] = _error!;
+                break;
+        }
+    }
+
+    private async Task<PairChoices> PairsAsync(CancellationToken cancellationToken) =>
+        _pairs ??= await Agents.ListPairsAsync(CurrentMarket, cancellationToken);
+
+    /// <summary>The pair and timeframe, such as "BTCUSDT 1H", numbered when one of the user's agents has it.</summary>
+    private async Task<string?> SuggestedNameAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(Input.Symbol) || CurrentTimeframe is not { } timeframe)
+        {
+            return null;
+        }
+
+        var stem = $"{Input.Symbol} {AgentText.TimeframeOf(timeframe)}";
+        var agents = await Agents.ListAsync(_userId, includeArchived: false, cancellationToken);
+        var taken = agents.Select(agent => agent.Settings.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        for (var number = 1; ; number++)
+        {
+            var name = number == 1 ? stem : string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardNameNumbered, stem, number);
+
+            if (!taken.Contains(name))
+            {
+                return name;
+            }
+        }
+    }
+
+    /// <summary>Whether Binance lets the key trade on the market, or null when nobody knows yet.</summary>
+    private static bool? EnabledFor(CredentialRecord key, Market market) => market == Market.Spot ? key.SpotEnabled : key.FuturesEnabled;
+
+    private string KeyOption(CredentialRecord key)
+    {
+        if (key.Status != CredentialStatus.Valid)
+        {
+            return string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardKeyNotValid, key.Label);
+        }
+
+        var disabled = Enum.GetValues<Market>().Where(market => EnabledFor(key, market) == false).Select(market => (Market?)market).FirstOrDefault();
+
+        return disabled is { } market
+            ? string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardKeyNotEnabled, key.Label, AgentText.MarketOf(market))
+            : key.Label;
+    }
+
+    /// <summary>
+    /// The risk settings the step shows first, or those in its panel. On Spot, those only Futures uses are carried
+    /// unseen, as they are.
+    /// </summary>
+    private IEnumerable<RiskSetting> RiskShown(bool main) =>
+        Enum.GetValues<RiskSetting>()
+            .Where(setting => AgentWizard.Main.Contains(setting) == main)
+            .Where(setting => CurrentMarket == Market.Futures || !AgentWizard.FuturesOnly.Contains(setting));
+
+    private static int CyclesPerDay(Timeframe timeframe) => timeframe switch
+    {
+        Timeframe.FifteenMinutes => 96,
+        Timeframe.OneHour => 24,
+        Timeframe.FourHours => 6,
+        _ => 1,
+    };
+
+    private IEnumerable<(string Name, string Label, string? Value, bool Decimals)> BudgetFields =>
+    [
+        (nameof(AgentForm.DailyBudgetUsd), Strings.FieldAgentDailyBudget, Input.DailyBudgetUsd, true),
+        (nameof(AgentForm.MonthlyBudgetUsd), Strings.FieldAgentMonthlyBudget, Input.MonthlyBudgetUsd, true),
+        (nameof(AgentForm.DailyTokens), Strings.FieldAgentDailyTokens, Input.DailyTokens, false),
+        (nameof(AgentForm.MonthlyTokens), Strings.FieldAgentMonthlyTokens, Input.MonthlyTokens, false),
+    ];
+
+    /// <summary>
+    /// What the risk settings mean in money (NFR-USA-03): the most a trade loses at its stop, and the losses that pause
+    /// the agent. Null until the capital and the pair's asset are known.
+    /// </summary>
+    private string? MoneySummary()
+    {
+        if (QuoteAsset is not { } asset || Number(Input.CapitalAllocation) is not { } capital || capital <= 0m
+            || Number(Input.MaxRiskPerTradePercent) is not { } perTrade
+            || Number(Input.DailyLossLimitPercent) is not { } daily
+            || Number(Input.WeeklyLossLimitPercent) is not { } weekly)
+        {
+            return null;
+        }
+
+        string Share(decimal percent) => Amount(capital * percent / 100m);
+
+        return string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardMoneySummary, Share(perTrade), Share(daily), Share(weekly), asset);
+    }
+
+    /// <summary>What the user chose on a step, as Review lists it. Every value is text, the user's own included.</summary>
+    private IEnumerable<(string Term, string Value)> SummaryOf(WizardStep step)
+    {
+        switch (step)
+        {
+            case WizardStep.Market:
+                var key = _demoKeys.FirstOrDefault(candidate => candidate.Id.ToString() == Input.ExchangeKey);
+                yield return (Strings.FieldAgentMarket, AgentText.MarketOf(CurrentMarket));
+                yield return (Strings.AgentWizardSummaryEnvironment, Strings.AgentDemo);
+                yield return (Strings.FieldAgentExchangeKey, key?.Label ?? Strings.AgentWizardChooseLater);
+                break;
+
+            case WizardStep.Pair:
+                yield return (Strings.FieldAgentPair, Input.Symbol ?? "");
+                yield return (Strings.FieldAgentTimeframe, CurrentTimeframe is { } timeframe ? AgentText.TimeframeOf(timeframe) : "");
+                break;
+
+            case WizardStep.Roles:
+                foreach (var role in Enum.GetValues<AiRole>())
+                {
+                    var model = Input.RoleValue(role, false);
+                    yield return (AgentText.RoleOf(role), !string.IsNullOrEmpty(model) ? _roleOptions.TextOf(role, model)
+                        : AgentRoles.IsRequired(role) ? Strings.AgentWizardRequiredNone
+                        : Strings.AgentSettingsNoModel);
+                }
+
+                break;
+
+            case WizardStep.Risk:
+                yield return (Strings.FieldAgentCapital, string.IsNullOrEmpty(Input.CapitalAllocation) ? Strings.AgentWizardNotSet
+                    : QuoteAsset is { } asset ? string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardAmount, Input.CapitalAllocation, asset)
+                    : Input.CapitalAllocation);
+
+                foreach (var setting in RiskShown(main: true))
+                {
+                    yield return (AgentText.RiskSettingOf(setting), string.Format(
+                        CultureInfo.CurrentCulture,
+                        setting == RiskSetting.MaxLeverage ? Strings.AgentWizardLeverage : Strings.AgentWizardPercent,
+                        Input.RiskValue(setting)));
+                }
+
+                break;
+
+            case WizardStep.Execution:
+                var confirm = Input.ExecutionMode == nameof(ExecutionMode.Confirm);
+                yield return (Strings.FieldAgentExecutionMode, Parse<ExecutionMode>(Input.ExecutionMode) is { } mode ? AgentText.ExecutionModeOf(mode) : "");
+
+                if (confirm)
+                {
+                    yield return (Strings.FieldAgentAutoExecuteRiskReducing, Input.AutoExecuteRiskReducing == "true" ? Strings.AgentOn : Strings.AgentOff);
+                }
+
+                yield return (Strings.FieldAgentDailyBudget, string.IsNullOrEmpty(Input.DailyBudgetUsd) ? Strings.AgentWizardNoLimit
+                    : string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardBudgetDaily, Input.DailyBudgetUsd));
+                yield return (Strings.FieldAgentMonthlyBudget, string.IsNullOrEmpty(Input.MonthlyBudgetUsd) ? Strings.AgentWizardNoLimit
+                    : string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardBudgetMonthly, Input.MonthlyBudgetUsd));
+
+                if (!string.IsNullOrEmpty(Input.DailyTokens))
+                {
+                    yield return (Strings.FieldAgentDailyTokens, Input.DailyTokens);
+                }
+
+                if (!string.IsNullOrEmpty(Input.MonthlyTokens))
+                {
+                    yield return (Strings.FieldAgentMonthlyTokens, Input.MonthlyTokens);
+                }
+
+                yield return (Strings.FieldAgentExperienceMemory, Input.ExperienceEnabled == "true"
+                    ? string.Format(CultureInfo.CurrentCulture, Strings.AgentWizardLessons, Input.ReflectionsInPrompt)
+                    : Strings.AgentOff);
+                break;
+        }
+    }
+
+    private static decimal? Number(string? value) =>
+        decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var number) ? number : null;
+
+    /// <summary>To 8 places, which covers every Binance asset, without trailing zeros.</summary>
+    private static string Amount(decimal value) => Math.Round(value, 8).ToString("#,0.########", CultureInfo.CurrentCulture);
+
+    private string? ErrorOf(AgentField field) =>
+        _fields.Contains(field) ? _messages.GetValueOrDefault(field) ?? AgentText.FieldErrorOf(field) : null;
+
+    private string? Invalid(AgentField field) => _fields.Contains(field) ? "true" : null;
+
+    /// <summary>An exact name only, because Enum.TryParse also takes a number.</summary>
+    private static T? Parse<T>(string? value)
+        where T : struct, Enum =>
+        value is not null && Enum.GetNames<T>().Contains(value, StringComparer.Ordinal) ? Enum.Parse<T>(value) : null;
+}

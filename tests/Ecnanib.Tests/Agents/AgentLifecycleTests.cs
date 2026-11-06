@@ -136,6 +136,54 @@ public sealed class AgentLifecycleTests(PostgresFixture postgres)
         Assert.Equal(AgentSaveOutcome.SymbolUnverifiable, result.Outcome);
     }
 
+    /// <summary>The wizard offers the pairs a new agent can trade: trading on Binance's Demo, and perpetual on Futures.</summary>
+    [Fact]
+    public async Task The_pairs_offered_are_those_create_accepts()
+    {
+        await using var app = new AgentApp(postgres);
+        app.Binance.On(
+            HttpMethod.Get, "/fapi/v1/exchangeInfo", _ => FakeBinance.Json(BinanceSamples.FuturesExchangeInfo.Replace("PERPETUAL", "CURRENT_QUARTER")));
+
+        var spot = await app.Agents.ListPairsAsync(Market.Spot, Cancellation);
+        var futures = await app.Agents.ListPairsAsync(Market.Futures, Cancellation);
+
+        Assert.True(spot.Available);
+        Assert.Equal([new PairChoice("BTCUSDT", "BTC", "USDT")], spot.Pairs);
+        Assert.True(futures.Available);
+        Assert.Empty(futures.Pairs);
+    }
+
+    [Fact]
+    public async Task No_pairs_are_offered_while_Binance_cant_be_reached_and_none_are_stored()
+    {
+        await using var app = new AgentApp(postgres);
+        app.Binance.On(HttpMethod.Get, "/api/v3/exchangeInfo", _ => FakeBinance.Error(HttpStatusCode.ServiceUnavailable, -1001, "Internal error."));
+
+        var pairs = await app.Agents.ListPairsAsync(Market.Spot, Cancellation);
+
+        Assert.False(pairs.Available);
+        Assert.Empty(pairs.Pairs);
+    }
+
+    /// <summary>
+    /// Check says what create would refuse in the settings themselves, so the wizard can check a step at a time. It's
+    /// synchronous, so it can't ask Binance, and it stores nothing.
+    /// </summary>
+    [Fact]
+    public async Task Check_finds_what_create_would_refuse_without_saving()
+    {
+        await using var app = new AgentApp(postgres, new() { ["RiskCaps:MaxLeverage"] = "1" });
+        var user = await app.UserAsync();
+
+        var fine = app.Agents.Check(AgentApp.Ready(user) with { Risk = RiskSettings.Default with { MaxLeverage = 1 } });
+        var wrong = app.Agents.Check(AgentApp.Ready(user) with { Name = " ", Symbol = "BTC-USDT", CapitalAllocation = 0m });
+
+        Assert.Empty(fine.Fields);
+        Assert.Equal([AgentField.Name, AgentField.Symbol, AgentField.CapitalAllocation, AgentField.Risk], wrong.Fields.Order());
+        Assert.Equal([RiskSetting.MaxLeverage], wrong.RiskSettings);
+        Assert.Empty(await app.Agents.ListAsync(user.Id, includeArchived: true, Cancellation));
+    }
+
     /// <summary>UC-04: an agent starts in Demo, and only switching makes it Live, never a new agent's settings or an edit.</summary>
     [Fact]
     public async Task Live_is_refused_on_creation_and_by_an_edit()

@@ -106,13 +106,38 @@ internal sealed class ActivationChecks(
             return (null, ActivationProblemKind.SymbolUnverifiable);
         }
 
-        return info switch
+        return (info, SymbolProblemOf(info));
+    }
+
+    /// <summary>
+    /// What's wrong with Binance's record of a pair for an agent, or null when Binance lists it as trading, and as a
+    /// perpetual contract on Futures. Null <paramref name="info"/> is a pair Binance doesn't list.
+    /// </summary>
+    public static ActivationProblemKind? SymbolProblemOf(ExchangeSymbolInfo? info) => info switch
+    {
+        null => ActivationProblemKind.SymbolUnknown,
+        { IsTrading: false } => ActivationProblemKind.SymbolNotTrading,
+        { Market: Market.Futures } when info.ContractType != FuturesContract.Perpetual => ActivationProblemKind.SymbolNotPerpetual,
+        _ => null,
+    };
+
+    /// <summary>The pairs an agent can trade on the market in the environment, as <see cref="SymbolProblemOf"/> allows.</summary>
+    public async Task<PairChoices> ListPairsAsync(Market market, TradingEnvironment environment, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<ExchangeSymbolInfo> listed;
+
+        try
         {
-            null => (null, ActivationProblemKind.SymbolUnknown),
-            { IsTrading: false } => (info, ActivationProblemKind.SymbolNotTrading),
-            { Market: Market.Futures } when info.ContractType != FuturesContract.Perpetual => (info, ActivationProblemKind.SymbolNotPerpetual),
-            _ => (info, null),
-        };
+            listed = await symbols.ListAsync(market, environment, cancellationToken);
+        }
+        catch (MarketDataException)
+        {
+            return new PairChoices([], Available: false);
+        }
+
+        return new PairChoices(
+            [.. listed.Where(info => SymbolProblemOf(info) is null).Select(info => new PairChoice(info.Symbol, info.BaseAsset, info.QuoteAsset))],
+            Available: true);
     }
 
     /// <summary>

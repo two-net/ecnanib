@@ -1,11 +1,12 @@
+using Ecnanib.Kernel;
 using Ecnanib.Modules.RiskEngine.Contracts;
 
 namespace Ecnanib.Modules.Agents.Contracts;
 
 /// <summary>
 /// A user's trading agents (FR-AGT-01 to FR-AGT-05, FR-AGT-10, FR-AGT-12): their settings and their
-/// lifecycle. Every call is scoped to the user, so another user's agent behaves like one that doesn't exist
-/// (NFR-SEC-04). Every change of status is audited with who made it and why (FR-AGT-04). See Agents in
+/// lifecycle. Every call that reads or changes an agent is scoped to the user, so another user's agent behaves like
+/// one that doesn't exist (NFR-SEC-04). <see cref="Check"/> and <see cref="ListPairsAsync"/> read no user's data. Every change of status is audited with who made it and why (FR-AGT-04). See Agents in
 /// docs/architecture.md.
 /// </summary>
 public interface IAgents
@@ -29,6 +30,20 @@ public interface IAgents
     /// from the default role assignments (FR-ROLE-02 to FR-ROLE-05). Only the user's own keys (NFR-SEC-04).
     /// </summary>
     Task<RoleChoices> ListRoleChoicesAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// What <see cref="CreateAsync"/> or <see cref="UpdateAsync"/> would refuse in <paramref name="settings"/> on their
+    /// own: each setting's range and the global caps (FR-RISK-11). It reads nothing and asks Binance nothing, so the
+    /// pair is checked only for its shape, and the exchange key not at all. The wizard checks one step at a time with it.
+    /// </summary>
+    AgentInputCheck Check(AgentSettings settings);
+
+    /// <summary>
+    /// The pairs a new agent can trade on <paramref name="market"/>: those Binance lists as trading in the environment
+    /// every agent starts in, and only perpetual contracts on Futures, as <see cref="CreateAsync"/> requires. Ordered by
+    /// symbol. Binance's symbols are public, so this isn't scoped to a user.
+    /// </summary>
+    Task<PairChoices> ListPairsAsync(Market market, CancellationToken cancellationToken);
 
     /// <summary>
     /// Creates a Draft. The pair is checked against Binance's symbols (FR-AGT-02), and the exchange key, when
@@ -131,6 +146,16 @@ public interface IAgents
     /// </summary>
     Task<IReadOnlyList<AgentUse>> ListUsingCredentialAsync(Guid userId, Guid credentialId, CancellationToken cancellationToken);
 }
+
+/// <param name="Fields">The settings that are wrong. Empty when there's nothing to fix.</param>
+/// <param name="RiskSettings">Which risk settings, when <paramref name="Fields"/> has <see cref="AgentField.Risk"/>.</param>
+public sealed record AgentInputCheck(IReadOnlyList<AgentField> Fields, IReadOnlyList<RiskSetting> RiskSettings);
+
+/// <param name="Available">False when Binance couldn't be reached and nothing is stored, so <paramref name="Pairs"/> is empty.</param>
+public sealed record PairChoices(IReadOnlyList<PairChoice> Pairs, bool Available);
+
+/// <param name="QuoteAsset">The asset the agent's capital is in, such as USDT in BTCUSDT.</param>
+public sealed record PairChoice(string Symbol, string BaseAsset, string QuoteAsset);
 
 /// <param name="WillPause">It's Active, so it will pause when the credential goes.</param>
 public sealed record AgentUse(Guid Id, string Name, AgentStatus Status, bool WillPause);

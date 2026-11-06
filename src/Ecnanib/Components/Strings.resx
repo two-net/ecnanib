@@ -1948,19 +1948,19 @@
     <value>Risk per trade (%)</value>
   </data>
   <data name="RiskMaxRiskPerTradePercentHint" xml:space="preserve">
-    <value>The most one trade may lose if its stop is hit, as a share of the capital. 1 means 1%.</value>
+    <value>The most one trade may lose if its stop is hit, as a share of the capital: 1 means 1%. The agent sizes each trade so that this holds.</value>
   </data>
   <data name="RiskMaxPositionNotional" xml:space="preserve">
     <value>Largest position (optional)</value>
   </data>
   <data name="RiskMaxPositionNotionalHint" xml:space="preserve">
-    <value>A further cap on a position's size, in the pair's quote asset. Leave it empty to use the capital.</value>
+    <value>A further limit on how big one position may be, in the same asset as the capital. Leave it empty to allow up to the whole capital.</value>
   </data>
   <data name="RiskMaxLeverage" xml:space="preserve">
     <value>Leverage (Futures)</value>
   </data>
   <data name="RiskMaxLeverageHint" xml:space="preserve">
-    <value>Borrowing to trade more than you put in. It multiplies gains and losses alike. Futures only.</value>
+    <value>How many times its margin a Futures position may be: at 2, 100 USDT holds a position worth up to 200 USDT. It multiplies gains and losses alike.</value>
   </data>
   <data name="RiskDailyLossLimitPercent" xml:space="preserve">
     <value>Daily loss limit (%)</value>
@@ -1978,7 +1978,7 @@
     <value>Losing trades in a row before pausing</value>
   </data>
   <data name="RiskConsecutiveLossesBeforePauseHint" xml:space="preserve">
-    <value>0 turns this off.</value>
+    <value>After this many losing trades in a row, the agent pauses until you resume it. 0 turns this off.</value>
   </data>
   <data name="RiskMinRewardToRisk" xml:space="preserve">
     <value>Smallest reward for the risk</value>
@@ -1996,7 +1996,7 @@
     <value>Closest stop (in ATR)</value>
   </data>
   <data name="RiskMinStopDistanceAtrHint" xml:space="preserve">
-    <value>How close a stop may be to the entry, in multiples of the pair's average move per candle, its average true range.</value>
+    <value>How close a stop may be to the entry, in multiples of the pair's average move per candle, its average true range (ATR). A stop too close is hit by ordinary swings.</value>
   </data>
   <data name="RiskMaxStopDistanceAtr" xml:space="preserve">
     <value>Furthest stop (in ATR)</value>
@@ -2022,14 +2022,8 @@
   <data name="RiskCooldownCyclesAfterLossHint" xml:space="preserve">
     <value>After a losing trade, the agent waits this many candles before opening another.</value>
   </data>
-  <data name="AgentSettingsNewPageTitle" xml:space="preserve">
-    <value>New agent</value>
-  </data>
   <data name="AgentSettingsNewHeading" xml:space="preserve">
     <value>New agent</value>
-  </data>
-  <data name="AgentSettingsNewIntro" xml:space="preserve">
-    <value>It's saved as a draft, which does nothing until you activate it from the agents page.</value>
   </data>
   <data name="AgentSettingsEditPageTitle" xml:space="preserve">
     <value>Agent settings</value>
@@ -2106,7 +2100,7 @@
     <value>Capital and risk</value>
   </data>
   <data name="AgentSettingsCapitalHint" xml:space="preserve">
-    <value>The most this agent may commit, in the pair's quote asset, such as USDT. It needs this before it can be activated.</value>
+    <value>The most this agent may put into trades, in the pair's second asset, such as USDT in BTCUSDT. It needs this before it can be activated.</value>
   </data>
   <data name="AgentSettingsExecutionHeading" xml:space="preserve">
     <value>Execution</value>
@@ -2129,9 +2123,6 @@
   <data name="AgentSettingsInstructionsHint" xml:space="preserve">
     <value>Added to the agent's prompts in a section of their own, up to {0} characters. They can't change the risk limits.</value>
     <comment>{0} is the most characters allowed.</comment>
-  </data>
-  <data name="AgentSettingsCreate" xml:space="preserve">
-    <value>Save draft</value>
   </data>
   <data name="AgentSettingsSave" xml:space="preserve">
     <value>Save settings</value>
@@ -3212,9 +3203,6 @@
   <data name="AgentSwitchToLiveLabel" xml:space="preserve">
     <value>Switch {0} to Live</value>
   </data>
-  <data name="AgentSettingsEnvironmentNew" xml:space="preserve">
-    <value>New agents start in Demo, on Binance's demo exchange with test funds. Once it has run, you can pause or stop it and switch it to Live from the agents page.</value>
-  </data>
   <data name="AgentSettingsEnvironmentDemo" xml:space="preserve">
     <value>This agent trades in Demo, on Binance's demo exchange with test funds. To trade real money, pause or stop it, then use Switch to Live on the agents page.</value>
   </data>
@@ -3337,5 +3325,293 @@
   </data>
   <data name="AgentLiveProblemKeyMissing" xml:space="preserve">
     <value>That isn't one of your Binance Live keys. Choose another.</value>
+  </data>
+  <data name="AgentWizardPageTitle" xml:space="preserve">
+    <value>New agent: {0}</value>
+    <comment>{0} is the step's name.</comment>
+  </data>
+  <data name="AgentWizardProgress" xml:space="preserve">
+    <value>Step {0} of {1}</value>
+    <comment>{0} is the step's number, and {1} how many steps there are.</comment>
+  </data>
+  <data name="AgentWizardStepsLabel" xml:space="preserve">
+    <value>Steps</value>
+    <comment>The list of the wizard's steps, for screen readers.</comment>
+  </data>
+  <data name="AgentWizardStepMarket" xml:space="preserve">
+    <value>Market and environment</value>
+  </data>
+  <data name="AgentWizardStepPair" xml:space="preserve">
+    <value>Pair and timeframe</value>
+  </data>
+  <data name="AgentWizardStepRoles" xml:space="preserve">
+    <value>Roles and models</value>
+  </data>
+  <data name="AgentWizardStepRisk" xml:space="preserve">
+    <value>Risk settings</value>
+  </data>
+  <data name="AgentWizardStepExecution" xml:space="preserve">
+    <value>Execution mode and AI budget</value>
+  </data>
+  <data name="AgentWizardStepReview" xml:space="preserve">
+    <value>Review and create</value>
+  </data>
+  <data name="AgentWizardNext" xml:space="preserve">
+    <value>Next</value>
+  </data>
+  <data name="AgentWizardBack" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="AgentWizardBackToReview" xml:space="preserve">
+    <value>Back to review</value>
+  </data>
+  <data name="AgentWizardStart" xml:space="preserve">
+    <value>Create and start</value>
+  </data>
+  <data name="AgentWizardSaveDraft" xml:space="preserve">
+    <value>Save as draft</value>
+  </data>
+  <data name="AgentWizardCancel" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>A link back to the agents page, which saves nothing.</comment>
+  </data>
+  <data name="AgentWizardBeforeHeading" xml:space="preserve">
+    <value>Before you start</value>
+  </data>
+  <data name="AgentWizardBeforeIntro" xml:space="preserve">
+    <value>The agent needs these before it can start. You can set it up now, and start it once they're there.</value>
+  </data>
+  <data name="AgentWizardNeedExchangeKey" xml:space="preserve">
+    <value>You have no Binance Demo key yet.</value>
+  </data>
+  <data name="AgentWizardAddExchangeKey" xml:space="preserve">
+    <value>Add a Binance Demo key</value>
+  </data>
+  <data name="AgentWizardNeedAiModels" xml:space="preserve">
+    <value>None of your AI keys can fill a role yet. A new key's models can take a minute to appear.</value>
+  </data>
+  <data name="AgentWizardAddAiKey" xml:space="preserve">
+    <value>Add an AI key</value>
+  </data>
+  <data name="AgentWizardMarketIntro" xml:space="preserve">
+    <value>Choose what the agent trades. It can't change while the agent holds a position.</value>
+  </data>
+  <data name="AgentWizardSpotHint" xml:space="preserve">
+    <value>Buys a coin, such as bitcoin, with a stablecoin such as USDT, and sells it later. It gains only when the price rises, and can't lose more than it spent.</value>
+  </data>
+  <data name="AgentWizardFuturesHint" xml:space="preserve">
+    <value>Trades contracts that follow a coin's price, settled in a stablecoin. It can gain when the price falls as well as when it rises, and can use leverage, which makes losses bigger and faster. A position can be liquidated, and pays or receives funding.</value>
+  </data>
+  <data name="AgentWizardTermsHeading" xml:space="preserve">
+    <value>Futures terms in plain words</value>
+  </data>
+  <data name="AgentWizardTermShort" xml:space="preserve">
+    <value>Going short</value>
+  </data>
+  <data name="AgentWizardTermShortText" xml:space="preserve">
+    <value>Selling first and buying back later, which gains when the price falls. Only Futures can do this here.</value>
+  </data>
+  <data name="AgentWizardTermLeverage" xml:space="preserve">
+    <value>Leverage</value>
+  </data>
+  <data name="AgentWizardTermLeverageText" xml:space="preserve">
+    <value>Trading with more than you put in, by borrowing the rest. At 2x, 100 USDT holds a 200 USDT position, so a 5% move against it loses 10 USDT, a tenth of what you put in.</value>
+  </data>
+  <data name="AgentWizardTermLiquidation" xml:space="preserve">
+    <value>Liquidation</value>
+  </data>
+  <data name="AgentWizardTermLiquidationText" xml:space="preserve">
+    <value>When a leveraged position has lost nearly all the money put in it, Binance closes it by force at its liquidation price, and that money is gone. The agent's stop must sit well before that price.</value>
+  </data>
+  <data name="AgentWizardTermFunding" xml:space="preserve">
+    <value>Funding</value>
+  </data>
+  <data name="AgentWizardTermFundingText" xml:space="preserve">
+    <value>A small payment between buyers and sellers of a perpetual contract every few hours, which keeps its price close to the coin's. A position pays it or receives it, depending on the market. The agent skips a trade whose funding would cost too much.</value>
+  </data>
+  <data name="AgentWizardEnvironmentHeading" xml:space="preserve">
+    <value>Environment</value>
+  </data>
+  <data name="AgentWizardEnvironmentDemo" xml:space="preserve">
+    <value>Every agent starts in Demo, which trades on Binance's demo servers with test funds, so no real money is at risk. Demo prices resemble the live market but aren't the same. Once it has run in Demo, you can switch it to Live from the agents page.</value>
+  </data>
+  <data name="AgentWizardExchangeKeyHint" xml:space="preserve">
+    <value>One of your Binance Demo keys, which must allow the market you chose. You can choose it later, but the agent can't start without one.</value>
+  </data>
+  <data name="AgentWizardKeyNotValid" xml:space="preserve">
+    <value>{0} (not working: check it on the API keys page)</value>
+    <comment>{0} is the key's label.</comment>
+  </data>
+  <data name="AgentWizardKeyNotEnabled" xml:space="preserve">
+    <value>{0} (doesn't allow {1})</value>
+    <comment>{0} is the key's label, and {1} a market, such as USDⓈ-M Futures.</comment>
+  </data>
+  <data name="AgentWizardKeyNotEnabledError" xml:space="preserve">
+    <value>This key doesn't allow {0} on Binance. Choose another, allow {0} for it on Binance and check it again on the API keys page, or choose a key later.</value>
+    <comment>{0} is a market, such as USDⓈ-M Futures.</comment>
+  </data>
+  <data name="AgentWizardPairHint" xml:space="preserve">
+    <value>Type to search Binance's pairs, such as BTCUSDT. The first part is the coin the agent trades, and the second the asset its capital is in.</value>
+  </data>
+  <data name="AgentWizardPairsUnavailable" xml:space="preserve">
+    <value>Binance couldn't be reached to list its pairs. Type one, and it's checked when you create the agent.</value>
+  </data>
+  <data name="AgentWizardPairNotOffered" xml:space="preserve">
+    <value>Choose a pair from the list: one that Binance's Demo trades on this market, and on Futures a perpetual contract.</value>
+  </data>
+  <data name="AgentWizardTimeframeFifteenMinutesHint" xml:space="preserve">
+    <value>Decides every 15 minutes, 96 times a day. Short trades, and the most AI cost.</value>
+  </data>
+  <data name="AgentWizardTimeframeOneHourHint" xml:space="preserve">
+    <value>Decides every hour, 24 times a day.</value>
+  </data>
+  <data name="AgentWizardTimeframeFourHoursHint" xml:space="preserve">
+    <value>Decides every 4 hours, 6 times a day.</value>
+  </data>
+  <data name="AgentWizardTimeframeOneDayHint" xml:space="preserve">
+    <value>Decides once a day, at midnight UTC. Long trades, and the least AI cost.</value>
+  </data>
+  <data name="AgentWizardRolesIntro" xml:space="preserve">
+    <value>Each decision is made by a council of AI models, one for each role. Each role starts with a suggested model from the keys you have, which is fine to start with.</value>
+  </data>
+  <data name="AgentWizardRoleTechnicalAnalystHint" xml:space="preserve">
+    <value>Reads the price chart and indicators, and says which way the market is heading.</value>
+  </data>
+  <data name="AgentWizardRoleSentimentAnalystHint" xml:space="preserve">
+    <value>Reads current news and social posts about the coin. A model with live search does this best.</value>
+  </data>
+  <data name="AgentWizardRoleStrategistHint" xml:space="preserve">
+    <value>Weighs the analyses, the agent's position and your risk settings, and proposes a trade, or to wait.</value>
+  </data>
+  <data name="AgentWizardRoleRiskCriticHint" xml:space="preserve">
+    <value>Challenges each proposed trade, and can reject or tighten it. A model from another provider than the Strategist's gives a more independent check.</value>
+  </data>
+  <data name="AgentWizardRoleReviewerHint" xml:space="preserve">
+    <value>After each trade closes, writes a lesson that later decisions take into account.</value>
+  </data>
+  <data name="AgentWizardFallbackSummary" xml:space="preserve">
+    <value>Fallback, for when this model fails</value>
+  </data>
+  <data name="AgentWizardCheckAgain" xml:space="preserve">
+    <value>Check again</value>
+  </data>
+  <data name="AgentWizardSyncModels" xml:space="preserve">
+    <value>Sync your keys' models</value>
+  </data>
+  <data name="AgentWizardRiskIntro" xml:space="preserve">
+    <value>Fixed rules, not AI, check these limits before every order. The defaults are cautious, and fine to start with.</value>
+  </data>
+  <data name="AgentWizardCapitalLabel" xml:space="preserve">
+    <value>Capital ({0})</value>
+    <comment>{0} is the asset the capital is in, such as USDT.</comment>
+  </data>
+  <data name="AgentWizardCapitalHint" xml:space="preserve">
+    <value>The most this agent may put into trades at once. It needs this before it can start. In Demo, these are Binance's test funds.</value>
+  </data>
+  <data name="AgentWizardMoreLimits" xml:space="preserve">
+    <value>More limits, whose defaults suit most agents</value>
+  </data>
+  <data name="AgentWizardAutonomousHint" xml:space="preserve">
+    <value>The agent places each trade on its own, within your risk settings. Nothing waits for you.</value>
+  </data>
+  <data name="AgentWizardConfirmHint" xml:space="preserve">
+    <value>Each trade waits for your approval on the Approvals page, and lapses if you don't answer in time. Approving checks it again first.</value>
+  </data>
+  <data name="AgentWizardBudgetCycles" xml:space="preserve">
+    <value>At {0}, the agent decides {1} times a day and asks several models each time, so a shorter timeframe costs more. Leave a limit empty for none.</value>
+    <comment>{0} is a timeframe, such as 1H, and {1} a number.</comment>
+  </data>
+  <data name="AgentWizardReviewIntro" xml:space="preserve">
+    <value>Check your choices, name the agent, and start it. It trades in Demo with test funds, and you can change any setting later.</value>
+  </data>
+  <data name="AgentWizardOptionalDetails" xml:space="preserve">
+    <value>Add a description or instructions (optional)</value>
+  </data>
+  <data name="AgentWizardNameNumbered" xml:space="preserve">
+    <value>{0} ({1})</value>
+    <comment>{0} is the suggested name, such as BTCUSDT 1H, and {1} a number from 2 up, when that name is taken.</comment>
+  </data>
+  <data name="AgentWizardChange" xml:space="preserve">
+    <value>Change</value>
+  </data>
+  <data name="AgentWizardChangeLabel" xml:space="preserve">
+    <value>Change {0}</value>
+    <comment>{0} is a step's name. For screen readers.</comment>
+  </data>
+  <data name="AgentWizardSummaryEnvironment" xml:space="preserve">
+    <value>Environment</value>
+  </data>
+  <data name="AgentWizardChooseLater" xml:space="preserve">
+    <value>Not chosen. The agent can't start without one.</value>
+  </data>
+  <data name="AgentWizardNotSet" xml:space="preserve">
+    <value>Not set. The agent can't start without it.</value>
+  </data>
+  <data name="AgentWizardRequiredNone" xml:space="preserve">
+    <value>None. The agent can't start without one.</value>
+  </data>
+  <data name="AgentWizardAmount" xml:space="preserve">
+    <value>{0} {1}</value>
+    <comment>{0} is an amount, and {1} its asset, such as USDT.</comment>
+  </data>
+  <data name="AgentWizardPercent" xml:space="preserve">
+    <value>{0}%</value>
+    <comment>{0} is a number.</comment>
+  </data>
+  <data name="AgentWizardLeverage" xml:space="preserve">
+    <value>{0}x</value>
+    <comment>{0} is the leverage, a number.</comment>
+  </data>
+  <data name="AgentWizardNoLimit" xml:space="preserve">
+    <value>No limit</value>
+  </data>
+  <data name="AgentWizardBudgetDaily" xml:space="preserve">
+    <value>{0} US dollars a day</value>
+    <comment>{0} is an amount.</comment>
+  </data>
+  <data name="AgentWizardBudgetMonthly" xml:space="preserve">
+    <value>{0} US dollars a month</value>
+    <comment>{0} is an amount.</comment>
+  </data>
+  <data name="AgentWizardLessons" xml:space="preserve">
+    <value>On, {0} per prompt</value>
+    <comment>{0} is how many of its lessons go into each prompt.</comment>
+  </data>
+  <data name="AgentWizardMoneySummary" xml:space="preserve">
+    <value>If its stops are hit, the agent loses at most {0} {3} on a trade. It pauses after losing {1} {3} in a day, or {2} {3} in a week.</value>
+    <comment>{0}, {1} and {2} are amounts, and {3} their asset, such as USDT.</comment>
+  </data>
+  <data name="AgentWizardStartedHeading" xml:space="preserve">
+    <value>Your agent is running</value>
+  </data>
+  <data name="AgentWizardStarted" xml:space="preserve">
+    <value>{0} is running in Demo. Its first decision is due at about {1}, when the next {2} candle closes.</value>
+    <comment>{0} is the agent's name, {1} a time, written as DisplayTime writes it, and {2} a timeframe, such as 1H.</comment>
+  </data>
+  <data name="AgentWizardStartedConfirm" xml:space="preserve">
+    <value>Its trades will wait for your approval on the Approvals page.</value>
+  </data>
+  <data name="AgentWizardWarnings" xml:space="preserve">
+    <value>Worth knowing:</value>
+  </data>
+  <data name="AgentWizardNotStartedHeading" xml:space="preserve">
+    <value>Saved, but not started</value>
+  </data>
+  <data name="AgentWizardNotStarted" xml:space="preserve">
+    <value>{0} is saved as a draft. Before it can start:</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentWizardSavedNotStarted" xml:space="preserve">
+    <value>{0} is saved as a draft. Start it from the agents page.</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentWizardFixSettings" xml:space="preserve">
+    <value>Fix its settings</value>
+  </data>
+  <data name="AgentWizardToAgents" xml:space="preserve">
+    <value>Go to your agents</value>
+  </data>
+  <data name="AgentWizardToApprovals" xml:space="preserve">
+    <value>Go to approvals</value>
   </data>
 </root>

@@ -1,4 +1,3 @@
-@page "/agents/new"
 @page "/agents/{Id:guid}/settings"
 @attribute [ExcludeFromInteractiveRouting]
 @using System.Globalization
@@ -11,18 +10,13 @@
 @inject NavigationManager Navigation
 
 @* Static, like every form here: a post goes through the HTTP rate limiter, which circuit traffic never
-   reaches, and the page works without a script. It takes no secret. Every FR-AGT-02 setting is on one page;
-   the creation wizard (#40) will take over /agents/new. See Agents in docs/architecture.md. *@
+   reaches, and the page works without a script. It takes no secret. Every FR-AGT-02 setting is on one page.
+   A new agent comes from the wizard, at /agents/new. See Agents in docs/architecture.md. *@
 
-<PageTitle>@(_agent is null ? Strings.AgentSettingsNewPageTitle : Strings.AgentSettingsEditPageTitle)</PageTitle>
+<PageTitle>@Strings.AgentSettingsEditPageTitle</PageTitle>
 
 <div class="page form-page">
-    @if (_agent is null)
-    {
-        <h1>@Strings.AgentSettingsNewHeading</h1>
-        <p>@Strings.AgentSettingsNewIntro</p>
-    }
-    else
+    @if (_agent is not null)
     {
         @* The user chose the name. Razor encodes it, so it's only text. *@
         <h1 class="agent-settings-heading">@string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsEditHeading, _agent.Settings.Name)</h1>
@@ -129,36 +123,7 @@
 
         <h2>@Strings.AgentSettingsRolesHeading</h2>
         <p class="field-hint">@Strings.AgentSettingsRolesHint</p>
-        <FieldError Id="agent-roles-error" Message="@ErrorOf(AgentField.Roles)" />
-
-        @foreach (var role in Enum.GetValues<AiRole>())
-        {
-            var id = $"agent-role-{role}";
-
-            <fieldset class="field agent-role">
-                <legend>@AgentText.RoleOf(role) <span class="field-hint">@(AgentRoles.IsRequired(role) ? Strings.AgentSettingsRoleRequired : Strings.AgentSettingsRoleOptional)</span></legend>
-                <label for="@id">@Strings.AgentSettingsRoleModel</label>
-                <select id="@id" name="@($"Input.{role}")" aria-describedby="@DescribedBy(role)">
-                    <option value="" selected="@string.IsNullOrEmpty(Input.RoleValue(role, false))">@Strings.AgentSettingsNoModel</option>
-                    @foreach (var option in OptionsWith(role, Input.RoleValue(role, false)))
-                    {
-                        <option value="@option.Value" selected="@(option.Value == Input.RoleValue(role, false))">@option.Text</option>
-                    }
-                </select>
-                <label for="@($"{id}-fallback")">@Strings.AgentSettingsRoleFallback</label>
-                <select id="@($"{id}-fallback")" name="@($"Input.{role}Fallback")">
-                    <option value="" selected="@string.IsNullOrEmpty(Input.RoleValue(role, true))">@Strings.AgentSettingsNoModel</option>
-                    @foreach (var option in OptionsWith(role, Input.RoleValue(role, true)))
-                    {
-                        <option value="@option.Value" selected="@(option.Value == Input.RoleValue(role, true))">@option.Text</option>
-                    }
-                </select>
-                @if (role == AiRole.RiskCritic && RiskCriticSharesProvider)
-                {
-                    <p id="@SharedProviderId" class="field-hint">@Strings.AgentSettingsRiskCriticSharesProvider</p>
-                }
-            </fieldset>
-        }
+        <RoleFields Form="Input" Options="_roleOptions" Error="@ErrorOf(AgentField.Roles)" />
 
         <h2>@Strings.AgentSettingsRiskHeading</h2>
 
@@ -170,25 +135,7 @@
             <FieldError Id="agent-capital-error" Message="@ErrorOf(AgentField.CapitalAllocation)" />
         </div>
 
-        @foreach (var setting in Enum.GetValues<RiskSetting>())
-        {
-            var id = $"agent-risk-{setting}";
-            var cap = AgentText.RiskCapOf(setting, Caps);
-
-            <div class="field">
-                <label for="@id">@AgentText.RiskSettingOf(setting)</label>
-                <input id="@id" name="@($"Input.{setting}")" type="text" inputmode="decimal" value="@Input.RiskValue(setting)" autocomplete="off"
-                       aria-invalid="@(_riskSettings.Contains(setting) ? "true" : null)"
-                       aria-describedby="@(cap is null ? $"{id}-hint {id}-error" : $"{id}-hint {id}-cap {id}-error")" />
-                <p id="@($"{id}-hint")" class="field-hint">@AgentText.RiskHintOf(setting)</p>
-                @if (cap is not null)
-                {
-                    @* FR-RISK-11's global cap, which the save refuses to go beyond. *@
-                    <p id="@($"{id}-cap")" class="field-hint">@cap</p>
-                }
-                <FieldError Id="@($"{id}-error")" Message="@(_riskSettings.Contains(setting) ? Strings.AgentFieldRiskError : null)" />
-            </div>
-        }
+        <RiskFields Form="Input" Caps="Caps" Settings="Enum.GetValues<RiskSetting>()" Invalid="_riskSettings" />
 
         <h2>@Strings.AgentSettingsExecutionHeading</h2>
 
@@ -255,7 +202,7 @@
             <FieldError Id="agent-instructions-error" Message="@ErrorOf(AgentField.CustomInstructions)" />
         </div>
 
-        <button type="submit" class="button">@(_agent is null ? Strings.AgentSettingsCreate : Strings.AgentSettingsSave)</button>
+        <button type="submit" class="button">@Strings.AgentSettingsSave</button>
     </EditForm>
 </div>
 
@@ -266,11 +213,7 @@
     private DateTimeOffset? _budgetUntil;
 
     private List<CredentialRecord> _exchangeKeys = [];
-    private const string SharedProviderId = "agent-role-shared-provider";
-
-    private Dictionary<AiRole, List<(string Value, string Text)>> _options = [];
-    private Dictionary<string, string> _modelNames = [];
-    private HashSet<string> _hiddenModels = [];
+    private RoleOptions _roleOptions = RoleOptions.Empty;
     private HashSet<AgentField> _fields = [];
     private HashSet<RiskSetting> _riskSettings = [];
     private IReadOnlyList<ActivationProblem> _problems = [];
@@ -279,7 +222,7 @@
     private Guid _userId;
 
     [Parameter]
-    public Guid? Id { get; set; }
+    public Guid Id { get; set; }
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -291,17 +234,11 @@
     [SupplyParameterFromForm(FormName = "agent-settings", Name = "Input")]
     private AgentForm Input { get; set; } = default!;
 
-    /// <summary>FR-ROLE-04 allows it, with a warning. Activation warns too.</summary>
-    private bool RiskCriticSharesProvider =>
-        ProviderOf(Input.RoleValue(AiRole.Strategist, false)) is { } strategist
-        && ProviderOf(Input.RoleValue(AiRole.RiskCritic, false)) == strategist;
-
-    /// <summary>The agent's environment, or the one a new agent starts in, which the page never changes.</summary>
+    /// <summary>The agent's environment, which the page never changes.</summary>
     private TradingEnvironment AgentEnvironment => _agent?.Settings.Environment ?? TradingEnvironment.Demo;
 
-    private string EnvironmentHint => _agent is null ? Strings.AgentSettingsEnvironmentNew
-        : AgentEnvironment == TradingEnvironment.Live ? Strings.AgentSettingsEnvironmentLive
-        : Strings.AgentSettingsEnvironmentDemo;
+    private string EnvironmentHint =>
+        AgentEnvironment == TradingEnvironment.Live ? Strings.AgentSettingsEnvironmentLive : Strings.AgentSettingsEnvironmentDemo;
 
     private static string InstructionsHint =>
         string.Format(CultureInfo.CurrentCulture, Strings.AgentSettingsInstructionsHint, AgentLimits.CustomInstructionsMaxLength);
@@ -329,56 +266,37 @@
         _userId = userId;
         var cancellationToken = HttpContext.RequestAborted;
 
-        if (Id is { } id)
+        _agent = await Agents.FindAsync(userId, Id, cancellationToken);
+
+        if (_agent is null)
         {
-            _agent = await Agents.FindAsync(userId, id, cancellationToken);
-
-            if (_agent is null)
-            {
-                Navigation.NotFound();
-                return;
-            }
-
-            if (_agent.Status == AgentStatus.Archived)
-            {
-                _error = Strings.AgentSaveArchived;
-            }
-
-            if (_agent.Status == AgentStatus.Active)
-            {
-                var spend = await Spending.FindAsync(userId, id, cancellationToken);
-                _budgetUntil = spend.Check(_agent.Settings.Budget).Until;
-            }
+            Navigation.NotFound();
+            return;
         }
 
-        var choices = await Agents.ListRoleChoicesAsync(userId, cancellationToken);
+        if (_agent.Status == AgentStatus.Archived)
+        {
+            _error = Strings.AgentSaveArchived;
+        }
+
+        if (_agent.Status == AgentStatus.Active)
+        {
+            var spend = await Spending.FindAsync(userId, Id, cancellationToken);
+            _budgetUntil = spend.Check(_agent.Settings.Budget).Until;
+        }
 
         if (!posted)
         {
-            // A new agent starts with the default role assignments (FR-ROLE-03), which the user can change.
-            var settings = _agent?.Settings ?? new AgentSettings
-            {
-                Name = "",
-                Market = Market.Spot,
-                Symbol = "",
-                Timeframe = Timeframe.OneHour,
-                ExecutionMode = ExecutionMode.Confirm,
-                Roles = choices.Defaults,
-
-                // The SRS's defaults, within the caps when an administrator set them lower (FR-RISK-11).
-                Risk = Caps.Apply(RiskSettings.Default),
-            };
-
-            Input = AgentForm.Of(settings, _agent?.Version);
+            Input = AgentForm.Of(_agent.Settings, _agent.Version);
         }
 
         // FR-AGT-03. The contract checks again when it saves, so this only spares the user a refusal.
-        if (_agent is not null && await Exposure.HasOpenPositionsOrOrdersAsync(userId, _agent.Id, cancellationToken))
+        if (await Exposure.HasOpenPositionsOrOrdersAsync(userId, _agent.Id, cancellationToken))
         {
             KeepLocked();
         }
 
-        await LoadOptionsAsync(userId, choices, cancellationToken);
+        await LoadOptionsAsync(userId, cancellationToken);
     }
 
     /// <summary>Shows the stored market, pair, timeframe and key, which can't change while the agent has positions or orders.</summary>
@@ -398,51 +316,16 @@
 
     /// <summary>
     /// The user's Binance keys for the agent's environment, and the models their valid AI keys can give each role
-    /// (FR-ROLE-02). The catalog's names are kept for a chosen model that's no longer offered, and which models are hidden.
+    /// (FR-ROLE-02), keeping a chosen model that's no longer offered.
     /// </summary>
-    private async Task LoadOptionsAsync(Guid userId, RoleChoices choices, CancellationToken cancellationToken)
+    private async Task LoadOptionsAsync(Guid userId, CancellationToken cancellationToken)
     {
         var keys = await Credentials.ListAsync(userId, cancellationToken);
         _exchangeKeys = [.. keys.Where(key => key.Kind == CredentialKind.Exchange && key.Environment == AgentEnvironment)];
 
-        var models = await Catalog.ListAsync(cancellationToken);
-        _modelNames = models.ToDictionary(model => AgentForm.ValueOf(new ModelRef(model.Provider, model.ModelId)), model => model.DisplayName);
-        _hiddenModels = [.. models.Where(model => model.Hidden).Select(model => AgentForm.ValueOf(new ModelRef(model.Provider, model.ModelId)))];
-        _options = choices.Options.ToDictionary(
-            pair => pair.Key,
-            pair => pair.Value.Select(choice => (AgentForm.ValueOf(choice.Model), AgentText.ModelOption(choice, pair.Key))).ToList());
+        var choices = await Agents.ListRoleChoicesAsync(userId, cancellationToken);
+        _roleOptions = await RoleOptions.LoadAsync(Catalog, choices, cancellationToken);
     }
-
-    /// <summary>
-    /// The role's options, plus the chosen model when it isn't one of them, such as when its key stopped
-    /// working, or an administrator hid it, which leaves it to the agents that have it. Otherwise saving would
-    /// quietly drop it.
-    /// </summary>
-    private IEnumerable<(string Value, string Text)> OptionsWith(AiRole role, string? chosen)
-    {
-        var options = _options.GetValueOrDefault(role) ?? [];
-
-        if (string.IsNullOrEmpty(chosen) || options.Any(option => option.Value == chosen))
-        {
-            return options;
-        }
-
-        var separator = chosen.IndexOf(AgentForm.ModelSeparator, StringComparison.Ordinal);
-        var name = _modelNames.GetValueOrDefault(chosen) ?? (separator > 0 ? chosen[(separator + 1)..] : chosen);
-        var unavailable = string.Format(
-            CultureInfo.CurrentCulture,
-            _hiddenModels.Contains(chosen) ? Strings.AgentSettingsModelHidden : Strings.AgentSettingsModelUnavailable,
-            name);
-
-        return [(chosen, unavailable), .. options];
-    }
-
-    private string DescribedBy(AiRole role) =>
-        role == AiRole.RiskCritic && RiskCriticSharesProvider ? $"agent-roles-error {SharedProviderId}" : "agent-roles-error";
-
-    /// <summary>The provider of a model's option value, or null for none.</summary>
-    private static string? ProviderOf(string? value) =>
-        value?.IndexOf(AgentForm.ModelSeparator, StringComparison.Ordinal) is int separator and > 0 ? value[..separator] : null;
 
     private string? ErrorOf(AgentField field) => _fields.Contains(field) ? AgentText.FieldErrorOf(field) : null;
 
@@ -450,7 +333,7 @@
 
     private async Task SubmitAsync()
     {
-        if (_userId == Guid.Empty || (_agent is not null && _agent.Status == AgentStatus.Archived))
+        if (_userId == Guid.Empty || _agent is null || _agent.Status == AgentStatus.Archived)
         {
             return;
         }
@@ -465,25 +348,13 @@
             return;
         }
 
-        var cancellationToken = HttpContext.RequestAborted;
-        AgentSaveResult result;
-
-        if (_agent is null)
-        {
-            result = await Agents.CreateAsync(_userId, settings, cancellationToken);
-        }
-        else if (int.TryParse(Input.Version, NumberStyles.Integer, CultureInfo.InvariantCulture, out var version))
-        {
-            result = await Agents.UpdateAsync(_userId, _agent.Id, version, settings, cancellationToken);
-        }
-        else
-        {
-            result = new AgentSaveResult(AgentSaveOutcome.Changed);
-        }
+        var result = int.TryParse(Input.Version, NumberStyles.Integer, CultureInfo.InvariantCulture, out var version)
+            ? await Agents.UpdateAsync(_userId, _agent.Id, version, settings, HttpContext.RequestAborted)
+            : new AgentSaveResult(AgentSaveOutcome.Changed);
 
         if (result.Outcome == AgentSaveOutcome.Saved)
         {
-            Navigation.NavigateTo(_agent is null ? "/agents?saved=created" : "/agents?saved=updated");
+            Navigation.NavigateTo("/agents?saved=updated");
             return;
         }
 

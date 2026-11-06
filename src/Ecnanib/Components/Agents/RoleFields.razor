@@ -1,0 +1,78 @@
+@* The model and fallback for each role (FR-ROLE-02), with FR-ROLE-04's note when the Risk Critic shares the
+   Strategist's provider. The settings page and the wizard share it, so their names and ids are the same. *@
+
+<FieldError Id="agent-roles-error" Message="@Error" />
+
+@foreach (var role in Enum.GetValues<AiRole>())
+{
+    var id = $"agent-role-{role}";
+
+    <fieldset class="field agent-role">
+        <legend>@AgentText.RoleOf(role) <span class="field-hint">@(AgentRoles.IsRequired(role) ? Strings.AgentSettingsRoleRequired : Strings.AgentSettingsRoleOptional)</span></legend>
+        @if (Explain)
+        {
+            <p id="@($"{id}-hint")" class="field-hint">@AgentText.RoleHintOf(role)</p>
+        }
+        <label for="@id">@Strings.AgentSettingsRoleModel</label>
+        <select id="@id" name="@($"Input.{role}")" aria-describedby="@DescribedBy(role)">
+            <option value="" selected="@string.IsNullOrEmpty(Form.RoleValue(role, false))">@Strings.AgentSettingsNoModel</option>
+            @foreach (var option in Options.For(role, Form.RoleValue(role, false)))
+            {
+                <option value="@option.Value" selected="@(option.Value == Form.RoleValue(role, false))">@option.Text</option>
+            }
+        </select>
+        @if (Explain)
+        {
+            @* Closed, because the suggestion is fine to start with. A closed panel's select still posts. *@
+            <details class="agent-role-fallback">
+                <summary>@Strings.AgentWizardFallbackSummary</summary>
+                @Fallback(role, id)
+            </details>
+        }
+        else
+        {
+            @Fallback(role, id)
+        }
+        @if (role == AiRole.RiskCritic && RoleOptions.RiskCriticSharesProvider(Form))
+        {
+            <p id="@SharedProviderId" class="field-hint">@Strings.AgentSettingsRiskCriticSharesProvider</p>
+        }
+    </fieldset>
+}
+
+@code {
+    private const string SharedProviderId = "agent-role-shared-provider";
+
+    [Parameter, EditorRequired]
+    public AgentForm Form { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public RoleOptions Options { get; set; } = RoleOptions.Empty;
+
+    /// <summary>What's wrong with the roles, or null.</summary>
+    [Parameter]
+    public string? Error { get; set; }
+
+    /// <summary>Says what each role does, and tucks the fallbacks away, for someone setting up their first agent.</summary>
+    [Parameter]
+    public bool Explain { get; set; }
+
+    private RenderFragment Fallback(AiRole role, string id) => __builder =>
+    {
+        <label for="@($"{id}-fallback")">@Strings.AgentSettingsRoleFallback</label>
+        <select id="@($"{id}-fallback")" name="@($"Input.{role}Fallback")">
+            <option value="" selected="@string.IsNullOrEmpty(Form.RoleValue(role, true))">@Strings.AgentSettingsNoModel</option>
+            @foreach (var option in Options.For(role, Form.RoleValue(role, true)))
+            {
+                <option value="@option.Value" selected="@(option.Value == Form.RoleValue(role, true))">@option.Text</option>
+            }
+        </select>
+    };
+
+    private string DescribedBy(AiRole role)
+    {
+        var ids = Explain ? $"agent-role-{role}-hint agent-roles-error" : "agent-roles-error";
+
+        return role == AiRole.RiskCritic && RoleOptions.RiskCriticSharesProvider(Form) ? $"{ids} {SharedProviderId}" : ids;
+    }
+}
