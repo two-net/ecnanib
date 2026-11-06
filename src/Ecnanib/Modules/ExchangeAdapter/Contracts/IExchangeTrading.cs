@@ -4,9 +4,10 @@ using Ecnanib.Kernel;
 namespace Ecnanib.Modules.ExchangeAdapter.Contracts;
 
 /// <summary>
-/// Places and cancels orders. Only Execution may use this, after a passing Risk Engine evaluation
-/// (AC-01), and BannedApis enforces that. Read an order with <see cref="IExchangeAccount.GetOrderAsync"/>.
-/// See Exchange adapter in docs/architecture.md.
+/// Places and cancels orders, and sets a Futures symbol's margin type and leverage before an entry
+/// (FR-RISK-09). Only Execution may use this, after a passing Risk Engine evaluation (AC-01), and
+/// BannedApis enforces that. Read an order with <see cref="IExchangeAccount.GetOrderAsync"/>. See Exchange
+/// adapter in docs/architecture.md.
 /// </summary>
 public interface IExchangeTrading
 {
@@ -29,6 +30,29 @@ public interface IExchangeTrading
         OrderReference order,
         RequestPriority priority,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Sets a Futures symbol's margin type on the key's account, before an entry (FR-RISK-09). It places no order,
+    /// so it keeps the caller's token, and it's safe to send again.
+    /// </summary>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept. Nothing was sent.</exception>
+    /// <exception cref="ExchangeException">
+    /// It failed. Binance's -4046 means the symbol already has that type, -4047 and -4048 that open orders or a
+    /// position stop the change, and -4168 that Multi-Assets Mode allows cross margin only.
+    /// </exception>
+    Task SetMarginTypeAsync(ExchangeKey key, string symbol, FuturesMarginType marginType, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Sets a Futures symbol's leverage on the key's account, before an entry (FR-RISK-09), with the same rules as
+    /// <see cref="SetMarginTypeAsync"/>.
+    /// </summary>
+    /// <returns>The leverage Binance set.</returns>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept, or a leverage below 1. Nothing was sent.</exception>
+    /// <exception cref="ExchangeException">
+    /// It failed. Binance's -4028 means the leverage isn't valid, -4209 that it's above the symbol's maximum, and
+    /// -4161 that an isolated position's leverage can't be lowered while it's open.
+    /// </exception>
+    Task<int> SetLeverageAsync(ExchangeKey key, string symbol, int leverage, CancellationToken cancellationToken);
 }
 
 /// <summary>

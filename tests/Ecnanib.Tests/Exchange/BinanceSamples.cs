@@ -206,6 +206,50 @@ internal static class BinanceSamples
          "positions":[]}
         """;
 
+    /// <summary>A Futures account's settings: One-way and Single-Asset Mode unless a test says otherwise.</summary>
+    public static string FuturesAccountConfig(bool canTrade = true, bool hedgeMode = false, bool multiAssets = false) => $$"""
+        {"feeTier":0,"canTrade":{{Json(canTrade)}},"canDeposit":true,"canWithdraw":true,
+         "dualSidePosition":{{Json(hedgeMode)}},"updateTime":0,"multiAssetsMargin":{{Json(multiAssets)}},"tradeGroupId":-1}
+        """;
+
+    /// <summary>One symbol's settings, as an array, the way Binance documents it.</summary>
+    public static string SymbolConfig(string marginType = "CROSSED", int leverage = 20, string symbol = "BTCUSDT") => $$"""
+        [{"symbol":"{{symbol}}","marginType":"{{marginType}}","isAutoAddMargin":"false","leverage":{{leverage}},"maxNotionalValue":"80000000"}]
+        """;
+
+    /// <summary>
+    /// BTCUSDT's first three brackets, from Binance's documented shape, as an array of symbols or as the one symbol.
+    /// At leverage 2 a position up to 500,000 USDT is in the first.
+    /// </summary>
+    public static string LeverageBrackets(bool single = false, string symbol = "BTCUSDT")
+    {
+        var entry = $$"""
+            {"symbol":"{{symbol}}","brackets":[
+              {"bracket":2,"initialLeverage":100,"notionalCap":600000,"notionalFloor":500000,"maintMarginRatio":0.005,"cum":750.0},
+              {"bracket":1,"initialLeverage":125,"notionalCap":500000,"notionalFloor":0,"maintMarginRatio":0.004,"cum":0.0},
+              {"bracket":3,"initialLeverage":75,"notionalCap":3000000,"notionalFloor":600000,"maintMarginRatio":0.0065,"cum":1650.0}]}
+            """;
+
+        return single ? entry : $"[{entry}]";
+    }
+
+    /// <summary>
+    /// The symbols whose funding Binance adjusted: ETHUSDT every 4 hours, and one listed for its cap alone. BTCUSDT
+    /// isn't listed, so it's on the default 8 hours.
+    /// </summary>
+    public const string FundingInfo = """
+        [{"symbol":"ETHUSDT","adjustedFundingRateCap":"0.02500000","adjustedFundingRateFloor":"-0.02500000","fundingIntervalHours":4,"disclaimer":false},
+         {"symbol":"XRPUSDT","adjustedFundingRateCap":"0.03000000","adjustedFundingRateFloor":"-0.03000000","fundingIntervalHours":0,"disclaimer":false}]
+        """;
+
+    public static string Leverage(int leverage, string symbol = "BTCUSDT") => $$"""
+        {"leverage":{{leverage}},"maxNotionalValue":"1000000","symbol":"{{symbol}}"}
+        """;
+
+    public const string MarginTypeChanged = """
+        {"code":200,"msg":"success"}
+        """;
+
     public static string SpotOrder(string clientOrderId, string status = "NEW", string type = "LIMIT") => $$"""
         {"symbol":"BTCUSDT","orderId":28,"orderListId":-1,"clientOrderId":"{{clientOrderId}}","transactTime":1507725176595,
          "price":"60000.00000000","origQty":"0.00200000","executedQty":"0.00100000","cummulativeQuoteQty":"60.50000000",

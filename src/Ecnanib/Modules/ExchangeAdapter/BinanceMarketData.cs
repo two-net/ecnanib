@@ -104,6 +104,24 @@ internal sealed class BinanceMarketData(BinanceTransport transport, ExchangeInfo
         return new ExchangePremiumIndex(symbol, body.MarkPrice, body.IndexPrice, fundingRate, nextFunding, time.GetUtcNow());
     }
 
+    public async Task<IReadOnlyDictionary<string, int>> GetFundingIntervalsAsync(TradingEnvironment environment, CancellationToken cancellationToken)
+    {
+        var symbols = await transport.SendAsync<List<FundingInfoBody>>(
+            ExchangeServers.Public(Market.Futures, environment),
+            BinanceEndpoint.FuturesFundingInfo,
+            [],
+            key: null,
+            RequestPriority.Normal,
+            clientOrderId: null,
+            cancellationToken);
+
+        // A symbol listed only for its cap or floor still has an interval. One without is left to the default.
+        return symbols
+            .Where(symbol => symbol.FundingIntervalHours > 0)
+            .GroupBy(symbol => symbol.Symbol, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last().FundingIntervalHours, StringComparer.Ordinal);
+    }
+
     internal static string Code(CandleInterval interval) => interval switch
     {
         CandleInterval.FifteenMinutes => "15m",
@@ -173,7 +191,7 @@ internal sealed class BinanceMarketData(BinanceTransport transport, ExchangeInfo
 
     private static string Milliseconds(DateTimeOffset at) => at.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
 
-    private static ExchangeException Unreadable(ExchangeServer server, BinanceEndpoint endpoint, Exception exception) =>
+    internal static ExchangeException Unreadable(ExchangeServer server, BinanceEndpoint endpoint, Exception exception) =>
         new(
             server,
             ExchangeFailure.Rejected,

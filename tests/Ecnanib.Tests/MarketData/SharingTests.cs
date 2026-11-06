@@ -251,5 +251,32 @@ public sealed class SharingTests(PostgresFixture postgres)
         Assert.All(app.Binance.Requests, request => Assert.Equal(FakeBinance.FuturesLive, request.Host));
     }
 
+    /// <summary>
+    /// Binance's adjusted funding intervals are one list for every symbol, so the cycles that close a candle together
+    /// share one call per environment. A symbol it doesn't list is on the default 8 hours.
+    /// </summary>
+    [Fact]
+    public async Task Funding_intervals_are_fetched_once_per_environment_and_close_whatever_the_symbols()
+    {
+        await using var app = new MarketDataApp(postgres);
+        var close = app.LastClose("1h");
+
+        var bitcoin = await app.CollectAsync(Timeframe.OneHour, close, Market.Futures, TradingEnvironment.Live);
+        var ether = await app.MarketData.CollectAsync(
+            new MarketDataRequest(Market.Futures, TradingEnvironment.Live, "ETHUSDT", Timeframe.OneHour, close), MarketDataApp.Cancellation);
+        await app.CollectAsync(Timeframe.OneHour, close, Market.Spot, TradingEnvironment.Live);
+
+        Assert.Equal((8, 4), (bitcoin.Futures!.FundingIntervalHours, ether.Futures!.FundingIntervalHours));
+        Assert.Equal([FakeBinance.FuturesLive], app.Binance.To("/fapi/v1/fundingInfo").Select(request => request.Host));
+
+        await app.CollectAsync(Timeframe.OneHour, close, Market.Futures, TradingEnvironment.Demo);
+        app.Clock.Advance(TimeSpan.FromHours(1));
+        await app.CollectAsync(Timeframe.OneHour, app.LastClose("1h"), Market.Futures, TradingEnvironment.Live);
+
+        Assert.Equal(
+            [FakeBinance.FuturesLive, FakeBinance.FuturesDemo, FakeBinance.FuturesLive],
+            app.Binance.To("/fapi/v1/fundingInfo").Select(request => request.Host));
+    }
+
     internal static string Ms(DateTimeOffset at) => at.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
 }

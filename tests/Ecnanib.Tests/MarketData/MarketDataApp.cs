@@ -26,6 +26,7 @@ internal sealed class MarketDataApp : IAsyncDisposable
         Binance.On(HttpMethod.Get, "/fapi/v1/ticker/bookTicker", _ => FakeBinance.Json(BinanceSamples.FuturesBookTicker));
         Binance.On(HttpMethod.Get, "/fapi/v1/ticker/price", _ => FakeBinance.Json(BinanceSamples.FuturesPrice));
         Binance.On(HttpMethod.Get, "/fapi/v1/premiumIndex", _ => FakeBinance.Json(BinanceSamples.PremiumIndex()));
+        Binance.On(HttpMethod.Get, "/fapi/v1/fundingInfo", _ => FakeBinance.Json(BinanceSamples.FundingInfo));
     }
 
     public ExchangeHarness Exchange { get; }

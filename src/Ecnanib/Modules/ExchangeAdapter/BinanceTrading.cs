@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.ExchangeAdapter.Contracts;
 
@@ -101,5 +102,39 @@ internal sealed class BinanceTrading(BinanceTransport transport) : IExchangeTrad
         var endpoint = market == Market.Spot ? BinanceEndpoint.SpotCancelOrder : BinanceEndpoint.FuturesCancelOrder;
         await transport.SendAsync(
             server, endpoint, [("symbol", order.Symbol), ("origClientOrderId", order.ClientOrderId)], key, priority, order.ClientOrderId, cancellationToken);
+    }
+
+    public async Task SetMarginTypeAsync(ExchangeKey key, string symbol, FuturesMarginType marginType, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceMarketData.CheckSymbol(symbol);
+        var type = BinanceOrders.MarginType(marginType);
+
+        await transport.SendAsync(
+            ExchangeServers.Trading(Market.Futures, key.Environment),
+            BinanceEndpoint.FuturesMarginType,
+            [("symbol", symbol), ("marginType", type)],
+            key,
+            RequestPriority.Normal,
+            clientOrderId: null,
+            cancellationToken);
+    }
+
+    public async Task<int> SetLeverageAsync(ExchangeKey key, string symbol, int leverage, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        BinanceMarketData.CheckSymbol(symbol);
+        ArgumentOutOfRangeException.ThrowIfLessThan(leverage, 1);
+
+        var body = await transport.SendAsync<LeverageBody>(
+            ExchangeServers.Trading(Market.Futures, key.Environment),
+            BinanceEndpoint.FuturesLeverage,
+            [("symbol", symbol), ("leverage", leverage.ToString(CultureInfo.InvariantCulture))],
+            key,
+            RequestPriority.Normal,
+            clientOrderId: null,
+            cancellationToken);
+
+        return body.Leverage;
     }
 }

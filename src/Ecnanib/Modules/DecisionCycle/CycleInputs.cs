@@ -89,16 +89,15 @@ internal static class CycleInputs
         Prices = new MarketPrices(snapshot.Quote.BidPrice, snapshot.Quote.AskPrice, snapshot.Quote.LastPrice, snapshot.Futures?.MarkPrice),
         Atr = snapshot.Candles.Indicators.Atr14,
 
-        // Binance's funding interval comes with the Futures prerequisites (#33). Most symbols' is 8 hours, the default.
-        Funding = snapshot.Futures?.FundingRate is { } rate ? new FundingInfo(rate) : null,
+        Funding = snapshot.Futures is { FundingRate: { } rate } futures ? new FundingInfo(rate, futures.FundingIntervalHours) : null,
         AvailableQuote = account.AvailableQuote,
         BaseHeld = account.BaseHeld,
         Position = account.Position,
         HasPendingEntry = account.HasPendingEntry,
 
-        // The trade journal (#36) fills the record, and the Futures prerequisites (#33) the leverage brackets.
+        // The trade journal (#36) fills the record.
         Record = TradingRecord.None,
-        Brackets = [],
+        Brackets = account.Brackets,
     };
 
     /// <summary>The account as the Strategist and Risk Critic see it, with the leverage the caps allow on Futures.</summary>

@@ -85,7 +85,10 @@ internal sealed class AgentApp : IAsyncDisposable
     /// <summary>From now on, <paramref name="key"/> lists these models.</summary>
     public void Lists(string key, params string[] ids) => _lists[key] = ids;
 
-    /// <summary>Binance takes a Demo key on the markets given, and its Spot account holds 250.12 USDT.</summary>
+    /// <summary>
+    /// Binance takes a Demo key on the markets given. Its Spot account holds 250.12 USDT, and its Futures account
+    /// 103.12345678 USDT, in One-way and Single-Asset Mode (EXT-BIN-07).
+    /// </summary>
     public void BinanceAccepts(bool spot = true, bool futures = true)
     {
         Binance.On(
@@ -96,7 +99,13 @@ internal sealed class AgentApp : IAsyncDisposable
             HttpMethod.Get,
             CredentialApp.FuturesAccountPath,
             _ => futures ? FakeBinance.Json(BinanceSamples.FuturesAccount) : CredentialApp.Refusal());
+        Binance.On(
+            HttpMethod.Get,
+            FuturesAccountConfigPath,
+            _ => futures ? FakeBinance.Json(BinanceSamples.FuturesAccountConfig()) : CredentialApp.Refusal());
     }
+
+    public const string FuturesAccountConfigPath = "/fapi/v1/accountConfig";
 
     /// <summary>A user with a valid Binance Demo key and a valid AI key whose model the catalog lists.</summary>
     public async Task<User> UserAsync()
@@ -198,12 +207,20 @@ internal sealed class AgentApp : IAsyncDisposable
     public sealed record User(Guid Id, Guid ExchangeKey, Guid AiKey);
 }
 
-/// <summary>Stands in for Execution, which has no orders yet, so a test can give an agent open positions.</summary>
+/// <summary>
+/// Stands in for Execution, which has no orders yet, so a test can give an agent open positions. Its Futures account
+/// is ready for any agent unless a test says otherwise.
+/// </summary>
 internal sealed class FakeExposure : IAgentExposure
 {
     public HashSet<Guid> Exposed { get; } = [];
 
     public decimal? Balance { get; set; }
+
+    public FuturesAccountRead Futures { get; set; } = FuturesAccountRead.Of(new FuturesAccountState(true, false, false, 1_000m));
+
+    public Task<FuturesAccountRead> ReadFuturesAccountAsync(Guid userId, Guid credentialId, string marginAsset, CancellationToken cancellationToken) =>
+        Task.FromResult(Futures);
 
     public Task<bool> HasOpenPositionsOrOrdersAsync(Guid userId, Guid agentId, CancellationToken cancellationToken) =>
         Task.FromResult(Exposed.Contains(agentId));

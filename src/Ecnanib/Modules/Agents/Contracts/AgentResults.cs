@@ -194,12 +194,41 @@ public enum ActivationProblemKind
     /// exchange key (FR-AGT-10). <see cref="ActivationProblem.OtherAgent"/> names it.
     /// </summary>
     SlotTaken,
+
+    /// <summary>Binance couldn't be reached to check the Futures account (EXT-BIN-07). Trying again later may work.</summary>
+    FuturesAccountUnverifiable,
+
+    /// <summary>The Futures account is in Hedge Mode, and agents need One-way Mode (EXT-BIN-07, FR-RISK-09).</summary>
+    FuturesHedgeMode,
+
+    /// <summary>
+    /// The Futures account is in Multi-Assets Mode, which allows cross margin only, so the pair can't be set to
+    /// isolated (FR-RISK-09).
+    /// </summary>
+    FuturesMultiAssetsMode,
+
+    /// <summary>
+    /// The Futures account has less margin available than the smallest position Binance accepts for the pair needs at
+    /// the agent's leverage (EXT-BIN-07). <see cref="ActivationProblem.Asset"/>, <see cref="ActivationProblem.Required"/>
+    /// and <see cref="ActivationProblem.Available"/> say how much.
+    /// </summary>
+    FuturesMarginInsufficient,
 }
 
 /// <param name="Role">Which role, for the role problems.</param>
 /// <param name="OtherAgent">The other agent's name, for <see cref="ActivationProblemKind.SlotTaken"/>. Only show it as text.</param>
 /// <param name="Until">When the pause ends, for <see cref="ActivationProblemKind.LossLimitPause"/>.</param>
-public sealed record ActivationProblem(ActivationProblemKind Kind, AiRole? Role = null, string? OtherAgent = null, DateTimeOffset? Until = null);
+/// <param name="Asset">The margin asset, for <see cref="ActivationProblemKind.FuturesMarginInsufficient"/>.</param>
+/// <param name="Required">The margin the smallest position needs, in <paramref name="Asset"/>.</param>
+/// <param name="Available">The margin the account has available, in <paramref name="Asset"/>.</param>
+public sealed record ActivationProblem(
+    ActivationProblemKind Kind,
+    AiRole? Role = null,
+    string? OtherAgent = null,
+    DateTimeOffset? Until = null,
+    string? Asset = null,
+    decimal? Required = null,
+    decimal? Available = null);
 
 public enum ActivationWarningKind
 {

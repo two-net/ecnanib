@@ -77,4 +77,11 @@ public sealed record Quote(decimal LastPrice, decimal BidPrice, decimal BidQuant
 /// <param name="FundingRate">The last funding rate as a fraction, such as 0.0001. Null for a contract without funding.</param>
 /// <param name="NextFundingTime">Null for a contract without funding.</param>
 /// <param name="At">When it was fetched, by this server's clock.</param>
-public sealed record FuturesData(decimal MarkPrice, decimal IndexPrice, decimal? FundingRate, DateTimeOffset? NextFundingTime, DateTimeOffset At);
+/// <param name="FundingIntervalHours">Hours between fundings: Binance's adjusted interval, or 8 when it hasn't adjusted the symbol's.</param>
+public sealed record FuturesData(
+    decimal MarkPrice,
+    decimal IndexPrice,
+    decimal? FundingRate,
+    DateTimeOffset? NextFundingTime,
+    DateTimeOffset At,
+    int FundingIntervalHours = 8);

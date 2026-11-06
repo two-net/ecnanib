@@ -2275,6 +2275,19 @@
   <data name="AgentWarningSentimentWithoutLiveSearch" xml:space="preserve">
     <value>The Sentiment Analyst's model can't search the web, so it can only judge sentiment from what it already knows.</value>
   </data>
+  <data name="AgentProblemFuturesAccountUnverifiable" xml:space="preserve">
+    <value>Binance can't be reached to check the Futures account. Try again later.</value>
+  </data>
+  <data name="AgentProblemFuturesHedgeMode" xml:space="preserve">
+    <value>The Futures account is in Hedge Mode, and agents need One-way Mode. Change the position mode on Binance, then try again in a minute.</value>
+  </data>
+  <data name="AgentProblemFuturesMultiAssetsMode" xml:space="preserve">
+    <value>The Futures account is in Multi-Assets Mode, which doesn't allow the isolated margin agents use. Switch to Single-Asset Mode on Binance, then try again in a minute.</value>
+  </data>
+  <data name="AgentProblemFuturesMarginInsufficient" xml:space="preserve">
+    <value>The Futures account has {1} {2} available, less than the {0} {2} the smallest position in this pair needs at the agent's leverage. Add margin on Binance, then try again in a minute.</value>
+    <comment>{0} is the margin needed, {1} what's available, and {2} the asset, such as USDT.</comment>
+  </data>
   <data name="AgentWarningCapitalExceedsBalance" xml:space="preserve">
     <value>This key's active agents have {0} {2} allocated, more than the {1} {2} available on the account.</value>
     <comment>{0} is the total allocated, {1} what's available, and {2} the asset, such as USDT.</comment>
