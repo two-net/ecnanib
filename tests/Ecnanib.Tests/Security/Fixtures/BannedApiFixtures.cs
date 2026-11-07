@@ -159,6 +159,11 @@ namespace Ecnanib.Tests.Security.Fixtures.Banned
     {
         public static Task<string> ExecuteAsync(Modules.Execution.Contracts.IOrderExecution execution) => execution.ExecuteAsync("an order");
     }
+
+    public static class AccountReadByTheWebUi
+    {
+        public static Task<string> ReadAsync(Modules.Execution.Contracts.IAgentAccounts accounts) => accounts.ReadAsync(Guid.Empty);
+    }
 }
 
 namespace Ecnanib.Tests.Security.Fixtures.Modules.Execution.Contracts
@@ -167,6 +172,12 @@ namespace Ecnanib.Tests.Security.Fixtures.Modules.Execution.Contracts
     public interface IOrderExecution
     {
         Task<string> ExecuteAsync(string order);
+    }
+
+    /// <summary>Stands in for the real contract, under the same path below the root.</summary>
+    public interface IAgentAccounts
+    {
+        Task<string> ReadAsync(Guid agentId);
     }
 }
 
@@ -204,6 +215,8 @@ namespace Ecnanib.Tests.Security.Fixtures.Modules.DecisionCycle
         public static Task<string> AskAsync(AiCouncil.Contracts.ICouncil council) => council.AskAsync("a question");
 
         public static Task<string> ExecuteAsync(Execution.Contracts.IOrderExecution execution) => execution.ExecuteAsync("a sized order");
+
+        public static Task<string> ReadAsync(Execution.Contracts.IAgentAccounts accounts) => accounts.ReadAsync(Guid.Empty);
     }
 }
 

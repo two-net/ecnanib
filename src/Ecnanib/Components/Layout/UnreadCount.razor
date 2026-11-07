@@ -4,6 +4,7 @@
 @inject INotifications Inbox
 @inject NavigationManager Navigation
 @inject UnreadNotifications Unread
+@inject LiveUpdates Live
 @inject ILogger<UnreadCount> Logger
 
 @* The count is part of the link's text, so a screen reader hears what's shown. *@
@@ -19,11 +20,13 @@
     /// <summary>Which read is the latest, so an older one that finishes last can't put back a stale count.</summary>
     private int _reads;
 
+    private IDisposable? _live;
+
     /// <summary>
     /// Read on the prerender and again when the circuit starts, rather than carried across: a page that
     /// a notification's link loaded in full can be prerendered before the click that marked it read has
     /// committed, and the circuit's read corrects that. Re-read on every move inside a circuit, where
-    /// the layout stays, and when the list says something was read.
+    /// the layout stays, when the list says something was read, and when a new one commits (FR-UI-05).
     /// </summary>
     private int? Count { get; set; }
 
@@ -39,6 +42,17 @@
         Navigation.LocationChanged += OnLocationChanged;
         Unread.Changed += OnChanged;
 
+        if (RendererInfo.IsInteractive)
+        {
+            _live = Live.Subscribe(UserId, change =>
+            {
+                if (change.Change == LiveChange.Notification)
+                {
+                    OnChanged();
+                }
+            });
+        }
+
         await ReadAsync();
     }
 
@@ -46,6 +60,7 @@
     {
         Navigation.LocationChanged -= OnLocationChanged;
         Unread.Changed -= OnChanged;
+        _live?.Dispose();
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => OnChanged();

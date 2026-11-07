@@ -1,6 +1,9 @@
 using System.Globalization;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
+using Ecnanib.Modules.AiCouncil.Contracts;
+using Ecnanib.Modules.DecisionCycle.Contracts;
+using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 
@@ -419,6 +422,96 @@ public static class AgentText
             role == AiRole.SentimentAnalyst && choice.LiveSearch == true ? Strings.AgentSettingsModelOptionLiveSearch : Strings.AgentSettingsModelOption,
             choice.DisplayName,
             choice.Model.Provider);
+
+    /// <summary>How a decision cycle ended, as an agent's last decision and its chart's markers say it.</summary>
+    public static string OutcomeOf(CycleOutcome outcome) => outcome switch
+    {
+        CycleOutcome.Hold => Strings.AgentOutcomeHold,
+        CycleOutcome.RejectedByCritic => Strings.AgentOutcomeRejectedByCritic,
+        CycleOutcome.BlockedByRiskEngine => Strings.AgentOutcomeBlockedByRiskEngine,
+        CycleOutcome.PastDeadline => Strings.AgentOutcomePastDeadline,
+        CycleOutcome.ReadyToExecute => Strings.AgentOutcomeReadyToExecute,
+        CycleOutcome.AwaitingApproval => Strings.AgentOutcomeAwaitingApproval,
+        CycleOutcome.PausedForLossLimit => Strings.AgentOutcomePausedForLossLimit,
+        CycleOutcome.OverBudget => Strings.AgentOutcomeOverBudget,
+        CycleOutcome.Failed => Strings.AgentOutcomeFailed,
+        CycleOutcome.Interrupted => Strings.AgentOutcomeInterrupted,
+        CycleOutcome.Executed => Strings.AgentOutcomeExecuted,
+        CycleOutcome.ExecutionFailed => Strings.AgentOutcomeExecutionFailed,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Give the outcome its text in Strings.resx."),
+    };
+
+    /// <summary>What the Strategist proposed, as a chart marker's title says it.</summary>
+    public static string ActionOf(TradeAction action) => action switch
+    {
+        TradeAction.Hold => Strings.AgentActionHold,
+        TradeAction.Buy => Strings.AgentActionBuy,
+        TradeAction.Sell => Strings.AgentActionSell,
+        TradeAction.OpenLong => Strings.AgentActionOpenLong,
+        TradeAction.OpenShort => Strings.AgentActionOpenShort,
+        TradeAction.Close => Strings.AgentActionClose,
+        TradeAction.AdjustStop => Strings.AgentActionAdjustStop,
+        TradeAction.AdjustTarget => Strings.AgentActionAdjustTarget,
+        TradeAction.CancelPending => Strings.AgentActionCancelPending,
+        _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Give the action its text in Strings.resx."),
+    };
+
+    public static string SideOf(PositionSide side) => side switch
+    {
+        PositionSide.Long => Strings.AgentSideLong,
+        PositionSide.Short => Strings.AgentSideShort,
+        _ => throw new ArgumentOutOfRangeException(nameof(side), side, "Give the side its text in Strings.resx."),
+    };
+
+    /// <summary>How a trade's last part ended, wherever a trade's exit shows.</summary>
+    public static string ExitOf(TradeExit exit) => exit switch
+    {
+        TradeExit.StopFilled => Strings.AgentExitStopFilled,
+        TradeExit.TargetFilled => Strings.AgentExitTargetFilled,
+        TradeExit.Exited => Strings.AgentExitExited,
+        TradeExit.Unprotected => Strings.AgentExitUnprotected,
+        TradeExit.ClosedOutside => Strings.AgentExitClosedOutside,
+        TradeExit.LeftToUser => Strings.AgentExitLeftToUser,
+        TradeExit.Dust => Strings.AgentExitDust,
+        TradeExit.Abandoned => Strings.AgentExitAbandoned,
+        TradeExit.KillSwitch => Strings.AgentExitKillSwitch,
+        _ => throw new ArgumentOutOfRangeException(nameof(exit), exit, "Give the exit its text in Strings.resx."),
+    };
+
+    /// <summary>A price or a quantity as Binance gives it, with no trailing zeros.</summary>
+    public static string Number(decimal value) => value.ToString("#,0.############################", CultureInfo.CurrentCulture);
+
+    /// <summary>A price or an amount with its asset, such as "60,123.5 USDT".</summary>
+    public static string AmountOf(decimal amount, string asset) =>
+        string.Format(CultureInfo.CurrentCulture, Strings.AgentCapitalOf, Number(amount), asset);
+
+    /// <summary>
+    /// An amount of money with its sign, so a gain and a loss differ in more than color (FR-ANI-03): a plus for a gain,
+    /// the culture's minus for a loss, and neither for nothing. Two places from 1 up, and up to eight below, so a
+    /// stablecoin's cents and a fraction of a bitcoin both show.
+    /// </summary>
+    public static string SignedOf(decimal amount)
+    {
+        var rounded = Math.Round(amount, Math.Abs(amount) >= 1m ? 2 : 8, MidpointRounding.AwayFromZero);
+        var digits = Math.Abs(rounded).ToString(Math.Abs(rounded) >= 1m ? "#,0.00" : "#,0.########", CultureInfo.CurrentCulture);
+
+        return rounded switch
+        {
+            > 0m => CultureInfo.CurrentCulture.NumberFormat.PositiveSign + digits,
+            < 0m => CultureInfo.CurrentCulture.NumberFormat.NegativeSign + digits,
+            _ => digits,
+        };
+    }
+
+    /// <summary>
+    /// US dollars of AI spend, such as "1.24 US dollars": cents from a dollar up, and four places below, so a cycle's
+    /// fraction of a cent doesn't show as nothing.
+    /// </summary>
+    public static string UsdOf(decimal usd) =>
+        string.Format(
+            CultureInfo.CurrentCulture,
+            Strings.AgentUsdOf,
+            Math.Round(usd, usd >= 1m ? 2 : 4, MidpointRounding.AwayFromZero).ToString(usd >= 1m ? "#,0.00" : "#,0.####", CultureInfo.CurrentCulture));
 
     private static string? OnOff(string value) => value switch
     {

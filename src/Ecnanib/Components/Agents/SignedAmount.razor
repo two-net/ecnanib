@@ -1,0 +1,29 @@
+@* An amount of money that can be a gain or a loss. Its sign and a shape say which as well as its color, so color is
+   never the only cue (FR-ANI-03), and the word is there for a screen reader. Green and red are kept for this. *@
+@if (Amount is { } amount)
+{
+    var direction = Math.Round(amount, Math.Abs(amount) >= 1m ? 2 : 8, MidpointRounding.AwayFromZero) switch { > 0m => 1, < 0m => -1, _ => 0 };
+    <span class="@($"signed-amount {(direction > 0 ? "gain" : direction < 0 ? "loss" : "flat")}")">
+        @if (direction != 0)
+        {
+            <svg class="signed-amount-icon" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
+                <path d="@(direction > 0 ? "M5 1 9 8H1z" : "M5 9 1 2h8z")" />
+            </svg>
+            <span class="visually-hidden">@(direction > 0 ? Strings.AgentGain : Strings.AgentLoss)</span>
+        }
+        @string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.AgentCapitalOf, AgentText.SignedOf(amount), Asset)
+    </span>
+}
+else
+{
+    <span class="signed-amount flat">@Strings.AgentAmountUnknown</span>
+}
+
+@code {
+    /// <summary>In <see cref="Asset"/>. A loss is negative. Null when it isn't known.</summary>
+    [Parameter, EditorRequired]
+    public decimal? Amount { get; set; }
+
+    [Parameter, EditorRequired]
+    public string Asset { get; set; } = "";
+}

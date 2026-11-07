@@ -1,4 +1,5 @@
 using Ecnanib.Kernel;
+using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.MarketData.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,7 @@ namespace Ecnanib.Modules.Execution;
 internal sealed class TradeBook(
     IDbContextFactory<EcnanibDbContext> contextFactory,
     IExchangeSymbols symbols,
+    ExecutionObservers observers,
     TimeProvider time,
     ILogger<TradeBook> logger)
 {
@@ -136,6 +138,7 @@ internal sealed class TradeBook(
 
         if (changed)
         {
+            observers.AfterCommit(context, userId, agentId);
             await context.SaveChangesAsync(cancellationToken);
         }
     }

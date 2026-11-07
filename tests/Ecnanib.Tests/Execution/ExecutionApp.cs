@@ -27,13 +27,19 @@ internal sealed class ExecutionApp : IAsyncDisposable
     public const decimal Target = 60_400m;
 
     /// <param name="prepare">Sets up Binance's books before the application starts, as they are when it restarts.</param>
+    /// <param name="services">Changes to the application's services, such as an observer to record what it's told.</param>
     public ExecutionApp(
-        PostgresFixture postgres, Dictionary<string, string?>? settings = null, string? connectionString = null, Action<FakeOrderBook>? prepare = null)
+        PostgresFixture postgres,
+        Dictionary<string, string?>? settings = null,
+        string? connectionString = null,
+        Action<FakeOrderBook>? prepare = null,
+        Action<IServiceCollection>? services = null)
     {
         // The sweeps run only when a test runs them.
         Agents = new AgentApp(
             postgres,
             settings,
+            services: services,
             connectionString: connectionString,
             manualJobs: ["OrderWatchSweep", "ReconcileSweep", "TradeJournalSweep"],
             beforeStart: agents =>

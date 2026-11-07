@@ -241,6 +241,42 @@ public sealed class BudgetTests(PostgresFixture postgres)
     }
 
     /// <summary>A Spot BTCUSDT 1H agent's app with a price for the test model, at noon mid-month.</summary>
+    /// <summary>
+    /// FR-AGT-11's AI cost to date: every cycle since the agent was created, whatever the month, in Demo and Live alike,
+    /// because it's real money in both, and nothing for another user.
+    /// </summary>
+    [Fact]
+    public async Task The_cost_to_date_counts_every_month_and_only_the_users_own()
+    {
+        await using var app = PricedApp();
+        var (user, agent) = await app.ActiveAgentAsync();
+        var spending = app.Agents.App.Services.GetRequiredService<IAiSpending>();
+
+        await app.RunAsync(user, agent);
+        app.Clock.Advance(TimeSpan.FromDays(31));
+        await app.RunAsync(user, agent);
+
+        Assert.Equal(CycleCost, (await spending.FindAsync(user.Id, agent.Id, Cancellation)).MonthUsd);
+        Assert.Equal(new AiCostToDate(2 * CycleCost, 0, 2 * CycleCost, 0m), await spending.FindToDateAsync(user.Id, agent.Id, Cancellation));
+        Assert.Equal(2 * CycleCost, (await spending.ListToDateAsync(user.Id, Cancellation))[agent.Id].Usd);
+        Assert.Same(AiCostToDate.None, await spending.FindToDateAsync(Guid.NewGuid(), agent.Id, Cancellation));
+        Assert.Empty(await spending.ListToDateAsync(Guid.NewGuid(), Cancellation));
+    }
+
+    /// <summary>A model with no price has no cost to show, so its tokens are counted instead.</summary>
+    [Fact]
+    public async Task An_unpriced_models_tokens_are_counted_beside_the_cost_to_date()
+    {
+        await using var app = new CycleApp(postgres);
+        var (user, agent) = await app.ActiveAgentAsync();
+
+        await app.RunAsync(user, agent);
+
+        Assert.Equal(
+            new AiCostToDate(0m, CycleTokens, 0m, 0m),
+            await app.Agents.App.Services.GetRequiredService<IAiSpending>().FindToDateAsync(user.Id, agent.Id, Cancellation));
+    }
+
     private CycleApp PricedApp()
     {
         var app = new CycleApp(postgres, Priced());

@@ -15,6 +15,25 @@ public interface IAiSpending
 
     /// <summary>The agent's spend, which is nothing for an agent that has none, or isn't the user's.</summary>
     Task<AiSpend> FindAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>What each of the user's agents that has spent anything has spent on AI since it was created (FR-AGT-11).</summary>
+    Task<IReadOnlyDictionary<Guid, AiCostToDate>> ListToDateAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>What the agent has spent on AI since it was created, which is nothing for one that isn't the user's.</summary>
+    Task<AiCostToDate> FindToDateAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// An agent's AI cost to date (FR-AGT-11): every billed call of every cycle it has kept, as <see cref="AiSpend"/> counts
+/// them. It's real money in either environment, so the total counts both, and the split says how much each took.
+/// </summary>
+/// <param name="Usd">The estimated cost of every call to a model with a price, in <see cref="AiBudget.Currency"/>.</param>
+/// <param name="UnpricedTokens">Input and output tokens of calls to a model without a price, which have no cost to show.</param>
+/// <param name="DemoUsd">The part of <paramref name="Usd"/> spent while the agent was in Demo.</param>
+/// <param name="LiveUsd">And in Live.</param>
+public sealed record AiCostToDate(decimal Usd, long UnpricedTokens, decimal DemoUsd, decimal LiveUsd)
+{
+    public static AiCostToDate None { get; } = new(0m, 0, 0m, 0m);
 }
 
 /// <summary>

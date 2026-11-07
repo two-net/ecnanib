@@ -9,7 +9,7 @@ namespace Ecnanib.Modules.Execution;
 /// order may have been sent uses a token of its own, because the end of the shutdown drain must not cancel the record
 /// of a trade (NFR-REL-04). See Order execution in docs/architecture.md.
 /// </summary>
-internal sealed class OrderStore(IDbContextFactory<EcnanibDbContext> contextFactory, INotifications notifications)
+internal sealed class OrderStore(IDbContextFactory<EcnanibDbContext> contextFactory, INotifications notifications, ExecutionObservers observers)
 {
     /// <summary>How long a write after a send may take, whatever the caller's tokens say.</summary>
     public static readonly TimeSpan WriteLimit = TimeSpan.FromSeconds(5);
@@ -32,7 +32,9 @@ internal sealed class OrderStore(IDbContextFactory<EcnanibDbContext> contextFact
     public async Task InsertAsync(IEnumerable<OrderRow> rows, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        context.AddRange(rows);
+        var list = rows.ToList();
+        context.AddRange(list);
+        observers.AfterCommit(context, list.Select(row => (row.UserId, row.AgentId)));
         await context.SaveChangesAsync(cancellationToken);
     }
 
@@ -45,6 +47,7 @@ internal sealed class OrderStore(IDbContextFactory<EcnanibDbContext> contextFact
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         context.AddRange(rows);
         context.Update(protection);
+        observers.AfterCommit(context, protection.UserId, protection.AgentId);
         await context.SaveChangesAsync(cancellationToken);
     }
 
@@ -52,6 +55,7 @@ internal sealed class OrderStore(IDbContextFactory<EcnanibDbContext> contextFact
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         context.Add(protection);
+        observers.AfterCommit(context, protection.UserId, protection.AgentId);
         await context.SaveChangesAsync(cancellationToken);
     }
 
@@ -64,8 +68,13 @@ internal sealed class OrderStore(IDbContextFactory<EcnanibDbContext> contextFact
         using var limit = new CancellationTokenSource(WriteLimit);
         await using var context = await contextFactory.CreateDbContextAsync(limit.Token);
 
-        context.UpdateRange(orders);
-        context.UpdateRange(protections);
+        var orderList = orders.ToList();
+        var protectionList = protections.ToList();
+        context.UpdateRange(orderList);
+        context.UpdateRange(protectionList);
+        observers.AfterCommit(
+            context,
+            orderList.Select(row => (row.UserId, row.AgentId)).Concat(protectionList.Select(row => (row.UserId, row.AgentId))));
 
         if (notice is not null)
         {
@@ -87,8 +96,11 @@ internal sealed class OrderStore(IDbContextFactory<EcnanibDbContext> contextFact
         using var limit = new CancellationTokenSource(WriteLimit);
         await using var context = await contextFactory.CreateDbContextAsync(limit.Token);
 
-        context.UpdateRange(changed);
-        context.AddRange(added);
+        var changedList = changed.ToList();
+        var addedList = added.ToList();
+        context.UpdateRange(changedList);
+        context.AddRange(addedList);
+        observers.AfterCommit(context, changedList.Concat(addedList).Select(row => (row.UserId, row.AgentId)));
 
         if (notice is not null)
         {

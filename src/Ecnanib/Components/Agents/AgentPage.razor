@@ -1,0 +1,147 @@
+@page "/agents/{Id:guid}"
+@using System.Globalization
+@implements IDisposable
+@inject IAgents Agents
+@inject IAgentExposure Exposure
+@inject ITwoFactor TwoFactor
+@inject NavigationManager Navigation
+@inject LiveUpdates Live
+@inject ILogger<AgentPage> Logger
+
+@* The agent's own page (FR-UI-01): its overview (FR-AGT-11), chart (FR-UI-03), trades and actions, live (FR-UI-05).
+   Interactive, because its actions take no secret: the kill switch's code is checked on the circuit, as on /agents.
+   Another user's agent answers 404, because every read takes the user (NFR-SEC-04). The council view (#53), decision
+   timeline (#42) and reflections (#45) join it later. See The dashboard and the agent's page in docs/architecture.md. *@
+
+@if (_agent is { } agent)
+{
+    <PageTitle>@string.Format(CultureInfo.CurrentCulture, Strings.AgentPageTitle, agent.Settings.Name)</PageTitle>
+
+    <div class="page agent-page">
+        <div class="agent-page-heading">
+            @* The user chose the name. Razor encodes it, so it's only text. *@
+            <h1>@agent.Settings.Name</h1>
+            <EnvironmentTag Environment="agent.Settings.Environment" />
+        </div>
+        <p class="agent-page-summary">
+            @string.Format(
+                CultureInfo.CurrentCulture,
+                Strings.AgentPageSummary,
+                AgentText.MarketOf(agent.Settings.Market),
+                agent.Settings.Symbol,
+                AgentText.TimeframeOf(agent.Settings.Timeframe),
+                AgentText.ExecutionModeOf(agent.Settings.ExecutionMode))
+        </p>
+
+        <section class="agent-page-section" aria-labelledby="agent-overview">
+            <h2 id="agent-overview">@Strings.AgentPageOverview</h2>
+            <AgentOverview Agent="agent" UserId="_userId" AlwaysWatch="true" />
+        </section>
+
+        <section class="agent-page-section" aria-labelledby="agent-chart">
+            <h2 id="agent-chart">@Strings.AgentPageChart</h2>
+            <AgentChart Agent="agent" UserId="_userId" />
+        </section>
+
+        <section class="agent-page-section" aria-labelledby="agent-trades">
+            <h2 id="agent-trades">@Strings.AgentPageTrades</h2>
+            <AgentTrades Agent="agent" UserId="_userId" />
+        </section>
+
+        <section class="agent-page-section" aria-labelledby="agent-manage">
+            <h2 id="agent-manage">@Strings.AgentPageManage</h2>
+            <AgentActions Agent="agent" UserId="_userId" TwoFactorOn="_twoFactorOn" HoldsPositions="_holding"
+                          OnChanged="ChangedAsync" OnCloned="Cloned" OnRemoved="Removed" />
+        </section>
+
+        <p class="agent-page-links"><a href="/agents">@Strings.AgentPageAllAgents</a> <a href="/dashboard">@Strings.NavDashboard</a></p>
+    </div>
+}
+
+@code {
+    private AgentRecord? _agent;
+    private Guid _userId;
+    private bool _twoFactorOn;
+    private bool _holding;
+    private IDisposable? _live;
+    private LiveRefresh? _refresh;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /// <summary>On parameters rather than once, so moving from one agent's page to another's reads the new one.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AccountClaims.UserId((await AuthenticationState).User) is not { } userId)
+        {
+            return;
+        }
+
+        _userId = userId;
+        _agent = await Agents.FindAsync(userId, Id, CancellationToken.None);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+            return;
+        }
+
+        _twoFactorOn = await TwoFactor.IsEnabledAsync(userId, CancellationToken.None);
+        await FindHoldingAsync();
+
+        if (RendererInfo.IsInteractive && _live is null)
+        {
+            _refresh = new LiveRefresh(InvokeAsync, RefreshAsync, Logger);
+            _live = Live.Subscribe(userId, OnLive);
+        }
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    /// <summary>Its status or settings changed somewhere else, such as a loss limit's pause, or another tab.</summary>
+    private void OnLive(LiveEvent change)
+    {
+        if (change.AgentId == Id && change.Change is LiveChange.Agent or LiveChange.Execution)
+        {
+            _refresh?.Request();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        var agent = await Agents.FindAsync(_userId, Id, CancellationToken.None);
+
+        if (agent is null)
+        {
+            // Deleted in another tab, so there's nothing left to show here.
+            Navigation.NavigateTo("/agents?saved=deleted");
+            return;
+        }
+
+        _agent = agent;
+        await FindHoldingAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>From Execution's records only, never Binance, so a page load costs no request weight.</summary>
+    private async Task FindHoldingAsync() =>
+        _holding = _agent is { Status: AgentStatus.Stopped } && await Exposure.HasOpenPositionsOrOrdersAsync(_userId, Id, CancellationToken.None);
+
+    private async Task ChangedAsync(AgentRecord agent)
+    {
+        _agent = agent;
+
+        // A stop, or the kill switch, changes whether a stopped agent still holds something.
+        await FindHoldingAsync();
+    }
+
+    /// <summary>The copy is a Draft of its own, so its page is where to set it up (FR-AGT-12).</summary>
+    private void Cloned(AgentRecord clone) => Navigation.NavigateTo($"/agents/{clone.Id}");
+
+    /// <summary>Once it's archived or deleted, the list says so, because this page has nothing left to act on.</summary>
+    private void Removed((AgentRecord Agent, bool Deleted) removed) =>
+        Navigation.NavigateTo(removed.Deleted ? "/agents?saved=deleted" : "/agents?saved=archived");
+}

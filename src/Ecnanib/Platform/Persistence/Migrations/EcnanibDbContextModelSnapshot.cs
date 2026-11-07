@@ -1715,6 +1715,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("credential_id");
 
+                    b.Property<DateTimeOffset?>("EntryFeesReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("entry_fees_read_at");
+
                     b.Property<Guid>("EntryId")
                         .HasColumnType("uuid")
                         .HasColumnName("entry_id");
@@ -1753,6 +1757,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.Property<decimal?>("Funding")
                         .HasColumnType("numeric")
                         .HasColumnName("funding");
+
+                    b.Property<DateTimeOffset?>("FundingReadTo")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("funding_read_to");
 
                     b.Property<decimal>("InitialStop")
                         .HasColumnType("numeric")

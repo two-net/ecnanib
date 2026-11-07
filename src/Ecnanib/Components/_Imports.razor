@@ -17,6 +17,7 @@
 @using Ecnanib.Components.Credentials
 @using Ecnanib.Components.Layout
 @using Ecnanib.Components.Legal
+@using Ecnanib.Components.Live
 @using Ecnanib.Endpoints.Security
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.RateLimiting
@@ -26,8 +27,11 @@
 @using Ecnanib.Modules.Catalog.Contracts
 @using Ecnanib.Modules.Credentials.Contracts
 @using Ecnanib.Modules.DecisionCycle.Contracts
+@using Ecnanib.Modules.Execution.Contracts
 @using Ecnanib.Modules.Identity.Contracts
+@using Ecnanib.Modules.MarketData.Contracts
 @using Ecnanib.Modules.RiskEngine.Contracts
+@using Ecnanib.Modules.Scheduler.Contracts
 
 @* Every page is private unless it says otherwise, on HTTP and in a circuit alike. A page that visitors
    need adds [AllowAnonymous], and AccessTests holds the list of those. On a component that isn't a page

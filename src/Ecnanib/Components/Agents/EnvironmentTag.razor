@@ -1,0 +1,9 @@
+@* Demo in words, wherever a Demo agent or its results appear (FR-UI-07, EXT-BIN-08), and Live in words too, so real
+   money is never a matter of noticing a missing label. A result takes its environment from its own record, never from
+   the agent, which may have switched since (FR-EXP-08). *@
+<span class="environment-tag">@(Environment == TradingEnvironment.Demo ? Strings.AgentDemo : Strings.AgentLive)</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public TradingEnvironment Environment { get; set; }
+}

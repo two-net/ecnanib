@@ -18,7 +18,7 @@ public sealed partial class SignInTests(SharedAccountApp app) : IClassFixture<Sh
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Signing_in_sets_the_session_and_goes_to_the_account()
+    public async Task Signing_in_sets_the_session_and_goes_to_the_dashboard()
     {
         using var visitor = Visitor.To(app);
         var email = Visitor.NewEmail();
@@ -27,7 +27,7 @@ public sealed partial class SignInTests(SharedAccountApp app) : IClassFixture<Sh
         using var response = await visitor.SignInAsync(email);
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.Equal("/account", Visitor.Target(response));
+        Assert.Equal("/dashboard", Visitor.Target(response));
         Assert.Contains(response.Headers.GetValues("Set-Cookie"), cookie => cookie.StartsWith(SessionCookie, StringComparison.Ordinal));
 
         Assert.Contains(email, await visitor.PageAsync("/account"), StringComparison.Ordinal);
@@ -199,7 +199,7 @@ public sealed partial class SignInTests(SharedAccountApp app) : IClassFixture<Sh
         (await visitor.RegisterAsync(email)).Dispose();
         using var response = await visitor.SignInAsync(email, page: $"/sign-in?returnUrl={WebUtility.UrlEncode(returnUrl)}");
 
-        Assert.Equal(new Uri(visitor.Client.BaseAddress!, "/account"), new Uri(visitor.Client.BaseAddress!, response.Headers.Location!));
+        Assert.Equal(new Uri(visitor.Client.BaseAddress!, "/dashboard"), new Uri(visitor.Client.BaseAddress!, response.Headers.Location!));
     }
 
     [Fact]

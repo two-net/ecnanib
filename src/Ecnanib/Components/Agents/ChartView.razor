@@ -1,0 +1,175 @@
+@using System.Globalization
+
+@* An agent's chart as drawn (FR-UI-03), from a ChartLayout: everything is a percentage of its box, so it fills any width
+   with no script and no viewBox, and its lines and text keep their size. Its colors are the theme's tokens
+   (NFR-USA-04), and a new candle or marker fades in through --motion-time (FR-ANI-04). AgentChart loads it and keeps
+   it live. See The chart in docs/architecture.md. *@
+
+<figure class="chart">
+    @if (Layout is { } chart)
+    {
+        <svg class="chart-svg" role="img" aria-label="@chart.Summary" focusable="false">
+            <g class="chart-grid">
+                @foreach (var tick in chart.PriceTicks)
+                {
+                    <line x1="0" x2="100%" y1="@tick.At" y2="@tick.At" />
+                }
+            </g>
+
+            <g class="chart-candles">
+                @foreach (var candle in chart.Candles)
+                {
+                    <g @key="candle.OpenTime" class="@CandleClass(candle)">
+                        <title>@candle.Title</title>
+                        <line class="chart-wick" x1="@candle.X" x2="@candle.X" y1="@candle.WickTop" y2="@candle.WickBottom" />
+                        <rect class="chart-body" x="@candle.BodyX" y="@candle.BodyY" width="@candle.BodyWidth" height="@candle.BodyHeight" />
+                    </g>
+                }
+            </g>
+
+            @if (chart.Stop is { } stop)
+            {
+                <g class="chart-line chart-stop">
+                    <line x1="0" x2="100%" y1="@stop.Y" y2="@stop.Y" />
+                    <SvgText X="99%" Y="@stop.Y" Dy="-0.4em" Anchor="end" Text="@stop.Label" />
+                </g>
+            }
+            @foreach (var target in chart.Targets)
+            {
+                <g class="chart-line chart-target">
+                    <line x1="0" x2="100%" y1="@target.Y" y2="@target.Y" />
+                    <SvgText X="99%" Y="@target.Y" Dy="-0.4em" Anchor="end" Text="@target.Label" />
+                </g>
+            }
+
+            <g class="chart-labels">
+                @foreach (var tick in chart.PriceTicks)
+                {
+                    <SvgText X="1%" Y="@tick.At" Dy="-0.4em" Text="@tick.Label" />
+                }
+                @foreach (var tick in chart.TimeTicks)
+                {
+                    <SvgText X="@tick.At" Y="@TimeRow" Anchor="middle" Text="@tick.Label" />
+                }
+            </g>
+
+            @foreach (var mark in chart.Trades)
+            {
+                <svg @key="(mark.TradeId, mark.Kind)" class="@($"chart-mark {MarkClass(mark.Kind)}")" x="@mark.X" y="@mark.Y" overflow="visible">
+                    <title>@mark.Title</title>
+                    <path d="@MarkPath(mark.Kind)" />
+                </svg>
+            }
+
+            <line class="chart-cycle-rule" x1="0" x2="100%" y1="@CycleRow" y2="@CycleRow" />
+            @foreach (var cycle in chart.Cycles)
+            {
+                <svg @key="cycle.CycleId" class="@($"chart-cycle {CycleClass(cycle.Kind)}")" x="@cycle.X" y="@CycleRow" overflow="visible">
+                    <title>@cycle.Title</title>
+                    <path d="@CyclePath(cycle.Kind)" />
+                </svg>
+            }
+        </svg>
+    }
+    else if (Failed)
+    {
+        <p class="chart-message" role="status">@Strings.ChartUnavailable</p>
+    }
+    else if (Loaded)
+    {
+        <p class="chart-message">@Strings.ChartNoCandles</p>
+    }
+    else
+    {
+        <div class="skeleton chart-skeleton" aria-hidden="true"></div>
+        <p class="visually-hidden">@Strings.ChartLoading</p>
+    }
+
+    <figcaption class="chart-caption">
+        <ul class="chart-legend">
+            <li><svg class="chart-key" viewBox="-6 -8 12 16" aria-hidden="true" focusable="false"><g class="chart-candle up"><line class="chart-wick" x1="0" x2="0" y1="-7" y2="7" /><rect class="chart-body" x="-3" y="-4" width="6" height="8" /></g></svg>@Strings.ChartKeyUp</li>
+            <li><svg class="chart-key" viewBox="-6 -8 12 16" aria-hidden="true" focusable="false"><g class="chart-candle down"><line class="chart-wick" x1="0" x2="0" y1="-7" y2="7" /><rect class="chart-body" x="-3" y="-4" width="6" height="8" /></g></svg>@Strings.ChartKeyDown</li>
+            <li><svg class="chart-key" viewBox="-8 -8 16 16" aria-hidden="true" focusable="false"><g class="chart-mark entry-long"><path d="@MarkPath(TradeMarkKind.EntryLong)" /></g></svg>@Strings.ChartKeyEntry</li>
+            <li><svg class="chart-key" viewBox="-8 -8 16 16" aria-hidden="true" focusable="false"><g class="chart-mark exit"><path d="@MarkPath(TradeMarkKind.Exit)" /></g></svg>@Strings.ChartKeyExit</li>
+            <li><svg class="chart-key chart-key-wide" viewBox="0 -4 24 8" aria-hidden="true" focusable="false"><g class="chart-line chart-stop"><line x1="0" x2="24" y1="0" y2="0" /></g></svg>@Strings.ChartKeyStop</li>
+            <li><svg class="chart-key chart-key-wide" viewBox="0 -4 24 8" aria-hidden="true" focusable="false"><g class="chart-line chart-target"><line x1="0" x2="24" y1="0" y2="0" /></g></svg>@Strings.ChartKeyTarget</li>
+            @foreach (var kind in Enum.GetValues<CycleMarkKind>())
+            {
+                <li><svg class="chart-key" viewBox="-8 -8 16 16" aria-hidden="true" focusable="false"><g class="@($"chart-cycle {CycleClass(kind)}")"><path d="@CyclePath(kind)" /></g></svg>@KeyOf(kind)</li>
+            }
+        </ul>
+        @if (Environment == TradingEnvironment.Demo)
+        {
+            @* EXT-BIN-08. *@
+            <p class="chart-note"><EnvironmentTag Environment="TradingEnvironment.Demo" /> @Strings.ChartDemoHint</p>
+        }
+    </figcaption>
+</figure>
+
+@code {
+    private static readonly string CycleRow = $"{ChartLayout.CycleRow.ToString(CultureInfo.InvariantCulture)}%";
+
+    private static readonly string TimeRow = $"{ChartLayout.TimeRow.ToString(CultureInfo.InvariantCulture)}%";
+
+    /// <summary>What to draw, or null while it loads or when there's nothing to draw.</summary>
+    [Parameter]
+    public ChartLayout? Layout { get; set; }
+
+    /// <summary>The candles were read, so a null layout means there are none, rather than that they're loading.</summary>
+    [Parameter]
+    public bool Loaded { get; set; }
+
+    /// <summary>Binance couldn't give the candles.</summary>
+    [Parameter]
+    public bool Failed { get; set; }
+
+    /// <summary>The chart's environment, so Demo prices say what they are (EXT-BIN-08).</summary>
+    [Parameter, EditorRequired]
+    public TradingEnvironment Environment { get; set; }
+
+    private static string CandleClass(CandleShape candle) =>
+        $"chart-candle {(candle.Up ? "up" : "down")}{(candle.Forming ? " forming" : "")}";
+
+    private static string MarkClass(TradeMarkKind kind) => kind switch
+    {
+        TradeMarkKind.EntryLong => "entry-long",
+        TradeMarkKind.EntryShort => "entry-short",
+        _ => "exit",
+    };
+
+    /// <summary>Drawn around the point it marks: triangles for entries, pointing the trade's way, and a square for an exit.</summary>
+    private static string MarkPath(TradeMarkKind kind) => kind switch
+    {
+        TradeMarkKind.EntryLong => "M0 -6 6 5 -6 5z",
+        TradeMarkKind.EntryShort => "M0 6 6 -5 -6 -5z",
+        _ => "M-5 -5h10v10h-10z",
+    };
+
+    private static string CycleClass(CycleMarkKind kind) => kind switch
+    {
+        CycleMarkKind.Deciding => "deciding",
+        CycleMarkKind.Acted => "acted",
+        CycleMarkKind.Held => "held",
+        CycleMarkKind.Waiting => "waiting",
+        CycleMarkKind.Blocked => "blocked",
+        _ => "failed",
+    };
+
+    /// <summary>Circles for a decision taken, squares for one that stopped short of an order, and a cross for a failure.</summary>
+    private static string CyclePath(CycleMarkKind kind) => kind switch
+    {
+        CycleMarkKind.Acted or CycleMarkKind.Held or CycleMarkKind.Deciding => "M-4.5 0a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0z",
+        CycleMarkKind.Waiting or CycleMarkKind.Blocked => "M-4 -4h8v8h-8z",
+        _ => "M-4 -4 4 4M4 -4 -4 4",
+    };
+
+    private static string KeyOf(CycleMarkKind kind) => kind switch
+    {
+        CycleMarkKind.Deciding => Strings.ChartKeyDeciding,
+        CycleMarkKind.Acted => Strings.ChartKeyActed,
+        CycleMarkKind.Held => Strings.ChartKeyHeld,
+        CycleMarkKind.Waiting => Strings.ChartKeyWaiting,
+        CycleMarkKind.Blocked => Strings.ChartKeyBlocked,
+        _ => Strings.ChartKeyFailed,
+    };
+}

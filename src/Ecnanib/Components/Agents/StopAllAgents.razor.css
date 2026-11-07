@@ -1,0 +1,30 @@
+/*
+    It sits in its page's row of actions, so the panel and the result take a row of their own there, and anywhere else
+    they're blocks anyway. A thicker edge as well as the words, so the panel doesn't rely on color.
+*/
+.stop-all {
+    display: grid;
+    flex-basis: 100%;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--caution);
+    border-inline-start-width: 4px;
+    border-radius: var(--radius);
+}
+
+.stop-all-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+}
+
+.stop-all-result {
+    display: grid;
+    flex-basis: 100%;
+    gap: 0.5rem;
+}
+
+    .stop-all-result:empty {
+        display: none;
+    }

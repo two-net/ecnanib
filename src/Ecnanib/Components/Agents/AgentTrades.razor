@@ -1,0 +1,122 @@
+@using System.Globalization
+@implements IDisposable
+@inject ITradeJournal Journal
+@inject LiveUpdates Live
+@inject ILogger<AgentTrades> Logger
+
+@* The agent's recent trades in its current environment (FR-EXE-07), newest first, read again after Execution's events
+   (FR-UI-05). Each trade's environment is its own, so the table's label is the trades', never the agent's (FR-EXP-08). It
+   scrolls in its own region on a phone. *@
+
+@if (_trades.Count == 0)
+{
+    <p>@Strings.AgentTradesNone</p>
+}
+else
+{
+    <div class="trades" role="region" tabindex="0" aria-label="@Strings.AgentTradesLabel">
+        <table>
+            <caption>
+                @string.Format(CultureInfo.CurrentCulture, Strings.AgentTradesCaption, _trades.Count)
+                <EnvironmentTag Environment="Agent.Settings.Environment" />
+            </caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Strings.AgentTradesOpened</th>
+                    <th scope="col">@Strings.AgentTradesSide</th>
+                    <th scope="col">@Strings.AgentTradesQuantity</th>
+                    <th scope="col">@Strings.AgentTradesEntry</th>
+                    <th scope="col">@Strings.AgentTradesClosed</th>
+                    <th scope="col">@Strings.AgentTradesExit</th>
+                    <th scope="col">@Strings.AgentTradesReason</th>
+                    <th scope="col">@Strings.AgentTradesPnl</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var trade in _trades)
+                {
+                    <tr @key="trade.Id">
+                        <td>@Time.Format(trade.OpenedAt)</td>
+                        <td>@AgentText.SideOf(trade.Side)</td>
+                        <td class="trades-number">@AgentText.Number(trade.Quantity)</td>
+                        <td class="trades-number">@AgentText.AmountOf(trade.EntryPrice, trade.QuoteAsset)</td>
+                        <td>@(trade.ClosedAt is { } closedAt ? Time.Format(closedAt) : Strings.AgentTradesStillOpen)</td>
+                        @* Nothing until it closes. A closed trade with nothing priced, such as dust, says so. *@
+                        <td class="trades-number">@(trade.ExitPrice is { } exit ? AgentText.AmountOf(exit, trade.QuoteAsset) : trade.ClosedAt is null ? "" : Strings.AgentAmountUnknown)</td>
+                        <td>@(trade.ExitReason is { } reason ? AgentText.ExitOf(reason) : Strings.AgentTradesStillOpen)</td>
+                        <td>
+                            @if (trade.Status == TradeStatus.Closed)
+                            {
+                                <SignedAmount Amount="trade.RealizedPnl" Asset="@trade.QuoteAsset" />
+                                @if (!trade.Settled)
+                                {
+                                    <span class="trades-note">@Strings.AgentTradesProvisional</span>
+                                }
+                            }
+                            else
+                            {
+                                @Strings.AgentTradesStillOpen
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    /// <summary>The newest trades shown. The export (#51) has all of them.</summary>
+    private const int Shown = 20;
+
+    private IReadOnlyList<TradeRecord> _trades = [];
+    private IDisposable? _live;
+    private LiveRefresh? _refresh;
+    private Guid _loadedFor;
+    private TradingEnvironment _loadedIn;
+
+    [Parameter, EditorRequired]
+    public AgentRecord Agent { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public Guid UserId { get; set; }
+
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    protected override void OnInitialized()
+    {
+        if (RendererInfo.IsInteractive)
+        {
+            _refresh = new LiveRefresh(InvokeAsync, RefreshAsync, Logger);
+            _live = Live.Subscribe(UserId, change =>
+            {
+                if (change is { Change: LiveChange.Execution } && change.AgentId == Agent.Id)
+                {
+                    _refresh.Request();
+                }
+            });
+        }
+    }
+
+    /// <summary>A switch to Live is a new list, because Demo's trades aren't Live's.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor != Agent.Id || _loadedIn != Agent.Settings.Environment)
+        {
+            (_loadedFor, _loadedIn) = (Agent.Id, Agent.Settings.Environment);
+            await ReadAsync();
+        }
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    private async Task ReadAsync() =>
+        _trades = await Journal.ListTradesAsync(UserId, Agent.Id, new TradeQuery(Agent.Settings.Environment, Limit: Shown), CancellationToken.None);
+
+    private async Task RefreshAsync()
+    {
+        await ReadAsync();
+        StateHasChanged();
+    }
+}

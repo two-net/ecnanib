@@ -1,20 +1,10 @@
 @using System.Globalization
-@inject IAgents Agents
 
 <li class="agent">
     <div class="agent-heading">
-        @* The user chose the name. Razor encodes it, so it's only text. *@
-        <h2 class="agent-name">@Agent.Settings.Name</h2>
-        @if (Agent.IsDemo)
-        {
-            @* Demo in words, wherever a Demo agent appears (FR-UI-07). *@
-            <span class="agent-tag">@Strings.AgentDemo</span>
-        }
-        else
-        {
-            @* And Live, so real money is never a matter of noticing a missing label. *@
-            <span class="agent-tag">@Strings.AgentLive</span>
-        }
+        @* The user chose the name. Razor encodes it, so it's only text. The agent's page is interactive, so a plain link. *@
+        <h2 class="agent-name"><a href="@($"/agents/{Agent.Id}")">@Agent.Settings.Name</a></h2>
+        <EnvironmentTag Environment="Agent.Settings.Environment" />
     </div>
 
     <dl class="facts">
@@ -45,131 +35,11 @@
         <p class="agent-problem">@string.Format(CultureInfo.CurrentCulture, Strings.AgentBudgetReachedUntil, Time.Format(budgetUntil))</p>
     }
 
-    <div class="agent-actions">
-        @if (Agent.Status is AgentStatus.Draft or AgentStatus.Stopped or AgentStatus.Error or AgentStatus.Paused)
-        {
-            var resume = Agent.Status == AgentStatus.Paused;
-            <button type="button" class="button" disabled="@_busy" aria-label="@Labelled(resume ? Strings.AgentResumeLabel : Strings.AgentActivateLabel)"
-                    @onclick="ActivateAsync">
-                @(resume ? Strings.AgentResume : Strings.AgentActivate)
-            </button>
-        }
-        @if (Agent.Status == AgentStatus.Active)
-        {
-            <button type="button" class="button" disabled="@_busy" aria-label="@Labelled(Strings.AgentPauseLabel)" @onclick="PauseAsync">
-                @Strings.AgentPause
-            </button>
-        }
-        @if (Agent.Status != AgentStatus.Archived)
-        {
-            @* A plain link, because the settings page is static. *@
-            <a href="@($"/agents/{Agent.Id}/settings")" aria-label="@Labelled(Strings.AgentSettingsLabel)">@Strings.AgentSettingsLink</a>
-        }
-        @if (Agent.IsDemo && Agent.Status is AgentStatus.Paused or AgentStatus.Stopped)
-        {
-            @* UC-04. A plain link to a static page, because it takes a two-factor code. It says what's missing, such as closing what's open. *@
-            <a href="@($"/agents/{Agent.Id}/live")" aria-label="@Labelled(Strings.AgentSwitchToLiveLabel)">@Strings.AgentSwitchToLive</a>
-        }
-        <button type="button" class="button" disabled="@_busy" aria-label="@Labelled(Strings.AgentCloneLabel)" @onclick="CloneAsync">
-            @Strings.AgentClone
-        </button>
-        @foreach (var action in Confirmable)
-        {
-            if (_confirming != action)
-            {
-                <button type="button" class="button" disabled="@_busy" aria-label="@Labelled(LabelOf(action))"
-                        @ref="_actionButtons[action]" @onclick="() => Confirm(action)">
-                    @TextOf(action)
-                </button>
-            }
-        }
-    </div>
-
-    @if (_confirming is { } pending)
-    {
-        <div class="agent-confirm">
-            <p>@Labelled(ConfirmOf(pending))</p>
-            @if (pending == Step.Stop)
-            {
-                @* FR-AGT-07's choice. Closing is the kill switch (FR-AGT-08), so it's the one that asks for a code. *@
-                <ul class="agent-choices">
-                    <li>@Strings.AgentStopKeepExplained</li>
-                    <li>@Strings.AgentStopCloseExplained</li>
-                </ul>
-            }
-            @if (Closes(pending) && TwoFactorOn)
-            {
-                @* On the circuit, as docs/architecture.md says for the kill switch: ITwoFactor.CheckAsync has its own throttle. *@
-                <div class="field">
-                    <label for="@CodeId">@Strings.FieldTwoFactorCode</label>
-                    <input id="@CodeId" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="64"
-                           aria-describedby="@($"{CodeId}-hint")" @bind="_code" @bind:event="oninput" @ref="_codeInput" />
-                    <p id="@($"{CodeId}-hint")" class="field-hint">@Strings.AgentKillCodeHint</p>
-                </div>
-            }
-            <div class="agent-actions">
-                @switch (pending)
-                {
-                    case Step.Stop:
-                        <button type="button" class="button" disabled="@_busy" @ref="_confirm" @onclick="() => RunAsync(pending)">@Strings.AgentStopSubmit</button>
-                        <button type="button" class="button" disabled="@_busy" @onclick="KillAsync">@Strings.AgentStopCloseSubmit</button>
-                        break;
-                    case Step.CloseAll:
-                        <button type="button" class="button" disabled="@_busy" @ref="_confirm" @onclick="KillAsync">@Strings.AgentCloseAllSubmit</button>
-                        break;
-                    default:
-                        <button type="button" class="button" disabled="@_busy" @ref="_confirm" @onclick="() => RunAsync(pending)">@SubmitOf(pending)</button>
-                        break;
-                }
-                <button type="button" class="button" disabled="@_busy" @onclick="Cancel">@Strings.AgentConfirmCancel</button>
-            </div>
-        </div>
-    }
-
-    @* Always there, so a screen reader announces the result when it appears. *@
-    <div class="agent-result" role="status">
-        @if (_message is not null)
-        {
-            <p>@_message</p>
-        }
-        @if (_problems.Count > 0)
-        {
-            <ul class="facts-list">
-                @foreach (var problem in _problems)
-                {
-                    <li>@AgentText.ProblemOf(problem, Time)</li>
-                }
-            </ul>
-        }
-        @if (_warnings.Count > 0)
-        {
-            <p>@Strings.AgentActivationWarnings</p>
-            <ul class="facts-list">
-                @foreach (var warning in _warnings)
-                {
-                    <li>@AgentText.WarningOf(warning)</li>
-                }
-            </ul>
-        }
-    </div>
+    <AgentActions Agent="Agent" UserId="UserId" TwoFactorOn="TwoFactorOn" HoldsPositions="HoldsPositions"
+                  OnChanged="OnChanged" OnCloned="OnCloned" OnRemoved="OnRemoved" />
 </li>
 
 @code {
-    private string? _message;
-    private IReadOnlyList<ActivationProblem> _problems = [];
-    private IReadOnlyList<ActivationWarning> _warnings = [];
-    private bool _busy;
-    private Step? _confirming;
-    private Step? _focusAction;
-    private bool _focusConfirm;
-    private bool _focusCode;
-    private ElementReference _confirm;
-    private ElementReference _codeInput;
-
-    /// <summary>What the user typed for the kill switch. Cleared after each try, because a code works once.</summary>
-    private string? _code;
-    private readonly Dictionary<Step, ElementReference> _actionButtons = [];
-
     [Parameter, EditorRequired]
     public AgentRecord Agent { get; set; } = default!;
 
@@ -196,39 +66,13 @@
     [Parameter]
     public EventCallback<AgentRecord> OnChanged { get; set; }
 
+    /// <summary>A Draft copy was made (FR-AGT-12).</summary>
     [Parameter]
-    public EventCallback<AgentRecord> OnClone { get; set; }
+    public EventCallback<AgentRecord> OnCloned { get; set; }
 
     /// <summary>The agent was archived, or deleted when the flag is set. Either way, its card leaves this list.</summary>
     [Parameter]
     public EventCallback<(AgentRecord Agent, bool Deleted)> OnRemoved { get; set; }
-
-    /// <summary>The changes that ask first, because they can't be taken back by the next click.</summary>
-    private enum Step
-    {
-        /// <summary>Stop, keeping its positions or closing everything (FR-AGT-07). Closing is the kill switch.</summary>
-        Stop,
-
-        /// <summary>The kill switch for a Stopped agent that still holds something (FR-AGT-08).</summary>
-        CloseAll,
-
-        Archive,
-        Delete,
-    }
-
-    private IEnumerable<Step> Confirmable => Agent.Status switch
-    {
-        AgentStatus.Active => [Step.Stop],
-        AgentStatus.Paused or AgentStatus.Error => [Step.Stop, Step.Archive],
-        AgentStatus.Stopped when HoldsPositions => [Step.CloseAll, Step.Archive],
-        AgentStatus.Draft or AgentStatus.Stopped => [Step.Archive],
-        AgentStatus.Archived => [Step.Delete],
-        _ => [],
-    };
-
-    private static bool Closes(Step action) => action is Step.Stop or Step.CloseAll;
-
-    private string CodeId => $"agent-code-{Agent.Id:N}";
 
     /// <summary>When an Active agent's protective-only mode ends (FR-CYC-07), or null when its AI budget hasn't run out.</summary>
     private DateTimeOffset? BudgetUntil => Agent.Status == AgentStatus.Active ? Spend?.Check(Agent.Settings.Budget).Until : null;
@@ -236,208 +80,4 @@
     private string Capital => Agent.Settings.CapitalAllocation is { } capital
         ? string.Format(CultureInfo.CurrentCulture, Strings.AgentCapitalOf, capital, Agent.QuoteAsset)
         : Strings.AgentCapitalNone;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_focusCode)
-        {
-            _focusCode = false;
-            await _codeInput.FocusAsync();
-        }
-        else if (_focusConfirm)
-        {
-            _focusConfirm = false;
-            await _confirm.FocusAsync();
-        }
-        else if (_focusAction is { } action)
-        {
-            _focusAction = null;
-
-            if (_actionButtons.TryGetValue(action, out var button))
-            {
-                await button.FocusAsync();
-            }
-        }
-    }
-
-    private async Task ActivateAsync()
-    {
-        await BusyAsync(async () =>
-        {
-            var result = await Agents.ActivateAsync(UserId, Agent.Id, CancellationToken.None);
-
-            _problems = result.Problems ?? [];
-            _warnings = result.Warnings ?? [];
-            _message = result.Outcome switch
-            {
-                ActivationOutcome.Activated => Strings.AgentActivated,
-                ActivationOutcome.Refused => Strings.AgentActivateRefused,
-                ActivationOutcome.NotAllowed => Strings.AgentNotAllowed,
-                ActivationOutcome.Changed => Strings.AgentChanged,
-                _ => Strings.AgentGone,
-            };
-
-            if (result.Agent is { } current)
-            {
-                await OnChanged.InvokeAsync(current);
-            }
-        });
-    }
-
-    private Task PauseAsync() => TransitionAsync(Agents.PauseAsync, Strings.AgentPausedNotice);
-
-    private async Task CloneAsync() => await BusyAsync(() => OnClone.InvokeAsync(Agent));
-
-    private void Confirm(Step action)
-    {
-        _confirming = action;
-        _code = null;
-
-        // Straight to the code when one is needed. Otherwise to the first button, which never closes anything.
-        _focusCode = action == Step.CloseAll && TwoFactorOn;
-        _focusConfirm = !_focusCode;
-    }
-
-    private void Cancel()
-    {
-        _focusAction = _confirming;
-        _confirming = null;
-        _code = null;
-    }
-
-    /// <summary>
-    /// The kill switch (FR-AGT-08): stops the agent, cancels its orders and closes its positions. A refused code keeps
-    /// the panel open for another, and says when only a recovery code will do.
-    /// </summary>
-    private async Task KillAsync()
-    {
-        await BusyAsync(async () =>
-        {
-            var code = _code;
-            _code = null;
-            _problems = [];
-            _warnings = [];
-            _message = Strings.AgentKillWorking;
-
-            var result = await Agents.StopAndCloseAsync(UserId, Agent.Id, code, CancellationToken.None);
-
-            if (result.Outcome == KillOutcome.TwoFactorRefused)
-            {
-                _message = AgentText.TwoFactorRefusalOf(result.TwoFactor);
-                _focusCode = TwoFactorOn;
-                return;
-            }
-
-            _confirming = null;
-            _message = AgentText.KillOutcomeOf(result.Outcome);
-
-            if (result.Agent is { } current)
-            {
-                await OnChanged.InvokeAsync(current);
-            }
-        });
-    }
-
-    private async Task RunAsync(Step action)
-    {
-        _confirming = null;
-
-        switch (action)
-        {
-            case Step.Stop:
-                await TransitionAsync(Agents.StopAsync, Strings.AgentStoppedNotice);
-                break;
-            case Step.Archive:
-                await RemoveAsync(Agents.ArchiveAsync, deleted: false);
-                break;
-            case Step.Delete:
-                await RemoveAsync(Agents.DeleteAsync, deleted: true);
-                break;
-        }
-    }
-
-    private async Task TransitionAsync(Func<Guid, Guid, CancellationToken, Task<TransitionResult>> transition, string done)
-    {
-        await BusyAsync(async () =>
-        {
-            var result = await transition(UserId, Agent.Id, CancellationToken.None);
-
-            _problems = [];
-            _warnings = [];
-            _message = AgentText.TransitionErrorOf(result.Outcome) ?? done;
-
-            if (result.Agent is { } current)
-            {
-                await OnChanged.InvokeAsync(current);
-            }
-        });
-    }
-
-    /// <summary>Once it's archived or deleted, the list moves or removes the card, and focus goes to its notice.</summary>
-    private async Task RemoveAsync(Func<Guid, Guid, CancellationToken, Task<TransitionResult>> transition, bool deleted)
-    {
-        await BusyAsync(async () =>
-        {
-            var result = await transition(UserId, Agent.Id, CancellationToken.None);
-
-            if (result.Outcome == TransitionOutcome.Done)
-            {
-                await OnRemoved.InvokeAsync((result.Agent ?? Agent, deleted));
-                return;
-            }
-
-            _problems = [];
-            _warnings = [];
-            _message = AgentText.TransitionErrorOf(result.Outcome);
-
-            if (result.Agent is { } current)
-            {
-                await OnChanged.InvokeAsync(current);
-            }
-        });
-    }
-
-    private async Task BusyAsync(Func<Task> work)
-    {
-        _busy = true;
-
-        try
-        {
-            await work();
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-
-    private static string TextOf(Step action) => action switch
-    {
-        Step.Stop => Strings.AgentStop,
-        Step.Archive => Strings.AgentArchive,
-        _ => Strings.AgentDelete,
-    };
-
-    private static string LabelOf(Step action) => action switch
-    {
-        Step.Stop => Strings.AgentStopLabel,
-        Step.Archive => Strings.AgentArchiveLabel,
-        _ => Strings.AgentDeleteLabel,
-    };
-
-    private static string ConfirmOf(Step action) => action switch
-    {
-        Step.Stop => Strings.AgentStopConfirm,
-        Step.Archive => Strings.AgentArchiveConfirm,
-        _ => Strings.AgentDeleteConfirm,
-    };
-
-    private static string SubmitOf(Step action) => action switch
-    {
-        Step.Stop => Strings.AgentStopSubmit,
-        Step.Archive => Strings.AgentArchiveSubmit,
-        _ => Strings.AgentDeleteSubmit,
-    };
-
-    private string Labelled(string format) => string.Format(CultureInfo.CurrentCulture, format, Agent.Settings.Name);
 }

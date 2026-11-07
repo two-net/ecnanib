@@ -7,7 +7,8 @@
 
 @* Interactive: activating, pausing, stopping, cloning, archiving and deleting take no secret. The kill switch's
    code is checked on the circuit, by ITwoFactor.CheckAsync, which has its own throttle (see Two-factor in
-   docs/architecture.md). The settings form is a static page, linked with a plain <a>. The agent detail page is #41's. *@
+   docs/architecture.md). The settings form is a static page, linked with a plain <a>. Each name links to the agent's
+   own page, which has the same actions, through AgentActions. *@
 
 <PageTitle>@Strings.AgentsPageTitle</PageTitle>
 
@@ -30,61 +31,7 @@
                 <p>@Strings.AgentsLimitReached</p>
             }
             <p class="agents-count">@string.Format(CultureInfo.CurrentCulture, Strings.AgentsCount, Current.Count(), Agents.MaxAgentsPerUser)</p>
-            @if (CanStopAll && !_confirmingStopAll)
-            {
-                <button type="button" class="button" @ref="_stopAllButton" @onclick="ConfirmStopAll">@Strings.AgentsStopAll</button>
-            }
-        </div>
-
-        @if (_confirmingStopAll)
-        {
-            @* UC-05: the kill switch for every agent, after confirmation, and a code when two-factor is on (FR-AGT-08). *@
-            <div class="agents-stop-all">
-                <p>@Strings.AgentsStopAllConfirm</p>
-                @if (_twoFactorOn)
-                {
-                    <div class="field">
-                        <label for="stop-all-code">@Strings.FieldTwoFactorCode</label>
-                        <input id="stop-all-code" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="64"
-                               aria-describedby="stop-all-code-hint" @bind="_stopAllCode" @bind:event="oninput" @ref="_stopAllCodeInput" />
-                        <p id="stop-all-code-hint" class="field-hint">@Strings.AgentKillCodeHint</p>
-                    </div>
-                }
-                <div class="agents-actions">
-                    <button type="button" class="button" disabled="@_stoppingAll" @ref="_stopAllConfirm" @onclick="StopAllAsync">@Strings.AgentsStopAllSubmit</button>
-                    <button type="button" class="button" disabled="@_stoppingAll" @onclick="CancelStopAll">@Strings.AgentConfirmCancel</button>
-                </div>
-            </div>
-        }
-
-        @* Always there, so a screen reader announces each step and the result per agent (UC-05). *@
-        <div class="agents-stop-all-result" role="status" tabindex="-1" @ref="_stopAllResult">
-            @if (_stoppingAll)
-            {
-                <p>@Strings.AgentsStopAllWorking</p>
-            }
-            else if (_stopAllError is not null)
-            {
-                <p>@_stopAllError</p>
-            }
-            else if (_stopAll is { } stopped)
-            {
-                @if (stopped.Agents.Count == 0)
-                {
-                    <p>@Strings.AgentsStopAllNone</p>
-                }
-                else
-                {
-                    <p>@Strings.AgentsStopAllHeading</p>
-                    <ul class="facts-list">
-                        @foreach (var agent in stopped.Agents)
-                        {
-                            @* The user chose the name. Razor encodes it, so it's only text. *@
-                            <li>@string.Format(CultureInfo.CurrentCulture, Strings.AgentsStopAllResult, agent.Name, AgentText.KillOutcomeOf(agent.Result.Outcome))</li>
-                        }
-                    </ul>
-                }
-            }
+            <StopAllAgents UserId="_userId" TwoFactorOn="_twoFactorOn" CanStopAll="CanStopAll" OnStopped="ReloadAsync" />
         </div>
 
         @if (!Current.Any())
@@ -97,7 +44,7 @@
                 @foreach (var agent in Current)
                 {
                     <AgentCard @key="agent.Id" Agent="agent" UserId="_userId" Spend="@_spend.GetValueOrDefault(agent.Id)" TwoFactorOn="_twoFactorOn"
-                               HoldsPositions="@_holding.Contains(agent.Id)" OnChanged="ReplaceAsync" OnClone="CloneAsync" OnRemoved="Remove" />
+                               HoldsPositions="@_holding.Contains(agent.Id)" OnChanged="ReplaceAsync" OnCloned="Cloned" OnRemoved="Remove" />
                 }
             </ul>
         }
@@ -109,7 +56,7 @@
                 <ul class="agents">
                     @foreach (var agent in Archived)
                     {
-                        <AgentCard @key="agent.Id" Agent="agent" UserId="_userId" OnChanged="ReplaceAsync" OnClone="CloneAsync" OnRemoved="Remove" />
+                        <AgentCard @key="agent.Id" Agent="agent" UserId="_userId" OnChanged="ReplaceAsync" OnCloned="Cloned" OnRemoved="Remove" />
                     }
                 </ul>
             </details>
@@ -132,19 +79,6 @@
     /// <summary>The Stopped agents that still hold positions or orders on Binance, which the kill switch can close.</summary>
     private HashSet<Guid> _holding = [];
 
-    private bool _confirmingStopAll;
-    private bool _stoppingAll;
-    private string? _stopAllCode;
-    private string? _stopAllError;
-    private StopAllResult? _stopAll;
-    private bool _focusStopAll;
-    private bool _focusStopAllButton;
-    private bool _focusStopAllResult;
-    private ElementReference _stopAllButton;
-    private ElementReference _stopAllConfirm;
-    private ElementReference _stopAllCodeInput;
-    private ElementReference _stopAllResult;
-
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
@@ -152,10 +86,13 @@
     [SupplyParameterFromQuery]
     private string? Saved { get; set; }
 
+    /// <summary>The agent's own page sends archived and deleted here, because the agent is no longer there to show.</summary>
     private string? Notice => _message ?? Saved switch
     {
         "created" => Strings.AgentsCreatedNotice,
         "updated" => Strings.AgentsUpdatedNotice,
+        "archived" => Strings.AgentsArchivedNotice,
+        "deleted" => Strings.AgentsDeletedNotice,
         _ => null,
     };
 
@@ -187,25 +124,6 @@
         {
             _focusNotice = false;
             await _notice.FocusAsync();
-        }
-        else if (_focusStopAll)
-        {
-            _focusStopAll = false;
-            await (_twoFactorOn ? _stopAllCodeInput : _stopAllConfirm).FocusAsync();
-        }
-        else if (_focusStopAllButton)
-        {
-            _focusStopAllButton = false;
-
-            if (CanStopAll)
-            {
-                await _stopAllButton.FocusAsync();
-            }
-        }
-        else if (_focusStopAllResult)
-        {
-            _focusStopAllResult = false;
-            await _stopAllResult.FocusAsync();
         }
     }
 
@@ -243,56 +161,11 @@
         }
     }
 
-    private void ConfirmStopAll()
+    /// <summary>After "Stop all agents", every agent as it is now, and what each still holds.</summary>
+    private async Task ReloadAsync()
     {
-        _confirmingStopAll = true;
-        _stopAllCode = null;
-        _stopAllError = null;
-        _stopAll = null;
-        _focusStopAll = true;
-    }
-
-    private void CancelStopAll()
-    {
-        _confirmingStopAll = false;
-        _stopAllCode = null;
-        _stopAllError = null;
-        _focusStopAllButton = true;
-    }
-
-    /// <summary>
-    /// UC-05: the kill switch for each agent, one at a time, then the result per agent. A refused code keeps the panel
-    /// open for another, and says when only a recovery code will do.
-    /// </summary>
-    private async Task StopAllAsync()
-    {
-        var code = _stopAllCode;
-        _stopAllCode = null;
-        _stopAllError = null;
-        _stopAll = null;
-        _stoppingAll = true;
-
-        try
-        {
-            var result = await Agents.StopAllAsync(_userId, code, CancellationToken.None);
-
-            if (result.Refused)
-            {
-                _stopAllError = AgentText.TwoFactorRefusalOf(result.TwoFactor);
-                _focusStopAll = true;
-                return;
-            }
-
-            _stopAll = result;
-            _confirmingStopAll = false;
-            _agents = [.. await Agents.ListAsync(_userId, includeArchived: true, CancellationToken.None)];
-            await FindHoldingAsync();
-            _focusStopAllResult = true;
-        }
-        finally
-        {
-            _stoppingAll = false;
-        }
+        _agents = [.. await Agents.ListAsync(_userId, includeArchived: true, CancellationToken.None)];
+        await FindHoldingAsync();
     }
 
     /// <summary>
@@ -315,42 +188,11 @@
         _focusNotice = true;
     }
 
-    /// <summary>A Draft named after the original, numbered when that's taken (FR-AGT-12).</summary>
-    private async Task CloneAsync(AgentRecord source)
+    /// <summary>A Draft copy joins the list, and focus goes to the notice that names it (FR-AGT-12).</summary>
+    private void Cloned(AgentRecord clone)
     {
-        var name = CloneName(source.Settings.Name);
-        var result = await Agents.CloneAsync(_userId, source.Id, name, CancellationToken.None);
-
-        if (result is { Outcome: AgentSaveOutcome.Saved, Agent: { } clone })
-        {
-            _agents?.Add(clone);
-            _message = string.Format(CultureInfo.CurrentCulture, Strings.AgentsClonedNotice, clone.Settings.Name);
-        }
-        else
-        {
-            _message = AgentText.SaveErrorOf(result.Outcome);
-        }
-
+        _agents?.Add(clone);
+        _message = string.Format(CultureInfo.CurrentCulture, Strings.AgentsClonedNotice, clone.Settings.Name);
         _focusNotice = true;
-    }
-
-    /// <summary>The first free name of the form "name (copy)", then "name (copy 2)", cut to fit.</summary>
-    private string CloneName(string name)
-    {
-        var taken = Current.Select(agent => agent.Settings.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        for (var number = 1; ; number++)
-        {
-            var suffix = number == 1
-                ? string.Format(CultureInfo.CurrentCulture, Strings.AgentCloneName, "")
-                : string.Format(CultureInfo.CurrentCulture, Strings.AgentCloneNameNumbered, "", number);
-            var stem = name.Length + suffix.Length > AgentLimits.NameMaxLength ? name[..(AgentLimits.NameMaxLength - suffix.Length)].TrimEnd() : name;
-            var candidate = stem + suffix;
-
-            if (!taken.Contains(candidate))
-            {
-                return candidate;
-            }
-        }
     }
 }

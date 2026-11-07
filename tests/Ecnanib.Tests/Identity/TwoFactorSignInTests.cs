@@ -74,7 +74,7 @@ public sealed class TwoFactorSignInTests(SharedTwoFactorApp app, PostgresFixture
 
         using var response = await TwoFactorSteps.SignInAsync(visitor, account.Email, $"{code[..3]} {code[3..]}");
 
-        Assert.Equal("/account", Visitor.Target(response));
+        Assert.Equal("/dashboard", Visitor.Target(response));
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public sealed class TwoFactorSignInTests(SharedTwoFactorApp app, PostgresFixture
         using var used = await TwoFactorSteps.SignInAsync(first, account.Email, code);
         using var again = await TwoFactorSteps.SignInAsync(second, account.Email, code);
 
-        Assert.Equal("/account", Visitor.Target(used));
+        Assert.Equal("/dashboard", Visitor.Target(used));
         Assert.Contains(Refusal, await again.Content.ReadAsStringAsync(Cancellation), StringComparison.Ordinal);
     }
 
@@ -191,7 +191,7 @@ public sealed class TwoFactorSignInTests(SharedTwoFactorApp app, PostgresFixture
         using var used = await TwoFactorSteps.SignInAsync(first, account.Email, account.RecoveryCodes[0].ToUpperInvariant());
         using var again = await TwoFactorSteps.SignInAsync(second, account.Email, account.RecoveryCodes[0]);
 
-        Assert.Equal("/account", Visitor.Target(used));
+        Assert.Equal("/dashboard", Visitor.Target(used));
         Assert.Contains(Refusal, await again.Content.ReadAsStringAsync(Cancellation), StringComparison.Ordinal);
         Assert.Equal(9, await TwoFactorRows.RecoveryCodesAsync(app.ConnectionString, account.Email, Cancellation));
         Assert.Single(await AuditAsync(account.Email), row => row.Action == "RecoveryCodeUsed");

@@ -1,0 +1,379 @@
+@using System.Globalization
+@implements IDisposable
+@inject IAgentPositions Positions
+@inject ITradeJournal Journal
+@inject IAiSpending Spending
+@inject IDecisionTraces Traces
+@inject ICycleTimes CycleTimes
+@inject IMarketWatch Market
+@inject LiveUpdates Live
+@inject ILogger<AgentOverview> Logger
+
+@* FR-AGT-11's overview of one agent, on the dashboard and on the agent's page: its status, next cycle, position, realized
+   and unrealized P&L net of fees and funding, AI cost to date and last decision. Everything but the price is read on
+   the prerender, from the database alone, and again when the circuit starts. Then it updates live (FR-UI-05): a cycle's
+   progress as it comes, its orders, position and trades after Execution's events, and the price from a shared watch of
+   the pair while the agent holds or waits on something. See The dashboard and the agent's page in docs/architecture.md. *@
+
+<div class="overview">
+    <dl class="facts">
+        <dt>@Strings.AgentFieldStatus</dt>
+        <dd>@AgentText.StatusOf(Agent.Status)</dd>
+
+        <dt>@Strings.AgentFieldNextCycle</dt>
+        <dd>
+            @if (Agent.Status == AgentStatus.Active)
+            {
+                @string.Format(CultureInfo.CurrentCulture, Strings.AgentNextCycleAbout, Time.Format(CycleTimes.NextCycleAt(Agent.Settings.Timeframe)))
+            }
+            else
+            {
+                @Strings.AgentNextCycleNone
+            }
+        </dd>
+
+        <dt>@Strings.AgentFieldPosition</dt>
+        <dd>
+            @if (_position.Position is { } position)
+            {
+                <span class="overview-number">@string.Format(CultureInfo.CurrentCulture, Strings.AgentPositionOf, AgentText.SideOf(position.Side), AgentText.Number(position.Quantity), PositionSymbol, AgentText.AmountOf(position.AverageEntry, QuoteAsset))</span>
+            }
+            else
+            {
+                @Strings.AgentPositionNone
+            }
+        </dd>
+
+        @if (_position.Position is { } held)
+        {
+            <dt>@Strings.AgentFieldStop</dt>
+            <dd class="overview-number">@(held.Stop is { } stop ? AgentText.AmountOf(stop, QuoteAsset) : Strings.AgentStopNone)</dd>
+            <dt>@Strings.AgentFieldTargets</dt>
+            <dd class="overview-number">@(_position.Targets.Count > 0 ? string.Join(CultureInfo.CurrentCulture.TextInfo.ListSeparator + " ", _position.Targets.Select(target => AgentText.AmountOf(target, QuoteAsset))) : Strings.AgentTargetsNone)</dd>
+            @if (_position.OpenedAt is { } openedAt)
+            {
+                <dt>@Strings.AgentFieldOpened</dt>
+                <dd>@Time.Format(openedAt)</dd>
+            }
+        }
+
+        @if (_position.PendingEntry is { } pending)
+        {
+            <dt>@Strings.AgentFieldPendingEntry</dt>
+            <dd class="overview-number">@PendingOf(pending)</dd>
+        }
+
+        @if (Watching)
+        {
+            <dt>@Strings.AgentFieldPrice</dt>
+            <dd>
+                @if (_market?.Price is { } price)
+                {
+                    <span class="overview-number">@AgentText.AmountOf(price, QuoteAsset)</span>
+                    @if (_market.Stale)
+                    {
+                        <span class="overview-note">@string.Format(CultureInfo.CurrentCulture, Strings.AgentPriceStale, Time.Format(_market.At))</span>
+                    }
+                }
+                else
+                {
+                    <span class="skeleton overview-skeleton" aria-hidden="true"></span>
+                    <span class="visually-hidden">@Strings.AgentPriceLoading</span>
+                }
+            </dd>
+        }
+
+        @if (_position.Position is not null)
+        {
+            <dt>@Strings.AgentFieldUnrealized</dt>
+            <dd>
+                @if (Unrealized is { } unrealized)
+                {
+                    <SignedAmount Amount="unrealized" Asset="@QuoteAsset" />
+                }
+                else
+                {
+                    <span class="skeleton overview-skeleton" aria-hidden="true"></span>
+                    <span class="visually-hidden">@Strings.AgentPriceLoading</span>
+                }
+                <span class="overview-note">@Strings.AgentUnrealizedHint</span>
+            </dd>
+        }
+
+        <dt>@Strings.AgentFieldRealized</dt>
+        <dd>
+            @if (_totals.Count == 0 || _totals.All(totals => totals.ClosedTrades == 0))
+            {
+                @Strings.AgentRealizedNone
+            }
+            else
+            {
+                @foreach (var totals in _totals.Where(totals => totals.ClosedTrades > 0))
+                {
+                    <span class="overview-line">
+                        <SignedAmount Amount="totals.RealizedPnl" Asset="@totals.QuoteAsset" />
+                        <span class="overview-note">@string.Format(CultureInfo.CurrentCulture, Strings.AgentRealizedTrades, totals.ClosedTrades)</span>
+                    </span>
+                    @if (totals.Provisional > 0)
+                    {
+                        <span class="overview-note">@string.Format(CultureInfo.CurrentCulture, Strings.AgentRealizedProvisional, totals.Provisional)</span>
+                    }
+                    @if (totals.FeesUnknown > 0)
+                    {
+                        <span class="overview-note">@string.Format(CultureInfo.CurrentCulture, Strings.AgentRealizedFeesUnknown, totals.FeesUnknown)</span>
+                    }
+                }
+            }
+        </dd>
+
+        <dt>@Strings.AgentFieldAiCost</dt>
+        <dd>
+            <span class="overview-number">@AgentText.UsdOf(_cost.Usd)</span>
+            @if (_cost.UnpricedTokens > 0)
+            {
+                <span class="overview-note">@string.Format(CultureInfo.CurrentCulture, Strings.AgentAiCostUnpriced, _cost.UnpricedTokens)</span>
+            }
+        </dd>
+
+        <dt>@Strings.AgentFieldLastDecision</dt>
+        <dd>
+            @if (_cycle is null)
+            {
+                @Strings.AgentLastDecisionNone
+            }
+            else if (_cycle.FinishedAt is null)
+            {
+                @Deciding(_cycle)
+            }
+            else
+            {
+                <span class="overview-line">
+                    <strong>@(_cycle.Outcome is { } outcome ? AgentText.OutcomeOf(outcome) : Strings.AgentLastDecisionUnknown)</strong>
+                    <span class="overview-note">@Time.Format(_cycle.CandleClose)</span>
+                </span>
+                @if (Proposal is { } summary)
+                {
+                    @* A model wrote it. Razor encodes it, so it's only text. *@
+                    <span class="overview-decision">@summary</span>
+                }
+            }
+        </dd>
+    </dl>
+
+    @if (AgentText.ExplanationOf(Agent.StatusReason) is { } explanation)
+    {
+        <p class="agent-problem">@explanation</p>
+    }
+    @if (Agent.LossLimitUntil is { } until && Agent.Status != AgentStatus.Active)
+    {
+        <p class="agent-problem">@string.Format(CultureInfo.CurrentCulture, Strings.AgentLossLimitUntil, Time.Format(until))</p>
+    }
+    @if (BudgetUntil is { } budgetUntil)
+    {
+        @* FR-CYC-07's protective-only mode, beside the status, because the agent stays Active. *@
+        <p class="agent-problem">@string.Format(CultureInfo.CurrentCulture, Strings.AgentBudgetReachedUntil, Time.Format(budgetUntil))</p>
+    }
+    @if (Agent.IsDemo)
+    {
+        @* EXT-BIN-08. *@
+        <p class="overview-note">@Strings.AgentDemoResultsHint</p>
+    }
+</div>
+
+@code {
+    private RecordedPosition _position = RecordedPosition.None;
+    private IReadOnlyList<JournalTotals> _totals = [];
+    private AiCostToDate _cost = AiCostToDate.None;
+    private AiSpend? _spend;
+    private CycleProgress? _cycle;
+    private LiveMarket? _market;
+    private Guid _loadedFor;
+    private IDisposable? _live;
+    private IDisposable? _watch;
+    private WatchKey? _watchKey;
+    private LiveRefresh? _refresh;
+
+    [Parameter, EditorRequired]
+    public AgentRecord Agent { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public Guid UserId { get; set; }
+
+    /// <summary>Watch the price even with nothing open, as the agent's own page does.</summary>
+    [Parameter]
+    public bool AlwaysWatch { get; set; }
+
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    private string QuoteAsset => Agent.QuoteAsset;
+
+    /// <summary>The position's own pair, which is the agent's unless it changed while the agent had nothing open.</summary>
+    private string PositionSymbol => _position.Symbol ?? Agent.Settings.Symbol;
+
+    private bool Watching => RendererInfo.IsInteractive && (AlwaysWatch || _position.Position is not null || _position.PendingEntry is not null);
+
+    /// <summary>
+    /// What the position would make or lose closed now, net of the fees and funding its trades have paid so far, which
+    /// the journal reads after the entry ends and after each funding time. Its exit's fee isn't known until it exits.
+    /// </summary>
+    private decimal? Unrealized
+    {
+        get
+        {
+            if (_position.Position is not { } position || _market?.ClosingPrice(position.Side == PositionSide.Long) is not { } price)
+            {
+                return null;
+            }
+
+            var costs = _totals.FirstOrDefault(totals => totals.QuoteAsset == QuoteAsset);
+
+            return _position.UnrealizedPnl(price) - (costs?.OpenFees ?? 0m) + (costs?.OpenFunding ?? 0m);
+        }
+    }
+
+    /// <summary>When an Active agent's protective-only mode ends (FR-CYC-07), or null when its AI budget hasn't run out.</summary>
+    private DateTimeOffset? BudgetUntil => Agent.Status == AgentStatus.Active ? _spend?.Check(Agent.Settings.Budget).Until : null;
+
+    /// <summary>The Strategist's summary of the last decision, which a model wrote.</summary>
+    private string? Proposal => _cycle?.Roles.FirstOrDefault(role => role.Role == AiRole.Strategist)?.Summary;
+
+    protected override void OnInitialized()
+    {
+        // Only the circuit listens and watches: a prerender ends at once, and would start a watch for nothing.
+        if (RendererInfo.IsInteractive)
+        {
+            _refresh = new LiveRefresh(InvokeAsync, RefreshAsync, Logger);
+            _live = Live.Subscribe(UserId, OnLive);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor != Agent.Id)
+        {
+            _loadedFor = Agent.Id;
+            await ReadAsync();
+        }
+
+        Watch();
+    }
+
+    public void Dispose()
+    {
+        _live?.Dispose();
+        _watch?.Dispose();
+    }
+
+    private async Task ReadAsync()
+    {
+        var position = Positions.FindAsync(UserId, Agent.Id, CancellationToken.None);
+        var totals = Journal.ReadTotalsAsync(UserId, Agent.Id, Agent.Settings.Environment, CancellationToken.None);
+        var cost = Spending.FindToDateAsync(UserId, Agent.Id, CancellationToken.None);
+        var spend = Spending.FindAsync(UserId, Agent.Id, CancellationToken.None);
+        var cycle = Traces.FindLatestAsync(UserId, Agent.Id, CancellationToken.None);
+
+        await Task.WhenAll(position, totals, cost, spend, cycle);
+
+        _position = await position;
+        _totals = await totals;
+        _cost = await cost;
+        _spend = await spend;
+        _cycle = await cycle;
+    }
+
+    private async Task RefreshAsync()
+    {
+        await ReadAsync();
+        Watch();
+        StateHasChanged();
+    }
+
+    /// <summary>Watches the pair while the price matters here, and stops when it doesn't, so a page costs weight only then.</summary>
+    private void Watch()
+    {
+        WatchKey? key = Watching
+            ? new WatchKey(_position.Market ?? Agent.Settings.Market, _position.Environment ?? Agent.Settings.Environment, PositionSymbol, null)
+            : null;
+
+        if (key == _watchKey)
+        {
+            return;
+        }
+
+        _watch?.Dispose();
+        _watch = null;
+        _watchKey = key;
+        _market = null;
+
+        if (key is not null)
+        {
+            _watch = Market.Watch(key, OnMarket);
+        }
+    }
+
+    /// <summary>From the watch's loop, or at once with the latest. It hands over and returns.</summary>
+    private void OnMarket(LiveMarket market) => _ = InvokeAsync(() =>
+    {
+        if (market.Key == _watchKey)
+        {
+            _market = market;
+            StateHasChanged();
+        }
+    });
+
+    /// <summary>On the thread that made the change, so it only hands over. Another agent's changes are someone else's.</summary>
+    private void OnLive(LiveEvent change)
+    {
+        if (change.AgentId != Agent.Id)
+        {
+            return;
+        }
+
+        switch (change.Change)
+        {
+            case LiveChange.Cycle when change.Cycle is { } progress:
+                _ = InvokeAsync(() => Apply(progress));
+                break;
+            case LiveChange.Execution:
+                _refresh?.Request();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// A cycle's progress as it comes. The analysts publish at once, so an older snapshot can arrive after a newer one:
+    /// one for an earlier candle, or one still running after this cycle finished, is dropped. A finished cycle has spent
+    /// on AI, and may have traded, so everything is read again.
+    /// </summary>
+    private void Apply(CycleProgress progress)
+    {
+        if (_cycle is { } shown
+            && (progress.CandleClose < shown.CandleClose || (progress.CycleId == shown.CycleId && shown.FinishedAt is not null && progress.FinishedAt is null)))
+        {
+            return;
+        }
+
+        _cycle = progress;
+        StateHasChanged();
+
+        if (progress.FinishedAt is not null)
+        {
+            _refresh?.Request();
+        }
+    }
+
+    private string Deciding(CycleProgress cycle) =>
+        cycle.Roles.FirstOrDefault(role => role.State == RoleState.Running) is { } running
+            ? string.Format(CultureInfo.CurrentCulture, Strings.AgentDecidingRole, AgentText.RoleOf(running.Role))
+            : Strings.AgentDeciding;
+
+    private string PendingOf(AgentPendingEntry pending) => pending.Price is { } price
+        ? string.Format(
+            CultureInfo.CurrentCulture, Strings.AgentPendingLimitOf, AgentText.SideOf(pending.Side), AgentText.Number(pending.Quantity), PositionSymbol,
+            AgentText.AmountOf(price, QuoteAsset), AgentText.Number(pending.Executed))
+        : string.Format(
+            CultureInfo.CurrentCulture, Strings.AgentPendingMarketOf, AgentText.SideOf(pending.Side), AgentText.Number(pending.Quantity), PositionSymbol,
+            AgentText.Number(pending.Executed));
+}

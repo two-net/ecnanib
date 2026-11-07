@@ -18,6 +18,7 @@ internal sealed class AgentPrerequisites(
     ICredentials credentials,
     IAuditTrail audit,
     TimeProvider time,
+    AgentObservers observers,
     ILogger<AgentPrerequisites> logger)
 {
     /// <summary>The one-off run that follows a change to a credential.</summary>
@@ -150,6 +151,7 @@ internal sealed class AgentPrerequisites(
 
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        observers.Changed(userId, agentId);
 
         logger.LogInformation("Paused agent {AgentId} of user {UserId}: {Reason}", agentId, userId, reason);
 

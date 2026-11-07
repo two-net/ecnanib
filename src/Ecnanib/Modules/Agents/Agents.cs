@@ -27,6 +27,7 @@ internal sealed class Agents(
     ITwoFactor twoFactor,
     IEmailVerification emailVerification,
     TimeProvider time,
+    AgentObservers observers,
     IServiceProvider services,
     ILogger<Agents> logger) : IAgents
 {
@@ -123,6 +124,7 @@ internal sealed class Agents(
 
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        observers.Changed(userId, id);
 
         logger.LogInformation("Created agent {AgentId} for user {UserId}: {Market} {Environment}", id, userId, cleaned.Market, cleaned.Environment);
 
@@ -248,6 +250,7 @@ internal sealed class Agents(
         }
 
         await transaction.CommitAsync(cancellationToken);
+        observers.Changed(userId, id);
 
         logger.LogInformation("Updated agent {AgentId} for user {UserId}", id, userId);
 
@@ -305,6 +308,7 @@ internal sealed class Agents(
 
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        observers.Changed(userId, cloneId);
 
         logger.LogInformation("Cloned agent {SourceAgentId} as {AgentId} for user {UserId}", id, cloneId, userId);
 
@@ -387,6 +391,7 @@ internal sealed class Agents(
                     : AgentAudit.ByUser(AuditAction.AgentActivated, userId, id, changes));
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            observers.Changed(userId, id);
         }
 
         logger.LogInformation("Activated agent {AgentId} for user {UserId}, from {Status}, because {Reason}", id, userId, before.Status, reason);
@@ -566,6 +571,7 @@ internal sealed class Agents(
 
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            observers.Changed(userId, id);
         }
 
         logger.LogInformation("Switched agent {AgentId} of user {UserId} to Live, from {Status}", id, userId, before.Status);
@@ -620,6 +626,7 @@ internal sealed class Agents(
 
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        observers.Changed(userId, id);
 
         logger.LogInformation(
             "Paused agent {AgentId} of user {UserId} because of {Reason}, until {Until}", id, userId, reason, breach.Until);
@@ -668,6 +675,7 @@ internal sealed class Agents(
 
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        observers.Changed(userId, id);
 
         logger.LogWarning("Put agent {AgentId} of user {UserId} in Error, because its decision cycles kept failing", id, userId);
 
@@ -694,6 +702,7 @@ internal sealed class Agents(
                         .SetProperty(row => row.LossLimitUntil, (DateTimeOffset?)null)
                         .SetProperty(row => row.Version, row => row.Version + 1),
                     cancellationToken);
+            observers.Changed(userId, id);
 
             logger.LogInformation(
                 "Agent {AgentId} of user {UserId} stays paused after its loss limit's pause ended, because it fails activation: {Problems}",
@@ -813,6 +822,7 @@ internal sealed class Agents(
                 ]));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        observers.Changed(userId, id);
 
         logger.LogInformation("Deleted agent {AgentId} for user {UserId}", id, userId);
 
@@ -995,6 +1005,7 @@ internal sealed class Agents(
 
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            observers.Changed(userId, id);
 
             logger.LogWarning("Used the kill switch on agent {AgentId} of user {UserId}, which was {From}", id, userId, agent.Status);
         }
@@ -1077,6 +1088,7 @@ internal sealed class Agents(
         audit.Add(context, AgentAudit.ByUser(action, userId, id, AgentAudit.StatusChange(agent.Status, to, AgentStatusReason.User)));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        observers.Changed(userId, id);
 
         logger.LogInformation("Agent {AgentId} of user {UserId} went from {From} to {To}", id, userId, agent.Status, to);
 

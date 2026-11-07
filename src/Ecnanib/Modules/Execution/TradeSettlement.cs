@@ -1,5 +1,6 @@
 using Ecnanib.Kernel;
 using Ecnanib.Modules.ExchangeAdapter.Contracts;
+using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,7 @@ internal sealed class TradeSettlement(
     AgentSessions sessions,
     IExchangeAccount accounts,
     IExchangeMarketData marketData,
+    ExecutionObservers observers,
     TimeProvider time,
     ILogger<TradeSettlement> logger)
 {
@@ -37,6 +39,24 @@ internal sealed class TradeSettlement(
 
     /// <summary>How far a funding rate's time may be from the payment's.</summary>
     private static readonly TimeSpan RateMatch = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// An open Futures trade's funding is read after each of these UTC boundaries, which every funding interval
+    /// Binance uses but one hour falls on, so an hourly symbol's shows up to four hours late.
+    /// </summary>
+    public static readonly TimeSpan FundingStep = TimeSpan.FromHours(4);
+
+    /// <summary>
+    /// How long after a boundary an open trade's funding is read, at the least: Binance books the payment just after,
+    /// and the candle closes that every timeframe shares are over by then.
+    /// </summary>
+    public static readonly TimeSpan FundingDelay = TimeSpan.FromMinutes(5);
+
+    /// <summary>Agents' reads are spread over this much after <see cref="FundingDelay"/>, by agent, so they don't all come at once.</summary>
+    public static readonly TimeSpan FundingSpread = TimeSpan.FromMinutes(30);
+
+    /// <summary>How far before what was read last an open trade's funding is read again, in case Binance booked one late.</summary>
+    private static readonly TimeSpan FundingOverlap = TimeSpan.FromHours(1);
 
     /// <summary>Binance's code for a symbol it doesn't list.</summary>
     private const int UnknownSymbol = -1121;
@@ -99,6 +119,167 @@ internal sealed class TradeSettlement(
         }
 
         return settled;
+    }
+
+    /// <summary>
+    /// The latest <see cref="FundingStep"/> boundary whose funding the agent's open Futures trades are due to have read
+    /// by <paramref name="now"/>, or null while it's still within the boundary's delay and the agent's share of the
+    /// spread.
+    /// </summary>
+    public static DateTimeOffset? FundingDue(Guid agentId, DateTimeOffset now)
+    {
+        var boundary = TradeMath.Floor(now, FundingStep);
+        var spread = TimeSpan.FromTicks((agentId.GetHashCode() & int.MaxValue) % FundingSpread.Ticks);
+
+        return now >= boundary + FundingDelay + spread ? boundary : null;
+    }
+
+    /// <summary>
+    /// What the agent's open trades have cost so far, so their unrealized P&amp;L is net of it (FR-AGT-11): an entry's
+    /// fills and their fees, once the entry has ended, and on Futures the funding paid or received, after each
+    /// <see cref="FundingStep"/> boundary. Each read is once: the fills when the entry ended, and the funding since the
+    /// last read, with an hour's overlap that is skipped by ID. Settling reads both again, whole, and replaces these. A
+    /// few trades a pass, like settling. Returns how many trades were read.
+    /// </summary>
+    public async Task<int> AccrueOpenAsync(Guid userId, Guid agentId, CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow();
+        var due = FundingDue(agentId, now);
+        List<TradeRow> open;
+
+        await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            open = await context.Set<TradeRow>()
+                .AsNoTracking()
+                .Where(trade => trade.UserId == userId && trade.AgentId == agentId && trade.Status == TradeStatus.Open
+                    && ((trade.EntryFeesReadAt == null && context.Set<OrderRow>().Any(entry => entry.Id == trade.EntryId && entry.Resolved))
+                        || (due != null && trade.Market == Market.Futures && (trade.FundingReadTo ?? trade.OpenedAt) < due)))
+                .OrderBy(trade => trade.OpenedAt)
+                .Take(TradesPerPass)
+                .ToListAsync(cancellationToken);
+        }
+
+        var accrued = 0;
+
+        foreach (var group in open.GroupBy(trade => (trade.CredentialId, trade.Market, trade.Environment, trade.Symbol)))
+        {
+            AgentSession session;
+
+            try
+            {
+                session = await sessions.OpenAsync(userId, agentId, group.Key.CredentialId, group.Key.Market, group.Key.Environment, group.Key.Symbol, cancellationToken);
+            }
+            catch (AgentSessionException exception)
+            {
+                // Settling reads it all once the trade closes, and the key's own checks deal with a key that can't be used.
+                logger.LogInformation("An open trade's fees and funding can't be read yet, because its key or pair can't be used: {Failure}", exception.Failure);
+                continue;
+            }
+
+            using (session)
+            {
+                var pass = new Pass();
+
+                foreach (var trade in group)
+                {
+                    try
+                    {
+                        accrued += await AccrueAsync(session, trade, due, pass, now, cancellationToken) ? 1 : 0;
+                    }
+                    catch (ExchangeException exception)
+                    {
+                        logger.LogInformation("Open trade {TradeId}'s fees and funding couldn't be read, so they're read next time: {Failure}", trade.Id, exception.Failure);
+                    }
+                }
+            }
+        }
+
+        return accrued;
+    }
+
+    /// <summary>One open trade's reads that are due. True when anything was written.</summary>
+    private async Task<bool> AccrueAsync(AgentSession session, TradeRow trade, DateTimeOffset? due, Pass pass, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        OrderRow entry;
+        List<ProtectionRow> parts;
+
+        await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            entry = await context.Set<OrderRow>().AsNoTracking().SingleAsync(row => row.Id == trade.EntryId, cancellationToken);
+            parts = await context.Set<ProtectionRow>().AsNoTracking().Where(row => row.EntryId == trade.EntryId).ToListAsync(cancellationToken);
+        }
+
+        var fills = new List<FillRow>();
+        var readFills = trade.EntryFeesReadAt is null && entry.Resolved;
+
+        if (readFills && entry.ExchangeOrderId is { } exchangeOrderId)
+        {
+            var orderTrades = await accounts.GetOrderTradesAsync(session.Market, session.Key, trade.Symbol, exchangeOrderId, RequestPriority.Normal, cancellationToken);
+
+            foreach (var fill in orderTrades)
+            {
+                fills.Add(new FillRow
+                {
+                    Id = Guid.NewGuid(),
+                    TradeId = trade.Id,
+                    OrderId = entry.Id,
+                    Source = FillSource.Agent,
+                    ExchangeTradeId = fill.TradeId,
+                    ExchangeOrderId = fill.OrderId,
+                    Side = entry.Side,
+                    Price = fill.Price,
+                    Quantity = fill.Quantity,
+                    Fee = fill.Commission,
+                    FeeAsset = fill.CommissionAsset,
+                    FeeQuote = await FeeInQuoteAsync(session, trade, fill.Commission, fill.CommissionAsset, fill.Price, fill.Time, pass, cancellationToken),
+                    Maker = fill.Maker,
+                    FilledAt = fill.Time,
+                    CreatedAt = now,
+                });
+            }
+        }
+
+        var funding = new List<FundingPaymentRow>();
+        var readFunding = due is { } boundary && trade.Market == Market.Futures && (trade.FundingReadTo ?? trade.OpenedAt) < boundary;
+
+        if (readFunding)
+        {
+            var from = trade.FundingReadTo is { } read && read - FundingOverlap > trade.OpenedAt ? read - FundingOverlap : trade.OpenedAt;
+            funding = await FundingAsync(session, trade, TradeMath.Leaves(parts), from, now, withRates: false, now, cancellationToken);
+        }
+
+        if (!readFills && !readFunding)
+        {
+            return false;
+        }
+
+        await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var recordedFills = await context.Set<FillRow>()
+                .Where(fill => fill.TradeId == trade.Id && fill.Source == FillSource.Agent)
+                .Select(fill => fill.ExchangeTradeId)
+                .ToListAsync(cancellationToken);
+            var recordedPayments = await context.Set<FundingPaymentRow>()
+                .Where(payment => payment.TradeId == trade.Id)
+                .Select(payment => payment.ExchangeTransactionId)
+                .ToListAsync(cancellationToken);
+
+            context.AddRange(fills.Where(fill => !recordedFills.Contains(fill.ExchangeTradeId)));
+            context.AddRange(funding.Where(payment => !recordedPayments.Contains(payment.ExchangeTransactionId)));
+
+            var stored = await context.Set<TradeRow>().SingleAsync(row => row.Id == trade.Id, cancellationToken);
+            stored.EntryFeesReadAt = readFills ? now : stored.EntryFeesReadAt;
+            stored.FundingReadTo = readFunding ? now : stored.FundingReadTo;
+            stored.UpdatedAt = now;
+
+            observers.AfterCommit(context, trade.UserId, trade.AgentId);
+            await context.SaveChangesAsync(cancellationToken);
+        }
+
+        logger.LogInformation(
+            "Read open trade {TradeId}'s costs so far: {Fills} entry fills and {Payments} funding payments", trade.Id, fills.Count, funding.Count);
+
+        return true;
     }
 
     private async Task SettleAsync(AgentSession session, TradeRow trade, Pass pass, CancellationToken cancellationToken)
@@ -173,17 +354,27 @@ internal sealed class TradeSettlement(
 
         fills.AddRange(await OutsideAsync(session, trade, leaves, pass, now, cancellationToken));
 
-        var funding = trade.Market == Market.Futures ? await FundingAsync(session, trade, leaves, now, cancellationToken) : [];
+        var funding = trade.Market == Market.Futures
+            ? await FundingAsync(session, trade, leaves, trade.OpenedAt, trade.ClosedAt!.Value, withRates: true, now, cancellationToken)
+            : [];
         var excursions = await ExcursionsAsync(trade, cancellationToken);
 
         Settle(trade, entry, fills, unfilled, funding, excursions, now);
 
         await using (var context = await contextFactory.CreateDbContextAsync(cancellationToken))
         {
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+            // What was read while it was open goes, because this has read it all again, whole.
+            await context.Set<FillRow>().Where(fill => fill.TradeId == trade.Id).ExecuteDeleteAsync(cancellationToken);
+            await context.Set<FundingPaymentRow>().Where(payment => payment.TradeId == trade.Id).ExecuteDeleteAsync(cancellationToken);
+
             context.Update(trade);
             context.AddRange(fills);
             context.AddRange(funding);
+            observers.AfterCommit(context, trade.UserId, trade.AgentId);
             await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         logger.LogInformation(
@@ -526,34 +717,44 @@ internal sealed class TradeSettlement(
     }
 
     /// <summary>
-    /// The trade's share of each Futures funding payment while it was open: by what its parts held at the time, among
-    /// everything the agent's trades in the pair held then. A payment in another asset than the quote is logged and left out.
+    /// The trade's share of each Futures funding payment between <paramref name="from"/> and <paramref name="until"/>:
+    /// by what its parts held at the time, among everything the agent's trades in the pair held then. A payment in
+    /// another asset than the quote is logged and left out.
     /// </summary>
+    /// <param name="withRates">Read each payment's rate too, which is for the record, so an open trade's reads leave it to settling.</param>
     private async Task<List<FundingPaymentRow>> FundingAsync(
-        AgentSession session, TradeRow trade, List<ProtectionRow> leaves, DateTimeOffset now, CancellationToken cancellationToken)
+        AgentSession session,
+        TradeRow trade,
+        List<ProtectionRow> leaves,
+        DateTimeOffset from,
+        DateTimeOffset until,
+        bool withRates,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
-        var closedAt = trade.ClosedAt!.Value;
-        var payments = await accounts.GetFundingFeesAsync(session.Key, trade.Symbol, trade.OpenedAt, closedAt, cancellationToken);
+        var payments = await accounts.GetFundingFeesAsync(session.Key, trade.Symbol, from, until, cancellationToken);
 
         if (payments.Count == 0)
         {
             return [];
         }
 
-        IReadOnlyList<ExchangeFundingRate> rates;
+        IReadOnlyList<ExchangeFundingRate> rates = [];
 
         try
         {
-            rates = await marketData.GetFundingRatesAsync(trade.Environment, trade.Symbol, trade.OpenedAt - RateMatch, closedAt + RateMatch, cancellationToken);
+            if (withRates)
+            {
+                rates = await marketData.GetFundingRatesAsync(trade.Environment, trade.Symbol, from - RateMatch, until + RateMatch, cancellationToken);
+            }
         }
         catch (ExchangeException exception)
         {
             // The rate is for the record. The amounts are what count.
             logger.LogInformation("Binance couldn't give {Symbol}'s funding rates, so trade {TradeId}'s are left out: {Failure}", trade.Symbol, trade.Id, exception.Failure);
-            rates = [];
         }
 
-        var agentLeaves = await AgentLeavesAsync(trade, cancellationToken);
+        var agentLeaves = await AgentLeavesAsync(trade, until, cancellationToken);
         var shares = new List<FundingPaymentRow>();
 
         foreach (var payment in payments)
@@ -592,14 +793,14 @@ internal sealed class TradeSettlement(
         return shares;
     }
 
-    /// <summary>The leaves of every entry of the agent's in the trade's pair that was open at some point while the trade was.</summary>
-    private async Task<List<ProtectionRow>> AgentLeavesAsync(TradeRow trade, CancellationToken cancellationToken)
+    /// <summary>The leaves of every entry of the agent's in the trade's pair that was open at some point before <paramref name="until"/>.</summary>
+    private async Task<List<ProtectionRow>> AgentLeavesAsync(TradeRow trade, DateTimeOffset until, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
         var parts = await context.Set<ProtectionRow>()
             .AsNoTracking()
-            .Where(part => part.UserId == trade.UserId && part.AgentId == trade.AgentId && part.OpenedAt <= trade.ClosedAt
+            .Where(part => part.UserId == trade.UserId && part.AgentId == trade.AgentId && part.OpenedAt <= until
                 && context.Set<OrderRow>().Any(entry => entry.Id == part.EntryId && entry.Market == trade.Market
                     && entry.Environment == trade.Environment && entry.Symbol == trade.Symbol))
             .ToListAsync(cancellationToken);
@@ -651,11 +852,16 @@ internal sealed class TradeSettlement(
         using var limit = new CancellationTokenSource(OrderStore.WriteLimit);
         await using var context = await contextFactory.CreateDbContextAsync(limit.Token);
 
-        await context.Set<TradeRow>()
+        var settled = await context.Set<TradeRow>()
             .Where(row => row.Id == trade.Id && row.SettledAt == null)
             .ExecuteUpdateAsync(
                 row => row.SetProperty(column => column.SettledAt, now).SetProperty(column => column.SettleAfter, (DateTimeOffset?)null).SetProperty(column => column.UpdatedAt, now),
                 limit.Token);
+
+        if (settled > 0)
+        {
+            observers.Changed(trade.UserId, trade.AgentId);
+        }
 
         logger.LogWarning(
             "Trade {TradeId} is settled from its orders alone, with its fees and funding unknown, because for a day {Reason}",

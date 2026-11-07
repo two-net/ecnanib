@@ -86,7 +86,7 @@
         {
             case SignInOutcome.SignedIn:
                 await HttpContext.SignInAsync(result.Principal!);
-                Navigation.NavigateTo(LocalUrl.Or(ReturnUrl, "/account"));
+                Navigation.NavigateTo(LocalUrl.Or(ReturnUrl, "/dashboard"));
                 return;
 
             case SignInOutcome.CodeRequired:

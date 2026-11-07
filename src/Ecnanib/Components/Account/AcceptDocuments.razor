@@ -31,7 +31,7 @@
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
 
-    private string Target => LocalUrl.Or(ReturnUrl, "/account");
+    private string Target => LocalUrl.Or(ReturnUrl, "/dashboard");
 
     protected override void OnInitialized()
     {
