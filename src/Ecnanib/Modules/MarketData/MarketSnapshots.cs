@@ -53,4 +53,42 @@ internal sealed class MarketSnapshots(CandleFeed candles, QuoteFeed quotes, Time
 
         return new MarketSnapshot(market, environment, symbol, request.Timeframe, await series, await context, book, futures);
     }
+
+    public async Task<IReadOnlyList<Candle>> ReadCandlesAsync(CandleRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!Failures.IsSymbol(request.Symbol))
+        {
+            throw new ArgumentException("A symbol is upper-case letters and digits, such as BTCUSDT.", nameof(request));
+        }
+
+        if (request.Count is < 1 or > CandleRequest.MaxCount)
+        {
+            throw new ArgumentException($"A chart reads 1 to {CandleRequest.MaxCount} candles.", nameof(request));
+        }
+
+        var interval = Timeframes.Interval(request.Timeframe);
+        var lastOpen = Timeframes.LastClosed(interval, time.GetUtcNow());
+
+        try
+        {
+            var series = await candles.GetAsync(new SeriesKey(request.Market, request.Environment, request.Symbol, interval), lastOpen, cancellationToken);
+
+            return [.. series.Candles.TakeLast(request.Count)];
+        }
+        catch (ExchangeException exception)
+        {
+            var failure = Failures.From(exception);
+            logger.LogWarning(
+                "Candles for {Market} {Environment} {Symbol} {Timeframe} couldn't be read for a chart: {Failure}",
+                request.Market,
+                request.Environment,
+                request.Symbol,
+                request.Timeframe,
+                failure.Failure);
+
+            throw failure;
+        }
+    }
 }

@@ -570,7 +570,10 @@ internal sealed class DecisionCycles(
     private static UntrustedContent RoleOutput(RoleOutput output) =>
         new(UntrustedKind.RoleOutput, output.Role.ToString(), OutputContracts.Write(output));
 
-    /// <summary>What the role concluded, for the council view (FR-ROLE-08). A model wrote it.</summary>
+    /// <summary>
+    /// What the role concluded, for the council view (FR-ROLE-08). A model wrote it, apart from the Strategist's action
+    /// and the Risk Critic's verdict before the colon, which <see cref="ActionOf"/> reads back.
+    /// </summary>
     private static string? SummaryOf(RoleOutput? output) => output switch
     {
         TechnicalAssessment technical => technical.Summary,
@@ -579,4 +582,28 @@ internal sealed class DecisionCycles(
         CriticVerdict verdict => $"{verdict.Verdict.ToString().ToUpperInvariant()}: {verdict.Rationale}",
         _ => null,
     };
+
+    /// <summary>
+    /// The action the Strategist's summary starts with, as <see cref="SummaryOf"/> wrote it, or null. Only that prefix is
+    /// read: the rationale after it is a model's, so whatever it says can't pass for an action.
+    /// </summary>
+    public static TradeAction? ActionOf(string? strategistSummary)
+    {
+        if (strategistSummary is null || strategistSummary.IndexOf(':', StringComparison.Ordinal) is not (> 0 and var colon))
+        {
+            return null;
+        }
+
+        var name = strategistSummary[..colon];
+
+        foreach (var action in Enum.GetValues<TradeAction>())
+        {
+            if (string.Equals(TradeActions.Name(action), name, StringComparison.Ordinal))
+            {
+                return action;
+            }
+        }
+
+        return null;
+    }
 }

@@ -56,7 +56,7 @@ public sealed partial class TwoFactorSetupTests(SharedTwoFactorApp app) : IClass
         await TwoFactorSteps.StartAsync(visitor);
         using var response = await later.SignInAsync(email);
 
-        Assert.Equal("/account", Visitor.Target(response));
+        Assert.Equal("/dashboard", Visitor.Target(response));
     }
 
     [Fact]

@@ -23,6 +23,21 @@ public interface ITradeJournal
     /// <param name="activeSince">When the agent last became Active, so a resumed agent's streak starts again.</param>
     Task<TradeResults> ReadResultsAsync(
         Guid userId, Guid agentId, TradingEnvironment environment, DateTimeOffset now, DateTimeOffset activeSince, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The agent's results to date in <paramref name="environment"/>, for its overview (FR-AGT-11): its closed trades'
+    /// realized P&amp;L, net of fees and funding as far as they're known, and what its open trades have cost so far,
+    /// which their unrealized P&amp;L is net of. One per quote asset, the agent's current pair's among them only once
+    /// it has a trade. Only <paramref name="environment"/>'s trades count, so Demo and Live are never added together
+    /// (FR-EXP-08). Scoped to the user (NFR-SEC-04).
+    /// </summary>
+    Task<IReadOnlyList<JournalTotals>> ReadTotalsAsync(Guid userId, Guid agentId, TradingEnvironment environment, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The agent's trades that <paramref name="query"/> picks, newest first: for its chart's entries and exits
+    /// (FR-UI-03) and its list of trades. Scoped to the user (NFR-SEC-04).
+    /// </summary>
+    Task<IReadOnlyList<TradeRecord>> ListTradesAsync(Guid userId, Guid agentId, TradeQuery query, CancellationToken cancellationToken);
 }
 
 /// <param name="RealizedToday">Since <c>RiskPeriods.DayStart</c>, in the quote asset. A loss is negative.</param>

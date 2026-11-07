@@ -1,0 +1,26 @@
+/*
+    Positioned, so the hidden word inside it is placed, and clipped, with it. Otherwise it's placed against the page,
+    and inside a table that scrolls on its own it widens the whole page on a phone.
+*/
+.signed-amount {
+    position: relative;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3em;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.gain {
+    color: var(--gain);
+}
+
+.loss {
+    color: var(--loss);
+}
+
+.signed-amount-icon {
+    width: 0.65em;
+    height: 0.65em;
+    fill: currentColor;
+}

@@ -12,7 +12,7 @@
         <p class="hero-actions">
             <AuthorizeView Policy="@AccountPolicies.SignedIn">
                 <Authorized>
-                    <a class="button" href="/account">@Strings.LandingOpenAccount</a>
+                    <a class="button" href="/dashboard">@Strings.LandingOpenDashboard</a>
                 </Authorized>
                 <NotAuthorized>
                     <a class="button" href="/register">@Strings.LandingRegister</a>

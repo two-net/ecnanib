@@ -1,4 +1,5 @@
 using Ecnanib.Modules.ExchangeAdapter.Contracts;
+using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 
 namespace Ecnanib.Modules.Execution;

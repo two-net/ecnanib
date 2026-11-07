@@ -54,6 +54,10 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         "changes a Futures symbol's margin type and leverage on a user's account, which only order execution may do, before "
         + "an entry that passed the Risk Engine (FR-RISK-09, AC-01)";
 
+    private const string AccountRead =
+        "reconciles an agent with Binance and reads its account with the user's key, which costs request weight, so only "
+        + "a decision cycle may. A page reads IAgentPositions, from the records alone (FR-AGT-11, NFR-PERF-05)";
+
     private const string OrderSent =
         "sends a sized order to Binance, which only the decision cycle may, for an Autonomous agent or an approved trade, "
         + "after a passing Risk Engine evaluation (AC-01, FR-APR-01)";
@@ -117,6 +121,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         (".Modules.AiCouncil.Contracts.ICouncil::", CouncilAsked, CouncilAskers),
         (".Modules.Execution.Contracts.IFuturesSetup::", AccountChanged, EntrySenders),
         (".Modules.Execution.Contracts.IOrderExecution::", OrderSent, EntrySenders),
+        (".Modules.Execution.Contracts.IAgentAccounts::", AccountRead, EntrySenders),
     ];
 
     private readonly string _prefix = rootNamespace + ".";

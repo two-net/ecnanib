@@ -3,6 +3,9 @@ using Ecnanib.Components.Account;
 using Ecnanib.Components.Agents;
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
+using Ecnanib.Modules.AiCouncil.Contracts;
+using Ecnanib.Modules.DecisionCycle.Contracts;
+using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.Identity.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 
@@ -49,12 +52,39 @@ public sealed class AgentTextTests
         Distinct(Enum.GetValues<KillOutcome>().Select(AgentText.KillOutcomeOf));
         Distinct([AgentText.TwoFactorRefusalOf(TwoFactorCheck.Refused), AgentText.TwoFactorRefusalOf(TwoFactorCheck.Throttled)]);
         Distinct(Enum.GetValues<ActivationWarningKind>().Select(kind => AgentText.WarningOf(new ActivationWarning(kind, AiRole.Strategist))));
+        Distinct(Enum.GetValues<CycleOutcome>().Select(AgentText.OutcomeOf));
+        Distinct(Enum.GetValues<TradeAction>().Select(AgentText.ActionOf));
+        Distinct(Enum.GetValues<PositionSide>().Select(AgentText.SideOf));
+        Distinct(Enum.GetValues<TradeExit>().Select(AgentText.ExitOf));
 
         // A refusal of the pair reads the same whether it came from saving or activating.
         Assert.All(Enum.GetValues<AgentSaveOutcome>().Where(outcome => outcome != AgentSaveOutcome.Saved), outcome =>
             Assert.False(string.IsNullOrWhiteSpace(AgentText.SaveErrorOf(outcome))));
         Assert.All(Enum.GetValues<ActivationProblemKind>(), kind =>
             Assert.False(string.IsNullOrWhiteSpace(AgentText.ProblemOf(new ActivationProblem(kind, AiRole.Strategist, "Other")))));
+    }
+
+    /// <summary>FR-ANI-03: a gain and a loss differ in their sign, not only in their color.</summary>
+    [Theory]
+    [InlineData("12.345", "+12.35")]
+    [InlineData("-1234.5", "-1,234.50")]
+    [InlineData("0.000123456789", "+0.00012346")]
+    [InlineData("-0.5", "-0.5")]
+    [InlineData("0", "0")]
+    [InlineData("0.000000001", "0")]
+    public void A_signed_amount_says_which_way_it_went_in_its_sign(string amount, string expected)
+    {
+        var original = System.Globalization.CultureInfo.CurrentCulture;
+
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+            Assert.Equal(expected, AgentText.SignedOf(decimal.Parse(amount, System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Theory]

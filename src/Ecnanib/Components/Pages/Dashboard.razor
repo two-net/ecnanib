@@ -1,0 +1,160 @@
+@page "/dashboard"
+@using System.Globalization
+@implements IDisposable
+@inject IAgents Agents
+@inject IAgentExposure Exposure
+@inject IApprovals Approvals
+@inject ITwoFactor TwoFactor
+@inject LiveUpdates Live
+@inject ILogger<Dashboard> Logger
+
+@* The dashboard (FR-UI-01), where signing in lands: what each agent is doing (FR-AGT-11), the approvals waiting for the
+   user (FR-APR-01), and "Stop all agents" (UC-05), all live (FR-UI-05). Interactive, for the same reason as /agents.
+   Each agent's overview reads and listens for itself. The page reads the list again when an agent changes, and the
+   approvals when a notification comes, because a new or expired approval raises one. See The dashboard and the agent's
+   page in docs/architecture.md. *@
+
+<PageTitle>@Strings.DashboardPageTitle</PageTitle>
+
+<div class="page dashboard">
+    <h1>@Strings.DashboardHeading</h1>
+
+    @if (_agents is { } agents)
+    {
+        @if (_pending.Count > 0)
+        {
+            <section class="dashboard-approvals" aria-labelledby="dashboard-approvals">
+                <h2 id="dashboard-approvals">@Strings.DashboardApprovalsHeading</h2>
+                <ul class="facts-list">
+                    @foreach (var approval in _pending)
+                    {
+                        <li @key="approval.Id">
+                            <a href="@($"/approvals/{approval.Id}")">@ApprovalText.TradeOf(approval.Proposal)</a>
+                            <EnvironmentTag Environment="approval.Proposal.Environment" />
+                            @* The user chose the name. Razor encodes it, so it's only text. *@
+                            <span class="dashboard-muted">@string.Format(CultureInfo.CurrentCulture, Strings.DashboardApprovalOf, NameOf(approval.AgentId), Time.Format(approval.ExpiresAt))</span>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        <div class="dashboard-actions">
+            @if (agents.Count < Agents.MaxAgentsPerUser)
+            {
+                <a class="button" href="/agents/new">@Strings.AgentsAddLink</a>
+            }
+            <a href="/agents">@Strings.DashboardAgentsLink</a>
+            <StopAllAgents UserId="_userId" TwoFactorOn="_twoFactorOn" CanStopAll="CanStopAll" OnStopped="RefreshAsync" />
+        </div>
+
+        @if (agents.Count == 0)
+        {
+            <p>@Strings.DashboardEmpty</p>
+        }
+        else
+        {
+            <ul class="dashboard-agents">
+                @foreach (var agent in agents)
+                {
+                    <li @key="agent.Id" class="dashboard-agent">
+                        <div class="dashboard-agent-heading">
+                            @* The user chose the name. Razor encodes it, so it's only text. *@
+                            <h2 class="dashboard-agent-name"><a href="@($"/agents/{agent.Id}")">@agent.Settings.Name</a></h2>
+                            <EnvironmentTag Environment="agent.Settings.Environment" />
+                            <span class="dashboard-muted">@string.Format(CultureInfo.CurrentCulture, Strings.DashboardAgentSummary, AgentText.MarketOf(agent.Settings.Market), agent.Settings.Symbol, AgentText.TimeframeOf(agent.Settings.Timeframe))</span>
+                        </div>
+                        <AgentOverview Agent="agent" UserId="_userId" />
+                    </li>
+                }
+            </ul>
+        }
+    }
+</div>
+
+@code {
+    private List<AgentRecord>? _agents;
+    private IReadOnlyList<ApprovalRecord> _pending = [];
+    private HashSet<Guid> _holding = [];
+    private Guid _userId;
+    private bool _twoFactorOn;
+    private IDisposable? _live;
+    private LiveRefresh? _refresh;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    /// <summary>Whether "Stop all agents" would do anything: an agent runs, is paused or in error, or a stopped one holds something.</summary>
+    private bool CanStopAll => _agents?.Any(agent =>
+        agent.Status is AgentStatus.Active or AgentStatus.Paused or AgentStatus.Error || _holding.Contains(agent.Id)) ?? false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AccountClaims.UserId((await AuthenticationState).User) is not { } userId)
+        {
+            return;
+        }
+
+        _userId = userId;
+        _twoFactorOn = await TwoFactor.IsEnabledAsync(userId, CancellationToken.None);
+        await ReadAsync();
+
+        if (RendererInfo.IsInteractive)
+        {
+            _refresh = new LiveRefresh(InvokeAsync, RefreshAsync, Logger);
+            _live = Live.Subscribe(userId, OnLive);
+        }
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    /// <summary>
+    /// The list changes with an agent, and the approvals with a notification. Execution's events matter here only for
+    /// a stopped agent, whose kill switch depends on what it still holds. Each overview listens for its own agent.
+    /// </summary>
+    private void OnLive(LiveEvent change)
+    {
+        var relevant = change.Change switch
+        {
+            LiveChange.Agent or LiveChange.Notification => true,
+            LiveChange.Execution => _agents?.Any(agent => agent.Id == change.AgentId && agent.Status == AgentStatus.Stopped) ?? false,
+            _ => false,
+        };
+
+        if (relevant)
+        {
+            _refresh?.Request();
+        }
+    }
+
+    private async Task ReadAsync()
+    {
+        var agents = await Agents.ListAsync(_userId, includeArchived: false, CancellationToken.None);
+        var approvals = await Approvals.ListAsync(_userId, CancellationToken.None);
+        var holding = new HashSet<Guid>();
+
+        // From Execution's records only, never Binance, so a page load costs no request weight.
+        foreach (var agent in agents.Where(agent => agent.Status == AgentStatus.Stopped))
+        {
+            if (await Exposure.HasOpenPositionsOrOrdersAsync(_userId, agent.Id, CancellationToken.None))
+            {
+                holding.Add(agent.Id);
+            }
+        }
+
+        _agents = [.. agents];
+        _pending = approvals.Pending;
+        _holding = holding;
+    }
+
+    private async Task RefreshAsync()
+    {
+        await ReadAsync();
+        StateHasChanged();
+    }
+
+    private string NameOf(Guid agentId) => _agents?.FirstOrDefault(agent => agent.Id == agentId)?.Settings.Name ?? Strings.ApprovalAgentGone;
+}

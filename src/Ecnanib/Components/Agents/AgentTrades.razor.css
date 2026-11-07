@@ -1,0 +1,44 @@
+.trades {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+    .trades table {
+        width: 100%;
+        min-width: 52rem;
+        border-collapse: collapse;
+    }
+
+    .trades caption {
+        padding-block-end: 0.5rem;
+        color: var(--text-muted);
+        text-align: start;
+    }
+
+    .trades th,
+    .trades td {
+        padding: 0.625rem 0.75rem 0.625rem 0;
+        border-block-start: 1px solid var(--rule);
+        text-align: start;
+        vertical-align: top;
+    }
+
+    .trades thead th {
+        border-block-start: 0;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        font-weight: 400;
+    }
+
+.trades-number {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+.trades-note {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+}

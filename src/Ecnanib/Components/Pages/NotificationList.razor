@@ -3,9 +3,12 @@
 @inject INotifications Inbox
 @inject IEmailVerification Verification
 @inject Layout.UnreadNotifications Unread
+@inject LiveUpdates Live
+@inject ILogger<NotificationList> Logger
+@implements IDisposable
 
 @* Named so that it doesn't clash with the module's namespace. FR-NTF-01: every notification, newest
-   first, 50 at a time, like the activity page. *@
+   first, 50 at a time, like the activity page. A new one joins the top as it commits (FR-UI-05). *@
 
 <PageTitle>@Strings.NotificationsPageTitle</PageTitle>
 
@@ -60,6 +63,9 @@
     /// <summary>Only set after showing older ones, so the first page doesn't take focus from the heading.</summary>
     private long? _firstOfLastPage;
 
+    private IDisposable? _live;
+    private LiveRefresh? _newer;
+
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
@@ -73,6 +79,46 @@
         }
 
         await LoadAsync(before: null);
+
+        if (RendererInfo.IsInteractive && _userId is { } listening)
+        {
+            _newer = new LiveRefresh(InvokeAsync, AddNewerAsync, Logger);
+            _live = Live.Subscribe(listening, change =>
+            {
+                if (change.Change == LiveChange.Notification)
+                {
+                    _newer.Request();
+                }
+            });
+        }
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    /// <summary>
+    /// What arrived since the newest shown, at the top. Nothing shown moves or changes, so focus stays where it was,
+    /// and "Mark all as read" still stops at what the user saw.
+    /// </summary>
+    private async Task AddNewerAsync()
+    {
+        if (_userId is not { } userId)
+        {
+            return;
+        }
+
+        var newest = _records.Count > 0 ? _records.Max(record => record.Id) : 0;
+        var page = await Inbox.ListAsync(userId, before: null, CancellationToken.None);
+        var added = page.Where(record => record.Id > newest).ToList();
+
+        if (added.Count == 0)
+        {
+            return;
+        }
+
+        _records.InsertRange(0, added);
+        _unread += added.Count(record => record.ReadAt is null);
+        _loaded = true;
+        StateHasChanged();
     }
 
     private async Task ShowOlderAsync()

@@ -1,3 +1,4 @@
+using Ecnanib.Kernel;
 using Ecnanib.Modules.DecisionCycle.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,56 @@ internal sealed class AiSpendings(IDbContextFactory<EcnanibDbContext> contextFac
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
         return await FindAsync(context, userId, agentId, time.GetUtcNow(), cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, AiCostToDate>> ListToDateAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        return await SumToDateAsync(context, userId, null, cancellationToken);
+    }
+
+    public async Task<AiCostToDate> FindToDateAsync(Guid userId, Guid agentId, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        return (await SumToDateAsync(context, userId, agentId, cancellationToken)).GetValueOrDefault(agentId) ?? AiCostToDate.None;
+    }
+
+    /// <summary>
+    /// Every call of the cycles that are kept, by the environment each cycle ran in. Purging old traces (#50) would
+    /// shrink this, so it has to keep their sum first.
+    /// </summary>
+    private static async Task<Dictionary<Guid, AiCostToDate>> SumToDateAsync(
+        EcnanibDbContext context, Guid userId, Guid? agentId, CancellationToken cancellationToken)
+    {
+        var cycles = context.Set<DecisionCycleRow>().Where(cycle => cycle.UserId == userId);
+
+        if (agentId is { } id)
+        {
+            cycles = cycles.Where(cycle => cycle.AgentId == id);
+        }
+
+        var sums = await cycles
+            .Join(
+                context.Set<AiCallRow>(),
+                cycle => cycle.Id,
+                call => call.CycleId,
+                (cycle, call) => new { cycle.AgentId, cycle.Environment, call.Cost, Tokens = call.InputTokens + call.OutputTokens })
+            .GroupBy(call => call.AgentId)
+            .Select(calls => new
+            {
+                AgentId = calls.Key,
+                Usd = calls.Sum(call => call.Cost),
+                UnpricedTokens = calls.Where(call => call.Cost == null).Sum(call => call.Tokens),
+                DemoUsd = calls.Where(call => call.Environment == TradingEnvironment.Demo).Sum(call => call.Cost),
+                LiveUsd = calls.Where(call => call.Environment == TradingEnvironment.Live).Sum(call => call.Cost),
+            })
+            .ToListAsync(cancellationToken);
+
+        return sums.ToDictionary(
+            sum => sum.AgentId,
+            sum => new AiCostToDate(sum.Usd ?? 0m, sum.UnpricedTokens, sum.DemoUsd ?? 0m, sum.LiveUsd ?? 0m));
     }
 
     /// <summary>The agent's spend in the day and month <paramref name="now"/> falls in.</summary>

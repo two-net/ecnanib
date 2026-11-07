@@ -385,9 +385,6 @@
   <data name="LandingSignIn" xml:space="preserve">
     <value>Sign in</value>
   </data>
-  <data name="LandingOpenAccount" xml:space="preserve">
-    <value>Open your account</value>
-  </data>
   <data name="SignInPageTitle" xml:space="preserve">
     <value>Sign in | Ecnanib</value>
   </data>
@@ -3613,5 +3610,411 @@
   </data>
   <data name="AgentWizardToApprovals" xml:space="preserve">
     <value>Go to approvals</value>
+  </data>
+  <data name="NavDashboard" xml:space="preserve">
+    <value>Dashboard</value>
+  </data>
+  <data name="LandingOpenDashboard" xml:space="preserve">
+    <value>Open your dashboard</value>
+  </data>
+  <data name="DashboardPageTitle" xml:space="preserve">
+    <value>Dashboard | Ecnanib</value>
+  </data>
+  <data name="DashboardHeading" xml:space="preserve">
+    <value>Dashboard</value>
+  </data>
+  <data name="DashboardApprovalsHeading" xml:space="preserve">
+    <value>Waiting for you</value>
+  </data>
+  <data name="DashboardApprovalOf" xml:space="preserve">
+    <value>{0}, until {1}</value>
+    <comment>{0} is the agent's name, and {1} the time the approval expires, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="DashboardAgentsLink" xml:space="preserve">
+    <value>All agents and their settings</value>
+  </data>
+  <data name="DashboardAgentSummary" xml:space="preserve">
+    <value>{0}, {1}, {2}</value>
+    <comment>{0} is the market, such as Spot, {1} the pair, such as BTCUSDT, and {2} the timeframe, such as 1H.</comment>
+  </data>
+  <data name="DashboardEmpty" xml:space="preserve">
+    <value>You have no agents yet. Add one to start trading in Demo.</value>
+  </data>
+  <data name="AgentPageTitle" xml:space="preserve">
+    <value>{0} | Ecnanib</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="AgentPageSummary" xml:space="preserve">
+    <value>{0}, {1}, {2}, {3}</value>
+    <comment>{0} is the market, such as Spot, {1} the pair, such as BTCUSDT, {2} the timeframe, such as 1H, and {3} the execution mode, such as Confirm.</comment>
+  </data>
+  <data name="AgentPageOverview" xml:space="preserve">
+    <value>Overview</value>
+  </data>
+  <data name="AgentPageChart" xml:space="preserve">
+    <value>Chart</value>
+  </data>
+  <data name="AgentPageTrades" xml:space="preserve">
+    <value>Trades</value>
+  </data>
+  <data name="AgentPageManage" xml:space="preserve">
+    <value>Manage</value>
+  </data>
+  <data name="AgentPageAllAgents" xml:space="preserve">
+    <value>All agents</value>
+  </data>
+  <data name="AgentFieldNextCycle" xml:space="preserve">
+    <value>Next decision</value>
+  </data>
+  <data name="AgentNextCycleAbout" xml:space="preserve">
+    <value>About {0}</value>
+    <comment>{0} is a time, written as DisplayTime writes it. About, because cycles start a few seconds after the candle closes.</comment>
+  </data>
+  <data name="AgentNextCycleNone" xml:space="preserve">
+    <value>None while it isn't Active</value>
+  </data>
+  <data name="AgentFieldPosition" xml:space="preserve">
+    <value>Position</value>
+  </data>
+  <data name="AgentPositionOf" xml:space="preserve">
+    <value>{0} {1} {2} at {3}</value>
+    <comment>{0} is the side, Long or Short, {1} the quantity, {2} the pair, such as BTCUSDT, and {3} the average entry price with its asset, such as 60,123.5 USDT.</comment>
+  </data>
+  <data name="AgentPositionNone" xml:space="preserve">
+    <value>Nothing open</value>
+  </data>
+  <data name="AgentFieldStop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="AgentStopNone" xml:space="preserve">
+    <value>None recorded</value>
+  </data>
+  <data name="AgentFieldTargets" xml:space="preserve">
+    <value>Targets</value>
+  </data>
+  <data name="AgentTargetsNone" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="AgentFieldOpened" xml:space="preserve">
+    <value>Opened</value>
+  </data>
+  <data name="AgentFieldPendingEntry" xml:space="preserve">
+    <value>Waiting to fill</value>
+  </data>
+  <data name="AgentPendingLimitOf" xml:space="preserve">
+    <value>{0} {1} {2} at {3}, {4} filled so far</value>
+    <comment>{0} is the side, Long or Short, {1} the quantity, {2} the pair, {3} the limit price with its asset, and {4} the quantity filled so far.</comment>
+  </data>
+  <data name="AgentPendingMarketOf" xml:space="preserve">
+    <value>{0} {1} {2} at market, {3} filled so far</value>
+    <comment>{0} is the side, Long or Short, {1} the quantity, {2} the pair, and {3} the quantity filled so far.</comment>
+  </data>
+  <data name="AgentFieldPrice" xml:space="preserve">
+    <value>Price</value>
+  </data>
+  <data name="AgentPriceLoading" xml:space="preserve">
+    <value>Reading the price</value>
+  </data>
+  <data name="AgentPriceStale" xml:space="preserve">
+    <value>Binance couldn't be read just now, so this is the price at {0}.</value>
+    <comment>{0} is a time, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="AgentFieldUnrealized" xml:space="preserve">
+    <value>Unrealized P&amp;L</value>
+  </data>
+  <data name="AgentUnrealizedHint" xml:space="preserve">
+    <value>If it closed now, after the fees and funding it has paid so far. Its exit's fee isn't known until it exits.</value>
+  </data>
+  <data name="AgentFieldRealized" xml:space="preserve">
+    <value>Realized P&amp;L</value>
+  </data>
+  <data name="AgentRealizedNone" xml:space="preserve">
+    <value>No closed trades yet</value>
+  </data>
+  <data name="AgentRealizedTrades" xml:space="preserve">
+    <value>from {0} closed trades, after fees and funding</value>
+    <comment>{0} is a number of trades.</comment>
+  </data>
+  <data name="AgentRealizedProvisional" xml:space="preserve">
+    <value>{0} of them are still being settled with Binance, so their fees may change it slightly.</value>
+    <comment>{0} is a number of trades.</comment>
+  </data>
+  <data name="AgentRealizedFeesUnknown" xml:space="preserve">
+    <value>Binance never gave the fees or funding of {0} of them, so those count before them.</value>
+    <comment>{0} is a number of trades.</comment>
+  </data>
+  <data name="AgentFieldAiCost" xml:space="preserve">
+    <value>AI cost to date</value>
+  </data>
+  <data name="AgentUsdOf" xml:space="preserve">
+    <value>{0} US dollars</value>
+    <comment>{0} is an amount of money.</comment>
+  </data>
+  <data name="AgentAiCostUnpriced" xml:space="preserve">
+    <value>and {0} tokens on models with no price</value>
+    <comment>{0} is a number of tokens.</comment>
+  </data>
+  <data name="AgentFieldLastDecision" xml:space="preserve">
+    <value>Last decision</value>
+  </data>
+  <data name="AgentLastDecisionNone" xml:space="preserve">
+    <value>None yet</value>
+  </data>
+  <data name="AgentLastDecisionUnknown" xml:space="preserve">
+    <value>Ended</value>
+  </data>
+  <data name="AgentDeciding" xml:space="preserve">
+    <value>Deciding now</value>
+  </data>
+  <data name="AgentDecidingRole" xml:space="preserve">
+    <value>Deciding now: the {0} is working</value>
+    <comment>{0} is a role on the AI council, such as Strategist.</comment>
+  </data>
+  <data name="AgentDemoResultsHint" xml:space="preserve">
+    <value>Demo prices resemble Live markets but don't equal them, so Demo results don't predict what Live would do.</value>
+  </data>
+  <data name="AgentAmountUnknown" xml:space="preserve">
+    <value>Not known</value>
+  </data>
+  <data name="AgentGain" xml:space="preserve">
+    <value>Gain</value>
+  </data>
+  <data name="AgentLoss" xml:space="preserve">
+    <value>Loss</value>
+  </data>
+  <data name="AgentSideLong" xml:space="preserve">
+    <value>Long</value>
+  </data>
+  <data name="AgentSideShort" xml:space="preserve">
+    <value>Short</value>
+  </data>
+  <data name="AgentOutcomeHold" xml:space="preserve">
+    <value>Held</value>
+  </data>
+  <data name="AgentOutcomeRejectedByCritic" xml:space="preserve">
+    <value>Rejected by the Risk Critic</value>
+  </data>
+  <data name="AgentOutcomeBlockedByRiskEngine" xml:space="preserve">
+    <value>Blocked by the Risk Engine</value>
+  </data>
+  <data name="AgentOutcomePastDeadline" xml:space="preserve">
+    <value>Ran out of time</value>
+  </data>
+  <data name="AgentOutcomeReadyToExecute" xml:space="preserve">
+    <value>Approved, waiting to be sent</value>
+  </data>
+  <data name="AgentOutcomeAwaitingApproval" xml:space="preserve">
+    <value>Awaiting your approval</value>
+  </data>
+  <data name="AgentOutcomePausedForLossLimit" xml:space="preserve">
+    <value>Paused for a loss limit</value>
+  </data>
+  <data name="AgentOutcomeOverBudget" xml:space="preserve">
+    <value>Protective only: the AI budget has run out</value>
+  </data>
+  <data name="AgentOutcomeFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="AgentOutcomeInterrupted" xml:space="preserve">
+    <value>Interrupted by a restart</value>
+  </data>
+  <data name="AgentOutcomeExecuted" xml:space="preserve">
+    <value>Executed</value>
+  </data>
+  <data name="AgentOutcomeExecutionFailed" xml:space="preserve">
+    <value>Sending the order failed</value>
+  </data>
+  <data name="AgentActionHold" xml:space="preserve">
+    <value>hold</value>
+  </data>
+  <data name="AgentActionBuy" xml:space="preserve">
+    <value>buy</value>
+  </data>
+  <data name="AgentActionSell" xml:space="preserve">
+    <value>sell</value>
+  </data>
+  <data name="AgentActionOpenLong" xml:space="preserve">
+    <value>open a long</value>
+  </data>
+  <data name="AgentActionOpenShort" xml:space="preserve">
+    <value>open a short</value>
+  </data>
+  <data name="AgentActionClose" xml:space="preserve">
+    <value>close</value>
+  </data>
+  <data name="AgentActionAdjustStop" xml:space="preserve">
+    <value>move the stop</value>
+  </data>
+  <data name="AgentActionAdjustTarget" xml:space="preserve">
+    <value>move the target</value>
+  </data>
+  <data name="AgentActionCancelPending" xml:space="preserve">
+    <value>cancel the waiting entry</value>
+  </data>
+  <data name="AgentExitStopFilled" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="AgentExitTargetFilled" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="AgentExitExited" xml:space="preserve">
+    <value>The council's exit</value>
+  </data>
+  <data name="AgentExitUnprotected" xml:space="preserve">
+    <value>Closed, because its stop couldn't be placed</value>
+  </data>
+  <data name="AgentExitClosedOutside" xml:space="preserve">
+    <value>Closed outside Ecnanib</value>
+  </data>
+  <data name="AgentExitLeftToUser" xml:space="preserve">
+    <value>Left to you</value>
+  </data>
+  <data name="AgentExitDust" xml:space="preserve">
+    <value>Too small to close</value>
+  </data>
+  <data name="AgentExitAbandoned" xml:space="preserve">
+    <value>Binance refused every close</value>
+  </data>
+  <data name="AgentExitKillSwitch" xml:space="preserve">
+    <value>Kill switch</value>
+  </data>
+  <data name="AgentTradesNone" xml:space="preserve">
+    <value>No trades yet.</value>
+  </data>
+  <data name="AgentTradesLabel" xml:space="preserve">
+    <value>Trades</value>
+  </data>
+  <data name="AgentTradesCaption" xml:space="preserve">
+    <value>The newest {0}</value>
+    <comment>{0} is a number of trades. A Demo or Live label follows it.</comment>
+  </data>
+  <data name="AgentTradesOpened" xml:space="preserve">
+    <value>Opened</value>
+  </data>
+  <data name="AgentTradesSide" xml:space="preserve">
+    <value>Side</value>
+  </data>
+  <data name="AgentTradesQuantity" xml:space="preserve">
+    <value>Quantity</value>
+  </data>
+  <data name="AgentTradesEntry" xml:space="preserve">
+    <value>Entry</value>
+  </data>
+  <data name="AgentTradesClosed" xml:space="preserve">
+    <value>Closed</value>
+  </data>
+  <data name="AgentTradesExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="AgentTradesReason" xml:space="preserve">
+    <value>How it ended</value>
+  </data>
+  <data name="AgentTradesPnl" xml:space="preserve">
+    <value>Net P&amp;L</value>
+  </data>
+  <data name="AgentTradesStillOpen" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="AgentTradesProvisional" xml:space="preserve">
+    <value>Still being settled</value>
+  </data>
+  <data name="ChartLoading" xml:space="preserve">
+    <value>Loading the chart</value>
+  </data>
+  <data name="ChartUnavailable" xml:space="preserve">
+    <value>Binance couldn't give the candles just now. The chart tries again within a minute.</value>
+  </data>
+  <data name="ChartNoCandles" xml:space="preserve">
+    <value>There are no candles for this pair yet.</value>
+  </data>
+  <data name="ChartSummary" xml:space="preserve">
+    <value>{0} {1} candles from {2} to {3}. The last price is {4}.</value>
+    <comment>{0} is the pair, such as BTCUSDT, {1} the timeframe, such as 1H, {2} and {3} times, written as DisplayTime writes them, and {4} a price with its asset.</comment>
+  </data>
+  <data name="ChartAxisTime" xml:space="preserve">
+    <value>{0:HH:mm}</value>
+    <comment>{0} is a candle's open time, in the user's time zone. The time axis of a 15m or 1H chart.</comment>
+  </data>
+  <data name="ChartAxisDate" xml:space="preserve">
+    <value>{0:d MMM}</value>
+    <comment>{0} is a candle's open time, in the user's time zone. The time axis of a 4H or 1D chart.</comment>
+  </data>
+  <data name="ChartCandleTitle" xml:space="preserve">
+    <value>{0}: open {1}, high {2}, low {3}, close {4} {5}</value>
+    <comment>{0} is the candle's open time, written as DisplayTime writes it, {1} to {4} prices, and {5} the asset they're in.</comment>
+  </data>
+  <data name="ChartFormingTitle" xml:space="preserve">
+    <value>{0}, still open: open {1}, high {2}, low {3}, last {4} {5}</value>
+    <comment>{0} is the candle's open time, written as DisplayTime writes it, {1} to {4} prices, and {5} the asset they're in.</comment>
+  </data>
+  <data name="ChartEntryTitle" xml:space="preserve">
+    <value>{0}: {1} entry, {2} at {3}</value>
+    <comment>{0} is a time, written as DisplayTime writes it, {1} the side, Long or Short, {2} the quantity, and {3} the price with its asset.</comment>
+  </data>
+  <data name="ChartExitTitle" xml:space="preserve">
+    <value>{0}: exit, {1}, at {2}</value>
+    <comment>{0} is a time, written as DisplayTime writes it, {1} how the trade ended, such as Stop, and {2} the price with its asset.</comment>
+  </data>
+  <data name="ChartExitUnknown" xml:space="preserve">
+    <value>reason not known</value>
+  </data>
+  <data name="ChartStopLabel" xml:space="preserve">
+    <value>Stop {0}</value>
+    <comment>{0} is a price.</comment>
+  </data>
+  <data name="ChartTargetLabel" xml:space="preserve">
+    <value>Target {0}</value>
+    <comment>{0} is a price.</comment>
+  </data>
+  <data name="ChartCycleDeciding" xml:space="preserve">
+    <value>{0}: deciding now</value>
+    <comment>{0} is the candle close that started the cycle, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="ChartCycleTitle" xml:space="preserve">
+    <value>{0}: {1}</value>
+    <comment>{0} is the candle close that started the cycle, written as DisplayTime writes it, and {1} how it ended, such as Held.</comment>
+  </data>
+  <data name="ChartCycleTitleAction" xml:space="preserve">
+    <value>{0}: {1}, after proposing to {2}</value>
+    <comment>{0} is the candle close that started the cycle, written as DisplayTime writes it, {1} how it ended, such as Executed, and {2} the Strategist's action, such as open a long.</comment>
+  </data>
+  <data name="ChartKeyUp" xml:space="preserve">
+    <value>Price rose: hollow</value>
+  </data>
+  <data name="ChartKeyDown" xml:space="preserve">
+    <value>Price fell: filled</value>
+  </data>
+  <data name="ChartKeyEntry" xml:space="preserve">
+    <value>Entry, pointing the trade's way</value>
+  </data>
+  <data name="ChartKeyExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="ChartKeyStop" xml:space="preserve">
+    <value>Active stop</value>
+  </data>
+  <data name="ChartKeyTarget" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="ChartKeyDeciding" xml:space="preserve">
+    <value>Deciding now</value>
+  </data>
+  <data name="ChartKeyActed" xml:space="preserve">
+    <value>Decision executed</value>
+  </data>
+  <data name="ChartKeyHeld" xml:space="preserve">
+    <value>Held</value>
+  </data>
+  <data name="ChartKeyWaiting" xml:space="preserve">
+    <value>Waiting for your approval</value>
+  </data>
+  <data name="ChartKeyBlocked" xml:space="preserve">
+    <value>Rejected, blocked or paused</value>
+  </data>
+  <data name="ChartKeyFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="ChartDemoHint" xml:space="preserve">
+    <value>Demo prices resemble Live markets but don't equal them.</value>
   </data>
 </root>

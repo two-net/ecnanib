@@ -13,6 +13,7 @@ public static class ExecutionModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(provider => ExecutionSettings.Read(provider.GetRequiredService<IConfiguration>()));
         services.AddSingleton<IExchangeBanObserver, ExchangeBanNotifier>();
+        services.AddSingleton<ExecutionObservers>();
         services.AddSingleton<AgentLocks>();
         services.AddSingleton<AgentSessions>();
         services.AddSingleton<OrderStore>();
@@ -35,6 +36,7 @@ public static class ExecutionModule
         services.AddSingleton<IAgentExposure, AgentExposure>();
         services.AddSingleton<IAgentLiquidation, AgentLiquidation>();
         services.AddSingleton<IAgentAccounts, AgentAccounts>();
+        services.AddSingleton<IAgentPositions, AgentPositionReader>();
         services.AddSingleton<IFuturesSetup, FuturesSetup>();
 
         return services;

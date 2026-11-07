@@ -9,6 +9,7 @@ public static class NotificationsModule
     {
         services.AddSingleton(provider => NotificationSettings.Read(provider.GetRequiredService<IConfiguration>()));
         services.AddSingleton<NotificationEmails>();
+        services.AddSingleton<NotificationObservers>();
         services.AddSingleton<INotifications, NotificationInbox>();
         services.AddSingleton<IRecurringJob, NotificationEmailJob>();
 

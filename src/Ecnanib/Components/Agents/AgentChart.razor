@@ -1,0 +1,219 @@
+@implements IDisposable
+@inject IMarketData MarketData
+@inject ITradeJournal Journal
+@inject IDecisionTraces Traces
+@inject IAgentPositions Positions
+@inject IMarketWatch Market
+@inject LiveUpdates Live
+@inject TimeProvider Clock
+@inject ILogger<AgentChart> Logger
+
+@* FR-UI-03: the agent's timeframe in candlesticks, with its entries and exits, the active stop and targets, and a marker
+   for each decision cycle, which ChartView draws as inline SVG on the server, so the CSP has nothing to refuse. It
+   loads on the circuit, with a placeholder on the prerender, because its candles may come from Binance (FR-ANI-05).
+   Then the forming candle comes from the pair's live watch, and the rest is read again after Execution's and the
+   cycles' events (FR-UI-05). See The chart in docs/architecture.md. *@
+
+<ChartView Layout="_layout" Loaded="_loaded" Failed="_failed" Environment="Agent.Settings.Environment" />
+
+@code {
+    /// <summary>After a failure, the chart tries again on the next update at the earliest after this long.</summary>
+    private static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(1);
+
+    private List<Candle> _closed = [];
+    private Candle? _forming;
+    private RecordedPosition _position = RecordedPosition.None;
+    private IReadOnlyList<TradeRecord> _trades = [];
+    private List<CycleMarker> _cycles = [];
+    private ChartLayout? _layout;
+    private bool _loaded;
+    private bool _failed;
+    private DateTimeOffset _failedAt;
+    private WatchKey? _key;
+    private IDisposable? _live;
+    private IDisposable? _watch;
+    private LiveRefresh? _records;
+
+    [Parameter, EditorRequired]
+    public AgentRecord Agent { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public Guid UserId { get; set; }
+
+    /// <summary>Routes cascades it. The time axis and every title are in its zone (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    private TimeSpan Length => TimeframeLength.Of(Agent.Settings.Timeframe);
+
+    protected override void OnInitialized()
+    {
+        if (RendererInfo.IsInteractive)
+        {
+            _records = new LiveRefresh(InvokeAsync, RecordsChangedAsync, Logger);
+            _live = Live.Subscribe(UserId, OnLive);
+        }
+    }
+
+    /// <summary>The agent's market, environment, pair or timeframe can change while it has nothing open, which is a new chart.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = new WatchKey(Agent.Settings.Market, Agent.Settings.Environment, Agent.Settings.Symbol, Agent.Settings.Timeframe);
+
+        if (!RendererInfo.IsInteractive || key == _key)
+        {
+            return;
+        }
+
+        _key = key;
+        _watch?.Dispose();
+        _closed = [];
+        _forming = null;
+        _layout = null;
+        _loaded = false;
+        await LoadAsync();
+        _watch = Market.Watch(key, OnMarket);
+    }
+
+    public void Dispose()
+    {
+        _live?.Dispose();
+        _watch?.Dispose();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _closed = [.. await MarketData.ReadCandlesAsync(
+                new CandleRequest(Agent.Settings.Market, Agent.Settings.Environment, Agent.Settings.Symbol, Agent.Settings.Timeframe, ChartModel.CandleCount),
+                CancellationToken.None)];
+            _failed = false;
+        }
+        catch (Exception exception) when (exception is MarketDataException or ArgumentException)
+        {
+            Logger.LogInformation("The agent's chart has no candles yet: {Message}", exception.Message);
+            _failed = true;
+            _failedAt = Clock.GetUtcNow();
+        }
+
+        await ReadRecordsAsync();
+        _loaded = true;
+        Draw();
+    }
+
+    /// <summary>What's drawn over the candles, from the agent's records in the chart's environment and pair.</summary>
+    private async Task ReadRecordsAsync()
+    {
+        var from = _closed.Count > 0 ? _closed[0].OpenTime : Clock.GetUtcNow() - (Length * ChartModel.CandleCount);
+        var (environment, symbol) = (Agent.Settings.Environment, Agent.Settings.Symbol);
+
+        var position = Positions.FindAsync(UserId, Agent.Id, CancellationToken.None);
+        var trades = Journal.ListTradesAsync(UserId, Agent.Id, new TradeQuery(environment, symbol, from, null, TradeQuery.MaxLimit), CancellationToken.None);
+        var cycles = Traces.ListCyclesAsync(
+            UserId, Agent.Id, new CycleRange(environment, symbol, Agent.Settings.Timeframe, from, Clock.GetUtcNow() + Length), CancellationToken.None);
+
+        await Task.WhenAll(position, trades, cycles);
+
+        _position = await position;
+        _trades = await trades;
+        _cycles = [.. await cycles];
+    }
+
+    private async Task RecordsChangedAsync()
+    {
+        await ReadRecordsAsync();
+        Draw();
+        StateHasChanged();
+    }
+
+    private void Draw()
+    {
+        // Only a position in the chart's own environment and pair has its lines here.
+        var position = _position.Environment == Agent.Settings.Environment && _position.Symbol == Agent.Settings.Symbol ? _position : RecordedPosition.None;
+
+        _layout = ChartLayout.Of(
+            new ChartModel(
+                Agent.Settings.Timeframe,
+                Agent.Settings.Environment,
+                Agent.Settings.Symbol,
+                Agent.QuoteAsset,
+                _closed,
+                _forming,
+                position.Position?.Side,
+                position.Position?.Stop,
+                position.Targets,
+                _trades,
+                _cycles),
+            Time);
+    }
+
+    /// <summary>
+    /// The forming candle, from the watch's loop. When it moves on, the one before it closed: Binance's final copy of it
+    /// joins the closed ones, and the oldest goes, so the window stays the same length.
+    /// </summary>
+    private void OnMarket(LiveMarket market) => _ = InvokeAsync(async () =>
+    {
+        if (market.Key != _key)
+        {
+            return;
+        }
+
+        if (_failed && Clock.GetUtcNow() - _failedAt >= RetryAfter)
+        {
+            await LoadAsync();
+            StateHasChanged();
+            return;
+        }
+
+        if (market.Forming is not { } forming || _closed.Count == 0)
+        {
+            return;
+        }
+
+        if (market.LastClosed is { } closed && closed.OpenTime > _closed[^1].OpenTime && closed.OpenTime < forming.OpenTime)
+        {
+            _closed.Add(closed);
+
+            if (_closed.Count > ChartModel.CandleCount)
+            {
+                _closed.RemoveRange(0, _closed.Count - ChartModel.CandleCount);
+            }
+        }
+
+        _forming = forming;
+        Draw();
+        StateHasChanged();
+    });
+
+    /// <summary>On the thread that made the change, so it only hands over. Another agent's changes are someone else's.</summary>
+    private void OnLive(LiveEvent change)
+    {
+        if (change.AgentId != Agent.Id)
+        {
+            return;
+        }
+
+        switch (change.Change)
+        {
+            case LiveChange.Execution:
+                _records?.Request();
+                break;
+            case LiveChange.Cycle when change.Cycle is { FinishedAt: null } running:
+                // A cycle that's started shows at once. Its outcome and action come with the read once it finishes.
+                _ = InvokeAsync(() =>
+                {
+                    if (_cycles.All(cycle => cycle.CycleId != running.CycleId))
+                    {
+                        _cycles.Add(new CycleMarker(running.CycleId, running.CandleClose, Agent.Settings.Environment, null, null, null));
+                        Draw();
+                        StateHasChanged();
+                    }
+                });
+                break;
+            case LiveChange.Cycle:
+                _records?.Request();
+                break;
+        }
+    }
+}

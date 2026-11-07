@@ -1,9 +1,13 @@
 @page "/approvals"
+@implements IDisposable
 @inject IApprovals Approvals
 @inject IAgents Agents
+@inject LiveUpdates Live
+@inject ILogger<ApprovalList> Logger
 
 @* Interactive: approving and rejecting take no secret. FR-APR-02: the user approves or rejects in the app. A decided
-   approval stays where it is until the page is opened again, so focus and the announcement of how it went aren't lost. *@
+   approval stays where it is until the page is opened again, so focus and the announcement of how it went aren't lost.
+   A new approval joins the top as its notification commits, and one that expires changes in place (FR-UI-05). *@
 
 <PageTitle>@Strings.ApprovalsPageTitle</PageTitle>
 
@@ -58,6 +62,8 @@
     private List<ApprovalRecord>? _pending;
     private List<ApprovalRecord>? _decided;
     private Dictionary<Guid, AgentRecord> _agents = [];
+    private IDisposable? _live;
+    private LiveRefresh? _refresh;
 
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
@@ -77,6 +83,51 @@
 
         // Archived ones too, because a decided approval's agent may have been archived since.
         _agents = (await Agents.ListAsync(userId, includeArchived: true, CancellationToken.None)).ToDictionary(agent => agent.Id);
+
+        // An approval raises a notification when it's proposed and when it expires, so that's the signal to read again.
+        if (RendererInfo.IsInteractive)
+        {
+            _refresh = new LiveRefresh(InvokeAsync, MergeAsync, Logger);
+            _live = Live.Subscribe(userId, change =>
+            {
+                if (change.Change == LiveChange.Notification)
+                {
+                    _refresh.Request();
+                }
+            });
+        }
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    /// <summary>
+    /// A new pending approval goes at the top. One already shown is replaced where it is, so nothing the user is
+    /// looking at moves.
+    /// </summary>
+    private async Task MergeAsync()
+    {
+        if (_pending is null || _decided is null)
+        {
+            return;
+        }
+
+        var list = await Approvals.ListAsync(_userId, CancellationToken.None);
+        var shown = _pending.Concat(_decided).Select(approval => approval.Id).ToHashSet();
+
+        foreach (var current in list.Pending.Concat(list.Decided).Where(approval => shown.Contains(approval.Id)))
+        {
+            Replace(current);
+        }
+
+        var added = list.Pending.Where(approval => !shown.Contains(approval.Id)).ToList();
+
+        if (added.Any(approval => !_agents.ContainsKey(approval.AgentId)))
+        {
+            _agents = (await Agents.ListAsync(_userId, includeArchived: true, CancellationToken.None)).ToDictionary(agent => agent.Id);
+        }
+
+        _pending.InsertRange(0, added);
+        StateHasChanged();
     }
 
     private AgentRecord? AgentOf(ApprovalRecord approval) => _agents.GetValueOrDefault(approval.AgentId);

@@ -1,0 +1,9 @@
+.environment-tag {
+    padding: 0 0.375rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}

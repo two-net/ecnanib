@@ -36,6 +36,18 @@ builder.Services.AddCascadingAuthenticationState();
 // One per circuit, so a page can tell the menu's unread count that something was read.
 builder.Services.AddScoped<Ecnanib.Components.Layout.UnreadNotifications>();
 
+// One for every circuit: it hears the modules' events after each commit, and passes each to the pages its user has open
+// (FR-UI-05). The modules resolve their observers on first use, so registering it here makes no cycle.
+builder.Services.AddSingleton<Ecnanib.Components.Live.LiveUpdates>();
+builder.Services.AddSingleton<Ecnanib.Modules.DecisionCycle.Contracts.ICycleObserver>(
+    provider => provider.GetRequiredService<Ecnanib.Components.Live.LiveUpdates>());
+builder.Services.AddSingleton<Ecnanib.Modules.Agents.Contracts.IAgentObserver>(
+    provider => provider.GetRequiredService<Ecnanib.Components.Live.LiveUpdates>());
+builder.Services.AddSingleton<Ecnanib.Modules.Execution.Contracts.IExecutionObserver>(
+    provider => provider.GetRequiredService<Ecnanib.Components.Live.LiveUpdates>());
+builder.Services.AddSingleton<Ecnanib.Modules.Notifications.Contracts.INotificationObserver>(
+    provider => provider.GetRequiredService<Ecnanib.Components.Live.LiveUpdates>());
+
 builder.Services.AddWebSecurity();
 
 // Modules, lowest level first. See docs/architecture.md.

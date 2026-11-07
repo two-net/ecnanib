@@ -81,7 +81,7 @@ public sealed partial class LegalDocumentTests(SharedAccountApp app) : IClassFix
         using var accepted = await AcceptAsync(visitor);
 
         Assert.Equal(HttpStatusCode.Redirect, accepted.StatusCode);
-        Assert.Equal("/account", Visitor.Target(accepted));
+        Assert.Equal("/dashboard", Visitor.Target(accepted));
         Assert.Contains(email, await visitor.PageAsync("/account"), StringComparison.Ordinal);
 
         var id = await AccountRows.IdAsync(app.ConnectionString, email, Cancellation);

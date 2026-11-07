@@ -18,6 +18,22 @@ public interface IMarketData
     /// <exception cref="ArgumentException">A symbol Binance wouldn't accept, or a candle that hasn't closed yet.</exception>
     /// <exception cref="MarketDataException">Binance couldn't provide the data.</exception>
     Task<MarketSnapshot> CollectAsync(MarketDataRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The pair's latest closed candles of a timeframe, oldest first, for an agent's chart (FR-UI-03). They come from
+    /// the same shared, cached series that cycles read, so a page asks Binance only for a candle nobody has read yet.
+    /// The candle open now isn't among them: <see cref="IMarketWatch"/> sends it.
+    /// </summary>
+    /// <exception cref="ArgumentException">A symbol Binance wouldn't accept, or a count outside 1 to <see cref="CandleRequest.MaxCount"/>.</exception>
+    /// <exception cref="MarketDataException">Binance couldn't provide the data.</exception>
+    Task<IReadOnlyList<Candle>> ReadCandlesAsync(CandleRequest request, CancellationToken cancellationToken);
+}
+
+/// <param name="Symbol">Such as BTCUSDT.</param>
+/// <param name="Count">How many, at most: fewer when the pair is newer than that.</param>
+public sealed record CandleRequest(Market Market, TradingEnvironment Environment, string Symbol, Timeframe Timeframe, int Count)
+{
+    public const int MaxCount = CandleSeries.Window;
 }
 
 /// <param name="Symbol">Such as BTCUSDT.</param>

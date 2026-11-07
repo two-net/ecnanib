@@ -1,0 +1,165 @@
+@using System.Globalization
+@inject IAgents Agents
+
+@* UC-05: "Stop all agents", the kill switch for every agent, on /agents and the dashboard. It asks first, in place, and
+   for a code when two-factor is on (FR-AGT-08). The code is checked on the circuit by ITwoFactor.CheckAsync, which has
+   its own throttle. *@
+
+@if (CanStopAll && !_confirming)
+{
+    <button type="button" class="button" @ref="_button" @onclick="Confirm">@Strings.AgentsStopAll</button>
+}
+
+@if (_confirming)
+{
+    <div class="stop-all">
+        <p>@Strings.AgentsStopAllConfirm</p>
+        @if (TwoFactorOn)
+        {
+            <div class="field">
+                <label for="stop-all-code">@Strings.FieldTwoFactorCode</label>
+                <input id="stop-all-code" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="64"
+                       aria-describedby="stop-all-code-hint" @bind="_code" @bind:event="oninput" @ref="_codeInput" />
+                <p id="stop-all-code-hint" class="field-hint">@Strings.AgentKillCodeHint</p>
+            </div>
+        }
+        <div class="stop-all-actions">
+            <button type="button" class="button" disabled="@_stopping" @ref="_submit" @onclick="StopAllAsync">@Strings.AgentsStopAllSubmit</button>
+            <button type="button" class="button" disabled="@_stopping" @onclick="Cancel">@Strings.AgentConfirmCancel</button>
+        </div>
+    </div>
+}
+
+@* Always there, so a screen reader announces each step and the result per agent (UC-05). *@
+<div class="stop-all-result" role="status" tabindex="-1" @ref="_result">
+    @if (_stopping)
+    {
+        <p>@Strings.AgentsStopAllWorking</p>
+    }
+    else if (_error is not null)
+    {
+        <p>@_error</p>
+    }
+    else if (_stopped is { } stopped)
+    {
+        @if (stopped.Agents.Count == 0)
+        {
+            <p>@Strings.AgentsStopAllNone</p>
+        }
+        else
+        {
+            <p>@Strings.AgentsStopAllHeading</p>
+            <ul class="facts-list">
+                @foreach (var agent in stopped.Agents)
+                {
+                    @* The user chose the name. Razor encodes it, so it's only text. *@
+                    <li>@string.Format(CultureInfo.CurrentCulture, Strings.AgentsStopAllResult, agent.Name, AgentText.KillOutcomeOf(agent.Result.Outcome))</li>
+                }
+            </ul>
+        }
+    }
+</div>
+
+@code {
+    private bool _confirming;
+    private bool _stopping;
+    private string? _code;
+    private string? _error;
+    private StopAllResult? _stopped;
+    private bool _focusPanel;
+    private bool _focusButton;
+    private bool _focusResult;
+    private ElementReference _button;
+    private ElementReference _submit;
+    private ElementReference _codeInput;
+    private ElementReference _result;
+
+    [Parameter, EditorRequired]
+    public Guid UserId { get; set; }
+
+    /// <summary>Whether the user has two-factor on, so it asks for a code (FR-AUTH-05).</summary>
+    [Parameter]
+    public bool TwoFactorOn { get; set; }
+
+    /// <summary>Whether it would do anything: an agent runs, is paused or in error, or a stopped one holds something.</summary>
+    [Parameter]
+    public bool CanStopAll { get; set; }
+
+    /// <summary>The agents were stopped, so whoever shows them reads them again.</summary>
+    [Parameter]
+    public EventCallback OnStopped { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPanel)
+        {
+            _focusPanel = false;
+            await (TwoFactorOn ? _codeInput : _submit).FocusAsync();
+        }
+        else if (_focusButton)
+        {
+            _focusButton = false;
+
+            if (CanStopAll)
+            {
+                await _button.FocusAsync();
+            }
+        }
+        else if (_focusResult)
+        {
+            _focusResult = false;
+            await _result.FocusAsync();
+        }
+    }
+
+    private void Confirm()
+    {
+        _confirming = true;
+        _code = null;
+        _error = null;
+        _stopped = null;
+        _focusPanel = true;
+    }
+
+    private void Cancel()
+    {
+        _confirming = false;
+        _code = null;
+        _error = null;
+        _focusButton = true;
+    }
+
+    /// <summary>
+    /// UC-05: the kill switch for each agent, one at a time, then the result per agent. A refused code keeps the panel
+    /// open for another, and says when only a recovery code will do.
+    /// </summary>
+    private async Task StopAllAsync()
+    {
+        var code = _code;
+        _code = null;
+        _error = null;
+        _stopped = null;
+        _stopping = true;
+
+        try
+        {
+            var result = await Agents.StopAllAsync(UserId, code, CancellationToken.None);
+
+            if (result.Refused)
+            {
+                _error = AgentText.TwoFactorRefusalOf(result.TwoFactor);
+                _focusPanel = true;
+                return;
+            }
+
+            _stopped = result;
+            _confirming = false;
+            await OnStopped.InvokeAsync();
+            _focusResult = true;
+        }
+        finally
+        {
+            _stopping = false;
+        }
+    }
+}

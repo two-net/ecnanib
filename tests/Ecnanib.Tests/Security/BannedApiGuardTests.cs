@@ -41,6 +41,7 @@ public sealed class BannedApiGuardTests
     [InlineData("CycleStartedByTheWebUi", "starts a decision cycle")]
     [InlineData("CouncilAskedByTheWebUi", "asks the AI council")]
     [InlineData("OrderSentByTheWebUi", "sends a sized order to Binance")]
+    [InlineData("AccountReadByTheWebUi", "reconciles an agent with Binance")]
     public void A_banned_use_is_found(string fixture, string risk) =>
         Assert.Contains(Uses, use => use.Source.Contains(fixture, StringComparison.Ordinal) && use.Risk.Contains(risk, StringComparison.Ordinal));
 

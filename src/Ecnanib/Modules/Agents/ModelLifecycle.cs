@@ -23,6 +23,7 @@ internal sealed class ModelLifecycle(
     INotifications notifications,
     IAuditTrail audit,
     TimeProvider time,
+    AgentObservers observers,
     ILogger<ModelLifecycle> logger)
 {
     /// <summary>The one-off run that follows a change to models' statuses.</summary>
@@ -166,6 +167,7 @@ internal sealed class ModelLifecycle(
 
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        observers.Changed(userId, agentId);
 
         logger.LogInformation(
             "Told the owner of agent {AgentId} of user {UserId} about {Models} models, switched {Switched} roles, paused {Paused}",

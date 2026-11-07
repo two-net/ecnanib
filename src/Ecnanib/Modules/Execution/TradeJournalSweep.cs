@@ -1,3 +1,5 @@
+using Ecnanib.Kernel;
+using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Platform.Contracts;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,8 +9,9 @@ namespace Ecnanib.Modules.Execution;
 /// Keeps the trade journal up to date every minute (FR-EXE-07). Every keeper pass books its agent's trades, so this is
 /// the recovery path: it books an entry whose booking failed, or whose agent has no more passes, such as after an exit
 /// sold everything, and books every existing entry the first time it runs. Then it settles each closed trade from
-/// Binance, a few at a time. Booking holds the agent's lock, skipping an agent whose lock is held because its holder
-/// books, and settling doesn't. See The trade journal in docs/architecture.md.
+/// Binance, a few at a time, and reads what each open trade has cost so far when that's due (FR-AGT-11). Booking holds
+/// the agent's lock, skipping an agent whose lock is held because its holder books, and settling and reading don't.
+/// See The trade journal in docs/architecture.md.
 /// </summary>
 internal sealed class TradeJournalSweep(
     IDbContextFactory<EcnanibDbContext> contextFactory,
@@ -31,7 +34,7 @@ internal sealed class TradeJournalSweep(
     {
         var agents = await ListAsync(cancellationToken);
         using var gate = new SemaphoreSlim(AgentReconciliation.Concurrency);
-        var runs = new List<Task<int?>>();
+        var runs = new List<Task<(int Settled, int Accrued)?>>();
 
         foreach (var agent in agents)
         {
@@ -53,20 +56,22 @@ internal sealed class TradeJournalSweep(
         }
 
         var outcomes = await Task.WhenAll(runs);
-        var failed = outcomes.Count(settled => settled is null);
+        var failed = outcomes.Count(outcome => outcome is null);
 
         if (failed > 0)
         {
             logger.LogWarning("{Failed} of {Count} agents' trades couldn't be booked or settled, so they're tried again next time", failed, agents.Count);
         }
 
-        context.Details = $"Agents: {agents.Count}, settled: {outcomes.Sum(settled => settled ?? 0)}, failed: {failed}";
+        context.Details =
+            $"Agents: {agents.Count}, settled: {outcomes.Sum(outcome => outcome?.Settled ?? 0)}, open trades read: {outcomes.Sum(outcome => outcome?.Accrued ?? 0)}, failed: {failed}";
         context.Stopping.ThrowIfCancellationRequested();
     }
 
     /// <summary>
     /// Agents with an entry that has a protected part and no trade, an open trade whose entry has ended and whose parts
-    /// all have, or a closed trade that's due to be settled. It isn't scoped to a user, because the sweep looks after
+    /// all have, a closed trade that's due to be settled, or an open trade whose entry's fees haven't been read, or whose
+    /// funding hasn't been read since the last boundary. It isn't scoped to a user, because the sweep looks after
     /// everyone's.
     /// </summary>
     private async Task<IReadOnlyList<AgentKey>> ListAsync(CancellationToken cancellationToken)
@@ -92,13 +97,21 @@ internal sealed class TradeJournalSweep(
             .Where(trade => trade.Status == TradeStatus.Closed && trade.SettledAt == null && (trade.SettleAfter == null || trade.SettleAfter <= now))
             .Select(trade => new { trade.UserId, trade.AgentId });
 
-        var agents = await unbooked.Union(closable).Union(unsettled).Distinct().ToListAsync(cancellationToken);
+        // Each agent's own spread is worked out when it's read, so an agent is listed from the boundary on.
+        var boundary = TradeMath.Floor(now, TradeSettlement.FundingStep);
+        var accruable = context.Set<TradeRow>()
+            .Where(trade => trade.Status == TradeStatus.Open
+                && ((trade.EntryFeesReadAt == null && context.Set<OrderRow>().Any(entry => entry.Id == trade.EntryId && entry.Resolved))
+                    || (trade.Market == Market.Futures && (trade.FundingReadTo ?? trade.OpenedAt) < boundary)))
+            .Select(trade => new { trade.UserId, trade.AgentId });
+
+        var agents = await unbooked.Union(closable).Union(unsettled).Union(accruable).Distinct().ToListAsync(cancellationToken);
 
         return [.. agents.Select(agent => new AgentKey(agent.UserId, agent.AgentId))];
     }
 
     /// <summary>One agent, on its own: one that fails is logged and the rest go on (NFR-REL-05). Null when it failed.</summary>
-    private async Task<int?> OneAsync(AgentKey agent, SemaphoreSlim gate, CancellationToken cancellationToken)
+    private async Task<(int Settled, int Accrued)?> OneAsync(AgentKey agent, SemaphoreSlim gate, CancellationToken cancellationToken)
     {
         using var scope = logger.BeginScope(new Dictionary<string, object?> { [LogProperties.AgentId] = agent.AgentId });
 
@@ -112,7 +125,10 @@ internal sealed class TradeJournalSweep(
                 }
             }
 
-            return await settlement.SettleDueAsync(agent.UserId, agent.AgentId, cancellationToken);
+            var settled = await settlement.SettleDueAsync(agent.UserId, agent.AgentId, cancellationToken);
+            var accrued = await settlement.AccrueOpenAsync(agent.UserId, agent.AgentId, cancellationToken);
+
+            return (settled, accrued);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

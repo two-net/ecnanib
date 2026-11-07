@@ -1,4 +1,5 @@
 using Ecnanib.Kernel;
+using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -97,6 +98,18 @@ internal sealed class TradeRow
 
     public int SettleAttempts { get; set; }
 
+    /// <summary>
+    /// When the entry's fills, and so its fees, were read while the trade was open, so its unrealized P&amp;L is net
+    /// of them (FR-AGT-11). Null until then. Settling reads them again, whole.
+    /// </summary>
+    public DateTimeOffset? EntryFeesReadAt { get; set; }
+
+    /// <summary>
+    /// Futures: the time up to which funding was read while the trade was open. Null until the first read. Settling
+    /// reads it again, whole, up to the close.
+    /// </summary>
+    public DateTimeOffset? FundingReadTo { get; set; }
+
     /// <summary>Settling isn't tried again before this, after a failure.</summary>
     public DateTimeOffset? SettleAfter { get; set; }
 
@@ -180,41 +193,6 @@ internal sealed class TradeCycleRow
     public required Guid TradeId { get; init; }
 
     public required Guid CycleId { get; init; }
-}
-
-/// <summary>Stored by name, so a value is never renamed.</summary>
-internal enum TradeStatus
-{
-    Open,
-    Closed,
-}
-
-/// <summary>How a trade's last part ended. Stored by name, so a value is never renamed.</summary>
-internal enum TradeExit
-{
-    StopFilled,
-    TargetFilled,
-
-    /// <summary>An exit the council proposed sold it.</summary>
-    Exited,
-
-    /// <summary>Its stop couldn't be placed, so it was closed at market (FR-EXE-02).</summary>
-    Unprotected,
-
-    /// <summary>It was closed outside Ecnanib, such as by the user on Binance, or liquidated (FR-EXE-06).</summary>
-    ClosedOutside,
-
-    /// <summary>Its stop was cancelled outside Ecnanib after the agent was stopped, so the user now manages it.</summary>
-    LeftToUser,
-
-    /// <summary>Too small for Binance to take a stop or a close, so it's the user's.</summary>
-    Dust,
-
-    /// <summary>Binance rejected every close, so the user must close it.</summary>
-    Abandoned,
-
-    /// <summary>The kill switch closed it at market (FR-AGT-08).</summary>
-    KillSwitch,
 }
 
 /// <summary>Stored by name, so a value is never renamed.</summary>

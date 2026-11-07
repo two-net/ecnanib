@@ -15,12 +15,17 @@ internal sealed class NotificationInbox(
     IAdministrators administrators,
     IEmailVerification email,
     ISecretScrubber scrubber,
+    NotificationObservers observers,
     ILogger<NotificationInbox> logger) : INotifications
 {
     public int PageSize => 50;
 
-    public void Add(EcnanibDbContext context, Notice notice) =>
+    /// <summary>The live count hears of it when the caller's change commits, and not before, so it never counts a row it can't read.</summary>
+    public void Add(EcnanibDbContext context, Notice notice)
+    {
         context.Set<Notification>().Add(Row(notice.UserId, notice.Type, notice.Link, notice.Subject, notice.Demo, DateTimeOffset.UtcNow));
+        context.AfterCommit(() => observers.Added(notice.UserId));
+    }
 
     public async Task RaiseAsync(Notice notice, CancellationToken cancellationToken)
     {
@@ -46,6 +51,7 @@ internal sealed class NotificationInbox(
         foreach (var userId in recipients)
         {
             context.Set<Notification>().Add(Row(userId, notice.Type, notice.Link, notice.Subject, demo: false, now));
+            context.AfterCommit(() => observers.Added(userId));
         }
 
         await context.SaveChangesAsync(cancellationToken);

@@ -27,22 +27,3 @@
         font-weight: 500;
         cursor: pointer;
     }
-
-/* "Stop all agents" asks first, in place, as each card does. A thicker edge as well as the words, so it doesn't rely on color. */
-.agents-stop-all {
-    display: grid;
-    gap: 0.75rem;
-    padding: 1rem;
-    border: 1px solid var(--caution);
-    border-inline-start-width: 4px;
-    border-radius: var(--radius);
-}
-
-.agents-stop-all-result {
-    display: grid;
-    gap: 0.5rem;
-}
-
-    .agents-stop-all-result:empty {
-        display: none;
-    }
