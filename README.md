@@ -337,6 +337,23 @@ When an agent reaches its daily or weekly loss limit, it pauses until the next U
 
 An agent's AI budget sets the most it may spend per UTC day and per month. It's in US dollars for models with a price, and in tokens for models without one. Every billed AI call counts, failed ones included. Once a limit is reached, the agent's cycles ask no AI and open no trades until the day or month ends, or until its owner raises the limit. The agent stays Active, its open positions keep their stops, and its owner is notified once. See [Budgets](docs/architecture.md#budgets).
 
+#### Trading experience
+
+Ecnanib keeps metrics per provider, model and role, from every decision cycle and every settled trade, with Demo and Live always apart:
+- **Each model's calls:** latency, errors, timeouts, refusals, contract violations, tokens and cost.
+- **What the Strategist and the Risk Critic decided.**
+- **How often the analysts' calls were right.**
+- **The trades whose entry each model took part in:** win rate, average R, expectancy, profit factor, P&L per quote asset, maximum drawdown, holding time, AI cost per trade, and P&L net of AI cost.
+
+They're built every hour, so they stay after old decision traces are purged. Nothing shows them yet: the leaderboard will.
+
+| Setting | What |
+|---|---|
+| `Experience:AnalystHorizonCandles` | How many candles after a cycle's an analyst's call is scored against, 1 to 30. Defaults to `3` |
+| `Experience:UsdQuoteAssets` | Quote assets whose P&L counts as US dollars, so AI cost can be taken off it. Defaults to `["USDT", "USDC", "FDUSD"]` |
+
+An invalid value stops startup with a message that names it. See [Trading experience](docs/architecture.md#trading-experience).
+
 ## Security
 
 Outside Development the application won't start until it knows its public address. It must use `https`:

@@ -38,6 +38,15 @@ public interface ITradeJournal
     /// (FR-UI-03) and its list of trades. Scoped to the user (NFR-SEC-04).
     /// </summary>
     Task<IReadOnlyList<TradeRecord>> ListTradesAsync(Guid userId, Guid agentId, TradeQuery query, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The user's settled trades, across all their agents, that closed in <paramref name="query"/>'s range, for the
+    /// trading experience metrics (FR-EXP-02). Only settled trades, whose figures are final, and only those in the
+    /// query's environment, from each trade's own row, so Demo and Live are never added together (FR-EXP-08). Each
+    /// carries the cycle its entry order cites, which says which models it's attributed to (FR-EXP-01). Scoped to the
+    /// user (NFR-SEC-04).
+    /// </summary>
+    Task<IReadOnlyList<SettledTrade>> ListSettledAsync(Guid userId, SettledTradeQuery query, CancellationToken cancellationToken);
 }
 
 /// <param name="RealizedToday">Since <c>RiskPeriods.DayStart</c>, in the quote asset. A loss is negative.</param>

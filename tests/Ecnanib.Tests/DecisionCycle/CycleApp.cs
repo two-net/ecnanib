@@ -50,13 +50,14 @@ internal sealed class CycleApp : IAsyncDisposable
          "rationale":"Sound."}
         """;
 
-    public CycleApp(PostgresFixture postgres, Dictionary<string, string?>? settings = null)
+    /// <param name="manualJobs">Other jobs a test runs itself, by class name, besides <c>ApprovalExpiryJob</c>.</param>
+    public CycleApp(PostgresFixture postgres, Dictionary<string, string?>? settings = null, IReadOnlyCollection<string>? manualJobs = null)
     {
         Agents = new AgentApp(
             postgres,
             settings,
             services: services => services.AddSingleton<ICycleObserver>(Observer),
-            manualJobs: ["ApprovalExpiryJob"]);
+            manualJobs: ["ApprovalExpiryJob", .. manualJobs ?? []]);
 
         foreach (var path in new[] { "/api/v3/klines", "/fapi/v1/klines" })
         {

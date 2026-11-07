@@ -20,6 +20,7 @@ public static class DecisionCycleModule
         services.AddSingleton<IRecurringJob, ApprovalExpiryJob>();
         services.AddSingleton<IDecisionTraces, DecisionTraces>();
         services.AddSingleton<IAiSpending, AiSpendings>();
+        services.AddSingleton<ICouncilActivity, CouncilActivity>();
         services.AddSingleton<IAgentHistory, AgentCycleHistory>();
 
         return services;

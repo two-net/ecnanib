@@ -108,3 +108,38 @@ public sealed record TradeRecord(
     decimal? RMultiple,
     TradeExit? ExitReason,
     bool Settled);
+
+/// <summary>Which of a user's settled trades to list: those in one environment that closed in a range.</summary>
+/// <param name="ClosedFrom">Trades that closed at or after this.</param>
+/// <param name="ClosedTo">And before this.</param>
+/// <param name="Market">Only trades in this market. Null for both.</param>
+/// <param name="Symbol">Only trades in this pair. Null for every pair.</param>
+public sealed record SettledTradeQuery(
+    TradingEnvironment Environment,
+    DateTimeOffset ClosedFrom,
+    DateTimeOffset ClosedTo,
+    Market? Market = null,
+    string? Symbol = null);
+
+/// <summary>
+/// A settled trade's final figures, for the trading experience metrics. Prices and P&amp;L are in the quote asset, and
+/// quantities in the base asset.
+/// </summary>
+/// <param name="EntryCycleId">The cycle the trade's entry order cites, or null when its entry order is gone.</param>
+/// <param name="Environment">The trade's own, which may not be the agent's now (FR-EXP-08).</param>
+/// <param name="ExitQuantity">What was closed with a known price. Zero when nothing was priced, which P&amp;L leaves out.</param>
+/// <param name="RealizedPnl">Net of fees and funding as far as Binance gave them. A loss is negative.</param>
+/// <param name="RMultiple">The P&amp;L in multiples of what the trade risked, or null when that isn't known.</param>
+public sealed record SettledTrade(
+    Guid Id,
+    Guid AgentId,
+    Guid? EntryCycleId,
+    Market Market,
+    TradingEnvironment Environment,
+    string Symbol,
+    string QuoteAsset,
+    DateTimeOffset OpenedAt,
+    DateTimeOffset ClosedAt,
+    decimal ExitQuantity,
+    decimal RealizedPnl,
+    decimal? RMultiple);

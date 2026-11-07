@@ -138,6 +138,51 @@ internal sealed class TradeJournal(IDbContextFactory<EcnanibDbContext> contextFa
         return [.. rows.Select(ToRecord)];
     }
 
+    public async Task<IReadOnlyList<SettledTrade>> ListSettledAsync(Guid userId, SettledTradeQuery query, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var trades = context.Set<TradeRow>()
+            .AsNoTracking()
+            .Where(trade => trade.UserId == userId && trade.Environment == query.Environment && trade.Status == TradeStatus.Closed
+                && trade.SettledAt != null && trade.ClosedAt >= query.ClosedFrom && trade.ClosedAt < query.ClosedTo);
+
+        if (query.Market is { } market)
+        {
+            trades = trades.Where(trade => trade.Market == market);
+        }
+
+        if (query.Symbol is { } symbol)
+        {
+            trades = trades.Where(trade => trade.Symbol == symbol);
+        }
+
+        // An entry is always an order with a cycle (OrderExecutor.NewEntry), but a left join keeps a trade whose order
+        // is gone, so it's counted as unattributed rather than lost.
+        var rows = await trades
+            .GroupJoin(context.Set<OrderRow>(), trade => trade.EntryId, order => order.Id, (trade, orders) => new { trade, orders })
+            .SelectMany(
+                pair => pair.orders.DefaultIfEmpty(),
+                (pair, order) => new SettledTrade(
+                    pair.trade.Id,
+                    pair.trade.AgentId,
+                    order == null ? (Guid?)null : order.CycleId,
+                    pair.trade.Market,
+                    pair.trade.Environment,
+                    pair.trade.Symbol,
+                    pair.trade.QuoteAsset,
+                    pair.trade.OpenedAt,
+                    pair.trade.ClosedAt!.Value,
+                    pair.trade.ExitQuantity,
+                    pair.trade.RealizedPnl ?? 0m,
+                    pair.trade.RMultiple))
+            .ToListAsync(cancellationToken);
+
+        return [.. rows.OrderBy(trade => trade.ClosedAt).ThenBy(trade => trade.Id)];
+    }
+
     private static TradeRecord ToRecord(TradeRow trade) => new(
         trade.Id,
         trade.Market,

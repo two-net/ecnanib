@@ -40,6 +40,9 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         "syncs every user's keys, overrides models' metadata or changes the roles' defaults, which only an administrator may do, "
         + "and Administration checks that before it calls (FR-ADM-03)";
 
+    private const string EveryCouncil =
+        "reads every user's council calls, which only the trading experience metrics may do, to build them (NFR-SEC-04)";
+
     private const string EveryAgent =
         "lists every user's agents, which only the scheduler may do, to run their cycles (NFR-SEC-04)";
 
@@ -87,6 +90,9 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
     /// <summary>Agents, which implements it, and the scheduler, which runs every Active agent.</summary>
     private static readonly string[] AgentListers = ["Modules.Agents.", "Modules.Scheduler."];
 
+    /// <summary>The decision cycle, which implements it, and Experience, whose job builds every user's metrics.</summary>
+    private static readonly string[] CouncilReaders = ["Modules.DecisionCycle.", "Modules.Experience."];
+
     /// <summary>DecisionCycle, which implements it, and the scheduler, which starts every cycle.</summary>
     private static readonly string[] CycleStarters = ["Modules.DecisionCycle.", "Modules.Scheduler."];
 
@@ -118,6 +124,7 @@ internal sealed class BannedApis(ReflectionAssembly assembly, string rootNamespa
         (".Modules.RiskEngine.Contracts.SizedOrder::.ctor", Unchecked, RiskEngine),
         (".Modules.Agents.Contracts.IActiveAgents::", EveryAgent, AgentListers),
         (".Modules.DecisionCycle.Contracts.IDecisionCycles::", CycleStarted, CycleStarters),
+        (".Modules.DecisionCycle.Contracts.ICouncilActivity::", EveryCouncil, CouncilReaders),
         (".Modules.AiCouncil.Contracts.ICouncil::", CouncilAsked, CouncilAskers),
         (".Modules.Execution.Contracts.IFuturesSetup::", AccountChanged, EntrySenders),
         (".Modules.Execution.Contracts.IOrderExecution::", OrderSent, EntrySenders),

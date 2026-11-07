@@ -1860,6 +1860,284 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("trades", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Modules.Experience.CycleAttributionRow", b =>
+                {
+                    b.Property<Guid>("CycleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cycle_id");
+
+                    b.Property<string>("Role")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("environment");
+
+                    b.Property<string>("Market")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("market");
+
+                    b.Property<string>("ModelId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("model_id");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("symbol");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("timeframe");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("CycleId", "Role")
+                        .HasName("pk_cycle_attributions");
+
+                    b.HasIndex("UserId", "AgentId")
+                        .HasDatabaseName("ix_cycle_attributions_user_id_agent_id");
+
+                    b.ToTable("cycle_attributions", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Experience.ExperienceProgressRow", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Timeframe")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("timeframe");
+
+                    b.Property<DateTimeOffset>("BuiltUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("built_until");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("UserId", "Timeframe")
+                        .HasName("pk_experience_progress");
+
+                    b.ToTable("experience_progress", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Modules.Experience.PerformanceSnapshotRow", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("Adjustments")
+                        .HasColumnType("bigint")
+                        .HasColumnName("adjustments");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<long>("Answered")
+                        .HasColumnType("bigint")
+                        .HasColumnName("answered");
+
+                    b.Property<long>("AnsweredCycles")
+                        .HasColumnType("bigint")
+                        .HasColumnName("answered_cycles");
+
+                    b.Property<long>("Approvals")
+                        .HasColumnType("bigint")
+                        .HasColumnName("approvals");
+
+                    b.Property<long>("BearishCalls")
+                        .HasColumnType("bigint")
+                        .HasColumnName("bearish_calls");
+
+                    b.Property<long>("BullishCalls")
+                        .HasColumnType("bigint")
+                        .HasColumnName("bullish_calls");
+
+                    b.Property<DateTimeOffset>("ComputedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("computed_at");
+
+                    b.Property<long>("ContractViolations")
+                        .HasColumnType("bigint")
+                        .HasColumnName("contract_violations");
+
+                    b.Property<decimal>("Cost")
+                        .HasColumnType("numeric")
+                        .HasColumnName("cost");
+
+                    b.Property<long>("Cycles")
+                        .HasColumnType("bigint")
+                        .HasColumnName("cycles");
+
+                    b.Property<long>("Entries")
+                        .HasColumnType("bigint")
+                        .HasColumnName("entries");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("environment");
+
+                    b.Property<long>("Errors")
+                        .HasColumnType("bigint")
+                        .HasColumnName("errors");
+
+                    b.Property<long>("Exits")
+                        .HasColumnType("bigint")
+                        .HasColumnName("exits");
+
+                    b.Property<long>("FallbackCycles")
+                        .HasColumnType("bigint")
+                        .HasColumnName("fallback_cycles");
+
+                    b.Property<long>("Hits")
+                        .HasColumnType("bigint")
+                        .HasColumnName("hits");
+
+                    b.Property<long>("Holds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("holds");
+
+                    b.Property<long>("InputTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("input_tokens");
+
+                    b.PrimitiveCollection<long[]>("LatencyBuckets")
+                        .IsRequired()
+                        .HasColumnType("bigint[]")
+                        .HasColumnName("latency_buckets");
+
+                    b.Property<string>("Market")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("market");
+
+                    b.Property<long>("Misses")
+                        .HasColumnType("bigint")
+                        .HasColumnName("misses");
+
+                    b.Property<string>("ModelId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("model_id");
+
+                    b.Property<long>("Modifications")
+                        .HasColumnType("bigint")
+                        .HasColumnName("modifications");
+
+                    b.Property<long>("NotSent")
+                        .HasColumnType("bigint")
+                        .HasColumnName("not_sent");
+
+                    b.Property<long>("OutputTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("output_tokens");
+
+                    b.Property<DateTimeOffset>("PeriodStart")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("period_start");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<long>("Refusals")
+                        .HasColumnType("bigint")
+                        .HasColumnName("refusals");
+
+                    b.Property<long>("Rejections")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rejections");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("role");
+
+                    b.Property<long>("Sent")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sent");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("symbol");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("timeframe");
+
+                    b.Property<long>("Timeouts")
+                        .HasColumnType("bigint")
+                        .HasColumnName("timeouts");
+
+                    b.Property<long>("Truncated")
+                        .HasColumnType("bigint")
+                        .HasColumnName("truncated");
+
+                    b.Property<long>("UnpricedTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("unpriced_tokens");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_performance_snapshots");
+
+                    b.HasIndex("UserId", "Environment", "PeriodStart")
+                        .HasDatabaseName("ix_performance_snapshots_user_id_environment_period_start");
+
+                    b.HasIndex("UserId", "AgentId", "Environment", "Market", "Symbol", "Timeframe", "Role", "Provider", "ModelId", "PeriodStart")
+                        .IsUnique()
+                        .HasDatabaseName("ix_performance_snapshots_key");
+
+                    b.ToTable("performance_snapshots", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Modules.Identity.AccountToken", b =>
                 {
                     b.Property<Guid>("UserId")
