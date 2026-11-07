@@ -8,10 +8,11 @@
 @inject LiveUpdates Live
 @inject ILogger<AgentPage> Logger
 
-@* The agent's own page (FR-UI-01): its overview (FR-AGT-11), chart (FR-UI-03), trades and actions, live (FR-UI-05).
-   Interactive, because its actions take no secret: the kill switch's code is checked on the circuit, as on /agents.
-   Another user's agent answers 404, because every read takes the user (NFR-SEC-04). The council view (#53), decision
-   timeline (#42) and reflections (#45) join it later. See The dashboard and the agent's page in docs/architecture.md. *@
+@* The agent's own page (FR-UI-01): its overview (FR-AGT-11), chart (FR-UI-03), decision timeline, trades and actions,
+   live (FR-UI-05). Interactive, because its actions take no secret: the kill switch's code is checked on the circuit,
+   as on /agents. Another user's agent answers 404, because every read takes the user (NFR-SEC-04). Each decision links
+   to its trace (FR-UI-04). The council view (#53) and reflections (#45) join it later. See The dashboard and the
+   agent's page in docs/architecture.md. *@
 
 @if (_agent is { } agent)
 {
@@ -41,6 +42,11 @@
         <section class="agent-page-section" aria-labelledby="agent-chart">
             <h2 id="agent-chart">@Strings.AgentPageChart</h2>
             <AgentChart Agent="agent" UserId="_userId" />
+        </section>
+
+        <section class="agent-page-section" aria-labelledby="agent-decisions">
+            <h2 id="agent-decisions">@Strings.AgentPageDecisions</h2>
+            <AgentDecisions Agent="agent" UserId="_userId" />
         </section>
 
         <section class="agent-page-section" aria-labelledby="agent-trades">

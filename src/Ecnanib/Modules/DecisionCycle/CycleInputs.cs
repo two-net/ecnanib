@@ -1,5 +1,6 @@
 using Ecnanib.Kernel;
 using Ecnanib.Modules.AiCouncil.Contracts;
+using Ecnanib.Modules.DecisionCycle.Contracts;
 using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.MarketData.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;
@@ -158,23 +159,3 @@ internal static class CycleInputs
     private static LotRule? Lot(QuantityFilter? filter) =>
         filter is null ? null : new LotRule(filter.Minimum, filter.Maximum, filter.StepSize);
 }
-
-/// <summary>
-/// A summary of what a cycle saw, for its trace (FR-UI-04): the latest candle of each series, their indicators, the
-/// prices, the account and the limits that held. The candles each role saw are in its prompt.
-/// </summary>
-internal sealed record InputSnapshot(
-    string Symbol,
-    DateTimeOffset CandleClose,
-    Candle? LastCandle,
-    Candle? LastHigherTimeframeCandle,
-    IndicatorSet Indicators,
-    IndicatorSet HigherTimeframeIndicators,
-    Quote Quote,
-    FuturesData? Futures,
-    decimal AvailableQuote,
-    decimal? BaseHeld,
-    OpenPosition? Position,
-    bool HasPendingEntry,
-    decimal CapitalAllocation,
-    RiskSettings Effective);

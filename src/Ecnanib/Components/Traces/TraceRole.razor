@@ -1,0 +1,54 @@
+@using System.Globalization
+
+@* One role of the council (FR-ROLE-08): its state, the model that answered or was tried last, its summary, and every
+   call it made, billed or not, each with its prompt and answer. The summary is a model's, so it's only text. *@
+
+<article class="trace-role" aria-labelledby="@HeadingId">
+    <div class="trace-role-heading">
+        <h3 id="@HeadingId">@AgentText.RoleOf(Role.Role)</h3>
+        <span class="trace-state">@TraceText.RoleStateOf(Role.State)</span>
+    </div>
+
+    @if (Role.ModelId is not null || Role.Summary is not null)
+    {
+        <dl class="facts">
+            @if (Role.ModelId is { } model)
+            {
+                <dt>@Strings.TraceFieldModel</dt>
+                <dd>
+                    @string.Format(CultureInfo.CurrentCulture, Strings.TraceModelOf, model, Role.Provider)
+                    @if (Role.UsedFallback)
+                    {
+                        <span class="trace-note">@Strings.TraceUsedFallback</span>
+                    }
+                </dd>
+            }
+            @if (Role.Summary is { } summary)
+            {
+                <dt>@Strings.TraceFieldSummary</dt>
+                <dd class="trace-text">@summary</dd>
+            }
+        </dl>
+    }
+
+    @if (Role.Calls.Count == 0)
+    {
+        <p class="trace-note">@Strings.TraceNoCalls</p>
+    }
+    else
+    {
+        <div class="trace-calls">
+            @foreach (var call in Role.Calls)
+            {
+                <TraceCall Call="call" />
+            }
+        </div>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public RoleTrace Role { get; set; } = default!;
+
+    private string HeadingId => $"trace-role-{Role.Role}";
+}

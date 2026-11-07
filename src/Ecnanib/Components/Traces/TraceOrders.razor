@@ -1,0 +1,81 @@
+@using System.Globalization
+
+@* The orders that cite the cycle (AC-01), oldest first: its entry, exit or close, and the stops and targets it placed or
+   moved. Each order's environment is its own (FR-EXP-08). It scrolls in its own region on a phone. *@
+
+@if (Orders.Count == 0)
+{
+    <p>@Strings.TraceOrdersNone</p>
+}
+else
+{
+    <div class="trace-table" role="region" tabindex="0" aria-label="@Strings.TraceOrdersLabel">
+        <table>
+            <caption>
+                <span class="trace-caption">
+                    @string.Format(CultureInfo.CurrentCulture, Strings.TraceOrdersCaption, Orders.Count)
+                    @foreach (var environment in Orders.Select(order => order.Environment).Distinct())
+                    {
+                        <EnvironmentTag Environment="environment" />
+                    }
+                </span>
+            </caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Strings.TraceOrderLeg</th>
+                    <th scope="col">@Strings.TraceOrderType</th>
+                    <th scope="col">@Strings.TraceFieldSide</th>
+                    <th scope="col">@Strings.TraceFieldQuantity</th>
+                    <th scope="col">@Strings.TraceOrderPrice</th>
+                    <th scope="col">@Strings.ApprovalFieldStatus</th>
+                    <th scope="col">@Strings.TraceOrderFilledColumn</th>
+                    <th scope="col">@Strings.TraceOrderSent</th>
+                    <th scope="col">@Strings.TraceOrderId</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var order in Orders)
+                {
+                    <tr @key="order.Id">
+                        <th scope="row">@TraceText.LegOf(order.Leg)</th>
+                        <td>@TraceText.OrderKindOf(order.Kind)</td>
+                        <td>@TraceText.SideOf(order.Side)</td>
+                        <td class="trace-number">@TraceText.NumberOf(order.Quantity)</td>
+                        <td class="trace-number">@PriceOf(order)</td>
+                        <td>
+                            @TraceText.OrderStatusOf(order.Status)
+                            @if (order.ErrorCode is { } errorCode)
+                            {
+                                <span class="trace-note">@string.Format(CultureInfo.CurrentCulture, Strings.TraceErrorCodeOf, errorCode.ToString(CultureInfo.InvariantCulture))</span>
+                            }
+                        </td>
+                        <td class="trace-number">
+                            @(order.ExecutedQuantity > 0m
+                                ? string.Format(CultureInfo.CurrentCulture, Strings.TraceFilledOf, TraceText.NumberOf(order.ExecutedQuantity), TraceText.NumberOf(order.AveragePrice))
+                                : Strings.TraceNone)
+                        </td>
+                        <td>@(order.SentAt is { } sent ? Time.Format(sent) : Strings.TraceNotSent)</td>
+                        <td><code>@order.ClientOrderId</code></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<CycleOrder> Orders { get; set; } = [];
+
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    /// <summary>A limit price, a trigger, both for a Futures target, or the market's for a market order.</summary>
+    private static string PriceOf(CycleOrder order) => (order.Price, order.StopPrice) switch
+    {
+        ({ } price, { } trigger) => string.Format(CultureInfo.CurrentCulture, Strings.TraceLimitAndTriggerOf, TraceText.NumberOf(price), TraceText.NumberOf(trigger)),
+        ({ } price, null) => TraceText.NumberOf(price),
+        (null, { } trigger) => string.Format(CultureInfo.CurrentCulture, Strings.TraceTriggerOf, TraceText.NumberOf(trigger)),
+        _ => Strings.TraceAtMarket,
+    };
+}

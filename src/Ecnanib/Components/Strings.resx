@@ -4017,4 +4017,927 @@
   <data name="ChartDemoHint" xml:space="preserve">
     <value>Demo prices resemble Live markets but don't equal them.</value>
   </data>
+  <data name="AgentPageDecisions" xml:space="preserve">
+    <value>Decisions</value>
+  </data>
+  <data name="AgentDecisionsNone" xml:space="preserve">
+    <value>No decisions yet.</value>
+  </data>
+  <data name="AgentDecisionsLabel" xml:space="preserve">
+    <value>Decisions</value>
+  </data>
+  <data name="AgentDecisionsCaption" xml:space="preserve">
+    <value>The newest {0}, each with its own Demo or Live label</value>
+    <comment>{0} is a number of decision cycles.</comment>
+  </data>
+  <data name="AgentDecisionsCandle" xml:space="preserve">
+    <value>Candle closed</value>
+  </data>
+  <data name="AgentDecisionsOutcome" xml:space="preserve">
+    <value>Outcome</value>
+  </data>
+  <data name="AgentDecisionsProposed" xml:space="preserve">
+    <value>Proposed</value>
+  </data>
+  <data name="AgentDecisionsCost" xml:space="preserve">
+    <value>AI cost</value>
+  </data>
+  <data name="AgentDecisionsTrace" xml:space="preserve">
+    <value>Trace</value>
+  </data>
+  <data name="AgentDecisionsRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="AgentDecisionsNoProposal" xml:space="preserve">
+    <value>No proposal</value>
+  </data>
+  <data name="AgentDecisionsView" xml:space="preserve">
+    <value>View</value>
+  </data>
+  <data name="AgentDecisionsViewLabel" xml:space="preserve">
+    <value>View the trace of the decision at {0}</value>
+    <comment>{0} is the candle close that started the cycle, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="AgentDecisionsMore" xml:space="preserve">
+    <value>Show older</value>
+  </data>
+  <data name="AgentLastDecisionTrace" xml:space="preserve">
+    <value>View its trace</value>
+  </data>
+  <data name="ApprovalTraceLink" xml:space="preserve">
+    <value>View the decision trace</value>
+  </data>
+  <data name="TracePageTitle" xml:space="preserve">
+    <value>Decision trace | {0} | Ecnanib</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="TraceHeading" xml:space="preserve">
+    <value>Decision trace</value>
+  </data>
+  <data name="TraceLedeOf" xml:space="preserve">
+    <value>{0}, {1}, {2}, for the candle that closed {3}</value>
+    <comment>{0} is the market, such as Spot, {1} the pair, such as BTCUSDT, {2} the timeframe, such as 1H, and {3} the candle close, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="TraceBackTo" xml:space="preserve">
+    <value>Back to {0}</value>
+    <comment>{0} is the agent's name.</comment>
+  </data>
+  <data name="TraceSectionSummary" xml:space="preserve">
+    <value>Summary</value>
+  </data>
+  <data name="TraceSectionInputs" xml:space="preserve">
+    <value>What it saw</value>
+  </data>
+  <data name="TraceSectionChecks" xml:space="preserve">
+    <value>Checks before the council</value>
+  </data>
+  <data name="TraceSectionCouncil" xml:space="preserve">
+    <value>Council</value>
+  </data>
+  <data name="TraceSectionRisk" xml:space="preserve">
+    <value>Risk Engine</value>
+  </data>
+  <data name="TraceSectionApproval" xml:space="preserve">
+    <value>Approval</value>
+  </data>
+  <data name="TraceSectionExecution" xml:space="preserve">
+    <value>Execution and orders</value>
+  </data>
+  <data name="TraceFieldOutcome" xml:space="preserve">
+    <value>Outcome</value>
+  </data>
+  <data name="TraceRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="TraceFieldFailure" xml:space="preserve">
+    <value>Why</value>
+  </data>
+  <data name="TraceFieldStarted" xml:space="preserve">
+    <value>Started</value>
+  </data>
+  <data name="TraceFieldFinished" xml:space="preserve">
+    <value>Finished</value>
+  </data>
+  <data name="TraceFinishedOf" xml:space="preserve">
+    <value>{0}, after {1}</value>
+    <comment>{0} is when it finished, written as DisplayTime writes it, and {1} how long it took, such as 12.3 s.</comment>
+  </data>
+  <data name="TraceNotFinished" xml:space="preserve">
+    <value>Not yet</value>
+  </data>
+  <data name="TraceFieldDeadline" xml:space="preserve">
+    <value>No new entry after</value>
+  </data>
+  <data name="TraceFieldCatchUp" xml:space="preserve">
+    <value>Catch-up</value>
+  </data>
+  <data name="TraceCatchUp" xml:space="preserve">
+    <value>It ran late, for a candle whose cycle was missed.</value>
+  </data>
+  <data name="TraceFieldTokens" xml:space="preserve">
+    <value>Tokens</value>
+  </data>
+  <data name="TraceTokensOf" xml:space="preserve">
+    <value>{0:N0} in, {1:N0} out</value>
+    <comment>{0} and {1} are numbers of tokens.</comment>
+  </data>
+  <data name="TraceFieldCost" xml:space="preserve">
+    <value>AI cost</value>
+  </data>
+  <data name="TraceCostUnpriced" xml:space="preserve">
+    <value>No price</value>
+  </data>
+  <data name="TraceFieldAiTime" xml:space="preserve">
+    <value>Time waiting for models</value>
+  </data>
+  <data name="TraceSecondsOf" xml:space="preserve">
+    <value>{0:0.0} s</value>
+    <comment>{0} is a number of seconds.</comment>
+  </data>
+  <data name="TraceNone" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="TraceYes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="TraceNo" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="TraceNotRecorded" xml:space="preserve">
+    <value>Not recorded.</value>
+  </data>
+  <data name="TraceNothingRecorded" xml:space="preserve">
+    <value>Nothing was recorded.</value>
+  </data>
+  <data name="TraceNoSnapshot" xml:space="preserve">
+    <value>The cycle ended before it read the market and the account.</value>
+  </data>
+  <data name="TraceUnitsOf" xml:space="preserve">
+    <value>Prices are in {0}'s quote asset, and quantities in its base asset.</value>
+    <comment>{0} is the pair, such as BTCUSDT.</comment>
+  </data>
+  <data name="TraceFieldLastCandle" xml:space="preserve">
+    <value>Last candle</value>
+  </data>
+  <data name="TraceFieldHigherCandle" xml:space="preserve">
+    <value>Last higher-timeframe candle</value>
+  </data>
+  <data name="TraceCandleOf" xml:space="preserve">
+    <value>Opened {0}: open {1}, high {2}, low {3}, close {4}, volume {5}</value>
+    <comment>{0} is when the candle opened, written as DisplayTime writes it. {1} to {4} are prices, and {5} a quantity.</comment>
+  </data>
+  <data name="TraceFieldQuote" xml:space="preserve">
+    <value>Prices</value>
+  </data>
+  <data name="TraceQuoteOf" xml:space="preserve">
+    <value>Last {0}, bid {1}, ask {2}</value>
+    <comment>{0}, {1} and {2} are prices.</comment>
+  </data>
+  <data name="TraceFieldFutures" xml:space="preserve">
+    <value>Mark and index</value>
+  </data>
+  <data name="TraceMarkOf" xml:space="preserve">
+    <value>Mark {0}, index {1}</value>
+    <comment>{0} and {1} are prices.</comment>
+  </data>
+  <data name="TraceFieldFunding" xml:space="preserve">
+    <value>Funding</value>
+  </data>
+  <data name="TraceFundingOf" xml:space="preserve">
+    <value>{0}% every {1} hours, next at {2}</value>
+    <comment>{0} is a percentage, such as 0.01, {1} a whole number of hours, and {2} a time, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="TraceFundingNone" xml:space="preserve">
+    <value>None for this contract</value>
+  </data>
+  <data name="TraceFieldAvailable" xml:space="preserve">
+    <value>Available</value>
+  </data>
+  <data name="TraceFieldBaseHeld" xml:space="preserve">
+    <value>Held</value>
+  </data>
+  <data name="TraceFieldCapital" xml:space="preserve">
+    <value>Capital allocation</value>
+  </data>
+  <data name="TraceFieldPosition" xml:space="preserve">
+    <value>Position</value>
+  </data>
+  <data name="TracePositionOf" xml:space="preserve">
+    <value>{0} {1} at an average of {2}</value>
+    <comment>{0} is the side, such as Long, {1} a quantity and {2} a price.</comment>
+  </data>
+  <data name="TracePositionProtectionOf" xml:space="preserve">
+    <value>{0}, stop {1}, target {2}</value>
+    <comment>{0} is the position, such as "Long 0.5 at an average of 60,000", and {1} and {2} are prices, or None.</comment>
+  </data>
+  <data name="TraceFieldPendingEntry" xml:space="preserve">
+    <value>Unfilled entry</value>
+  </data>
+  <data name="TraceIndicatorsHeading" xml:space="preserve">
+    <value>Indicators</value>
+  </data>
+  <data name="TraceHigherIndicatorsHeading" xml:space="preserve">
+    <value>Higher-timeframe indicators</value>
+  </data>
+  <data name="TraceEma20" xml:space="preserve">
+    <value>EMA 20</value>
+  </data>
+  <data name="TraceEma50" xml:space="preserve">
+    <value>EMA 50</value>
+  </data>
+  <data name="TraceEma200" xml:space="preserve">
+    <value>EMA 200</value>
+  </data>
+  <data name="TraceRsi14" xml:space="preserve">
+    <value>RSI 14</value>
+  </data>
+  <data name="TraceAtr14" xml:space="preserve">
+    <value>ATR 14</value>
+  </data>
+  <data name="TraceVolume" xml:space="preserve">
+    <value>Volume</value>
+  </data>
+  <data name="TraceVolumeOf" xml:space="preserve">
+    <value>{0}, average {1}, relative {2}</value>
+    <comment>{0} and {1} are quantities, and {2} a number, such as 1.4, or None.</comment>
+  </data>
+  <data name="TraceSwingHighs" xml:space="preserve">
+    <value>Swing highs, newest first</value>
+  </data>
+  <data name="TraceSwingLows" xml:space="preserve">
+    <value>Swing lows, newest first</value>
+  </data>
+  <data name="TraceSettingsHeading" xml:space="preserve">
+    <value>Risk settings in force</value>
+  </data>
+  <data name="TraceLossLimitsHeading" xml:space="preserve">
+    <value>Loss limits</value>
+  </data>
+  <data name="TraceLossLimitRulesLabel" xml:space="preserve">
+    <value>Loss limit rules</value>
+  </data>
+  <data name="TraceBudgetHeading" xml:space="preserve">
+    <value>AI budget</value>
+  </data>
+  <data name="TraceBudgetDayUsd" xml:space="preserve">
+    <value>Today, in dollars</value>
+  </data>
+  <data name="TraceBudgetMonthUsd" xml:space="preserve">
+    <value>This month, in dollars</value>
+  </data>
+  <data name="TraceBudgetDayTokens" xml:space="preserve">
+    <value>Today, in tokens</value>
+  </data>
+  <data name="TraceBudgetMonthTokens" xml:space="preserve">
+    <value>This month, in tokens</value>
+  </data>
+  <data name="TraceBudgetSpentOf" xml:space="preserve">
+    <value>{0} of {1}</value>
+    <comment>{0} is what was spent, and {1} the limit, both such as 1.24 US dollars.</comment>
+  </data>
+  <data name="TraceBudgetUnlimitedOf" xml:space="preserve">
+    <value>{0}, with no limit</value>
+    <comment>{0} is what was spent, such as 1.24 US dollars.</comment>
+  </data>
+  <data name="TraceBudgetTokensSpentOf" xml:space="preserve">
+    <value>{0:N0} of {1:N0}</value>
+    <comment>{0} is the tokens spent, and {1} the limit.</comment>
+  </data>
+  <data name="TraceBudgetTokensUnlimitedOf" xml:space="preserve">
+    <value>{0:N0}, with no limit</value>
+    <comment>{0} is the tokens spent.</comment>
+  </data>
+  <data name="TraceFieldResult" xml:space="preserve">
+    <value>Result</value>
+  </data>
+  <data name="TraceBudgetRanOutOf" xml:space="preserve">
+    <value>It had reached {0}, until {1}, so the cycle asked no model.</value>
+    <comment>{0} is the limit, such as "the daily dollar limit", and {1} a time, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="TraceBudgetWithin" xml:space="preserve">
+    <value>Within budget</value>
+  </data>
+  <data name="TraceBudgetNote" xml:space="preserve">
+    <value>Days and months are UTC. Tokens count only calls to models with no price.</value>
+  </data>
+  <data name="TraceBudgetLimitDailyUsd" xml:space="preserve">
+    <value>the daily dollar limit</value>
+  </data>
+  <data name="TraceBudgetLimitMonthlyUsd" xml:space="preserve">
+    <value>the monthly dollar limit</value>
+  </data>
+  <data name="TraceBudgetLimitDailyTokens" xml:space="preserve">
+    <value>the daily token limit</value>
+  </data>
+  <data name="TraceBudgetLimitMonthlyTokens" xml:space="preserve">
+    <value>the monthly token limit</value>
+  </data>
+  <data name="TraceCouncilNote" xml:space="preserve">
+    <value>What you and the models wrote is shown as text, exactly as sent and received, except that anything shaped like a secret is masked.</value>
+  </data>
+  <data name="TraceCouncilNone" xml:space="preserve">
+    <value>No role was asked.</value>
+  </data>
+  <data name="TraceFieldModel" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="TraceModelOf" xml:space="preserve">
+    <value>{0} from {1}</value>
+    <comment>{0} is a model's ID, and {1} its provider, such as anthropic.</comment>
+  </data>
+  <data name="TraceUsedFallback" xml:space="preserve">
+    <value>The role's fallback model</value>
+  </data>
+  <data name="TraceFieldSummary" xml:space="preserve">
+    <value>Summary</value>
+  </data>
+  <data name="TraceNoCalls" xml:space="preserve">
+    <value>No calls.</value>
+  </data>
+  <data name="TraceCallTitleOf" xml:space="preserve">
+    <value>{0}, attempt {1}: {2}</value>
+    <comment>{0} is a model's ID, {1} a whole number, and {2} how the call went, such as Answered.</comment>
+  </data>
+  <data name="TraceCallFallbackTitleOf" xml:space="preserve">
+    <value>{0}, the fallback, attempt {1}: {2}</value>
+    <comment>{0} is a model's ID, {1} a whole number, and {2} how the call went, such as Answered.</comment>
+  </data>
+  <data name="TraceCallStatusWhyOf" xml:space="preserve">
+    <value>{0}. {1}</value>
+    <comment>{0} is how the call went, such as Failed, and {1} why, as a sentence.</comment>
+  </data>
+  <data name="TraceCallMetricsOf" xml:space="preserve">
+    <value>{0}, {1}, {2}</value>
+    <comment>{0} is a latency, such as 2.4 s, {1} the tokens, such as "1,200 in, 300 out", and {2} a cost, such as 0.0042 US dollars.</comment>
+  </data>
+  <data name="TraceFieldLatency" xml:space="preserve">
+    <value>Latency</value>
+  </data>
+  <data name="TraceFieldSent" xml:space="preserve">
+    <value>Sent</value>
+  </data>
+  <data name="TraceProviderAttemptsOf" xml:space="preserve">
+    <value>{0} times, with the provider's own retries</value>
+    <comment>{0} is a whole number.</comment>
+  </data>
+  <data name="TraceFieldTruncated" xml:space="preserve">
+    <value>Cut off</value>
+  </data>
+  <data name="TraceTruncated" xml:space="preserve">
+    <value>The answer reached the output limit.</value>
+  </data>
+  <data name="TraceFieldTemplates" xml:space="preserve">
+    <value>Prompt templates</value>
+  </data>
+  <data name="TraceTemplateOf" xml:space="preserve">
+    <value>{0}, version {1}</value>
+    <comment>{0} is a prompt layer, such as Role, and {1} a whole number.</comment>
+  </data>
+  <data name="TraceRetryNote" xml:space="preserve">
+    <value>This retry also sent the answer of the attempt before it, and what broke its contract.</value>
+  </data>
+  <data name="TraceInstructions" xml:space="preserve">
+    <value>Instructions</value>
+  </data>
+  <data name="TraceInstructionsHint" xml:space="preserve">
+    <value>Prompt layers 1 to 4: system, output contract, role, market and timeframe.</value>
+  </data>
+  <data name="TraceMessage" xml:space="preserve">
+    <value>Message</value>
+  </data>
+  <data name="TraceMessageHint" xml:space="preserve">
+    <value>Prompt layers 5 and 6: your custom instructions, then what the cycle saw.</value>
+  </data>
+  <data name="TraceAnswer" xml:space="preserve">
+    <value>Raw answer</value>
+  </data>
+  <data name="TraceOutput" xml:space="preserve">
+    <value>Parsed output</value>
+  </data>
+  <data name="TraceOutputHint" xml:space="preserve">
+    <value>What passed the output contract, in the contract's own names.</value>
+  </data>
+  <data name="TraceViolations" xml:space="preserve">
+    <value>What broke the contract</value>
+  </data>
+  <data name="TraceProviderMessage" xml:space="preserve">
+    <value>The provider's message</value>
+  </data>
+  <data name="TraceRoleQueued" xml:space="preserve">
+    <value>Waiting</value>
+  </data>
+  <data name="TraceRoleRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="TraceRoleDone" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="TraceRoleFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="TraceRoleSkipped" xml:space="preserve">
+    <value>Skipped</value>
+  </data>
+  <data name="TraceCallAnswered" xml:space="preserve">
+    <value>Answered</value>
+  </data>
+  <data name="TraceCallBrokeContract" xml:space="preserve">
+    <value>Broke its contract</value>
+  </data>
+  <data name="TraceCallFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="TraceCallNotSent" xml:space="preserve">
+    <value>Not sent</value>
+  </data>
+  <data name="TraceCallFailureNoKey" xml:space="preserve">
+    <value>None of your AI keys can use this model.</value>
+  </data>
+  <data name="TraceCallFailureKeyUnusable" xml:space="preserve">
+    <value>The AI key stopped being usable.</value>
+  </data>
+  <data name="TraceCallFailureTemplateMissing" xml:space="preserve">
+    <value>A prompt template is missing, which only an administrator can fix.</value>
+  </data>
+  <data name="TraceCallFailureAuthentication" xml:space="preserve">
+    <value>The provider refused the key.</value>
+  </data>
+  <data name="TraceCallFailureRateLimit" xml:space="preserve">
+    <value>The provider was limiting requests.</value>
+  </data>
+  <data name="TraceCallFailureOverloaded" xml:space="preserve">
+    <value>The provider was overloaded.</value>
+  </data>
+  <data name="TraceCallFailureInvalidRequest" xml:space="preserve">
+    <value>The provider refused the request.</value>
+  </data>
+  <data name="TraceCallFailureRefusal" xml:space="preserve">
+    <value>The model refused to answer.</value>
+  </data>
+  <data name="TraceCallFailureTimeout" xml:space="preserve">
+    <value>The call took too long.</value>
+  </data>
+  <data name="TraceCallFailureOther" xml:space="preserve">
+    <value>The provider failed for another reason.</value>
+  </data>
+  <data name="TraceLayerSystem" xml:space="preserve">
+    <value>System</value>
+  </data>
+  <data name="TraceLayerOutputContract" xml:space="preserve">
+    <value>Output contract</value>
+  </data>
+  <data name="TraceLayerRole" xml:space="preserve">
+    <value>Role</value>
+  </data>
+  <data name="TraceLayerMarket" xml:space="preserve">
+    <value>Market</value>
+  </data>
+  <data name="TraceLayerTimeframe" xml:space="preserve">
+    <value>Timeframe</value>
+  </data>
+  <data name="TraceRiskNone" xml:space="preserve">
+    <value>The Risk Engine wasn't asked: the council proposed no trade, the Risk Critic rejected it, or the cycle ended first.</value>
+  </data>
+  <data name="TraceFieldVerdict" xml:space="preserve">
+    <value>Verdict</value>
+  </data>
+  <data name="TraceVerdictPass" xml:space="preserve">
+    <value>Passed</value>
+  </data>
+  <data name="TraceVerdictFail" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="TraceFieldEvaluated" xml:space="preserve">
+    <value>Evaluated</value>
+  </data>
+  <data name="TraceFieldBreach" xml:space="preserve">
+    <value>Loss limit reached</value>
+  </data>
+  <data name="TraceBreachUntilOf" xml:space="preserve">
+    <value>{0}, so the agent paused until {1}</value>
+    <comment>{0} is a loss limit, such as "The daily loss limit", and {1} a time, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="TraceBreachUntilResumedOf" xml:space="preserve">
+    <value>{0}, so the agent paused until you resume it</value>
+    <comment>{0} is a loss limit, such as "Losses in a row".</comment>
+  </data>
+  <data name="TraceLossLimitDaily" xml:space="preserve">
+    <value>The daily loss limit</value>
+  </data>
+  <data name="TraceLossLimitWeekly" xml:space="preserve">
+    <value>The weekly loss limit</value>
+  </data>
+  <data name="TraceLossLimitConsecutiveLosses" xml:space="preserve">
+    <value>Losses in a row</value>
+  </data>
+  <data name="TraceFieldCaps" xml:space="preserve">
+    <value>Caps</value>
+  </data>
+  <data name="TraceCapsOf" xml:space="preserve">
+    <value>Leverage {0}x, risk per trade {1}%, liquidation buffer {2}, reward to risk {3}</value>
+    <comment>{0} is a whole number, and {1}, {2} and {3} are numbers.</comment>
+  </data>
+  <data name="TraceIntentHeading" xml:space="preserve">
+    <value>What it was asked</value>
+  </data>
+  <data name="TraceFieldAction" xml:space="preserve">
+    <value>Action</value>
+  </data>
+  <data name="TraceFieldOrigin" xml:space="preserve">
+    <value>From</value>
+  </data>
+  <data name="TraceOriginCouncil" xml:space="preserve">
+    <value>The council</value>
+  </data>
+  <data name="TraceOriginSystem" xml:space="preserve">
+    <value>Ecnanib itself</value>
+  </data>
+  <data name="TraceFieldEntryType" xml:space="preserve">
+    <value>Entry</value>
+  </data>
+  <data name="TraceEntryMarket" xml:space="preserve">
+    <value>At market</value>
+  </data>
+  <data name="TraceEntryLimit" xml:space="preserve">
+    <value>Limit</value>
+  </data>
+  <data name="TraceFieldLimitPrice" xml:space="preserve">
+    <value>Limit price</value>
+  </data>
+  <data name="TraceFieldRiskPercent" xml:space="preserve">
+    <value>Risk</value>
+  </data>
+  <data name="TracePercentOf" xml:space="preserve">
+    <value>{0}%</value>
+    <comment>{0} is a number.</comment>
+  </data>
+  <data name="TraceFieldCloseFraction" xml:space="preserve">
+    <value>Share to close</value>
+  </data>
+  <data name="TraceSizedHeading" xml:space="preserve">
+    <value>What it sized</value>
+  </data>
+  <data name="TraceSizedNone" xml:space="preserve">
+    <value>Nothing, because it failed.</value>
+  </data>
+  <data name="TraceFieldKind" xml:space="preserve">
+    <value>Kind</value>
+  </data>
+  <data name="TraceSizedEntry" xml:space="preserve">
+    <value>Entry</value>
+  </data>
+  <data name="TraceSizedExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="TraceSizedStopAdjustment" xml:space="preserve">
+    <value>Stop adjustment</value>
+  </data>
+  <data name="TraceSizedTargetAdjustment" xml:space="preserve">
+    <value>Target adjustment</value>
+  </data>
+  <data name="TraceSizedCancelEntry" xml:space="preserve">
+    <value>Cancel the unfilled entry</value>
+  </data>
+  <data name="TraceFieldSide" xml:space="preserve">
+    <value>Side</value>
+  </data>
+  <data name="TraceSideBuy" xml:space="preserve">
+    <value>Buy</value>
+  </data>
+  <data name="TraceSideSell" xml:space="preserve">
+    <value>Sell</value>
+  </data>
+  <data name="TraceFieldQuantity" xml:space="preserve">
+    <value>Quantity</value>
+  </data>
+  <data name="TraceFieldNotional" xml:space="preserve">
+    <value>Order value</value>
+  </data>
+  <data name="TraceFieldLiquidation" xml:space="preserve">
+    <value>Estimated liquidation</value>
+  </data>
+  <data name="TraceFieldReduceOnly" xml:space="preserve">
+    <value>Reduce only</value>
+  </data>
+  <data name="TraceRulesHeading" xml:space="preserve">
+    <value>Rules, in the order they run</value>
+  </data>
+  <data name="TraceRiskRulesLabel" xml:space="preserve">
+    <value>Risk Engine rules</value>
+  </data>
+  <data name="TraceRuleColumn" xml:space="preserve">
+    <value>Rule</value>
+  </data>
+  <data name="TraceResultColumn" xml:space="preserve">
+    <value>Result</value>
+  </data>
+  <data name="TraceReasonColumn" xml:space="preserve">
+    <value>Why it failed</value>
+  </data>
+  <data name="TraceInputsColumn" xml:space="preserve">
+    <value>What it looked at</value>
+  </data>
+  <data name="TraceRuleOutcomePass" xml:space="preserve">
+    <value>Passed</value>
+  </data>
+  <data name="TraceRuleOutcomeFail" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="TraceRuleOutcomeNotApplicable" xml:space="preserve">
+    <value>Doesn't apply</value>
+  </data>
+  <data name="TraceRuleOutcomeNotEvaluated" xml:space="preserve">
+    <value>Not checked</value>
+  </data>
+  <data name="TraceRuleSettings" xml:space="preserve">
+    <value>Settings in range</value>
+  </data>
+  <data name="TraceRuleAction" xml:space="preserve">
+    <value>Action suits the market</value>
+  </data>
+  <data name="TraceRuleSymbolTrading" xml:space="preserve">
+    <value>Pair is trading</value>
+  </data>
+  <data name="TraceRuleDailyLoss" xml:space="preserve">
+    <value>Daily loss limit</value>
+  </data>
+  <data name="TraceRuleWeeklyLoss" xml:space="preserve">
+    <value>Weekly loss limit</value>
+  </data>
+  <data name="TraceRuleConsecutiveLosses" xml:space="preserve">
+    <value>Losses in a row</value>
+  </data>
+  <data name="TraceRuleEntriesPerDay" xml:space="preserve">
+    <value>New entries today</value>
+  </data>
+  <data name="TraceRuleCooldown" xml:space="preserve">
+    <value>Cooldown after a loss</value>
+  </data>
+  <data name="TraceRulePendingEntry" xml:space="preserve">
+    <value>No other unfilled entry</value>
+  </data>
+  <data name="TraceRuleFunding" xml:space="preserve">
+    <value>Funding rate</value>
+  </data>
+  <data name="TraceRulePrices" xml:space="preserve">
+    <value>Prices on the tick and in range</value>
+  </data>
+  <data name="TraceRuleStopRequired" xml:space="preserve">
+    <value>Protective stop present</value>
+  </data>
+  <data name="TraceRuleStopSide" xml:space="preserve">
+    <value>Stop on the right side</value>
+  </data>
+  <data name="TraceRuleStopDistance" xml:space="preserve">
+    <value>Stop distance</value>
+  </data>
+  <data name="TraceRuleStopNotWidened" xml:space="preserve">
+    <value>Stop not widened</value>
+  </data>
+  <data name="TraceRuleTargetSide" xml:space="preserve">
+    <value>Target on the right side</value>
+  </data>
+  <data name="TraceRuleRewardToRisk" xml:space="preserve">
+    <value>Reward to risk</value>
+  </data>
+  <data name="TraceRuleNoAveragingDown" xml:space="preserve">
+    <value>No averaging down</value>
+  </data>
+  <data name="TraceRuleSize" xml:space="preserve">
+    <value>Position size</value>
+  </data>
+  <data name="TraceRuleQuantity" xml:space="preserve">
+    <value>Minimum quantity</value>
+  </data>
+  <data name="TraceRuleNotional" xml:space="preserve">
+    <value>Order value in range</value>
+  </data>
+  <data name="TraceRuleLiquidationBuffer" xml:space="preserve">
+    <value>Liquidation buffer</value>
+  </data>
+  <data name="TraceDecidedOf" xml:space="preserve">
+    <value>By {0}, {1}</value>
+    <comment>{0} is who decided, such as you, and {1} when, written as DisplayTime writes it.</comment>
+  </data>
+  <data name="TraceDecidedByYou" xml:space="preserve">
+    <value>you</value>
+  </data>
+  <data name="TraceDecidedBySystem" xml:space="preserve">
+    <value>Ecnanib</value>
+  </data>
+  <data name="TraceApprovalLink" xml:space="preserve">
+    <value>Open the approval</value>
+  </data>
+  <data name="TraceSecondLookHeading" xml:space="preserve">
+    <value>Second look</value>
+  </data>
+  <data name="TraceSecondLookNone" xml:space="preserve">
+    <value>It wasn't checked again.</value>
+  </data>
+  <data name="TraceSecondLookRulesLabel" xml:space="preserve">
+    <value>Rules of the second look</value>
+  </data>
+  <data name="TraceApprovalExecutionHeading" xml:space="preserve">
+    <value>What was sent</value>
+  </data>
+  <data name="TraceExecutionNone" xml:space="preserve">
+    <value>The cycle sent nothing itself.</value>
+  </data>
+  <data name="TraceExecutionByApproval" xml:space="preserve">
+    <value>The cycle sent nothing itself. What was approved is sent from the approval, above.</value>
+  </data>
+  <data name="TraceFieldExecution" xml:space="preserve">
+    <value>What execution did</value>
+  </data>
+  <data name="TraceFieldFuturesSetup" xml:space="preserve">
+    <value>Futures setup</value>
+  </data>
+  <data name="TraceFieldExchangeCode" xml:space="preserve">
+    <value>Binance's code</value>
+  </data>
+  <data name="TraceTargetNotPlaced" xml:space="preserve">
+    <value>Binance refused the take-profit, so only the stop protects the position.</value>
+  </data>
+  <data name="TraceFuturesReady" xml:space="preserve">
+    <value>The account and the pair were ready.</value>
+  </data>
+  <data name="TraceFuturesKeyUnusable" xml:space="preserve">
+    <value>The exchange key can't be used.</value>
+  </data>
+  <data name="TraceFuturesExchangeUnavailable" xml:space="preserve">
+    <value>Binance couldn't be reached, or refused for a reason of its own.</value>
+  </data>
+  <data name="TraceFuturesTradingDisabled" xml:space="preserve">
+    <value>Binance doesn't let the account trade Futures.</value>
+  </data>
+  <data name="TraceFuturesHedgeMode" xml:space="preserve">
+    <value>The account is in Hedge Mode, and One-way Mode is required. Only you can change it.</value>
+  </data>
+  <data name="TraceFuturesMultiAssetsMode" xml:space="preserve">
+    <value>The account is in Multi-Assets Mode, so the pair can't be isolated.</value>
+  </data>
+  <data name="TraceFuturesMarginTypeLocked" xml:space="preserve">
+    <value>Open orders or a position kept the pair from being isolated.</value>
+  </data>
+  <data name="TraceFuturesLeverageRefused" xml:space="preserve">
+    <value>Binance refused the leverage.</value>
+  </data>
+  <data name="TraceOrdersHeading" xml:space="preserve">
+    <value>Orders</value>
+  </data>
+  <data name="TraceOrdersNone" xml:space="preserve">
+    <value>No order cites this cycle.</value>
+  </data>
+  <data name="TraceOrdersLabel" xml:space="preserve">
+    <value>Orders</value>
+  </data>
+  <data name="TraceOrdersCaption" xml:space="preserve">
+    <value>{0} orders, oldest first</value>
+    <comment>{0} is a number of orders. A Demo or Live label follows it.</comment>
+  </data>
+  <data name="TraceOrderLeg" xml:space="preserve">
+    <value>Order</value>
+  </data>
+  <data name="TraceOrderType" xml:space="preserve">
+    <value>Type</value>
+  </data>
+  <data name="TraceOrderPrice" xml:space="preserve">
+    <value>Price</value>
+  </data>
+  <data name="TraceOrderFilledColumn" xml:space="preserve">
+    <value>Filled</value>
+  </data>
+  <data name="TraceOrderSent" xml:space="preserve">
+    <value>Sent</value>
+  </data>
+  <data name="TraceOrderId" xml:space="preserve">
+    <value>Client order ID</value>
+  </data>
+  <data name="TraceNotSent" xml:space="preserve">
+    <value>Not sent</value>
+  </data>
+  <data name="TraceAtMarket" xml:space="preserve">
+    <value>At market</value>
+  </data>
+  <data name="TraceTriggerOf" xml:space="preserve">
+    <value>Trigger {0}</value>
+    <comment>{0} is a price.</comment>
+  </data>
+  <data name="TraceLimitAndTriggerOf" xml:space="preserve">
+    <value>{0}, trigger {1}</value>
+    <comment>{0} and {1} are prices.</comment>
+  </data>
+  <data name="TraceFilledOf" xml:space="preserve">
+    <value>{0} at {1}</value>
+    <comment>{0} is a quantity, and {1} an average price, or None.</comment>
+  </data>
+  <data name="TraceErrorCodeOf" xml:space="preserve">
+    <value>Binance's code {0}</value>
+    <comment>{0} is Binance's error code, such as -2010.</comment>
+  </data>
+  <data name="TraceLegEntry" xml:space="preserve">
+    <value>Entry</value>
+  </data>
+  <data name="TraceLegStop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="TraceLegTarget" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="TraceLegEmergencyClose" xml:space="preserve">
+    <value>Emergency close</value>
+  </data>
+  <data name="TraceLegExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="TraceOrderKindMarket" xml:space="preserve">
+    <value>Market</value>
+  </data>
+  <data name="TraceOrderKindLimit" xml:space="preserve">
+    <value>Limit</value>
+  </data>
+  <data name="TraceOrderKindStopMarket" xml:space="preserve">
+    <value>Stop at market</value>
+  </data>
+  <data name="TraceOrderKindTakeProfitMarket" xml:space="preserve">
+    <value>Take-profit at market</value>
+  </data>
+  <data name="TraceOrderKindLimitMaker" xml:space="preserve">
+    <value>Take-profit limit</value>
+  </data>
+  <data name="TraceOrderSending" xml:space="preserve">
+    <value>Being sent</value>
+  </data>
+  <data name="TraceOrderUnknown" xml:space="preserve">
+    <value>Outcome not known yet</value>
+  </data>
+  <data name="TraceOrderNotPlaced" xml:space="preserve">
+    <value>Not placed</value>
+  </data>
+  <data name="TraceOrderOpen" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="TraceOrderPartiallyFilled" xml:space="preserve">
+    <value>Partly filled</value>
+  </data>
+  <data name="TraceOrderFilled" xml:space="preserve">
+    <value>Filled</value>
+  </data>
+  <data name="TraceOrderTriggered" xml:space="preserve">
+    <value>Triggered</value>
+  </data>
+  <data name="TraceOrderFinished" xml:space="preserve">
+    <value>Triggered and ended</value>
+  </data>
+  <data name="TraceOrderCanceled" xml:space="preserve">
+    <value>Cancelled</value>
+  </data>
+  <data name="TraceOrderExpired" xml:space="preserve">
+    <value>Expired</value>
+  </data>
+  <data name="TraceOrderRejected" xml:space="preserve">
+    <value>Rejected</value>
+  </data>
+  <data name="TraceFailureMarketData" xml:space="preserve">
+    <value>Binance couldn't give the pair, its candles or its prices.</value>
+  </data>
+  <data name="TraceFailureAccount" xml:space="preserve">
+    <value>The account couldn't be read, or the agent has no exchange key.</value>
+  </data>
+  <data name="TraceFailureRoleFailed" xml:space="preserve">
+    <value>A required role failed on its model and its fallback.</value>
+  </data>
+  <data name="TraceFailureUnexpected" xml:space="preserve">
+    <value>Something unexpected went wrong. The log has the details.</value>
+  </data>
+  <data name="TraceFailureExecution" xml:space="preserve">
+    <value>Binance didn't take the order.</value>
+  </data>
+  <data name="TraceProposalHold" xml:space="preserve">
+    <value>Hold</value>
+  </data>
+  <data name="TraceProposalBuy" xml:space="preserve">
+    <value>Buy</value>
+  </data>
+  <data name="TraceProposalSell" xml:space="preserve">
+    <value>Sell</value>
+  </data>
+  <data name="TraceProposalOpenLong" xml:space="preserve">
+    <value>Open long</value>
+  </data>
+  <data name="TraceProposalOpenShort" xml:space="preserve">
+    <value>Open short</value>
+  </data>
+  <data name="TraceProposalClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="TraceProposalAdjustStop" xml:space="preserve">
+    <value>Move the stop</value>
+  </data>
+  <data name="TraceProposalAdjustTarget" xml:space="preserve">
+    <value>Move the target</value>
+  </data>
+  <data name="TraceProposalCancelPending" xml:space="preserve">
+    <value>Cancel the unfilled entry</value>
+  </data>
 </root>

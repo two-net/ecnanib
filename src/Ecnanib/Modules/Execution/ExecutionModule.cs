@@ -37,6 +37,7 @@ public static class ExecutionModule
         services.AddSingleton<IAgentLiquidation, AgentLiquidation>();
         services.AddSingleton<IAgentAccounts, AgentAccounts>();
         services.AddSingleton<IAgentPositions, AgentPositionReader>();
+        services.AddSingleton<ICycleOrders, CycleOrders>();
         services.AddSingleton<IFuturesSetup, FuturesSetup>();
 
         return services;

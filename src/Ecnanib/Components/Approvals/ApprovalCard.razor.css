@@ -38,6 +38,10 @@
     white-space: pre-line;
 }
 
+.approval-trace {
+    margin: 0;
+}
+
 .approval-hint {
     display: block;
     color: var(--text-muted);

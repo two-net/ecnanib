@@ -1,0 +1,157 @@
+@using System.Globalization
+
+@* The Risk Engine's evaluation (FR-RISK-10): its verdict, the intent it was given, the caps it applied, what it sized
+   when it passed, any loss limit reached, and every rule as recorded. *@
+
+<dl class="facts">
+    <dt>@Strings.TraceFieldVerdict</dt>
+    <dd><strong>@TraceText.VerdictOf(Evaluation.Verdict)</strong></dd>
+    <dt>@Strings.TraceFieldEvaluated</dt>
+    <dd>@Time.Format(Evaluation.EvaluatedAt)</dd>
+    @if (Evaluation.Breach is { } breach)
+    {
+        <dt>@Strings.TraceFieldBreach</dt>
+        <dd>
+            @(breach.Until is { } until
+                ? string.Format(CultureInfo.CurrentCulture, Strings.TraceBreachUntilOf, TraceText.LossLimitOf(breach.Kind), Time.Format(until))
+                : string.Format(CultureInfo.CurrentCulture, Strings.TraceBreachUntilResumedOf, TraceText.LossLimitOf(breach.Kind)))
+        </dd>
+    }
+    <dt>@Strings.TraceFieldCaps</dt>
+    <dd class="trace-number">
+        @string.Format(
+            CultureInfo.CurrentCulture,
+            Strings.TraceCapsOf,
+            Evaluation.Caps.MaxLeverage,
+            TraceText.NumberOf(Evaluation.Caps.MaxRiskPerTradePercent),
+            TraceText.NumberOf(Evaluation.Caps.MinLiquidationBufferMultiple),
+            TraceText.NumberOf(Evaluation.Caps.MinRewardToRisk))
+    </dd>
+</dl>
+
+<div class="trace-group">
+    <h3>@Strings.TraceIntentHeading</h3>
+    <dl class="facts">
+        <dt>@Strings.TraceFieldAction</dt>
+        <dd>@ApprovalText.ActionOf(Intent.Action)</dd>
+        <dt>@Strings.TraceFieldOrigin</dt>
+        <dd>@TraceText.OriginOf(Intent.Origin)</dd>
+        @if (Intent.EntryType is { } entryType)
+        {
+            <dt>@Strings.TraceFieldEntryType</dt>
+            <dd>@TraceText.EntryTypeOf(entryType)</dd>
+        }
+        @if (Intent.LimitPrice is { } limit)
+        {
+            <dt>@Strings.TraceFieldLimitPrice</dt>
+            <dd class="trace-number">@TraceText.NumberOf(limit)</dd>
+        }
+        @if (Intent.StopPrice is { } stop)
+        {
+            <dt>@Strings.ApprovalFieldStop</dt>
+            <dd class="trace-number">@TraceText.NumberOf(stop)</dd>
+        }
+        @if (Intent.TargetPrice is { } target)
+        {
+            <dt>@Strings.ApprovalFieldTarget</dt>
+            <dd class="trace-number">@TraceText.NumberOf(target)</dd>
+        }
+        @if (Intent.RiskPercent is { } risk)
+        {
+            <dt>@Strings.TraceFieldRiskPercent</dt>
+            <dd class="trace-number">@string.Format(CultureInfo.CurrentCulture, Strings.TracePercentOf, TraceText.NumberOf(risk))</dd>
+        }
+        @if (Intent.CloseFraction is { } fraction)
+        {
+            <dt>@Strings.TraceFieldCloseFraction</dt>
+            <dd class="trace-number">@string.Format(CultureInfo.CurrentCulture, Strings.TracePercentOf, TraceText.NumberOf(fraction * 100m))</dd>
+        }
+    </dl>
+</div>
+
+<div class="trace-group">
+    <h3>@Strings.TraceSizedHeading</h3>
+    @if (Evaluation.Sized is not { } sized)
+    {
+        <p>@Strings.TraceSizedNone</p>
+    }
+    else
+    {
+        <dl class="facts">
+            <dt>@Strings.TraceFieldKind</dt>
+            <dd>@TraceText.SizedKindOf(sized.Kind)</dd>
+            @if (sized.Side is { } side)
+            {
+                <dt>@Strings.TraceFieldSide</dt>
+                <dd>@TraceText.SideOf(side)</dd>
+            }
+            @if (sized.EntryType is { } sizedEntry)
+            {
+                <dt>@Strings.TraceFieldEntryType</dt>
+                <dd>@TraceText.EntryTypeOf(sizedEntry)</dd>
+            }
+            @if (sized.Quantity is { } quantity)
+            {
+                <dt>@Strings.TraceFieldQuantity</dt>
+                <dd class="trace-number">@TraceText.NumberOf(quantity)</dd>
+            }
+            @if (sized.LimitPrice is { } sizedLimit)
+            {
+                <dt>@Strings.TraceFieldLimitPrice</dt>
+                <dd class="trace-number">@TraceText.NumberOf(sizedLimit)</dd>
+            }
+            @if (sized.StopPrice is { } sizedStop)
+            {
+                <dt>@Strings.ApprovalFieldStop</dt>
+                <dd class="trace-number">@TraceText.NumberOf(sizedStop)</dd>
+            }
+            @if (sized.TargetPrice is { } sizedTarget)
+            {
+                <dt>@Strings.ApprovalFieldTarget</dt>
+                <dd class="trace-number">@TraceText.NumberOf(sizedTarget)</dd>
+            }
+            @if (sized.Notional is { } notional)
+            {
+                <dt>@Strings.TraceFieldNotional</dt>
+                <dd class="trace-number">@TraceText.NumberOf(notional)</dd>
+            }
+            @if (sized.MoneyAtRisk is { } atRisk)
+            {
+                <dt>@Strings.ApprovalFieldMoneyAtRisk</dt>
+                <dd class="trace-number">@TraceText.NumberOf(atRisk)</dd>
+            }
+            @if (sized.RewardToRisk is { } rewardToRisk)
+            {
+                <dt>@Strings.ApprovalFieldRewardToRisk</dt>
+                <dd class="trace-number">@string.Format(CultureInfo.CurrentCulture, Strings.ApprovalRewardToRiskOf, TraceText.NumberOf(Math.Round(rewardToRisk, 2, MidpointRounding.AwayFromZero)))</dd>
+            }
+            @if (sized.Leverage is { } leverage)
+            {
+                <dt>@Strings.ApprovalFieldLeverage</dt>
+                <dd class="trace-number">@string.Format(CultureInfo.CurrentCulture, Strings.ApprovalLeverageOf, leverage)</dd>
+            }
+            @if (sized.EstimatedLiquidationPrice is { } liquidation)
+            {
+                <dt>@Strings.TraceFieldLiquidation</dt>
+                <dd class="trace-number">@TraceText.NumberOf(liquidation)</dd>
+            }
+            <dt>@Strings.TraceFieldReduceOnly</dt>
+            <dd>@(sized.ReduceOnly ? Strings.TraceYes : Strings.TraceNo)</dd>
+        </dl>
+    }
+</div>
+
+<div class="trace-group">
+    <h3>@Strings.TraceRulesHeading</h3>
+    <TraceRules Rules="Evaluation.Rules" Label="@Strings.TraceRiskRulesLabel" />
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public EvaluationTrace Evaluation { get; set; } = default!;
+
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    private OrderIntent Intent => Evaluation.Intent;
+}

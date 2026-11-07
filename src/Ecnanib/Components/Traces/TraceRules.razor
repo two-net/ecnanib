@@ -1,0 +1,46 @@
+@* Risk Engine rules as recorded (FR-RISK-10): every rule, in the order it runs, whether it applied or not, with what it
+   looked at. Inputs are shown as recorded, each a name and an invariant-culture value, because they're the engine's own
+   words for what it checked. Each result is a word, never only a color. It scrolls in its own region on a phone. *@
+
+<div class="trace-table" role="region" tabindex="0" aria-label="@Label">
+    <table>
+        <thead>
+            <tr>
+                <th scope="col">@Strings.TraceRuleColumn</th>
+                <th scope="col">@Strings.TraceResultColumn</th>
+                <th scope="col">@Strings.TraceReasonColumn</th>
+                <th scope="col">@Strings.TraceInputsColumn</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var rule in Rules)
+            {
+                <tr @key="rule.Rule" class="@(rule.Outcome == RuleOutcome.Fail ? "trace-rule-failed" : null)">
+                    <th scope="row">@TraceText.RuleOf(rule.Rule)</th>
+                    <td>@TraceText.RuleOutcomeOf(rule.Outcome)</td>
+                    <td>@(rule.Reason is { } reason ? ApprovalText.ReasonOf(reason) : "")</td>
+                    <td>
+                        @if (rule.Inputs.Count > 0)
+                        {
+                            <ul class="trace-inputs-list">
+                                @foreach (var input in rule.Inputs)
+                                {
+                                    <li><code>@input.Name</code> = <code>@input.Value</code></li>
+                                }
+                            </ul>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<RuleResult> Rules { get; set; } = [];
+
+    /// <summary>What the region is called, for a screen reader.</summary>
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = "";
+}

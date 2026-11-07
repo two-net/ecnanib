@@ -1,0 +1,115 @@
+@using System.Globalization
+
+@* A summary of what the cycle saw (FR-UI-04): the latest candle of each series, their indicators, the prices, the
+   account and the risk settings in force. The candles each role saw are in its prompt. Numbers are as recorded:
+   prices in the pair's quote asset and quantities in its base asset (DATA-R-02). *@
+
+@if (Snapshot is not { } snapshot)
+{
+    <p>@Strings.TraceNoSnapshot</p>
+}
+else
+{
+    <p class="trace-note">@string.Format(CultureInfo.CurrentCulture, Strings.TraceUnitsOf, snapshot.Symbol)</p>
+
+    <div class="trace-inputs">
+        <dl class="facts">
+            <dt>@Strings.TraceFieldLastCandle</dt>
+            <dd>@CandleOf(snapshot.LastCandle)</dd>
+            <dt>@Strings.TraceFieldHigherCandle</dt>
+            <dd>@CandleOf(snapshot.LastHigherTimeframeCandle)</dd>
+            <dt>@Strings.TraceFieldQuote</dt>
+            <dd class="trace-number">
+                @string.Format(
+                    CultureInfo.CurrentCulture,
+                    Strings.TraceQuoteOf,
+                    TraceText.NumberOf(snapshot.Quote.LastPrice),
+                    TraceText.NumberOf(snapshot.Quote.BidPrice),
+                    TraceText.NumberOf(snapshot.Quote.AskPrice))
+            </dd>
+            @if (snapshot.Futures is { } futures)
+            {
+                <dt>@Strings.TraceFieldFutures</dt>
+                <dd class="trace-number">
+                    @string.Format(CultureInfo.CurrentCulture, Strings.TraceMarkOf, TraceText.NumberOf(futures.MarkPrice), TraceText.NumberOf(futures.IndexPrice))
+                </dd>
+                <dt>@Strings.TraceFieldFunding</dt>
+                <dd>
+                    @(futures is { FundingRate: { } rate, NextFundingTime: { } next }
+                        ? string.Format(
+                            CultureInfo.CurrentCulture,
+                            Strings.TraceFundingOf,
+                            TraceText.NumberOf(rate * 100m),
+                            futures.FundingIntervalHours,
+                            Time.Format(next))
+                        : Strings.TraceFundingNone)
+                </dd>
+            }
+            <dt>@Strings.TraceFieldAvailable</dt>
+            <dd class="trace-number">@TraceText.NumberOf(snapshot.AvailableQuote)</dd>
+            @if (snapshot.BaseHeld is { } held)
+            {
+                <dt>@Strings.TraceFieldBaseHeld</dt>
+                <dd class="trace-number">@TraceText.NumberOf(held)</dd>
+            }
+            <dt>@Strings.TraceFieldCapital</dt>
+            <dd class="trace-number">@TraceText.NumberOf(snapshot.CapitalAllocation)</dd>
+            <dt>@Strings.TraceFieldPosition</dt>
+            <dd>@PositionOf(snapshot.Position)</dd>
+            <dt>@Strings.TraceFieldPendingEntry</dt>
+            <dd>@(snapshot.HasPendingEntry ? Strings.TraceYes : Strings.TraceNo)</dd>
+        </dl>
+
+        <TraceIndicators Heading="@Strings.TraceIndicatorsHeading" Indicators="snapshot.Indicators" />
+        <TraceIndicators Heading="@Strings.TraceHigherIndicatorsHeading" Indicators="snapshot.HigherTimeframeIndicators" />
+
+        <div class="trace-group">
+            <h3>@Strings.TraceSettingsHeading</h3>
+            <dl class="facts">
+                @foreach (var setting in Enum.GetValues<RiskSetting>())
+                {
+                    <dt>@AgentText.RiskSettingOf(setting)</dt>
+                    <dd class="trace-number">@TraceText.NumberOf(TraceText.SettingOf(snapshot.Effective, setting))</dd>
+                }
+            </dl>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Null when the cycle ended before it collected the market and the account.</summary>
+    [Parameter]
+    public InputSnapshot? Snapshot { get; set; }
+
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    private string CandleOf(Candle? candle) => candle is null
+        ? Strings.TraceNone
+        : string.Format(
+            CultureInfo.CurrentCulture,
+            Strings.TraceCandleOf,
+            Time.Format(candle.OpenTime),
+            TraceText.NumberOf(candle.Open),
+            TraceText.NumberOf(candle.High),
+            TraceText.NumberOf(candle.Low),
+            TraceText.NumberOf(candle.Close),
+            TraceText.NumberOf(candle.Volume));
+
+    private static string PositionOf(OpenPosition? position)
+    {
+        if (position is null)
+        {
+            return Strings.TraceNone;
+        }
+
+        var held = string.Format(
+            CultureInfo.CurrentCulture,
+            Strings.TracePositionOf,
+            AgentText.SideOf(position.Side),
+            TraceText.NumberOf(position.Quantity),
+            TraceText.NumberOf(position.AverageEntry));
+
+        return string.Format(CultureInfo.CurrentCulture, Strings.TracePositionProtectionOf, held, TraceText.NumberOf(position.Stop), TraceText.NumberOf(position.Target));
+    }
+}

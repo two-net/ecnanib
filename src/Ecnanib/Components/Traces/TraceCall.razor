@@ -1,0 +1,113 @@
+@using System.Globalization
+
+@* One call to a model (SRS 6.1's AiCall, FR-UI-04, FR-PRM-03): its latency, tokens and cost, the template versions, the
+   rendered prompt, and the raw and parsed answer. Closed, because a prompt is long, and the summary line says what
+   happened. A retry also sent the first answer and what broke the contract, which are on the call before it. *@
+
+<details class="trace-call">
+    <summary>
+        <span class="trace-call-title">@Title</span>
+        <span class="trace-call-metrics">
+            @string.Format(
+                CultureInfo.CurrentCulture,
+                Strings.TraceCallMetricsOf,
+                TraceText.SecondsOf(Call.Latency),
+                TraceText.TokensOf(Call.InputTokens, Call.OutputTokens),
+                TraceText.CostOf(Call.Cost))
+        </span>
+    </summary>
+
+    <div class="trace-call-body">
+        <dl class="facts">
+            <dt>@Strings.TraceFieldModel</dt>
+            <dd>@string.Format(CultureInfo.CurrentCulture, Strings.TraceModelOf, Call.ModelId, Call.Provider)</dd>
+            <dt>@Strings.TraceFieldResult</dt>
+            <dd>@TraceText.CallStatusOf(Call.Status)</dd>
+            @if (Call.Failure is { } failure)
+            {
+                <dt>@Strings.TraceFieldFailure</dt>
+                <dd>@TraceText.CallFailureOf(failure)</dd>
+            }
+            <dt>@Strings.TraceFieldStarted</dt>
+            <dd>@Time.Format(Call.StartedAt)</dd>
+            <dt>@Strings.TraceFieldLatency</dt>
+            <dd class="trace-number">@TraceText.SecondsOf(Call.Latency)</dd>
+            <dt>@Strings.TraceFieldTokens</dt>
+            <dd class="trace-number">@TraceText.TokensOf(Call.InputTokens, Call.OutputTokens)</dd>
+            <dt>@Strings.TraceFieldCost</dt>
+            <dd class="trace-number">@TraceText.CostOf(Call.Cost)</dd>
+            @if (Call.ProviderAttempts > 1)
+            {
+                <dt>@Strings.TraceFieldSent</dt>
+                <dd>@string.Format(CultureInfo.CurrentCulture, Strings.TraceProviderAttemptsOf, Call.ProviderAttempts)</dd>
+            }
+            @if (Call.Truncated)
+            {
+                <dt>@Strings.TraceFieldTruncated</dt>
+                <dd>@Strings.TraceTruncated</dd>
+            }
+            <dt>@Strings.TraceFieldTemplates</dt>
+            <dd>
+                @if (Call.Templates.Count == 0)
+                {
+                    @Strings.TraceNone
+                }
+                else
+                {
+                    <ul class="facts-list">
+                        @foreach (var template in Call.Templates)
+                        {
+                            <li>@string.Format(CultureInfo.CurrentCulture, Strings.TraceTemplateOf, TraceText.LayerOf(template.Key.Layer), template.Version)</li>
+                        }
+                    </ul>
+                }
+            </dd>
+        </dl>
+
+        @if (Call.Attempt > 1)
+        {
+            <p class="trace-note">@Strings.TraceRetryNote</p>
+        }
+
+        <TraceCode Label="@Strings.TraceInstructions" Hint="@Strings.TraceInstructionsHint" Text="@Call.Instructions" />
+        <TraceCode Label="@Strings.TraceMessage" Hint="@Strings.TraceMessageHint" Text="@Call.Message" />
+        <TraceCode Label="@Strings.TraceAnswer" Text="@Call.Answer" />
+        @if (Call.Output is not null)
+        {
+            <TraceCode Label="@Strings.TraceOutput" Hint="@Strings.TraceOutputHint" Text="@Call.Output" />
+        }
+        @if (Call.Violations.Count > 0)
+        {
+            <div class="trace-violations">
+                <h4>@Strings.TraceViolations</h4>
+                <ul class="facts-list">
+                    @foreach (var violation in Call.Violations)
+                    {
+                        <li><code>@violation.Path</code> <span class="trace-text">@violation.Problem</span></li>
+                    }
+                </ul>
+            </div>
+        }
+        @if (Call.ProviderMessage is not null)
+        {
+            <TraceCode Label="@Strings.TraceProviderMessage" Text="@Call.ProviderMessage" />
+        }
+    </div>
+</details>
+
+@code {
+    [Parameter, EditorRequired]
+    public CallTrace Call { get; set; } = default!;
+
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    private string Title => string.Format(
+        CultureInfo.CurrentCulture,
+        Call.Fallback ? Strings.TraceCallFallbackTitleOf : Strings.TraceCallTitleOf,
+        Call.ModelId,
+        Call.Attempt,
+        Call.Failure is { } failure && Call.Status != CouncilCallStatus.BrokeContract
+            ? string.Format(CultureInfo.CurrentCulture, Strings.TraceCallStatusWhyOf, TraceText.CallStatusOf(Call.Status), TraceText.CallFailureOf(failure))
+            : TraceText.CallStatusOf(Call.Status));
+}

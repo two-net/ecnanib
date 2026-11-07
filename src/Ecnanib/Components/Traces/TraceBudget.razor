@@ -1,0 +1,42 @@
+@using System.Globalization
+
+@* The AI budget check at the start of the cycle (FR-CYC-07): each limit against what had been spent, and whether one had
+   run out, which put the agent in protective-only mode for the cycle. *@
+
+<dl class="facts">
+    <dt>@Strings.TraceBudgetDayUsd</dt>
+    <dd class="trace-number">@UsdOf(Check.Spend.DayUsd, Check.Budget.DailyUsd)</dd>
+    <dt>@Strings.TraceBudgetMonthUsd</dt>
+    <dd class="trace-number">@UsdOf(Check.Spend.MonthUsd, Check.Budget.MonthlyUsd)</dd>
+    <dt>@Strings.TraceBudgetDayTokens</dt>
+    <dd class="trace-number">@TokensOf(Check.Spend.DayTokens, Check.Budget.DailyTokens)</dd>
+    <dt>@Strings.TraceBudgetMonthTokens</dt>
+    <dd class="trace-number">@TokensOf(Check.Spend.MonthTokens, Check.Budget.MonthlyTokens)</dd>
+    <dt>@Strings.TraceFieldResult</dt>
+    <dd>
+        @(Check.Reached is { } reached
+            ? string.Format(
+                CultureInfo.CurrentCulture,
+                Strings.TraceBudgetRanOutOf,
+                TraceText.BudgetLimitOf(reached),
+                Check.Until is { } until ? Time.Format(until) : Strings.TraceNone)
+            : Strings.TraceBudgetWithin)
+    </dd>
+</dl>
+<p class="trace-note">@Strings.TraceBudgetNote</p>
+
+@code {
+    [Parameter, EditorRequired]
+    public BudgetCheck Check { get; set; } = default!;
+
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    private static string UsdOf(decimal spent, decimal? limit) => limit is { } most
+        ? string.Format(CultureInfo.CurrentCulture, Strings.TraceBudgetSpentOf, TraceText.CostOf(spent), TraceText.CostOf(most))
+        : string.Format(CultureInfo.CurrentCulture, Strings.TraceBudgetUnlimitedOf, TraceText.CostOf(spent));
+
+    private static string TokensOf(long spent, long? limit) => limit is { } most
+        ? string.Format(CultureInfo.CurrentCulture, Strings.TraceBudgetTokensSpentOf, spent, most)
+        : string.Format(CultureInfo.CurrentCulture, Strings.TraceBudgetTokensUnlimitedOf, spent);
+}

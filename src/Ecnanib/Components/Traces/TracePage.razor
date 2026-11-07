@@ -1,0 +1,246 @@
+@page "/agents/{AgentId:guid}/cycles/{CycleId:guid}"
+@using System.Globalization
+@implements IDisposable
+@inject IAgents Agents
+@inject IDecisionTraces Traces
+@inject ICycleOrders Orders
+@inject NavigationManager Navigation
+@inject LiveUpdates Live
+@inject ILogger<TracePage> Logger
+
+@* The decision trace viewer (FR-UI-04): everything behind one cycle, what it saw, each role's prompt and answer, the Risk
+   Engine's rules, the approval and the orders, with latency, tokens and cost. Only its user reads it: another user's
+   cycle, or one that isn't this agent's, answers 404 (NFR-SEC-04), and administrators have no way to it (FR-ADM-01).
+   What the user and models wrote is only ever text, and the module masks anything shaped like a secret first. A
+   running cycle fills in live (FR-UI-05). See The trace viewer in docs/architecture.md. *@
+
+@if (_trace is { } trace && _agent is { } agent)
+{
+    <PageTitle>@string.Format(CultureInfo.CurrentCulture, Strings.TracePageTitle, agent.Settings.Name)</PageTitle>
+
+    <div class="page trace-page">
+        <div class="trace-heading">
+            <h1>@Strings.TraceHeading</h1>
+            @* The cycle's own environment, which may not be the agent's now (FR-EXP-08). *@
+            <EnvironmentTag Environment="trace.Environment" />
+        </div>
+        <p class="trace-lede">
+            @string.Format(
+                CultureInfo.CurrentCulture,
+                Strings.TraceLedeOf,
+                AgentText.MarketOf(trace.Market),
+                trace.Symbol,
+                AgentText.TimeframeOf(trace.Timeframe),
+                Time.Format(trace.CandleClose))
+        </p>
+        @* The user chose the name, so it's only text. *@
+        <p><a href="@($"/agents/{agent.Id}")">@string.Format(CultureInfo.CurrentCulture, Strings.TraceBackTo, agent.Settings.Name)</a></p>
+
+        <section class="trace-section" aria-labelledby="trace-summary">
+            <h2 id="trace-summary">@Strings.TraceSectionSummary</h2>
+            <dl class="facts">
+                <dt>@Strings.TraceFieldOutcome</dt>
+                <dd><strong>@(trace.Outcome is { } outcome ? AgentText.OutcomeOf(outcome) : Strings.TraceRunning)</strong></dd>
+                @if (trace.Failure is { } failure)
+                {
+                    <dt>@Strings.TraceFieldFailure</dt>
+                    <dd>@TraceText.FailureOf(failure)</dd>
+                }
+                <dt>@Strings.TraceFieldStarted</dt>
+                <dd>@Time.Format(trace.StartedAt)</dd>
+                <dt>@Strings.TraceFieldFinished</dt>
+                <dd>
+                    @(trace.FinishedAt is { } finished
+                        ? string.Format(CultureInfo.CurrentCulture, Strings.TraceFinishedOf, Time.Format(finished), TraceText.SecondsOf(finished - trace.StartedAt))
+                        : Strings.TraceNotFinished)
+                </dd>
+                <dt>@Strings.TraceFieldDeadline</dt>
+                <dd>@Time.Format(trace.Deadline)</dd>
+                @if (trace.CatchUp)
+                {
+                    <dt>@Strings.TraceFieldCatchUp</dt>
+                    <dd>@Strings.TraceCatchUp</dd>
+                }
+                <dt>@Strings.TraceFieldTokens</dt>
+                <dd class="trace-number">@TraceText.TokensOf(trace.Usage.InputTokens, trace.Usage.OutputTokens)</dd>
+                <dt>@Strings.TraceFieldCost</dt>
+                <dd>
+                    <span class="trace-number">@TraceText.CostOf(trace.Usage.Cost ?? 0m)</span>
+                    @if (trace.Usage.UnpricedTokens > 0)
+                    {
+                        <span class="trace-note">@string.Format(CultureInfo.CurrentCulture, Strings.AgentAiCostUnpriced, TraceText.CountOf(trace.Usage.UnpricedTokens))</span>
+                    }
+                </dd>
+                <dt>@Strings.TraceFieldAiTime</dt>
+                <dd class="trace-number">@TraceText.SecondsOf(trace.Usage.AiTime)</dd>
+            </dl>
+        </section>
+
+        <section class="trace-section" aria-labelledby="trace-inputs">
+            <h2 id="trace-inputs">@Strings.TraceSectionInputs</h2>
+            <TraceInputs Snapshot="trace.Snapshot" />
+        </section>
+
+        <section class="trace-section" aria-labelledby="trace-checks">
+            <h2 id="trace-checks">@Strings.TraceSectionChecks</h2>
+            <h3>@Strings.TraceLossLimitsHeading</h3>
+            @if (trace.LossLimits.Count == 0)
+            {
+                <p>@Strings.TraceNotRecorded</p>
+            }
+            else
+            {
+                <TraceRules Rules="trace.LossLimits" Label="@Strings.TraceLossLimitRulesLabel" />
+            }
+            @if (trace.Budget is { } budget)
+            {
+                <h3>@Strings.TraceBudgetHeading</h3>
+                <TraceBudget Check="budget" />
+            }
+        </section>
+
+        <section class="trace-section" aria-labelledby="trace-council">
+            <h2 id="trace-council">@Strings.TraceSectionCouncil</h2>
+            <p class="trace-note">@Strings.TraceCouncilNote</p>
+            @if (trace.Roles.Count == 0)
+            {
+                <p>@Strings.TraceCouncilNone</p>
+            }
+            @foreach (var role in trace.Roles)
+            {
+                <TraceRole @key="role.Role" Role="role" />
+            }
+        </section>
+
+        <section class="trace-section" aria-labelledby="trace-risk">
+            <h2 id="trace-risk">@Strings.TraceSectionRisk</h2>
+            @if (trace.Evaluation is { } evaluation)
+            {
+                <TraceEvaluation Evaluation="evaluation" />
+            }
+            else
+            {
+                <p>@Strings.TraceRiskNone</p>
+            }
+        </section>
+
+        @if (trace.Approval is { } approval)
+        {
+            <section class="trace-section" aria-labelledby="trace-approval">
+                <h2 id="trace-approval">@Strings.TraceSectionApproval</h2>
+                <TraceApproval Approval="approval" />
+            </section>
+        }
+
+        <section class="trace-section" aria-labelledby="trace-execution">
+            <h2 id="trace-execution">@Strings.TraceSectionExecution</h2>
+            @if (trace.Execution is { } execution)
+            {
+                <TraceExecution Result="execution" />
+            }
+            else
+            {
+                <p>@(trace.Approval is null ? Strings.TraceExecutionNone : Strings.TraceExecutionByApproval)</p>
+            }
+            <h3>@Strings.TraceOrdersHeading</h3>
+            <TraceOrders Orders="_orders" />
+        </section>
+    </div>
+}
+
+@code {
+    private CycleTrace? _trace;
+    private AgentRecord? _agent;
+    private IReadOnlyList<CycleOrder> _orders = [];
+    private Guid _userId;
+    private IDisposable? _live;
+    private LiveRefresh? _refresh;
+
+    [Parameter]
+    public Guid AgentId { get; set; }
+
+    [Parameter]
+    public Guid CycleId { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /// <summary>Routes cascades it, from the user's preference or their browser (FR-PREF-05).</summary>
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    /// <summary>On parameters rather than once, so moving from one cycle's trace to another's reads the new one.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AccountClaims.UserId((await AuthenticationState).User) is not { } userId)
+        {
+            return;
+        }
+
+        _userId = userId;
+
+        if (!await ReadAsync())
+        {
+            Navigation.NotFound();
+            return;
+        }
+
+        if (RendererInfo.IsInteractive && _live is null)
+        {
+            _refresh = new LiveRefresh(InvokeAsync, RefreshAsync, Logger);
+            _live = Live.Subscribe(userId, OnLive);
+        }
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    /// <summary>
+    /// The cycle moved on, while it runs, or the agent's orders changed, such as a fill, a stop that rested, or an
+    /// approval of this cycle that was sent. A decision on an approval raises no event of its own.
+    /// </summary>
+    private void OnLive(LiveEvent change)
+    {
+        if (change.AgentId != AgentId)
+        {
+            return;
+        }
+
+        if ((change.Change == LiveChange.Cycle && change.Cycle?.CycleId == CycleId) || change.Change is LiveChange.Execution or LiveChange.Agent)
+        {
+            _refresh?.Request();
+        }
+    }
+
+    /// <summary>The agent, the trace and its orders, each for the user only. False when any isn't theirs.</summary>
+    private async Task<bool> ReadAsync()
+    {
+        var agent = Agents.FindAsync(_userId, AgentId, CancellationToken.None);
+        var trace = Traces.FindAsync(_userId, AgentId, CycleId, CancellationToken.None);
+        var orders = Orders.ListAsync(_userId, AgentId, CycleId, CancellationToken.None);
+
+        await Task.WhenAll(agent, trace, orders);
+
+        if (await agent is not { } found || await trace is not { } cycle)
+        {
+            _agent = null;
+            _trace = null;
+            _orders = [];
+            return false;
+        }
+
+        (_agent, _trace, _orders) = (found, cycle, await orders);
+        return true;
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (!await ReadAsync())
+        {
+            // The agent and its cycles were deleted in another tab, so there's nothing left to show here.
+            Navigation.NavigateTo("/agents?saved=deleted");
+            return;
+        }
+
+        StateHasChanged();
+    }
+}

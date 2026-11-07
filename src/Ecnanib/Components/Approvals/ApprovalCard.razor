@@ -103,6 +103,7 @@
             </dd>
         }
     </dl>
+    <p class="approval-trace"><a href="@($"/agents/{Approval.AgentId}/cycles/{Approval.CycleId}")">@Strings.ApprovalTraceLink</a></p>
 
     @if (Approval.IsPending)
     {

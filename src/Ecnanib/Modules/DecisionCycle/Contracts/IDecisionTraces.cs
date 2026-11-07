@@ -5,7 +5,7 @@ namespace Ecnanib.Modules.DecisionCycle.Contracts;
 
 /// <summary>
 /// A user's decision traces. Every call takes the user, so another user's agent behaves like one with no cycles
-/// (NFR-SEC-04). The trace viewer (#42) adds the rest of the trace. See Decision cycle in docs/architecture.md.
+/// (NFR-SEC-04), and administrators never read them (FR-ADM-01). See Decision cycle in docs/architecture.md.
 /// </summary>
 public interface IDecisionTraces
 {
@@ -18,6 +18,19 @@ public interface IDecisionTraces
     /// and timeframe, from each cycle's own row, so a chart never mixes Demo and Live (FR-EXP-08).
     /// </summary>
     Task<IReadOnlyList<CycleMarker>> ListCyclesAsync(Guid userId, Guid agentId, CycleRange range, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The agent's newest cycles, newest first by candle close, for its decision timeline (FR-UI-01): at most
+    /// <paramref name="count"/>, and never more than <see cref="CycleRange.MaxCycles"/>. Both environments, each cycle
+    /// with its own, because an agent switched to Live keeps its Demo cycles (FR-EXP-08).
+    /// </summary>
+    Task<IReadOnlyList<CycleSummary>> ListRecentAsync(Guid userId, Guid agentId, int count, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The whole trace of one of the agent's cycles (FR-UI-04), or null when it isn't the user's, isn't the agent's, or
+    /// doesn't exist. A running cycle's has what's been saved so far.
+    /// </summary>
+    Task<CycleTrace?> FindAsync(Guid userId, Guid agentId, Guid cycleId, CancellationToken cancellationToken);
 }
 
 /// <summary>Which of an agent's cycles a chart shows: those of one environment, pair and timeframe, by candle close.</summary>

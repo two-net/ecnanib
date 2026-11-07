@@ -1,0 +1,31 @@
+@* A prompt, an answer or a parsed output, as it was sent or received (FR-UI-04). Razor encodes it, so markup in it is
+   only text. It wraps rather than scrolls, so nothing hides past the edge on a phone, and it takes its colors from the
+   theme's tokens, so it follows light, dark and the system's theme with no rule of its own (NFR-USA-04). *@
+
+<details class="trace-code">
+    <summary>@Label</summary>
+    @if (Hint is not null)
+    {
+        <p class="trace-note">@Hint</p>
+    }
+    @if (string.IsNullOrEmpty(Text))
+    {
+        <p class="trace-note">@Strings.TraceNothingRecorded</p>
+    }
+    else
+    {
+        <pre class="trace-pre"><code>@Text</code></pre>
+    }
+</details>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = "";
+
+    [Parameter]
+    public string? Hint { get; set; }
+
+    /// <summary>Null when nothing was recorded, such as the prompt of a call whose template was missing.</summary>
+    [Parameter]
+    public string? Text { get; set; }
+}

@@ -1,6 +1,7 @@
 using Ecnanib.Kernel;
 using Ecnanib.Modules.Agents.Contracts;
 using Ecnanib.Modules.ExchangeAdapter.Contracts;
+using Ecnanib.Modules.Execution.Contracts;
 using Ecnanib.Modules.MarketData.Contracts;
 using Ecnanib.Modules.Notifications.Contracts;
 using Ecnanib.Modules.RiskEngine.Contracts;

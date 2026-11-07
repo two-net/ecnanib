@@ -1,0 +1,53 @@
+.decisions {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+    .decisions table {
+        width: 100%;
+        min-width: 40rem;
+        border-collapse: collapse;
+    }
+
+    .decisions caption {
+        padding-block-end: 0.5rem;
+        color: var(--text-muted);
+        text-align: start;
+    }
+
+    .decisions th,
+    .decisions td {
+        padding: 0.625rem 0.75rem 0.625rem 0;
+        border-block-start: 1px solid var(--rule);
+        text-align: start;
+        vertical-align: top;
+    }
+
+    .decisions thead th {
+        border-block-start: 0;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        font-weight: 400;
+    }
+
+.decisions-when {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.5rem;
+}
+
+.decisions-number {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+.decisions-note {
+    display: block;
+    color: var(--text-muted);
+    font-family: var(--font-body);
+    font-size: 0.8125rem;
+    white-space: normal;
+}

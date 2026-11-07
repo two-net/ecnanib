@@ -1,0 +1,243 @@
+/*
+    The trace viewer's parts are components of their own, so their rules reach them through ::deep from the page. Every
+    color is a theme token, so code, tables and text follow light, dark and the system's theme (NFR-USA-04).
+*/
+.trace-page {
+    display: grid;
+    gap: 2rem;
+    align-content: start;
+    padding-block: var(--section-gap);
+}
+
+    .trace-page h1 {
+        font-size: clamp(2rem, 1.5rem + 2.5vw, 3rem);
+    }
+
+    .trace-page h2 {
+        font-size: 1.25rem;
+    }
+
+    .trace-page ::deep h3 {
+        margin: 0;
+        font-size: 1.0625rem;
+    }
+
+    .trace-page ::deep h4 {
+        margin: 0;
+        font-size: 0.9375rem;
+    }
+
+    .trace-page p {
+        margin: 0;
+    }
+
+.trace-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem 0.75rem;
+}
+
+.trace-lede {
+    margin-block-start: -1.25rem;
+    color: var(--text-muted);
+}
+
+.trace-section {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+}
+
+.trace-page ::deep .trace-group,
+.trace-page ::deep .trace-inputs,
+.trace-page ::deep .trace-violations {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.trace-page ::deep .trace-inputs {
+    gap: 1.5rem;
+}
+
+/* A line of its own, also after a value in a fact or a cell. */
+.trace-page ::deep .trace-note {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.trace-page ::deep .trace-number {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+/* What models wrote can be long, and can be one long word. */
+.trace-page ::deep .trace-text {
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+}
+
+/* A role, raised like an approval, so the council reads as four blocks. */
+.trace-page ::deep .trace-role {
+    display: grid;
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 1rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+}
+
+.trace-page ::deep .trace-role-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.625rem;
+}
+
+.trace-page ::deep .trace-state {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+}
+
+.trace-page ::deep .trace-calls {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.trace-page ::deep .trace-call {
+    padding-block-start: 0.5rem;
+    border-block-start: 1px solid var(--rule);
+}
+
+    .trace-page ::deep .trace-call > summary,
+    .trace-page ::deep .trace-code > summary {
+        cursor: pointer;
+    }
+
+.trace-page ::deep .trace-call-title {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+.trace-page ::deep .trace-call-metrics {
+    display: block;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+}
+
+.trace-page ::deep .trace-call-body {
+    display: grid;
+    gap: 0.75rem;
+    min-width: 0;
+    padding-block: 0.75rem 0.25rem;
+}
+
+.trace-page ::deep .trace-code {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+    .trace-page ::deep .trace-code > summary {
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+    }
+
+/*
+    A prompt or an answer. It wraps rather than scrolls sideways, so a phone shows all of it, and it sits on the page's
+    surface inside the raised role, so it stands apart in both themes.
+*/
+.trace-page ::deep .trace-pre {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+    .trace-page ::deep .trace-pre code {
+        font: inherit;
+    }
+
+.trace-page ::deep .trace-table {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+    .trace-page ::deep .trace-table table {
+        width: 100%;
+        min-width: 44rem;
+        border-collapse: collapse;
+    }
+
+    .trace-page ::deep .trace-table caption {
+        padding-block-end: 0.5rem;
+        color: var(--text-muted);
+        text-align: start;
+    }
+
+    .trace-page ::deep .trace-caption {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.25rem 0.5rem;
+    }
+
+    .trace-page ::deep .trace-table th,
+    .trace-page ::deep .trace-table td {
+        padding: 0.5rem 0.75rem 0.5rem 0;
+        border-block-start: 1px solid var(--rule);
+        text-align: start;
+        vertical-align: top;
+    }
+
+    .trace-page ::deep .trace-table thead th {
+        border-block-start: 0;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        font-weight: 400;
+    }
+
+    .trace-page ::deep .trace-table tbody th {
+        font-weight: 500;
+    }
+
+    /* The table scrolls, so a price or a quantity in it keeps to one line rather than breaking inside a word. */
+    .trace-page ::deep .trace-table .trace-number {
+        overflow-wrap: normal;
+        white-space: nowrap;
+    }
+
+    .trace-page ::deep .trace-table code {
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        overflow-wrap: anywhere;
+    }
+
+/* A failed rule has an edge as well as its word, so it doesn't rely on color. */
+.trace-page ::deep .trace-rule-failed > th {
+    padding-inline-start: 0.5rem;
+    box-shadow: inset 3px 0 0 var(--caution);
+}
+
+.trace-page ::deep .trace-inputs-list {
+    display: grid;
+    gap: 0.125rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}

@@ -108,6 +108,7 @@ public sealed class DecisionCycleTests(PostgresFixture postgres)
                 UNION ALL SELECT c::text FROM ai_calls c
                 UNION ALL SELECT r::text FROM risk_evaluations r
                 UNION ALL SELECT o::text FROM cycle_roles o
+                UNION ALL SELECT a::text FROM approvals a
                 """,
                 CycleApp.Cancellation));
 

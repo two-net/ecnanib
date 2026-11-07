@@ -1,0 +1,122 @@
+@using System.Globalization
+@implements IDisposable
+@inject IDecisionTraces Traces
+@inject LiveUpdates Live
+@inject ILogger<AgentDecisions> Logger
+
+@* The agent's decision timeline (FR-UI-01): its newest cycles, newest first, each linking to its trace (FR-UI-04), read
+   again as cycles move on (FR-UI-05). Both environments, because an agent switched to Live keeps its Demo cycles, so
+   each row is labelled with its own (FR-EXP-08). It scrolls in its own region on a phone. *@
+
+@if (_cycles.Count == 0)
+{
+    <p>@Strings.AgentDecisionsNone</p>
+}
+else
+{
+    <div class="decisions" role="region" tabindex="0" aria-label="@Strings.AgentDecisionsLabel">
+        <table>
+            <caption>@string.Format(CultureInfo.CurrentCulture, Strings.AgentDecisionsCaption, _cycles.Count)</caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Strings.AgentDecisionsCandle</th>
+                    <th scope="col">@Strings.AgentDecisionsOutcome</th>
+                    <th scope="col">@Strings.AgentDecisionsProposed</th>
+                    <th scope="col">@Strings.AgentDecisionsCost</th>
+                    <th scope="col">@Strings.AgentDecisionsTrace</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var cycle in _cycles)
+                {
+                    <tr @key="cycle.CycleId">
+                        <td>
+                            <span class="decisions-when">
+                                @Time.Format(cycle.CandleClose)
+                                <EnvironmentTag Environment="cycle.Environment" />
+                            </span>
+                        </td>
+                        <td>@(cycle.Outcome is { } outcome ? AgentText.OutcomeOf(outcome) : Strings.AgentDecisionsRunning)</td>
+                        <td>@(cycle.Action is { } action ? TraceText.ProposalOf(action) : Strings.AgentDecisionsNoProposal)</td>
+                        <td class="decisions-number">
+                            @TraceText.CostOf(cycle.Usage.Cost ?? 0m)
+                            @if (cycle.Usage.UnpricedTokens > 0)
+                            {
+                                <span class="decisions-note">@string.Format(CultureInfo.CurrentCulture, Strings.AgentAiCostUnpriced, TraceText.CountOf(cycle.Usage.UnpricedTokens))</span>
+                            }
+                        </td>
+                        <td>
+                            <a href="@($"/agents/{Agent.Id}/cycles/{cycle.CycleId}")"
+                               aria-label="@string.Format(CultureInfo.CurrentCulture, Strings.AgentDecisionsViewLabel, Time.Format(cycle.CandleClose))">@Strings.AgentDecisionsView</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (_cycles.Count == _shown && _shown < CycleRange.MaxCycles)
+    {
+        <p><button type="button" class="button" @onclick="ShowMoreAsync">@Strings.AgentDecisionsMore</button></p>
+    }
+}
+
+@code {
+    /// <summary>How many it shows at first, and how many more each press adds.</summary>
+    private const int Page = 20;
+
+    private IReadOnlyList<CycleSummary> _cycles = [];
+    private int _shown = Page;
+    private IDisposable? _live;
+    private LiveRefresh? _refresh;
+    private Guid _loadedFor;
+
+    [Parameter, EditorRequired]
+    public AgentRecord Agent { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public Guid UserId { get; set; }
+
+    [CascadingParameter]
+    private DisplayTime Time { get; set; } = DisplayTime.Utc;
+
+    protected override void OnInitialized()
+    {
+        if (RendererInfo.IsInteractive)
+        {
+            _refresh = new LiveRefresh(InvokeAsync, RefreshAsync, Logger);
+            _live = Live.Subscribe(UserId, change =>
+            {
+                if (change is { Change: LiveChange.Cycle } && change.AgentId == Agent.Id)
+                {
+                    _refresh.Request();
+                }
+            });
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor != Agent.Id)
+        {
+            _loadedFor = Agent.Id;
+            _shown = Page;
+            await ReadAsync();
+        }
+    }
+
+    public void Dispose() => _live?.Dispose();
+
+    private async Task ReadAsync() => _cycles = await Traces.ListRecentAsync(UserId, Agent.Id, _shown, CancellationToken.None);
+
+    private async Task ShowMoreAsync()
+    {
+        _shown = Math.Min(_shown + Page, CycleRange.MaxCycles);
+        await ReadAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        await ReadAsync();
+        StateHasChanged();
+    }
+}

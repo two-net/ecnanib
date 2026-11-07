@@ -39,7 +39,7 @@ public sealed class AgentDetailPageTests(PostgresFixture postgres)
         foreach (var fact in new[]
         {
             "Next decision", "About ", "Nothing open", "No closed trades yet", "AI cost to date", "0 US dollars", "Last decision", "None yet",
-            "Demo prices resemble Live markets but don't equal them",
+            "Demo prices resemble Live markets but don't equal them", "Decisions", "No decisions yet.",
         })
         {
             Assert.Contains(fact, page, StringComparison.Ordinal);

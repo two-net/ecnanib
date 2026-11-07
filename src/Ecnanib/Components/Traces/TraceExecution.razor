@@ -1,0 +1,33 @@
+@using System.Globalization
+
+@* What execution did with a sized order: the cycle's own, or an approval's. `ExecutionResult` holds it. *@
+
+<dl class="facts">
+    <dt>@Strings.TraceFieldExecution</dt>
+    <dd>@ApprovalText.ExecutionOf(Result.Status)</dd>
+    @if (Result.Reason is { } reason)
+    {
+        <dt>@Strings.TraceFieldFailure</dt>
+        <dd>@ApprovalText.ExecutionReasonOf(reason)</dd>
+    }
+    @if (Result.FuturesSetup is { } setup)
+    {
+        <dt>@Strings.TraceFieldFuturesSetup</dt>
+        <dd>@TraceText.FuturesSetupOf(setup)</dd>
+    }
+    @if (Result.ExchangeCode is { } exchangeCode)
+    {
+        <dt>@Strings.TraceFieldExchangeCode</dt>
+        <dd class="trace-number">@exchangeCode.ToString(CultureInfo.InvariantCulture)</dd>
+    }
+    @if (Result.TargetNotPlaced)
+    {
+        <dt>@Strings.ApprovalFieldTarget</dt>
+        <dd>@Strings.TraceTargetNotPlaced</dd>
+    }
+</dl>
+
+@code {
+    [Parameter, EditorRequired]
+    public ExecutionResult Result { get; set; } = default!;
+}

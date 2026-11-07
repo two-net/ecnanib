@@ -1526,6 +1526,9 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_orders_client_order_id");
 
+                    b.HasIndex("CycleId")
+                        .HasDatabaseName("ix_orders_cycle_id");
+
                     b.HasIndex("EntryId")
                         .HasDatabaseName("ix_orders_entry_id");
 

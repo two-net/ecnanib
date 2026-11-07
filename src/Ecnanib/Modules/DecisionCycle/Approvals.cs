@@ -262,6 +262,13 @@ internal sealed class Approvals(
         row.Execution is null ? null : TraceJson.Read<ExecutionResult>(row.Execution));
 
     /// <summary>
+    /// Every rule of the second look, for the trace viewer, or none when it wasn't checked again. The approvals page's
+    /// <see cref="ApprovalRevalidation"/> keeps only the failures.
+    /// </summary>
+    internal static IReadOnlyList<RuleResult> RevalidationRulesOf(ApprovalRow row) =>
+        row.Revalidation is null ? [] : TraceJson.Read<StoredEvaluation>(row.Revalidation).Rules;
+
+    /// <summary>
     /// Checks the approved order again and sends what the Risk Engine sizes now (FR-APR-03). Every outcome is recorded on
     /// the approval; one that throws is too, before the run records the failure.
     /// </summary>

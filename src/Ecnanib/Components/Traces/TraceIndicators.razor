@@ -1,0 +1,46 @@
+@using System.Globalization
+
+@* One series' indicators, as the cycle computed them. Each is "None" when the series was too short for it. *@
+
+<div class="trace-group">
+    <h3>@Heading</h3>
+    <dl class="facts">
+        <dt>@Strings.TraceEma20</dt>
+        <dd class="trace-number">@TraceText.NumberOf(Indicators.Ema20)</dd>
+        <dt>@Strings.TraceEma50</dt>
+        <dd class="trace-number">@TraceText.NumberOf(Indicators.Ema50)</dd>
+        <dt>@Strings.TraceEma200</dt>
+        <dd class="trace-number">@TraceText.NumberOf(Indicators.Ema200)</dd>
+        <dt>@Strings.TraceRsi14</dt>
+        <dd class="trace-number">@TraceText.NumberOf(Indicators.Rsi14)</dd>
+        <dt>@Strings.TraceAtr14</dt>
+        <dd class="trace-number">@TraceText.NumberOf(Indicators.Atr14)</dd>
+        <dt>@Strings.TraceVolume</dt>
+        <dd class="trace-number">
+            @(Indicators.Volume is { } volume
+                ? string.Format(
+                    CultureInfo.CurrentCulture,
+                    Strings.TraceVolumeOf,
+                    TraceText.NumberOf(volume.Latest),
+                    TraceText.NumberOf(volume.Average),
+                    TraceText.NumberOf(volume.Relative))
+                : Strings.TraceNone)
+        </dd>
+        <dt>@Strings.TraceSwingHighs</dt>
+        <dd class="trace-number">@SwingsOf(Indicators.SwingHighs)</dd>
+        <dt>@Strings.TraceSwingLows</dt>
+        <dd class="trace-number">@SwingsOf(Indicators.SwingLows)</dd>
+    </dl>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Heading { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public IndicatorSet Indicators { get; set; } = default!;
+
+    /// <summary>Newest first, as the cycle found them.</summary>
+    private static string SwingsOf(IReadOnlyList<SwingPoint> swings) =>
+        swings.Count == 0 ? Strings.TraceNone : string.Join(CultureInfo.CurrentCulture.TextInfo.ListSeparator + " ", swings.Select(swing => TraceText.NumberOf(swing.Price)));
+}

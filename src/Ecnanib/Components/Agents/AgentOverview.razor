@@ -157,6 +157,10 @@
                     <span class="overview-decision">@summary</span>
                 }
             }
+            @if (_cycle is not null)
+            {
+                <a href="@($"/agents/{Agent.Id}/cycles/{_cycle.CycleId}")">@Strings.AgentLastDecisionTrace</a>
+            }
         </dd>
     </dl>
 

@@ -1,5 +1,6 @@
 using Ecnanib.Kernel;
 using Ecnanib.Modules.ExchangeAdapter.Contracts;
+using Ecnanib.Modules.Execution.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -243,66 +244,6 @@ internal enum OrderOrigin
 }
 
 /// <summary>Stored by name, so a value is never renamed.</summary>
-internal enum OrderLeg
-{
-    Entry,
-    Stop,
-    Target,
-
-    /// <summary>
-    /// Ecnanib's own close at market, under an evaluation of its own: when a stop couldn't be placed (FR-EXE-02), or
-    /// for the kill switch (FR-AGT-08). The protection's <see cref="ProtectionRow.ClosingFor"/> says which.
-    /// </summary>
-    EmergencyClose,
-
-    /// <summary>The close at market of an exit the council proposed and the Risk Engine sized (SELL or CLOSE).</summary>
-    Exit,
-}
-
-/// <summary>Stored by name, so a value is never renamed.</summary>
-internal enum OrderKind
-{
-    Market,
-    Limit,
-
-    /// <summary>Spot STOP_LOSS, or Futures STOP_MARKET through the algo order service.</summary>
-    StopMarket,
-
-    /// <summary>Futures TAKE_PROFIT_MARKET through the algo order service.</summary>
-    TakeProfitMarket,
-
-    /// <summary>A Spot OCO's target.</summary>
-    LimitMaker,
-}
-
-/// <summary>Stored by name, so a value is never renamed.</summary>
-internal enum OrderStatus
-{
-    /// <summary>Written, and being sent. One left behind by a crash is settled like <see cref="Unknown"/>.</summary>
-    Sending,
-
-    /// <summary>Sent with no usable answer. Settled by its client order ID, not before <see cref="OrderRow.SettlesAt"/>.</summary>
-    Unknown,
-
-    /// <summary>Never reached Binance: not sent, refused before sending, or shown missing once it had settled.</summary>
-    NotPlaced,
-
-    Open,
-    PartiallyFilled,
-    Filled,
-
-    /// <summary>A Futures conditional order whose trigger was met.</summary>
-    Triggered,
-
-    /// <summary>A Futures conditional order that triggered, and whose order then ended.</summary>
-    Finished,
-
-    Canceled,
-    Expired,
-    Rejected,
-}
-
-/// <summary>Stored by name, so a value is never renamed.</summary>
 internal enum ProtectionStatus
 {
     /// <summary>No stop rests yet.</summary>
@@ -400,6 +341,10 @@ internal sealed class OrderRowConfiguration : IEntityTypeConfiguration<OrderRow>
         builder.HasIndex(row => row.ClientOrderId).IsUnique();
         builder.HasIndex(row => new { row.UserId, row.AgentId, row.Status });
         builder.HasIndex(row => row.EntryId);
+
+        // The trace viewer lists a cycle's orders.
+        builder.HasIndex(row => row.CycleId);
+
         builder.HasIndex(row => row.AgentId).HasDatabaseName("ix_orders_unresolved_entries").HasFilter("leg = 'Entry' AND NOT resolved");
 
         // What the sweeps look for: orders whose outcome or fill isn't settled yet, or that may still rest.
