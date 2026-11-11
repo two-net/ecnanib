@@ -64,12 +64,31 @@ public class DependencyRuleTests
     }
 
     [Fact]
+    public void Settings_reach_the_components_only_through_the_platform()
+    {
+        AssertNone(
+            Checker.FindReservedNamespaceViolations(Application),
+            "The host's configuration is used outside Platform. Take the typed settings instead, " +
+            "which come from the one configuration file. See docs/configuration.md.");
+    }
+
+    [Fact]
+    public void No_code_reads_environment_variables_or_command_line_arguments()
+    {
+        AssertNone(
+            Checker.FindForbiddenCalls(Application),
+            "The application reads or changes the process environment directly. Every setting " +
+            "belongs in the one configuration file. See docs/configuration.md.");
+    }
+
+    [Fact]
     public void Every_rule_names_a_registered_area()
     {
         var areas = Rules.AllowedDependencies.Keys.ToHashSet();
 
         var unknown = Rules.AllowedDependencies.Values
             .Concat(Rules.RestrictedNamespaces.Values)
+            .Concat(Rules.ReservedNamespaces.Values)
             .SelectMany(named => named)
             .Where(area => !areas.Contains(area))
             .Distinct();

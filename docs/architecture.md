@@ -29,10 +29,10 @@ The code is the project `src/Ecnanib`. Each logical component of SRS section 3.1
 Three more areas are not SRS components:
 
 - `Shared` holds vocabulary that several components use, such as `Market` and `TradingMode`. It depends on nothing.
-- `Platform` is reserved for the plumbing every component builds on: configuration, persistence, logging, and background work. It may depend only on `Shared`.
+- `Platform` holds the plumbing every component builds on. Today that is configuration: it reads the one configuration file into typed settings, as [configuration.md](configuration.md) describes. Persistence, logging, and background work are reserved for it. It may depend only on `Shared`.
 - `Api` holds the HTTP endpoints under `/api`. Like the Web UI, it is an entry point on top of the components.
 
-Each component has a `<Name>Module.cs` with an `Add<Name>()` method that registers its services. `Program.cs` is the composition root: it calls every `Add<Name>()` and maps the API and the UI. A component that runs scheduled or background work registers a hosted service in its `Add<Name>()`, so the work runs in the same process.
+Each component has a `<Name>Module.cs` with an `Add<Name>()` method that registers its services. `Program.cs` is the composition root: it creates the host with `PlatformModule.CreateBuilder`, calls every `Add<Name>()`, and maps the API and the UI. A component that runs scheduled or background work registers a hosted service in its `Add<Name>()`, so the work runs in the same process.
 
 ## Dependency rules
 
@@ -80,6 +80,10 @@ Nothing else changes. Other components call `IAiProviderGateway` and name the pr
 ### Placing orders
 
 Operations that place orders belong in the namespace `Ecnanib.ExchangeGateway.Trading`. Only the Decision Engine may use it, which keeps one path from a model's output to an order: schema validation, then the Risk Guard, then the Exchange Gateway (NFR-SEC-6). The Web UI and the other components may use the rest of the Exchange Gateway, which only reads.
+
+## Configuration
+
+Settings come from one file and reach a component as typed settings. Two rules in `ComponentRules.cs` keep it that way: only `Platform` may use `Microsoft.Extensions.Configuration`, and no code may read the process environment or the command line directly. See [configuration.md](configuration.md).
 
 ## Deployment guard
 

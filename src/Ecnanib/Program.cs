@@ -8,6 +8,8 @@ using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Experience;
 using Ecnanib.Notifications;
+using Ecnanib.Platform;
+using Ecnanib.Platform.Settings;
 using Ecnanib.RiskGuard;
 using Ecnanib.WebUi;
 
@@ -22,9 +24,27 @@ using Ecnanib.WebUi;
 /// </remarks>
 public class Program
 {
-    public static void Main(string[] args)
+    public static int Main(string[] args) => Run(args, Console.Error);
+
+    /// <summary>
+    /// Runs the application until it is stopped. When the configuration file is missing or
+    /// invalid it does not start: it writes which keys are wrong to <paramref name="errors"/>,
+    /// without their values, and returns a non-zero exit code (NFR-CFG-4).
+    /// </summary>
+    public static int Run(string[] args, TextWriter errors)
     {
-        var builder = WebApplication.CreateBuilder(args);
+        // Settings come from the one configuration file and nowhere else. See docs/configuration.md.
+        WebApplicationBuilder builder;
+        try
+        {
+            builder = PlatformModule.CreateBuilder(args);
+        }
+        catch (InvalidSettingsException invalid)
+        {
+            errors.WriteLine("Ecnanib cannot start.");
+            errors.WriteLine(invalid.Message);
+            return 1;
+        }
 
         // Components, in dependency order, leaves first.
         builder.Services
@@ -59,5 +79,7 @@ public class Program
         app.MapWebUi();
 
         app.Run();
+
+        return 0;
     }
 }

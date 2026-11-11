@@ -89,6 +89,25 @@ internal static class ComponentRules
             "System.Net.Mail",
             "System.Net.WebSockets",
             "System.Net.Sockets",
+        ],
+
+        // The host's configuration API. Only Platform may use it. Every other area takes typed
+        // settings, which come from the one configuration file, so a setting cannot reach it
+        // from an environment variable or a command-line argument (NFR-CFG-2).
+        ReservedNamespaces: new Dictionary<string, IReadOnlySet<string>>
+        {
+            ["Microsoft.Extensions.Configuration"] = Only(Platform),
+        },
+
+        // Direct access to the process environment. No code may use it, so the application adds
+        // no environment variable or command-line argument of its own (NFR-CFG-3).
+        ForbiddenCalls:
+        [
+            "System.Environment::GetEnvironmentVariable",
+            "System.Environment::SetEnvironmentVariable",
+            "System.Environment::ExpandEnvironmentVariables",
+            "System.Environment::GetCommandLineArgs",
+            "System.Environment::get_CommandLine",
         ]);
 
     private static IReadOnlySet<string> Only(params string[] areas) => new HashSet<string>(areas);

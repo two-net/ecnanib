@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using ArchUnitNET.Domain.Dependencies;
 using ArchUnitNET.Loader;
 using IType = ArchUnitNET.Domain.IType;
 using TypeGraph = ArchUnitNET.Domain.Architecture;
@@ -15,11 +16,20 @@ namespace Ecnanib.Tests.Architecture;
 /// <param name="OutboundNetworkNamespaces">
 /// Namespaces of network client types, usable only inside an <c>Adapters</c> namespace.
 /// </param>
+/// <param name="ReservedNamespaces">
+/// Namespaces outside the root that only the listed areas may reference.
+/// </param>
+/// <param name="ForbiddenCalls">
+/// Methods that no code may call, each written as <c>Namespace.Type::Method</c>. A name also
+/// covers every method that starts with it.
+/// </param>
 internal sealed record RuleSet(
     string RootNamespace,
     IReadOnlyDictionary<string, IReadOnlySet<string>> AllowedDependencies,
     IReadOnlyDictionary<string, IReadOnlySet<string>> RestrictedNamespaces,
-    IReadOnlyList<string> OutboundNetworkNamespaces);
+    IReadOnlyList<string> OutboundNetworkNamespaces,
+    IReadOnlyDictionary<string, IReadOnlySet<string>> ReservedNamespaces,
+    IReadOnlyList<string> ForbiddenCalls);
 
 /// <summary>One reference from a type to a type it is not allowed to use.</summary>
 internal sealed record Violation(string Origin, string Target, string Reason)
@@ -117,6 +127,35 @@ internal sealed class DependencyChecker(RuleSet rules)
         return network is null ? null : $"{network} may be used only inside an {AdaptersSegment} namespace";
     });
 
+    /// <summary>References to a reserved namespace from an area that is not allowed to use it.</summary>
+    public IReadOnlyList<Violation> FindReservedNamespaceViolations(Assembly assembly) => Find(assembly, (origin, target) =>
+    {
+        var originArea = AreaOf(origin.Namespace.FullName);
+
+        foreach (var (reserved, audience) in rules.ReservedNamespaces)
+        {
+            if (IsWithin(target.Namespace.FullName, reserved) && (originArea is null || !audience.Contains(originArea)))
+            {
+                return $"only {string.Join(", ", audience.Order(StringComparer.Ordinal))} may use {reserved}";
+            }
+        }
+
+        return null;
+    });
+
+    /// <summary>Calls to a method that no code may call.</summary>
+    public IReadOnlyList<Violation> FindForbiddenCalls(Assembly assembly) =>
+    [
+        .. Load(assembly).Types
+            .SelectMany(origin => origin.Dependencies.OfType<MethodCallDependency>()
+                .Select(call => (origin, method: $"{call.Target.FullName}::{call.TargetMember.Name}")))
+            .Where(call => rules.ForbiddenCalls.Any(forbidden => call.method.StartsWith(forbidden, StringComparison.Ordinal)))
+            .Select(call => new Violation(call.origin.FullName, call.method, "no code may call this method"))
+            .Distinct()
+            .OrderBy(violation => violation.Origin, StringComparer.Ordinal)
+            .ThenBy(violation => violation.Target, StringComparer.Ordinal),
+    ];
+
     private bool IsInAdapters(string @namespace)
     {
         var area = AreaOf(@namespace);
@@ -127,6 +166,10 @@ internal sealed class DependencyChecker(RuleSet rules)
     [
         .. Load(assembly).Types
             .SelectMany(origin => origin.Dependencies.Select(dependency => (origin, target: dependency.Target)))
+
+            // A generic parameter is a target without a namespace. It is a placeholder, not a
+            // type that code depends on, so no rule applies to it.
+            .Where(pair => pair.target.Namespace is not null)
             .Select(pair => (pair.origin, pair.target, reason: reasonFor(pair.origin, pair.target)))
             .Where(found => found.reason is not null)
             .Select(found => new Violation(found.origin.FullName, found.target.FullName, found.reason!))

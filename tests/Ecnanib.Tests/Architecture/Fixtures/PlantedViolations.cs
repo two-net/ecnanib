@@ -2,13 +2,19 @@
 // prove that it reports each kind of forbidden reference. They are never used by the application.
 //
 // The fixture rules are: Low uses nothing; Mid may use Low and Gateway; High may use Low and
-// Gateway, and is the only area that may use Gateway.Trading.
+// Gateway, and is the only area that may use Gateway.Trading. Low is the only area that may use
+// the host's configuration, and no area may read the process environment.
 
 #pragma warning disable CA1822 // Members are instance members on purpose.
 
 namespace Ecnanib.Tests.Architecture.Fixtures.Low
 {
     public sealed class Clean;
+
+    public sealed class UsesConfigurationAsAllowed
+    {
+        public string? Read(Microsoft.Extensions.Configuration.IConfiguration configuration) => configuration["Key"];
+    }
 
     public sealed class UsesHighInSignature
     {
@@ -60,6 +66,31 @@ namespace Ecnanib.Tests.Architecture.Fixtures.Mid
     public sealed class UsesNetwork
     {
         public object Make() => new HttpClient();
+    }
+
+    public sealed class UsesConfiguration
+    {
+        public string? Read(Microsoft.Extensions.Configuration.IConfiguration configuration) => configuration["Key"];
+    }
+
+    public sealed class ReadsAnEnvironmentVariable
+    {
+        public string? Read() => Environment.GetEnvironmentVariable("ECNANIB_FIXTURE");
+    }
+
+    public sealed class ReadsAllEnvironmentVariables
+    {
+        public Func<object> Read() => () => Environment.GetEnvironmentVariables();
+    }
+
+    public sealed class ReadsTheCommandLine
+    {
+        public string[] Read() => Environment.GetCommandLineArgs();
+    }
+
+    public sealed class UsesTheEnvironmentAsAllowed
+    {
+        public string Read() => Environment.NewLine + Environment.ProcessId;
     }
 }
 

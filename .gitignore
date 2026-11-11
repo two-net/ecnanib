@@ -481,5 +481,7 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
-#
-appsettings.Development.json
+# The configuration file holds secrets, so only its template is tracked (docs/configuration.md).
+appsettings.json
+appsettings.*.json
+!appsettings.template.json

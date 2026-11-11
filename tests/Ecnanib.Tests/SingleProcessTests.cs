@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.Api;
-using Microsoft.AspNetCore.Mvc.Testing;
+using Ecnanib.Tests.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests;
@@ -11,7 +11,7 @@ namespace Ecnanib.Tests;
 /// The system is one deployable application: a single host serves the UI and the API and holds
 /// every component's services (NFR-ARC-1).
 /// </summary>
-public class SingleProcessTests(WebApplicationFactory<Program> application) : IClassFixture<WebApplicationFactory<Program>>
+public class SingleProcessTests(EcnanibApplicationFactory application) : IClassFixture<EcnanibApplicationFactory>
 {
     [Fact]
     public async Task One_host_serves_the_UI_and_the_API()
