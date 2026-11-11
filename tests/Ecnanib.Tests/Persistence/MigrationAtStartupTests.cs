@@ -66,9 +66,9 @@ public class MigrationAtStartupTests
         Assert.DoesNotContain(application.Events(), written => written.Level is "Warning" or "Error" or "Fatal");
 
         // The lock is released while the application runs on, not only when it stops. Nothing
-        // here has used the database since, which would have released it by the way.
-        Assert.Equal(0L, database.Scalar<long>(
-            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database())"));
+        // here has used the database since, which would have released it by the way. The lock
+        // the application does hold while it runs is another one: see BackgroundWorkLockTests.
+        Assert.Empty(database.SessionsHolding(DatabaseMigration.LockKey));
     }
 
     [Fact]

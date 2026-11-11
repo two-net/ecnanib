@@ -136,6 +136,34 @@ internal sealed class TestDatabase(string connectionString)
         return values;
     }
 
+    /// <summary>
+    /// The sessions of this database that hold the advisory lock with a key, by their process
+    /// ids. A lock taken with one 64-bit key shows as its two halves.
+    /// </summary>
+    public IReadOnlyList<int> SessionsHolding(long key)
+    {
+        using var connection = Open();
+        using var command = new NpgsqlCommand(
+            """
+            SELECT pid FROM pg_locks
+            WHERE locktype = 'advisory' AND granted AND objsubid = 1
+              AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+              AND classid::bigint = @high AND objid::bigint = @low
+            """,
+            connection);
+        command.Parameters.AddWithValue("high", key >> 32);
+        command.Parameters.AddWithValue("low", key & 0xFFFFFFFF);
+        using var reader = command.ExecuteReader();
+
+        var sessions = new List<int>();
+        while (reader.Read())
+        {
+            sessions.Add(reader.GetInt32(0));
+        }
+
+        return sessions;
+    }
+
     /// <summary>The names of the tables in the database, in order.</summary>
     public IReadOnlyList<string> Tables() =>
     [

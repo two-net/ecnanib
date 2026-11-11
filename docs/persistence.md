@@ -28,6 +28,8 @@ The lock and the migrations share a session, so the lock cannot be lost while a 
 
 Because the lock belongs to a session, the connection must be direct, or go through a connection pooler in session mode. Behind a pooler in transaction mode the session changes between commands, and the application logs a warning that it did not keep the lock.
 
+Once it runs, the application holds another advisory lock, with the key `BackgroundJobs.LockKey`, for as long as it is the instance that runs the background work. The same holds for that one: it needs a direct connection or a pooler in session mode. See [background-work.md](background-work.md).
+
 The log says what happened:
 
 ```

@@ -16,9 +16,9 @@ using Ecnanib.RiskGuard;
 using Ecnanib.WebUi;
 
 /// <summary>
-/// The composition root. Ecnanib is one process: every component registers here, and scheduled
-/// and background work joins this same host as hosted services. The rules are in
-/// docs/architecture.md.
+/// The composition root. Ecnanib is one process: every component registers here, and the jobs
+/// a component registers run in this same host, on the platform's scheduler. The rules are in
+/// docs/architecture.md and docs/background-work.md.
 /// </summary>
 /// <remarks>
 /// This is a class with a Main method, not top-level statements, because the architecture tests

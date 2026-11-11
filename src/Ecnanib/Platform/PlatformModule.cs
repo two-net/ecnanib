@@ -1,4 +1,5 @@
 using Ecnanib.Platform.Adapters.Http;
+using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Logging;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Settings;
@@ -8,16 +9,16 @@ using Serilog.Extensions.Logging;
 namespace Ecnanib.Platform;
 
 /// <summary>
-/// Platform: the plumbing every component builds on. For now that is configuration, logging, and
-/// persistence; background work joins it later. See docs/configuration.md, docs/logging.md, and
-/// docs/persistence.md.
+/// Platform: the plumbing every component builds on. That is configuration, logging, persistence,
+/// and background work. See docs/configuration.md, docs/logging.md, docs/persistence.md, and
+/// docs/background-work.md.
 /// </summary>
 public static class PlatformModule
 {
     /// <summary>
     /// Creates the host builder with the settings from the one configuration file registered, with
-    /// no other source of settings, with logging as that file describes it, and with the database
-    /// it names. The composition root starts here.
+    /// no other source of settings, with logging as that file describes it, with the database it
+    /// names, and with the scheduler that runs the components' jobs. The composition root starts here.
     /// </summary>
     /// <exception cref="InvalidSettingsException">The file is missing or invalid, so the application must not start.</exception>
     public static WebApplicationBuilder CreateBuilder(string[] args)
@@ -55,6 +56,7 @@ public static class PlatformModule
         AddLogging(builder, settings);
 
         builder.Services.AddPersistence();
+        builder.Services.AddBackgroundWork();
 
         return builder;
     }

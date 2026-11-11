@@ -102,6 +102,8 @@ using (logger.BeginCorrelation(new Correlation(AgentId: agent.Id, CycleId: cycle
 
 Scopes nest. Work that runs outside a request, such as a scheduled cycle, opens its own scope and logs its own failures inside it, so the error carries the agent and the cycle.
 
+The scheduler that runs a component's jobs names the job in its own events, as `Job`. That is a property of those events, not a correlation property: it is not added to what the job logs. See [background-work.md](background-work.md).
+
 ## Masking
 
 Secrets, API keys, tokens, and passwords never appear in a log (NFR-LOG-4). Every event passes one place, `MaskingSink`, before any output. It applies the rules of `SecretMask` to the event's properties at any depth, to its message text, and to the text of its exception:
@@ -147,6 +149,7 @@ An error that nothing handles is logged once, at the `Error` level, with its sta
 | A request under `/api` | Status 500 and problem JSON with `referenceId`. |
 | Any other request | Status 500 and the page `/Error`, which shows the reference. |
 | Starting or running the host | Nothing to show. The error is logged as `Critical` and the process exits with code 1. A database that cannot be migrated is such an error: see [persistence.md](persistence.md). |
+| A scheduled job | Nothing to show, and no reference. The scheduler logs the error once, as `Error`, with the job's name, and the application runs on. See [background-work.md](background-work.md). |
 
 To find an error a user reports, search the log file for the reference. The event's `RequestId` leads to everything else the request logged.
 
