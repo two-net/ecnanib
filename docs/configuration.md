@@ -21,7 +21,7 @@ chmod 600 src/Ecnanib/appsettings.json
 
 Git checks the file out readable by other accounts, and the application refuses that (see Permissions). The command is needed once.
 
-The file names a local database, which the application migrates when it starts. Start it with `docker compose up -d`. See [persistence.md](persistence.md).
+The file names a local database, which the application migrates when it starts, and a local mail server, which takes the email the application sends and delivers it nowhere. Start both with `docker compose up -d`. See [persistence.md](persistence.md) and [accounts.md](accounts.md).
 
 ### For a deployment
 
@@ -33,6 +33,8 @@ openssl rand -base64 32
 ```
 
 The last command prints a master key for `Security:MasterKeys`. Never deploy the tracked master key.
+
+The `Email` section has no key for encryption: the port and the sign-in decide it. A mail server that takes a sign-in must offer STARTTLS, or listen on port 465. See "Email" in [accounts.md](accounts.md).
 
 ### Permissions
 

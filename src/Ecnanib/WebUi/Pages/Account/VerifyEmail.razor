@@ -1,0 +1,53 @@
+@attribute [Route(EmailVerification.Path)]
+@using Ecnanib.Accounts
+@inject IRegistration Registration
+
+@*
+    Opening the link only shows this page. The address is verified when the button is pressed,
+    so that a mail scanner that opens every link in a message verifies nothing.
+*@
+
+<PageTitle>Confirm your email address</PageTitle>
+
+<HeadContent>
+    @* The address of this page holds the token, so it is not passed on to a page that is linked from here. *@
+    <meta name="referrer" content="no-referrer" />
+</HeadContent>
+
+<h1>Confirm your email address</h1>
+
+@if (_verified is true)
+{
+    <p role="status">Your email address is confirmed.</p>
+    <p><a href="/">Go to the start page</a></p>
+}
+else if (_verified is false || string.IsNullOrEmpty(Token))
+{
+    <p role="alert">This link does not work any more. It may have been used, replaced by a later one, or be older than @((int)EmailVerification.LinkLifetime.TotalHours) hours.</p>
+    <p><a href="/register">Register again</a> to get a new link.</p>
+}
+else
+{
+    <form method="post" @formname="verify-email" @onsubmit="ConfirmAsync">
+        <AntiforgeryToken />
+
+        <p>Confirm that this email address is yours to finish registering.</p>
+
+        <button type="submit">Confirm my email address</button>
+    </form>
+}
+
+@code {
+    private bool? _verified;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // The form posts to the address of the page, so the token is in the query both times.
+    [SupplyParameterFromQuery(Name = EmailVerification.TokenParameter)]
+    private string? Token { get; set; }
+
+    private async Task ConfirmAsync() =>
+        _verified = await Registration.VerifyEmailAsync(
+            Token ?? string.Empty, HttpContext?.RequestAborted ?? CancellationToken.None);
+}

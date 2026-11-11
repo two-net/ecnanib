@@ -1,0 +1,15 @@
+@page "/register/sent"
+@using Ecnanib.Accounts
+
+@*
+    The same page whatever the address was, so that it does not tell whether an address already
+    has an account.
+*@
+
+<PageTitle>Check your email</PageTitle>
+
+<h1>Check your email</h1>
+
+<p>We sent a message to the address you entered. Open the link in it to confirm that the address is yours.</p>
+
+<p>The link works for @((int)EmailVerification.LinkLifetime.TotalHours) hours. If no message arrives, look in your spam folder, or <a href="/register">register again</a> to get a new one.</p>

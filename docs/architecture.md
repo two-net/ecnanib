@@ -55,6 +55,8 @@ Every type in an `Ecnanib` namespace must sit in a registered area, so new code 
 
 Sometimes a component must cause something to happen in a component above it. For example, when the Catalog marks a model as unavailable, the agents that use it must change state. The lower component declares an interface, and the higher component implements it and registers the implementation. The reference still points downward. This happens in process; there is no message broker.
 
+Accounts sends its email this way. It declares `IAccountMailer`, and Notifications implements it on top of the email adapter. See [accounts.md](accounts.md).
+
 ### Changing a rule
 
 Edit `ComponentRules.cs`. The allow-lists are deliberately tight, so a new dependency is a decision made in one visible place. The tests reject a change that creates a cycle.
@@ -67,12 +69,12 @@ Each external system sits behind an adapter with a common interface.
 |---|---|---|
 | Each AI provider | `IAiProviderAdapter` | `AiProviderGateway/Adapters/<Provider>` |
 | Binance | `IExchangeAdapter` | `ExchangeGateway/Adapters/Binance` |
-| Email delivery | `IEmailAdapter` | `Notifications/Adapters/<Service>` |
+| Email delivery | `IEmailAdapter` | `Notifications/Adapters/<Service>`. SMTP is in `Notifications/Adapters/Smtp`. |
 
 Three rules keep every call to an external system inside its adapter, and in the log:
 
 - A component's `Adapters` namespace is private to that component. Other code uses the common interface.
-- Network client types (`System.Net.Http`, `System.Net.Mail`, `System.Net.WebSockets`, `System.Net.Sockets`) may be used only inside an `Adapters` namespace.
+- Network client types (`System.Net.Http`, `System.Net.Mail`, `System.Net.WebSockets`, `System.Net.Sockets`, and the SMTP library `MailKit`) may be used only inside an `Adapters` namespace.
 - No code may create an `HttpClient`. An adapter takes one from the host's factory (a typed or named client, or `IHttpClientFactory`), and every client from the factory logs its calls (NFR-LOG-5). See [logging.md](logging.md).
 
 ### Adding an AI provider
@@ -94,6 +96,10 @@ Settings come from one file and reach a component as typed settings. Two rules i
 ## Persistence
 
 The application has one database, PostgreSQL, and reaches it through one context, `EcnanibDbContext` in `Platform`. An entity and its mapping live in the component that owns them, and the context finds every mapping by itself, so `Platform` never references a component. One rule in `ComponentRules.cs` keeps the context the only way in: only `Platform` may use the database driver, Npgsql (NFR-DAT-1, -2). See [persistence.md](persistence.md).
+
+## Accounts
+
+A visitor registers with an email address and a password, accepts the legal documents, and verifies the address by email. Passwords are stored only as Argon2id hashes. Whatever creates an agent asks Accounts first whether the user may, which is where the verified address and the fair-use limit are checked (FR-ACC-1, FR-ACC-7). See [accounts.md](accounts.md).
 
 ## Background work
 

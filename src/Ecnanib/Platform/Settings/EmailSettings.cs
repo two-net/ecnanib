@@ -1,9 +1,12 @@
 namespace Ecnanib.Platform.Settings;
 
-/// <summary>The <c>Email</c> section: the mail server that sends the service's email.</summary>
+/// <summary>The <c>Email</c> section: the mail server that sends the service's email, over SMTP.</summary>
 /// <param name="Host">The mail server.</param>
-/// <param name="Port">Its port.</param>
-/// <param name="User">The account to sign in with, or null when the server needs no sign-in.</param>
+/// <param name="Port">Its port. On port 465 the connection is encrypted from the start.</param>
+/// <param name="User">
+/// The account to sign in with, or null when the server needs no sign-in. A server that takes a
+/// sign-in must offer encryption first. See docs/accounts.md.
+/// </param>
 /// <param name="Password">The password of <paramref name="User"/>.</param>
 /// <param name="From">The sender address.</param>
 public sealed record EmailSettings(string Host, int Port, string? User, Secret? Password, string From)

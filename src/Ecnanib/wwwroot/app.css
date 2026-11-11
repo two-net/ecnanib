@@ -36,3 +36,43 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+/* Forms: one field under another, with its hint and its error below it. */
+.field {
+    margin-bottom: 1rem;
+    max-width: 28rem;
+}
+
+    .field > label {
+        display: block;
+        margin-bottom: 0.25rem;
+    }
+
+    .field > input:not([type=checkbox]) {
+        box-sizing: border-box;
+        width: 100%;
+    }
+
+    .field > input[type=checkbox] + label {
+        display: inline;
+    }
+
+form > button[type=submit] {
+    margin-top: 1rem;
+}
+
+.field-hint {
+    margin: 0.25rem 0 0;
+    opacity: 0.75;
+}
+
+.field-error, .form-error {
+    color: #b3261e;
+    margin: 0.25rem 0 0;
+}
+
+@media (prefers-color-scheme: dark) {
+    .field-error, .form-error {
+        color: #f2b8b5;
+    }
+}

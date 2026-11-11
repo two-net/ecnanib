@@ -89,6 +89,9 @@ internal static class ComponentRules
             "System.Net.Mail",
             "System.Net.WebSockets",
             "System.Net.Sockets",
+
+            // The SMTP client library of the email adapter.
+            "MailKit",
         ],
 
         // Namespaces outside the application that only Platform may use.

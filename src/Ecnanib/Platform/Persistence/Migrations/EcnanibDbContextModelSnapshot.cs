@@ -22,6 +22,76 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Ecnanib.Accounts.LegalAcceptance", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Document")
+                        .HasColumnType("text")
+                        .HasColumnName("document");
+
+                    b.Property<string>("Version")
+                        .HasColumnType("text")
+                        .HasColumnName("version");
+
+                    b.Property<DateTimeOffset>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at");
+
+                    b.HasKey("UserId", "Document", "Version")
+                        .HasName("pk_legal_acceptances");
+
+                    b.ToTable("legal_acceptances", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Accounts.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("email");
+
+                    b.Property<DateTimeOffset?>("EmailVerificationExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("email_verification_expires_at");
+
+                    b.Property<byte[]>("EmailVerificationTokenHash")
+                        .HasColumnType("bytea")
+                        .HasColumnName("email_verification_token_hash");
+
+                    b.Property<DateTimeOffset?>("EmailVerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("email_verified_at");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
+
+                    b.Property<DateTimeOffset>("RegisteredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("registered_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_users");
+
+                    b.HasIndex("Email")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_email");
+
+                    b.HasIndex("EmailVerificationTokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_email_verification_token_hash");
+
+                    b.ToTable("users", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.AiProviderGateway.AiProvider", b =>
                 {
                     b.Property<string>("Code")
@@ -267,6 +337,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                             Code = "RiskManager",
                             DisplayName = "Risk Manager"
                         });
+                });
+
+            modelBuilder.Entity("Ecnanib.Accounts.LegalAcceptance", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_legal_acceptances_users_user_id");
                 });
 #pragma warning restore 612, 618
         }

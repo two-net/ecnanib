@@ -31,6 +31,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Password hashing with Argon2id, a memory-hard algorithm (NFR-SEC-2). See docs/accounts.md. -->
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
+
+    <!-- The SMTP client of the email adapter, and nothing else. See docs/accounts.md. -->
+    <PackageReference Include="MailKit" Version="5.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Serilog" Version="4.4.0" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />

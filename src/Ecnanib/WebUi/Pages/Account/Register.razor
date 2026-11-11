@@ -1,0 +1,166 @@
+@page "/register"
+@using Ecnanib.Accounts
+@using Ecnanib.WebUi.Pages.Legal
+@inject IRegistration Registration
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: the password travels in a form
+    post, and not over the connection that an interactive page keeps open.
+*@
+
+<PageTitle>Register</PageTitle>
+
+<h1>Register</h1>
+
+@if (!Registration.IsOpen)
+{
+    <p>Registration is closed. No new accounts are being accepted at the moment.</p>
+}
+else
+{
+    @if (_emailNotSent)
+    {
+        <p class="form-error" role="alert">We could not send the email. Try again in a few minutes.</p>
+    }
+
+    <form method="post" @formname="register" @onsubmit="RegisterAsync">
+        <AntiforgeryToken />
+
+        <div class="field">
+            <label for="email">Email address</label>
+            <input id="email" name="Email" type="email" autocomplete="email" required value="@Email"
+                   aria-invalid="@Invalid(RegistrationProblem.EmailInvalid)"
+                   aria-describedby="@Describes("email-error", RegistrationProblem.EmailInvalid)" />
+            @if (Has(RegistrationProblem.EmailInvalid))
+            {
+                <p id="email-error" class="field-error">Enter an email address, such as name@example.com.</p>
+            }
+        </div>
+
+        <div class="field">
+            <label for="password">Password</label>
+            @* The password is never written back into the page. *@
+            <input id="password" name="Password" type="password" autocomplete="new-password" required
+                   minlength="@PasswordRules.MinimumLength"
+                   aria-invalid="@Invalid(RegistrationProblem.PasswordTooShort, RegistrationProblem.PasswordTooLong)"
+                   aria-describedby="password-hint" />
+            <p id="password-hint" class="field-hint">At least @PasswordRules.MinimumLength characters. A long phrase is a good password.</p>
+            @if (Has(RegistrationProblem.PasswordTooShort))
+            {
+                <p class="field-error" role="alert">Choose a password of at least @PasswordRules.MinimumLength characters.</p>
+            }
+            @if (Has(RegistrationProblem.PasswordTooLong))
+            {
+                <p class="field-error" role="alert">Choose a password of at most @PasswordRules.MaximumLength characters.</p>
+            }
+        </div>
+
+        <fieldset>
+            <legend>Before you register</legend>
+
+            @foreach (var document in Documents)
+            {
+                <div class="field">
+                    @* The value is the version this page shows, so that is the version accepted. *@
+                    <input id="@document.Id" name="@document.Field" type="checkbox" required value="@document.Version"
+                           checked="@(document.Posted == document.Version)"
+                           aria-invalid="@Invalid(document.Problem)"
+                           aria-describedby="@Describes(document.Id + "-error", document.Problem)" />
+                    <label for="@document.Id">
+                        I have read and accept the
+                        <a href="@document.Path" target="_blank" rel="noopener">@document.Name</a>
+                        (version @document.Version)
+                    </label>
+                    @if (Has(document.Problem))
+                    {
+                        <p id="@(document.Id)-error" class="field-error">Read and accept the current @document.Name to register.</p>
+                    }
+                </div>
+            }
+        </fieldset>
+
+        <button type="submit">Register</button>
+    </form>
+}
+
+@code {
+    private IReadOnlyList<RegistrationProblem> _problems = [];
+    private bool _emailNotSent;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Email { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Password { get; set; }
+
+    // Each holds the version of the document that the visitor accepted, or nothing.
+    [SupplyParameterFromForm]
+    private string? TermsOfService { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? PrivacyPolicy { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? RiskDisclosure { get; set; }
+
+    private IEnumerable<DocumentField> Documents =>
+    [
+        new(LegalDocument.TermsOfService, nameof(TermsOfService), TermsOfService, RegistrationProblem.TermsOfServiceNotAccepted),
+        new(LegalDocument.PrivacyPolicy, nameof(PrivacyPolicy), PrivacyPolicy, RegistrationProblem.PrivacyPolicyNotAccepted),
+        new(LegalDocument.RiskDisclosure, nameof(RiskDisclosure), RiskDisclosure, RegistrationProblem.RiskDisclosureNotAccepted),
+    ];
+
+    private async Task RegisterAsync()
+    {
+        var accepted = Documents
+            .Where(document => document.Posted is not null)
+            .Select(document => new AcceptedDocument(document.Document, document.Posted!))
+            .ToList();
+
+        var result = await Registration.RegisterAsync(
+            new RegistrationRequest(Email ?? string.Empty, accepted),
+            Password ?? string.Empty,
+            HttpContext?.RequestAborted ?? CancellationToken.None);
+
+        switch (result.Outcome)
+        {
+            case RegistrationOutcome.Accepted:
+                // A page of its own, so that reloading it does not register again.
+                Navigation.NavigateTo("/register/sent");
+                break;
+
+            case RegistrationOutcome.Invalid:
+                _problems = result.Problems;
+                break;
+
+            case RegistrationOutcome.EmailNotSent:
+                _emailNotSent = true;
+                break;
+
+            // Closed: the page shows that by itself.
+        }
+    }
+
+    private bool Has(RegistrationProblem problem) => _problems.Contains(problem);
+
+    // An attribute that is null is left out of the page.
+    private string? Invalid(params RegistrationProblem[] problems) => problems.Any(Has) ? "true" : null;
+
+    private string? Describes(string id, RegistrationProblem problem) => Has(problem) ? id : null;
+
+    /// <summary>One document on the form: its checkbox, and what the visitor posted for it.</summary>
+    private sealed record DocumentField(LegalDocument Document, string Field, string? Posted, RegistrationProblem Problem)
+    {
+        public string Id => $"accept-{Field}";
+
+        public string Version => LegalDocuments.CurrentVersionOf(Document);
+
+        public string Name => LegalPages.NameOf(Document);
+
+        public string Path => LegalPages.PathOf(Document);
+    }
+}

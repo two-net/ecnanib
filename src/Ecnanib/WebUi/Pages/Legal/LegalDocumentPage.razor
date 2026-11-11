@@ -1,0 +1,20 @@
+@using Ecnanib.Accounts
+
+@* The frame of a legal document: its title and the version that a registration accepts. *@
+
+<PageTitle>@LegalPages.TitleOf(Document)</PageTitle>
+
+<h1>@LegalPages.TitleOf(Document)</h1>
+
+<p>Version @LegalDocuments.CurrentVersionOf(Document)</p>
+
+@ChildContent
+
+@code {
+    [Parameter, EditorRequired]
+    public LegalDocument Document { get; set; }
+
+    /// <summary>The text of the document.</summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

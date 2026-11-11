@@ -1,9 +1,10 @@
-# The database for development on one machine: the server, database, user, and password that
-# ConnectionStrings:EcnanibDbContext in src/Ecnanib/appsettings.json names. See docs/persistence.md.
+# What the application needs for development on one machine, as src/Ecnanib/appsettings.json
+# names it: the database of ConnectionStrings:EcnanibDbContext, and the mail server of Email.
+# See docs/persistence.md and docs/accounts.md.
 #
 #   docker compose up -d
 #
-# It is not part of a deployment, and the tests do not use it.
+# Neither is part of a deployment, and the tests do not use them.
 services:
   db:
     image: postgres:18
@@ -16,6 +17,14 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - ecnanib-db:/var/lib/postgresql
+
+  # Takes the email the application sends and delivers it nowhere. Read it at http://localhost:8025.
+  mail:
+    image: axllent/mailpit:v1.33
+    ports:
+      # This machine only. It takes mail from anyone who can reach it.
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
 volumes:
   ecnanib-db:

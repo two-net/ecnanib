@@ -42,7 +42,9 @@ public class SingleStoreTests
         using var context = database.Context();
         var modelTables = context.Model.GetEntityTypes().Select(entity => entity.GetTableName()!).Distinct().ToList();
 
-        Assert.Equal(["ai_providers", "background_jobs", "prompt_templates", "roles"], modelTables.Order(StringComparer.Ordinal));
+        Assert.Equal(
+            ["ai_providers", "background_jobs", "legal_acceptances", "prompt_templates", "roles", "users"],
+            modelTables.Order(StringComparer.Ordinal));
         Assert.Equal(
             modelTables.Append("__EFMigrationsHistory").Order(StringComparer.Ordinal),
             database.Tables());
