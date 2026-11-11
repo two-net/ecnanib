@@ -145,6 +145,9 @@ public class SettingsFileTests
         { "Email:From", "\"nobody\"", "Email:From" },
         { "Application:PublicUrl", "\"ecnanib.example\"", "Application:PublicUrl" },
         { "Application:PublicUrl", "\"ftp://ecnanib.example\"", "Application:PublicUrl" },
+
+        // Users reach the service over TLS and nothing else (NFR-SEC-1).
+        { "Application:PublicUrl", "\"http://ecnanib.example\"", "Application:PublicUrl" },
         { "Application:PublicUrl", "\"<the address>\"", "Application:PublicUrl" },
         { "Application:Operators", "[\"not an address\"]", "Application:Operators:0" },
         { "Application:Operators", "[\"a@ecnanib.example\", \"A@ecnanib.example\"]", "Application:Operators" },

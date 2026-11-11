@@ -1,5 +1,11 @@
+using System.Buffers.Text;
+using System.Security.Cryptography;
 using Ecnanib.Accounts;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.Persistence;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql;
 
 namespace Ecnanib.Tests.Accounts;
 
@@ -39,6 +45,8 @@ public class EmailVerificationTests
     [InlineData("")]
     [InlineData("not-a-token")]
     [InlineData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")] // Shaped like a token, and no account's.
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB")] // As long as a token, with an end that no 32 bytes have.
+    [InlineData("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")] // As long as a token, in characters that no token has.
     [InlineData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==")]
     [InlineData("' OR 1=1 --")]
     public async Task What_is_not_the_token_of_a_link_verifies_nothing(string token)
@@ -80,8 +88,69 @@ public class EmailVerificationTests
         Assert.Equal(
             Morning.AddDays(3) + EmailVerification.LinkLifetime, StoredUser.Of(application.Database, Ada)!.TokenExpiresAt);
 
-        Assert.True(await application.VerifyAsync(AccountsApplication.TokenIn(application.Email.Sent[1])));
+        // The address was registered twice, so the link asks for the password of the account.
+        Assert.True(await application.VerifyAsync(
+            AccountsApplication.TokenIn(application.Email.Sent[1]), AccountsApplication.Password));
         Assert.Equal(Morning.AddDays(3), StoredUser.Of(application.Database, Ada)!.EmailVerifiedAt);
+    }
+
+    [Fact]
+    public async Task A_first_link_takes_no_password()
+    {
+        using var application = new AccountsApplication();
+        await application.RegisterAsync(Ada, "the password chosen first");
+        var before = StoredUser.Of(application.Database, Ada)!;
+        Assert.False(before.LinkSetsPassword);
+
+        // A password that comes with it is not the account's: nothing asked for one.
+        Assert.True(await application.VerifyAsync(
+            AccountsApplication.TokenIn(application.Email.Sent[0]), "a password nobody asked for"));
+
+        var after = StoredUser.Of(application.Database, Ada)!;
+        Assert.NotNull(after.EmailVerifiedAt);
+        Assert.Equal(before.PasswordHash, after.PasswordHash);
+    }
+
+    [Fact]
+    public async Task A_link_that_was_out_before_repeat_links_set_the_password_asks_for_one()
+    {
+        // A database of the version before, in which a link does not say whether it is the first
+        // link of its address or a later one, which then kept the first password.
+        var database = PostgresServer.CreateDatabase();
+        using (var before = database.Context())
+        {
+            before.GetService<IMigrator>().Migrate("20261111172937_AddAccounts");
+        }
+
+        var token = RandomNumberGenerator.GetBytes(32);
+        using (var connection = database.Open())
+        using (var insert = new NpgsqlCommand(
+            """
+            INSERT INTO users (id, email, password_hash, registered_at, email_verified_at, email_verification_token_hash, email_verification_expires_at)
+            VALUES (@waiting, 'ada@example.com', 'not-a-hash', @now, NULL, @hash, @later),
+                   (@verified, 'grace@example.com', 'not-a-hash', @now, @now, NULL, NULL)
+            """,
+            connection))
+        {
+            insert.Parameters.AddWithValue("waiting", Guid.CreateVersion7());
+            insert.Parameters.AddWithValue("verified", Guid.CreateVersion7());
+            insert.Parameters.AddWithValue("now", DateTimeOffset.UtcNow);
+            insert.Parameters.AddWithValue("later", DateTimeOffset.UtcNow.AddHours(24));
+            insert.Parameters.AddWithValue("hash", SHA256.HashData(token));
+            insert.ExecuteNonQuery();
+        }
+
+        // Starting this version migrates the database.
+        using var application = new AccountsApplication(database: database);
+        _ = application.Registration;
+
+        Assert.True(StoredUser.Of(database, Ada)!.LinkSetsPassword);
+        Assert.False(StoredUser.Of(database, "grace@example.com")!.LinkSetsPassword);
+
+        var link = Base64Url.EncodeToString(token);
+        Assert.Equal(EmailVerificationOutcome.PasswordNeeded, await application.ConfirmAsync(link));
+        Assert.Equal(EmailVerificationOutcome.Verified, await application.ConfirmAsync(link, "the password of the owner"));
+        Assert.True(await application.Passwords.VerifyAsync("the password of the owner", StoredUser.Of(database, Ada)!.PasswordHash));
     }
 
     [Fact]

@@ -16,7 +16,7 @@ public interface IAccountMailer
     /// <param name="link">The verification link. It is a secret until it is used.</param>
     /// <param name="registeredBefore">
     /// True when the address already had an account that is not verified, so the message says
-    /// that the earlier password still applies.
+    /// that confirming the link means choosing a new password.
     /// </param>
     /// <param name="cancellationToken">Cancels the sending.</param>
     Task SendVerificationLinkAsync(string emailAddress, Uri link, bool registeredBefore, CancellationToken cancellationToken);
@@ -26,4 +26,19 @@ public interface IAccountMailer
     /// and that nothing has changed.
     /// </summary>
     Task SendAlreadyRegisteredNoticeAsync(string emailAddress, CancellationToken cancellationToken);
+
+    /// <summary>Sends the link that sets a new password for an account (FR-ACC-2).</summary>
+    /// <param name="emailAddress">The address of the account.</param>
+    /// <param name="link">The reset link. It is a secret until it is used.</param>
+    /// <param name="cancellationToken">Cancels the sending.</param>
+    Task SendPasswordResetLinkAsync(string emailAddress, Uri link, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Tells the owner of an address that someone asked to reset the password of an account with
+    /// it, and that it has no account.
+    /// </summary>
+    Task SendNoAccountNoticeAsync(string emailAddress, CancellationToken cancellationToken);
+
+    /// <summary>Tells the owner of an account that its password was changed with a reset link.</summary>
+    Task SendPasswordChangedNoticeAsync(string emailAddress, CancellationToken cancellationToken);
 }

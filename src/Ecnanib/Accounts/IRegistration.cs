@@ -25,8 +25,31 @@ public interface IRegistration
     /// <summary>
     /// Verifies the address of the account that the token of a verification link belongs to.
     /// </summary>
-    /// <returns>False when the token is not one, was used, was replaced by a later link, or has expired.</returns>
-    Task<bool> VerifyEmailAsync(string token, CancellationToken cancellationToken);
+    /// <param name="token">The token of the link.</param>
+    /// <param name="newPassword">
+    /// The password that whoever confirms the link chooses, or null when they gave none. Only
+    /// the link of an address that was registered again needs one: the password stored with the
+    /// account may be someone else's, so the person who reads the mail of the address chooses it.
+    /// The sessions of the account end with the earlier password. A first link takes no password.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the verification.</param>
+    Task<EmailVerificationOutcome> VerifyEmailAsync(string token, string? newPassword, CancellationToken cancellationToken);
+}
+
+/// <summary>How confirming a verification link ended.</summary>
+public enum EmailVerificationOutcome
+{
+    /// <summary>The address is verified.</summary>
+    Verified,
+
+    /// <summary>The token is not one, was used, was replaced by a later link, or has expired.</summary>
+    LinkNotValid,
+
+    /// <summary>The link is of an address that was registered again, and no password came with it. Nothing was done.</summary>
+    PasswordNeeded,
+
+    PasswordTooShort,
+    PasswordTooLong,
 }
 
 /// <summary>What a visitor fills in on the registration form, except the password.</summary>

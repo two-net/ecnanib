@@ -3,6 +3,7 @@ using System.Text.Json;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -38,6 +39,15 @@ internal sealed class LoggedApplication : IDisposable
     public string LogFolder => Path.Combine(ContentRoot.Path, "logs");
 
     public HttpClient CreateClient() => _application.CreateClient();
+
+    /// <summary>A client that does not follow where an answer leads, so that a test sees the answer itself.</summary>
+    /// <param name="address">Where it sends its requests, when that is not <see cref="EcnanibApplicationFactory.Address"/>.</param>
+    public HttpClient CreateClientThatStays(Uri? address = null) =>
+        _application.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = address ?? EcnanibApplicationFactory.Address,
+            AllowAutoRedirect = false,
+        });
 
     public ILogger Logger(string area = "Ecnanib.Tests.Logging") =>
         Services.GetRequiredService<ILoggerFactory>().CreateLogger(area);

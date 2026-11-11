@@ -6,17 +6,32 @@ namespace Ecnanib.Platform.Logging;
 public static class RequestCorrelation
 {
     /// <summary>
-    /// Opens a scope around the rest of the pipeline with the request id, and the user id when the
-    /// request is signed in. Add it first, so that error handling runs inside the scope.
+    /// Opens a scope around the rest of the pipeline with the request id. Add it first, so that
+    /// authentication and error handling run inside the scope.
     /// </summary>
-    /// <remarks>
-    /// The user is the one known when the request arrives here. The host runs authentication
-    /// before the application's own middleware, so that is the signed-in user.
-    /// </remarks>
     public static IApplicationBuilder UseRequestCorrelation(this IApplicationBuilder app) =>
-        app.UseMiddleware<Middleware>();
+        app.UseMiddleware<RequestMiddleware>();
 
-    private sealed class Middleware(RequestDelegate next, ILogger<Middleware> logger)
+    /// <summary>
+    /// Opens a scope around the rest of the pipeline with the user id, when the request is signed
+    /// in. Add it right after authentication, which is what knows the user, and before error
+    /// handling, so that a logged error names the user too.
+    /// </summary>
+    public static IApplicationBuilder UseUserCorrelation(this IApplicationBuilder app) =>
+        app.UseMiddleware<UserMiddleware>();
+
+    private sealed class RequestMiddleware(RequestDelegate next, ILogger<RequestMiddleware> logger)
+    {
+        public async Task InvokeAsync(HttpContext context)
+        {
+            using (logger.BeginCorrelation(new Correlation(RequestId: context.TraceIdentifier)))
+            {
+                await next(context);
+            }
+        }
+    }
+
+    private sealed class UserMiddleware(RequestDelegate next, ILogger<UserMiddleware> logger)
     {
         public async Task InvokeAsync(HttpContext context)
         {
@@ -24,7 +39,7 @@ public static class RequestCorrelation
                 ? context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                 : null;
 
-            using (logger.BeginCorrelation(new Correlation(RequestId: context.TraceIdentifier, UserId: user)))
+            using (logger.BeginCorrelation(new Correlation(UserId: user)))
             {
                 await next(context);
             }

@@ -85,8 +85,8 @@ Events inside a request or a cycle carry the properties that say what they belon
 
 | Property | Set by |
 |---|---|
-| `RequestId` | `UseRequestCorrelation()`, for every HTTP request. |
-| `UserId` | `UseRequestCorrelation()`, when the request is signed in. |
+| `RequestId` | `UseRequestCorrelation()`, for every HTTP request. It comes first in the pipeline. |
+| `UserId` | `UseUserCorrelation()`, when the request is signed in: the id of the account. It comes right after authentication, which is what knows the user. See [accounts.md](accounts.md). |
 | `Provider`, `Model` | The AI Provider Gateway, around each call to a model. |
 | `AgentId`, `CycleId`, `Role` | The component that runs a cycle and calls the team. |
 | `ExchangeOrderId` | The component that places or tracks an order. |

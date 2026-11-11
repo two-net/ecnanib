@@ -23,6 +23,8 @@ Git checks the file out readable by other accounts, and the application refuses 
 
 The file names a local database, which the application migrates when it starts, and a local mail server, which takes the email the application sends and delivers it nowhere. Start both with `docker compose up -d`. See [persistence.md](persistence.md) and [accounts.md](accounts.md).
 
+The file also names `https://localhost:7109` as the address of the application, which is where the launch profile listens. Trust the development certificate once, with `dotnet dev-certs https --trust`. See [security.md](security.md).
+
 ### For a deployment
 
 Put a copy of the tracked file in the folder the application runs from and replace its development values:
@@ -35,6 +37,8 @@ openssl rand -base64 32
 The last command prints a master key for `Security:MasterKeys`. Never deploy the tracked master key.
 
 The `Email` section has no key for encryption: the port and the sign-in decide it. A mail server that takes a sign-in must offer STARTTLS, or listen on port 465. See "Email" in [accounts.md](accounts.md).
+
+`Application:PublicUrl` is the address users reach the application at, and it must be an `https` address. A request over plain HTTP is sent on to its port, and the links in emails start with it. `Security:SessionIdleMinutes`, from 1 to 1440, is how long a session lasts without being used. See [security.md](security.md) and "Sessions" in [accounts.md](accounts.md).
 
 ### Permissions
 
@@ -82,7 +86,7 @@ The default ASP.NET Core host layers many configuration sources. `PlatformModule
 | `appsettings.{Environment}.json` and other override files | None. There are no per-environment variants. |
 | User secrets, a vault, or any other secret store | None. No such source is added. |
 
-What the runtime platform defines for itself keeps its default behavior (NFR-CFG-3): variables with the `ASPNETCORE_` and `DOTNET_` prefixes, such as `ASPNETCORE_ENVIRONMENT` and `ASPNETCORE_URLS`, and the host switches `--environment` and `--contentRoot`. They decide how the host runs. They hold no application setting, and the environment name does not select a file. The application defines no variable of its own.
+What the runtime platform defines for itself keeps its default behavior (NFR-CFG-3): variables with the `ASPNETCORE_` and `DOTNET_` prefixes, such as `ASPNETCORE_ENVIRONMENT`, `ASPNETCORE_URLS`, and `ASPNETCORE_FORWARDEDHEADERS_ENABLED` for a deployment behind a proxy (see [security.md](security.md)), and the host switches `--environment` and `--contentRoot`. They decide how the host runs. They hold no application setting, and the environment name does not select a file. The application defines no variable of its own.
 
 Settings never enter the host's `IConfiguration`. They are read from the file into `EcnanibSettings`, so nothing in the host's configuration can override them, and a dump of that configuration holds no secret.
 

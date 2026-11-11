@@ -12,6 +12,11 @@ namespace Ecnanib.Accounts;
 /// while its owner is signed in to it.
 /// </para>
 /// <para>
+/// Nor does the password of the first registration stand when the address is registered again:
+/// the first one may have been someone else's. The link of the later registration lets whoever
+/// reads the mail of the address choose the password, and ends the sessions of the account.
+/// </para>
+/// <para>
 /// Every registration does the same work whatever the address is: it hashes the password, writes
 /// to the database, and sends one email. So neither the answer nor the time it takes tells
 /// whether an address has an account.
@@ -25,9 +30,6 @@ internal sealed class Registration(
     TimeProvider clock,
     ILogger<Registration> logger) : IRegistration
 {
-    // The longest address the mail protocol can carry.
-    private const int LongestEmail = 254;
-
     /// <summary>What the address of a registration turned out to be.</summary>
     private enum Address
     {
@@ -49,7 +51,7 @@ internal sealed class Registration(
             return RegistrationResult.Of(RegistrationOutcome.Closed);
         }
 
-        var email = Normalize(request.Email);
+        var email = EmailAddress.Normalize(request.Email);
         var problems = ProblemsOf(email, password, request.Accepted);
         if (problems.Count > 0)
         {
@@ -58,7 +60,7 @@ internal sealed class Registration(
 
         // Before the address is looked up, so that the time it takes is spent either way.
         var passwordHash = await passwords.HashAsync(password);
-        var (token, tokenHash) = VerificationToken.Create();
+        var (token, tokenHash) = SecretToken.Create();
 
         var address = await StoreAsync(email, passwordHash, tokenHash, cancellationToken);
 
@@ -89,53 +91,112 @@ internal sealed class Registration(
         return RegistrationResult.Of(RegistrationOutcome.Accepted);
     }
 
-    public async Task<bool> VerifyEmailAsync(string token, CancellationToken cancellationToken)
+    public async Task<EmailVerificationOutcome> VerifyEmailAsync(
+        string token, string? newPassword, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(token);
 
-        if (VerificationToken.HashOf(token) is not { } tokenHash)
+        if (SecretToken.HashOf(token) is not { } tokenHash)
         {
-            return false;
+            return EmailVerificationOutcome.LinkNotValid;
         }
 
         var now = clock.GetUtcNow();
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
 
-        var userId = await context.Set<User>()
-            .Where(user => user.EmailVerificationTokenHash == tokenHash)
-            .Select(user => (Guid?)user.Id)
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (userId is null)
-        {
-            return false;
-        }
-
-        // One statement, and only while the link still stands: of two requests with the same
-        // link, one verifies the address and the other finds the link used.
-        var verified = await context.Set<User>()
-            .Where(user => user.Id == userId
-                && user.EmailVerificationTokenHash == tokenHash
+        var link = await context.Set<User>()
+            .Where(user => user.EmailVerificationTokenHash == tokenHash
                 && user.EmailVerificationExpiresAt > now
                 && user.EmailVerifiedAt == null)
-            .ExecuteUpdateAsync(
+            .Select(user => new { user.Id, SetsPassword = user.EmailVerificationSetsPassword })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (link is null)
+        {
+            return EmailVerificationOutcome.LinkNotValid;
+        }
+
+        // Only while the link still stands: of two requests with the same link, one verifies
+        // the address and the other finds the link used.
+        var standing = context.Set<User>()
+            .Where(user => user.Id == link.Id
+                && user.EmailVerificationTokenHash == tokenHash
+                && user.EmailVerificationExpiresAt > now
+                && user.EmailVerifiedAt == null);
+
+        if (!link.SetsPassword)
+        {
+            var verified = await standing.ExecuteUpdateAsync(
                 row => row
                     .SetProperty(user => user.EmailVerifiedAt, (DateTimeOffset?)now)
                     .SetProperty(user => user.EmailVerificationTokenHash, (byte[]?)null)
                     .SetProperty(user => user.EmailVerificationExpiresAt, (DateTimeOffset?)null),
                 cancellationToken);
 
-        if (verified == 1)
-        {
-            logger.LogInformation("The email address of user {UserId} was verified", userId);
+            if (verified != 1)
+            {
+                return EmailVerificationOutcome.LinkNotValid;
+            }
+
+            logger.LogInformation("The email address of user {UserId} was verified", link.Id);
+
+            return EmailVerificationOutcome.Verified;
         }
 
-        return verified == 1;
+        // The address was registered again. Whoever confirms it chooses the password.
+        if (string.IsNullOrEmpty(newPassword))
+        {
+            return EmailVerificationOutcome.PasswordNeeded;
+        }
+
+        switch (PasswordRules.ProblemOf(newPassword))
+        {
+            case PasswordProblem.TooShort:
+                return EmailVerificationOutcome.PasswordTooShort;
+
+            case PasswordProblem.TooLong:
+                return EmailVerificationOutcome.PasswordTooLong;
+        }
+
+        var passwordHash = await passwords.HashAsync(newPassword);
+
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        var chosen = await standing.ExecuteUpdateAsync(
+            row => row
+                .SetProperty(user => user.EmailVerifiedAt, (DateTimeOffset?)now)
+                .SetProperty(user => user.EmailVerificationTokenHash, (byte[]?)null)
+                .SetProperty(user => user.EmailVerificationExpiresAt, (DateTimeOffset?)null)
+                .SetProperty(user => user.EmailVerificationSetsPassword, false)
+                .SetProperty(user => user.PasswordHash, passwordHash)
+
+                // A reset link that is out was asked for under the earlier password.
+                .SetProperty(user => user.PasswordResetTokenHash, (byte[]?)null)
+                .SetProperty(user => user.PasswordResetExpiresAt, (DateTimeOffset?)null),
+            cancellationToken);
+
+        if (chosen != 1)
+        {
+            return EmailVerificationOutcome.LinkNotValid;
+        }
+
+        // Whoever was signed in knew the earlier password.
+        var ended = await Sessions.EndAllAsync(context, link.Id, cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        logger.LogInformation(
+            "The email address of user {UserId} was verified with a new password, which ended {SessionCount} sessions",
+            link.Id,
+            ended);
+
+        return EmailVerificationOutcome.Verified;
     }
 
     /// <summary>
     /// Creates the account when the address has none. When it has one that is not verified, only
-    /// its verification link is replaced. A verified account is not touched.
+    /// its verification link is replaced, by one that sets the password. A verified account is
+    /// not touched.
     /// </summary>
     private async Task<Address> StoreAsync(
         string email, string passwordHash, byte[] tokenHash, CancellationToken cancellationToken)
@@ -151,8 +212,8 @@ internal sealed class Registration(
         // time, the second waits here, and then finds the account of the first.
         var inserted = await context.Database.ExecuteSqlAsync(
             $"""
-            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at)
-            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt})
+            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at, email_verification_sets_password)
+            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt}, FALSE)
             ON CONFLICT (email) DO NOTHING
             """,
             cancellationToken);
@@ -174,7 +235,11 @@ internal sealed class Registration(
                 .ExecuteUpdateAsync(
                     row => row
                         .SetProperty(user => user.EmailVerificationTokenHash, (byte[]?)tokenHash)
-                        .SetProperty(user => user.EmailVerificationExpiresAt, (DateTimeOffset?)expiresAt),
+                        .SetProperty(user => user.EmailVerificationExpiresAt, (DateTimeOffset?)expiresAt)
+
+                        // The password stored may not be this registrant's, and this one's is
+                        // not kept. See the remarks of this class.
+                        .SetProperty(user => user.EmailVerificationSetsPassword, true),
                     cancellationToken);
 
             address = relinked == 1 ? Address.RegisteredNotVerified : Address.RegisteredAndVerified;
@@ -191,7 +256,7 @@ internal sealed class Registration(
 
             case Address.RegisteredNotVerified:
                 logger.LogInformation(
-                    "A registration named an address that is registered and not verified. Its verification link was replaced");
+                    "A registration named an address that is registered and not verified. Its verification link was replaced by one that sets the password");
                 break;
 
             default:
@@ -203,27 +268,25 @@ internal sealed class Registration(
         return address;
     }
 
-    private static string Normalize(string email) => email.Trim().ToLowerInvariant();
-
     private static List<RegistrationProblem> ProblemsOf(
         string email, string password, IReadOnlyCollection<AcceptedDocument> accepted)
     {
         var problems = new List<RegistrationProblem>();
 
-        if (!LooksLikeEmailAddress(email))
+        if (!EmailAddress.LooksValid(email))
         {
             problems.Add(RegistrationProblem.EmailInvalid);
         }
 
-        // In characters as a person counts them, not in the units the text is stored in.
-        var length = password.EnumerateRunes().Count();
-        if (length < PasswordRules.MinimumLength)
+        switch (PasswordRules.ProblemOf(password))
         {
-            problems.Add(RegistrationProblem.PasswordTooShort);
-        }
-        else if (length > PasswordRules.MaximumLength)
-        {
-            problems.Add(RegistrationProblem.PasswordTooLong);
+            case PasswordProblem.TooShort:
+                problems.Add(RegistrationProblem.PasswordTooShort);
+                break;
+
+            case PasswordProblem.TooLong:
+                problems.Add(RegistrationProblem.PasswordTooLong);
+                break;
         }
 
         foreach (var document in LegalDocuments.All)
@@ -243,24 +306,5 @@ internal sealed class Registration(
         }
 
         return problems;
-    }
-
-    /// <summary>
-    /// One <c>@</c> with something before it and a domain with a dot after it, and no spaces or
-    /// control characters. Whether the address exists is what verifying it finds out.
-    /// </summary>
-    private static bool LooksLikeEmailAddress(string email)
-    {
-        var at = email.IndexOf('@');
-        if (at <= 0 || at != email.LastIndexOf('@') || email.Length > LongestEmail)
-        {
-            return false;
-        }
-
-        var domain = email[(at + 1)..];
-
-        return domain.Contains('.')
-            && domain.Split('.').All(label => label.Length > 0)
-            && !email.Any(character => char.IsWhiteSpace(character) || char.IsControl(character));
     }
 }

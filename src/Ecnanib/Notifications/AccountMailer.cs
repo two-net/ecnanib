@@ -17,7 +17,7 @@ internal sealed class AccountMailer(IEmailAdapter email, ApplicationSettings app
         var before = registeredBefore
             ? $"""
 
-              This address was registered before and has not been confirmed yet. The password chosen the first time still applies.
+              This address was registered before and has not been confirmed yet. When you confirm it with this link, you choose a new password, and a password chosen earlier stops working.
 
               """
             : string.Empty;
@@ -51,6 +51,56 @@ internal sealed class AccountMailer(IEmailAdapter email, ApplicationSettings app
                 Nothing about your account has changed. If that was you, sign in with the password you chose when you registered.
 
                 If it was not you, you can ignore this message.
+                """),
+            cancellationToken);
+
+    public Task SendPasswordResetLinkAsync(string emailAddress, Uri link, CancellationToken cancellationToken)
+    {
+        var minutes = (int)PasswordResetLink.Lifetime.TotalMinutes;
+
+        return email.SendAsync(
+            new EmailMessage(
+                emailAddress,
+                $"Choose a new password for {application.Name}",
+                $"""
+                Someone asked to reset the password of your account at {application.Name}.
+
+                If that was you, open this link to choose a new password:
+
+                {link.AbsoluteUri}
+
+                The link works for {minutes} minutes, and once. Choosing a new password signs the account out everywhere.
+
+                If it was not you, ignore this message. Your password stays as it is.
+                """),
+            cancellationToken);
+    }
+
+    public Task SendNoAccountNoticeAsync(string emailAddress, CancellationToken cancellationToken) =>
+        email.SendAsync(
+            new EmailMessage(
+                emailAddress,
+                $"No account at {application.Name} with this address",
+                $"""
+                Someone asked to reset the password of an account at {application.Name} with this email address, which has no account.
+
+                If that was you, you may have registered with another address.
+
+                If it was not you, you can ignore this message.
+                """),
+            cancellationToken);
+
+    public Task SendPasswordChangedNoticeAsync(string emailAddress, CancellationToken cancellationToken) =>
+        email.SendAsync(
+            new EmailMessage(
+                emailAddress,
+                $"Your password at {application.Name} was changed",
+                $"""
+                The password of your account at {application.Name} was changed with a link sent to this email address, and the account was signed out everywhere.
+
+                If that was you, there is nothing to do.
+
+                If it was not you, someone else can read your email. Secure your mailbox first, and then ask for a new password on the sign-in page.
                 """),
             cancellationToken);
 }

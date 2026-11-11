@@ -16,11 +16,18 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
 
+    /// <summary>
+    /// Where a test's client sends its requests. Over TLS, as a browser does: the application
+    /// serves nothing over plain HTTP, and its cookies are sent only over TLS.
+    /// </summary>
+    public static readonly Uri Address = new("https://localhost");
+
     /// <summary>Runs the application with a valid configuration file, on the test server's shared database.</summary>
     public EcnanibApplicationFactory()
     {
         _ownDirectory = new SettingsDirectory(SettingsJson.Valid().OnTestServer());
         _contentRoot = _ownDirectory.Path;
+        ClientOptions.BaseAddress = Address;
     }
 
     /// <summary>Runs the application in a content root the test prepared.</summary>
@@ -28,6 +35,7 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     {
         _contentRoot = contentRoot.Path;
         _configure = configure;
+        ClientOptions.BaseAddress = Address;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

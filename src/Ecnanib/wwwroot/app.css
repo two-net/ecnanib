@@ -76,3 +76,19 @@ form > button[type=submit] {
         color: #f2b8b5;
     }
 }
+
+/* The bar that says who is signed in, with the sign-out button in line with its links. */
+.account-bar {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+    .account-bar form {
+        margin: 0;
+    }
+
+    .account-bar form > button[type=submit] {
+        margin-top: 0;
+    }

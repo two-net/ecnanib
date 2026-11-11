@@ -17,6 +17,15 @@ namespace Ecnanib.Accounts;
 /// token itself is only in the email.
 /// </param>
 /// <param name="emailVerificationExpiresAt">When that link stops working.</param>
+/// <param name="emailVerificationSetsPassword">
+/// True when that link came from registering the address again. Whoever confirms it chooses the
+/// password of the account, because the one stored may be someone else's.
+/// </param>
+/// <param name="passwordResetTokenHash">
+/// The SHA-256 hash of the token in the password reset link that is out, or null when none is
+/// (FR-ACC-2).
+/// </param>
+/// <param name="passwordResetExpiresAt">When that link stops working.</param>
 public sealed class User(
     Guid id,
     string email,
@@ -24,7 +33,10 @@ public sealed class User(
     DateTimeOffset registeredAt,
     DateTimeOffset? emailVerifiedAt,
     byte[]? emailVerificationTokenHash,
-    DateTimeOffset? emailVerificationExpiresAt)
+    DateTimeOffset? emailVerificationExpiresAt,
+    bool emailVerificationSetsPassword,
+    byte[]? passwordResetTokenHash,
+    DateTimeOffset? passwordResetExpiresAt)
 {
     public Guid Id { get; } = id;
 
@@ -39,6 +51,12 @@ public sealed class User(
     public byte[]? EmailVerificationTokenHash { get; } = emailVerificationTokenHash;
 
     public DateTimeOffset? EmailVerificationExpiresAt { get; } = emailVerificationExpiresAt;
+
+    public bool EmailVerificationSetsPassword { get; } = emailVerificationSetsPassword;
+
+    public byte[]? PasswordResetTokenHash { get; } = passwordResetTokenHash;
+
+    public DateTimeOffset? PasswordResetExpiresAt { get; } = passwordResetExpiresAt;
 }
 
 internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
@@ -56,11 +74,15 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(user => user.EmailVerifiedAt);
         builder.Property(user => user.EmailVerificationTokenHash);
         builder.Property(user => user.EmailVerificationExpiresAt);
+        builder.Property(user => user.EmailVerificationSetsPassword);
+        builder.Property(user => user.PasswordResetTokenHash);
+        builder.Property(user => user.PasswordResetExpiresAt);
 
         // One account for each address. Registration relies on it: see Registration.
         builder.HasIndex(user => user.Email).IsUnique();
 
         // A link is looked up by the hash of its token.
         builder.HasIndex(user => user.EmailVerificationTokenHash).IsUnique();
+        builder.HasIndex(user => user.PasswordResetTokenHash).IsUnique();
     }
 }

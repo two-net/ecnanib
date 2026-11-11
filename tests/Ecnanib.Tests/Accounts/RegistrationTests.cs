@@ -107,7 +107,7 @@ public class RegistrationTests
     }
 
     [Fact]
-    public async Task Registering_again_before_verifying_keeps_the_password_and_replaces_the_link()
+    public async Task Registering_again_before_verifying_leaves_the_account_alone_and_sends_a_link_that_sets_the_password()
     {
         using var application = new AccountsApplication();
 
@@ -122,21 +122,73 @@ public class RegistrationTests
         var user = Assert.Single(StoredUser.All(application.Database));
         Assert.Equal(first.Id, user.Id);
         Assert.Equal(first.PasswordHash, user.PasswordHash);
-        Assert.True(await application.Passwords.VerifyAsync("the password chosen first", user.PasswordHash));
-        Assert.False(await application.Passwords.VerifyAsync("the password of someone else", user.PasswordHash));
+        Assert.True(user.LinkSetsPassword);
         Assert.Equal(3, StoredAcceptance.All(application.Database).Count);
 
-        // A second message, which says that the address was registered before.
+        // A second message, which says that confirming it means choosing a password.
         Assert.Equal(2, application.Email.Sent.Count);
         var second = application.Email.Sent[1];
+        var secondToken = AccountsApplication.TokenIn(second);
         Assert.Equal("Confirm your email address for Ecnanib Test", second.Subject);
-        Assert.Contains("The password chosen the first time still applies.", second.TextBody);
+        Assert.Contains("you choose a new password, and a password chosen earlier stops working.", second.TextBody);
 
-        // The later link is the one that works.
-        Assert.False(await application.VerifyAsync(firstToken));
-        Assert.Null(StoredUser.Of(application.Database, Ada)!.EmailVerifiedAt);
-        Assert.True(await application.VerifyAsync(AccountsApplication.TokenIn(second)));
-        Assert.NotNull(StoredUser.Of(application.Database, Ada)!.EmailVerifiedAt);
+        // The later link is the one that works, and it asks for a password.
+        Assert.Equal(EmailVerificationOutcome.LinkNotValid, await application.ConfirmAsync(firstToken));
+        Assert.Equal(EmailVerificationOutcome.PasswordNeeded, await application.ConfirmAsync(secondToken));
+        Assert.Equal(EmailVerificationOutcome.PasswordTooShort, await application.ConfirmAsync(secondToken, "eleven-char"));
+        Assert.Equal(
+            EmailVerificationOutcome.PasswordTooLong, await application.ConfirmAsync(secondToken, new string('x', 129)));
+
+        var unchanged = StoredUser.Of(application.Database, Ada)!;
+        Assert.Null(unchanged.EmailVerifiedAt);
+        Assert.Equal(first.PasswordHash, unchanged.PasswordHash);
+
+        // Whoever reads the mail of the address chooses the password. Neither of the two that
+        // were typed on the form is the account's any more.
+        Assert.Equal(
+            EmailVerificationOutcome.Verified, await application.ConfirmAsync(secondToken, "the password of the owner"));
+
+        var verified = StoredUser.Of(application.Database, Ada)!;
+        Assert.NotNull(verified.EmailVerifiedAt);
+        Assert.False(verified.LinkSetsPassword);
+        Assert.True(await application.Passwords.VerifyAsync("the password of the owner", verified.PasswordHash));
+        Assert.False(await application.Passwords.VerifyAsync("the password chosen first", verified.PasswordHash));
+        Assert.False(await application.Passwords.VerifyAsync("the password of someone else", verified.PasswordHash));
+
+        // The link is spent.
+        Assert.Equal(
+            EmailVerificationOutcome.LinkNotValid, await application.ConfirmAsync(secondToken, "the password of the owner"));
+    }
+
+    [Fact]
+    public async Task Confirming_an_address_that_was_registered_again_ends_the_sessions_of_whoever_registered_it_first()
+    {
+        using var application = new AccountsApplication();
+        using var first = application.CreateClient();
+
+        // Someone registers an address that is not theirs, and signs in to the account.
+        await application.RegisterAsync(Ada, "the password of someone else");
+        Assert.Equal("/", (await first.SignInAsync(Ada, "the password of someone else")).Path);
+        Assert.Single(StoredSession.All(application.Database));
+
+        // The owner of the address registers later, and confirms the link they are sent.
+        await application.RegisterAsync(Ada, "what the owner typed on the form");
+        Assert.True(await application.VerifyAsync(
+            AccountsApplication.TokenIn(application.Email.Sent[1]), "the password of the owner"));
+
+        // The first one is signed out, and their password is not the account's any more.
+        Assert.Empty(StoredSession.All(application.Database));
+        Assert.StartsWith(SessionAuthentication.SignInPath, (await first.OpenAsync("/account")).Address);
+        Assert.Equal(SessionAuthentication.SignInPath, (await first.SignInAsync(Ada, "the password of someone else")).Path);
+
+        using var owner = application.CreateClient();
+        Assert.Equal("/", (await owner.SignInAsync(Ada, "the password of the owner")).Path);
+
+        var chosen = Assert.Single(
+            application.Events(),
+            written => written.Template
+                == "The email address of user {UserId} was verified with a new password, which ended {SessionCount} sessions");
+        Assert.Equal(1, chosen["SessionCount"].GetInt32());
     }
 
     [Fact]
@@ -191,7 +243,9 @@ public class RegistrationTests
 
         Assert.Equal(RegistrationOutcome.Accepted, again.Outcome);
         Assert.Single(StoredUser.All(application.Database));
-        Assert.True(await application.VerifyAsync(AccountsApplication.TokenIn(Assert.Single(application.Email.Sent))));
+        // The account was there from the first try, so this link is of an address registered again.
+        Assert.True(await application.VerifyAsync(
+            AccountsApplication.TokenIn(Assert.Single(application.Email.Sent)), AccountsApplication.Password));
     }
 
     [Fact]
@@ -211,7 +265,7 @@ public class RegistrationTests
         var working = 0;
         foreach (var message in application.Email.Sent)
         {
-            working += await application.VerifyAsync(AccountsApplication.TokenIn(message)) ? 1 : 0;
+            working += await application.VerifyAsync(AccountsApplication.TokenIn(message), AccountsApplication.Password) ? 1 : 0;
         }
 
         Assert.Equal(1, working);

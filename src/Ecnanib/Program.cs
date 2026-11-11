@@ -67,9 +67,18 @@ public class Program
 
         var app = builder.Build();
 
-        // Configure the HTTP request pipeline. Correlation comes first, so that everything after
-        // it, error handling included, logs with the request's properties.
+        // Configure the HTTP request pipeline. The rules for TLS and cookies are in docs/security.md.
+        // Every cookie is sent only over TLS and is hidden from scripts, whoever sets it.
+        app.UseCookiePolicy();
+
+        // Correlation comes next, so that everything after it, authentication and error handling
+        // included, logs with the request's properties.
         app.UseRequestCorrelation();
+
+        // Who is signed in, and then the user as a property of what the request logs. The handler
+        // of Accounts does not fail a request here, ahead of the error handling: see docs/accounts.md.
+        app.UseAuthentication();
+        app.UseUserCorrelation();
 
         if (!app.Environment.IsDevelopment())
         {
@@ -84,12 +93,16 @@ public class Program
                 SuppressDiagnosticsCallback = _ => true,
             });
 
-            // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+            // Not in development, where a browser would remember it for every project on localhost.
             app.UseHsts();
         }
         app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+
+        // A request over plain HTTP is sent on to TLS, and is not served.
         app.UseHttpsRedirection();
 
+        // A page for signed-in users sends a visitor to sign in.
+        app.UseAuthorization();
         app.UseAntiforgery();
 
         app.MapStaticAssets();

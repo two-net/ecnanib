@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Ecnanib.Accounts;
 using Ecnanib.WebUi.Pages.Legal;
 
@@ -117,7 +116,46 @@ public class RegistrationPageTests
 
         Assert.Equal("/register/sent", known.Path);
         Assert.Equal(unknown.Path, known.Path);
-        Assert.Equal(WithoutComments(unknown.Page), WithoutComments(known.Page));
+        Assert.Equal(Browser.AsSeen(unknown.Page), Browser.AsSeen(known.Page));
+    }
+
+    [Fact]
+    public async Task A_visitor_who_registered_twice_chooses_the_password_when_confirming_the_address()
+    {
+        using var application = new AccountsApplication();
+        using var client = application.CreateClient();
+
+        await client.SubmitAsync(
+            "/register", "register", [("Email", Ada), ("Password", "the password chosen first"), .. EveryDocumentAccepted]);
+        await client.SubmitAsync(
+            "/register", "register", [("Email", Ada), ("Password", "TYPED-MARKER the second time"), .. EveryDocumentAccepted]);
+
+        // The page of the later link looks like that of any link, until the button is pressed.
+        var link = AccountsApplication.LinkIn(application.Email.Sent[1]);
+        var opened = await client.PageAsync(link.PathAndQuery);
+        Assert.Contains("Confirm my email address", opened);
+        Assert.DoesNotContain("name=\"Password\"", opened);
+
+        var (_, asked) = await client.SubmitAsync(link.PathAndQuery, "verify-email");
+        Assert.Contains("Choose the password of your account now.", asked);
+        Assert.Contains("name=\"Password\"", asked);
+        Assert.Null(StoredUser.Of(application.Database, Ada)!.EmailVerifiedAt);
+
+        // A password that breaks the rules is refused, and is not shown again.
+        var (_, refused) = await client.SubmitAsync(link.PathAndQuery, "verify-email", ("Password", "SHORT-MARKER"[..11]));
+        Assert.Contains("Choose a password of at least 12 characters.", refused);
+        Assert.DoesNotContain("SHORT-MARKE", refused);
+        Assert.Null(StoredUser.Of(application.Database, Ada)!.EmailVerifiedAt);
+
+        var (_, confirmed) = await client.SubmitAsync(
+            link.PathAndQuery, "verify-email", ("Password", "the password of the owner"));
+        Assert.Contains("Your email address is confirmed.", confirmed);
+        Assert.Contains($"href=\"{SessionAuthentication.SignInPath}\"", confirmed);
+
+        // The password chosen with the link is the account's, and neither of those typed on the form.
+        Assert.Equal(SessionAuthentication.SignInPath, (await client.SignInAsync(Ada, "the password chosen first")).Path);
+        Assert.Equal(SessionAuthentication.SignInPath, (await client.SignInAsync(Ada, "TYPED-MARKER the second time")).Path);
+        Assert.Equal("/", (await client.SignInAsync(Ada, "the password of the owner")).Path);
     }
 
     [Fact]
@@ -175,12 +213,6 @@ public class RegistrationPageTests
         Assert.Contains("href=\"/register\"", page);
         Assert.Null(StoredUser.Of(application.Database, Ada)!.EmailVerifiedAt);
     }
-
-    /// <summary>
-    /// A page as a visitor sees it. The framework adds a comment to each page that holds state
-    /// for the browser, encrypted, and so different every time.
-    /// </summary>
-    private static string WithoutComments(string page) => Regex.Replace(page, "<!--.*?-->", string.Empty, RegexOptions.Singleline);
 
     [Theory]
     [InlineData(LegalDocument.TermsOfService, "/legal/terms", "Terms of Service")]

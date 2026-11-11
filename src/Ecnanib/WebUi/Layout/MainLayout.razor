@@ -1,4 +1,29 @@
 ﻿@inherits LayoutComponentBase
+@using Ecnanib.Accounts
+@inject IRegistration Registration
+
+<nav class="account-bar" aria-label="Account">
+    <AuthorizeView>
+        <Authorized>
+            <span>@context.User.Identity?.Name</span>
+            <a href="/account">Account</a>
+
+            @* Posted to an endpoint of its own, so the button works on every page. *@
+            <form method="post" action="@WebUiModule.SignOutPath">
+                <AntiforgeryToken />
+                <button type="submit">Sign out</button>
+            </form>
+        </Authorized>
+        <NotAuthorized>
+            <a href="@SessionAuthentication.SignInPath">Sign in</a>
+
+            @if (Registration.IsOpen)
+            {
+                <a href="/register">Register</a>
+            }
+        </NotAuthorized>
+    </AuthorizeView>
+</nav>
 
 @Body
 

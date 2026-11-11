@@ -1,0 +1,13 @@
+@page "/account"
+@attribute [Authorize]
+
+<PageTitle>Your account</PageTitle>
+
+<h1>Your account</h1>
+
+<p>You are signed in as @HttpContext?.User.Identity?.Name.</p>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+}

@@ -189,6 +189,23 @@ internal sealed class SettingsReader
         return new Uri("about:blank");
     }
 
+    /// <summary>An absolute address that is reached over TLS: <c>https</c>, and nothing else (NFR-SEC-1).</summary>
+    public Uri HttpsUrl(string key)
+    {
+        var text = Text(key);
+        if (text.Length > 0)
+        {
+            if (Uri.TryCreate(text, UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttps)
+            {
+                return url;
+            }
+
+            Problem(key, "must be an absolute https address");
+        }
+
+        return new Uri("about:blank");
+    }
+
     public string EmailAddress(string key)
     {
         var text = Text(key);

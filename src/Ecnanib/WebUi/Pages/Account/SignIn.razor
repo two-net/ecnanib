@@ -1,0 +1,86 @@
+@attribute [Route(SessionAuthentication.SignInPath)]
+@using Ecnanib.Accounts
+@inject ISignIn SigningIn
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: the password travels in a form
+    post, and not over the connection that an interactive page keeps open.
+*@
+
+<PageTitle>Sign in</PageTitle>
+
+<h1>Sign in</h1>
+
+@if (_failed)
+{
+    @* One answer whatever was wrong, so that it does not tell whether an address has an account. *@
+    <p class="form-error" role="alert">The email address or the password is not right.</p>
+}
+
+<form method="post" @formname="sign-in" @onsubmit="SignInAsync">
+    <AntiforgeryToken />
+
+    <div class="field">
+        <label for="email">Email address</label>
+        <input id="email" name="Email" type="email" autocomplete="username" required value="@Email" />
+    </div>
+
+    <div class="field">
+        <label for="password">Password</label>
+        @* The password is never written back into the page. *@
+        <input id="password" name="Password" type="password" autocomplete="current-password" required />
+    </div>
+
+    <button type="submit">Sign in</button>
+</form>
+
+<p><a href="/forgot-password">Forgot your password?</a></p>
+
+@code {
+    private bool _failed;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Email { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Password { get; set; }
+
+    // The form posts to the address of the page, so this is in the query both times.
+    [SupplyParameterFromQuery(Name = SessionAuthentication.ReturnUrlParameter)]
+    private string? ReturnUrl { get; set; }
+
+    // Only a path of this application is followed.
+    private string Destination => SessionAuthentication.LocalPathOrHome(ReturnUrl);
+
+    protected override void OnInitialized()
+    {
+        // Someone who is signed in has no use for the form.
+        if (HttpContext is { } request
+            && HttpMethods.IsGet(request.Request.Method)
+            && request.User.Identity is { IsAuthenticated: true })
+        {
+            Navigation.NavigateTo(Destination);
+        }
+    }
+
+    private async Task SignInAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        if (await SigningIn.SignInAsync(HttpContext, Email ?? string.Empty, Password ?? string.Empty))
+        {
+            Navigation.NavigateTo(Destination);
+        }
+        else
+        {
+            _failed = true;
+        }
+    }
+}

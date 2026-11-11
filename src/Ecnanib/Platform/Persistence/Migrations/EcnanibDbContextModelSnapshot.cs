@@ -46,6 +46,42 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("legal_acceptances", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Accounts.Session", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("LastActiveAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_active_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sessions");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_sessions_token_hash");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_sessions_user_id");
+
+                    b.ToTable("sessions", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Accounts.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -61,6 +97,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("email_verification_expires_at");
 
+                    b.Property<bool>("EmailVerificationSetsPassword")
+                        .HasColumnType("boolean")
+                        .HasColumnName("email_verification_sets_password");
+
                     b.Property<byte[]>("EmailVerificationTokenHash")
                         .HasColumnType("bytea")
                         .HasColumnName("email_verification_token_hash");
@@ -73,6 +113,14 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("password_hash");
+
+                    b.Property<DateTimeOffset?>("PasswordResetExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("password_reset_expires_at");
+
+                    b.Property<byte[]>("PasswordResetTokenHash")
+                        .HasColumnType("bytea")
+                        .HasColumnName("password_reset_token_hash");
 
                     b.Property<DateTimeOffset>("RegisteredAt")
                         .HasColumnType("timestamp with time zone")
@@ -88,6 +136,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.HasIndex("EmailVerificationTokenHash")
                         .IsUnique()
                         .HasDatabaseName("ix_users_email_verification_token_hash");
+
+                    b.HasIndex("PasswordResetTokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_password_reset_token_hash");
 
                     b.ToTable("users", (string)null);
                 });
@@ -347,6 +399,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_legal_acceptances_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Accounts.Session", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_sessions_users_user_id");
                 });
 #pragma warning restore 612, 618
         }

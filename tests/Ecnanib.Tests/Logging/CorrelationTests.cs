@@ -109,8 +109,8 @@ public class CorrelationTests
     [Fact]
     public async Task An_event_written_for_a_signed_in_request_carries_the_user_id()
     {
-        // Sign-in does not exist yet. The user is set the way authentication will set it: before
-        // the application's own pipeline runs.
+        // Without signing in: the user is set the way the host's own middleware can set it,
+        // before the application's pipeline runs. SessionTests covers a user who signed in.
         using var application = new LoggedApplication(
             LoggedApplication.Settings(),
             host => host

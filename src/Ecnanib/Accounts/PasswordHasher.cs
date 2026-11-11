@@ -13,6 +13,27 @@ public static class PasswordRules
 
     /// <summary>The most characters a password may have, so that hashing one has a bounded cost.</summary>
     public const int MaximumLength = 128;
+
+    /// <summary>What is wrong with a password that someone wants to set, or null when it meets the rules.</summary>
+    internal static PasswordProblem? ProblemOf(string password)
+    {
+        // In characters as a person counts them, not in the units the text is stored in.
+        var length = password.EnumerateRunes().Count();
+
+        return length switch
+        {
+            < MinimumLength => PasswordProblem.TooShort,
+            > MaximumLength => PasswordProblem.TooLong,
+            _ => null,
+        };
+    }
+}
+
+/// <summary>A rule that a new password breaks.</summary>
+internal enum PasswordProblem
+{
+    TooShort,
+    TooLong,
 }
 
 /// <summary>
