@@ -8,6 +8,8 @@ The rules below are enforced by tests in `tests/Ecnanib.Tests/Architecture`. Run
 dotnet test --solution Ecnanib.slnx
 ```
 
+The tests start the application on a PostgreSQL container of their own, so Docker must be running. See [persistence.md](persistence.md).
+
 ## Components
 
 The code is the project `src/Ecnanib`. Each logical component of SRS section 3.1 is a top-level folder and the namespace `Ecnanib.<Folder>`.
@@ -29,7 +31,7 @@ The code is the project `src/Ecnanib`. Each logical component of SRS section 3.1
 Three more areas are not SRS components:
 
 - `Shared` holds vocabulary that several components use, such as `Market` and `TradingMode`. It depends on nothing.
-- `Platform` holds the plumbing every component builds on. Today that is configuration and logging: it reads the one configuration file into typed settings, as [configuration.md](configuration.md) describes, and it sets up structured logging from that file, as [logging.md](logging.md) describes. Persistence and background work are reserved for it. It may depend only on `Shared`.
+- `Platform` holds the plumbing every component builds on. Today that is configuration, logging, and persistence: it reads the one configuration file into typed settings, as [configuration.md](configuration.md) describes, it sets up structured logging from that file, as [logging.md](logging.md) describes, and it holds the one database context and its migrations, as [persistence.md](persistence.md) describes. Background work is reserved for it. It may depend only on `Shared`.
 - `Api` holds the HTTP endpoints under `/api`. Like the Web UI, it is an entry point on top of the components.
 
 Each component has a `<Name>Module.cs` with an `Add<Name>()` method that registers its services. `Program.cs` is the composition root: it creates the host with `PlatformModule.CreateBuilder`, calls every `Add<Name>()`, and maps the API and the UI. A component that runs scheduled or background work registers a hosted service in its `Add<Name>()`, so the work runs in the same process.
@@ -75,6 +77,7 @@ Three rules keep every call to an external system inside its adapter, and in the
 
 1. Add a class that implements `IAiProviderAdapter` under `AiProviderGateway/Adapters/<Provider>`.
 2. Register it in `AddAiProviderGateway()`.
+3. Add its row to the seed data in `AiProviderGateway/AiProvider.cs` and generate a migration, as [persistence.md](persistence.md) describes.
 
 Nothing else changes. Other components call `IAiProviderGateway` and name the provider by its `AiProviderCode`. Providers are an open set of codes, not an enum, so no caller can branch over them.
 
@@ -86,10 +89,14 @@ Operations that place orders belong in the namespace `Ecnanib.ExchangeGateway.Tr
 
 Settings come from one file and reach a component as typed settings. Two rules in `ComponentRules.cs` keep it that way: only `Platform` may use `Microsoft.Extensions.Configuration`, and no code may read the process environment or the command line directly. See [configuration.md](configuration.md).
 
+## Persistence
+
+The application has one database, PostgreSQL, and reaches it through one context, `EcnanibDbContext` in `Platform`. An entity and its mapping live in the component that owns them, and the context finds every mapping by itself, so `Platform` never references a component. One rule in `ComponentRules.cs` keeps the context the only way in: only `Platform` may use the database driver, Npgsql (NFR-DAT-1, -2). See [persistence.md](persistence.md).
+
 ## Logging
 
 Components write log events through the host's `ILogger<T>` and nothing else. One rule in `ComponentRules.cs` keeps it that way: only `Platform` may use the logging library, Serilog. So every event passes the one place that masks secrets before it reaches an output (NFR-LOG-4). See [logging.md](logging.md).
 
 ## Deployment guard
 
-`DeploymentRuleTests` reads the application's package graph and fails if it contains a message broker client, a cache server client, a search server client, or a proprietary cloud SDK. The list is in [`ForbiddenInfrastructure.cs`](../tests/Ecnanib.Tests/Architecture/ForbiddenInfrastructure.cs).
+`DeploymentRuleTests` reads the application's package graph and fails if it contains a message broker client, a cache server client, a search server client, a proprietary cloud SDK, or a client for a database other than PostgreSQL (NFR-DAT-1). The list is in [`ForbiddenInfrastructure.cs`](../tests/Ecnanib.Tests/Architecture/ForbiddenInfrastructure.cs). It also fails if the graph contains a log output other than the console and the file, so no log can be written to a database (NFR-DAT-7).

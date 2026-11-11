@@ -4,5 +4,5 @@ namespace Ecnanib.Platform.Settings;
 public sealed record DatabaseSettings(Secret ConnectionString)
 {
     internal static DatabaseSettings Read(SettingsReader file) =>
-        new(file.SecretText("Database:ConnectionString"));
+        new(file.ConnectionString("Database:ConnectionString"));
 }

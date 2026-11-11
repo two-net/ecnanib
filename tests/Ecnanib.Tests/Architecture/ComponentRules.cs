@@ -103,6 +103,11 @@ internal static class ComponentRules
             // event can reach an output without passing the one place that masks secrets
             // (NFR-LOG-4).
             ["Serilog"] = Only(Platform),
+
+            // The database driver. Every other area reaches the database through the context
+            // the platform registers, so there is one connection to one database, with one
+            // model and one set of migrations (NFR-DAT-1, NFR-DAT-2).
+            ["Npgsql"] = Only(Platform),
         },
 
         // Methods that no code may call.

@@ -15,6 +15,22 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- PostgreSQL through Entity Framework Core. See docs/persistence.md. -->
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+
+    <!-- Only the dotnet-ef tool uses this package, to generate migrations. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+
+    <!-- Named here so that the tests, which reference this project, run on the same version of
+         Entity Framework Core as the application. The provider alone asks for an earlier one. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.15" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Serilog" Version="4.4.0" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />

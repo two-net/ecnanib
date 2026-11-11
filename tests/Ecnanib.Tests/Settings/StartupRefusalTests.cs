@@ -73,7 +73,8 @@ public class StartupRefusalTests
     [Fact]
     public void The_test_host_does_not_start_either()
     {
-        using var contentRoot = new SettingsDirectory(SettingsJson.Valid().With("Email:Port", 0));
+        // On a database it could migrate, so that only the file is in its way.
+        using var contentRoot = new SettingsDirectory(SettingsJson.Valid().OnTestServer().With("Email:Port", 0));
         using var application = new EcnanibApplicationFactory(contentRoot);
 
         Assert.ThrowsAny<Exception>(() => application.Services.GetRequiredService<IServiceProvider>());

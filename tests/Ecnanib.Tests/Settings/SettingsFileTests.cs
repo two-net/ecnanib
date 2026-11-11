@@ -100,6 +100,11 @@ public class SettingsFileTests
         { "Database:ConnectionString", "null", "Database:ConnectionString" },
         { "Email", "null", "Email" },
 
+        // Forms.
+        { "Database:ConnectionString", "\"db.example\"", "Database:ConnectionString" },
+        { "Database:ConnectionString", "\"Host=db.example;Port=five\"", "Database:ConnectionString" },
+        { "Database:ConnectionString", "\"Host=db.example;Passwrod=database-password\"", "Database:ConnectionString" },
+
         // Types.
         { "Email:Port", "\"2525\"", "Email:Port" },
         { "Email:Port", "25.5", "Email:Port" },
@@ -222,6 +227,19 @@ public class SettingsFileTests
         Assert.True(invalid.Problems.Count > 10, "The markers were expected to break many keys.");
         Assert.DoesNotContain(Marker, invalid.Message);
         Assert.DoesNotContain(Marker, invalid.ToString());
+    }
+
+    [Fact]
+    public void A_connection_string_that_cannot_be_read_is_reported_without_a_piece_of_it()
+    {
+        // A password with a semicolon in it, unquoted: what follows reads as a keyword of its own.
+        var invalid = Assert.Throws<InvalidSettingsException>(() => Load(SettingsJson.Valid()
+            .With("Database:ConnectionString", $"Host=db.example;Password=first;{Marker}=rest")));
+
+        Assert.Equal(
+            [new SettingsProblem("Database:ConnectionString", "must be a PostgreSQL connection string")],
+            invalid.Problems);
+        Assert.DoesNotContain(Marker, invalid.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

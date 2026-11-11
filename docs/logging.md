@@ -12,7 +12,8 @@ Logs are not the audit trail. The audit trail is stored in the database and is a
 "Logging": {
   "MinimumLevel": "Information",
   "Overrides": {
-    "Microsoft.AspNetCore": "Warning"
+    "Microsoft.AspNetCore": "Warning",
+    "Microsoft.EntityFrameworkCore": "Warning"
   },
   "Outputs": {
     "Console": {},
@@ -145,7 +146,7 @@ An error that nothing handles is logged once, at the `Error` level, with its sta
 |---|---|
 | A request under `/api` | Status 500 and problem JSON with `referenceId`. |
 | Any other request | Status 500 and the page `/Error`, which shows the reference. |
-| Starting or running the host | Nothing to show. The error is logged as `Critical` and the process exits with code 1. |
+| Starting or running the host | Nothing to show. The error is logged as `Critical` and the process exits with code 1. A database that cannot be migrated is such an error: see [persistence.md](persistence.md). |
 
 To find an error a user reports, search the log file for the reference. The event's `RequestId` leads to everything else the request logged.
 

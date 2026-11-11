@@ -10,6 +10,7 @@ using Ecnanib.Experience;
 using Ecnanib.Notifications;
 using Ecnanib.Platform;
 using Ecnanib.Platform.Logging;
+using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Settings;
 using Ecnanib.RiskGuard;
 using Ecnanib.WebUi;
@@ -31,7 +32,8 @@ public class Program
     /// Runs the application until it is stopped. When the configuration file is missing or
     /// invalid it does not start: it writes which keys are wrong to <paramref name="errors"/>,
     /// without their values, and returns a non-zero exit code (NFR-CFG-4). It also returns a
-    /// non-zero exit code when an error stops the application, after logging it (NFR-LOG-6).
+    /// non-zero exit code when an error stops the application, after logging it (NFR-LOG-6). A
+    /// database that cannot be migrated is such an error: the application does not start (NFR-DAT-3).
     /// </summary>
     public static int Run(string[] args, TextWriter errors)
     {
@@ -98,6 +100,10 @@ public class Program
         // while the log outputs are still open.
         try
         {
+            // Pending migrations are applied first. Requests are served and scheduled work is
+            // started only by app.Start(), so neither can meet a database that is behind.
+            app.MigrateDatabase();
+
             app.Start();
             app.WaitForShutdown();
 

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Ecnanib.Tests.Persistence;
 
 namespace Ecnanib.Tests.Settings;
 
@@ -94,6 +95,15 @@ internal sealed class SettingsJson
         .With("Security:MasterKeys:k2", MasterKey);
 
     public static SettingsJson Parse(string json) => new(JsonNode.Parse(json)!.AsObject());
+
+    /// <summary>
+    /// Points the file at the shared database of the test server, for a test that starts the
+    /// application: starting it migrates the database, so the database must be there.
+    /// </summary>
+    public SettingsJson OnTestServer() => OnDatabase(PostgresServer.SharedDatabase);
+
+    /// <summary>Points the file at a database of the test's own.</summary>
+    public SettingsJson OnDatabase(TestDatabase database) => With("Database:ConnectionString", database.ConnectionString);
 
     /// <summary>Sets a key, adding it when it is not there.</summary>
     public SettingsJson With(string key, JsonNode? value)

@@ -21,6 +21,8 @@ chmod 600 src/Ecnanib/appsettings.json
 
 Git checks the file out readable by other accounts, and the application refuses that (see Permissions). The command is needed once.
 
+The file names a local database, which the application migrates when it starts. Start it with `docker compose up -d`. See [persistence.md](persistence.md).
+
 ### For a deployment
 
 Put a copy of the tracked file in the folder the application runs from and replace its development values:

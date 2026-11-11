@@ -64,13 +64,14 @@ public class DependencyRuleTests
     }
 
     [Fact]
-    public void Configuration_and_the_logging_library_are_used_only_by_the_platform()
+    public void Configuration_the_logging_library_and_the_database_driver_are_used_only_by_the_platform()
     {
         AssertNone(
             Checker.FindReservedNamespaceViolations(Application),
             "A namespace reserved for Platform is used outside it. Take the typed settings instead " +
-            "of the host's configuration (docs/configuration.md), and write log events through " +
-            "ILogger instead of the logging library (docs/logging.md).");
+            "of the host's configuration (docs/configuration.md), write log events through " +
+            "ILogger instead of the logging library (docs/logging.md), and reach the database " +
+            "through EcnanibDbContext instead of the driver (docs/persistence.md).");
     }
 
     [Fact]

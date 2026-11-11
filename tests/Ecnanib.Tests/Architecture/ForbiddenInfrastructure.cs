@@ -3,7 +3,7 @@ namespace Ecnanib.Tests.Architecture;
 /// <summary>
 /// Packages the application must never ship, because each one means a second thing to deploy or
 /// a proprietary cloud service: the application is one process plus PostgreSQL and runs anywhere
-/// those two run (NFR-ARC-1, NFR-ARC-2, NFR-ARC-5).
+/// those two run (NFR-ARC-1, NFR-ARC-2, NFR-ARC-5). PostgreSQL is its only data store (NFR-DAT-1).
 /// </summary>
 internal static class ForbiddenInfrastructure
 {
@@ -35,6 +35,28 @@ internal static class ForbiddenInfrastructure
         ("SolrNet", "search server"),
         ("Typesense", "search server"),
         ("Algolia", "search server"),
+
+        ("Microsoft.EntityFrameworkCore.SqlServer", "another database"),
+        ("Microsoft.EntityFrameworkCore.Sqlite", "another database"),
+        ("Microsoft.EntityFrameworkCore.InMemory", "another database"),
+        ("Microsoft.EntityFrameworkCore.Cosmos", "another database"),
+        ("Microsoft.Data.SqlClient", "another database"),
+        ("System.Data.SqlClient", "another database"),
+        ("Microsoft.Data.Sqlite", "another database"),
+        ("System.Data.SQLite", "another database"),
+        ("SQLitePCLRaw", "another database"),
+        ("MySql", "another database"),
+        ("MySqlConnector", "another database"),
+        ("Pomelo.EntityFrameworkCore.MySql", "another database"),
+        ("Oracle", "another database"),
+        ("MongoDB", "another database"),
+        ("LiteDB", "another database"),
+        ("RavenDB", "another database"),
+        ("CassandraCSharpDriver", "another database"),
+        ("CouchbaseNetClient", "another database"),
+        ("InfluxDB", "another database"),
+        ("ClickHouse", "another database"),
+        ("Neo4j", "another database"),
 
         ("Azure", "proprietary cloud service"),
         ("Microsoft.Azure", "proprietary cloud service"),

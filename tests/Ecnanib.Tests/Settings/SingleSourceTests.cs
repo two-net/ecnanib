@@ -20,7 +20,7 @@ public sealed class SingleSourceTests : IDisposable
     private const int FromTheFile = 7;
     private const string FromElsewhere = "999";
 
-    private readonly SettingsDirectory _contentRoot = new(SettingsJson.Valid().With(Key, FromTheFile));
+    private readonly SettingsDirectory _contentRoot = new(SettingsJson.Valid().OnTestServer().With(Key, FromTheFile));
 
     public void Dispose() => _contentRoot.Dispose();
 

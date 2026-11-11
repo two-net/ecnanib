@@ -1,0 +1,21 @@
+# The database for development on one machine: the server, database, user, and password that
+# Database:ConnectionString in src/Ecnanib/appsettings.json names. See docs/persistence.md.
+#
+#   docker compose up -d
+#
+# It is not part of a deployment, and the tests do not use it.
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ecnanib
+      POSTGRES_USER: ecnanib
+      POSTGRES_PASSWORD: ecnanib
+    ports:
+      # This machine only. The password is in source control.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ecnanib-db:/var/lib/postgresql
+
+volumes:
+  ecnanib-db:

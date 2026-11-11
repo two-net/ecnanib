@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,13 +13,17 @@ namespace Ecnanib.Tests.Logging;
 /// it wrote to its log file. Tests read the file because it is a real output: what is in it got
 /// through everything the application does to an event.
 /// </summary>
+/// <remarks>
+/// The file is pointed at the test server: at its shared database, or at a database of the
+/// test's own when the test is about the database.
+/// </remarks>
 internal sealed class LoggedApplication : IDisposable
 {
     private readonly EcnanibApplicationFactory _application;
 
-    public LoggedApplication(SettingsJson settings, Action<IWebHostBuilder>? configure = null)
+    public LoggedApplication(SettingsJson settings, Action<IWebHostBuilder>? configure = null, TestDatabase? database = null)
     {
-        ContentRoot = new SettingsDirectory(settings);
+        ContentRoot = new SettingsDirectory(settings.OnDatabase(database ?? PostgresServer.SharedDatabase));
         _application = new EcnanibApplicationFactory(ContentRoot, configure);
     }
 

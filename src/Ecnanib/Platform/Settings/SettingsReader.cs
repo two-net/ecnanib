@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using Npgsql;
 
 namespace Ecnanib.Platform.Settings;
 
@@ -85,6 +86,29 @@ internal sealed class SettingsReader
     public Secret SecretText(string key) => new(Text(key));
 
     public Secret? OptionalSecret(string key) => OptionalText(key) is { } text ? new Secret(text) : null;
+
+    /// <summary>The connection to the PostgreSQL database, in the form the database driver reads.</summary>
+    public Secret ConnectionString(string key)
+    {
+        var text = Text(key);
+        if (text.Length == 0)
+        {
+            return new Secret(string.Empty);
+        }
+
+        try
+        {
+            _ = new NpgsqlConnectionStringBuilder(text);
+        }
+        catch (Exception)
+        {
+            // Whatever the driver objects to. Its own message can quote a piece of the text,
+            // which holds the password, so it is not passed on.
+            Problem(key, "must be a PostgreSQL connection string");
+        }
+
+        return new Secret(text);
+    }
 
     /// <summary>A master encryption key: 32 random bytes in Base64, which is 256 bits (FR-KEY-6).</summary>
     public Secret MasterKey(string key)
