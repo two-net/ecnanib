@@ -56,7 +56,7 @@ public sealed partial class SecretMask
 
         IEnumerable<Secret?> secrets =
         [
-            settings.Database.ConnectionString,
+            settings.ConnectionStrings.EcnanibDbContext,
             .. settings.Security.MasterKeys.Values,
             settings.Email.Password,
             .. settings.AiProviders.ByCode.Values.Select(provider => provider.CatalogKey),

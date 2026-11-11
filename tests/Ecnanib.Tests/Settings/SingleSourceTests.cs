@@ -1,5 +1,6 @@
 using Ecnanib.Platform;
 using Ecnanib.Platform.Settings;
+using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Memory;
@@ -42,6 +43,22 @@ public sealed class SingleSourceTests : IDisposable
         using var application = new EcnanibApplicationFactory(_contentRoot);
 
         AssertOnlyTheFileCounts(application);
+    }
+
+    [Theory]
+    [InlineData("ConnectionStrings__EcnanibDbContext")]
+    [InlineData("ASPNETCORE_ConnectionStrings__EcnanibDbContext")]
+    [InlineData("CUSTOMCONNSTR_EcnanibDbContext")]
+    public void A_connection_string_in_an_environment_variable_has_no_effect(string name)
+    {
+        // The section is the one a .NET host fills from such variables, and a hosting platform sets them.
+        using var variable = new EnvironmentVariable(name, "Host=elsewhere.example;Database=elsewhere");
+        using var application = new EcnanibApplicationFactory(_contentRoot);
+
+        Assert.Equal(
+            PostgresServer.SharedDatabase.ConnectionString,
+            application.Services.GetRequiredService<ConnectionStringsSettings>().EcnanibDbContext.Reveal());
+        Assert.Null(application.Services.GetRequiredService<IConfiguration>().GetConnectionString("EcnanibDbContext"));
     }
 
     [Fact]
@@ -95,7 +112,7 @@ public sealed class SingleSourceTests : IDisposable
 
         // Not even the configuration file itself: settings are typed, and secrets stay out of here.
         Assert.Null(builder.Configuration[Key]);
-        Assert.Null(builder.Configuration["Database:ConnectionString"]);
+        Assert.Null(builder.Configuration.GetConnectionString("EcnanibDbContext"));
 
         // The host switches were taken before the sources were removed.
         Assert.Equal("Staging", builder.Environment.EnvironmentName);

@@ -40,7 +40,7 @@ public static class PlatformModule
         builder.Services
             .AddSingleton(settings)
             .AddSingleton(settings.Application)
-            .AddSingleton(settings.Database)
+            .AddSingleton(settings.ConnectionStrings)
             .AddSingleton(settings.Security)
             .AddSingleton(settings.Logging)
             .AddSingleton(settings.Email)

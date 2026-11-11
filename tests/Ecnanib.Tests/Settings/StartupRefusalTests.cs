@@ -14,7 +14,7 @@ public class StartupRefusalTests
     public void An_invalid_file_stops_the_application_and_the_wrong_keys_are_reported_without_values()
     {
         using var contentRoot = new SettingsDirectory(SettingsJson.Valid()
-            .With("Database:ConnectionString", $"Host=db.example;Password={Marker}")
+            .With("ConnectionStrings:EcnanibDbContext", $"Host=db.example;Password={Marker}")
             .With("Security:MasterKeys:k1", $"{Marker}-that-is-not-a-key")
             .With("Email:Password", $"<{Marker}>")
             .With("Email:Port", 0)

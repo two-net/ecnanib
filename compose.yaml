@@ -1,5 +1,5 @@
 # The database for development on one machine: the server, database, user, and password that
-# Database:ConnectionString in src/Ecnanib/appsettings.json names. See docs/persistence.md.
+# ConnectionStrings:EcnanibDbContext in src/Ecnanib/appsettings.json names. See docs/persistence.md.
 #
 #   docker compose up -d
 #

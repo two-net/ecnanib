@@ -127,7 +127,7 @@ public class MaskingTests
 
         var secrets = new[]
         {
-            settings.Database.ConnectionString.Reveal(),
+            settings.ConnectionStrings.EcnanibDbContext.Reveal(),
             settings.Security.MasterKeys["k1"].Reveal(),
             settings.Security.MasterKeys["k2"].Reveal(),
             settings.Email.Password!.Reveal(),

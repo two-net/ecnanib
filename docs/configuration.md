@@ -86,6 +86,8 @@ Settings never enter the host's `IConfiguration`. They are read from the file in
 
 A platform variable cannot carry a section that belongs to the configuration file. `ASPNETCORE_Logging__LogLevel__Default`, for example, is dropped: the host's logger reads the host's configuration, so without this rule the variable would reach the log levels. Sections of the platform's own, such as `Kestrel`, are untouched.
 
+The connection string is in `ConnectionStrings`, under the name of the database context, where a .NET application keeps it. Other .NET applications also take that section from variables such as `ConnectionStrings__EcnanibDbContext`. Here such a variable has no effect, like any other: the connection string comes from the file.
+
 ## Using a setting
 
 A component takes the section it needs as a constructor parameter:

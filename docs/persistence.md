@@ -9,12 +9,12 @@ The object-relational mapper is Entity Framework Core with the Npgsql provider. 
 | Where | Database |
 |---|---|
 | Development | `docker compose up -d` starts PostgreSQL 18 with the database, user, and password that the tracked configuration file names. |
-| A deployment | An empty database and a role that owns it, named in `Database:ConnectionString` of the deployment's configuration file. See [configuration.md](configuration.md). |
+| A deployment | An empty database and a role that owns it, named in `ConnectionStrings:EcnanibDbContext` of the deployment's configuration file. See [configuration.md](configuration.md). |
 | Tests | A PostgreSQL container that the tests start themselves, and that is removed when the run ends. They need Docker running, and nothing else. |
 
 The application does not create the database, so its role needs no right to. It creates and changes the tables inside it.
 
-`Database:ConnectionString` is checked with the rest of the configuration file: a value that is not a PostgreSQL connection string is reported there, by its key.
+`ConnectionStrings:EcnanibDbContext` is the standard place of a .NET application's connection string, named after the context. It is checked with the rest of the configuration file: a value that is not a PostgreSQL connection string is reported there, by its key.
 
 ## At startup
 

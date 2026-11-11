@@ -25,7 +25,7 @@ public class SettingsFileTests
 
         Assert.Equal(
             "Host=db.example;Database=ecnanib;Username=app;Password=database-password",
-            settings.Database.ConnectionString.Reveal());
+            settings.ConnectionStrings.EcnanibDbContext.Reveal());
 
         Assert.Equal("k2", settings.Security.ActiveKeyId);
         Assert.Equal(["k1", "k2"], settings.Security.MasterKeys.Keys.Order());
@@ -96,14 +96,14 @@ public class SettingsFileTests
     public static TheoryData<string, string, string> WrongValues => new()
     {
         // Required keys.
-        { "Database:ConnectionString", "\"\"", "Database:ConnectionString" },
-        { "Database:ConnectionString", "null", "Database:ConnectionString" },
+        { "ConnectionStrings:EcnanibDbContext", "\"\"", "ConnectionStrings:EcnanibDbContext" },
+        { "ConnectionStrings:EcnanibDbContext", "null", "ConnectionStrings:EcnanibDbContext" },
         { "Email", "null", "Email" },
 
         // Forms.
-        { "Database:ConnectionString", "\"db.example\"", "Database:ConnectionString" },
-        { "Database:ConnectionString", "\"Host=db.example;Port=five\"", "Database:ConnectionString" },
-        { "Database:ConnectionString", "\"Host=db.example;Passwrod=database-password\"", "Database:ConnectionString" },
+        { "ConnectionStrings:EcnanibDbContext", "\"db.example\"", "ConnectionStrings:EcnanibDbContext" },
+        { "ConnectionStrings:EcnanibDbContext", "\"Host=db.example;Port=five\"", "ConnectionStrings:EcnanibDbContext" },
+        { "ConnectionStrings:EcnanibDbContext", "\"Host=db.example;Passwrod=database-password\"", "ConnectionStrings:EcnanibDbContext" },
 
         // Types.
         { "Email:Port", "\"2525\"", "Email:Port" },
@@ -201,13 +201,13 @@ public class SettingsFileTests
     public void Every_wrong_key_is_reported_not_only_the_first()
     {
         var invalid = Assert.Throws<InvalidSettingsException>(() => Load(SettingsJson.Valid()
-            .Without("Database:ConnectionString")
+            .Without("ConnectionStrings:EcnanibDbContext")
             .With("Email:Port", 0)
             .With("Security:MasterKeys:k2", "c2hvcnQ=")
             .With("Limits:MaxAgents", 3)));
 
         Assert.Equal(
-            ["Database:ConnectionString", "Security:MasterKeys:k2", "Email:Port", "Limits:MaxAgents"],
+            ["ConnectionStrings:EcnanibDbContext", "Security:MasterKeys:k2", "Email:Port", "Limits:MaxAgents"],
             invalid.Problems.Select(problem => problem.Key));
 
         foreach (var problem in invalid.Problems)
@@ -234,10 +234,10 @@ public class SettingsFileTests
     {
         // A password with a semicolon in it, unquoted: what follows reads as a keyword of its own.
         var invalid = Assert.Throws<InvalidSettingsException>(() => Load(SettingsJson.Valid()
-            .With("Database:ConnectionString", $"Host=db.example;Password=first;{Marker}=rest")));
+            .With("ConnectionStrings:EcnanibDbContext", $"Host=db.example;Password=first;{Marker}=rest")));
 
         Assert.Equal(
-            [new SettingsProblem("Database:ConnectionString", "must be a PostgreSQL connection string")],
+            [new SettingsProblem("ConnectionStrings:EcnanibDbContext", "must be a PostgreSQL connection string")],
             invalid.Problems);
         Assert.DoesNotContain(Marker, invalid.ToString(), StringComparison.OrdinalIgnoreCase);
     }
@@ -248,9 +248,9 @@ public class SettingsFileTests
         var settings = Load(SettingsJson.Valid());
 
         var printed = string.Join(
-            Environment.NewLine, settings, settings.Database, settings.Security, settings.Email, settings.AiProviders);
+            Environment.NewLine, settings, settings.ConnectionStrings, settings.Security, settings.Email, settings.AiProviders);
 
-        Assert.Contains("ConnectionString = ***", printed);
+        Assert.Contains("EcnanibDbContext = ***", printed);
         Assert.DoesNotContain("database-password", printed);
         Assert.DoesNotContain("email-password", printed);
         Assert.DoesNotContain("claude-catalog-key", printed);

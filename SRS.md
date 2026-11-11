@@ -627,7 +627,7 @@ The outline below shows what the single configuration file contains. Key names a
 ```json
 {
   "Application": { "Name": "Ecnanib", "PublicUrl": "", "RegistrationOpen": true, "Operators": [] },
-  "Database": { "ConnectionString": "" },
+  "ConnectionStrings": { "EcnanibDbContext": "" },
   "Security": { "ActiveKeyId": "", "MasterKeys": {}, "SessionIdleMinutes": 60 },
   "Logging": {
     "MinimumLevel": "Information",

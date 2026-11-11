@@ -21,7 +21,7 @@ internal static class PersistenceRegistration
     {
         // One pool of connections for the application, closed when the host is disposed.
         services.AddSingleton(provider =>
-            NpgsqlDataSource.Create(provider.GetRequiredService<DatabaseSettings>().ConnectionString.Reveal()));
+            NpgsqlDataSource.Create(provider.GetRequiredService<ConnectionStringsSettings>().EcnanibDbContext.Reveal()));
 
         services.AddDbContextFactory<EcnanibDbContext>((provider, options) =>
             options.UseNpgsql(provider.GetRequiredService<NpgsqlDataSource>()));

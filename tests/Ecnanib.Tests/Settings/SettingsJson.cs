@@ -32,7 +32,7 @@ internal sealed class SettingsJson
             "RegistrationOpen": false,
             "Operators": [ "operator@ecnanib.example" ]
           },
-          "Database": { "ConnectionString": "Host=db.example;Database=ecnanib;Username=app;Password=database-password" },
+          "ConnectionStrings": { "EcnanibDbContext": "Host=db.example;Database=ecnanib;Username=app;Password=database-password" },
           "Security": {
             "ActiveKeyId": "k2",
             "MasterKeys": { "k1": "", "k2": "" },
@@ -103,7 +103,7 @@ internal sealed class SettingsJson
     public SettingsJson OnTestServer() => OnDatabase(PostgresServer.SharedDatabase);
 
     /// <summary>Points the file at a database of the test's own.</summary>
-    public SettingsJson OnDatabase(TestDatabase database) => With("Database:ConnectionString", database.ConnectionString);
+    public SettingsJson OnDatabase(TestDatabase database) => With("ConnectionStrings:EcnanibDbContext", database.ConnectionString);
 
     /// <summary>Sets a key, adding it when it is not there.</summary>
     public SettingsJson With(string key, JsonNode? value)

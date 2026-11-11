@@ -10,7 +10,7 @@ namespace Ecnanib.Platform.Settings;
 /// </summary>
 public sealed record EcnanibSettings(
     ApplicationSettings Application,
-    DatabaseSettings Database,
+    ConnectionStringsSettings ConnectionStrings,
     SecuritySettings Security,
     LoggingSettings Logging,
     EmailSettings Email,
@@ -31,7 +31,7 @@ public sealed record EcnanibSettings(
     internal static EcnanibSettings Read(SettingsReader file)
     {
         var application = ApplicationSettings.Read(file);
-        var database = DatabaseSettings.Read(file);
+        var connectionStrings = ConnectionStringsSettings.Read(file);
         var security = SecuritySettings.Read(file);
         var logging = LoggingSettings.Read(file);
         var email = EmailSettings.Read(file);
@@ -44,7 +44,7 @@ public sealed record EcnanibSettings(
         var limits = LimitsSettings.Read(file);
 
         return new EcnanibSettings(
-            application, database, security, logging, email, aiProviders, catalogSync, binance, trading,
+            application, connectionStrings, security, logging, email, aiProviders, catalogSync, binance, trading,
             experience, retention, limits);
     }
 }

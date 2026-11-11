@@ -70,7 +70,7 @@ public class LogLevelReloadTests
             SettingsJson.Valid()
                 .With("Logging:MinimumLevel", "Information")
                 .With("Email:Port", 0)
-                .With("Database:ConnectionString", $"<{Marker}>"),
+                .With("ConnectionStrings:EcnanibDbContext", $"<{Marker}>"),
             until: () => application.Events().Any(written => written.Has("Problems")));
 
         Assert.False(logger.IsEnabled(LogLevel.Information));
@@ -78,7 +78,7 @@ public class LogLevelReloadTests
         var reported = application.Events().First(written => written.Has("Problems"));
         Assert.Equal("Warning", reported.Level);
         Assert.Equal(
-            ["Database:ConnectionString: still holds a placeholder", "Email:Port: must be a whole number from 1 to 65535"],
+            ["ConnectionStrings:EcnanibDbContext: still holds a placeholder", "Email:Port: must be a whole number from 1 to 65535"],
             reported["Problems"].EnumerateArray().Select(problem => problem.GetString()));
         Assert.DoesNotContain(Marker, application.LogText());
 

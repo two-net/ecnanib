@@ -88,7 +88,7 @@ public class MigrationFailureTests
     public void The_test_host_does_not_start_either_and_says_why()
     {
         using var contentRoot = new SettingsDirectory(SettingsJson.Valid()
-            .With("Database:ConnectionString", $"Host=127.0.0.1;Port=1;Database=ecnanib;Username=app;Password={Marker}"));
+            .With("ConnectionStrings:EcnanibDbContext", $"Host=127.0.0.1;Port=1;Database=ecnanib;Username=app;Password={Marker}"));
         using var application = new EcnanibApplicationFactory(contentRoot);
 
         var refused = Assert.ThrowsAny<Exception>(() => application.Services.GetRequiredService<IServiceProvider>());
@@ -134,7 +134,7 @@ public class MigrationFailureTests
     private static (int ExitCode, IReadOnlyList<LoggedEvent> Events, string Log) Run(string connectionString)
     {
         using var contentRoot = new SettingsDirectory(SettingsJson.Valid()
-            .With("Database:ConnectionString", connectionString)
+            .With("ConnectionStrings:EcnanibDbContext", connectionString)
             .With("Logging:MinimumLevel", "Information")
             .Without("Logging:Outputs:Console"));
         using var errors = new StringWriter();
