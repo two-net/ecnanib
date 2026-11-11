@@ -1,6 +1,6 @@
 # Configuration
 
-Every application setting, secrets included, comes from one file: `appsettings.json` in the content root. The application reads its settings from nowhere else, and it refuses to start when the file is invalid (NFR-CFG-1 to -6).
+Every application setting, secrets included, comes from one file: `appsettings.json` in the content root. The application reads its settings from nowhere else, and it refuses to start when the file is invalid (NFR-CFG-1 to -7).
 
 The rules below are enforced by tests in `tests/Ecnanib.Tests/Settings` and `tests/Ecnanib.Tests/Architecture`.
 
@@ -8,21 +8,29 @@ The rules below are enforced by tests in `tests/Ecnanib.Tests/Settings` and `tes
 
 | File | In source control | Purpose |
 |---|---|---|
-| `src/Ecnanib/appsettings.template.json` | Yes | Every key, with the defaults from the specification and a `<placeholder>` wherever a deployment supplies its own value. |
-| `appsettings.json` | No | The real file. It holds the database password and the master encryption keys. |
+| `src/Ecnanib/appsettings.json` | Yes | Every key, with the defaults from the specification and values for development on one machine: a local database, a local mail server, and a master key that protects nothing real. |
+| `appsettings.json` of a deployment | No | The same keys with the deployment's own values. It holds the real database password and master encryption keys. |
 
-The real file is git-ignored, and the build never copies it to `bin/` or into a published application. The template is published next to the application.
+The build never copies the tracked file to `bin/` or into a published application, so its development values cannot reach a deployment by accident.
 
-### Creating it
+### After cloning
 
 ```
-cd src/Ecnanib
-cp appsettings.template.json appsettings.json
+chmod 600 src/Ecnanib/appsettings.json
+```
+
+Git checks the file out readable by other accounts, and the application refuses that (see Permissions). The command is needed once.
+
+### For a deployment
+
+Put a copy of the tracked file in the folder the application runs from and replace its development values:
+
+```
 chmod 600 appsettings.json
 openssl rand -base64 32
 ```
 
-Replace each `<placeholder>`. The last command prints a master key for `Security:MasterKeys`. In a deployment the file sits in the folder the application runs from.
+The last command prints a master key for `Security:MasterKeys`. Never deploy the tracked master key.
 
 ### Permissions
 
@@ -44,12 +52,18 @@ The configuration file /srv/ecnanib/appsettings.json is invalid:
 
 A report names keys and rules. It never prints a value, secret or not.
 
-- **Every key is required**, except `Email:User` and `Email:Password`, each provider's `CatalogKey`, and the two entries of `Logging:Outputs`. Lists may be empty unless a rule says otherwise. There are no defaults in code: the defaults are the values in the template.
+- **Every key is required**, except `Email:User` and `Email:Password`, each provider's `CatalogKey`, and the two entries of `Logging:Outputs`. Lists may be empty unless a rule says otherwise. There are no defaults in code: the defaults are the values in the tracked file.
 - **Unknown keys are errors.** A misspelled key is reported instead of ignored. This also keeps user preferences, agent settings, and runtime flags such as the global halt out of the file. They belong in the database (NFR-CFG-6).
 - **Types are those of JSON.** A number is written as a number, not as text.
-- **A placeholder is an error.** A value still in the form `<...>` has not been filled in.
+- **A placeholder is an error.** A value in the form `<...>` has not been filled in.
 - As in any appsettings file, keys ignore letter case, and comments and trailing commas are allowed.
-- A change to the file takes effect at the next start.
+- A change to the file takes effect at the next start, except for log levels.
+
+## Changes while the application runs
+
+`Logging:MinimumLevel` and `Logging:Overrides` take effect within a few seconds of saving the file, with no restart (NFR-CFG-7). The application logs the levels now in force. Every other key, the log outputs included, is read at the next start.
+
+The whole file is validated again when it changes. If it is invalid, the levels stay as they were, and the application logs a warning that names the wrong keys and rules, never a value. The next valid save applies. See [logging.md](logging.md).
 
 The rules for each key are next to its section in `src/Ecnanib/Platform/Settings`.
 
@@ -68,7 +82,7 @@ What the runtime platform defines for itself keeps its default behavior (NFR-CFG
 
 Settings never enter the host's `IConfiguration`. They are read from the file into `EcnanibSettings`, so nothing in the host's configuration can override them, and a dump of that configuration holds no secret.
 
-A platform variable cannot carry a section that belongs to the configuration file. `ASPNETCORE_Logging__LogLevel__Default`, for example, is dropped: the built-in logger reads the host's configuration, so without this rule the variable would set log levels. Sections of the platform's own, such as `Kestrel`, are untouched.
+A platform variable cannot carry a section that belongs to the configuration file. `ASPNETCORE_Logging__LogLevel__Default`, for example, is dropped: the host's logger reads the host's configuration, so without this rule the variable would reach the log levels. Sections of the platform's own, such as `Kestrel`, are untouched.
 
 ## Using a setting
 
@@ -91,7 +105,7 @@ Secrets are of type `Secret`, which prints as `***`. Call `Reveal()` at the poin
 ## Adding a setting
 
 1. Add it to the section's record in `src/Ecnanib/Platform/Settings` and read it in that record's `Read` method, with its rule.
-2. Add it to `appsettings.template.json` with its default, or a placeholder if each deployment supplies it.
-3. Add it to your own `appsettings.json`.
+2. Add it to `src/Ecnanib/appsettings.json` with its default, or a value for development if each deployment supplies its own.
+3. Add it to the file of each deployment.
 
-`TemplateTests` fails when the template and the records disagree.
+`TrackedFileTests` fails when the tracked file and the records disagree.

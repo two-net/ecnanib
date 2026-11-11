@@ -19,6 +19,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The tracked configuration file, for TrackedFileTests. It gets another name here so that
+         no host started by a test can pick it up. -->
+    <None Include="..\..\src\Ecnanib\appsettings.json" Link="appsettings.tracked.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

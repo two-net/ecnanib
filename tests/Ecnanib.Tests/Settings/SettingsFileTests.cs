@@ -145,6 +145,7 @@ public class SettingsFileTests
         { "Application:Operators", "[\"a@ecnanib.example\", \"A@ecnanib.example\"]", "Application:Operators" },
         { "Logging:MinimumLevel", "\"Loud\"", "Logging:MinimumLevel" },
         { "Logging:Overrides", "{ \"Ecnanib\": \"Loud\" }", "Logging:Overrides:Ecnanib" },
+        { "Logging:Overrides", "{ \"Ecnanib.*.Adapters.*\": \"Debug\" }", "Logging:Overrides:Ecnanib.*.Adapters.*" },
         { "Logging:Outputs:File:Rolling", "\"Hour\"", "Logging:Outputs:File:Rolling" },
         { "AiProviders", "{}", "AiProviders" },
         { "AiProviders:Claude:BaseUrl", "\"\"", "AiProviders:Claude:BaseUrl" },
@@ -304,7 +305,7 @@ public class SettingsFileTests
         var problem = Assert.Single(invalid.Problems);
         Assert.Null(problem.Key);
         Assert.Contains("does not exist", problem.Rule);
-        Assert.Contains(SettingsFile.TemplateName, problem.Rule);
+        Assert.Contains($"Put {SettingsFile.Name} in this folder", problem.Rule);
         Assert.Contains(directory.SettingsPath, invalid.Message);
     }
 

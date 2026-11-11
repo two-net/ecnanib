@@ -29,7 +29,7 @@ The code is the project `src/Ecnanib`. Each logical component of SRS section 3.1
 Three more areas are not SRS components:
 
 - `Shared` holds vocabulary that several components use, such as `Market` and `TradingMode`. It depends on nothing.
-- `Platform` holds the plumbing every component builds on. Today that is configuration: it reads the one configuration file into typed settings, as [configuration.md](configuration.md) describes. Persistence, logging, and background work are reserved for it. It may depend only on `Shared`.
+- `Platform` holds the plumbing every component builds on. Today that is configuration and logging: it reads the one configuration file into typed settings, as [configuration.md](configuration.md) describes, and it sets up structured logging from that file, as [logging.md](logging.md) describes. Persistence and background work are reserved for it. It may depend only on `Shared`.
 - `Api` holds the HTTP endpoints under `/api`. Like the Web UI, it is an entry point on top of the components.
 
 Each component has a `<Name>Module.cs` with an `Add<Name>()` method that registers its services. `Program.cs` is the composition root: it creates the host with `PlatformModule.CreateBuilder`, calls every `Add<Name>()`, and maps the API and the UI. A component that runs scheduled or background work registers a hosted service in its `Add<Name>()`, so the work runs in the same process.
@@ -65,10 +65,11 @@ Each external system sits behind an adapter with a common interface.
 | Binance | `IExchangeAdapter` | `ExchangeGateway/Adapters/Binance` |
 | Email delivery | `IEmailAdapter` | `Notifications/Adapters/<Service>` |
 
-Two rules keep every call to an external system inside its adapter:
+Three rules keep every call to an external system inside its adapter, and in the log:
 
 - A component's `Adapters` namespace is private to that component. Other code uses the common interface.
 - Network client types (`System.Net.Http`, `System.Net.Mail`, `System.Net.WebSockets`, `System.Net.Sockets`) may be used only inside an `Adapters` namespace.
+- No code may create an `HttpClient`. An adapter takes one from the host's factory (a typed or named client, or `IHttpClientFactory`), and every client from the factory logs its calls (NFR-LOG-5). See [logging.md](logging.md).
 
 ### Adding an AI provider
 
@@ -84,6 +85,10 @@ Operations that place orders belong in the namespace `Ecnanib.ExchangeGateway.Tr
 ## Configuration
 
 Settings come from one file and reach a component as typed settings. Two rules in `ComponentRules.cs` keep it that way: only `Platform` may use `Microsoft.Extensions.Configuration`, and no code may read the process environment or the command line directly. See [configuration.md](configuration.md).
+
+## Logging
+
+Components write log events through the host's `ILogger<T>` and nothing else. One rule in `ComponentRules.cs` keeps it that way: only `Platform` may use the logging library, Serilog. So every event passes the one place that masks secrets before it reaches an output (NFR-LOG-4). See [logging.md](logging.md).
 
 ## Deployment guard
 

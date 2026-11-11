@@ -64,21 +64,23 @@ public class DependencyRuleTests
     }
 
     [Fact]
-    public void Settings_reach_the_components_only_through_the_platform()
+    public void Configuration_and_the_logging_library_are_used_only_by_the_platform()
     {
         AssertNone(
             Checker.FindReservedNamespaceViolations(Application),
-            "The host's configuration is used outside Platform. Take the typed settings instead, " +
-            "which come from the one configuration file. See docs/configuration.md.");
+            "A namespace reserved for Platform is used outside it. Take the typed settings instead " +
+            "of the host's configuration (docs/configuration.md), and write log events through " +
+            "ILogger instead of the logging library (docs/logging.md).");
     }
 
     [Fact]
-    public void No_code_reads_environment_variables_or_command_line_arguments()
+    public void No_code_reads_the_process_environment_or_creates_its_own_HTTP_client()
     {
         AssertNone(
             Checker.FindForbiddenCalls(Application),
-            "The application reads or changes the process environment directly. Every setting " +
-            "belongs in the one configuration file. See docs/configuration.md.");
+            "The application calls a method that no code may call. Every setting belongs in the one " +
+            "configuration file (docs/configuration.md), and an HTTP client comes from the host's " +
+            "factory, which logs its calls (docs/logging.md).");
     }
 
     [Fact]

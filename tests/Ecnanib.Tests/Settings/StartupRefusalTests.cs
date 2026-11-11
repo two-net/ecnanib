@@ -29,7 +29,7 @@ public class StartupRefusalTests
             The configuration file {contentRoot.SettingsPath} is invalid:
               Security:MasterKeys:k1: must be 32 random bytes in Base64, which is a 256-bit key
               Email:Port: must be a whole number from 1 to 65535
-              Email:Password: still holds the placeholder from the template
+              Email:Password: still holds a placeholder
               Limits:MaxAgents: is not a known setting
 
             """,

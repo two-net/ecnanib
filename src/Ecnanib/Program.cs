@@ -9,6 +9,7 @@ using Ecnanib.ExchangeGateway;
 using Ecnanib.Experience;
 using Ecnanib.Notifications;
 using Ecnanib.Platform;
+using Ecnanib.Platform.Logging;
 using Ecnanib.Platform.Settings;
 using Ecnanib.RiskGuard;
 using Ecnanib.WebUi;
@@ -29,7 +30,8 @@ public class Program
     /// <summary>
     /// Runs the application until it is stopped. When the configuration file is missing or
     /// invalid it does not start: it writes which keys are wrong to <paramref name="errors"/>,
-    /// without their values, and returns a non-zero exit code (NFR-CFG-4).
+    /// without their values, and returns a non-zero exit code (NFR-CFG-4). It also returns a
+    /// non-zero exit code when an error stops the application, after logging it (NFR-LOG-6).
     /// </summary>
     public static int Run(string[] args, TextWriter errors)
     {
@@ -58,14 +60,28 @@ public class Program
             .AddCredentials()
             .AddAgents()
             .AddDecisionEngine()
-            .AddWebUi();
+            .AddWebUi()
+            .AddApi();
 
         var app = builder.Build();
 
-        // Configure the HTTP request pipeline.
+        // Configure the HTTP request pipeline. Correlation comes first, so that everything after
+        // it, error handling included, logs with the request's properties.
+        app.UseRequestCorrelation();
+
         if (!app.Environment.IsDevelopment())
         {
-            app.UseExceptionHandler("/Error", createScopeForErrors: true);
+            // An unhandled error is logged once, under a reference id, by the platform. The API
+            // answers with that id as JSON, and every other request gets the error page.
+            app.UseExceptionHandler(new ExceptionHandlerOptions
+            {
+                ExceptionHandlingPath = "/Error",
+                CreateScopeForErrors = true,
+
+                // The middleware would log the error a second time, without the reference id.
+                SuppressDiagnosticsCallback = _ => true,
+            });
+
             // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
             app.UseHsts();
         }
@@ -78,8 +94,24 @@ public class Program
         app.MapApi();
         app.MapWebUi();
 
-        app.Run();
+        // The same as app.Run(), except that an error which stops the application is logged
+        // while the log outputs are still open.
+        try
+        {
+            app.Start();
+            app.WaitForShutdown();
 
-        return 0;
+            return 0;
+        }
+        catch (Exception error)
+        {
+            app.Logger.LogCritical(error, "Ecnanib stopped because of an unhandled error");
+
+            return 1;
+        }
+        finally
+        {
+            app.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 }

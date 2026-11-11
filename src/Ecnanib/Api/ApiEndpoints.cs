@@ -5,9 +5,20 @@ namespace Ecnanib.Api;
 /// </summary>
 public static class ApiEndpoints
 {
+    /// <summary>The path every API endpoint is under.</summary>
+    internal const string Prefix = "/api";
+
+    /// <summary>Registers what the API needs besides its endpoints.</summary>
+    public static IServiceCollection AddApi(this IServiceCollection services)
+    {
+        services.AddExceptionHandler<ApiErrorResponder>();
+
+        return services;
+    }
+
     public static IEndpointRouteBuilder MapApi(this IEndpointRouteBuilder endpoints)
     {
-        var api = endpoints.MapGroup("/api");
+        var api = endpoints.MapGroup(Prefix);
 
         api.MapGet("/health", () => TypedResults.Ok(new HealthResponse("ok")));
 

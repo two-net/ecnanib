@@ -19,7 +19,14 @@ public sealed record LoggingSettings(
         var overrides = new Dictionary<string, LogLevel>(StringComparer.OrdinalIgnoreCase);
         foreach (var area in file.Map(overridesKey))
         {
-            overrides[area] = file.Choice<LogLevel>(SettingsReader.Join(overridesKey, area));
+            var key = SettingsReader.Join(overridesKey, area);
+            overrides[area] = file.Choice<LogLevel>(key);
+
+            // An area is the start of a name, such as Microsoft.AspNetCore, or a name with one *.
+            if (area.Count(character => character == '*') > 1)
+            {
+                file.Problem(key, "must name an area with at most one *");
+            }
         }
 
         var console = file.Has("Logging:Outputs:Console");

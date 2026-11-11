@@ -3,8 +3,8 @@ using Ecnanib.Platform.Settings;
 namespace Ecnanib.Tests.Settings;
 
 /// <summary>
-/// A temporary content root for one test, holding the configuration file the test wants. Tests
-/// never read the file in the project folder: that one is a developer's own and holds real secrets.
+/// A temporary content root for one test, holding the configuration file the test wants. No test
+/// runs the application against the file in the project folder.
 /// </summary>
 internal sealed class SettingsDirectory : IDisposable
 {

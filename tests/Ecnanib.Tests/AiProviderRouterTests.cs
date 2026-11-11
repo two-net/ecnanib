@@ -17,6 +17,7 @@ public class AiProviderRouterTests
     {
         var adapter = new FakeAdapter("a-fifth-provider");
         await using var services = new ServiceCollection()
+            .AddLogging()
             .AddAiProviderGateway()
             .AddSingleton<IAiProviderAdapter>(adapter)
             .BuildServiceProvider();
@@ -36,6 +37,7 @@ public class AiProviderRouterTests
         var first = new FakeAdapter("first");
         var second = new FakeAdapter("second");
         await using var services = new ServiceCollection()
+            .AddLogging()
             .AddAiProviderGateway()
             .AddSingleton<IAiProviderAdapter>(first)
             .AddSingleton<IAiProviderAdapter>(second)
@@ -51,7 +53,7 @@ public class AiProviderRouterTests
     [Fact]
     public async Task A_provider_without_an_adapter_is_refused_by_name()
     {
-        await using var services = new ServiceCollection().AddAiProviderGateway().BuildServiceProvider();
+        await using var services = new ServiceCollection().AddLogging().AddAiProviderGateway().BuildServiceProvider();
         var gateway = services.GetRequiredService<IAiProviderGateway>();
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.CompleteAsync(
@@ -64,6 +66,7 @@ public class AiProviderRouterTests
     public async Task Two_adapters_for_one_provider_are_refused()
     {
         await using var services = new ServiceCollection()
+            .AddLogging()
             .AddAiProviderGateway()
             .AddSingleton<IAiProviderAdapter>(new FakeAdapter("same"))
             .AddSingleton<IAiProviderAdapter>(new FakeAdapter("same"))

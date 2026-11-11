@@ -4,15 +4,16 @@ namespace Ecnanib.Platform.Settings;
 
 /// <summary>
 /// The one configuration file. Every application setting, secrets included, comes from it and from
-/// nowhere else (NFR-CFG-1, NFR-CFG-2). It is read once, at startup.
+/// nowhere else (NFR-CFG-1, NFR-CFG-2). It is read at startup. When it changes while the
+/// application runs, it is read again for its log levels only (NFR-CFG-7).
 /// </summary>
 public static class SettingsFile
 {
-    /// <summary>The real file. It holds secrets, so it is kept out of source control.</summary>
+    /// <summary>
+    /// The file, in the content root. The one in source control carries development defaults; a
+    /// deployment supplies its own.
+    /// </summary>
     public const string Name = "appsettings.json";
-
-    /// <summary>The copy with placeholders that is kept in source control (NFR-CFG-5).</summary>
-    public const string TemplateName = "appsettings.template.json";
 
     // An appsettings file may carry comments and trailing commas.
     private static readonly JsonDocumentOptions JsonOptions = new()
@@ -33,8 +34,8 @@ public static class SettingsFile
         if (!File.Exists(path))
         {
             problems.Add(new SettingsProblem(null,
-                $"the file does not exist. Copy {TemplateName} to {Name}, replace the placeholders, " +
-                "and make the file readable only by the account that runs the application"));
+                $"the file does not exist. Put {Name} in this folder, with every key that the one in " +
+                "source control has, and make it readable only by the account that runs the application"));
 
             throw Invalid(path, problems);
         }

@@ -3,7 +3,7 @@
 //
 // The fixture rules are: Low uses nothing; Mid may use Low and Gateway; High may use Low and
 // Gateway, and is the only area that may use Gateway.Trading. Low is the only area that may use
-// the host's configuration, and no area may read the process environment.
+// the host's configuration, and no area may read the process environment or create an HTTP client.
 
 #pragma warning disable CA1822 // Members are instance members on purpose.
 

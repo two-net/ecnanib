@@ -19,8 +19,8 @@ internal sealed class SettingsJson
     private SettingsJson(JsonObject root) => _root = root;
 
     /// <summary>
-    /// A complete file that passes validation. Its values differ from the defaults in the template,
-    /// so a test that reads one back knows it came from this file.
+    /// A complete file that passes validation. Its values differ from the defaults in the tracked
+    /// file, so a test that reads one back knows it came from this file.
     /// </summary>
     public static SettingsJson Valid() => Parse(
         """

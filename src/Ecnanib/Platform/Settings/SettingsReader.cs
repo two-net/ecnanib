@@ -63,7 +63,7 @@ internal sealed class SettingsReader
         }
     }
 
-    /// <summary>Required text that is not empty and is not a placeholder left from the template.</summary>
+    /// <summary>Required text that is not empty and is not a placeholder such as <c>&lt;the mail server&gt;</c>.</summary>
     public string Text(string key) =>
         TryScalar(key, Kind.Text, "must be text", out var text) && IsFilledIn(key, text) ? text : string.Empty;
 
@@ -416,7 +416,7 @@ internal sealed class SettingsReader
 
         if (text.StartsWith('<') && text.EndsWith('>'))
         {
-            Problem(key, "still holds the placeholder from the template");
+            Problem(key, "still holds a placeholder");
             return false;
         }
 

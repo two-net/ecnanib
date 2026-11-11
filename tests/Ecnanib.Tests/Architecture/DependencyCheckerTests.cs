@@ -31,7 +31,12 @@ public class DependencyCheckerTests
         {
             ["Microsoft.Extensions.Configuration"] = new HashSet<string> { "Low" },
         },
-        ForbiddenCalls: ["System.Environment::GetEnvironmentVariable", "System.Environment::GetCommandLineArgs"]));
+        ForbiddenCalls:
+        [
+            "System.Environment::GetEnvironmentVariable",
+            "System.Environment::GetCommandLineArgs",
+            "System.Net.Http.HttpClient::.ctor",
+        ]));
 
     [Fact]
     public void Reports_a_reference_to_a_forbidden_area_wherever_it_appears_in_a_type()
@@ -94,11 +99,14 @@ public class DependencyCheckerTests
             .Where(origin => origin.StartsWith(Fixtures, StringComparison.Ordinal))
             .Distinct();
 
+        // A constructor is a method too: an adapter may use an HTTP client but may not create one.
         Assert.Equal(
             [
+                $"{Fixtures}.Gateway.Adapters.Fake.FakeAdapter",
                 $"{Fixtures}.Mid.ReadsAllEnvironmentVariables",
                 $"{Fixtures}.Mid.ReadsAnEnvironmentVariable",
                 $"{Fixtures}.Mid.ReadsTheCommandLine",
+                $"{Fixtures}.Mid.UsesNetwork",
             ],
             origins);
     }

@@ -91,23 +91,34 @@ internal static class ComponentRules
             "System.Net.Sockets",
         ],
 
-        // The host's configuration API. Only Platform may use it. Every other area takes typed
-        // settings, which come from the one configuration file, so a setting cannot reach it
-        // from an environment variable or a command-line argument (NFR-CFG-2).
+        // Namespaces outside the application that only Platform may use.
         ReservedNamespaces: new Dictionary<string, IReadOnlySet<string>>
         {
+            // The host's configuration API. Every other area takes typed settings, which come
+            // from the one configuration file, so a setting cannot reach it from an environment
+            // variable or a command-line argument (NFR-CFG-2).
             ["Microsoft.Extensions.Configuration"] = Only(Platform),
+
+            // The logging library. Every other area writes through the host's ILogger, so no
+            // event can reach an output without passing the one place that masks secrets
+            // (NFR-LOG-4).
+            ["Serilog"] = Only(Platform),
         },
 
-        // Direct access to the process environment. No code may use it, so the application adds
-        // no environment variable or command-line argument of its own (NFR-CFG-3).
+        // Methods that no code may call.
         ForbiddenCalls:
         [
+            // Direct access to the process environment, so the application adds no environment
+            // variable or command-line argument of its own (NFR-CFG-3).
             "System.Environment::GetEnvironmentVariable",
             "System.Environment::SetEnvironmentVariable",
             "System.Environment::ExpandEnvironmentVariables",
             "System.Environment::GetCommandLineArgs",
             "System.Environment::get_CommandLine",
+
+            // Creating an HTTP client. An adapter takes one from the host's factory, which logs
+            // every call it makes (NFR-LOG-5).
+            "System.Net.Http.HttpClient::.ctor",
         ]);
 
     private static IReadOnlySet<string> Only(params string[] areas) => new HashSet<string>(areas);
