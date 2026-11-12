@@ -341,7 +341,7 @@ public class PasswordResetTests
         using var request = new CancellationTokenSource();
         application.Email.Sending = _ => request.Cancel();
 
-        Assert.Equal(PasswordResetOutcome.Done, await application.PasswordReset.ResetAsync(token, NewPassword, request.Token));
+        Assert.Equal(PasswordResetOutcome.Done, await application.PasswordReset.ResetAsync(token, NewPassword, AuditOrigin.Unknown, request.Token));
 
         Assert.Equal("Your password at Ecnanib Test was changed", application.Email.Sent[^1].Subject);
         Assert.True(await application.Passwords.VerifyAsync(NewPassword, StoredUser.Of(application.Database, Ada)!.PasswordHash));

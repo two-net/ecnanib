@@ -368,10 +368,17 @@ public class ReauthenticationTests
         Assert.Equal(Morning.AddMinutes(5), Assert.Single(StoredSession.All(application.Database)).ReauthenticatedAt);
         Assert.Equal(9, StoredRecoveryCode.All(application.Database).Count);
 
+        // The audit trail has the code that was spent, and then the proof it gave, after what
+        // led here: a sign-in to turn two-factor authentication on, and one with a code.
         var events = StoredAuditEvent.All(application.Database);
-        Assert.Equal(["TwoFactorTurnedOn", "TwoFactorRecoveryCodeUsed"], events.Select(recorded => recorded.Action));
-        Assert.Equal(user.Id, events[^1].UserId);
-        Assert.Equal(Morning.AddMinutes(5), events[^1].OccurredAt);
+        Assert.Equal(
+            ["SignedIn", "TwoFactorTurnedOn", "SignedIn", "TwoFactorRecoveryCodeUsed", "Reauthenticated"],
+            events.Select(recorded => recorded.Action));
+        Assert.All(events.TakeLast(2), recorded =>
+        {
+            Assert.Equal(user.Id, recorded.UserId);
+            Assert.Equal(Morning.AddMinutes(5), recorded.OccurredAt);
+        });
 
         // When the proof no longer holds, the same recovery code is a wrong code.
         clock.Set(clock.GetUtcNow() + ReauthenticationRules.HoldsFor);

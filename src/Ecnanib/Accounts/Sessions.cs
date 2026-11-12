@@ -63,12 +63,14 @@ internal sealed class Sessions(
     /// <param name="verifiedPasswordHash">The stored hash that the password matched.</param>
     /// <param name="heldToken">The token of the session the browser holds now, which ends when another starts.</param>
     /// <param name="heldPendingToken">The token of the sign-in the browser has waiting for a code, which ends.</param>
+    /// <param name="origin">Where the request came from, for the audit trail.</param>
     /// <param name="cancellationToken">Cancels the start.</param>
     public async Task<SignInStart> StartAsync(
         Guid userId,
         string verifiedPasswordHash,
         string? heldToken,
         string? heldPendingToken,
+        AuditOrigin origin,
         CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
@@ -133,7 +135,7 @@ internal sealed class Sessions(
         }
         else
         {
-            started = new SignInStart { SessionToken = await AddAsync(context, userId, heldToken, now, cancellationToken) };
+            started = new SignInStart { SessionToken = await AddAsync(context, userId, heldToken, now, origin, cancellationToken) };
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -145,13 +147,24 @@ internal sealed class Sessions(
     /// Stores a session for a user inside the transaction of the caller, who holds the lock on
     /// the user's row and has made sure that the user may be signed in. Returns its token.
     /// </summary>
+    /// <remarks>
+    /// This is the one place a session is stored, and it records the sign-in in the audit trail
+    /// (NFR-LOG-7). So no session starts without its event, whichever way the user signed in,
+    /// and no event is recorded for a sign-in that started none.
+    /// </remarks>
     /// <param name="context">The context that holds the transaction.</param>
     /// <param name="userId">The user.</param>
     /// <param name="heldToken">The token of the session the browser holds now, which ends.</param>
     /// <param name="now">The time the session starts at.</param>
+    /// <param name="origin">Where the request came from, for the audit trail.</param>
     /// <param name="cancellationToken">Cancels the start.</param>
     public async Task<string> AddAsync(
-        EcnanibDbContext context, Guid userId, string? heldToken, DateTimeOffset now, CancellationToken cancellationToken)
+        EcnanibDbContext context,
+        Guid userId,
+        string? heldToken,
+        DateTimeOffset now,
+        AuditOrigin origin,
+        CancellationToken cancellationToken)
     {
         var (token, tokenHash) = SecretToken.Create();
 
@@ -173,6 +186,10 @@ internal sealed class Sessions(
         // Signing in is not proving it again: a session starts without a re-authentication.
         context.Set<Session>().Add(new Session(Guid.CreateVersion7(), userId, tokenHash, now, now, reauthenticatedAt: null));
         await context.SaveChangesAsync(cancellationToken);
+
+        // In the transaction that stores the session, so that the two stand or fall together.
+        await AuditTrail.RecordAsync(
+            context, userId, AuditAction.SignedIn, AuditTarget.Account(userId), now, origin, cancellationToken);
 
         return token;
     }

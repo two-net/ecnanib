@@ -156,6 +156,20 @@ internal sealed class DependencyChecker(RuleSet rules)
             .ThenBy(violation => violation.Target, StringComparer.Ordinal),
     ];
 
+    /// <summary>
+    /// The types of an assembly that call a method, each by its full name. The method is written
+    /// as <c>Namespace.Type::Method</c>, and the name also covers every method that starts with it.
+    /// </summary>
+    public static IReadOnlyList<string> FindCallersOf(Assembly assembly, string method) =>
+    [
+        .. Load(assembly).Types
+            .Where(origin => origin.Dependencies.OfType<MethodCallDependency>()
+                .Any(call => $"{call.Target.FullName}::{call.TargetMember.Name}".StartsWith(method, StringComparison.Ordinal)))
+            .Select(origin => origin.FullName)
+            .Distinct()
+            .Order(StringComparer.Ordinal),
+    ];
+
     private bool IsInAdapters(string @namespace)
     {
         var area = AreaOf(@namespace);

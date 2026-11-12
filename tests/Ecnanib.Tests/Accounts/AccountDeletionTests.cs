@@ -370,7 +370,7 @@ public class AccountDeletionTests
         await phone.EnterCodeAsync(app.CodeAt(clock.GetUtcNow()));
         clock.Set(clock.GetUtcNow().AddMinutes(1));
         await desk.ConfirmIdentityAsync(code: app.CodeAt(clock.GetUtcNow()));
-        Assert.Single(StoredAuditEvent.All(application.Database));
+        Assert.NotEmpty(StoredAuditEvent.All(application.Database));
 
         await desk.DeleteAccountAsync();
 

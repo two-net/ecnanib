@@ -22,8 +22,9 @@ public interface IPasswordReset
     /// The password to set. It is passed on its own, so that it is never part of a value that can
     /// be printed or logged.
     /// </param>
+    /// <param name="origin">Where the request came from, for the audit trail, which records a new password.</param>
     /// <param name="cancellationToken">Cancels the reset.</param>
-    Task<PasswordResetOutcome> ResetAsync(string token, string newPassword, CancellationToken cancellationToken);
+    Task<PasswordResetOutcome> ResetAsync(string token, string newPassword, AuditOrigin origin, CancellationToken cancellationToken);
 }
 
 /// <summary>How a request for a reset link ended.</summary>

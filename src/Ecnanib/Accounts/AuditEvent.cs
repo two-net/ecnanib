@@ -8,8 +8,27 @@ namespace Ecnanib.Accounts;
 /// A security- or money-relevant action that the audit trail records (NFR-LOG-7). A member is
 /// stored by its name, so renaming one changes stored data and needs a migration.
 /// </summary>
+/// <remarks>
+/// A component adds the members of its own actions when it is built: the changes to a key, what
+/// a user does with an agent, and what an operator does. See docs/accounts.md.
+/// </remarks>
 public enum AuditAction
 {
+    /// <summary>
+    /// A browser was signed in to the account: a session started, with the password, and with a
+    /// code as well for an account that has two-factor authentication on.
+    /// </summary>
+    SignedIn,
+
+    /// <summary>The user proved again who they are, before a sensitive action (FR-ACC-4).</summary>
+    Reauthenticated,
+
+    /// <summary>
+    /// The password of the account was replaced: with a reset link, or with the link of an
+    /// address that was registered again.
+    /// </summary>
+    PasswordChanged,
+
     /// <summary>Two-factor authentication was turned on, with an authenticator app.</summary>
     TwoFactorTurnedOn,
 
@@ -27,29 +46,49 @@ public enum AuditAction
 /// One action in the audit trail, as a row of the <c>audit_events</c> table (NFR-LOG-7). The audit
 /// trail is in the database and is not a log. An event holds no secret. See docs/accounts.md.
 /// </summary>
-/// <param name="id">Assigned by the application when the action is recorded.</param>
-/// <param name="userId">The user who did it.</param>
-/// <param name="action">What was done.</param>
-/// <param name="target">What it was done to, as a kind and an id: <c>user:…</c> for an account.</param>
-/// <param name="occurredAt">When it was done.</param>
-/// <param name="origin">
-/// The address the request came from, or null when it is not known. It is personal data, and goes
-/// with the account.
-/// </param>
-public sealed class AuditEvent(
-    Guid id, Guid userId, AuditAction action, string target, DateTimeOffset occurredAt, string? origin) : IUserOwned
+/// <remarks>
+/// An event is made by <see cref="AuditTrail.RecordAsync"/> and by nothing else. Its constructor
+/// is private, and what makes one takes no text: so nothing that a request brought, such as a
+/// key or a password, can end up in an event.
+/// </remarks>
+public sealed class AuditEvent : IUserOwned
 {
-    public Guid Id { get; } = id;
+    // What a row is read with. The model finds it, private as it is.
+    private AuditEvent(Guid id, Guid userId, AuditAction action, string target, DateTimeOffset occurredAt, string? origin)
+    {
+        Id = id;
+        UserId = userId;
+        Action = action;
+        Target = target;
+        OccurredAt = occurredAt;
+        Origin = origin;
+    }
 
-    public Guid UserId { get; } = userId;
+    /// <summary>Assigned by the application when the action is recorded. A later event has a greater id.</summary>
+    public Guid Id { get; }
 
-    public AuditAction Action { get; } = action;
+    /// <summary>The user who did it.</summary>
+    public Guid UserId { get; }
 
-    public string Target { get; } = target;
+    /// <summary>What was done.</summary>
+    public AuditAction Action { get; }
 
-    public DateTimeOffset OccurredAt { get; } = occurredAt;
+    /// <summary>What it was done to, as a kind and an id: <c>user:…</c> for an account.</summary>
+    public string Target { get; }
 
-    public string? Origin { get; } = origin;
+    /// <summary>When it was done.</summary>
+    public DateTimeOffset OccurredAt { get; }
+
+    /// <summary>
+    /// The address the request came from, or null when it is not known. It is personal data, and
+    /// goes with the account.
+    /// </summary>
+    public string? Origin { get; }
+
+    /// <summary>An event, from values that cannot hold what a request brought.</summary>
+    internal static AuditEvent Of(
+        Guid id, Guid userId, AuditAction action, AuditTarget target, DateTimeOffset occurredAt, AuditOrigin origin) =>
+        new(id, userId, action, target.Text, occurredAt, origin.Address);
 }
 
 internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEvent>

@@ -79,5 +79,8 @@ else
 
     private async Task ConfirmAsync() =>
         _outcome = await Registration.VerifyEmailAsync(
-            Token ?? string.Empty, Password, HttpContext?.RequestAborted ?? CancellationToken.None);
+            Token ?? string.Empty,
+            Password,
+            HttpContext is { } request ? AuditOrigin.Of(request) : AuditOrigin.Unknown,
+            HttpContext?.RequestAborted ?? CancellationToken.None);
 }

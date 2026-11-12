@@ -101,13 +101,17 @@ public class DataExportTests
         Assert.Equal(signedInAt, session.GetProperty("createdAt").GetDateTimeOffset());
         Assert.Equal(Morning.AddMinutes(5), session.GetProperty("lastActiveAt").GetDateTimeOffset());
 
-        // The audit trail of the account, in the order it was recorded, with where each action came from.
+        // The audit trail of the account, in the order it was recorded, with where each action
+        // came from: the sign-in that turned two-factor authentication on, and the recovery
+        // code that was spent on the sign-in after it.
         var events = export.GetProperty("auditEvents").EnumerateArray().ToList();
         Assert.All(events, recorded => Assert.Equal(["action", "target", "occurredAt", "origin"], NamesIn(recorded)));
         Assert.Equal(
             [
+                $"SignedIn user:{ada.Id} {Morning:O} 203.0.113.7",
                 $"TwoFactorTurnedOn user:{ada.Id} {Morning:O} 203.0.113.7",
                 $"TwoFactorRecoveryCodeUsed user:{ada.Id} {signedInAt:O} 203.0.113.7",
+                $"SignedIn user:{ada.Id} {signedInAt:O} 203.0.113.7",
             ],
             events.Select(recorded =>
                 $"{recorded.GetProperty("action").GetString()} {recorded.GetProperty("target").GetString()} " +
@@ -131,10 +135,9 @@ public class DataExportTests
         Assert.Equal("account-data-2026-11-12.json", answer.Content.Headers.ContentDisposition?.FileName);
         Assert.True(answer.Headers.CacheControl?.NoStore, "What is stored about a person is not to be kept by a browser or a proxy.");
 
-        // One thing to a line, as a person reads it, with nothing left out for being empty.
+        // One thing to a line, as a person reads it, with nothing left out for not being set.
         Assert.Contains($"{Environment.NewLine}  \"account\": {{{Environment.NewLine}", text);
         Assert.Contains("\"since\": null", text);
-        Assert.Contains("\"auditEvents\": []", text);
 
         // The account page leads to it, as a download: the browser asks for the file once and
         // does not try to show it as a page.
@@ -221,13 +224,16 @@ public class DataExportTests
         var text = await client.PageAsync(Export);
         var export = JsonDocument.Parse(text).RootElement;
 
-        // What it holds is Ada's: her account, her one session, and no event, because she did
-        // nothing that the audit trail records.
+        // What it holds is Ada's: her account, her one session, and the one event of hers that
+        // the audit trail has, which is the sign-in that led here.
         Assert.Equal(ada.Id, export.GetProperty("account").GetProperty("id").GetGuid());
         Assert.Equal(0, export.GetProperty("account").GetProperty("twoFactor").GetProperty("recoveryCodesLeft").GetInt32());
         Assert.Equal(LegalDocuments.All.Count, export.GetProperty("legalAcceptances").GetArrayLength());
         Assert.Equal(1, export.GetProperty("sessions").GetArrayLength());
-        Assert.Equal(0, export.GetProperty("auditEvents").GetArrayLength());
+
+        var recorded = Assert.Single(export.GetProperty("auditEvents").EnumerateArray());
+        Assert.Equal("SignedIn", recorded.GetProperty("action").GetString());
+        Assert.Equal($"user:{ada.Id}", recorded.GetProperty("target").GetString());
 
         // And nothing in it is Grace's: not her address, not her id, and not a time of hers.
         Assert.DoesNotContain("grace", text, StringComparison.OrdinalIgnoreCase);

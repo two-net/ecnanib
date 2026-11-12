@@ -92,9 +92,10 @@ internal sealed class Registration(
     }
 
     public async Task<EmailVerificationOutcome> VerifyEmailAsync(
-        string token, string? newPassword, CancellationToken cancellationToken)
+        string token, string? newPassword, AuditOrigin origin, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(token);
+        ArgumentNullException.ThrowIfNull(origin);
 
         if (SecretToken.HashOf(token) is not { } tokenHash)
         {
@@ -182,6 +183,11 @@ internal sealed class Registration(
 
         // Whoever was signed in knew the earlier password.
         var ended = await Sessions.EndAllAsync(context, link.Id, cancellationToken);
+
+        // The password of the account was replaced, which the audit trail records. A first
+        // link, which only verifies the address, changes no password and is not recorded.
+        await AuditTrail.RecordAsync(
+            context, link.Id, AuditAction.PasswordChanged, AuditTarget.Account(link.Id), now, origin, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 

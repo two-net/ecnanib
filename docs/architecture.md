@@ -109,7 +109,7 @@ Being signed in is not enough for an action that exposes keys or money: adding o
 
 A user can delete their account, which is the first of those actions to be built. Every row that belongs to a user hangs on the account and goes with it, in one transaction, stored keys included. It is done only while every agent of the user is stopped, which Agents says. A user can also download what is stored about them, without the secrets. Personal data is limited to the email address, the password hash, and preferences, and a test holds the columns of the model to that (FR-ACC-9, NFR-SEC-9).
 
-Accounts also holds the audit trail: the record in the database, apart from the logs, of security- and money-relevant actions (NFR-LOG-7). An event is written in the transaction of the action it records. The first events are the changes to two-factor authentication. See [accounts.md](accounts.md).
+Accounts also holds the audit trail: the record in the database, apart from the logs, of security- and money-relevant actions (NFR-LOG-7). An event is written in the transaction of the action it records, and is made from values that take no text, so it cannot hold a secret. Accounts records sign-ins, re-authentications, new passwords, and the changes to two-factor authentication. A component above it records its own actions through `AuditTrail`, and a test fails for an action of the requirement that is still not recorded once what does it is built. See [accounts.md](accounts.md).
 
 ## Ownership
 

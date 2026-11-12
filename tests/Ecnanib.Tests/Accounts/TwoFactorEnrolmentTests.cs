@@ -123,7 +123,7 @@ public class TwoFactorEnrolmentTests
         // A key that nobody confirmed is nowhere: nobody can come back later to one they noted.
         Assert.True(StoredTwoFactor.Of(application.Database, Ada).IsEmpty);
         Assert.Empty(StoredRecoveryCode.All(application.Database));
-        Assert.Empty(StoredAuditEvent.All(application.Database));
+        Assert.Empty(StoredAuditEvent.OfTwoFactor(application.Database));
     }
 
     [Fact]
@@ -450,7 +450,7 @@ public class TwoFactorEnrolmentTests
 
         // Nothing was made a second time.
         Assert.Equal(codes, StoredRecoveryCode.All(application.Database), (one, other) => one.CodeHash.SequenceEqual(other.CodeHash));
-        Assert.Single(StoredAuditEvent.All(application.Database));
+        Assert.Single(StoredAuditEvent.OfTwoFactor(application.Database));
     }
 
     [Fact]
@@ -486,7 +486,7 @@ public class TwoFactorEnrolmentTests
         // found its session ended by the first.
         Assert.Single(answers, answer => Browser.RecoveryCodesIn(answer.Page).Count == 10);
         Assert.Equal(10, StoredRecoveryCode.All(application.Database).Count);
-        Assert.Equal("TwoFactorTurnedOn", Assert.Single(StoredAuditEvent.All(application.Database)).Action);
+        Assert.Equal("TwoFactorTurnedOn", Assert.Single(StoredAuditEvent.OfTwoFactor(application.Database)).Action);
         Assert.Single(StoredSession.All(application.Database));
     }
 

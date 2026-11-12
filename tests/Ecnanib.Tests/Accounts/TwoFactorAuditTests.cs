@@ -18,6 +18,7 @@ public class TwoFactorAuditTests
     private static readonly DateTimeOffset Morning = new(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    [ShowsAuditOf(AuditAction.TwoFactorTurnedOn)]
     public async Task Turning_two_factor_on_is_recorded_with_the_user_the_action_the_target_the_time_and_the_origin()
     {
         var clock = new TestClock(Morning);
@@ -26,7 +27,7 @@ public class TwoFactorAuditTests
 
         var (user, _, _) = await application.RegisterWithTwoFactorAsync(Ada, clock);
 
-        var recorded = Assert.Single(StoredAuditEvent.All(application.Database));
+        var recorded = Assert.Single(StoredAuditEvent.OfTwoFactor(application.Database));
         Assert.Equal(user.Id, recorded.UserId);
         Assert.Equal("TwoFactorTurnedOn", recorded.Action);
         Assert.Equal($"user:{user.Id}", recorded.Target);
@@ -38,6 +39,7 @@ public class TwoFactorAuditTests
     }
 
     [Fact]
+    [ShowsAuditOf(AuditAction.TwoFactorTurnedOff)]
     public async Task Turning_it_off_is_recorded()
     {
         var clock = new TestClock(Morning);
@@ -50,7 +52,7 @@ public class TwoFactorAuditTests
         clock.Set(Morning.AddMinutes(30));
         await client.SubmitAsync("/account/two-factor/turn-off", "turn-off", ("Code", app.CodeAt(clock.GetUtcNow())));
 
-        var events = StoredAuditEvent.All(application.Database);
+        var events = StoredAuditEvent.OfTwoFactor(application.Database);
         Assert.Equal(["TwoFactorTurnedOn", "TwoFactorTurnedOff"], events.Select(recorded => recorded.Action));
 
         var turnedOff = events[^1];
@@ -61,6 +63,7 @@ public class TwoFactorAuditTests
     }
 
     [Fact]
+    [ShowsAuditOf(AuditAction.TwoFactorRecoveryCodesReplaced)]
     public async Task Making_new_recovery_codes_is_recorded()
     {
         var clock = new TestClock(Morning);
@@ -74,13 +77,14 @@ public class TwoFactorAuditTests
         await client.SubmitAsync(
             "/account/two-factor/recovery-codes", "new-recovery-codes", ("Code", app.CodeAt(clock.GetUtcNow())));
 
-        var events = StoredAuditEvent.All(application.Database);
+        var events = StoredAuditEvent.OfTwoFactor(application.Database);
         Assert.Equal(["TwoFactorTurnedOn", "TwoFactorRecoveryCodesReplaced"], events.Select(recorded => recorded.Action));
         Assert.Equal(user.Id, events[^1].UserId);
         Assert.Equal(Morning.AddMinutes(30), events[^1].OccurredAt);
     }
 
     [Fact]
+    [ShowsAuditOf(AuditAction.TwoFactorRecoveryCodeUsed)]
     public async Task Signing_in_with_a_recovery_code_is_recorded()
     {
         var clock = new TestClock(Morning);
@@ -88,18 +92,19 @@ public class TwoFactorAuditTests
         var (user, app, recoveryCodes) = await application.RegisterWithTwoFactorAsync(Ada, clock);
         using var client = application.CreateClient();
 
-        // A code from the app changes nothing about two-factor authentication, and is not recorded here.
+        // A code from the app changes nothing about two-factor authentication. It is recorded
+        // as the sign-in it is, and as nothing else.
         await client.SignInAsync(Ada);
         await client.EnterCodeAsync(app.CodeAt(clock.GetUtcNow()));
         await client.SignOutAsync();
-        Assert.Single(StoredAuditEvent.All(application.Database));
+        Assert.Single(StoredAuditEvent.OfTwoFactor(application.Database));
 
         // A recovery code is spent by it.
         clock.Set(Morning.AddMinutes(30));
         await client.SignInAsync(Ada);
         Assert.Equal("/", (await client.EnterCodeAsync(recoveryCodes[3])).Path);
 
-        var events = StoredAuditEvent.All(application.Database);
+        var events = StoredAuditEvent.OfTwoFactor(application.Database);
         Assert.Equal(["TwoFactorTurnedOn", "TwoFactorRecoveryCodeUsed"], events.Select(recorded => recorded.Action));
         Assert.Equal(user.Id, events[^1].UserId);
         Assert.Equal($"user:{user.Id}", events[^1].Target);
@@ -133,7 +138,7 @@ public class TwoFactorAuditTests
                 ("Password", password));
         }
 
-        Assert.Empty(StoredAuditEvent.All(application.Database));
+        Assert.Empty(StoredAuditEvent.OfTwoFactor(application.Database));
 
         // Once it is on, a wrong code changes nothing either: not to turn it off, not for new
         // recovery codes, and not to sign in.
@@ -148,7 +153,7 @@ public class TwoFactorAuditTests
         await client.EnterCodeAsync(wrong);
         await client.EnterCodeAsync("ABCD-EFGH-IJKL-MNOP");
 
-        Assert.Equal("TwoFactorTurnedOn", Assert.Single(StoredAuditEvent.All(application.Database)).Action);
+        Assert.Equal("TwoFactorTurnedOn", Assert.Single(StoredAuditEvent.OfTwoFactor(application.Database)).Action);
     }
 
     [Theory]
@@ -164,7 +169,7 @@ public class TwoFactorAuditTests
 
         await application.RegisterWithTwoFactorAsync(Ada, clock);
 
-        Assert.Equal(origin, Assert.Single(StoredAuditEvent.All(application.Database)).Origin);
+        Assert.Equal(origin, Assert.Single(StoredAuditEvent.OfTwoFactor(application.Database)).Origin);
     }
 
     [Fact]
@@ -185,7 +190,7 @@ public class TwoFactorAuditTests
         var turningOff = app.CodeAt(clock.GetUtcNow());
         await client.SubmitAsync("/account/two-factor/turn-off", "turn-off", ("Code", turningOff));
 
-        Assert.Equal(4, StoredAuditEvent.All(application.Database).Count);
+        Assert.Equal(4, StoredAuditEvent.OfTwoFactor(application.Database).Count);
 
         // The rows, as the database hands them to whoever reads them.
         var events = string.Join(
@@ -211,7 +216,7 @@ public class TwoFactorAuditTests
         await application.RegisterWithTwoFactorAsync(Ada, clock);
 
         // The change is in the table. The log tells of it in its own words, without the origin.
-        Assert.Single(StoredAuditEvent.All(application.Database));
+        Assert.Single(StoredAuditEvent.OfTwoFactor(application.Database));
         Assert.Contains("turned two-factor authentication on", application.LogText());
         Assert.DoesNotContain("TwoFactorTurnedOn", application.LogText());
         Assert.DoesNotContain("203.0.113.7", application.LogText());
@@ -228,7 +233,8 @@ public class TwoFactorAuditTests
         // An origin is where a user was, which is personal data: it does not outlast the account.
         application.Database.Execute($"DELETE FROM users WHERE email = '{Ada}'");
 
-        Assert.Equal(grace.Id, Assert.Single(StoredAuditEvent.All(application.Database)).UserId);
+        Assert.Equal(grace.Id, Assert.Single(StoredAuditEvent.OfTwoFactor(application.Database)).UserId);
+        Assert.All(StoredAuditEvent.All(application.Database), recorded => Assert.Equal(grace.Id, recorded.UserId));
         Assert.All(StoredRecoveryCode.All(application.Database), code => Assert.Equal(grace.Id, code.UserId));
     }
 }

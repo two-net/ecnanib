@@ -224,9 +224,9 @@ internal sealed class TwoFactor(
             context,
             userId,
             AuditAction.TwoFactorTurnedOn,
-            AuditTrail.Account(userId),
+            AuditTarget.Account(userId),
             now,
-            AuditTrail.OriginOf(request),
+            AuditOrigin.Of(request),
             cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
@@ -254,7 +254,7 @@ internal sealed class TwoFactor(
             return TwoFactorChangeOutcome.NotOn;
         }
 
-        var answer = await codes.JudgeAsync(context, account, code, AuditTrail.OriginOf(request), now);
+        var answer = await codes.JudgeAsync(context, account, code, AuditOrigin.Of(request), now);
         if (answer == CodeAnswer.Right)
         {
             // From here on nothing is canceled with the request: the code is spent.
@@ -279,9 +279,9 @@ internal sealed class TwoFactor(
                 context,
                 userId,
                 AuditAction.TwoFactorTurnedOff,
-                AuditTrail.Account(userId),
+                AuditTarget.Account(userId),
                 now,
-                AuditTrail.OriginOf(request),
+                AuditOrigin.Of(request),
                 CancellationToken.None);
         }
 
@@ -313,7 +313,7 @@ internal sealed class TwoFactor(
 
         IReadOnlyList<string> texts = [];
 
-        var answer = await codes.JudgeAsync(context, account, code, AuditTrail.OriginOf(request), now);
+        var answer = await codes.JudgeAsync(context, account, code, AuditOrigin.Of(request), now);
         if (answer == CodeAnswer.Right)
         {
             // From here on nothing is canceled with the request: the code is spent.
@@ -330,9 +330,9 @@ internal sealed class TwoFactor(
                 context,
                 userId,
                 AuditAction.TwoFactorRecoveryCodesReplaced,
-                AuditTrail.Account(userId),
+                AuditTarget.Account(userId),
                 now,
-                AuditTrail.OriginOf(request),
+                AuditOrigin.Of(request),
                 CancellationToken.None);
         }
 

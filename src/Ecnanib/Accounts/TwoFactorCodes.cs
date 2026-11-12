@@ -127,7 +127,7 @@ internal sealed class TwoFactorCodes(StoredSecrets secrets, ILogger<TwoFactorCod
     /// <param name="origin">Where the request came from, for the audit trail.</param>
     /// <param name="now">The time the code is judged at.</param>
     public async Task<CodeAnswer> JudgeAsync(
-        EcnanibDbContext context, TwoFactorAccount account, string code, string? origin, DateTimeOffset now)
+        EcnanibDbContext context, TwoFactorAccount account, string code, AuditOrigin origin, DateTimeOffset now)
     {
         // Without a look at the code, so that guessing gains nothing while it lasts.
         if (account.LockedUntil > now)
@@ -197,7 +197,7 @@ internal sealed class TwoFactorCodes(StoredSecrets secrets, ILogger<TwoFactorCod
                 context,
                 account.UserId,
                 AuditAction.TwoFactorRecoveryCodeUsed,
-                AuditTrail.Account(account.UserId),
+                AuditTarget.Account(account.UserId),
                 now,
                 origin,
                 CancellationToken.None);

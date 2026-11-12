@@ -83,10 +83,12 @@ internal sealed class PasswordReset(
         return PasswordResetRequestOutcome.Accepted;
     }
 
-    public async Task<PasswordResetOutcome> ResetAsync(string token, string newPassword, CancellationToken cancellationToken)
+    public async Task<PasswordResetOutcome> ResetAsync(
+        string token, string newPassword, AuditOrigin origin, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(token);
         ArgumentNullException.ThrowIfNull(newPassword);
+        ArgumentNullException.ThrowIfNull(origin);
 
         if (SecretToken.HashOf(token) is not { } tokenHash)
         {
@@ -151,6 +153,10 @@ internal sealed class PasswordReset(
 
         // Whoever was signed in knew the earlier password, or held a browser of someone who did.
         var ended = await Sessions.EndAllAsync(context, account.Id, cancellationToken);
+
+        // In the transaction that set the password, so that the two stand or fall together.
+        await AuditTrail.RecordAsync(
+            context, account.Id, AuditAction.PasswordChanged, AuditTarget.Account(account.Id), now, origin, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 

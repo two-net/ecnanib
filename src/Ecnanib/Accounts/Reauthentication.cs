@@ -137,7 +137,7 @@ internal sealed class Reauthentication(
         if (account.IsOn)
         {
             // The code first, and its answer whatever the password was: see the remarks above.
-            var answer = await codes.JudgeAsync(context, account, code, AuditTrail.OriginOf(request), now);
+            var answer = await codes.JudgeAsync(context, account, code, AuditOrigin.Of(request), now);
             if (answer != CodeAnswer.Right)
             {
                 // The wrong code is counted in this transaction.
@@ -169,6 +169,16 @@ internal sealed class Reauthentication(
             // so the transaction is undone, and a code is not spent.
             return ReauthenticationOutcome.SessionEnded;
         }
+
+        // In the transaction that wrote the proof down, so that the two stand or fall together.
+        await AuditTrail.RecordAsync(
+            context,
+            userId,
+            AuditAction.Reauthenticated,
+            AuditTarget.Account(userId),
+            now,
+            AuditOrigin.Of(request),
+            CancellationToken.None);
 
         await transaction.CommitAsync(CancellationToken.None);
 

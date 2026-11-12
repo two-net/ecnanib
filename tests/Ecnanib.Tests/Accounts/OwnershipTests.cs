@@ -89,7 +89,7 @@ public class OwnershipTests
                 nameof(AuditAction.TwoFactorRecoveryCodesReplaced),
                 nameof(AuditAction.TwoFactorTurnedOff),
             ],
-            StoredAuditEvent.All(application.Database).Where(recorded => recorded.UserId == ada.Id).Select(recorded => recorded.Action));
+            StoredAuditEvent.OfTwoFactor(application.Database).Where(recorded => recorded.UserId == ada.Id).Select(recorded => recorded.Action));
         Assert.DoesNotContain(StoredSession.All(application.Database), session => session.UserId == ada.Id);
         Assert.DoesNotContain(StoredRecoveryCode.All(application.Database), code => code.UserId == ada.Id);
 

@@ -1,6 +1,6 @@
 # Accounts
 
-A visitor registers with an email address and a password, accepts the legal documents, and verifies the address with a link sent by email (FR-ACC-1, FR-ACC-7, FR-ACC-8, NFR-SEC-2). A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). A browser that is signed in has a session, which ends after a period of inactivity (NFR-SEC-1). A user can turn on two-factor authentication with an authenticator app, and signing in then takes a code from the app after the password (FR-ACC-3). Changes to it are recorded in the audit trail (NFR-LOG-7). Before an action that exposes keys or money, a user who is signed in proves again who they are (FR-ACC-4). A user can delete their account, which removes everything that belongs to it, and can download what is stored about them (FR-ACC-9, NFR-SEC-9). The only account type is the individual user (FR-ACC-5).
+A visitor registers with an email address and a password, accepts the legal documents, and verifies the address with a link sent by email (FR-ACC-1, FR-ACC-7, FR-ACC-8, NFR-SEC-2). A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). A browser that is signed in has a session, which ends after a period of inactivity (NFR-SEC-1). A user can turn on two-factor authentication with an authenticator app, and signing in then takes a code from the app after the password (FR-ACC-3). Sign-ins, re-authentications, new passwords, and the changes to two-factor authentication are recorded in the audit trail (NFR-LOG-7). Before an action that exposes keys or money, a user who is signed in proves again who they are (FR-ACC-4). A user can delete their account, which removes everything that belongs to it, and can download what is stored about them (FR-ACC-9, NFR-SEC-9). The only account type is the individual user (FR-ACC-5).
 
 The code is in `src/Ecnanib/Accounts`, the pages in `src/Ecnanib/WebUi/Pages/Account` and `Pages/Legal`, and the email in `src/Ecnanib/Notifications`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Accounts` and `tests/Ecnanib.Tests/Notifications`.
 
@@ -54,7 +54,7 @@ So the link of a repeat registration sets the password:
 | Link | Confirming it |
 |---|---|
 | Of the first registration | Verifies the address. It takes no password. |
-| Of a later registration of the same address | Asks for a new password. With one, it verifies the address, replaces the password, and ends every session of the account. |
+| Of a later registration of the same address | Asks for a new password. With one, it verifies the address, replaces the password, and ends every session of the account. The new password is recorded in the audit trail. |
 
 - The password typed on the form of a later registration is not kept. The page of the link asks for it, so the person who reads the mail of the address is the one who chooses it.
 - `users.email_verification_sets_password` marks such a link. The migration that added the column marked every link that was out at the time, because nothing stored told a first link from a later one.
@@ -70,6 +70,7 @@ The form is at `/sign-in`. It asks for the email address and the password.
 - A page that needs a signed-in user carries `@attribute [Authorize]`. A visitor who opens it is sent to `/sign-in?returnUrl=...` and comes back after signing in. `returnUrl` is followed only when it is a path of this application: it starts with one `/`, and holds no control character. Anything else leads to the start page. `/account` is the first such page.
 - An account with two-factor authentication is not signed in by its password. It is asked for a code: see "Signing in with a code" below. Only the right password tells that an account has it on.
 - The log names the account by its id: `User {UserId} signed in`, `A sign-in failed: ...`.
+- A sign-in is recorded in the audit trail, in the transaction that starts the session. One that fails is not: see "The audit trail".
 
 `ISignIn` does the work. The pages are rendered on the server for each request, so the password and the code travel in a form post.
 
@@ -122,12 +123,13 @@ The email holds a link to `/reset-password?token=...` under `Application:PublicU
 - The token is stored as the verification token is: only its SHA-256 hash, under a parameter that the log masks.
 - The new password meets the rules of registration. One that does not is refused, and the link still works.
 
-Setting the password does four things:
+Setting the password does five things:
 
 1. The password hash is replaced and the link is spent.
 2. **Every session of the account ends,** in the same transaction. Whoever was signed in knew the earlier password, or held a browser of someone who did. A sign-in that waits for a code ends with them.
 3. A verification link that sets the password ends too, or whoever holds it could replace the password that was just set. A first link, which only verifies the address, stands.
-4. A notice is sent to the address, so that an owner who did not do this finds out. It is sent even when whoever set the password closes the connection at once. If it cannot be sent, the error is logged and the password is set all the same.
+4. The new password is recorded in the audit trail, in the same transaction, with where the request came from.
+5. A notice is sent to the address, so that an owner who did not do this finds out. It is sent even when whoever set the password closes the connection at once. If it cannot be sent, the error is logged and the password is set all the same.
 
 The user then signs in with the new password. A reset does not sign in, and **it does not confirm the address**: only a link from the registration form does, because that form is where the legal documents are accepted. **It does not turn two-factor authentication off** either, and it does not end a wait after too many wrong codes: whoever reads the mail of the address would otherwise need nothing else.
 
@@ -278,7 +280,7 @@ The page is `/confirm-identity`, for signed-in users. It asks for the password, 
 - **A right code is spent even when the password is wrong,** a recovery code included. The page asks for the next one. If the code could be given again, one code would serve for as many passwords as can be tried in the minute and a half that it is right.
 - The password is verified before the transaction, because a hash takes its time. The transaction then locks the row of the account, judges the code, looks whether the password is still the one that was verified, and writes the time into the session. A password reset ends the session, so a proof never outlives the password it was given with.
 - If the session has ended by then, nothing is written, the code is not spent, and the browser is sent to sign in.
-- A recovery code that is used here is recorded in the audit trail, as everywhere. The proof itself is not yet: see "Not built yet".
+- The proof is recorded in the audit trail, in the transaction that writes it into the session. A recovery code that is used here is recorded as everywhere, ahead of the proof it gave.
 - The log names the account by its id: `User {UserId} confirmed who they are`, `User {UserId} did not confirm who they are: the password was not right`.
 
 ### Not covered
@@ -367,7 +369,7 @@ The log has `User {UserId} exported their data`, and nothing of the data.
 
 ## The audit trail
 
-Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). The first actions in it are the changes to two-factor authentication. Sign-ins and the actions of other components are not recorded yet.
+Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). Accounts records its own: sign-ins, re-authentications, new passwords, and the changes to two-factor authentication. The other components record theirs when they are built: see "What is not recorded yet".
 
 | Column | What it holds |
 |---|---|
@@ -379,18 +381,64 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 
 | Action | Recorded when |
 |---|---|
+| `SignedIn` | A session started: with the password, and for an account with two-factor authentication when the code was accepted. |
+| `Reauthenticated` | The user proved again who they are, before a sensitive action. |
+| `PasswordChanged` | A new password was set with a reset link, or with the link of an address that was registered again. |
 | `TwoFactorTurnedOn` | Two-factor authentication was turned on. |
 | `TwoFactorTurnedOff` | It was turned off. |
 | `TwoFactorRecoveryCodesReplaced` | New recovery codes were made. |
 | `TwoFactorRecoveryCodeUsed` | A recovery code was used, for any of the four things a code does. |
 
-- **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not.
-- **An event holds no secret:** no key, no code, and no address of an account.
+- **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not. `RecordAsync` refuses a context that holds no transaction.
+- **A sign-in is recorded where the session is stored,** in `Sessions.AddAsync`, which is the one place. So no session starts without its event. A password that only leads to the page that asks for a code records nothing: nobody is signed in.
+- **An event holds no secret, and cannot.** Nothing that makes one takes text: the action is a member of `AuditAction`, the target is made from an id by `AuditTarget`, and the origin is read from the connection by `AuditOrigin`. `AuditEvent` has no constructor that anything else can call. So what a request brought, such as a key or a password, cannot be written into the trail, whatever records the event.
+- **The ids of events are in the order the events were recorded in.** An id starts with a time in milliseconds, and `AuditTrail` hands each one out for a later millisecond than the one before. So two events of one transaction are in order too: a recovery code, and then the sign-in it made. This holds for the events that one running instance records.
 - **The origin is personal data,** and it is not on the list of NFR-SEC-9. It is kept because an audit trail that cannot say where an action came from does not show a takeover. It is the one thing stored about a person beyond that list: see "Personal data". It is in the export of the user's data.
 - **The events of an account are deleted with the account.** So deleting an account is not an event: the log says that it was deleted.
 - Behind a proxy, the origin is the address of the browser only when the application is told to believe the proxy's headers. Otherwise it is the address of the proxy. See "Behind a proxy that terminates TLS" in [security.md](security.md).
 
-A code from the app that signs in changes nothing about two-factor authentication, and is not recorded here. It will be, as a sign-in, when sign-ins are.
+Two actions are recorded though the requirement does not name them. A re-authentication says who was at the browser when keys or money were at stake. A new password by a link from the mail is how an account is taken over by whoever reads that mail.
+
+### What is not recorded
+
+| What | Why |
+|---|---|
+| A sign-in that fails, and a code that is not right | An event belongs to an account, and an address without an account has none to belong to. Recording only for the addresses that have one would make a failed sign-in do other work for them, and so tell whether an address has an account. They are in the log, and wrong codes are counted on the account. |
+| Signing out | A session also ends by staying away, which is nobody's action. |
+| Registering, and verifying an address with a first link | They sign nobody in, and change no password. |
+| Deleting the account | The events of an account go with it. |
+
+### Recording an event
+
+Whatever does one of the actions of the requirement records it, in its own transaction. Agents are not built yet. Starting one will record it like this:
+
+```csharp
+await AuditTrail.RecordAsync(
+    context, userId, AuditAction.AgentStarted, AuditTarget.Agent(agent.Id), now, AuditOrigin.Of(request), cancellationToken);
+```
+
+1. Add the action to `AuditAction`, and a method for the kind of target to `AuditTarget` when the kind is new. Both are in Accounts, so that the vocabulary of the trail is in one place.
+2. Record inside the transaction that does the action, with the context that holds it. `RecordAsync` saves that context.
+3. Take the origin from the request, with `AuditOrigin.Of`.
+4. Write a test that does the action and finds the event, and mark it `[ShowsAuditOf(AuditAction.…)]`.
+5. List the action in [`AuditRules.cs`](../tests/Ecnanib.Tests/Accounts/AuditRules.cs), under the action of the requirement that it records.
+
+A component that may not use Accounts, such as the Decision Engine, records nothing itself. Whoever takes the request does: it opens the transaction, records the event, and hands its context down.
+
+### What is not recorded yet
+
+`AuditRules.cs` is the source of truth. It lists the actions that the requirement names, each with the members of `AuditAction` that record it, or with what it waits for:
+
+| Action of the requirement | Waits for |
+|---|---|
+| Key changes | Credentials |
+| Agent start, pause, and stop | Agents |
+| Mode switches | Agents |
+| Manual closes | Agents, which takes the request. The Decision Engine places the order. |
+| Risk setting changes | Agents |
+| Operator actions | The first operator function |
+
+`AuditRulesTests` fails for an action that still waits once what it waits for is built: once the component has a table of its own, or, for the operator actions, once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`. It also fails for a member of `AuditAction` that no marked test shows being recorded.
 
 ## Passwords
 
@@ -514,8 +562,9 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - What Agents says about the agents of a user before an account is deleted. It implements `IAgentActivity` when agents are built. See "Deleting the account".
 - The parts of the export that other components keep: keys in their masked form, agents, lessons. Accounts cannot read their rows, so each hands its part over through an interface that Accounts declares, when the first such table arrives.
 - Preferences. None is stored yet. When one is, it is personal data of an allowed kind, and it is in the export.
-- Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it.
-- The rest of the audit trail: sign-ins and re-authentications, the actions of other components, and the job that removes events older than `Retention:AuditDays`.
+- Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
+- The rest of the audit trail: the actions of Credentials, of Agents, and of operators, each of which records its own when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
+- A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.
 - Ending a session inside an interactive page. A page that is rendered for each request is checked on each request. An interactive page keeps a connection open, which is not checked again after it is made. No page is interactive yet; the first one must check the session itself.

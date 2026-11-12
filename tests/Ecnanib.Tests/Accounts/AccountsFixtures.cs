@@ -140,9 +140,13 @@ internal sealed class AccountsApplication : IDisposable
         Registration.RegisterAsync(
             new RegistrationRequest(email, accepted ?? EveryDocument), password, TestContext.Current.CancellationToken);
 
-    /// <summary>Confirms a verification link, with the password that the link of a repeat registration asks for.</summary>
+    /// <summary>
+    /// Confirms a verification link, with the password that the link of a repeat registration
+    /// asks for. It is asked of the service itself, and not through a page, so it comes from
+    /// nowhere that the audit trail could name.
+    /// </summary>
     public Task<EmailVerificationOutcome> ConfirmAsync(string token, string? newPassword = null) =>
-        Registration.VerifyEmailAsync(token, newPassword, TestContext.Current.CancellationToken);
+        Registration.VerifyEmailAsync(token, newPassword, AuditOrigin.Unknown, TestContext.Current.CancellationToken);
 
     /// <summary>Whether confirming a verification link verified the address.</summary>
     public async Task<bool> VerifyAsync(string token, string? newPassword = null) =>
@@ -152,7 +156,7 @@ internal sealed class AccountsApplication : IDisposable
         PasswordReset.RequestAsync(email, TestContext.Current.CancellationToken);
 
     public Task<PasswordResetOutcome> ResetAsync(string token, string newPassword) =>
-        PasswordReset.ResetAsync(token, newPassword, TestContext.Current.CancellationToken);
+        PasswordReset.ResetAsync(token, newPassword, AuditOrigin.Unknown, TestContext.Current.CancellationToken);
 
     /// <summary>Every row of every table, as the database would hand it to whoever reads it.</summary>
     public string EverythingStored() =>
@@ -435,6 +439,13 @@ internal sealed record StoredAuditEvent(Guid Id, Guid UserId, string Action, str
 
         return events;
     }
+
+    /// <summary>
+    /// The events about two-factor authentication, in the order they were recorded: what a test
+    /// about its changes looks at, without the sign-ins and the proofs around them.
+    /// </summary>
+    public static IReadOnlyList<StoredAuditEvent> OfTwoFactor(TestDatabase database) =>
+        [.. All(database).Where(recorded => recorded.Action.StartsWith("TwoFactor", StringComparison.Ordinal))];
 }
 
 /// <summary>

@@ -69,6 +69,7 @@ internal sealed class SignIn(
             passwordHash,
             SessionCookie.TokenOf(request.Request),
             PendingSignInCookie.TokenOf(request.Request),
+            AuditOrigin.Of(request),
             cancellationToken);
 
         if (started.PendingToken is { } pendingToken)
@@ -138,7 +139,7 @@ internal sealed class SignIn(
             return StartAgain(request);
         }
 
-        var answer = await codes.JudgeAsync(context, account, code, AuditTrail.OriginOf(request), now);
+        var answer = await codes.JudgeAsync(context, account, code, AuditOrigin.Of(request), now);
         if (answer != CodeAnswer.Right)
         {
             // The wrong code is counted in this transaction.
@@ -162,7 +163,7 @@ internal sealed class SignIn(
         }
 
         var token = await sessions.AddAsync(
-            context, account.UserId, SessionCookie.TokenOf(request.Request), now, CancellationToken.None);
+            context, account.UserId, SessionCookie.TokenOf(request.Request), now, AuditOrigin.Of(request), CancellationToken.None);
 
         await transaction.CommitAsync(CancellationToken.None);
 

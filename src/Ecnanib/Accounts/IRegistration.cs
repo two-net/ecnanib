@@ -32,8 +32,13 @@ public interface IRegistration
     /// account may be someone else's, so the person who reads the mail of the address chooses it.
     /// The sessions of the account end with the earlier password. A first link takes no password.
     /// </param>
+    /// <param name="origin">
+    /// Where the request came from, for the audit trail, which records a password that is chosen
+    /// this way.
+    /// </param>
     /// <param name="cancellationToken">Cancels the verification.</param>
-    Task<EmailVerificationOutcome> VerifyEmailAsync(string token, string? newPassword, CancellationToken cancellationToken);
+    Task<EmailVerificationOutcome> VerifyEmailAsync(
+        string token, string? newPassword, AuditOrigin origin, CancellationToken cancellationToken);
 }
 
 /// <summary>How confirming a verification link ended.</summary>

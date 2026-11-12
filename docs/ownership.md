@@ -119,6 +119,8 @@ An operator is a user with the status screens and the safety controls of the ser
 - Owning something satisfies no part of the policy.
 - An operator function that is about every user, or about a user who is not the one signed in, asks the database without `OwnedBy`. That is why it requires the policy.
 
+An operator function asks in one of the two ways of "The check", and in no other. `AuditRulesTests` watches for both, to tell when the first operator function is built: what an operator does is recorded in the audit trail (FR-OPS-5). See "The audit trail" in [accounts.md](accounts.md).
+
 No operator function is built yet.
 
 ## No tenants and no billing
