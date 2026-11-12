@@ -19,6 +19,10 @@ public static class AccountsModule
         services.AddSingleton<ISignIn, SignIn>();
         services.AddSingleton<IPasswordReset, PasswordReset>();
 
+        // Two-factor authentication. Its key is encrypted by the platform's StoredSecrets.
+        services.AddSingleton<TwoFactorCodes>();
+        services.AddSingleton<ITwoFactor, TwoFactor>();
+
         // The one way a request is known to be signed in, for the Web UI and the API alike.
         services.AddAuthentication(SessionAuthentication.Scheme)
             .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthentication.Scheme, configureOptions: null);

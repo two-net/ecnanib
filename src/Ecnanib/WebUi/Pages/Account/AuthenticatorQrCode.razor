@@ -1,0 +1,32 @@
+@using Net.Codecrete.QrCodeGenerator
+
+@*
+    The QR code that an authenticator app scans. It is drawn here, on the server, as part of the
+    page: the key in it goes to the browser of its user and nowhere else. Black on white whatever
+    the colors of the page are, with the quiet border a scanner needs.
+*@
+
+<svg class="qr-code" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 @_size @_size" role="img" aria-label="QR code to scan with your authenticator app">
+    <rect width="@_size" height="@_size" fill="#ffffff" />
+    <path d="@_path" fill="#000000" />
+</svg>
+
+@code {
+    // In modules, on every side: what the standard asks for.
+    private const int Border = 4;
+
+    private int _size;
+    private string _path = string.Empty;
+
+    /// <summary>What the code carries: the address that gives an app the key.</summary>
+    [Parameter, EditorRequired]
+    public string Text { get; set; } = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        var code = QrCode.EncodeText(Text, QrCode.Ecc.Medium);
+
+        _size = code.Size + (2 * Border);
+        _path = code.ToGraphicsPath(Border);
+    }
+}

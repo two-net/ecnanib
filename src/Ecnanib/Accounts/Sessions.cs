@@ -8,9 +8,27 @@ namespace Ecnanib.Accounts;
 internal sealed record SignedInUser(Guid Id, string Email);
 
 /// <summary>
+/// What giving the right password led to: a session, or a sign-in that waits for a code. Neither
+/// is set when the password was changed since it was verified, so that it no longer signs in.
+/// </summary>
+/// <remarks>It holds a token, which is a secret, so it is not a record: nothing prints its members.</remarks>
+internal readonly struct SignInStart
+{
+    /// <summary>The token of the session that started, for an account without two-factor authentication.</summary>
+    public string? SessionToken { get; init; }
+
+    /// <summary>The token of the sign-in that waits for a code, for an account with it.</summary>
+    public string? PendingToken { get; init; }
+}
+
+/// <summary>A sign-in that waits for a code, as far as the page that takes the code needs to know it.</summary>
+internal sealed record WaitingSignIn(Guid Id, Guid UserId);
+
+/// <summary>
 /// The sessions in the database: starting one, finding the one a cookie names, and ending them.
-/// A session ends by itself after the configured period of inactivity (NFR-SEC-1). See
-/// docs/accounts.md.
+/// A session ends by itself after the configured period of inactivity (NFR-SEC-1). The sign-ins
+/// that wait for a code are here too, because the same lock decides which of the two a password
+/// starts (FR-ACC-3). See docs/accounts.md.
 /// </summary>
 internal sealed class Sessions(
     SecuritySettings security,
@@ -27,18 +45,22 @@ internal sealed class Sessions(
     private readonly TimeSpan _writeEvery = TimeSpan.FromSeconds(Math.Min(60, security.SessionIdleMinutes));
 
     /// <summary>
-    /// Starts a session for a user whose password was just verified against
-    /// <paramref name="verifiedPasswordHash"/>, and returns its token.
+    /// Starts what the right password starts, for a user whose password was just verified against
+    /// <paramref name="verifiedPasswordHash"/>: a session, or for an account with two-factor
+    /// authentication a sign-in that waits for a code.
     /// </summary>
     /// <param name="userId">The user.</param>
     /// <param name="verifiedPasswordHash">The stored hash that the password matched.</param>
-    /// <param name="heldToken">The token of the session the browser holds now, which ends.</param>
+    /// <param name="heldToken">The token of the session the browser holds now, which ends when another starts.</param>
+    /// <param name="heldPendingToken">The token of the sign-in the browser has waiting for a code, which ends.</param>
     /// <param name="cancellationToken">Cancels the start.</param>
-    /// <returns>Null when the password was changed since it was verified, so that it no longer signs in.</returns>
-    public async Task<string?> StartAsync(
-        Guid userId, string verifiedPasswordHash, string? heldToken, CancellationToken cancellationToken)
+    public async Task<SignInStart> StartAsync(
+        Guid userId,
+        string verifiedPasswordHash,
+        string? heldToken,
+        string? heldPendingToken,
+        CancellationToken cancellationToken)
     {
-        var (token, tokenHash) = SecretToken.Create();
         var now = clock.GetUtcNow();
 
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
@@ -48,19 +70,80 @@ internal sealed class Sessions(
         // of the account, so whichever comes first, a session never outlives the password it
         // was started with: either the change waits and then ends this session, or this waits
         // and then finds another hash.
-        var unchanged = await context.Database
-            .SqlQuery<Guid>(
+        //
+        // The same lock, in the same statement, says whether the account asks for a code.
+        // Turning two-factor authentication on changes the row, so it waits for this or this
+        // waits for it, and a password alone never starts a session of an account that has it on.
+        var asksForCode = await context.Database
+            .SqlQuery<bool>(
                 $"""
-                SELECT id AS "Value" FROM users
+                SELECT two_factor_enabled_at IS NOT NULL AS "Value" FROM users
                 WHERE id = {userId} AND password_hash = {verifiedPasswordHash}
                 FOR SHARE
                 """)
             .ToListAsync(cancellationToken);
 
-        if (unchanged.Count == 0)
+        if (asksForCode.Count == 0)
         {
-            return null;
+            return default;
         }
+
+        // A browser has one sign-in waiting for a code. The one it held ends, whoever it belonged to.
+        if (heldPendingToken is not null && SecretToken.HashOf(heldPendingToken) is { } heldPendingHash)
+        {
+            await context.Set<PendingSignIn>()
+                .Where(pending => pending.TokenHash == heldPendingHash)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+
+        // Those of the account that nobody gave a code for in time. One that another request is
+        // ending at this moment is left to it. This lock is shared, so two passwords of one
+        // account can be here at once, each having ended a sign-in that the other would clear
+        // away: if either waited for the other, both would wait for ever.
+        await context.Database.ExecuteSqlAsync(
+            $"""
+            DELETE FROM pending_sign_ins
+            WHERE id IN (
+                SELECT id FROM pending_sign_ins
+                WHERE user_id = {userId} AND expires_at <= {now}
+                FOR UPDATE SKIP LOCKED)
+            """,
+            cancellationToken);
+
+        SignInStart started;
+        if (asksForCode[0])
+        {
+            var (token, tokenHash) = SecretToken.Create();
+
+            context.Set<PendingSignIn>().Add(
+                new PendingSignIn(Guid.CreateVersion7(), userId, tokenHash, now + PendingSignIn.Lifetime));
+            await context.SaveChangesAsync(cancellationToken);
+
+            started = new SignInStart { PendingToken = token };
+        }
+        else
+        {
+            started = new SignInStart { SessionToken = await AddAsync(context, userId, heldToken, now, cancellationToken) };
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return started;
+    }
+
+    /// <summary>
+    /// Stores a session for a user inside the transaction of the caller, who holds the lock on
+    /// the user's row and has made sure that the user may be signed in. Returns its token.
+    /// </summary>
+    /// <param name="context">The context that holds the transaction.</param>
+    /// <param name="userId">The user.</param>
+    /// <param name="heldToken">The token of the session the browser holds now, which ends.</param>
+    /// <param name="now">The time the session starts at.</param>
+    /// <param name="cancellationToken">Cancels the start.</param>
+    public async Task<string> AddAsync(
+        EcnanibDbContext context, Guid userId, string? heldToken, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var (token, tokenHash) = SecretToken.Create();
 
         // A browser has one session. The one it held ends, whoever it belonged to.
         if (heldToken is not null && SecretToken.HashOf(heldToken) is { } heldHash)
@@ -78,8 +161,6 @@ internal sealed class Sessions(
 
         context.Set<Session>().Add(new Session(Guid.CreateVersion7(), userId, tokenHash, now, now));
         await context.SaveChangesAsync(cancellationToken);
-
-        await transaction.CommitAsync(cancellationToken);
 
         return token;
     }
@@ -183,11 +264,85 @@ internal sealed class Sessions(
 
     /// <summary>
     /// Ends every session of a user, inside the transaction of whoever changes their password:
-    /// nobody stays signed in on a password that no longer is one.
+    /// nobody stays signed in on a password that no longer is one. A sign-in that waits for a
+    /// code ends with them, because it was started with that password.
     /// </summary>
     /// <returns>How many sessions ended.</returns>
-    public static Task<int> EndAllAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken) =>
-        context.Set<Session>()
+    public static async Task<int> EndAllAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken)
+    {
+        await EndWaitingAsync(context, userId, cancellationToken);
+
+        return await context.Set<Session>()
             .Where(session => session.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Ends every session of a user but the one of the browser that asks for it, inside the
+    /// transaction of whoever turns two-factor authentication on: the others were started with
+    /// the password alone. Every sign-in that waits for a code ends too.
+    /// </summary>
+    /// <param name="context">The context that holds the transaction.</param>
+    /// <param name="userId">The user.</param>
+    /// <param name="keptToken">The token of the session that stays.</param>
+    /// <param name="cancellationToken">Cancels it.</param>
+    /// <returns>How many sessions ended.</returns>
+    public static async Task<int> EndOthersAsync(
+        EcnanibDbContext context, Guid userId, string? keptToken, CancellationToken cancellationToken)
+    {
+        await EndWaitingAsync(context, userId, cancellationToken);
+
+        var others = context.Set<Session>().Where(session => session.UserId == userId);
+        if (keptToken is not null && SecretToken.HashOf(keptToken) is { } keptHash)
+        {
+            others = others.Where(session => session.TokenHash != keptHash);
+        }
+
+        return await others.ExecuteDeleteAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The sign-in that a token names, when it still waits for its code. One that waited too
+    /// long is not found.
+    /// </summary>
+    /// <returns>Null when the text is not a token, or names no sign-in that waits.</returns>
+    public async Task<WaitingSignIn?> FindWaitingAsync(string token, CancellationToken cancellationToken)
+    {
+        if (SecretToken.HashOf(token) is not { } tokenHash)
+        {
+            return null;
+        }
+
+        var now = clock.GetUtcNow();
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await context.Set<PendingSignIn>()
+            .Where(pending => pending.TokenHash == tokenHash && pending.ExpiresAt > now)
+            .Select(pending => new WaitingSignIn(pending.Id, pending.UserId))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    /// <summary>Ends the sign-in that a token names, when a browser gives it up.</summary>
+    public async Task EndWaitingAsync(string token, CancellationToken cancellationToken)
+    {
+        if (SecretToken.HashOf(token) is not { } tokenHash)
+        {
+            return;
+        }
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        await context.Set<PendingSignIn>()
+            .Where(pending => pending.TokenHash == tokenHash)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Ends every sign-in of a user that waits for a code, inside the transaction of whoever
+    /// changes what such a sign-in was started under.
+    /// </summary>
+    public static Task<int> EndWaitingAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken) =>
+        context.Set<PendingSignIn>()
+            .Where(pending => pending.UserId == userId)
             .ExecuteDeleteAsync(cancellationToken);
 }

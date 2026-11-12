@@ -1,10 +1,10 @@
 # Security
 
-How requests travel between a browser and the application: over TLS, with cookies that are sent only over TLS and that scripts cannot read (NFR-SEC-1).
+How requests travel between a browser and the application: over TLS, with cookies that are sent only over TLS and that scripts cannot read (NFR-SEC-1). And how a secret is kept in the database: encrypted (NFR-SEC-5).
 
-The options are in `src/Ecnanib/Platform/Security`, and the order of the request pipeline is in `src/Ecnanib/Program.cs`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Security` and `tests/Ecnanib.Tests/Accounts`.
+The options and the encryption are in `src/Ecnanib/Platform/Security`, and the order of the request pipeline is in `src/Ecnanib/Program.cs`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Security` and `tests/Ecnanib.Tests/Accounts`.
 
-Sign-in, sessions, and password reset are in [accounts.md](accounts.md). Rate limits and the other defenses of a web application are a separate feature and are not built yet.
+Sign-in, sessions, password reset, and two-factor authentication are in [accounts.md](accounts.md). Rate limits and the other defenses of a web application are a separate feature and are not built yet.
 
 ## TLS
 
@@ -43,11 +43,33 @@ Every cookie the application sets is `Secure` and `HttpOnly`, and at least `Same
 | Cookie | Purpose | Attributes |
 |---|---|---|
 | `__Host-ecnanib-session` | The token of a session. See "Sessions" in [accounts.md](accounts.md). | `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no expiry |
+| `__Host-ecnanib-sign-in` | The token of a sign-in that waits for a code, from the page that took the password to the page that takes the code. It is set only for an account with two-factor authentication, and taken back when the code is accepted. See "Signing in with a code" in [accounts.md](accounts.md). | `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, no expiry |
 | `__Host-ecnanib-antiforgery` | One half of the token against request forgery that every form carries. | `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, no expiry |
 
-The `__Host-` prefix makes a browser refuse a cookie unless it was set over TLS, for the whole host, and without a domain. So a site on another subdomain of the same domain cannot plant either cookie.
+The `__Host-` prefix makes a browser refuse a cookie unless it was set over TLS, for the whole host, and without a domain. So a site on another subdomain of the same domain cannot plant any of these cookies.
 
 Because the cookies are `Secure`, a browser does not send them over plain HTTP. The tests speak TLS to the application for that reason.
+
+## Stored secrets
+
+A secret that the application must be able to read again is stored encrypted (NFR-SEC-5). `StoredSecrets` in `Platform/Security` does it, for every component, with the master keys of the configuration file. A secret that only needs to be recognised, such as a password or the token of a session, is not encrypted but hashed: see [accounts.md](accounts.md).
+
+| Rule | How |
+|---|---|
+| Authenticated encryption with a 256-bit key (FR-KEY-6). | AES-256-GCM. A value that was changed, in any bit, does not decrypt. |
+| A nonce for every value (FR-KEY-6). | 12 random bytes, new each time. The same secret is stored differently every time it is stored. |
+| A value names the master key that encrypted it (FR-KEY-6). | `EncryptedSecret` is the value and the id of the key. A component stores both: the id in a column of its own, beside the value. |
+| New values use the active key, and earlier values still read (FR-KEY-7). | `Security:ActiveKeyId` names the key that encrypts. A value is decrypted with the key it names, so it reads for as long as `Security:MasterKeys` lists that key. Ids ignore case. |
+| A value belongs to one thing. | Whoever encrypts says what the value is bound to, such as `two-factor:<user id>`, and must say the same to decrypt. A value that is copied to another row does not decrypt there. |
+| Decrypted only for the call that needs it (FR-KEY-9). | `Decrypt` hands the secret to its caller, who uses it and clears it. Nothing keeps it. |
+
+A stored value is the nonce, the ciphertext, and the tag of 16 bytes, in that order.
+
+What is encrypted this way today is the key of two-factor authentication, in `users.two_factor_secret`. See "The key" in [accounts.md](accounts.md).
+
+**To change the master key,** add a key to `Security:MasterKeys` under a new id, name it in `Security:ActiveKeyId`, and keep the earlier key listed. Values that are stored from then on use the new key. **Removing a key from the file makes every value it encrypted unreadable:** a user whose two-factor key is one of them cannot sign in, and the request ends in an error.
+
+Not built yet: the routine that encrypts every stored value again with the active key, after which an earlier key can be removed, and the encryption of users' API keys.
 
 ## The request pipeline
 

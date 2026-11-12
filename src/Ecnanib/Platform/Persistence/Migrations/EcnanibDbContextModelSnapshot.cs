@@ -22,6 +22,43 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Ecnanib.Accounts.AuditEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("action");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Origin")
+                        .HasColumnType("text")
+                        .HasColumnName("origin");
+
+                    b.Property<string>("Target")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("target");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_audit_events");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_audit_events_user_id");
+
+                    b.ToTable("audit_events", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Accounts.LegalAcceptance", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -44,6 +81,58 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasName("pk_legal_acceptances");
 
                     b.ToTable("legal_acceptances", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Accounts.PendingSignIn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pending_sign_ins");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_pending_sign_ins_token_hash");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_pending_sign_ins_user_id");
+
+                    b.ToTable("pending_sign_ins", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Accounts.RecoveryCode", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<byte[]>("CodeHash")
+                        .HasColumnType("bytea")
+                        .HasColumnName("code_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("UserId", "CodeHash")
+                        .HasName("pk_two_factor_recovery_codes");
+
+                    b.ToTable("two_factor_recovery_codes", (string)null);
                 });
 
             modelBuilder.Entity("Ecnanib.Accounts.Session", b =>
@@ -125,6 +214,30 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.Property<DateTimeOffset>("RegisteredAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("registered_at");
+
+                    b.Property<DateTimeOffset?>("TwoFactorEnabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("two_factor_enabled_at");
+
+                    b.Property<int>("TwoFactorFailedCodes")
+                        .HasColumnType("integer")
+                        .HasColumnName("two_factor_failed_codes");
+
+                    b.Property<long?>("TwoFactorLastStep")
+                        .HasColumnType("bigint")
+                        .HasColumnName("two_factor_last_step");
+
+                    b.Property<DateTimeOffset?>("TwoFactorLockedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("two_factor_locked_until");
+
+                    b.Property<byte[]>("TwoFactorSecret")
+                        .HasColumnType("bytea")
+                        .HasColumnName("two_factor_secret");
+
+                    b.Property<string>("TwoFactorSecretKeyId")
+                        .HasColumnType("text")
+                        .HasColumnName("two_factor_secret_key_id");
 
                     b.HasKey("Id")
                         .HasName("pk_users");
@@ -391,6 +504,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Ecnanib.Accounts.AuditEvent", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_audit_events_users_user_id");
+                });
+
             modelBuilder.Entity("Ecnanib.Accounts.LegalAcceptance", b =>
                 {
                     b.HasOne("Ecnanib.Accounts.User", null)
@@ -399,6 +522,26 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_legal_acceptances_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Accounts.PendingSignIn", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_pending_sign_ins_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Accounts.RecoveryCode", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_two_factor_recovery_codes_users_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Accounts.Session", b =>

@@ -1,6 +1,7 @@
 using System.Net;
 using Ecnanib.Accounts;
 using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Logging;
 using Microsoft.AspNetCore.Hosting;
 
@@ -100,6 +101,48 @@ public class TransportTests
             Assert.Contains("path=/", attributes);
             Assert.Contains(attributes, attribute => attribute is "samesite=lax" or "samesite=strict");
             Assert.DoesNotContain(attributes, attribute => attribute.StartsWith("domain=", StringComparison.Ordinal));
+        });
+    }
+
+    [Fact]
+    public async Task The_cookie_of_a_sign_in_that_waits_for_a_code_is_sent_only_over_TLS_and_is_hidden_from_scripts()
+    {
+        var clock = new TestClock(new DateTimeOffset(2026, 11, 12, 9, 0, 0, TimeSpan.Zero));
+        using var application = new AccountsApplication(clock: clock);
+        var (_, app, _) = await application.RegisterWithTwoFactorAsync("ada@example.com", clock);
+        using var client = application.CreateClientThatStays();
+
+        // The password of an account with two-factor authentication sets this cookie, and no session.
+        using var afterPassword = await client.SendFormAsync(
+            SessionAuthentication.SignInPath,
+            "sign-in",
+            Browser.AntiforgeryTokenIn(await client.PageAsync(SessionAuthentication.SignInPath)),
+            ("Email", "ada@example.com"),
+            ("Password", AccountsApplication.Password));
+
+        var waiting = Assert.Single(Browser.CookiesSetBy(afterPassword));
+        Assert.StartsWith("__Host-ecnanib-sign-in=", waiting);
+
+        // For this site alone, and until the browser closes.
+        var attributes = waiting.Split("; ")[1..];
+        Assert.Equal(["httponly", "path=/", "samesite=strict", "secure"], attributes.Order(StringComparer.Ordinal));
+
+        // The code sets the cookie of the session, and takes this one back.
+        using var afterCode = await client.SendFormAsync(
+            SessionAuthentication.SignInCodePath,
+            "sign-in-code",
+            Browser.AntiforgeryTokenIn(await client.PageAsync(SessionAuthentication.SignInCodePath)),
+            ("Code", app.CodeAt(clock.GetUtcNow())));
+
+        var cookies = Browser.CookiesSetBy(afterCode).Order(StringComparer.Ordinal).ToList();
+
+        Assert.Equal(2, cookies.Count);
+        Assert.StartsWith("__Host-ecnanib-session=", cookies[0]);
+        Assert.StartsWith("__Host-ecnanib-sign-in=; expires=Thu, 01 Jan 1970", cookies[1]);
+        Assert.All(cookies, cookie =>
+        {
+            Assert.Contains("secure", cookie.Split("; "));
+            Assert.Contains("httponly", cookie.Split("; "));
         });
     }
 }

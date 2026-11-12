@@ -4,7 +4,7 @@ Ecnanib writes structured log events: each one has a message template with named
 
 The library is Serilog, behind the host's `ILogger<T>`. Only `Platform` uses Serilog directly (`src/Ecnanib/Platform/Logging`). The rules below are enforced by tests in `tests/Ecnanib.Tests/Logging` and `tests/Ecnanib.Tests/Architecture`.
 
-Logs are not the audit trail. The audit trail is stored in the database and is a separate feature.
+Logs are not the audit trail. The audit trail is stored in the database: see "The audit trail" in [accounts.md](accounts.md).
 
 ## Configuration
 

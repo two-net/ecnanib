@@ -36,6 +36,10 @@
 
     <!-- The SMTP client of the email adapter, and nothing else. See docs/accounts.md. -->
     <PackageReference Include="MailKit" Version="5.0.0" />
+
+    <!-- Draws the QR code that an authenticator app scans (FR-ACC-3). .NET has no QR encoder of
+         its own, and this one depends on nothing else. See docs/accounts.md. -->
+    <PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="3.2.1" />
   </ItemGroup>
 
   <ItemGroup>

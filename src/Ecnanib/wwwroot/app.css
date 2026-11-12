@@ -77,6 +77,34 @@ form > button[type=submit] {
     }
 }
 
+/* Two-factor authentication: the QR code for an authenticator app, the key to type in its place,
+   and the recovery codes. The codes are in a typeface that tells its letters and digits apart. */
+.qr-code {
+    display: block;
+    width: 12rem;
+    height: 12rem;
+    margin: 1rem 0;
+}
+
+.setup-key, .recovery-codes code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.1rem;
+    letter-spacing: 0.05em;
+}
+
+.setup-key {
+    overflow-wrap: anywhere;
+}
+
+.recovery-codes {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0.5rem 2rem;
+    max-width: 32rem;
+}
+
 /* The bar that says who is signed in, with the sign-out button in line with its links. */
 .account-bar {
     display: flex;

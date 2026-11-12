@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
 using Ecnanib.Accounts;
@@ -145,6 +146,13 @@ internal sealed class AccountsApplication : IDisposable
     public Task<PasswordResetOutcome> ResetAsync(string token, string newPassword) =>
         PasswordReset.ResetAsync(token, newPassword, TestContext.Current.CancellationToken);
 
+    /// <summary>Every row of every table, as the database would hand it to whoever reads it.</summary>
+    public string EverythingStored() =>
+        string.Join(
+            Environment.NewLine,
+            Database.Tables().SelectMany(table =>
+                Database.Column($"""SELECT row_to_json(stored)::text FROM "{table}" stored""")));
+
     /// <summary>Registers an address and verifies it with the link it was sent.</summary>
     public async Task<StoredUser> RegisterVerifiedAsync(string email)
     {
@@ -152,6 +160,27 @@ internal sealed class AccountsApplication : IDisposable
         Assert.True(await VerifyAsync(TokenIn(Email.Sent[^1])));
 
         return StoredUser.Of(Database, email)!;
+    }
+
+    /// <summary>
+    /// Registers an address, verifies it, and turns two-factor authentication on for it, as its
+    /// user does. Nobody is signed in afterwards, and the clock is a minute on, so that the next
+    /// code of the app is one that was not used.
+    /// </summary>
+    /// <returns>The account, the app that was enrolled, and the recovery codes that were shown.</returns>
+    public async Task<(StoredUser User, AuthenticatorApp App, IReadOnlyList<string> RecoveryCodes)> RegisterWithTwoFactorAsync(
+        string email, TestClock clock)
+    {
+        using var client = CreateClient();
+        var user = await RegisterVerifiedAsync(email);
+
+        await client.SignInAsync(email);
+        var (app, recoveryCodes) = await client.TurnOnTwoFactorAsync(clock);
+        await client.SignOutAsync();
+
+        clock.Set(clock.GetUtcNow().AddMinutes(1));
+
+        return (user, app, recoveryCodes);
     }
 
     /// <summary>The link in a message: a verification link or a reset link.</summary>
@@ -268,6 +297,169 @@ internal sealed record StoredAcceptance(Guid UserId, string Document, string Ver
     }
 }
 
+/// <summary>What the <c>users</c> table holds of an account for two-factor authentication, read by a test directly.</summary>
+internal sealed record StoredTwoFactor(
+    byte[]? Secret, string? SecretKeyId, DateTimeOffset? EnabledAt, long? LastStep, int FailedCodes, DateTimeOffset? LockedUntil)
+{
+    /// <summary>Whether nothing at all is stored: as for an account that never turned it on.</summary>
+    public bool IsEmpty =>
+        Secret is null && SecretKeyId is null && EnabledAt is null && LastStep is null && FailedCodes == 0 && LockedUntil is null;
+
+    public static StoredTwoFactor Of(TestDatabase database, string email)
+    {
+        using var connection = database.Open();
+        using var command = new NpgsqlCommand(
+            """
+            SELECT two_factor_secret, two_factor_secret_key_id, two_factor_enabled_at,
+                   two_factor_last_step, two_factor_failed_codes, two_factor_locked_until
+            FROM users WHERE email = @email
+            """,
+            connection);
+        command.Parameters.AddWithValue("email", email);
+        using var reader = command.ExecuteReader();
+
+        Assert.True(reader.Read(), $"There is no account of {email}.");
+
+        return new StoredTwoFactor(
+            reader.IsDBNull(0) ? null : reader.GetFieldValue<byte[]>(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
+            reader.IsDBNull(3) ? null : reader.GetInt64(3),
+            reader.GetInt32(4),
+            reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5));
+    }
+}
+
+/// <summary>A row of the <c>two_factor_recovery_codes</c> table, read by a test directly.</summary>
+internal sealed record StoredRecoveryCode(Guid UserId, byte[] CodeHash, DateTimeOffset CreatedAt)
+{
+    public static IReadOnlyList<StoredRecoveryCode> All(TestDatabase database)
+    {
+        using var connection = database.Open();
+        using var command = new NpgsqlCommand(
+            "SELECT user_id, code_hash, created_at FROM two_factor_recovery_codes ORDER BY user_id, code_hash", connection);
+        using var reader = command.ExecuteReader();
+
+        var codes = new List<StoredRecoveryCode>();
+        while (reader.Read())
+        {
+            codes.Add(new StoredRecoveryCode(
+                reader.GetGuid(0), reader.GetFieldValue<byte[]>(1), reader.GetFieldValue<DateTimeOffset>(2)));
+        }
+
+        return codes;
+    }
+
+    /// <summary>The hash that the table holds of a code, however the code is written.</summary>
+    public static byte[] HashOf(string code) =>
+        System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes(code.Replace("-", string.Empty)));
+}
+
+/// <summary>A row of the <c>pending_sign_ins</c> table, read by a test directly.</summary>
+internal sealed record StoredPendingSignIn(Guid Id, Guid UserId, byte[] TokenHash, DateTimeOffset ExpiresAt)
+{
+    public static IReadOnlyList<StoredPendingSignIn> All(TestDatabase database)
+    {
+        using var connection = database.Open();
+        using var command = new NpgsqlCommand(
+            "SELECT id, user_id, token_hash, expires_at FROM pending_sign_ins ORDER BY expires_at, id", connection);
+        using var reader = command.ExecuteReader();
+
+        var pending = new List<StoredPendingSignIn>();
+        while (reader.Read())
+        {
+            pending.Add(new StoredPendingSignIn(
+                reader.GetGuid(0),
+                reader.GetGuid(1),
+                reader.GetFieldValue<byte[]>(2),
+                reader.GetFieldValue<DateTimeOffset>(3)));
+        }
+
+        return pending;
+    }
+}
+
+/// <summary>A row of the <c>audit_events</c> table, read by a test directly.</summary>
+internal sealed record StoredAuditEvent(Guid Id, Guid UserId, string Action, string Target, DateTimeOffset OccurredAt, string? Origin)
+{
+    /// <summary>Every event, in the order they were recorded.</summary>
+    public static IReadOnlyList<StoredAuditEvent> All(TestDatabase database)
+    {
+        using var connection = database.Open();
+        using var command = new NpgsqlCommand(
+            "SELECT id, user_id, action, target, occurred_at, origin FROM audit_events ORDER BY id", connection);
+        using var reader = command.ExecuteReader();
+
+        var events = new List<StoredAuditEvent>();
+        while (reader.Read())
+        {
+            events.Add(new StoredAuditEvent(
+                reader.GetGuid(0),
+                reader.GetGuid(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetFieldValue<DateTimeOffset>(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5)));
+        }
+
+        return events;
+    }
+}
+
+/// <summary>
+/// Stands for the authenticator app on the phone of a user: it holds the key that the page
+/// showed, and gives the code of a moment.
+/// </summary>
+internal sealed class AuthenticatorApp(byte[] key)
+{
+    private const string Base32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+    public byte[] Key { get; } = key;
+
+    /// <summary>The key as the page shows it for typing, without its spaces.</summary>
+    public string KeyText => Totp.TextOf(Key);
+
+    public string CodeAt(DateTimeOffset time) => Totp.CodeAt(Key, time);
+
+    /// <summary>Six digits that are not the code of a moment, nor of the steps around it.</summary>
+    public string WrongCodeAt(DateTimeOffset time)
+    {
+        var right = new[] { -30, 0, 30 }.Select(seconds => CodeAt(time.AddSeconds(seconds))).ToHashSet();
+
+        return Enumerable.Range(0, 1000).Select(number => (111111 + number).ToString()).First(code => !right.Contains(code));
+    }
+
+    /// <summary>The app as a user sets it up: with the key that the page shows as text.</summary>
+    public static AuthenticatorApp WithKeyOn(string page)
+    {
+        var key = Regex.Match(page, "<code class=\"setup-key\">([A-Z2-7 ]+)</code>");
+        Assert.True(key.Success, $"The page shows no key to type into an app:{Environment.NewLine}{page}");
+
+        return new AuthenticatorApp(Decode(key.Groups[1].Value.Replace(" ", string.Empty)));
+    }
+
+    private static byte[] Decode(string text)
+    {
+        var bytes = new List<byte>();
+        var held = 0;
+        var bits = 0;
+
+        foreach (var letter in text)
+        {
+            held = (held << 5) | Base32.IndexOf(letter);
+            bits += 5;
+
+            if (bits >= 8)
+            {
+                bits -= 8;
+                bytes.Add((byte)(held >> bits));
+            }
+        }
+
+        return [.. bytes];
+    }
+}
+
 /// <summary>What a browser does with the pages: reads one, and posts a form of it.</summary>
 internal static class Browser
 {
@@ -341,6 +533,51 @@ internal static class Browser
     /// <summary>Presses the sign-out button of the start page, and follows where the answer leads.</summary>
     public static async Task<(string Path, string Page)> SignOutAsync(this HttpClient client) =>
         await client.PostAsync(WebUiModule.SignOutPath, "sign-out", AntiforgeryTokenIn(await client.PageAsync("/")));
+
+    /// <summary>The path of the page that turns two-factor authentication on, and says how it stands.</summary>
+    public const string TwoFactorPage = "/account/two-factor";
+
+    /// <summary>
+    /// Turns two-factor authentication on for the user who is signed in, as a user does: opens
+    /// the page, sets an app up with the key on it, and posts the code of the app and the password.
+    /// </summary>
+    /// <returns>The app, and the recovery codes that the answer showed.</returns>
+    public static async Task<(AuthenticatorApp App, IReadOnlyList<string> RecoveryCodes)> TurnOnTwoFactorAsync(
+        this HttpClient client, TimeProvider clock, string password = AccountsApplication.Password)
+    {
+        var page = await client.PageAsync(TwoFactorPage);
+        var app = AuthenticatorApp.WithKeyOn(page);
+
+        var (_, answer) = await client.PostAsync(
+            TwoFactorPage,
+            "turn-on",
+            AntiforgeryTokenIn(page),
+            ("SealedKey", SealedKeyIn(page)),
+            ("Code", app.CodeAt(clock.GetUtcNow())),
+            ("Password", password));
+
+        Assert.Contains("Two-factor authentication is on.", answer);
+
+        return (app, RecoveryCodesIn(answer));
+    }
+
+    /// <summary>Gives a code on the page that asks for one after the password, and follows where the answer leads.</summary>
+    public static Task<(string Path, string Page)> EnterCodeAsync(
+        this HttpClient client, string code, string page = SessionAuthentication.SignInCodePath) =>
+        client.SubmitAsync(page, "sign-in-code", ("Code", code));
+
+    /// <summary>The key of the setup that a page carries in its form, as the application sealed it.</summary>
+    public static string SealedKeyIn(string page)
+    {
+        var key = Regex.Match(page, "name=\"SealedKey\" value=\"([^\"]+)\"");
+        Assert.True(key.Success, $"The page has no form that turns two-factor authentication on:{Environment.NewLine}{page}");
+
+        return key.Groups[1].Value;
+    }
+
+    /// <summary>The recovery codes that a page shows, in order.</summary>
+    public static IReadOnlyList<string> RecoveryCodesIn(string page) =>
+        [.. Regex.Matches(page, "<li><code>([A-Z2-7]{4}(?:-[A-Z2-7]{4}){3})</code></li>").Select(code => code.Groups[1].Value)];
 
     /// <summary>The cookies an answer sets, each as the browser is sent it.</summary>
     public static IReadOnlyList<string> CookiesSetBy(HttpResponseMessage response) =>

@@ -74,13 +74,21 @@
             return;
         }
 
-        if (await SigningIn.SignInAsync(HttpContext, Email ?? string.Empty, Password ?? string.Empty))
+        switch (await SigningIn.SignInAsync(HttpContext, Email ?? string.Empty, Password ?? string.Empty))
         {
-            Navigation.NavigateTo(Destination);
-        }
-        else
-        {
-            _failed = true;
+            case SignInOutcome.SignedIn:
+                Navigation.NavigateTo(Destination);
+                break;
+
+            case SignInOutcome.CodeNeeded:
+                // The account has two-factor authentication. Nobody is signed in yet: the next
+                // page takes the code, and then leads where this one would have.
+                Navigation.NavigateTo(SessionAuthentication.PageWith(SessionAuthentication.SignInCodePath, ReturnUrl));
+                break;
+
+            default:
+                _failed = true;
+                break;
         }
     }
 }

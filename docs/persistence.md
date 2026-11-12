@@ -87,7 +87,7 @@ internal sealed class AiProviderConfiguration : IEntityTypeConfiguration<AiProvi
 | Foreign keys between components | Configured in the component that is allowed to reference the other, following the dependency rules. |
 | Foreign keys to a seeded table | Declared with `OnDelete(DeleteBehavior.Restrict)`, so that taking a seeded row away can never delete the rows that point at it. |
 
-Operational logs are never written to the database (NFR-DAT-7). The audit trail, which is not a log, will be.
+Operational logs are never written to the database (NFR-DAT-7). The audit trail, which is not a log, is: see "The audit trail" in [accounts.md](accounts.md).
 
 ## Using the database
 

@@ -1,0 +1,204 @@
+@page "/account/two-factor"
+@attribute [Authorize]
+@using System.Globalization
+@using Ecnanib.Accounts
+@inject ITwoFactor TwoFactorAuthentication
+
+@*
+    Rendered on the server for each request, and never interactive: the password and the code
+    travel in a form post. The page has one form, and it is on the page whenever a form is posted,
+    whatever the account says by then: a form that is not there cannot be answered.
+*@
+
+<PageTitle>Two-factor authentication</PageTitle>
+
+<h1>Two-factor authentication</h1>
+
+@switch (_view)
+{
+    case View.TurnedOn:
+        <p role="status">Two-factor authentication is on. From now on, signing in takes a code from your authenticator app after your password. Your account was signed out on every other device.</p>
+
+        <RecoveryCodeList Codes="_recoveryCodes" />
+
+        <p><a href="/account">Back to your account</a></p>
+        break;
+
+    case View.On:
+        @if (_outcome is TwoFactorTurnOnOutcome.AlreadyOn)
+        {
+            @* The form was sent twice, and the answer to the first, which showed the recovery codes, may never have been seen. *@
+            <p role="status">Two-factor authentication was on already, so nothing was changed. If you did not write down your recovery codes, make new ones below.</p>
+        }
+
+        <p>Two-factor authentication is on@(_state?.Since is { } since ? $", since {since.ToString("d MMMM yyyy", CultureInfo.InvariantCulture)}" : string.Empty). Signing in takes a code from your authenticator app after your password.</p>
+
+        <p>You have @(_state?.RecoveryCodesLeft ?? 0) of @TwoFactorRules.RecoveryCodeCount recovery codes left.</p>
+
+        <ul>
+            <li><a href="/account/two-factor/recovery-codes">Make new recovery codes</a></li>
+            <li><a href="/account/two-factor/turn-off">Turn off two-factor authentication</a></li>
+        </ul>
+        break;
+
+    case View.VerifyFirst:
+        <p role="status">Two-factor authentication can be turned on once your email address is verified. Open the link in the email you were sent when you registered.</p>
+
+        <p><a href="/account">Back to your account</a></p>
+        break;
+
+    default:
+        <p>With two-factor authentication, signing in takes a code from an authenticator app on your phone, after your password. Someone who learns your password cannot sign in without your phone.</p>
+
+        @if (_outcome is TwoFactorTurnOnOutcome.KeyNotValid)
+        {
+            <p class="form-error" role="alert">This page could not be used any more. Here is a new key: scan it, and enter the code it gives.</p>
+        }
+
+        @if (_setup is not null)
+        {
+            <ol>
+                <li>
+                    <p>Open your authenticator app and scan this QR code.</p>
+
+                    <AuthenticatorQrCode Text="@_setup.AuthenticatorUri" />
+
+                    <p>If you cannot scan it, type this key into the app instead:</p>
+                    <p><code class="setup-key">@_setup.Key</code></p>
+                </li>
+                <li>
+                    <p>Enter the code that the app shows, and your password.</p>
+                </li>
+            </ol>
+
+            <form method="post" @formname="turn-on" @onsubmit="TurnOnAsync">
+                <AntiforgeryToken />
+
+                @* The key of this page, encrypted for this account. Nothing is kept until the code is accepted. *@
+                <input type="hidden" name="SealedKey" value="@_setup.SealedKey" />
+
+                <div class="field">
+                    <label for="code">Code from your authenticator app</label>
+                    @* A code is never written back into the page. *@
+                    <input id="code" name="Code" type="text" inputmode="numeric" autocomplete="one-time-code" required
+                           aria-invalid="@(_outcome is TwoFactorTurnOnOutcome.WrongCode ? "true" : null)" />
+                    @if (_outcome is TwoFactorTurnOnOutcome.WrongCode)
+                    {
+                        <p class="field-error" role="alert">That code is not right. Enter the six digits that the app shows now.</p>
+                    }
+                </div>
+
+                <div class="field">
+                    <label for="password">Your password</label>
+                    @* The password is never written back into the page. *@
+                    <input id="password" name="Password" type="password" autocomplete="current-password" required
+                           aria-invalid="@(_outcome is TwoFactorTurnOnOutcome.WrongPassword ? "true" : null)" />
+                    @if (_outcome is TwoFactorTurnOnOutcome.WrongPassword)
+                    {
+                        <p class="field-error" role="alert">That is not your password.</p>
+                    }
+                </div>
+
+                <p>Turning it on signs your account out on every other device.</p>
+
+                <button type="submit">Turn on two-factor authentication</button>
+            </form>
+        }
+        break;
+}
+
+@code {
+    private enum View
+    {
+        Setup,
+        TurnedOn,
+        On,
+        VerifyFirst,
+    }
+
+    private View _view;
+    private TwoFactorState? _state;
+    private TwoFactorSetup? _setup;
+    private TwoFactorTurnOnOutcome? _outcome;
+    private IReadOnlyList<string> _recoveryCodes = [];
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? SealedKey { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Code { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Password { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        if (HttpMethods.IsPost(request.Request.Method))
+        {
+            // The form, with the key it carried, so that a wrong code does not ask the user to
+            // scan another one. What it leads to is for TurnOnAsync to say.
+            _view = View.Setup;
+            _setup = TwoFactorAuthentication.SetupOf(request, SealedKey ?? string.Empty)
+                ?? TwoFactorAuthentication.NewSetup(request);
+
+            return;
+        }
+
+        _state = await TwoFactorAuthentication.StateAsync(request);
+
+        if (_state.IsOn)
+        {
+            _view = View.On;
+        }
+        else if (!_state.AddressVerified)
+        {
+            _view = View.VerifyFirst;
+        }
+        else
+        {
+            // A new key each time the page is opened. It is stored nowhere.
+            _view = View.Setup;
+            _setup = TwoFactorAuthentication.NewSetup(request);
+        }
+    }
+
+    private async Task TurnOnAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        var answer = await TwoFactorAuthentication.TurnOnAsync(
+            request, SealedKey ?? string.Empty, Password ?? string.Empty, Code ?? string.Empty);
+
+        _outcome = answer.Outcome;
+
+        switch (answer.Outcome)
+        {
+            case TwoFactorTurnOnOutcome.TurnedOn:
+                // Shown in this answer, and not on a page of their own: they cannot be read again.
+                _recoveryCodes = answer.RecoveryCodes;
+                _view = View.TurnedOn;
+                break;
+
+            case TwoFactorTurnOnOutcome.AlreadyOn:
+                // The form was sent a second time, by a reload or from a page left open.
+                _state = await TwoFactorAuthentication.StateAsync(request);
+                _view = View.On;
+                break;
+
+            case TwoFactorTurnOnOutcome.AddressNotVerified:
+                _view = View.VerifyFirst;
+                break;
+        }
+    }
+}

@@ -11,16 +11,17 @@ namespace Ecnanib.Platform;
 
 /// <summary>
 /// Platform: the plumbing every component builds on. That is configuration, logging, persistence,
-/// background work, and how requests travel. See docs/configuration.md, docs/logging.md,
-/// docs/persistence.md, docs/background-work.md, and docs/security.md.
+/// background work, how requests travel, and how stored secrets are encrypted. See
+/// docs/configuration.md, docs/logging.md, docs/persistence.md, docs/background-work.md, and
+/// docs/security.md.
 /// </summary>
 public static class PlatformModule
 {
     /// <summary>
     /// Creates the host builder with the settings from the one configuration file registered, with
     /// no other source of settings, with logging as that file describes it, with the database it
-    /// names, with the scheduler that runs the components' jobs, and with the rules for TLS and
-    /// cookies. The composition root starts here.
+    /// names, with the scheduler that runs the components' jobs, with the rules for TLS and
+    /// cookies, and with the encryption of stored secrets. The composition root starts here.
     /// </summary>
     /// <exception cref="InvalidSettingsException">The file is missing or invalid, so the application must not start.</exception>
     public static WebApplicationBuilder CreateBuilder(string[] args)
@@ -60,6 +61,9 @@ public static class PlatformModule
         builder.Services.AddPersistence();
         builder.Services.AddBackgroundWork();
         builder.Services.AddTransportSecurity(settings.Application);
+
+        // What encrypts the secrets a component stores, with the master keys of the file.
+        builder.Services.AddSingleton<StoredSecrets>();
 
         return builder;
     }

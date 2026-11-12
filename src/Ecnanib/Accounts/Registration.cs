@@ -212,8 +212,8 @@ internal sealed class Registration(
         // time, the second waits here, and then finds the account of the first.
         var inserted = await context.Database.ExecuteSqlAsync(
             $"""
-            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at, email_verification_sets_password)
-            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt}, FALSE)
+            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at, email_verification_sets_password, two_factor_failed_codes)
+            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt}, FALSE, 0)
             ON CONFLICT (email) DO NOTHING
             """,
             cancellationToken);

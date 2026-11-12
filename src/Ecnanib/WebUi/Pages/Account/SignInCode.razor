@@ -1,0 +1,92 @@
+@attribute [Route(SessionAuthentication.SignInCodePath)]
+@using Ecnanib.Accounts
+@inject ISignIn SigningIn
+@inject NavigationManager Navigation
+
+@*
+    The second step of signing in, for an account with two-factor authentication. Rendered on the
+    server for each request, and never interactive: the code travels in a form post.
+*@
+
+<PageTitle>Enter your code</PageTitle>
+
+<h1>Enter your code</h1>
+
+@if (_outcome is SignInCodeOutcome.WrongCode)
+{
+    <p class="form-error" role="alert">That code is not right. A code from the app works once, for about half a minute.</p>
+}
+@if (_outcome is SignInCodeOutcome.CodesRefused)
+{
+    <p class="form-error" role="alert">Too many wrong codes were entered. No code is accepted for the next @((int)TwoFactorRules.RefusedFor.TotalMinutes) minutes. Then sign in again.</p>
+}
+
+<form method="post" @formname="sign-in-code" @onsubmit="CompleteAsync">
+    <AntiforgeryToken />
+
+    <div class="field">
+        <label for="code">Code from your authenticator app</label>
+        @* One field for both kinds of code, so it is not limited to digits. A code is never written back into the page. *@
+        <input id="code" name="Code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required
+               aria-describedby="code-hint" />
+        <p id="code-hint" class="field-hint">If you have lost the app, enter one of your recovery codes instead.</p>
+    </div>
+
+    <button type="submit">Sign in</button>
+</form>
+
+<p><a href="@SignInPage">Start again with your password</a></p>
+
+@code {
+    private SignInCodeOutcome? _outcome;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Code { get; set; }
+
+    // The form posts to the address of the page, so this is in the query both times.
+    [SupplyParameterFromQuery(Name = SessionAuthentication.ReturnUrlParameter)]
+    private string? ReturnUrl { get; set; }
+
+    // Only a path of this application is followed.
+    private string Destination => SessionAuthentication.LocalPathOrHome(ReturnUrl);
+
+    private string SignInPage => SessionAuthentication.PageWith(SessionAuthentication.SignInPath, ReturnUrl);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Nobody gave a password on this browser, or it was too long ago. The sign-in page sends
+        // someone who is signed in on to where they were going.
+        if (HttpContext is { } request
+            && HttpMethods.IsGet(request.Request.Method)
+            && !await SigningIn.AwaitsCodeAsync(request))
+        {
+            Navigation.NavigateTo(SignInPage);
+        }
+    }
+
+    private async Task CompleteAsync()
+    {
+        if (HttpContext is null)
+        {
+            return;
+        }
+
+        _outcome = await SigningIn.CompleteAsync(HttpContext, Code ?? string.Empty);
+
+        switch (_outcome)
+        {
+            case SignInCodeOutcome.SignedIn:
+                Navigation.NavigateTo(Destination);
+                break;
+
+            case SignInCodeOutcome.StartAgain:
+                // The sign-in no longer waits for a code. A browser that is signed in by now,
+                // because the form was sent twice, is sent on from there.
+                Navigation.NavigateTo(SignInPage);
+                break;
+        }
+    }
+}

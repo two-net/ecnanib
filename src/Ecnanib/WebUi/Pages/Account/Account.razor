@@ -1,5 +1,7 @@
 @page "/account"
 @attribute [Authorize]
+@using Ecnanib.Accounts
+@inject ITwoFactor TwoFactorAuthentication
 
 <PageTitle>Your account</PageTitle>
 
@@ -7,7 +9,32 @@
 
 <p>You are signed in as @HttpContext?.User.Identity?.Name.</p>
 
+<h2>Two-factor authentication</h2>
+
+@if (_twoFactor is { IsOn: true })
+{
+    <p>On. Signing in takes a code from your authenticator app after your password. You have @_twoFactor.RecoveryCodesLeft of @TwoFactorRules.RecoveryCodeCount recovery codes left.</p>
+
+    <p><a href="/account/two-factor">Manage two-factor authentication</a></p>
+}
+else
+{
+    <p>Off. Signing in takes your password alone.</p>
+
+    <p><a href="/account/two-factor">Turn on two-factor authentication</a></p>
+}
+
 @code {
+    private TwoFactorState? _twoFactor;
+
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is { } request)
+        {
+            _twoFactor = await TwoFactorAuthentication.StateAsync(request);
+        }
+    }
 }

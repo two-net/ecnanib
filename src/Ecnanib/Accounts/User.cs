@@ -26,6 +26,21 @@ namespace Ecnanib.Accounts;
 /// (FR-ACC-2).
 /// </param>
 /// <param name="passwordResetExpiresAt">When that link stops working.</param>
+/// <param name="twoFactorSecret">
+/// The key that the account shares with an authenticator app, encrypted, or null while two-factor
+/// authentication is off (FR-ACC-3, NFR-SEC-5). It is never stored in any other form.
+/// </param>
+/// <param name="twoFactorSecretKeyId">The id of the master key that encrypted that key (FR-KEY-6).</param>
+/// <param name="twoFactorEnabledAt">
+/// When two-factor authentication was turned on. It is on exactly while this is set, and the key
+/// and its key id are set with it and cleared with it.
+/// </param>
+/// <param name="twoFactorLastStep">
+/// The step of time of the last code from the app that was accepted. A code is accepted only for
+/// a later step, so no code is accepted twice.
+/// </param>
+/// <param name="twoFactorFailedCodes">How many wrong codes were entered in a row.</param>
+/// <param name="twoFactorLockedUntil">Until when every code is refused, after too many wrong ones.</param>
 public sealed class User(
     Guid id,
     string email,
@@ -36,7 +51,13 @@ public sealed class User(
     DateTimeOffset? emailVerificationExpiresAt,
     bool emailVerificationSetsPassword,
     byte[]? passwordResetTokenHash,
-    DateTimeOffset? passwordResetExpiresAt)
+    DateTimeOffset? passwordResetExpiresAt,
+    byte[]? twoFactorSecret,
+    string? twoFactorSecretKeyId,
+    DateTimeOffset? twoFactorEnabledAt,
+    long? twoFactorLastStep,
+    int twoFactorFailedCodes,
+    DateTimeOffset? twoFactorLockedUntil)
 {
     public Guid Id { get; } = id;
 
@@ -57,6 +78,18 @@ public sealed class User(
     public byte[]? PasswordResetTokenHash { get; } = passwordResetTokenHash;
 
     public DateTimeOffset? PasswordResetExpiresAt { get; } = passwordResetExpiresAt;
+
+    public byte[]? TwoFactorSecret { get; } = twoFactorSecret;
+
+    public string? TwoFactorSecretKeyId { get; } = twoFactorSecretKeyId;
+
+    public DateTimeOffset? TwoFactorEnabledAt { get; } = twoFactorEnabledAt;
+
+    public long? TwoFactorLastStep { get; } = twoFactorLastStep;
+
+    public int TwoFactorFailedCodes { get; } = twoFactorFailedCodes;
+
+    public DateTimeOffset? TwoFactorLockedUntil { get; } = twoFactorLockedUntil;
 }
 
 internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
@@ -77,6 +110,14 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(user => user.EmailVerificationSetsPassword);
         builder.Property(user => user.PasswordResetTokenHash);
         builder.Property(user => user.PasswordResetExpiresAt);
+
+        // Two-factor authentication. None of these has an index: the account is found by its id.
+        builder.Property(user => user.TwoFactorSecret);
+        builder.Property(user => user.TwoFactorSecretKeyId);
+        builder.Property(user => user.TwoFactorEnabledAt);
+        builder.Property(user => user.TwoFactorLastStep);
+        builder.Property(user => user.TwoFactorFailedCodes);
+        builder.Property(user => user.TwoFactorLockedUntil);
 
         // One account for each address. Registration relies on it: see Registration.
         builder.HasIndex(user => user.Email).IsUnique();

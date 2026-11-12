@@ -1,0 +1,96 @@
+@page "/account/two-factor/recovery-codes"
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@inject ITwoFactor TwoFactorAuthentication
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: the code travels in a form
+    post. The form is on the page whenever one is posted, so that a form which is posted from a
+    page left open is answered.
+*@
+
+<PageTitle>New recovery codes</PageTitle>
+
+<h1>New recovery codes</h1>
+
+@if (_recoveryCodes.Count > 0)
+{
+    <p role="status">Your recovery codes were replaced. The earlier ones no longer work.</p>
+
+    <RecoveryCodeList Codes="_recoveryCodes" />
+
+    <p><a href="/account/two-factor">Back to two-factor authentication</a></p>
+}
+else
+{
+    <p>This makes @TwoFactorRules.RecoveryCodeCount new recovery codes. The ones you have now stop working, used or not.</p>
+
+    @if (_outcome is TwoFactorChangeOutcome.CodesRefused)
+    {
+        <p class="form-error" role="alert">Too many wrong codes were entered. No code is accepted for the next @((int)TwoFactorRules.RefusedFor.TotalMinutes) minutes.</p>
+    }
+
+    <form method="post" @formname="new-recovery-codes" @onsubmit="ReplaceAsync">
+        <AntiforgeryToken />
+
+        <div class="field">
+            <label for="code">Code from your authenticator app</label>
+            @* One field for both kinds of code, so it is not limited to digits. A code is never written back into the page. *@
+            <input id="code" name="Code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required
+                   aria-invalid="@(_outcome is TwoFactorChangeOutcome.WrongCode ? "true" : null)"
+                   aria-describedby="code-hint" />
+            <p id="code-hint" class="field-hint">If you have lost the app, enter one of your recovery codes instead.</p>
+            @if (_outcome is TwoFactorChangeOutcome.WrongCode)
+            {
+                <p class="field-error" role="alert">That code is not right. A code from the app works once, for about half a minute.</p>
+            }
+        </div>
+
+        <button type="submit">Make new recovery codes</button>
+    </form>
+
+    <p><a href="/account/two-factor">Keep the ones you have</a></p>
+}
+
+@code {
+    private TwoFactorChangeOutcome? _outcome;
+    private IReadOnlyList<string> _recoveryCodes = [];
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Code { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // An account without two-factor authentication has no recovery codes.
+        if (HttpContext is { } request
+            && HttpMethods.IsGet(request.Request.Method)
+            && !(await TwoFactorAuthentication.StateAsync(request)).IsOn)
+        {
+            Navigation.NavigateTo("/account/two-factor");
+        }
+    }
+
+    private async Task ReplaceAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        var answer = await TwoFactorAuthentication.ReplaceRecoveryCodesAsync(request, Code ?? string.Empty);
+
+        _outcome = answer.Outcome;
+
+        // Shown in this answer, and not on a page of their own: they cannot be read again.
+        _recoveryCodes = answer.RecoveryCodes;
+
+        if (_outcome is TwoFactorChangeOutcome.NotOn)
+        {
+            Navigation.NavigateTo("/account/two-factor");
+        }
+    }
+}

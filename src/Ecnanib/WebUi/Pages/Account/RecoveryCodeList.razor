@@ -1,0 +1,22 @@
+@*
+    The recovery codes of an account, on the one page view that shows them. The application keeps
+    only their hashes, so it cannot show them a second time.
+*@
+
+<h2>Your recovery codes</h2>
+
+<p>Keep these codes somewhere safe, away from your phone. If you lose your authenticator app, each of them signs you in once in its place.</p>
+
+<ul class="recovery-codes">
+    @foreach (var recoveryCode in Codes)
+    {
+        <li><code>@recoveryCode</code></li>
+    }
+</ul>
+
+<p><strong>They are shown only now.</strong> Write them down or print this page before you leave it.</p>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<string> Codes { get; set; } = [];
+}
