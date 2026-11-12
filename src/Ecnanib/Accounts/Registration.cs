@@ -27,6 +27,7 @@ internal sealed class Registration(
     IDbContextFactory<EcnanibDbContext> contexts,
     PasswordHasher passwords,
     IAccountMailer mailer,
+    AttemptLimits attempts,
     TimeProvider clock,
     ILogger<Registration> logger) : IRegistration
 {
@@ -41,10 +42,11 @@ internal sealed class Registration(
     public bool IsOpen => application.RegistrationOpen;
 
     public async Task<RegistrationResult> RegisterAsync(
-        RegistrationRequest request, string password, CancellationToken cancellationToken)
+        RegistrationRequest request, string password, AuditOrigin origin, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(password);
+        ArgumentNullException.ThrowIfNull(origin);
 
         if (!IsOpen)
         {
@@ -56,6 +58,15 @@ internal sealed class Registration(
         if (problems.Count > 0)
         {
             return RegistrationResult.Invalid(problems);
+        }
+
+        // Before the password is hashed and an email is sent, and for the address as it is, new
+        // or registered: so the form sends no address more email than this allows.
+        if (attempts.Registration(origin, email) is var attempt and not Attempt.Allowed)
+        {
+            logger.LogInformation("A registration was refused: too many attempts {Limit}", AttemptLimits.Describe(attempt));
+
+            return RegistrationResult.Of(RegistrationOutcome.TooManyAttempts);
         }
 
         // Before the address is looked up, so that the time it takes is spent either way.

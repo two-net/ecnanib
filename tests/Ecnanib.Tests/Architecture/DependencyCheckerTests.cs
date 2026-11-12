@@ -36,6 +36,10 @@ public class DependencyCheckerTests
             "System.Environment::GetEnvironmentVariable",
             "System.Environment::GetCommandLineArgs",
             "System.Net.Http.HttpClient::.ctor",
+            "Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions::ExecuteSqlRaw",
+            "Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions::SqlQueryRaw",
+            "Microsoft.EntityFrameworkCore.RelationalQueryableExtensions::FromSqlRaw",
+            "Microsoft.AspNetCore.Components.MarkupString::",
         ]));
 
     [Fact]
@@ -100,13 +104,21 @@ public class DependencyCheckerTests
             .Distinct();
 
         // A constructor is a method too: an adapter may use an HTTP client but may not create one.
+        // So is a conversion: text that is cast to markup is written as markup. And a name covers
+        // what starts with it: the rule against ExecuteSqlRaw is one against ExecuteSqlRawAsync.
+        // SQL whose values are parameters is not reported.
         Assert.Equal(
             [
                 $"{Fixtures}.Gateway.Adapters.Fake.FakeAdapter",
+                $"{Fixtures}.Mid.CastsTextToMarkup",
+                $"{Fixtures}.Mid.QueriesWithSqlFromText",
                 $"{Fixtures}.Mid.ReadsAllEnvironmentVariables",
                 $"{Fixtures}.Mid.ReadsAnEnvironmentVariable",
                 $"{Fixtures}.Mid.ReadsTheCommandLine",
+                $"{Fixtures}.Mid.RunsSqlFromText",
+                $"{Fixtures}.Mid.RunsSqlFromTextInAsyncBody",
                 $"{Fixtures}.Mid.UsesNetwork",
+                $"{Fixtures}.Mid.WritesTextAsMarkup",
             ],
             origins);
     }

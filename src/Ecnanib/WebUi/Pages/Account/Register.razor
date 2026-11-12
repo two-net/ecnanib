@@ -1,7 +1,9 @@
 @page "/register"
 @using Ecnanib.Accounts
+@using Ecnanib.Platform.Settings
 @using Ecnanib.WebUi.Pages.Legal
 @inject IRegistration Registration
+@inject LimitsSettings Limits
 @inject NavigationManager Navigation
 
 @*
@@ -22,6 +24,10 @@ else
     @if (_emailNotSent)
     {
         <p class="form-error" role="alert">We could not send the email. Try again in a few minutes.</p>
+    }
+    @if (_tooManyAttempts)
+    {
+        <p class="form-error" role="alert">Too many attempts. Try again in up to @Limits.Registration.Minutes minutes.</p>
     }
 
     <form method="post" @formname="register" @onsubmit="RegisterAsync">
@@ -87,6 +93,7 @@ else
 @code {
     private IReadOnlyList<RegistrationProblem> _problems = [];
     private bool _emailNotSent;
+    private bool _tooManyAttempts;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -124,6 +131,7 @@ else
         var result = await Registration.RegisterAsync(
             new RegistrationRequest(Email ?? string.Empty, accepted),
             Password ?? string.Empty,
+            HttpContext is { } request ? AuditOrigin.Of(request) : AuditOrigin.Unknown,
             HttpContext?.RequestAborted ?? CancellationToken.None);
 
         switch (result.Outcome)
@@ -139,6 +147,12 @@ else
 
             case RegistrationOutcome.EmailNotSent:
                 _emailNotSent = true;
+                break;
+
+            case RegistrationOutcome.TooManyAttempts:
+                // The answer says so in its status too, for whatever sent the form without reading the page.
+                _tooManyAttempts = true;
+                HttpContext?.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 break;
 
             // Closed: the page shows that by itself.

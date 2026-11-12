@@ -15,6 +15,10 @@ public static class AccountsModule
         services.AddSingleton<IRegistration, Registration>();
         services.AddSingleton<IFairUse, FairUse>();
 
+        // How often signing in, registering, and asking for a reset may be tried (NFR-SEC-4).
+        // Each of them asks this first, and so does whatever else takes a password.
+        services.AddSingleton<AttemptLimits>();
+
         services.AddSingleton<Sessions>();
         services.AddSingleton<ISignIn, SignIn>();
         services.AddSingleton<IPasswordReset, PasswordReset>();

@@ -675,7 +675,12 @@ The outline below shows what the single configuration file contains. Key names a
     "Board": { "MinUsers": 5, "MinTrades": 50 }
   },
   "Retention": { "TranscriptDays": 90, "DecisionDays": 365, "NotificationDays": 90, "AuditDays": 730 },
-  "Limits": { "MaxAgentsPerUser": 10 }
+  "Limits": {
+    "MaxAgentsPerUser": 10,
+    "SignIn": { "PerClient": 30, "PerAddress": 10, "Minutes": 15 },
+    "Registration": { "PerClient": 10, "PerAddress": 3, "Minutes": 60 },
+    "PasswordReset": { "PerClient": 10, "PerAddress": 3, "Minutes": 60 }
+  }
 }
 ```
 

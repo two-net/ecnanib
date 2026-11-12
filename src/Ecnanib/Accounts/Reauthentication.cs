@@ -19,12 +19,17 @@ namespace Ecnanib.Accounts;
 /// is told that the code is wrong whatever password they try, and their wrong codes are counted.
 /// So the form does not help them to find the password.
 /// </para>
+/// <para>
+/// For an account without it, the form would tell such a person the password by trying. So the
+/// password of an account can be tried here only so often (NFR-SEC-4), as on the sign-in form.
+/// </para>
 /// </remarks>
 internal sealed class Reauthentication(
     IDbContextFactory<EcnanibDbContext> contexts,
     PasswordHasher passwords,
     Sessions sessions,
     TwoFactorCodes codes,
+    AttemptLimits attempts,
     TimeProvider clock,
     ILogger<Reauthentication> logger) : IReauthentication
 {
@@ -103,6 +108,17 @@ internal sealed class Reauthentication(
         if (SessionCookie.TokenOf(request.Request) is not { } token)
         {
             return ReauthenticationOutcome.SessionEnded;
+        }
+
+        // Before anything is looked up, hashed, or judged: a proof that is refused spends no code.
+        if (attempts.PasswordOf(userId) is var attempt and not Attempt.Allowed)
+        {
+            logger.LogInformation(
+                "User {UserId} was refused confirming who they are: too many attempts {Limit}",
+                userId,
+                AttemptLimits.Describe(attempt));
+
+            return ReauthenticationOutcome.TooManyAttempts;
         }
 
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);

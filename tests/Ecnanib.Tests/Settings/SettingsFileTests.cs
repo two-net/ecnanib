@@ -89,7 +89,13 @@ public class SettingsFileTests
 
         Assert.Equal(new ExperienceSettings(4, 15, 25, new ExperienceBoardSettings(6, 60)), settings.Experience);
         Assert.Equal(new RetentionSettings(30, 180, 45, 365), settings.Retention);
-        Assert.Equal(new LimitsSettings(7), settings.Limits);
+        Assert.Equal(
+            new LimitsSettings(
+                MaxAgentsPerUser: 7,
+                SignIn: new AttemptLimitSettings(PerClient: 400, PerAddress: 200, Minutes: 20),
+                Registration: new AttemptLimitSettings(PerClient: 300, PerAddress: 100, Minutes: 50),
+                PasswordReset: new AttemptLimitSettings(PerClient: 350, PerAddress: 150, Minutes: 40)),
+            settings.Limits);
     }
 
     /// <summary>Each row is a key to change, its new value as JSON, and the key that must be reported.</summary>
@@ -163,6 +169,15 @@ public class SettingsFileTests
         { "Binance:Symbols", "[\"btcusdt\"]", "Binance:Symbols:0" },
         { "Binance:OutboundIps", "[\"300.1.1.1\"]", "Binance:OutboundIps:0" },
         { "Trading:StaleSeconds", "{ \"15m\": 100, \"1H\": 200, \"1D\": 800 }", "Trading:StaleSeconds:4H" },
+
+        // How often the account entry points may be tried (NFR-SEC-4).
+        { "Limits:SignIn", "null", "Limits:SignIn" },
+        { "Limits:SignIn:PerClient", "0", "Limits:SignIn:PerClient" },
+        { "Limits:SignIn:PerAddress", "\"10\"", "Limits:SignIn:PerAddress" },
+        { "Limits:Registration", "{ \"PerClient\": 10, \"Minutes\": 60 }", "Limits:Registration:PerAddress" },
+        { "Limits:Registration:Minutes", "0", "Limits:Registration:Minutes" },
+        { "Limits:PasswordReset:Minutes", "1441", "Limits:PasswordReset:Minutes" },
+        { "Limits:PasswordReset:PerHour", "3", "Limits:PasswordReset:PerHour" },
 
         // Keys the application does not know. Runtime flags, user preferences, and agent settings
         // live in the database, so the file has no place for them (NFR-CFG-6).
@@ -296,12 +311,14 @@ public class SettingsFileTests
         // Comments, trailing commas, and keys in any letter case, as in an appsettings file.
         var text = SettingsJson.Valid().ToString()
             .Replace("\"Limits\": {", "// How many agents one user may have.\n  \"limits\": {")
-            .Replace("\"MaxAgentsPerUser\": 7", "\"MAXAGENTSPERUSER\": 7, /* fair use */");
+            .Replace("\"MaxAgentsPerUser\": 7", "\"MAXAGENTSPERUSER\": 7 /* fair use */")
+            .Replace("\"Minutes\": 40", "\"minutes\": 40, /* the last key, with a comma after it */");
         using var directory = new SettingsDirectory(text);
 
         var settings = SettingsFile.Load(directory.SettingsPath);
 
         Assert.Equal(7, settings.Limits.MaxAgentsPerUser);
+        Assert.Equal(40, settings.Limits.PasswordReset.Minutes);
     }
 
     [Fact]

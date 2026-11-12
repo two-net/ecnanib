@@ -15,6 +15,7 @@ internal sealed class SignIn(
     PasswordHasher passwords,
     Sessions sessions,
     TwoFactorCodes codes,
+    AttemptLimits attempts,
     TimeProvider clock,
     ILogger<SignIn> logger) : ISignIn
 {
@@ -37,6 +38,15 @@ internal sealed class SignIn(
             || PasswordRules.ProblemOf(password) == PasswordProblem.TooLong)
         {
             return Failed();
+        }
+
+        // Before anything is looked up or hashed, and for the address as it is, with an account
+        // or without one: a sign-in that is refused costs nothing and tells nothing.
+        if (attempts.SignIn(AuditOrigin.Of(request), address) is var attempt and not Attempt.Allowed)
+        {
+            logger.LogInformation("A sign-in was refused: too many attempts {Limit}", AttemptLimits.Describe(attempt));
+
+            return SignInOutcome.TooManyAttempts;
         }
 
         // Awaited by every sign-in, so that the first one for an address without an account

@@ -29,6 +29,7 @@ internal sealed class TwoFactor(
     StoredSecrets secrets,
     PasswordHasher passwords,
     TwoFactorCodes codes,
+    AttemptLimits attempts,
     TimeProvider clock,
     ILogger<TwoFactor> logger) : ITwoFactor
 {
@@ -173,10 +174,26 @@ internal sealed class TwoFactor(
         }
 
         // The password too, so that someone at a browser that was left signed in cannot enroll
-        // an app of their own and keep the account from its owner.
-        if (password.Length == 0
-            || PasswordRules.ProblemOf(password) == PasswordProblem.TooLong
-            || !await passwords.VerifyAsync(password, account.PasswordHash))
+        // an app of their own and keep the account from its owner. What no account can have as
+        // its password is not hashed at all.
+        if (password.Length == 0 || PasswordRules.ProblemOf(password) == PasswordProblem.TooLong)
+        {
+            return Ended(TwoFactorTurnOnOutcome.WrongPassword);
+        }
+
+        // Someone at that browser can make a key and its codes as often as they like, so only
+        // this keeps the form from telling them the password by trying.
+        if (attempts.PasswordOf(userId) is var attempt and not Attempt.Allowed)
+        {
+            logger.LogInformation(
+                "User {UserId} was refused turning two-factor authentication on: too many attempts {Limit}",
+                userId,
+                AttemptLimits.Describe(attempt));
+
+            return Ended(TwoFactorTurnOnOutcome.TooManyAttempts);
+        }
+
+        if (!await passwords.VerifyAsync(password, account.PasswordHash))
         {
             return Ended(TwoFactorTurnOnOutcome.WrongPassword);
         }

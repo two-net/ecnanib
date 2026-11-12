@@ -11,7 +11,12 @@ public interface IPasswordReset
     /// an account is sent a notice instead, so every request sends one email and gets the same
     /// answer: the answer does not tell whether an address is registered.
     /// </summary>
-    Task<PasswordResetRequestOutcome> RequestAsync(string email, CancellationToken cancellationToken);
+    /// <param name="email">The email address, as typed.</param>
+    /// <param name="origin">
+    /// Where the request came from, for the limit on how often one client may ask (NFR-SEC-4).
+    /// </param>
+    /// <param name="cancellationToken">Cancels the request.</param>
+    Task<PasswordResetRequestOutcome> RequestAsync(string email, AuditOrigin origin, CancellationToken cancellationToken);
 
     /// <summary>
     /// Sets the password of the account that the token of a reset link belongs to, and ends every
@@ -38,6 +43,12 @@ public enum PasswordResetRequestOutcome
 
     /// <summary>The email could not be sent. Asking again sends another.</summary>
     EmailNotSent,
+
+    /// <summary>
+    /// Too many links were asked for, from this client or for this address (NFR-SEC-4). Nothing
+    /// was done: no email was sent, and a link that was sent earlier still works.
+    /// </summary>
+    TooManyAttempts,
 }
 
 /// <summary>How setting a new password with a reset link ended.</summary>

@@ -2,7 +2,9 @@
 @attribute [Authorize]
 @using System.Globalization
 @using Ecnanib.Accounts
+@using Ecnanib.Platform.Settings
 @inject ITwoFactor TwoFactorAuthentication
+@inject LimitsSettings Limits
 
 @*
     Rendered on the server for each request, and never interactive: the password and the code
@@ -53,6 +55,11 @@
         @if (_outcome is TwoFactorTurnOnOutcome.KeyNotValid)
         {
             <p class="form-error" role="alert">This page could not be used any more. Here is a new key: scan it, and enter the code it gives.</p>
+        }
+
+        @if (_outcome is TwoFactorTurnOnOutcome.TooManyAttempts)
+        {
+            <p class="form-error" role="alert">Too many attempts. Try again in up to @Limits.SignIn.Minutes minutes.</p>
         }
 
         @if (_setup is not null)
@@ -198,6 +205,11 @@
 
             case TwoFactorTurnOnOutcome.AddressNotVerified:
                 _view = View.VerifyFirst;
+                break;
+
+            case TwoFactorTurnOnOutcome.TooManyAttempts:
+                // The answer says so in its status too, for whatever sent the form without reading the page.
+                request.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 break;
         }
     }

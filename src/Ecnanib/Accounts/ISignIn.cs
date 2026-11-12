@@ -20,6 +20,8 @@ public interface ISignIn
     /// <returns>
     /// <see cref="SignInOutcome.Failed"/> when the address has no account or the password is not
     /// its password. Which of the two it was is not told, and neither takes longer than the other.
+    /// <see cref="SignInOutcome.TooManyAttempts"/> when the client or the address has been tried
+    /// too often, whatever the password is, and whether or not the address has an account.
     /// </returns>
     Task<SignInOutcome> SignInAsync(HttpContext request, string email, string password);
 
@@ -58,6 +60,12 @@ public enum SignInOutcome
     /// until the browser gives a code.
     /// </summary>
     CodeNeeded,
+
+    /// <summary>
+    /// Too many sign-ins were tried, from this client or for this address (NFR-SEC-4). The
+    /// password was not looked at, and nobody is signed in.
+    /// </summary>
+    TooManyAttempts,
 }
 
 /// <summary>How giving a code after the password ended.</summary>

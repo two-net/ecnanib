@@ -14,17 +14,29 @@ internal sealed class PasswordReset(
     IDbContextFactory<EcnanibDbContext> contexts,
     PasswordHasher passwords,
     IAccountMailer mailer,
+    AttemptLimits attempts,
     TimeProvider clock,
     ILogger<PasswordReset> logger) : IPasswordReset
 {
-    public async Task<PasswordResetRequestOutcome> RequestAsync(string email, CancellationToken cancellationToken)
+    public async Task<PasswordResetRequestOutcome> RequestAsync(
+        string email, AuditOrigin origin, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(email);
+        ArgumentNullException.ThrowIfNull(origin);
 
         var address = EmailAddress.Normalize(email);
         if (!EmailAddress.LooksValid(address))
         {
             return PasswordResetRequestOutcome.Invalid;
+        }
+
+        // Before a link is stored and an email is sent, and for the address as it is, with an
+        // account or without one. A request that is refused replaces no link.
+        if (attempts.PasswordReset(origin, address) is var attempt and not Attempt.Allowed)
+        {
+            logger.LogInformation("A password reset was refused: too many attempts {Limit}", AttemptLimits.Describe(attempt));
+
+            return PasswordResetRequestOutcome.TooManyAttempts;
         }
 
         var (token, tokenHash) = SecretToken.Create();

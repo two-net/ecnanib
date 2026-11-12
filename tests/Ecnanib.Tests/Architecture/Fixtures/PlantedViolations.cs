@@ -3,7 +3,8 @@
 //
 // The fixture rules are: Low uses nothing; Mid may use Low and Gateway; High may use Low and
 // Gateway, and is the only area that may use Gateway.Trading. Low is the only area that may use
-// the host's configuration, and no area may read the process environment or create an HTTP client.
+// the host's configuration, and no area may read the process environment, create an HTTP client,
+// send SQL that was put together as text, or write text into a page as markup.
 
 #pragma warning disable CA1822 // Members are instance members on purpose.
 
@@ -91,6 +92,44 @@ namespace Ecnanib.Tests.Architecture.Fixtures.Mid
     public sealed class UsesTheEnvironmentAsAllowed
     {
         public string Read() => Environment.NewLine + Environment.ProcessId;
+    }
+
+    public sealed class RunsSqlFromText
+    {
+        public int Run(Microsoft.EntityFrameworkCore.DbContext context, string sql) =>
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(context.Database, sql);
+    }
+
+    public sealed class RunsSqlFromTextInAsyncBody
+    {
+        public async Task<int> RunAsync(Microsoft.EntityFrameworkCore.DbContext context, string sql) =>
+            await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(context.Database, sql);
+    }
+
+    public sealed class QueriesWithSqlFromText
+    {
+        public IQueryable<int> Ask(Microsoft.EntityFrameworkCore.DbContext context, string sql) =>
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.SqlQueryRaw<int>(context.Database, sql);
+
+        public IQueryable<Low.Clean> Ask(Microsoft.EntityFrameworkCore.DbSet<Low.Clean> rows, string sql) =>
+            Microsoft.EntityFrameworkCore.RelationalQueryableExtensions.FromSqlRaw(rows, sql);
+    }
+
+    public sealed class RunsSqlWithParametersAsAllowed
+    {
+        public int Run(Microsoft.EntityFrameworkCore.DbContext context, string name) =>
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSql(
+                context.Database, $"DELETE FROM fixtures WHERE name = {name}");
+    }
+
+    public sealed class WritesTextAsMarkup
+    {
+        public object Write(string text) => new Microsoft.AspNetCore.Components.MarkupString(text);
+    }
+
+    public sealed class CastsTextToMarkup
+    {
+        public object Write(string text) => (Microsoft.AspNetCore.Components.MarkupString)text;
     }
 }
 

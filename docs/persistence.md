@@ -109,9 +109,10 @@ internal sealed class TemplateReader(IDbContextFactory<EcnanibDbContext> context
 
 The factory is the form to use in a Blazor component, where an injected context would live as long as the user's connection.
 
-Two rules guard the one database:
+Three rules guard the one database:
 
 - Only `Platform` may use the types of the database driver, the `Npgsql` namespace, so no other area opens a connection of its own with them.
+- Only `Platform` may use `System.Data`, so no other area writes a database command of its own, and no code may call `ExecuteSqlRaw`, `SqlQueryRaw`, or `FromSqlRaw`. A statement that is written as SQL takes its values as parameters, with `ExecuteSqlAsync` or `SqlQuery` and an interpolated string (NFR-SEC-4). See "Injection" in [security.md](security.md).
 - No package for another database may be added. See the deployment guard in [architecture.md](architecture.md).
 
 They do not make `EcnanibDbContext` the only possible way in. Registering another context, or migrating from a component, is not caught by a test and is not done.

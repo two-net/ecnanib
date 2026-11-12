@@ -48,8 +48,11 @@ public static class WebUiModule
         // Not a page either: the answer is a file. A visitor is sent to sign in, as on a page.
         endpoints.MapGet(ExportPath, ExportAsync).RequireAuthorization();
 
+        // The framework would say on its pages that this site may frame them. Whether the
+        // application may be shown in a frame is said in one place, for every answer: no site
+        // may. See BrowserDefenses in Platform.
         endpoints.MapRazorComponents<App>()
-            .AddInteractiveServerRenderMode();
+            .AddInteractiveServerRenderMode(options => options.ContentSecurityFrameAncestorsPolicy = null);
 
         return endpoints;
     }

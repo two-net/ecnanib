@@ -1,7 +1,9 @@
 @attribute [Route(SessionAuthentication.ReauthenticationPath)]
 @attribute [Authorize]
 @using Ecnanib.Accounts
+@using Ecnanib.Platform.Settings
 @inject IReauthentication Reauthentication
+@inject LimitsSettings Limits
 @inject NavigationManager Navigation
 
 @*
@@ -20,6 +22,10 @@
 @if (_outcome is ReauthenticationOutcome.CodesRefused)
 {
     <p class="form-error" role="alert">Too many wrong codes were entered. No code is accepted for the next @((int)TwoFactorRules.RefusedFor.TotalMinutes) minutes.</p>
+}
+@if (_outcome is ReauthenticationOutcome.TooManyAttempts)
+{
+    <p class="form-error" role="alert">Too many attempts. Try again in up to @Limits.SignIn.Minutes minutes.</p>
 }
 
 <form method="post" @formname="confirm-identity" @onsubmit="ConfirmAsync">
@@ -111,6 +117,11 @@
             case ReauthenticationOutcome.SessionEnded:
                 // Nobody is signed in on this browser any more. Signing in leads on from there.
                 Navigation.NavigateTo(SessionAuthentication.PageWith(SessionAuthentication.SignInPath, ReturnUrl));
+                break;
+
+            case ReauthenticationOutcome.TooManyAttempts:
+                // The answer says so in its status too, for whatever sent the form without reading the page.
+                request.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 break;
         }
     }

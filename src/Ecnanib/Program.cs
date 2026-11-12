@@ -11,6 +11,7 @@ using Ecnanib.Notifications;
 using Ecnanib.Platform;
 using Ecnanib.Platform.Logging;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Platform.Security;
 using Ecnanib.Platform.Settings;
 using Ecnanib.RiskGuard;
 using Ecnanib.WebUi;
@@ -67,7 +68,11 @@ public class Program
 
         var app = builder.Build();
 
-        // Configure the HTTP request pipeline. The rules for TLS and cookies are in docs/security.md.
+        // Configure the HTTP request pipeline. The rules for TLS, cookies, and what a browser is
+        // told to refuse are in docs/security.md. First, so that every answer carries them: no
+        // script or style that is not the application's own, and no frame around it.
+        app.UseBrowserDefenses();
+
         // Every cookie is sent only over TLS and is hidden from scripts, whoever sets it.
         app.UseCookiePolicy();
 

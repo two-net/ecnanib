@@ -43,6 +43,10 @@ internal static class TransportSecurity
 
             // The prefix requires the whole host as the path.
             options.Cookie.Path = "/";
+
+            // Whether the application may be shown in a frame is said in one place, for every
+            // answer and not only for a page with a form. See BrowserDefenses.
+            options.SuppressXFrameOptionsHeader = true;
         });
 
         return services;

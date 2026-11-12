@@ -101,4 +101,10 @@ public enum ReauthenticationOutcome
 
     /// <summary>The session of the browser ended while the proof was looked at. The user signs in again.</summary>
     SessionEnded,
+
+    /// <summary>
+    /// The password of the account was tried too often by browsers that are signed in to it
+    /// (NFR-SEC-4). Neither the password nor the code was looked at, and no code is spent.
+    /// </summary>
+    TooManyAttempts,
 }

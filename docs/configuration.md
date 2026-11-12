@@ -40,6 +40,8 @@ The `Email` section has no key for encryption: the port and the sign-in decide i
 
 `Application:PublicUrl` is the address users reach the application at, and it must be an `https` address. A request over plain HTTP is sent on to its port, and the links in emails start with it. `Security:SessionIdleMinutes`, from 1 to 1440, is how long a session lasts without being used. See [security.md](security.md) and "Sessions" in [accounts.md](accounts.md).
 
+`Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
+
 ### Permissions
 
 On Linux and macOS the application does not start while the group or other accounts have any access to the file. Only the account that runs the application may read it: `chmod 600 appsettings.json`.

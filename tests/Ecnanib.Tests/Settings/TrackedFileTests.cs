@@ -48,6 +48,12 @@ public class TrackedFileTests
         Assert.Equal(new StaleSecondsSettings(120, 300, 600, 900), settings.Trading.StaleSeconds);
         Assert.Equal(new ExperienceSettings(5, 20, 20, new ExperienceBoardSettings(MinUsers: 5, MinTrades: 50)), settings.Experience);
         Assert.Equal(new RetentionSettings(90, 365, 90, 730), settings.Retention);
-        Assert.Equal(new LimitsSettings(MaxAgentsPerUser: 10), settings.Limits);
+        Assert.Equal(
+            new LimitsSettings(
+                MaxAgentsPerUser: 10,
+                SignIn: new AttemptLimitSettings(PerClient: 30, PerAddress: 10, Minutes: 15),
+                Registration: new AttemptLimitSettings(PerClient: 10, PerAddress: 3, Minutes: 60),
+                PasswordReset: new AttemptLimitSettings(PerClient: 10, PerAddress: 3, Minutes: 60)),
+            settings.Limits);
     }
 }

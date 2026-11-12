@@ -111,6 +111,12 @@ internal static class ComponentRules
             // the platform registers, so there is one connection to one database, with one
             // model and one set of migrations (NFR-DAT-1, NFR-DAT-2).
             ["Npgsql"] = Only(Platform),
+
+            // Database commands, whose text is SQL as it is sent. The few statements the platform
+            // sends itself are fixed text with parameters. Every other area asks through the
+            // context, which sends what a request brought as a parameter and never as SQL
+            // (NFR-SEC-4).
+            ["System.Data"] = Only(Platform),
         },
 
         // Methods that no code may call.
@@ -127,6 +133,17 @@ internal static class ComponentRules
             // Creating an HTTP client. An adapter takes one from the host's factory, which logs
             // every call it makes (NFR-LOG-5).
             "System.Net.Http.HttpClient::.ctor",
+
+            // SQL that is put together as text, where what a request brought could become part
+            // of the statement. The forms that take an interpolated string, ExecuteSql, SqlQuery,
+            // and FromSql, send each value as a parameter (NFR-SEC-4).
+            "Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions::ExecuteSqlRaw",
+            "Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions::SqlQueryRaw",
+            "Microsoft.EntityFrameworkCore.RelationalQueryableExtensions::FromSqlRaw",
+
+            // Text that a page writes as markup. Everything else a page writes is encoded, so
+            // what a person typed is shown as text and is never run (NFR-SEC-4).
+            "Microsoft.AspNetCore.Components.MarkupString::",
         ]);
 
     private static IReadOnlySet<string> Only(params string[] areas) => new HashSet<string>(areas);

@@ -33,7 +33,7 @@ The code is the project `src/Ecnanib`. Each logical component of SRS section 3.1
 Three more areas are not SRS components:
 
 - `Shared` holds vocabulary that several components use, such as `Market` and `TradingMode`. It depends on nothing.
-- `Platform` holds the plumbing every component builds on. That is configuration, logging, persistence, background work, and how requests travel: it reads the one configuration file into typed settings, as [configuration.md](configuration.md) describes, it sets up structured logging from that file, as [logging.md](logging.md) describes, it holds the one database context and its migrations, as [persistence.md](persistence.md) describes, it runs the components' scheduled jobs, as [background-work.md](background-work.md) describes, and it sets the rules for TLS and cookies and encrypts the secrets that a component stores, as [security.md](security.md) describes. It may depend only on `Shared`.
+- `Platform` holds the plumbing every component builds on. That is configuration, logging, persistence, background work, and how requests travel: it reads the one configuration file into typed settings, as [configuration.md](configuration.md) describes, it sets up structured logging from that file, as [logging.md](logging.md) describes, it holds the one database context and its migrations, as [persistence.md](persistence.md) describes, it runs the components' scheduled jobs, as [background-work.md](background-work.md) describes, and it sets the rules for TLS and cookies, says what a browser is told to refuse, and encrypts the secrets that a component stores, as [security.md](security.md) describes. It may depend only on `Shared`.
 - `Api` holds the HTTP endpoints under `/api`. Like the Web UI, it is an entry point on top of the components.
 
 Each component has a `<Name>Module.cs` with an `Add<Name>()` method that registers its services. `Program.cs` is the composition root: it creates the host with `PlatformModule.CreateBuilder`, calls every `Add<Name>()`, and maps the API and the UI. A component that has scheduled work registers a job with `AddBackgroundJob<T>()` in its `Add<Name>()`, and the platform's scheduler runs it in the same process. A component does not start a hosted service of its own for such work: that would run on every instance, without the lock that makes a second instance safe.
@@ -95,13 +95,13 @@ Settings come from one file and reach a component as typed settings. Two rules i
 
 ## Persistence
 
-The application has one database, PostgreSQL, and reaches it through one context, `EcnanibDbContext` in `Platform`. An entity and its mapping live in the component that owns them, and the context finds every mapping by itself, so `Platform` never references a component. One rule in `ComponentRules.cs` keeps the context the only way in: only `Platform` may use the database driver, Npgsql (NFR-DAT-1, -2). See [persistence.md](persistence.md).
+The application has one database, PostgreSQL, and reaches it through one context, `EcnanibDbContext` in `Platform`. An entity and its mapping live in the component that owns them, and the context finds every mapping by itself, so `Platform` never references a component. Two rules in `ComponentRules.cs` keep the context the only way in: only `Platform` may use the database driver, Npgsql, and only `Platform` may write a database command of its own (NFR-DAT-1, -2). See [persistence.md](persistence.md).
 
 ## Accounts
 
 A visitor registers with an email address and a password, accepts the legal documents, and verifies the address by email. Passwords are stored only as Argon2id hashes. Whatever creates an agent asks Accounts first whether the user may, which is where the verified address and the fair-use limit are checked (FR-ACC-1, FR-ACC-7).
 
-A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). A browser that is signed in has a session in the database, named by a cookie, which ends after a period of inactivity. Accounts registers the application's one authentication scheme, so the Web UI and the API both know the signed-in user, and a page says that it needs one with `[Authorize]`.
+A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). Signing in, registering, and asking for a reset can each be tried only so often, from one client and for one address (NFR-SEC-4). A browser that is signed in has a session in the database, named by a cookie, which ends after a period of inactivity. Accounts registers the application's one authentication scheme, so the Web UI and the API both know the signed-in user, and a page says that it needs one with `[Authorize]`.
 
 A user can turn on two-factor authentication with an authenticator app. Signing in then takes a code from the app after the password, and no session starts without one (FR-ACC-3). The key that the account shares with the app is stored encrypted.
 
@@ -120,6 +120,8 @@ Operator functions require a policy of their own, which Accounts registers: an o
 ## Security
 
 All traffic between a browser and the application uses TLS: a request over plain HTTP is redirected and not served. Every cookie is sent only over TLS and is hidden from scripts (NFR-SEC-1).
+
+The application defends against injection, cross-site scripting, request forgery, and clickjacking (NFR-SEC-4). Every answer tells the browser to run no script and apply no style that is not the application's own, and to show the application in no frame. A form is taken only with the token of a page that the application served. Two rules in `ComponentRules.cs` keep the rest in place: no code sends SQL that was put together as text, and no code writes text into a page as markup.
 
 A secret that the application must read again is stored encrypted, with authenticated encryption under a master key of the configuration file, and with the id of that key beside it (NFR-SEC-5). The encryption is in `Platform`, because Accounts needs it and may not use Credentials, which will need it too. See [security.md](security.md).
 

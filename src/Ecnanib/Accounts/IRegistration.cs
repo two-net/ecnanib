@@ -19,8 +19,12 @@ public interface IRegistration
     /// The password. It is passed on its own, not inside the request, so that it is never part of
     /// a value that can be printed or logged.
     /// </param>
+    /// <param name="origin">
+    /// Where the request came from, for the limit on how often one client may register (NFR-SEC-4).
+    /// </param>
     /// <param name="cancellationToken">Cancels the registration.</param>
-    Task<RegistrationResult> RegisterAsync(RegistrationRequest request, string password, CancellationToken cancellationToken);
+    Task<RegistrationResult> RegisterAsync(
+        RegistrationRequest request, string password, AuditOrigin origin, CancellationToken cancellationToken);
 
     /// <summary>
     /// Verifies the address of the account that the token of a verification link belongs to.
@@ -76,6 +80,12 @@ public enum RegistrationOutcome
 
     /// <summary>The email could not be sent. Registering again sends another.</summary>
     EmailNotSent,
+
+    /// <summary>
+    /// Too many registrations were tried, from this client or for this address (NFR-SEC-4).
+    /// Nothing was done, and no email was sent.
+    /// </summary>
+    TooManyAttempts,
 }
 
 /// <summary>A rule that a registration request breaks.</summary>

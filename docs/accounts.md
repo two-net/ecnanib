@@ -1,6 +1,6 @@
 # Accounts
 
-A visitor registers with an email address and a password, accepts the legal documents, and verifies the address with a link sent by email (FR-ACC-1, FR-ACC-7, FR-ACC-8, NFR-SEC-2). A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). A browser that is signed in has a session, which ends after a period of inactivity (NFR-SEC-1). A user can turn on two-factor authentication with an authenticator app, and signing in then takes a code from the app after the password (FR-ACC-3). Sign-ins, re-authentications, new passwords, and the changes to two-factor authentication are recorded in the audit trail (NFR-LOG-7). Before an action that exposes keys or money, a user who is signed in proves again who they are (FR-ACC-4). A user can delete their account, which removes everything that belongs to it, and can download what is stored about them (FR-ACC-9, NFR-SEC-9). The only account type is the individual user (FR-ACC-5).
+A visitor registers with an email address and a password, accepts the legal documents, and verifies the address with a link sent by email (FR-ACC-1, FR-ACC-7, FR-ACC-8, NFR-SEC-2). A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). Each of the three can be tried only so often (NFR-SEC-4). A browser that is signed in has a session, which ends after a period of inactivity (NFR-SEC-1). A user can turn on two-factor authentication with an authenticator app, and signing in then takes a code from the app after the password (FR-ACC-3). Sign-ins, re-authentications, new passwords, and the changes to two-factor authentication are recorded in the audit trail (NFR-LOG-7). Before an action that exposes keys or money, a user who is signed in proves again who they are (FR-ACC-4). A user can delete their account, which removes everything that belongs to it, and can download what is stored about them (FR-ACC-9, NFR-SEC-9). The only account type is the individual user (FR-ACC-5).
 
 The code is in `src/Ecnanib/Accounts`, the pages in `src/Ecnanib/WebUi/Pages/Account` and `Pages/Legal`, and the email in `src/Ecnanib/Notifications`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Accounts` and `tests/Ecnanib.Tests/Notifications`.
 
@@ -31,6 +31,8 @@ Two things follow from this on purpose:
 - **The password of an address that was registered twice is chosen by whoever confirms it.** See "An address that was registered again" below.
 
 If the email cannot be sent, the form says so and the error is logged. The account stays, and registering again sends a new link. That is also how to get a new link after one has expired. Such a link is one of an address that was registered again, so it asks for a password.
+
+The form can be sent only so often, from one client and for one address, so it sends no address more email than that. See "Limits on attempts".
 
 The log names an account by its id and never by its address.
 
@@ -67,6 +69,7 @@ The form is at `/sign-in`. It asks for the email address and the password.
 - The address is trimmed and compared in lower case, as it was stored.
 - **A sign-in that fails gets one answer,** "The email address or the password is not right", whatever was wrong. An address without an account is checked against a hash that no password matches, so the time it takes is the same too.
 - What no account can have is refused before anything is looked up or hashed: text that is not an email address, no password, or a password of more than 128 characters. The answer is the same one.
+- **A password can be tried only so often,** from one client and for one address. After that the form answers "Too many attempts" for a while, whatever the password is, and whether or not the address has an account. See "Limits on attempts".
 - A page that needs a signed-in user carries `@attribute [Authorize]`. A visitor who opens it is sent to `/sign-in?returnUrl=...` and comes back after signing in. `returnUrl` is followed only when it is a path of this application: it starts with one `/`, and holds no control character. Anything else leads to the start page. `/account` is the first such page.
 - An account with two-factor authentication is not signed in by its password. It is asked for a code: see "Signing in with a code" below. Only the right password tells that an account has it on.
 - The log names the account by its id: `User {UserId} signed in`, `A sign-in failed: ...`.
@@ -116,6 +119,8 @@ The form is at `/forgot-password`, linked from the sign-in page. It asks for the
 | Has no account | Nothing | A notice that the address has no account |
 
 As with registration, the visitor sees the same page, "Check your email", in both cases, and every request sends one email. If the email cannot be sent, the form says so.
+
+A link can be asked for only so often, from one client and for one address. A request that is refused sends nothing and replaces no link, so the link that was sent last still works. See "Limits on attempts".
 
 The email holds a link to `/reset-password?token=...` under `Application:PublicUrl`.
 
@@ -281,11 +286,67 @@ The page is `/confirm-identity`, for signed-in users. It asks for the password, 
 - The password is verified before the transaction, because a hash takes its time. The transaction then locks the row of the account, judges the code, looks whether the password is still the one that was verified, and writes the time into the session. A password reset ends the session, so a proof never outlives the password it was given with.
 - If the session has ended by then, nothing is written, the code is not spent, and the browser is sent to sign in.
 - The proof is recorded in the audit trail, in the transaction that writes it into the session. A recovery code that is used here is recorded as everywhere, ahead of the proof it gave.
+- **The password of an account can be tried here only so often.** For an account without two-factor authentication, whoever holds a browser that is signed in could otherwise find the password by trying. A proof that is refused is refused before anything is looked at, so it spends no code. See "The password of an account that is signed in" under "Limits on attempts".
 - The log names the account by its id: `User {UserId} confirmed who they are`, `User {UserId} did not confirm who they are: the password was not right`.
+
+## Limits on attempts
+
+Signing in, registering, and asking for a password reset link can each be tried only so often (NFR-SEC-4). Without a limit, a password could be guessed at without a pause, and the two forms that send email could send one address as much of it as someone likes. `AttemptLimits` counts the attempts, and each of the three asks it first.
+
+| What | From one client | For one email address | Within | In the configuration file |
+|---|---|---|---|---|
+| Signing in with a password | 30 times | 10 times | 15 minutes | `Limits:SignIn` |
+| Registering | 10 times | 3 times | 60 minutes | `Limits:Registration` |
+| Asking for a reset link | 10 times | 3 times | 60 minutes | `Limits:PasswordReset` |
+
+These are the defaults of the tracked configuration file. Each key holds `PerClient`, `PerAddress`, and `Minutes`, and applies to every user alike. See [configuration.md](configuration.md).
+
+| Rule | Detail |
+|---|---|
+| Within a period | A client, or an address, has room for an attempt while it has fewer than its number in the minutes that end now. So it is refused from its last attempt until its oldest one is that many minutes old, and then has room for one. |
+| A client | The IP address a request came from, as the connection knows it. An IPv6 address counts as its network of 64 bits, because one subscriber is given that many addresses. Requests whose connection names no address count as one client. |
+| An address | The email address as it is stored: trimmed and in lower case. It is counted whether or not it has an account, so **being refused does not tell whether an address has an account**. |
+| Both or neither | An attempt counts for its client and for its address. One that either of them refuses counts for neither: a client that is refused uses up nothing of the addresses it names. |
+| Being refused | Is not counted. Trying again while refused does not make the wait longer. |
+| What is refused for what it is | Is not counted either: text that is not an address, no password, a registration that breaks a rule. It costs nothing, and tells nothing. |
+| Before anything else | The limit is asked before an account is looked up, a password is hashed, or an email is sent, and a refused attempt does none of that. A refused request for a reset link replaces no link. |
+| The answer | The form again, with "Too many attempts. Try again in up to 15 minutes.", and status 429. It is the same whatever the password was. The minutes are those of the period, which is the longest the wait can be. |
+| The log | `A sign-in was refused: too many attempts from one client`, or `for one address`. It names neither of them. |
+
+At the default, the password of one account can be tried 960 times a day on the sign-in form, from however many clients.
+
+### The password of an account that is signed in
+
+Two more forms take a password, both from a browser that is signed in: the page that asks for it before a sensitive action, and the form that turns two-factor authentication on. Someone at a browser that was left signed in could try passwords on them.
+
+- **The two forms together take as many tries as the sign-in form takes for one address:** `Limits:SignIn:PerAddress` in `Limits:SignIn:Minutes`. They are counted for the account, whichever of its browsers tries.
+- **They are counted apart from the sign-in form.** Someone who tries the sign-in form for an address does not keep its owner, who is signed in, from a sensitive action.
+- **A proof that is refused spends no code,** and counts none as wrong: it is refused before the code is looked at.
+- On the form that turns two-factor authentication on, a code that is not right is told so first and is not a try of the password. Whoever is at the browser can make as many keys and codes as they like, so the code keeps nobody out there.
+- The log names the account by its id: `User {UserId} was refused confirming who they are: too many attempts for one account`.
+
+### Using up the attempts of someone else
+
+**Someone can use up the attempts of an address that is not theirs.** Its owner is then refused on that form until an attempt is old enough. This is decided: a limit for each client alone does not hold back guessing that is spread over many clients, and a limit for the address does.
+
+| Form | What its owner loses for the period | What they keep |
+|---|---|---|
+| Signing in | Signing in on a browser that is not signed in. | Every session that is open, and the sensitive actions on it. |
+| Registering | Registering the address, or getting a new verification link. | The link that was sent last. |
+| Asking for a reset link | Asking for another link. | The link that was sent last, which nobody can replace while the address is refused. |
+
+### Where the counts are
+
+- **In memory, in each running instance.** They start again when the application does, and a second instance would count on its own.
+- **Nothing of them is stored.** The address of a client, and an email address that may have no account, are not kept about anyone (NFR-SEC-9).
+- What no longer counts is dropped once in a period, so an address that was tried once does not stay in memory.
+- **Behind a proxy, the application must be told to believe the proxy's headers,** or every visitor counts as the one client that the proxy is. See "Behind a proxy that terminates TLS" in [security.md](security.md).
 
 ### Not covered
 
-- For an account without two-factor authentication, whoever holds a browser that is signed in can guess at the password on this page without a pause. Anyone can on the sign-in page. Both wait for the rate limits: see "Not built yet".
+- The pages of a link from an email, `/verify-email` and `/reset-password`, are not limited. Their token is 32 random bytes, which cannot be found by trying, and a link that does not work costs one query and no hash.
+- The page that takes a code after the password has its own limit, for the account: see "Wrong codes".
+- How many requests of any kind one client may make. That is for whatever stands in front of the application.
 
 ## Deleting the account
 
@@ -484,6 +545,7 @@ Both come from the configuration file, are read at startup, and apply to every u
 |---|---|
 | `Application:RegistrationOpen` | When `false`, the form is replaced by a notice and no account is created. An address that registered earlier can still be verified. |
 | `Limits:MaxAgentsPerUser` | The most agents one user may have. No account carries a limit of its own. |
+| `Limits:SignIn`, `Limits:Registration`, `Limits:PasswordReset` | How often each may be tried. See "Limits on attempts". |
 
 ### Creating agents
 
@@ -557,7 +619,7 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 ## Not built yet
 
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
-- Limits on how often one visitor may register, sign in, or ask for a reset link. Until then, the registration form and the reset form can be used to send email to an address repeatedly, and a password can be guessed at without a pause, on the sign-in page and on the page of a re-authentication. Only codes are limited: see "Wrong codes".
+- Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
 - The other two sensitive actions: adding or replacing a key, and switching an agent to Live. Each asks `IReauthentication` first when it is built. See "Re-authentication".
 - What Agents says about the agents of a user before an account is deleted. It implements `IAgentActivity` when agents are built. See "Deleting the account".
 - The parts of the export that other components keep: keys in their masked form, agents, lessons. Accounts cannot read their rows, so each hands its part over through an interface that Accounts declares, when the first such table arrives.

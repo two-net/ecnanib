@@ -64,24 +64,27 @@ public class DependencyRuleTests
     }
 
     [Fact]
-    public void Configuration_the_logging_library_and_the_database_driver_are_used_only_by_the_platform()
+    public void Configuration_the_logging_library_the_database_driver_and_database_commands_are_used_only_by_the_platform()
     {
         AssertNone(
             Checker.FindReservedNamespaceViolations(Application),
             "A namespace reserved for Platform is used outside it. Take the typed settings instead " +
             "of the host's configuration (docs/configuration.md), write log events through " +
             "ILogger instead of the logging library (docs/logging.md), and reach the database " +
-            "through EcnanibDbContext instead of the driver (docs/persistence.md).");
+            "through EcnanibDbContext instead of the driver or a command of its own " +
+            "(docs/persistence.md, docs/security.md).");
     }
 
     [Fact]
-    public void No_code_reads_the_process_environment_or_creates_its_own_HTTP_client()
+    public void No_code_reads_the_process_environment_creates_its_own_HTTP_client_sends_SQL_made_of_text_or_writes_text_as_markup()
     {
         AssertNone(
             Checker.FindForbiddenCalls(Application),
             "The application calls a method that no code may call. Every setting belongs in the one " +
             "configuration file (docs/configuration.md), and an HTTP client comes from the host's " +
-            "factory, which logs its calls (docs/logging.md).");
+            "factory, which logs its calls (docs/logging.md). SQL takes its values as parameters, " +
+            "with ExecuteSql, SqlQuery, or FromSql, and a page writes text as text, never as a " +
+            "MarkupString (docs/security.md).");
     }
 
     [Fact]

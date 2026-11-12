@@ -109,6 +109,12 @@ public enum TwoFactorTurnOnOutcome
 
     /// <summary>The password is not the password of the account.</summary>
     WrongPassword,
+
+    /// <summary>
+    /// The password of the account was tried too often by browsers that are signed in to it
+    /// (NFR-SEC-4). It was not looked at.
+    /// </summary>
+    TooManyAttempts,
 }
 
 /// <summary>

@@ -88,7 +88,12 @@ internal sealed class SettingsJson
             "Board": { "MinUsers": 6, "MinTrades": 60 }
           },
           "Retention": { "TranscriptDays": 30, "DecisionDays": 180, "NotificationDays": 45, "AuditDays": 365 },
-          "Limits": { "MaxAgentsPerUser": 7 }
+          "Limits": {
+            "MaxAgentsPerUser": 7,
+            "SignIn": { "PerClient": 400, "PerAddress": 200, "Minutes": 20 },
+            "Registration": { "PerClient": 300, "PerAddress": 100, "Minutes": 50 },
+            "PasswordReset": { "PerClient": 350, "PerAddress": 150, "Minutes": 40 }
+          }
         }
         """)
         .With("Security:MasterKeys:k1", Convert.ToBase64String(new byte[32]))

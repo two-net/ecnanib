@@ -1,6 +1,8 @@
 @attribute [Route(SessionAuthentication.SignInPath)]
 @using Ecnanib.Accounts
+@using Ecnanib.Platform.Settings
 @inject ISignIn SigningIn
+@inject LimitsSettings Limits
 @inject NavigationManager Navigation
 
 @*
@@ -16,6 +18,11 @@
 {
     @* One answer whatever was wrong, so that it does not tell whether an address has an account. *@
     <p class="form-error" role="alert">The email address or the password is not right.</p>
+}
+@if (_tooManyAttempts)
+{
+    @* The same whatever the password was, and whether or not the address has an account. *@
+    <p class="form-error" role="alert">Too many attempts. Try again in up to @Limits.SignIn.Minutes minutes.</p>
 }
 
 <form method="post" @formname="sign-in" @onsubmit="SignInAsync">
@@ -39,6 +46,7 @@
 
 @code {
     private bool _failed;
+    private bool _tooManyAttempts;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -84,6 +92,12 @@
                 // The account has two-factor authentication. Nobody is signed in yet: the next
                 // page takes the code, and then leads where this one would have.
                 Navigation.NavigateTo(SessionAuthentication.PageWith(SessionAuthentication.SignInCodePath, ReturnUrl));
+                break;
+
+            case SignInOutcome.TooManyAttempts:
+                // The answer says so in its status too, for whatever sent the form without reading the page.
+                _tooManyAttempts = true;
+                HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 break;
 
             default:

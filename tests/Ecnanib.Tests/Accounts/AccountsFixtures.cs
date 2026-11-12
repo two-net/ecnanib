@@ -138,7 +138,7 @@ internal sealed class AccountsApplication : IDisposable
     public Task<RegistrationResult> RegisterAsync(
         string email, string password = Password, IReadOnlyCollection<AcceptedDocument>? accepted = null) =>
         Registration.RegisterAsync(
-            new RegistrationRequest(email, accepted ?? EveryDocument), password, TestContext.Current.CancellationToken);
+            new RegistrationRequest(email, accepted ?? EveryDocument), password, AuditOrigin.Unknown, TestContext.Current.CancellationToken);
 
     /// <summary>
     /// Confirms a verification link, with the password that the link of a repeat registration
@@ -153,7 +153,7 @@ internal sealed class AccountsApplication : IDisposable
         await ConfirmAsync(token, newPassword) == EmailVerificationOutcome.Verified;
 
     public Task<PasswordResetRequestOutcome> RequestResetAsync(string email) =>
-        PasswordReset.RequestAsync(email, TestContext.Current.CancellationToken);
+        PasswordReset.RequestAsync(email, AuditOrigin.Unknown, TestContext.Current.CancellationToken);
 
     public Task<PasswordResetOutcome> ResetAsync(string token, string newPassword) =>
         PasswordReset.ResetAsync(token, newPassword, AuditOrigin.Unknown, TestContext.Current.CancellationToken);
@@ -653,12 +653,16 @@ internal static class Browser
     /// <summary>
     /// A page as a visitor sees it. The framework adds a comment to each page that holds state
     /// for the browser, and each form carries a token against request forgery. Both are
-    /// encrypted, and so different every time.
+    /// encrypted, and so different every time. So is the nonce of the one script that is
+    /// written into a page, which is new for every answer.
     /// </summary>
     public static string AsSeen(string page) =>
         Regex.Replace(
-            Regex.Replace(page, "<!--.*?-->", string.Empty, RegexOptions.Singleline),
-            "name=\"__RequestVerificationToken\" value=\"[^\"]+\"",
+            Regex.Replace(
+                Regex.Replace(page, "<!--.*?-->", string.Empty, RegexOptions.Singleline),
+                "name=\"__RequestVerificationToken\" value=\"[^\"]+\"",
+                string.Empty),
+            " nonce=\"[^\"]+\"",
             string.Empty);
 
     public static string AntiforgeryTokenIn(string page)
