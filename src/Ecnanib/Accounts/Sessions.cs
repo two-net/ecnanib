@@ -190,12 +190,31 @@ internal sealed class Sessions(
     /// </returns>
     public async Task<DateTimeOffset?> ReauthenticatedAtAsync(string token, Guid userId, CancellationToken cancellationToken)
     {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await ReauthenticatedAtAsync(context, token, userId, cancellationToken);
+    }
+
+    /// <summary>
+    /// When the user of a session last proved who they are again on its browser, as the
+    /// transaction of the caller sees it. A sensitive action that Accounts does itself asks
+    /// here, under the lock on the user's row, so that the answer holds until the action is done.
+    /// </summary>
+    /// <param name="context">The context that holds the transaction.</param>
+    /// <param name="token">The token of the session.</param>
+    /// <param name="userId">The user the request is signed in as, whose session it must be.</param>
+    /// <param name="cancellationToken">Cancels the question.</param>
+    /// <returns>
+    /// Null when they have not since they signed in, when the text is not a token, or when the
+    /// session has ended or is not that user's.
+    /// </returns>
+    public static async Task<DateTimeOffset?> ReauthenticatedAtAsync(
+        EcnanibDbContext context, string token, Guid userId, CancellationToken cancellationToken)
+    {
         if (SecretToken.HashOf(token) is not { } tokenHash)
         {
             return null;
         }
-
-        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
 
         return await context.Set<Session>()
             .OwnedBy(userId)

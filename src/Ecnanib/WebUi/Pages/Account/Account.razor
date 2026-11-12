@@ -24,6 +24,19 @@ else
     <p><a href="/account/two-factor">Turn on two-factor authentication</a></p>
 }
 
+<h2>Your data</h2>
+
+<p>What is stored about you is your email address, when you registered and verified it, the legal documents you accepted, the devices you are signed in on, and the security-relevant actions of your account. Your password is stored only as a hash, which is in no download.</p>
+
+@* Marked as a download, so that the browser asks for the file once and does not try to show it as a page. *@
+<p><a href="@WebUiModule.ExportPath" download>Download your data</a></p>
+
+<h2>Delete your account</h2>
+
+<p>Deleting your account removes it and everything that belongs to it, for good. You are asked to confirm that it is you first.</p>
+
+<p><a href="@WebUiModule.DeleteAccountPath">Delete your account</a></p>
+
 @code {
     private TwoFactorState? _twoFactor;
 

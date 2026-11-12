@@ -11,6 +11,7 @@ The vocabulary is in `src/Ecnanib/Platform/Persistence/Ownership.cs`. Who is sig
 | Every table holds rows of users, which carry their owner, or rows of the service. | `OwnershipModelTests` reads the model. A table that says neither fails it. |
 | The owner of a row is an account. | The owner has a foreign key that ends at `users.id`. The same test checks it. |
 | Each kind of row that belongs to a user has a test that another user cannot reach it. | A test marked `[ProvesOwnershipOf("table")]`. `OwnershipModelTests` fails for a table without one. |
+| The rows of a user go with the account when it is deleted (FR-ACC-9). | Each foreign key that carries the owner to `users` deletes the row with what it points at. `OwnershipModelTests` reads the model, and `AccountDeletionTests` deletes an account that has a row in every such table. |
 | Nothing is about a tenant, a team, a shared resource, or money for the service. | `IndividualServiceTests` reads the name of every table, column, page, and endpoint. `DeploymentRuleTests` refuses the package of a payment service. |
 | An operator function requires an operator, whoever owns what. | The `Operator` policy, which `OperatorAccessTests` covers. |
 
@@ -49,6 +50,8 @@ internal sealed class RecoveryCodeConfiguration : IEntityTypeConfiguration<Recov
 
 - **Every row carries its owner itself,** also a row that hangs on another row of the same user. A query for it needs no join to know whose it is.
 - **A component that may not use Accounts cannot point at `users`.** The Decision Engine is one. Its rows carry the owner along in the foreign key to the row they hang on: `(agent_id, user_id)` to `agents (id, user_id)`. The database then holds the two owners to being the same, and the row it hangs on points at the account.
+- **A row goes with its account.** The foreign key that carries the owner is declared with `OnDelete(DeleteBehavior.Cascade)`, at every row on the way to `users`. Deleting an account deletes one row, and the database deletes the rest, stored keys included. See "Deleting the account" in [accounts.md](accounts.md).
+- **Another foreign key between two rows of one user must not stand in the way of that.** One that is declared with `Restrict` can refuse the deletion of the account, depending on the order the database deletes in. The test that deletes an account with a row in every table shows whether it does.
 - The owner is an id. It tells nothing about the person, so it is not personal data, and a component that must not see personal data may hold it.
 
 A row that belongs to no user belongs to the service: vocabulary, the catalog, the prompts, the state of the jobs. Such a table is listed, with what it holds, in [`OwnershipRules.cs`](../tests/Ecnanib.Tests/Persistence/OwnershipRules.cs). That file is the source of truth. To list a table there is to decide that no user owns its rows.
@@ -127,16 +130,19 @@ No operator function is built yet.
 
 ## Adding a kind of resource
 
-1. Add the entity and its configuration, as [persistence.md](persistence.md) describes. Implement `IUserOwned`, and point `user_id` at `users` with a foreign key, or carry it along to the row this one hangs on.
+1. Add the entity and its configuration, as [persistence.md](persistence.md) describes. Implement `IUserOwned`, and point `user_id` at `users` with a foreign key, or carry it along to the row this one hangs on. Declare that key with `OnDelete(DeleteBehavior.Cascade)`.
 2. Read and change the rows through `OwnedBy(userId)`, with the user from `SignedInUser`.
 3. Answer "not found" when the scoped query finds nothing.
 4. Write a test with two users: a request of one for a row of the other is refused, and what one does changes nothing of the other. Mark it `[ProvesOwnershipOf("table")]`.
+5. Give both users of the first test in `AccountDeletionTests` a row in the table. That test fails until they have one, and then shows that deleting an account deletes from the table.
+6. List each column that could say who a user is in `PersonalDataRules`, with what it holds. See "Personal data" in [accounts.md](accounts.md).
+7. Add the rows to the export of the user's data, or list the table in `ExportRules` with why it is left out. See "Exporting your data" in [accounts.md](accounts.md).
 
 If the rows belong to the service instead, list the table in `OwnershipRules.ServiceTables` with what it holds.
 
 ## Not built yet
 
 - The first resources that a request names by an id: keys and agents. The tests of today are about the rows that Accounts keeps, none of which a request names by its id.
-- The operator functions: the global halt, the status screen, and the account controls, each recorded in the audit trail.
+- The operator functions: the global halt, the status screen, and the account controls, each recorded in the audit trail. The events of an account go with it when it is deleted, so what happens to the events of an operator who deletes their own account is to be decided with them. See "Not built yet" in [accounts.md](accounts.md).
 - What a protected endpoint under `/api` answers to a visitor. See "Not built yet" in [accounts.md](accounts.md).
 - Checking again inside an interactive page. Who the user is, and whether they are an operator, is decided when the connection of such a page is made. See "Not built yet" in [accounts.md](accounts.md).

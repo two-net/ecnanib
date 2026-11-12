@@ -9,7 +9,8 @@ namespace Ecnanib.Tests.Persistence;
 /// Whose the rows of each table are, in one place. Every table but <c>users</c> holds rows that
 /// belong to a user, and carry that user, or rows that belong to the service (FR-ACC-5,
 /// NFR-DAT-9). This file is the source of truth for the second kind: <c>docs/ownership.md</c>
-/// explains the rule, and <see cref="OwnershipModelTests"/> enforces it.
+/// explains the rule, and <see cref="OwnershipModelTests"/> enforces it. The rows of a user go
+/// with the account when it is deleted (FR-ACC-9), which is held to here as well.
 /// </summary>
 internal static class OwnershipRules
 {
@@ -73,7 +74,7 @@ internal static class OwnershipRules
                 continue;
             }
 
-            if (!LeadsToTheAccount(entity, owner, accountEntity, []))
+            if (!LeadsToTheAccount(entity, owner, accountEntity, [], AnyKey))
             {
                 violations.Add(
                     $"{table}: the owner has no foreign key that ends at {TableOf(accountEntity)}. Point it at the " +
@@ -90,6 +91,42 @@ internal static class OwnershipRules
         return [.. violations.Order(StringComparer.Ordinal)];
     }
 
+    /// <summary>
+    /// The tables of the application's model whose rows would not go with their account when it
+    /// is deleted (FR-ACC-9), each with what to do about it.
+    /// </summary>
+    public static IReadOnlyList<string> FindRowsThatStay(IModel model) => FindRowsThatStay(model, typeof(User));
+
+    /// <summary>
+    /// The tables of a model whose rows would not go with their account. Deleting an account
+    /// deletes one row, the account, and the database deletes what hangs on it: so the foreign
+    /// key that carries the owner to the account must delete the row with what it points at, at
+    /// every row on the way. A table whose owner does not lead to the account at all is for
+    /// <see cref="FindViolations(IModel)"/> to find, and is not repeated here.
+    /// </summary>
+    /// <param name="model">The model.</param>
+    /// <param name="account">The entity that is the account.</param>
+    public static IReadOnlyList<string> FindRowsThatStay(IModel model, Type account)
+    {
+        var accountEntity = model.FindEntityType(account)
+            ?? throw new InvalidOperationException($"The model has no entity {account.Name}.");
+
+        return
+        [
+            .. from entity in model.GetEntityTypes()
+               where entity != accountEntity && CarriesOwner(entity)
+               let owner = entity.FindProperty(nameof(IUserOwned.UserId))
+               where owner is not null
+                   && LeadsToTheAccount(entity, owner, accountEntity, [], AnyKey)
+                   && !LeadsToTheAccount(entity, owner, accountEntity, [], DeletesWithWhatItPointsAt)
+               let table = TableOf(entity)
+               orderby table
+               select $"{table}: its rows would stay when the account is deleted, or stand in the way of deleting it. " +
+                   $"Declare OnDelete(DeleteBehavior.Cascade) on the foreign key that carries the owner to {TableOf(accountEntity)}, " +
+                   "at every row on the way.",
+        ];
+    }
+
     /// <summary>The tables of a model whose rows belong to users.</summary>
     public static IReadOnlyList<string> UserOwnedTables(IModel model) =>
         [.. model.GetEntityTypes().Where(CarriesOwner).Select(TableOf).Order(StringComparer.Ordinal)];
@@ -98,20 +135,29 @@ internal static class OwnershipRules
 
     private static string TableOf(IReadOnlyEntityType entity) => entity.GetTableName() ?? entity.ClrType.Name;
 
+    private static bool AnyKey(IForeignKey key) => true;
+
+    private static bool DeletesWithWhatItPointsAt(IForeignKey key) => key.DeleteBehavior == DeleteBehavior.Cascade;
+
     /// <summary>
     /// Whether the database holds the owner of a row to being an account: by a foreign key from
     /// the owner to the account, or by one that carries the owner along to a row which is held
     /// to it in turn. The second is for a component that may not point at Accounts.
     /// </summary>
+    /// <param name="entity">The entity whose rows are asked about.</param>
+    /// <param name="owner">The property that holds the owner.</param>
+    /// <param name="account">The entity that is the account.</param>
+    /// <param name="seen">The entities on the way so far.</param>
+    /// <param name="counts">Which foreign keys count as a way to the account.</param>
     private static bool LeadsToTheAccount(
-        IEntityType entity, IProperty owner, IEntityType account, HashSet<IEntityType> seen)
+        IEntityType entity, IProperty owner, IEntityType account, HashSet<IEntityType> seen, Func<IForeignKey, bool> counts)
     {
         if (!seen.Add(entity))
         {
             return false;
         }
 
-        foreach (var key in entity.GetForeignKeys())
+        foreach (var key in entity.GetForeignKeys().Where(counts))
         {
             var position = key.Properties.ToList().IndexOf(owner);
             if (position < 0)
@@ -133,7 +179,7 @@ internal static class OwnershipRules
             var carried = key.PrincipalKey.Properties[position];
             if (CarriesOwner(key.PrincipalEntityType)
                 && carried.Name == nameof(IUserOwned.UserId)
-                && LeadsToTheAccount(key.PrincipalEntityType, carried, account, seen))
+                && LeadsToTheAccount(key.PrincipalEntityType, carried, account, seen, counts))
             {
                 return true;
             }

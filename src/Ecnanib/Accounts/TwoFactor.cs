@@ -49,7 +49,14 @@ internal sealed class TwoFactor(
                 // The codes of this account. Inside a projection, so it names the owner itself.
                 RecoveryCodes = context.Set<RecoveryCode>().Count(code => code.UserId == user.Id),
             })
-            .SingleAsync(request.RequestAborted);
+            .SingleOrDefaultAsync(request.RequestAborted);
+
+        if (account is null)
+        {
+            // The account was deleted, on another browser, since this request was signed in.
+            // An account that does not exist has nothing on, and is not verified.
+            return new TwoFactorState(IsOn: false, Since: null, RecoveryCodesLeft: 0, AddressVerified: false);
+        }
 
         return new TwoFactorState(
             IsOn: account.TwoFactorEnabledAt is not null,
@@ -114,7 +121,14 @@ internal sealed class TwoFactor(
         var account = await context.Set<User>()
             .Where(user => user.Id == userId)
             .Select(user => new { user.PasswordHash, user.EmailVerifiedAt, user.TwoFactorEnabledAt })
-            .SingleAsync(cancellationToken);
+            .SingleOrDefaultAsync(cancellationToken);
+
+        // The account was deleted, on another browser, since this request was signed in. An
+        // account that does not exist is not verified.
+        if (account is null)
+        {
+            return Ended(TwoFactorTurnOnOutcome.AddressNotVerified);
+        }
 
         // Before anything is looked at, so that a form which is sent a second time, by a reload
         // of the page that showed the recovery codes, gets this answer and not an error.

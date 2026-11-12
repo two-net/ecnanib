@@ -103,4 +103,18 @@ internal sealed class AccountMailer(IEmailAdapter email, ApplicationSettings app
                 If it was not you, someone else can read your email. Secure your mailbox first, and then ask for a new password on the sign-in page.
                 """),
             cancellationToken);
+
+    public Task SendAccountDeletedNoticeAsync(string emailAddress, CancellationToken cancellationToken) =>
+        email.SendAsync(
+            new EmailMessage(
+                emailAddress,
+                $"Your account at {application.Name} was deleted",
+                $"""
+                Your account at {application.Name} was deleted, with everything that belonged to it. This is the last message to this email address, which {application.Name} no longer keeps.
+
+                If that was you, there is nothing to do. You can register again at any time.
+
+                If it was not you, someone else knew how to sign in to your account. If you use its password anywhere else, change it there.
+                """),
+            cancellationToken);
 }

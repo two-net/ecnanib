@@ -55,7 +55,7 @@ Every type in an `Ecnanib` namespace must sit in a registered area, so new code 
 
 Sometimes a component must cause something to happen in a component above it. For example, when the Catalog marks a model as unavailable, the agents that use it must change state. The lower component declares an interface, and the higher component implements it and registers the implementation. The reference still points downward. This happens in process; there is no message broker.
 
-Accounts sends its email this way. It declares `IAccountMailer`, and Notifications implements it on top of the email adapter. See [accounts.md](accounts.md).
+Accounts sends its email this way. It declares `IAccountMailer`, and Notifications implements it on top of the email adapter. It asks about a user's agents this way too, before it deletes an account: it declares `IAgentActivity`, for Agents to implement. See [accounts.md](accounts.md).
 
 ### Changing a rule
 
@@ -106,6 +106,8 @@ A user signs in with the address and the password, signs out, and resets a forgo
 A user can turn on two-factor authentication with an authenticator app. Signing in then takes a code from the app after the password, and no session starts without one (FR-ACC-3). The key that the account shares with the app is stored encrypted.
 
 Being signed in is not enough for an action that exposes keys or money: adding or replacing a key, switching an agent to Live, and deleting the account. Whatever does one asks Accounts first whether the user has just proved again who they are, with their password and, when they have it on, a code (FR-ACC-4).
+
+A user can delete their account, which is the first of those actions to be built. Every row that belongs to a user hangs on the account and goes with it, in one transaction, stored keys included. It is done only while every agent of the user is stopped, which Agents says. A user can also download what is stored about them, without the secrets. Personal data is limited to the email address, the password hash, and preferences, and a test holds the columns of the model to that (FR-ACC-9, NFR-SEC-9).
 
 Accounts also holds the audit trail: the record in the database, apart from the logs, of security- and money-relevant actions (NFR-LOG-7). An event is written in the transaction of the action it records. The first events are the changes to two-factor authentication. See [accounts.md](accounts.md).
 

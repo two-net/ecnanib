@@ -41,4 +41,10 @@ public interface IAccountMailer
 
     /// <summary>Tells the owner of an account that its password was changed with a reset link.</summary>
     Task SendPasswordChangedNoticeAsync(string emailAddress, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Tells the owner of an address that the account with it was deleted (FR-ACC-9). It is the
+    /// last message to the address, which is kept nowhere once this is sent.
+    /// </summary>
+    Task SendAccountDeletedNoticeAsync(string emailAddress, CancellationToken cancellationToken);
 }

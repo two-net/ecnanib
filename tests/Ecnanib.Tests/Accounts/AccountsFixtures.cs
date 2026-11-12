@@ -614,6 +614,14 @@ internal static class Browser
             ? client.SubmitAsync(page, "confirm-identity", ("Password", password))
             : client.SubmitAsync(page, "confirm-identity", ("Password", password), ("Code", code));
 
+    /// <summary>
+    /// Presses the button of the page that deletes the account of the signed-in user, and
+    /// follows where the answer leads. A user who has not just proved who they are is not shown
+    /// that page: the form is then posted all the same, as something that is not a browser can.
+    /// </summary>
+    public static Task<(string Path, string Page)> DeleteAccountAsync(this HttpClient client) =>
+        client.SubmitAsync(WebUiModule.DeleteAccountPath, "delete-account");
+
     /// <summary>The key of the setup that a page carries in its form, as the application sealed it.</summary>
     public static string SealedKeyIn(string page)
     {

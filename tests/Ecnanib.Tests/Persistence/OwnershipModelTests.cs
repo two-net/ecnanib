@@ -7,7 +7,8 @@ namespace Ecnanib.Tests.Persistence;
 /// <summary>
 /// Every resource belongs to exactly one user, and every user-owned row carries its owner
 /// (FR-ACC-5, NFR-DAT-9). Each kind of them has a test that a row of another user is out of
-/// reach (NFR-SEC-3). These tests read the model and need no database.
+/// reach (NFR-SEC-3), and goes with its account when that is deleted (FR-ACC-9). These tests
+/// read the model and need no database.
 /// </summary>
 public class OwnershipModelTests
 {
@@ -69,6 +70,34 @@ public class OwnershipModelTests
         Assert.True(
             unknown.Count == 0,
             $"Tests are marked as proving the ownership of tables that hold no rows of users: {string.Join(", ", unknown)}");
+    }
+
+    [Fact]
+    public void The_rows_of_a_user_go_with_the_account_when_it_is_deleted()
+    {
+        using var context = ModelOnly.Context();
+
+        var staying = OwnershipRules.FindRowsThatStay(context.Model);
+
+        Assert.True(
+            staying.Count == 0,
+            "Deleting an account deletes everything that belongs to its user, at once (FR-ACC-9). See docs/ownership.md:" +
+            Environment.NewLine + string.Join(Environment.NewLine, staying.Select(table => $"  {table}")));
+    }
+
+    [Fact]
+    public void A_table_whose_rows_would_stay_when_the_account_is_deleted_is_found()
+    {
+        using var context = new PlantedContext();
+
+        const string whatToDo =
+            "its rows would stay when the account is deleted, or stand in the way of deleting it. Declare " +
+            "OnDelete(DeleteBehavior.Cascade) on the foreign key that carries the owner to accounts, at every row on the way.";
+
+        // The tables whose owner leads to no account are not among them: the other rule finds those.
+        Assert.Equal(
+            [$"hangs_on_one_that_stays: {whatToDo}", $"stays_behind: {whatToDo}"],
+            OwnershipRules.FindRowsThatStay(context.Model, typeof(Account)));
     }
 
     [Fact]
@@ -150,7 +179,40 @@ public class OwnershipModelTests
                 owned.ToTable("listed_and_owned");
                 owned.HasOne<Account>().WithMany().HasForeignKey(row => row.UserId);
             });
+
+            // Says whose its rows are, and would keep them when the account is deleted.
+            modelBuilder.Entity<StaysBehind>(owned =>
+            {
+                owned.ToTable("stays_behind");
+                owned.HasOne<Account>().WithMany().HasForeignKey(row => row.UserId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // Goes with the row it hangs on, which does not go with the account.
+            modelBuilder.Entity<HangsOnOneThatStays>(owned =>
+            {
+                owned.ToTable("hangs_on_one_that_stays");
+                owned.HasOne<StaysBehind>().WithMany()
+                    .HasForeignKey(row => new { row.StaysBehindId, row.UserId })
+                    .HasPrincipalKey(row => new { row.Id, row.UserId })
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
         }
+    }
+
+    private sealed class StaysBehind : IUserOwned
+    {
+        public Guid Id { get; set; }
+
+        public Guid UserId { get; set; }
+    }
+
+    private sealed class HangsOnOneThatStays : IUserOwned
+    {
+        public Guid Id { get; set; }
+
+        public Guid StaysBehindId { get; set; }
+
+        public Guid UserId { get; set; }
     }
 
     private sealed class Account

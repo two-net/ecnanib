@@ -23,8 +23,17 @@ public static class AccountsModule
         services.AddSingleton<TwoFactorCodes>();
         services.AddSingleton<ITwoFactor, TwoFactor>();
 
-        // What a sensitive action asks first: whether its user proved who they are again (FR-ACC-4).
-        services.AddSingleton<IReauthentication, Reauthentication>();
+        // What a sensitive action asks first: whether its user proved who they are again
+        // (FR-ACC-4). Also registered as itself, for the sensitive action that Accounts does
+        // itself, which asks inside its own transaction.
+        services.AddSingleton<Reauthentication>();
+        services.AddSingleton<IReauthentication>(provider => provider.GetRequiredService<Reauthentication>());
+
+        // Deleting the account, and the export of what is stored about its user (FR-ACC-9,
+        // NFR-SEC-9). Whether agents stand in the way is for IAgentActivity to say, which Agents
+        // implements.
+        services.AddSingleton<IAccountDeletion, AccountDeletion>();
+        services.AddSingleton<IDataExport, DataExport>();
 
         // The one way a request is known to be signed in, for the Web UI and the API alike.
         services.AddAuthentication(SessionAuthentication.Scheme)

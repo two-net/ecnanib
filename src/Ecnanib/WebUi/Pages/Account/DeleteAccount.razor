@@ -1,0 +1,111 @@
+@attribute [Route(WebUiModule.DeleteAccountPath)]
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@inject IAccountDeletion Deletion
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page is shown to a user
+    who has just proved again who they are, and to nobody else. The form is on the page whenever
+    one is posted, whatever the account says by then: a form that is not there cannot be answered.
+    Whether the account is deleted is for DeleteAsync to say, which asks again.
+*@
+
+<PageTitle>Delete your account</PageTitle>
+
+<h1>Delete your account</h1>
+
+@if (_agentsNotStopped)
+{
+    <p class="form-error" role="alert">One of your agents is not stopped. Stop every agent first, and then delete your account.</p>
+}
+
+@if (_showForm)
+{
+    <p>This deletes your account and everything that belongs to it, at once and for good:</p>
+
+    <ul>
+        <li>your email address and your password,</li>
+        <li>two-factor authentication and its recovery codes,</li>
+        <li>the record of the legal documents you accepted,</li>
+        <li>the record of the security-relevant actions of your account,</li>
+        <li>and your sign-in on this and on every other device.</li>
+    </ul>
+
+    <p>It cannot be undone. If you want a copy of what is stored about you, <a href="@WebUiModule.ExportPath" download>download your data</a> first.</p>
+
+    <form method="post" @formname="delete-account" @onsubmit="DeleteAsync">
+        <AntiforgeryToken />
+
+        <button type="submit">Delete my account</button>
+    </form>
+}
+
+<p><a href="/account">Keep my account</a></p>
+
+@code {
+    private bool _showForm;
+    private bool _agentsNotStopped;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // Where the page that takes the proof leads back to.
+    private static string ConfirmFirst =>
+        SessionAuthentication.PageWith(SessionAuthentication.ReauthenticationPath, WebUiModule.DeleteAccountPath);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        if (!HttpMethods.IsGet(request.Request.Method))
+        {
+            // A form was posted, and is answered by DeleteAsync.
+            _showForm = true;
+
+            return;
+        }
+
+        var state = await Deletion.StateAsync(request);
+
+        if (!state.IsRecent)
+        {
+            // Not shown, and not done, until the user has proved again who they are.
+            Navigation.NavigateTo(ConfirmFirst);
+
+            return;
+        }
+
+        _agentsNotStopped = state.AgentsNotStopped;
+        _showForm = !state.AgentsNotStopped;
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        switch (await Deletion.DeleteAsync(request))
+        {
+            case AccountDeletionOutcome.Deleted:
+                // A page for visitors: nobody is signed in on this browser any more.
+                Navigation.NavigateTo(WebUiModule.AccountDeletedPath);
+                break;
+
+            case AccountDeletionOutcome.ConfirmationNeeded:
+                // The proof was given too long ago, or never. Nothing was deleted, and the form
+                // is not posted again: the user comes back to the page and presses the button.
+                Navigation.NavigateTo(ConfirmFirst);
+                break;
+
+            case AccountDeletionOutcome.AgentsNotStopped:
+                _agentsNotStopped = true;
+                break;
+        }
+    }
+}

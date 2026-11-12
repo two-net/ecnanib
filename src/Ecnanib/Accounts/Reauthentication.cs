@@ -43,7 +43,36 @@ internal sealed class Reauthentication(
             return true;
         }
 
-        logger.LogInformation("User {UserId} is asked to confirm who they are before {Action}", userId, action);
+        LogAsked(userId, action);
+
+        return false;
+    }
+
+    /// <summary>
+    /// The same question, for a sensitive action of Accounts itself, asked inside the
+    /// transaction that does the action. The answer then holds until the action is done: with
+    /// the lock on the account's row, nothing that ends the proof comes in between.
+    /// </summary>
+    /// <param name="context">The context that holds the transaction.</param>
+    /// <param name="request">The request that asks for the action.</param>
+    /// <param name="action">The action that is asked for.</param>
+    internal async Task<bool> IsRecentAsync(EcnanibDbContext context, HttpContext request, SensitiveAction action)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (SignedInUser.IdOf(request) is not { } userId)
+        {
+            return false;
+        }
+
+        if (SessionCookie.TokenOf(request.Request) is { } token
+            && IsRecent(await Sessions.ReauthenticatedAtAsync(context, token, userId, request.RequestAborted)))
+        {
+            return true;
+        }
+
+        LogAsked(userId, action);
 
         return false;
     }
@@ -156,8 +185,13 @@ internal sealed class Reauthentication(
             return false;
         }
 
-        var provedAt = await sessions.ReauthenticatedAtAsync(token, userId, request.RequestAborted);
-
-        return provedAt is { } at && clock.GetUtcNow() - at < ReauthenticationRules.HoldsFor;
+        return IsRecent(await sessions.ReauthenticatedAtAsync(token, userId, request.RequestAborted));
     }
+
+    /// <summary>Whether a proof that was given at a time still holds. One that was never given does not.</summary>
+    private bool IsRecent(DateTimeOffset? provedAt) =>
+        provedAt is { } at && clock.GetUtcNow() - at < ReauthenticationRules.HoldsFor;
+
+    private void LogAsked(Guid userId, SensitiveAction action) =>
+        logger.LogInformation("User {UserId} is asked to confirm who they are before {Action}", userId, action);
 }

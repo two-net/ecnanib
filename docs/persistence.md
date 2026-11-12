@@ -83,7 +83,8 @@ internal sealed class AiProviderConfiguration : IEntityTypeConfiguration<AiProvi
 | Prices, quantities, and money | `decimal` in the code, which is `numeric` in the database: exact. No floating-point column is allowed, for any purpose (NFR-DAT-8). |
 | Timestamps | `DateTimeOffset` or a UTC `DateTime` in the code, which is `timestamp with time zone` in the database. A value that is not in UTC is refused when it is written (NFR-DAT-8). |
 | Partitioning | No table is partitioned, by any mechanism (NFR-DAT-4). |
-| Ownership | A table holds rows that belong to users or rows that belong to the service, and never both. An entity of the first kind implements `IUserOwned`, and its `user_id` has a foreign key that ends at `users.id`. A table of the second kind is listed in `OwnershipRules.cs` (NFR-DAT-9). See [ownership.md](ownership.md). |
+| Ownership | A table holds rows that belong to users or rows that belong to the service, and never both. An entity of the first kind implements `IUserOwned`, and its `user_id` has a foreign key that ends at `users.id`. That key is declared with `OnDelete(DeleteBehavior.Cascade)`, so that the row goes with its account (FR-ACC-9). A table of the second kind is listed in `OwnershipRules.cs` (NFR-DAT-9). See [ownership.md](ownership.md). |
+| Personal data | A column of a user's row that could say who the user is, which is any column that is not an id, a flag, a number, a time, or an enum, is listed in `PersonalDataRules.cs` with what it holds (NFR-SEC-9). See "Personal data" in [accounts.md](accounts.md). |
 | Shared vocabulary | A lookup table for a type in `Shared`, such as `roles` for `Role`, is mapped in `Platform/Persistence`, so that every component can point at it. |
 | Foreign keys between components | Configured in the component that is allowed to reference the other, following the dependency rules. |
 | Foreign keys to a seeded table | Declared with `OnDelete(DeleteBehavior.Restrict)`, so that taking a seeded row away can never delete the rows that point at it. |
@@ -159,6 +160,6 @@ Keep each seeded text on one line in the source file. A text that spans lines wo
 
 1. Add the entity and its `IEntityTypeConfiguration` to the component that owns it. Name the table with `ToTable`.
 2. Use `decimal` for prices, quantities, and money, and `DateTimeOffset` for timestamps.
-3. Say whose its rows are. Rows of a user implement `IUserOwned` and are read through `OwnedBy`. Rows of the service are listed in `OwnershipRules.cs`. See "Adding a kind of resource" in [ownership.md](ownership.md).
+3. Say whose its rows are. Rows of a user implement `IUserOwned`, are read through `OwnedBy`, and go with their account. Rows of the service are listed in `OwnershipRules.cs`. See "Adding a kind of resource" in [ownership.md](ownership.md).
 4. Generate a migration, read it, and commit it.
-5. Run the tests. `ModelTests` checks the model against its migrations and against the rules for columns, and `OwnershipModelTests` checks that every table says whose its rows are.
+5. Run the tests. `ModelTests` checks the model against its migrations and against the rules for columns, `OwnershipModelTests` checks that every table says whose its rows are and that the rows of a user go with the account, and `PersonalDataTests` checks that every column which could say who a user is has been listed.
