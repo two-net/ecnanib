@@ -15,7 +15,17 @@ namespace Ecnanib.Accounts;
 /// When the session was last used, to within the time between two writes. The session ends when
 /// this is longer ago than the configured period of inactivity (NFR-SEC-1).
 /// </param>
-public sealed class Session(Guid id, Guid userId, byte[] tokenHash, DateTimeOffset createdAt, DateTimeOffset lastActiveAt)
+/// <param name="reauthenticatedAt">
+/// When the user last proved who they are again on this browser, or null when they have not since
+/// they signed in. A sensitive action is done only for a while after it (FR-ACC-4).
+/// </param>
+public sealed class Session(
+    Guid id,
+    Guid userId,
+    byte[] tokenHash,
+    DateTimeOffset createdAt,
+    DateTimeOffset lastActiveAt,
+    DateTimeOffset? reauthenticatedAt)
 {
     public Guid Id { get; } = id;
 
@@ -26,6 +36,8 @@ public sealed class Session(Guid id, Guid userId, byte[] tokenHash, DateTimeOffs
     public DateTimeOffset CreatedAt { get; } = createdAt;
 
     public DateTimeOffset LastActiveAt { get; } = lastActiveAt;
+
+    public DateTimeOffset? ReauthenticatedAt { get; } = reauthenticatedAt;
 }
 
 internal sealed class SessionConfiguration : IEntityTypeConfiguration<Session>
@@ -41,6 +53,9 @@ internal sealed class SessionConfiguration : IEntityTypeConfiguration<Session>
         builder.Property(session => session.TokenHash);
         builder.Property(session => session.CreatedAt);
         builder.Property(session => session.LastActiveAt);
+
+        // Without an index: it is read with the session, which is found by the hash of its token.
+        builder.Property(session => session.ReauthenticatedAt);
 
         // A session is looked up by the hash of its token, on every signed-in request.
         builder.HasIndex(session => session.TokenHash).IsUnique();

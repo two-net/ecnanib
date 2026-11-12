@@ -1,0 +1,177 @@
+using System.Security.Claims;
+using Ecnanib.Platform.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace Ecnanib.Accounts;
+
+/// <summary>
+/// Takes the proof of a user who is signed in that they are who they are, and says whether one
+/// was given recently enough for a sensitive action (FR-ACC-4). See docs/accounts.md.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The proof is kept in the row of the session whose browser gave it, and nowhere else. So it is
+/// of no use to another browser of the same user, and whatever ends the session ends it too:
+/// signing out, staying away, a new password.
+/// </para>
+/// <para>
+/// For an account with two-factor authentication the code is judged before anything is said
+/// about the password. Someone at a browser that was left signed in, who does not have the app,
+/// is told that the code is wrong whatever password they try, and their wrong codes are counted.
+/// So the form does not help them to find the password.
+/// </para>
+/// </remarks>
+internal sealed class Reauthentication(
+    IDbContextFactory<EcnanibDbContext> contexts,
+    PasswordHasher passwords,
+    Sessions sessions,
+    TwoFactorCodes codes,
+    TimeProvider clock,
+    ILogger<Reauthentication> logger) : IReauthentication
+{
+    public async Task<bool> IsRecentAsync(HttpContext request, SensitiveAction action)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // Nobody is signed in, so nobody proved anything.
+        if (SignedInUserOf(request) is not { } userId)
+        {
+            return false;
+        }
+
+        if (await IsRecentAsync(request, userId))
+        {
+            return true;
+        }
+
+        logger.LogInformation("User {UserId} is asked to confirm who they are before {Action}", userId, action);
+
+        return false;
+    }
+
+    public async Task<ReauthenticationState> StateAsync(HttpContext request)
+    {
+        var userId = UserOf(request);
+
+        bool asksForCode;
+        await using (var context = await contexts.CreateDbContextAsync(request.RequestAborted))
+        {
+            asksForCode = await context.Set<User>()
+                .AnyAsync(user => user.Id == userId && user.TwoFactorEnabledAt != null, request.RequestAborted);
+        }
+
+        return new ReauthenticationState(asksForCode, await IsRecentAsync(request, userId));
+    }
+
+    public async Task<ReauthenticationOutcome> ConfirmAsync(HttpContext request, string password, string code)
+    {
+        ArgumentNullException.ThrowIfNull(password);
+        ArgumentNullException.ThrowIfNull(code);
+
+        var userId = UserOf(request);
+        var cancellationToken = request.RequestAborted;
+
+        // The proof is written into the session of the browser that gives it.
+        if (SessionCookie.TokenOf(request.Request) is not { } token)
+        {
+            return ReauthenticationOutcome.SessionEnded;
+        }
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        var verifiedHash = await context.Set<User>()
+            .Where(user => user.Id == userId)
+            .Select(user => user.PasswordHash)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (verifiedHash is null)
+        {
+            return ReauthenticationOutcome.SessionEnded;
+        }
+
+        // Before the transaction, because a hash takes its time, and the row is not locked for
+        // it. What no account can have as its password is not hashed at all.
+        var passwordIsRight = password.Length > 0
+            && PasswordRules.ProblemOf(password) != PasswordProblem.TooLong
+            && await passwords.VerifyAsync(password, verifiedHash);
+
+        var now = clock.GetUtcNow();
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        // The row is locked from here to the end, as the first thing this transaction asks of it.
+        // So what it says about two-factor authentication and the password holds until the proof
+        // is written down.
+        if (await TwoFactorCodes.LockAsync(context, userId, cancellationToken) is not { } account)
+        {
+            return ReauthenticationOutcome.SessionEnded;
+        }
+
+        if (account.IsOn)
+        {
+            // The code first, and its answer whatever the password was: see the remarks above.
+            var answer = await codes.JudgeAsync(context, account, code, AuditTrail.OriginOf(request), now);
+            if (answer != CodeAnswer.Right)
+            {
+                // The wrong code is counted in this transaction.
+                await transaction.CommitAsync(CancellationToken.None);
+
+                return answer == CodeAnswer.Refused ? ReauthenticationOutcome.CodesRefused : ReauthenticationOutcome.WrongCode;
+            }
+        }
+
+        // From here on nothing is canceled with the request: a code may be spent.
+        var passwordStands = await context.Set<User>()
+            .AnyAsync(user => user.Id == userId && user.PasswordHash == verifiedHash, CancellationToken.None);
+
+        if (!passwordIsRight || !passwordStands)
+        {
+            // A code that was right stays spent. If it could be given again, one code would
+            // serve for as many passwords as can be tried while it is the code of the app.
+            await transaction.CommitAsync(CancellationToken.None);
+
+            logger.LogInformation("User {UserId} did not confirm who they are: the password was not right", userId);
+
+            return ReauthenticationOutcome.WrongPassword;
+        }
+
+        if (!await Sessions.MarkReauthenticatedAsync(context, token, userId, now, CancellationToken.None))
+        {
+            // The session ended since the request was signed in with it: the user signed out on
+            // another tab, or their password was set anew. Nothing is left to hold the proof,
+            // so the transaction is undone, and a code is not spent.
+            return ReauthenticationOutcome.SessionEnded;
+        }
+
+        await transaction.CommitAsync(CancellationToken.None);
+
+        logger.LogInformation("User {UserId} confirmed who they are", userId);
+
+        return ReauthenticationOutcome.Confirmed;
+    }
+
+    /// <summary>Whether the session of a request holds a proof that is recent enough, as the database says now.</summary>
+    private async Task<bool> IsRecentAsync(HttpContext request, Guid userId)
+    {
+        if (SessionCookie.TokenOf(request.Request) is not { } token)
+        {
+            return false;
+        }
+
+        var provedAt = await sessions.ReauthenticatedAtAsync(token, userId, request.RequestAborted);
+
+        return provedAt is { } at && clock.GetUtcNow() - at < ReauthenticationRules.HoldsFor;
+    }
+
+    /// <summary>The user who is signed in on a request, or null when nobody is.</summary>
+    private static Guid? SignedInUserOf(HttpContext request) =>
+        Guid.TryParse(request.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ? userId : null;
+
+    /// <summary>The user who is signed in on a request.</summary>
+    private static Guid UserOf(HttpContext request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return SignedInUserOf(request)
+            ?? throw new InvalidOperationException("Re-authentication is for a signed-in user, and this request has none.");
+    }
+}

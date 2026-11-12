@@ -1,0 +1,117 @@
+@attribute [Route(SessionAuthentication.ReauthenticationPath)]
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@inject IReauthentication Reauthentication
+@inject NavigationManager Navigation
+
+@*
+    Where a signed-in user proves again who they are, before a sensitive action. Rendered on the
+    server for each request, and never interactive: the password and the code travel in a form
+    post. The form is on the page whatever the account says, so that a form which is posted from a
+    page left open is answered.
+*@
+
+<PageTitle>Confirm that it is you</PageTitle>
+
+<h1>Confirm that it is you</h1>
+
+<p>Adding or replacing a key, switching an agent to Live, and deleting your account are done only after you have confirmed that it is you. It then holds for @((int)ReauthenticationRules.HoldsFor.TotalMinutes) minutes, on this browser.</p>
+
+@if (_outcome is ReauthenticationOutcome.CodesRefused)
+{
+    <p class="form-error" role="alert">Too many wrong codes were entered. No code is accepted for the next @((int)TwoFactorRules.RefusedFor.TotalMinutes) minutes.</p>
+}
+
+<form method="post" @formname="confirm-identity" @onsubmit="ConfirmAsync">
+    <AntiforgeryToken />
+
+    <div class="field">
+        <label for="password">Your password</label>
+        @* The password is never written back into the page. *@
+        <input id="password" name="Password" type="password" autocomplete="current-password" required
+               aria-invalid="@(_outcome is ReauthenticationOutcome.WrongPassword ? "true" : null)" />
+        @if (_outcome is ReauthenticationOutcome.WrongPassword)
+        {
+            <p class="field-error" role="alert">That is not your password.@(_asksForCode ? " The code was used up by this try: enter your password with the next code that the app shows, or with another recovery code." : string.Empty)</p>
+        }
+    </div>
+
+    @if (_asksForCode)
+    {
+        <div class="field">
+            <label for="code">Code from your authenticator app</label>
+            @* One field for both kinds of code, so it is not limited to digits. A code is never written back into the page. *@
+            <input id="code" name="Code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required
+                   aria-invalid="@(_outcome is ReauthenticationOutcome.WrongCode ? "true" : null)"
+                   aria-describedby="code-hint" />
+            <p id="code-hint" class="field-hint">If you have lost the app, enter one of your recovery codes instead.</p>
+            @if (_outcome is ReauthenticationOutcome.WrongCode)
+            {
+                <p class="field-error" role="alert">That code is not right. A code from the app works once, for about half a minute.</p>
+            }
+        </div>
+    }
+
+    <button type="submit">Confirm</button>
+</form>
+
+@code {
+    private ReauthenticationOutcome? _outcome;
+    private bool _asksForCode;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Password { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Code { get; set; }
+
+    // The form posts to the address of the page, so this is in the query both times.
+    [SupplyParameterFromQuery(Name = SessionAuthentication.ReturnUrlParameter)]
+    private string? ReturnUrl { get; set; }
+
+    // Only a path of this application is followed.
+    private string Destination => SessionAuthentication.LocalPathOrHome(ReturnUrl);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        var state = await Reauthentication.StateAsync(request);
+        _asksForCode = state.AsksForCode;
+
+        // Someone who has just confirmed it has no use for the form.
+        if (HttpMethods.IsGet(request.Request.Method) && state.IsRecent)
+        {
+            Navigation.NavigateTo(Destination);
+        }
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        _outcome = await Reauthentication.ConfirmAsync(request, Password ?? string.Empty, Code ?? string.Empty);
+
+        switch (_outcome)
+        {
+            case ReauthenticationOutcome.Confirmed:
+                // Back to the action that asked for this.
+                Navigation.NavigateTo(Destination);
+                break;
+
+            case ReauthenticationOutcome.SessionEnded:
+                // Nobody is signed in on this browser any more. Signing in leads on from there.
+                Navigation.NavigateTo(SessionAuthentication.PageWith(SessionAuthentication.SignInPath, ReturnUrl));
+                break;
+        }
+    }
+}

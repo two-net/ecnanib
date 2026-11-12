@@ -149,6 +149,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_active_at");
 
+                    b.Property<DateTimeOffset?>("ReauthenticatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reauthenticated_at");
+
                     b.Property<byte[]>("TokenHash")
                         .IsRequired()
                         .HasColumnType("bytea")

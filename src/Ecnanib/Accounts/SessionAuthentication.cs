@@ -25,15 +25,23 @@ public static class SessionAuthentication
     /// </summary>
     public const string SignInCodePath = "/sign-in/code";
 
-    /// <summary>The query parameter of both pages that says where to go after signing in.</summary>
+    /// <summary>
+    /// The path of the page a signed-in user proves who they are on again, before a sensitive
+    /// action (FR-ACC-4). Whatever holds such an action back sends the browser here.
+    /// </summary>
+    public const string ReauthenticationPath = "/confirm-identity";
+
+    /// <summary>The query parameter of these pages that says where to go afterwards.</summary>
     public const string ReturnUrlParameter = "returnUrl";
 
     /// <summary>
-    /// The address of one of the two pages, with where to go after signing in carried along when
-    /// there is somewhere to go.
+    /// The address of one of these pages, with where to go afterwards carried along when there
+    /// is somewhere to go.
     /// </summary>
-    /// <param name="path"><see cref="SignInPath"/> or <see cref="SignInCodePath"/>.</param>
-    /// <param name="returnUrl">Where to go after signing in, as the page was given it.</param>
+    /// <param name="path">
+    /// <see cref="SignInPath"/>, <see cref="SignInCodePath"/>, or <see cref="ReauthenticationPath"/>.
+    /// </param>
+    /// <param name="returnUrl">Where to go afterwards, as the page was given it.</param>
     public static string PageWith(string path, string? returnUrl) =>
         string.IsNullOrEmpty(returnUrl) ? path : QueryHelpers.AddQueryString(path, ReturnUrlParameter, returnUrl);
 

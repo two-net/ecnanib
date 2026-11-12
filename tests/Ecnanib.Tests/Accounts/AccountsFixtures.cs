@@ -114,6 +114,8 @@ internal sealed class AccountsApplication : IDisposable
 
     public PasswordHasher Passwords => _application.Services.GetRequiredService<PasswordHasher>();
 
+    public IReauthentication Reauthentication => _application.Services.GetRequiredService<IReauthentication>();
+
     /// <summary>Every document in the version in force: what the form posts when all boxes are ticked.</summary>
     public static IReadOnlyCollection<AcceptedDocument> EveryDocument =>
         [.. LegalDocuments.All.Select(document => new AcceptedDocument(document, LegalDocuments.CurrentVersionOf(document)))];
@@ -251,14 +253,21 @@ internal sealed record StoredUser(
 }
 
 /// <summary>A row of the <c>sessions</c> table, read by a test directly.</summary>
-internal sealed record StoredSession(Guid Id, Guid UserId, byte[] TokenHash, DateTimeOffset CreatedAt, DateTimeOffset LastActiveAt)
+internal sealed record StoredSession(
+    Guid Id,
+    Guid UserId,
+    byte[] TokenHash,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset LastActiveAt,
+    DateTimeOffset? ReauthenticatedAt)
 {
     /// <summary>Every session, oldest first.</summary>
     public static IReadOnlyList<StoredSession> All(TestDatabase database)
     {
         using var connection = database.Open();
         using var command = new NpgsqlCommand(
-            "SELECT id, user_id, token_hash, created_at, last_active_at FROM sessions ORDER BY created_at, id", connection);
+            "SELECT id, user_id, token_hash, created_at, last_active_at, reauthenticated_at FROM sessions ORDER BY created_at, id",
+            connection);
         using var reader = command.ExecuteReader();
 
         var sessions = new List<StoredSession>();
@@ -269,7 +278,8 @@ internal sealed record StoredSession(Guid Id, Guid UserId, byte[] TokenHash, Dat
                 reader.GetGuid(1),
                 reader.GetFieldValue<byte[]>(2),
                 reader.GetFieldValue<DateTimeOffset>(3),
-                reader.GetFieldValue<DateTimeOffset>(4)));
+                reader.GetFieldValue<DateTimeOffset>(4),
+                reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5)));
         }
 
         return sessions;
@@ -565,6 +575,23 @@ internal static class Browser
     public static Task<(string Path, string Page)> EnterCodeAsync(
         this HttpClient client, string code, string page = SessionAuthentication.SignInCodePath) =>
         client.SubmitAsync(page, "sign-in-code", ("Code", code));
+
+    /// <summary>
+    /// Proves again who the signed-in user is, on the page that asks for it before a sensitive
+    /// action, and follows where the answer leads.
+    /// </summary>
+    /// <param name="client">The browser.</param>
+    /// <param name="password">The password to give.</param>
+    /// <param name="code">The code to give, for an account with two-factor authentication.</param>
+    /// <param name="page">The address of the form, when it carries where to go afterwards.</param>
+    public static Task<(string Path, string Page)> ConfirmIdentityAsync(
+        this HttpClient client,
+        string password = AccountsApplication.Password,
+        string? code = null,
+        string page = SessionAuthentication.ReauthenticationPath) =>
+        code is null
+            ? client.SubmitAsync(page, "confirm-identity", ("Password", password))
+            : client.SubmitAsync(page, "confirm-identity", ("Password", password), ("Code", code));
 
     /// <summary>The key of the setup that a page carries in its form, as the application sealed it.</summary>
     public static string SealedKeyIn(string page)

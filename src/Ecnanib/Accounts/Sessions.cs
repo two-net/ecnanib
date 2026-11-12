@@ -28,7 +28,8 @@ internal sealed record WaitingSignIn(Guid Id, Guid UserId);
 /// The sessions in the database: starting one, finding the one a cookie names, and ending them.
 /// A session ends by itself after the configured period of inactivity (NFR-SEC-1). The sign-ins
 /// that wait for a code are here too, because the same lock decides which of the two a password
-/// starts (FR-ACC-3). See docs/accounts.md.
+/// starts (FR-ACC-3). A session also holds when its user last proved who they are again, which
+/// therefore ends with the session (FR-ACC-4). See docs/accounts.md.
 /// </summary>
 internal sealed class Sessions(
     SecuritySettings security,
@@ -159,10 +160,63 @@ internal sealed class Sessions(
             .Where(session => session.UserId == userId && session.LastActiveAt <= endedBefore)
             .ExecuteDeleteAsync(cancellationToken);
 
-        context.Set<Session>().Add(new Session(Guid.CreateVersion7(), userId, tokenHash, now, now));
+        // Signing in is not proving it again: a session starts without a re-authentication.
+        context.Set<Session>().Add(new Session(Guid.CreateVersion7(), userId, tokenHash, now, now, reauthenticatedAt: null));
         await context.SaveChangesAsync(cancellationToken);
 
         return token;
+    }
+
+    /// <summary>
+    /// When the user of a session last proved who they are again on its browser (FR-ACC-4), as
+    /// the database says at this moment.
+    /// </summary>
+    /// <param name="token">The token of the session.</param>
+    /// <param name="userId">The user the request is signed in as, whose session it must be.</param>
+    /// <param name="cancellationToken">Cancels the question.</param>
+    /// <returns>
+    /// Null when they have not since they signed in, when the text is not a token, or when the
+    /// session has ended or is not that user's.
+    /// </returns>
+    public async Task<DateTimeOffset?> ReauthenticatedAtAsync(string token, Guid userId, CancellationToken cancellationToken)
+    {
+        if (SecretToken.HashOf(token) is not { } tokenHash)
+        {
+            return null;
+        }
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await context.Set<Session>()
+            .Where(session => session.TokenHash == tokenHash && session.UserId == userId)
+            .Select(session => session.ReauthenticatedAt)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes down that the user of a session proved who they are again, inside the transaction
+    /// of whoever took the proof. Only the session of the browser that gave it is marked.
+    /// </summary>
+    /// <param name="context">The context that holds the transaction.</param>
+    /// <param name="token">The token of the session.</param>
+    /// <param name="userId">The user who gave the proof, whose session it must be.</param>
+    /// <param name="now">The time the proof was given at.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>False when the text is not a token, or the session has ended or is not that user's.</returns>
+    public static async Task<bool> MarkReauthenticatedAsync(
+        EcnanibDbContext context, string token, Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (SecretToken.HashOf(token) is not { } tokenHash)
+        {
+            return false;
+        }
+
+        var marked = await context.Set<Session>()
+            .Where(session => session.TokenHash == tokenHash && session.UserId == userId)
+            .ExecuteUpdateAsync(
+                row => row.SetProperty(session => session.ReauthenticatedAt, (DateTimeOffset?)now), cancellationToken);
+
+        return marked == 1;
     }
 
     /// <summary>

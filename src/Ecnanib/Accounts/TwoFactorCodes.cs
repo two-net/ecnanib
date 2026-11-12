@@ -64,8 +64,9 @@ internal sealed record TwoFactorAccount(
 
 /// <summary>
 /// Judges a code for every place that takes one: signing in, turning two-factor authentication
-/// off, and making new recovery codes (FR-ACC-3). A code is one from the authenticator app or a
-/// recovery code. See docs/accounts.md.
+/// off, making new recovery codes (FR-ACC-3), and proving who one is again before a sensitive
+/// action (FR-ACC-4). A code is one from the authenticator app or a recovery code. See
+/// docs/accounts.md.
 /// </summary>
 /// <remarks>
 /// A code is judged inside a transaction that holds the lock on the account's row, which

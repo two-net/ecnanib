@@ -1,6 +1,6 @@
 # Accounts
 
-A visitor registers with an email address and a password, accepts the legal documents, and verifies the address with a link sent by email (FR-ACC-1, FR-ACC-7, FR-ACC-8, NFR-SEC-2). A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). A browser that is signed in has a session, which ends after a period of inactivity (NFR-SEC-1). A user can turn on two-factor authentication with an authenticator app, and signing in then takes a code from the app after the password (FR-ACC-3). Changes to it are recorded in the audit trail (NFR-LOG-7). The only account type is the individual user.
+A visitor registers with an email address and a password, accepts the legal documents, and verifies the address with a link sent by email (FR-ACC-1, FR-ACC-7, FR-ACC-8, NFR-SEC-2). A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). A browser that is signed in has a session, which ends after a period of inactivity (NFR-SEC-1). A user can turn on two-factor authentication with an authenticator app, and signing in then takes a code from the app after the password (FR-ACC-3). Changes to it are recorded in the audit trail (NFR-LOG-7). Before an action that exposes keys or money, a user who is signed in proves again who they are (FR-ACC-4). The only account type is the individual user.
 
 The code is in `src/Ecnanib/Accounts`, the pages in `src/Ecnanib/WebUi/Pages/Account` and `Pages/Legal`, and the email in `src/Ecnanib/Notifications`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Accounts` and `tests/Ecnanib.Tests/Notifications`.
 
@@ -194,7 +194,7 @@ A code of six digits can be found by trying, unless trying is limited.
 |---|---|
 | Five wrong codes in a row | Every code of the account is refused for 15 minutes. The fifth wrong code starts the wait, and the count starts again. The numbers are `TwoFactorRules.WrongCodesAllowed` and `TwoFactorRules.RefusedFor`. |
 | While codes are refused | A code is not looked at, right or wrong, so trying gains nothing. A recovery code is not spent by it. |
-| For the account | The count is the account's, whichever browser sends the codes and whichever form takes them: signing in, turning it off, or making new recovery codes. |
+| For the account | The count is the account's, whichever browser sends the codes and whichever form takes them: signing in, turning it off, making new recovery codes, or proving who one is again before a sensitive action. |
 | A right code | Starts the count again. |
 | What cannot be a code | Is refused and not counted: nothing, or text that is neither six digits nor sixteen letters and digits. |
 | A right code from the app, a second time | Is refused and not counted. It was not a guess, and a form that is sent again by a reload is then harmless. |
@@ -203,14 +203,14 @@ A code of six digits can be found by trying, unless trying is limited.
 
 At that rate, someone who has the password gets 480 tries a day at three codes in a million.
 
-Only someone who has the password can reach the form, so only they can make the codes of an account be refused. The owner's answer to that is a new password. The log has a warning for each wait: `The codes of user {UserId} are refused for {Minutes} minutes, after {WrongCodes} wrong ones in a row`.
+Only someone who has the password, or a browser that is signed in, can reach a form that takes a code, so only they can make the codes of an account be refused. The owner's answer to that is a new password, which also ends every session. The log has a warning for each wait: `The codes of user {UserId} are refused for {Minutes} minutes, after {WrongCodes} wrong ones in a row`.
 
 ### Recovery codes
 
 Turning two-factor authentication on gives the user ten recovery codes, for the day they lose the app.
 
 - A code is 80 random bits, shown as sixteen letters and digits in groups of four: `ABCD-EFGH-IJKL-MNOP`. It is the same in small letters, and with or without its hyphens.
-- **A code works once.** It signs in, turns two-factor authentication off, or makes new recovery codes, in place of a code from the app. Its row is deleted as it is found, so of two requests with one code, one finds it gone.
+- **A code works once.** It signs in, turns two-factor authentication off, makes new recovery codes, or is the code of a re-authentication, in place of a code from the app. Its row is deleted as it is found, so of two requests with one code, one finds it gone.
 - **They are shown once,** in the answer that made them. The table `two_factor_recovery_codes` keeps only their SHA-256 hashes, so reading the database gives nobody a way in. A user who did not see that answer, because the form was sent twice or the connection broke, makes new ones.
 - `/account/two-factor/recovery-codes` replaces all ten, for a user who has used some or lost the list. It takes a code. The earlier ones stop working, used or not.
 - `/account` and `/account/two-factor` say how many are left.
@@ -230,6 +230,59 @@ It is decrypted to judge a code, in memory, and forgotten when the code is judge
 - A user who has lost both the app and the recovery codes cannot sign in. Nothing in the application turns two-factor authentication off for them. Until an operator can, it takes a statement on the database that sets the six `two_factor_` columns of the account to nothing (the count to 0) and deletes its recovery codes.
 - No email tells the owner that two-factor authentication was turned on or off. The audit trail records it.
 
+## Re-authentication
+
+Being signed in is not enough for an action that exposes keys or money. Before one, the user proves again who they are (FR-ACC-4). `SensitiveAction` names these actions:
+
+| Action | Member |
+|---|---|
+| Adding or replacing a key | `AddOrReplaceKey` |
+| Switching an agent to Live | `SwitchAgentToLive` |
+| Deleting the account | `DeleteAccount` |
+
+| Rule | Detail |
+|---|---|
+| The proof | What signing in takes: the password, and for an account with two-factor authentication a code as well, from the app or a recovery code. |
+| How long it holds | Ten minutes (`ReauthenticationRules.HoldsFor`), counted from the proof. An action that is done does not make it hold longer. |
+| For which browser | The one that gave it. The proof is `sessions.reauthenticated_at`, in the row of that browser's session, and nowhere else. Another browser of the same user is asked itself. |
+| Signing in | Is not a proof. A session starts without one, so the first sensitive action of a session always asks. |
+| What ends it | Whatever ends the session: signing out, staying away for the period of inactivity, a password reset, and signing in again on the browser. |
+
+### Doing something sensitive
+
+Whatever does one of these actions asks `IReauthentication` first, on the server, in the request that asks for the action:
+
+```csharp
+if (!await reauthentication.IsRecentAsync(request, SensitiveAction.AddOrReplaceKey))
+{
+    // Not done.
+}
+```
+
+- **The answer is read from the database at that moment,** for the session that the cookie of the request names. It is no for a request that is not signed in.
+- **The action is not done when the answer is no.** A page then sends the browser to `SessionAuthentication.PageWith(SessionAuthentication.ReauthenticationPath, returnUrl)`, and the user comes back after the proof. A form that was posted is not posted again: the user fills it in again.
+- **The check is in the action, and not only in the page that leads to it,** so it holds for a request that no page of the application made.
+- The log says which action was held back: `User {UserId} is asked to confirm who they are before {Action}`.
+
+None of the three actions is built yet. Each calls this when it is.
+
+### Proving it
+
+The page is `/confirm-identity`, for signed-in users. It asks for the password, and for a code when the account has two-factor authentication on. `returnUrl` is followed as it is after signing in: only when it is a path of this application. Someone who has just proved it is sent on without being asked.
+
+`IReauthentication.ConfirmAsync` takes the proof:
+
+- **For an account with two-factor authentication the code is judged first, and a code that is not right is the answer whatever the password was.** So someone at a browser that was left signed in, who does not have the app, learns nothing about the password from the form, and their wrong codes are counted: see "Wrong codes".
+- **A right code is spent even when the password is wrong,** a recovery code included. The page asks for the next one. If the code could be given again, one code would serve for as many passwords as can be tried in the minute and a half that it is right.
+- The password is verified before the transaction, because a hash takes its time. The transaction then locks the row of the account, judges the code, looks whether the password is still the one that was verified, and writes the time into the session. A password reset ends the session, so a proof never outlives the password it was given with.
+- If the session has ended by then, nothing is written, the code is not spent, and the browser is sent to sign in.
+- A recovery code that is used here is recorded in the audit trail, as everywhere. The proof itself is not yet: see "Not built yet".
+- The log names the account by its id: `User {UserId} confirmed who they are`, `User {UserId} did not confirm who they are: the password was not right`.
+
+### Not covered
+
+- For an account without two-factor authentication, whoever holds a browser that is signed in can guess at the password on this page without a pause. Anyone can on the sign-in page. Both wait for the rate limits: see "Not built yet".
+
 ## The audit trail
 
 Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). The first actions in it are the changes to two-factor authentication. Sign-ins and the actions of other components are not recorded yet.
@@ -247,7 +300,7 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 | `TwoFactorTurnedOn` | Two-factor authentication was turned on. |
 | `TwoFactorTurnedOff` | It was turned off. |
 | `TwoFactorRecoveryCodesReplaced` | New recovery codes were made. |
-| `TwoFactorRecoveryCodeUsed` | A recovery code was used, for any of the three things a code does. |
+| `TwoFactorRecoveryCodeUsed` | A recovery code was used, for any of the four things a code does. |
 
 - **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not.
 - **An event holds no secret:** no key, no code, and no address of an account.
@@ -321,7 +374,7 @@ var answer = await fairUse.MayCreateAgentAsync(userId, agentsOwned, cancellation
 |---|---|
 | `users` | `id`, `email` (unique), `password_hash`, `registered_at`, `email_verified_at`, `email_verification_token_hash` (unique), `email_verification_expires_at`, `email_verification_sets_password`, `password_reset_token_hash` (unique), `password_reset_expires_at`, `two_factor_secret`, `two_factor_secret_key_id`, `two_factor_enabled_at`, `two_factor_last_step`, `two_factor_failed_codes`, `two_factor_locked_until` |
 | `legal_acceptances` | `user_id`, `document`, `version`, `accepted_at`. The rows of an account are deleted with it. |
-| `sessions` | `id`, `user_id`, `token_hash` (unique), `created_at`, `last_active_at`. The rows of an account are deleted with it. |
+| `sessions` | `id`, `user_id`, `token_hash` (unique), `created_at`, `last_active_at`, `reauthenticated_at`. The rows of an account are deleted with it. |
 | `pending_sign_ins` | `id`, `user_id`, `token_hash` (unique), `expires_at`. The rows of an account are deleted with it. |
 | `two_factor_recovery_codes` | `user_id`, `code_hash`, `created_at`. The rows of an account are deleted with it. |
 | `audit_events` | `id`, `user_id`, `action`, `target`, `occurred_at`, `origin`. The rows of an account are deleted with it. |
@@ -349,9 +402,9 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 ## Not built yet
 
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
-- Limits on how often one visitor may register, sign in, or ask for a reset link. Until then, the registration form and the reset form can be used to send email to an address repeatedly, and a password can be guessed at without a pause. Only codes are limited: see "Wrong codes".
-- Re-authentication before sensitive actions.
-- The rest of the audit trail: sign-ins, the actions of other components, and the job that removes events older than `Retention:AuditDays`.
+- Limits on how often one visitor may register, sign in, or ask for a reset link. Until then, the registration form and the reset form can be used to send email to an address repeatedly, and a password can be guessed at without a pause, on the sign-in page and on the page of a re-authentication. Only codes are limited: see "Wrong codes".
+- The sensitive actions: adding or replacing a key, switching an agent to Live, and deleting the account. Each asks `IReauthentication` first when it is built. See "Re-authentication".
+- The rest of the audit trail: sign-ins and re-authentications, the actions of other components, and the job that removes events older than `Retention:AuditDays`.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.
 - Ending a session inside an interactive page. A page that is rendered for each request is checked on each request. An interactive page keeps a connection open, which is not checked again after it is made. No page is interactive yet; the first one must check the session itself.

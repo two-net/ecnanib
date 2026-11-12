@@ -23,6 +23,9 @@ public static class AccountsModule
         services.AddSingleton<TwoFactorCodes>();
         services.AddSingleton<ITwoFactor, TwoFactor>();
 
+        // What a sensitive action asks first: whether its user proved who they are again (FR-ACC-4).
+        services.AddSingleton<IReauthentication, Reauthentication>();
+
         // The one way a request is known to be signed in, for the Web UI and the API alike.
         services.AddAuthentication(SessionAuthentication.Scheme)
             .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthentication.Scheme, configureOptions: null);
