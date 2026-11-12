@@ -1,10 +1,10 @@
 # Accounts
 
-A visitor registers with an email address and a password, accepts the legal documents, and verifies the address with a link sent by email (FR-ACC-1, FR-ACC-7, FR-ACC-8, NFR-SEC-2). A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). A browser that is signed in has a session, which ends after a period of inactivity (NFR-SEC-1). A user can turn on two-factor authentication with an authenticator app, and signing in then takes a code from the app after the password (FR-ACC-3). Changes to it are recorded in the audit trail (NFR-LOG-7). Before an action that exposes keys or money, a user who is signed in proves again who they are (FR-ACC-4). The only account type is the individual user.
+A visitor registers with an email address and a password, accepts the legal documents, and verifies the address with a link sent by email (FR-ACC-1, FR-ACC-7, FR-ACC-8, NFR-SEC-2). A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). A browser that is signed in has a session, which ends after a period of inactivity (NFR-SEC-1). A user can turn on two-factor authentication with an authenticator app, and signing in then takes a code from the app after the password (FR-ACC-3). Changes to it are recorded in the audit trail (NFR-LOG-7). Before an action that exposes keys or money, a user who is signed in proves again who they are (FR-ACC-4). The only account type is the individual user (FR-ACC-5).
 
 The code is in `src/Ecnanib/Accounts`, the pages in `src/Ecnanib/WebUi/Pages/Account` and `Pages/Legal`, and the email in `src/Ecnanib/Notifications`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Accounts` and `tests/Ecnanib.Tests/Notifications`.
 
-How requests travel, over TLS and with which cookies, and how the secrets in the database are encrypted, is in [security.md](security.md).
+How requests travel, over TLS and with which cookies, and how the secrets in the database are encrypted, is in [security.md](security.md). Whose data a request reaches, and who is an operator, is in [ownership.md](ownership.md).
 
 ## Registering
 
@@ -91,6 +91,8 @@ A session that has ended is deleted when its cookie is next seen, and the cookie
 ### How a request is signed in
 
 `SessionAuthenticationHandler` is the application's one authentication scheme, registered by `AddAccounts()`. It reads the cookie, finds the session and its account with one query, and makes the account the user of the request: the name identifier is the account's id, and the name is its address. The Web UI and the API see the same user, and every log event of the request carries the id as `UserId`. See [logging.md](logging.md).
+
+Whatever needs the user of a request asks `SignedInUser.IdOf(request)`, and asks for that user's rows with `OwnedBy`. The handler also says whether the user is an operator, for the policy that an operator function requires. See [ownership.md](ownership.md).
 
 Authentication runs ahead of the error handling, so the handler does not fail a request. When the database cannot be reached:
 
@@ -379,7 +381,9 @@ var answer = await fairUse.MayCreateAgentAsync(userId, agentsOwned, cancellation
 | `two_factor_recovery_codes` | `user_id`, `code_hash`, `created_at`. The rows of an account are deleted with it. |
 | `audit_events` | `id`, `user_id`, `action`, `target`, `occurred_at`, `origin`. The rows of an account are deleted with it. |
 
-An account's id is a version 7 UUID that the application assigns. A table that belongs to a user points at `users.id` (NFR-DAT-9).
+An account's id is a version 7 UUID that the application assigns. A table that belongs to a user points at `users.id` (NFR-DAT-9). The five tables below `users` are such tables: their entities implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. A session and a sign-in that waits are also found by the hash of their token, which is how a request comes to be signed in. See [ownership.md](ownership.md).
+
+`users` has no column for a kind of account, because there is one kind. Who is an operator is in the configuration file and is stored nowhere.
 
 The first three `two_factor_` columns are empty together or set together: two-factor authentication is on exactly while `two_factor_enabled_at` is set. None of the six has an index.
 

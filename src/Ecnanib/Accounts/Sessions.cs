@@ -5,7 +5,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Ecnanib.Accounts;
 
 /// <summary>The user a session belongs to, as far as a request needs to know them.</summary>
-internal sealed record SignedInUser(Guid Id, string Email);
+/// <param name="Id">The id of the account.</param>
+/// <param name="Email">The address of the account, as it is stored.</param>
+/// <param name="IsVerified">Whether that address is verified. Only then does it say who the user is.</param>
+internal sealed record SessionUser(Guid Id, string Email, bool IsVerified);
 
 /// <summary>
 /// What giving the right password led to: a session, or a sign-in that waits for a code. Neither
@@ -31,6 +34,12 @@ internal sealed record WaitingSignIn(Guid Id, Guid UserId);
 /// starts (FR-ACC-3). A session also holds when its user last proved who they are again, which
 /// therefore ends with the session (FR-ACC-4). See docs/accounts.md.
 /// </summary>
+/// <remarks>
+/// What is asked for a user is asked with <see cref="Ownership.OwnedBy{TEntity}"/>. A session
+/// and a sign-in that waits are also found by the hash of the token their browser holds, with
+/// no user named: that is how a request comes to be signed in, and the token is the proof. See
+/// docs/ownership.md.
+/// </remarks>
 internal sealed class Sessions(
     SecuritySettings security,
     IDbContextFactory<EcnanibDbContext> contexts,
@@ -157,7 +166,8 @@ internal sealed class Sessions(
         // Sessions that ended by themselves, on browsers that never came back.
         var endedBefore = now - _idle;
         await context.Set<Session>()
-            .Where(session => session.UserId == userId && session.LastActiveAt <= endedBefore)
+            .OwnedBy(userId)
+            .Where(session => session.LastActiveAt <= endedBefore)
             .ExecuteDeleteAsync(cancellationToken);
 
         // Signing in is not proving it again: a session starts without a re-authentication.
@@ -188,7 +198,8 @@ internal sealed class Sessions(
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
 
         return await context.Set<Session>()
-            .Where(session => session.TokenHash == tokenHash && session.UserId == userId)
+            .OwnedBy(userId)
+            .Where(session => session.TokenHash == tokenHash)
             .Select(session => session.ReauthenticatedAt)
             .SingleOrDefaultAsync(cancellationToken);
     }
@@ -212,7 +223,8 @@ internal sealed class Sessions(
         }
 
         var marked = await context.Set<Session>()
-            .Where(session => session.TokenHash == tokenHash && session.UserId == userId)
+            .OwnedBy(userId)
+            .Where(session => session.TokenHash == tokenHash)
             .ExecuteUpdateAsync(
                 row => row.SetProperty(session => session.ReauthenticatedAt, (DateTimeOffset?)now), cancellationToken);
 
@@ -224,7 +236,7 @@ internal sealed class Sessions(
     /// activity.
     /// </summary>
     /// <returns>Null when the text is not a token, or its session has ended.</returns>
-    public async Task<SignedInUser?> FindAsync(string token, CancellationToken cancellationToken)
+    public async Task<SessionUser?> FindAsync(string token, CancellationToken cancellationToken)
     {
         if (SecretToken.HashOf(token) is not { } tokenHash)
         {
@@ -272,7 +284,7 @@ internal sealed class Sessions(
                 .ExecuteUpdateAsync(row => row.SetProperty(session => session.LastActiveAt, now), cancellationToken);
         }
 
-        return new SignedInUser(found.UserId, found.Email);
+        return new SessionUser(found.UserId, found.Email, found.IsVerified);
 
         Task<FoundSession?> ReadAsync() =>
             context.Set<Session>()
@@ -281,12 +293,13 @@ internal sealed class Sessions(
                     context.Set<User>(),
                     session => session.UserId,
                     user => user.Id,
-                    (session, user) => new FoundSession(session.Id, session.LastActiveAt, user.Id, user.Email))
+                    (session, user) => new FoundSession(
+                        session.Id, session.LastActiveAt, user.Id, user.Email, user.EmailVerifiedAt != null))
                 .SingleOrDefaultAsync(cancellationToken);
     }
 
     /// <summary>A session as it was read, with the account it belongs to.</summary>
-    private sealed record FoundSession(Guid Id, DateTimeOffset LastActiveAt, Guid UserId, string Email);
+    private sealed record FoundSession(Guid Id, DateTimeOffset LastActiveAt, Guid UserId, string Email, bool IsVerified);
 
     /// <summary>Ends the session that a token names.</summary>
     /// <returns>The user it belonged to, or null when there was no such session.</returns>
@@ -327,7 +340,7 @@ internal sealed class Sessions(
         await EndWaitingAsync(context, userId, cancellationToken);
 
         return await context.Set<Session>()
-            .Where(session => session.UserId == userId)
+            .OwnedBy(userId)
             .ExecuteDeleteAsync(cancellationToken);
     }
 
@@ -346,7 +359,7 @@ internal sealed class Sessions(
     {
         await EndWaitingAsync(context, userId, cancellationToken);
 
-        var others = context.Set<Session>().Where(session => session.UserId == userId);
+        var others = context.Set<Session>().OwnedBy(userId);
         if (keptToken is not null && SecretToken.HashOf(keptToken) is { } keptHash)
         {
             others = others.Where(session => session.TokenHash != keptHash);
@@ -397,6 +410,6 @@ internal sealed class Sessions(
     /// </summary>
     public static Task<int> EndWaitingAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken) =>
         context.Set<PendingSignIn>()
-            .Where(pending => pending.UserId == userId)
+            .OwnedBy(userId)
             .ExecuteDeleteAsync(cancellationToken);
 }

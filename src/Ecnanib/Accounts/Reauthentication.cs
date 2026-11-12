@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Ecnanib.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -34,7 +33,7 @@ internal sealed class Reauthentication(
         ArgumentNullException.ThrowIfNull(request);
 
         // Nobody is signed in, so nobody proved anything.
-        if (SignedInUserOf(request) is not { } userId)
+        if (SignedInUser.IdOf(request) is not { } userId)
         {
             return false;
         }
@@ -51,7 +50,7 @@ internal sealed class Reauthentication(
 
     public async Task<ReauthenticationState> StateAsync(HttpContext request)
     {
-        var userId = UserOf(request);
+        var userId = SignedInUser.RequiredIdOf(request);
 
         bool asksForCode;
         await using (var context = await contexts.CreateDbContextAsync(request.RequestAborted))
@@ -68,7 +67,7 @@ internal sealed class Reauthentication(
         ArgumentNullException.ThrowIfNull(password);
         ArgumentNullException.ThrowIfNull(code);
 
-        var userId = UserOf(request);
+        var userId = SignedInUser.RequiredIdOf(request);
         var cancellationToken = request.RequestAborted;
 
         // The proof is written into the session of the browser that gives it.
@@ -160,18 +159,5 @@ internal sealed class Reauthentication(
         var provedAt = await sessions.ReauthenticatedAtAsync(token, userId, request.RequestAborted);
 
         return provedAt is { } at && clock.GetUtcNow() - at < ReauthenticationRules.HoldsFor;
-    }
-
-    /// <summary>The user who is signed in on a request, or null when nobody is.</summary>
-    private static Guid? SignedInUserOf(HttpContext request) =>
-        Guid.TryParse(request.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ? userId : null;
-
-    /// <summary>The user who is signed in on a request.</summary>
-    private static Guid UserOf(HttpContext request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        return SignedInUserOf(request)
-            ?? throw new InvalidOperationException("Re-authentication is for a signed-in user, and this request has none.");
     }
 }

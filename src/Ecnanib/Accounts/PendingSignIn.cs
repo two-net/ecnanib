@@ -1,3 +1,4 @@
+using Ecnanib.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -12,7 +13,7 @@ namespace Ecnanib.Accounts;
 /// <param name="userId">The account whose password the browser gave.</param>
 /// <param name="tokenHash">The SHA-256 hash of the token in the browser's cookie.</param>
 /// <param name="expiresAt">When the code can no longer be given, and the password is asked for again.</param>
-public sealed class PendingSignIn(Guid id, Guid userId, byte[] tokenHash, DateTimeOffset expiresAt)
+public sealed class PendingSignIn(Guid id, Guid userId, byte[] tokenHash, DateTimeOffset expiresAt) : IUserOwned
 {
     /// <summary>How long a browser has to give the code after it gave the password.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);

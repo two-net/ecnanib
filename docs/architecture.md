@@ -109,6 +109,12 @@ Being signed in is not enough for an action that exposes keys or money: adding o
 
 Accounts also holds the audit trail: the record in the database, apart from the logs, of security- and money-relevant actions (NFR-LOG-7). An event is written in the transaction of the action it records. The first events are the changes to two-factor authentication. See [accounts.md](accounts.md).
 
+## Ownership
+
+The only account type is the individual user, and every resource belongs to exactly one (FR-ACC-5). A row that belongs to a user carries its owner. Whatever serves a request asks for the rows of the user who is signed in, so a row of another user is not found (NFR-SEC-3, NFR-DAT-9). The vocabulary for it, `IUserOwned` and `OwnedBy`, is in `Platform`, so that a component which may not use Accounts can still say whose its rows are.
+
+Operator functions require a policy of their own, which Accounts registers: an operator is a user whose verified address the configuration file lists. Being an operator opens nothing that belongs to another user. There are no tenants, and the service is free, so there is no billing (FR-ACC-6). See [ownership.md](ownership.md).
+
 ## Security
 
 All traffic between a browser and the application uses TLS: a request over plain HTTP is redirected and not served. Every cookie is sent only over TLS and is hidden from scripts (NFR-SEC-1).
@@ -125,4 +131,4 @@ Components write log events through the host's `ILogger<T>` and nothing else. On
 
 ## Deployment guard
 
-`DeploymentRuleTests` reads the application's package graph and fails if it contains a message broker client, a cache server client, a search server client, a proprietary cloud SDK, or a client for a database other than PostgreSQL (NFR-DAT-1). The list is in [`ForbiddenInfrastructure.cs`](../tests/Ecnanib.Tests/Architecture/ForbiddenInfrastructure.cs). It also fails if the graph contains a log output other than the console and the file, so no log can be written to a database (NFR-DAT-7).
+`DeploymentRuleTests` reads the application's package graph and fails if it contains a message broker client, a cache server client, a search server client, a proprietary cloud SDK, a client for a database other than PostgreSQL (NFR-DAT-1), or the SDK of a payment service, because the service is free (FR-ACC-6). The list is in [`ForbiddenInfrastructure.cs`](../tests/Ecnanib.Tests/Architecture/ForbiddenInfrastructure.cs). It also fails if the graph contains a log output other than the console and the file, so no log can be written to a database (NFR-DAT-7).

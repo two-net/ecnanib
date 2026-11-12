@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Buffers.Text;
-using System.Security.Claims;
 using System.Security.Cryptography;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
@@ -38,7 +37,7 @@ internal sealed class TwoFactor(
 
     public async Task<TwoFactorState> StateAsync(HttpContext request)
     {
-        var userId = UserOf(request);
+        var userId = SignedInUser.RequiredIdOf(request);
         await using var context = await contexts.CreateDbContextAsync(request.RequestAborted);
 
         var account = await context.Set<User>()
@@ -47,6 +46,7 @@ internal sealed class TwoFactor(
             {
                 user.TwoFactorEnabledAt,
                 user.EmailVerifiedAt,
+                // The codes of this account. Inside a projection, so it names the owner itself.
                 RecoveryCodes = context.Set<RecoveryCode>().Count(code => code.UserId == user.Id),
             })
             .SingleAsync(request.RequestAborted);
@@ -60,7 +60,7 @@ internal sealed class TwoFactor(
 
     public TwoFactorSetup NewSetup(HttpContext request)
     {
-        var userId = UserOf(request);
+        var userId = SignedInUser.RequiredIdOf(request);
 
         // The key, and after it the time it was made at, in seconds.
         Span<byte> setup = stackalloc byte[Totp.KeyLength + sizeof(long)];
@@ -84,7 +84,7 @@ internal sealed class TwoFactor(
     {
         ArgumentNullException.ThrowIfNull(sealedKey);
 
-        if (Unseal(UserOf(request), sealedKey, clock.GetUtcNow()) is not { } key)
+        if (Unseal(SignedInUser.RequiredIdOf(request), sealedKey, clock.GetUtcNow()) is not { } key)
         {
             return null;
         }
@@ -105,7 +105,7 @@ internal sealed class TwoFactor(
         ArgumentNullException.ThrowIfNull(password);
         ArgumentNullException.ThrowIfNull(code);
 
-        var userId = UserOf(request);
+        var userId = SignedInUser.RequiredIdOf(request);
         var cancellationToken = request.RequestAborted;
         var now = clock.GetUtcNow();
 
@@ -229,7 +229,7 @@ internal sealed class TwoFactor(
     {
         ArgumentNullException.ThrowIfNull(code);
 
-        var userId = UserOf(request);
+        var userId = SignedInUser.RequiredIdOf(request);
         var now = clock.GetUtcNow();
 
         await using var context = await contexts.CreateDbContextAsync(request.RequestAborted);
@@ -255,7 +255,7 @@ internal sealed class TwoFactor(
                     .SetProperty(user => user.TwoFactorLockedUntil, (DateTimeOffset?)null));
 
             await context.Set<RecoveryCode>()
-                .Where(recovery => recovery.UserId == userId)
+                .OwnedBy(userId)
                 .ExecuteDeleteAsync();
 
             // A sign-in that waits for a code would wait for one that no longer exists.
@@ -286,7 +286,7 @@ internal sealed class TwoFactor(
     {
         ArgumentNullException.ThrowIfNull(code);
 
-        var userId = UserOf(request);
+        var userId = SignedInUser.RequiredIdOf(request);
         var now = clock.GetUtcNow();
 
         await using var context = await contexts.CreateDbContextAsync(request.RequestAborted);
@@ -304,7 +304,7 @@ internal sealed class TwoFactor(
         {
             // From here on nothing is canceled with the request: the code is spent.
             await context.Set<RecoveryCode>()
-                .Where(recovery => recovery.UserId == userId)
+                .OwnedBy(userId)
                 .ExecuteDeleteAsync();
 
             var recoveryCodes = NewRecoveryCodes(userId, now);
@@ -342,16 +342,6 @@ internal sealed class TwoFactor(
         CodeAnswer.Refused => TwoFactorChangeOutcome.CodesRefused,
         _ => TwoFactorChangeOutcome.WrongCode,
     };
-
-    /// <summary>The user who is signed in on a request.</summary>
-    private static Guid UserOf(HttpContext request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        return Guid.TryParse(request.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId)
-            ? userId
-            : throw new InvalidOperationException("Two-factor authentication is for a signed-in user, and this request has none.");
-    }
 
     private TwoFactorSetup SetupFor(HttpContext request, ReadOnlySpan<byte> key, string sealedKey)
     {

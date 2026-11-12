@@ -4,7 +4,7 @@ How requests travel between a browser and the application: over TLS, with cookie
 
 The options and the encryption are in `src/Ecnanib/Platform/Security`, and the order of the request pipeline is in `src/Ecnanib/Program.cs`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Security` and `tests/Ecnanib.Tests/Accounts`.
 
-Sign-in, sessions, password reset, two-factor authentication, and re-authentication before a sensitive action are in [accounts.md](accounts.md). Rate limits and the other defenses of a web application are a separate feature and are not built yet.
+Sign-in, sessions, password reset, two-factor authentication, and re-authentication before a sensitive action are in [accounts.md](accounts.md). Whose data a request reaches, and the check that an operator function requires, are in [ownership.md](ownership.md). Rate limits and the other defenses of a web application are a separate feature and are not built yet.
 
 ## TLS
 
@@ -81,7 +81,7 @@ The order, in `Program.cs`:
 4. User correlation: the `UserId` of every log event of the request.
 5. Error handling.
 6. The redirect of plain HTTP.
-7. Authorization: a page for signed-in users sends a visitor to sign in.
+7. Authorization: a page for signed-in users sends a visitor to sign in, and a page for operators refuses a user who is not one. See [ownership.md](ownership.md).
 8. The check of the token against request forgery.
 9. The endpoints.
 

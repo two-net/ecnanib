@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Ecnanib.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -13,7 +14,7 @@ namespace Ecnanib.Accounts;
 /// <param name="userId">The account the code belongs to.</param>
 /// <param name="codeHash">The SHA-256 hash of the code. The code itself is shown once and not kept.</param>
 /// <param name="createdAt">When the code was made.</param>
-public sealed class RecoveryCode(Guid userId, byte[] codeHash, DateTimeOffset createdAt)
+public sealed class RecoveryCode(Guid userId, byte[] codeHash, DateTimeOffset createdAt) : IUserOwned
 {
     public Guid UserId { get; } = userId;
 

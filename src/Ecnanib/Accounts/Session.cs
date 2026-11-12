@@ -1,3 +1,4 @@
+using Ecnanib.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -25,7 +26,7 @@ public sealed class Session(
     byte[] tokenHash,
     DateTimeOffset createdAt,
     DateTimeOffset lastActiveAt,
-    DateTimeOffset? reauthenticatedAt)
+    DateTimeOffset? reauthenticatedAt) : IUserOwned
 {
     public Guid Id { get; } = id;
 

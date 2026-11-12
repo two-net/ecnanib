@@ -64,7 +64,8 @@ public static class SessionAuthentication
 
 /// <summary>
 /// Reads the session cookie of a request and makes the user of its session the user of the
-/// request, with the account's id as the name identifier.
+/// request, with the account's id as the name identifier. It also says whether that user is an
+/// operator, which is decided here on every request and stored nowhere (FR-OPS-1).
 /// </summary>
 /// <remarks>
 /// Authentication runs ahead of the error handling, so this does not throw. When the session
@@ -75,7 +76,8 @@ internal sealed class SessionAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    Sessions sessions)
+    Sessions sessions,
+    Operators operators)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     private Exception? _lookupFailure;
@@ -87,7 +89,7 @@ internal sealed class SessionAuthenticationHandler(
             return AuthenticateResult.NoResult();
         }
 
-        SignedInUser? user;
+        SessionUser? user;
         try
         {
             user = await sessions.FindAsync(token, Context.RequestAborted);
@@ -124,6 +126,12 @@ internal sealed class SessionAuthenticationHandler(
             ],
             Scheme.Name);
 
+        // What an operator function checks, apart from whose a row is. See OperatorAccess.
+        if (operators.Includes(user.Email, user.IsVerified))
+        {
+            identity.AddClaim(new Claim(OperatorAccess.ClaimType, bool.TrueString));
+        }
+
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name));
     }
 
@@ -149,8 +157,15 @@ internal sealed class SessionAuthenticationHandler(
             SessionAuthentication.SignInPath, SessionAuthentication.ReturnUrlParameter, returnUrl));
     }
 
+    /// <summary>Refuses a signed-in user what is not for them, such as an operator function.</summary>
     protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
     {
+        // The path without its query, which may carry what must not be logged.
+        Logger.LogWarning(
+            "User {UserId} was refused {Path}, which is not for them",
+            SignedInUser.IdOf(Context),
+            Request.PathBase.Add(Request.Path).ToString());
+
         Response.StatusCode = StatusCodes.Status403Forbidden;
 
         return Task.CompletedTask;

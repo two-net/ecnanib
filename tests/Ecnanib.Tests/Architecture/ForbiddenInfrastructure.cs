@@ -4,6 +4,7 @@ namespace Ecnanib.Tests.Architecture;
 /// Packages the application must never ship, because each one means a second thing to deploy or
 /// a proprietary cloud service: the application is one process plus PostgreSQL and runs anywhere
 /// those two run (NFR-ARC-1, NFR-ARC-2, NFR-ARC-5). PostgreSQL is its only data store (NFR-DAT-1).
+/// And the service is free, so it takes no payment and needs nothing that takes one (FR-ACC-6).
 /// </summary>
 internal static class ForbiddenInfrastructure
 {
@@ -63,6 +64,17 @@ internal static class ForbiddenInfrastructure
         ("AWSSDK", "proprietary cloud service"),
         ("Amazon", "proprietary cloud service"),
         ("Google.Cloud", "proprietary cloud service"),
+
+        ("Stripe", "payment service"),
+        ("PayPal", "payment service"),
+        ("PayPalCheckoutSdk", "payment service"),
+        ("PayPalServerSDK", "payment service"),
+        ("Braintree", "payment service"),
+        ("Paddle", "payment service"),
+        ("Adyen", "payment service"),
+        ("Mollie", "payment service"),
+        ("ChargeBee", "payment service"),
+        ("Recurly", "payment service"),
     ];
 
     /// <summary>Returns the forbidden packages among <paramref name="packages"/>, with the reason.</summary>

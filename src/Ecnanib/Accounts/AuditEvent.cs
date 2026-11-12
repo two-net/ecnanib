@@ -1,3 +1,4 @@
+using Ecnanib.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -36,7 +37,7 @@ public enum AuditAction
 /// with the account.
 /// </param>
 public sealed class AuditEvent(
-    Guid id, Guid userId, AuditAction action, string target, DateTimeOffset occurredAt, string? origin)
+    Guid id, Guid userId, AuditAction action, string target, DateTimeOffset occurredAt, string? origin) : IUserOwned
 {
     public Guid Id { get; } = id;
 

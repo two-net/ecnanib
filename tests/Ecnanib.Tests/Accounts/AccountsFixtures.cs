@@ -4,12 +4,14 @@ using System.Text.RegularExpressions;
 using System.Web;
 using Ecnanib.Accounts;
 using Ecnanib.Notifications;
+using Ecnanib.Platform.Persistence;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Ecnanib.WebUi;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -116,6 +118,10 @@ internal sealed class AccountsApplication : IDisposable
 
     public IReauthentication Reauthentication => _application.Services.GetRequiredService<IReauthentication>();
 
+    /// <summary>The database as a component reaches it, for a test that asks it the way a component does.</summary>
+    public IDbContextFactory<EcnanibDbContext> Contexts =>
+        _application.Services.GetRequiredService<IDbContextFactory<EcnanibDbContext>>();
+
     /// <summary>Every document in the version in force: what the form posts when all boxes are ticked.</summary>
     public static IReadOnlyCollection<AcceptedDocument> EveryDocument =>
         [.. LegalDocuments.All.Select(document => new AcceptedDocument(document, LegalDocuments.CurrentVersionOf(document)))];
@@ -154,6 +160,21 @@ internal sealed class AccountsApplication : IDisposable
             Environment.NewLine,
             Database.Tables().SelectMany(table =>
                 Database.Column($"""SELECT row_to_json(stored)::text FROM "{table}" stored""")));
+
+    /// <summary>
+    /// Every row that belongs to a user, by the table it is in, as the database would hand it to
+    /// whoever reads it. The tables are those of the model that hold rows of users, so a table
+    /// that is added later is among them.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> RowsOf(Guid userId)
+    {
+        using var model = ModelOnly.Context();
+
+        return OwnershipRules.UserOwnedTables(model.Model).ToDictionary(
+            table => table,
+            table => Database.Column(
+                $"""SELECT row_to_json(stored)::text FROM "{table}" stored WHERE user_id = '{userId}' ORDER BY 1"""));
+    }
 
     /// <summary>Registers an address and verifies it with the link it was sent.</summary>
     public async Task<StoredUser> RegisterVerifiedAsync(string email)

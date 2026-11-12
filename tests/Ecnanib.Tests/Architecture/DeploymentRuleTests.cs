@@ -6,19 +6,20 @@ namespace Ecnanib.Tests.Architecture;
 /// <summary>
 /// Guards the deployment shape as packages are added: no message broker, separate cache server,
 /// or search server (NFR-ARC-2), no proprietary cloud service (NFR-ARC-5), no database other than
-/// PostgreSQL (NFR-DAT-1), and no log output into a database (NFR-DAT-7).
+/// PostgreSQL (NFR-DAT-1), no log output into a database (NFR-DAT-7), and no payment service,
+/// because the service is free (FR-ACC-6).
 /// </summary>
 public class DeploymentRuleTests
 {
     [Fact]
-    public void The_application_ships_no_broker_cache_server_search_server_cloud_sdk_or_other_database()
+    public void The_application_ships_no_broker_cache_server_search_server_cloud_sdk_other_database_or_payment_service()
     {
         var forbidden = ForbiddenInfrastructure.FindIn(Packages());
 
         Assert.True(
             forbidden.Count == 0,
-            "The application must stay one process plus PostgreSQL, with no proprietary cloud service. " +
-            $"Remove: {string.Join(", ", forbidden)}");
+            "The application must stay one process plus PostgreSQL, with no proprietary cloud service, " +
+            $"and it takes no payment. Remove: {string.Join(", ", forbidden)}");
     }
 
     [Fact]
@@ -44,6 +45,9 @@ public class DeploymentRuleTests
     [InlineData("Microsoft.Data.SqlClient")]
     [InlineData("MySql.Data")]
     [InlineData("MongoDB.Driver")]
+    [InlineData("Stripe.net")]
+    [InlineData("PayPalCheckoutSdk")]
+    [InlineData("Mollie.Api")]
     public void Forbidden_packages_are_recognised(string package)
     {
         Assert.NotEmpty(ForbiddenInfrastructure.FindIn([package]));

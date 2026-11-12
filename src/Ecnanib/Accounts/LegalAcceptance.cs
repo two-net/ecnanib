@@ -1,3 +1,4 @@
+using Ecnanib.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -12,6 +13,7 @@ namespace Ecnanib.Accounts;
 /// accepted earlier stays on record.
 /// </remarks>
 public sealed class LegalAcceptance(Guid userId, LegalDocument document, string version, DateTimeOffset acceptedAt)
+    : IUserOwned
 {
     public Guid UserId { get; } = userId;
 

@@ -177,7 +177,8 @@ internal sealed class TwoFactorCodes(StoredSecrets secrets, ILogger<TwoFactorCod
         {
             // Deleted as it is found: of two requests with one code, one finds it gone.
             var spent = await context.Set<RecoveryCode>()
-                .Where(recovery => recovery.UserId == account.UserId && recovery.CodeHash == codeHash)
+                .OwnedBy(account.UserId)
+                .Where(recovery => recovery.CodeHash == codeHash)
                 .ExecuteDeleteAsync();
 
             if (spent != 1)

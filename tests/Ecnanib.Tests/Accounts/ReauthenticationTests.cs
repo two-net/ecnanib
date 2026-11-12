@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using Ecnanib.Accounts;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Logging;
+using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -127,6 +128,7 @@ public class ReauthenticationTests
     }
 
     [Fact]
+    [ProvesOwnershipOf("sessions")]
     public async Task The_proof_holds_for_the_browser_that_gave_it_and_for_no_other()
     {
         var actions = new SensitiveActions();

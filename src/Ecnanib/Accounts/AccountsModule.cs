@@ -30,6 +30,14 @@ public static class AccountsModule
         services.AddAuthentication(SessionAuthentication.Scheme)
             .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthentication.Scheme, configureOptions: null);
 
+        // What an operator function requires, which is checked apart from whose a row is
+        // (NFR-SEC-3). The session handler says who is an operator, on every request.
+        services.AddSingleton<Operators>();
+        services.AddAuthorizationBuilder()
+            .AddPolicy(OperatorAccess.Policy, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => OperatorAccess.IsOperator(context.User)));
+
         return services;
     }
 }
