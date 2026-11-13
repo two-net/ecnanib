@@ -10,13 +10,13 @@ namespace Ecnanib.AiProviderGateway.Adapters.Grok;
 /// </summary>
 internal sealed class GrokKeyCheck(KeyCheckCall call) : IAiKeyChecker
 {
-    public AiProviderCode Provider { get; } = new("grok");
+    public AiProviderCode Provider => GrokApi.Provider;
 
     public Task<KeyVerdict> CheckAsync(string apiKey, CancellationToken cancellationToken) =>
         call.AskAsync(
             Provider,
             "v1/models",
-            headers => headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}"),
+            headers => GrokApi.Authorize(headers, apiKey),
             KeyCheckCall.Status(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized),
             cancellationToken);
 }

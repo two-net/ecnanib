@@ -35,6 +35,13 @@ internal sealed class AiProviderRouter : IAiProviderGateway
         string apiKey,
         CancellationToken cancellationToken)
     {
+        // Said without what was given: a prompt and a key are in no error.
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Model, nameof(request));
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Prompt, nameof(request));
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ResultSchema, nameof(request));
+        ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
+
         if (!_adapters.TryGetValue(provider, out var adapter))
         {
             throw new InvalidOperationException($"No adapter is registered for AI provider '{provider}'.");
@@ -45,32 +52,53 @@ internal sealed class AiProviderRouter : IAiProviderGateway
         using var call = _logger.BeginCorrelation(new Correlation(Provider: provider.Value, Model: request.Model));
         var started = Stopwatch.GetTimestamp();
 
+        AiCallResult result;
         try
         {
-            var result = await adapter.CompleteAsync(request, apiKey, cancellationToken);
-
-            _logger.LogInformation(
-                "AI call {Outcome} in {DurationMs} ms, using {InputTokens} input and {OutputTokens} output tokens",
-                "Succeeded",
-                Milliseconds(started),
-                result.Usage.InputTokens,
-                result.Usage.OutputTokens);
-
-            return result;
+            result = await adapter.CompleteAsync(request, apiKey, cancellationToken);
         }
         catch (Exception error)
         {
-            // Logged here for its duration and outcome. What it means is the caller's to decide.
+            // A caller that cancelled, or something that an adapter did not expect. Logged here
+            // for its duration and outcome. What it means is the caller's to decide.
             _logger.LogWarning(
                 error,
                 "AI call {Outcome} in {DurationMs} ms",
                 error is OperationCanceledException ? "Canceled" : "Failed",
-                Milliseconds(started));
+                Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1));
 
             throw;
         }
+
+        Log(result);
+
+        return result;
     }
 
-    private static double Milliseconds(long started) =>
-        Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1);
+    /// <summary>
+    /// Logs a call by how it ended: one that gave no result is a warning. The duration is the
+    /// latency of the result, which is what the caller records, and the tokens are there when the
+    /// provider counted them.
+    /// </summary>
+    private void Log(AiCallResult result)
+    {
+        var level = result.Outcome == AiCallOutcome.Succeeded ? LogLevel.Information : LogLevel.Warning;
+        var outcome = result.Outcome.ToString();
+        var duration = Math.Round(result.Latency.TotalMilliseconds, 1);
+
+        if (result.Usage is { } usage)
+        {
+            _logger.Log(
+                level,
+                "AI call {Outcome} in {DurationMs} ms, using {InputTokens} input and {OutputTokens} output tokens",
+                outcome,
+                duration,
+                usage.InputTokens,
+                usage.OutputTokens);
+        }
+        else
+        {
+            _logger.Log(level, "AI call {Outcome} in {DurationMs} ms", outcome, duration);
+        }
+    }
 }

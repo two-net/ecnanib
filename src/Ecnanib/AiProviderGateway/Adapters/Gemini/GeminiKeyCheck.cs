@@ -11,15 +11,13 @@ namespace Ecnanib.AiProviderGateway.Adapters.Gemini;
 /// </summary>
 internal sealed class GeminiKeyCheck(KeyCheckCall call) : IAiKeyChecker
 {
-    private const string WrongKey = "API_KEY_INVALID";
-
-    public AiProviderCode Provider { get; } = new("gemini");
+    public AiProviderCode Provider => GeminiApi.Provider;
 
     public Task<KeyVerdict> CheckAsync(string apiKey, CancellationToken cancellationToken) =>
         call.AskAsync(
             Provider,
             "v1beta/models?pageSize=1",
-            headers => headers.TryAddWithoutValidation("x-goog-api-key", apiKey),
+            headers => GeminiApi.Authorize(headers, apiKey),
             RefusesAsync,
             cancellationToken);
 
@@ -31,7 +29,7 @@ internal sealed class GeminiKeyCheck(KeyCheckCall call) : IAiKeyChecker
             _ => false,
         };
 
-    /// <summary>Whether the error of an answer names the key as what is wrong: <c>error.details[].reason</c>.</summary>
+    /// <summary>Whether the error of an answer names the key as what is wrong.</summary>
     private static async Task<bool> SaysWrongKeyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
@@ -39,16 +37,7 @@ internal sealed class GeminiKeyCheck(KeyCheckCall call) : IAiKeyChecker
             await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var answer = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
 
-            return answer.RootElement.ValueKind == JsonValueKind.Object
-                && answer.RootElement.TryGetProperty("error", out var error)
-                && error.ValueKind == JsonValueKind.Object
-                && error.TryGetProperty("details", out var details)
-                && details.ValueKind == JsonValueKind.Array
-                && details.EnumerateArray().Any(detail =>
-                    detail.ValueKind == JsonValueKind.Object
-                    && detail.TryGetProperty("reason", out var reason)
-                    && reason.ValueKind == JsonValueKind.String
-                    && reason.GetString() == WrongKey);
+            return GeminiApi.NamesWrongKey(answer.RootElement);
         }
         catch (JsonException)
         {

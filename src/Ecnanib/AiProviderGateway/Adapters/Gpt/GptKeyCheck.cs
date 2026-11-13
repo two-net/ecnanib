@@ -9,13 +9,13 @@ namespace Ecnanib.AiProviderGateway.Adapters.Gpt;
 /// </summary>
 internal sealed class GptKeyCheck(KeyCheckCall call) : IAiKeyChecker
 {
-    public AiProviderCode Provider { get; } = new("gpt");
+    public AiProviderCode Provider => GptApi.Provider;
 
     public Task<KeyVerdict> CheckAsync(string apiKey, CancellationToken cancellationToken) =>
         call.AskAsync(
             Provider,
             "v1/models",
-            headers => headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}"),
+            headers => GptApi.Authorize(headers, apiKey),
             KeyCheckCall.Status(HttpStatusCode.Unauthorized),
             cancellationToken);
 }

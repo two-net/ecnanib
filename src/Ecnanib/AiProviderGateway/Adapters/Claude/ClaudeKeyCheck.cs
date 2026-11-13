@@ -9,20 +9,13 @@ namespace Ecnanib.AiProviderGateway.Adapters.Claude;
 /// </summary>
 internal sealed class ClaudeKeyCheck(KeyCheckCall call) : IAiKeyChecker
 {
-    // The version of the API that the request is written for. The provider requires one.
-    private const string ApiVersion = "2023-06-01";
-
-    public AiProviderCode Provider { get; } = new("claude");
+    public AiProviderCode Provider => ClaudeApi.Provider;
 
     public Task<KeyVerdict> CheckAsync(string apiKey, CancellationToken cancellationToken) =>
         call.AskAsync(
             Provider,
             "v1/models?limit=1",
-            headers =>
-            {
-                headers.TryAddWithoutValidation("x-api-key", apiKey);
-                headers.TryAddWithoutValidation("anthropic-version", ApiVersion);
-            },
+            headers => ClaudeApi.Authorize(headers, apiKey),
             KeyCheckCall.Status(HttpStatusCode.Unauthorized),
             cancellationToken);
 }

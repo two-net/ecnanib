@@ -42,6 +42,8 @@ The `Email` section has no key for encryption: the port and the sign-in decide i
 
 `Application:PublicUrl` is the address users reach the application at, and it must be an `https` address. A request over plain HTTP is sent on to its port, and the links in emails start with it. `Security:SessionIdleMinutes`, from 1 to 1440, is how long a session lasts without being used. See [security.md](security.md) and "Sessions" in [accounts.md](accounts.md).
 
+Each entry under `AiProviders` is one AI provider, named by its code. `BaseUrl` is the address of its API, and `TimeoutSeconds`, from 1 to 600, is how long a call to one of its models may take: the whole call, from the request to the end of the answer. It is the only limit on such a call. See [ai-providers.md](ai-providers.md).
+
 `Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
 
 ### Permissions

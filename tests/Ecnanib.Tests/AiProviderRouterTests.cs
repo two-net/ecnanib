@@ -1,12 +1,15 @@
 using Ecnanib.AiProviderGateway;
 using Ecnanib.Shared;
+using Ecnanib.Tests.Logging;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests;
 
 /// <summary>
 /// A provider adapter is added by registering one more <see cref="IAiProviderAdapter"/>. Callers
-/// reach it through <see cref="IAiProviderGateway"/> by code, so nothing else changes (NFR-ARC-3).
+/// reach it through <see cref="IAiProviderGateway"/> by code, so nothing else changes: not the
+/// adapters that are there, and not what calls the gateway (NFR-ARC-3).
 /// </summary>
 public class AiProviderRouterTests
 {
@@ -16,19 +19,19 @@ public class AiProviderRouterTests
     public async Task A_new_provider_adapter_is_reached_through_the_gateway_with_no_other_change()
     {
         var adapter = new FakeAdapter("a-fifth-provider");
-        await using var services = new ServiceCollection()
-            .AddLogging()
-            .AddAiProviderGateway()
-            .AddSingleton<IAiProviderAdapter>(adapter)
-            .BuildServiceProvider();
-        var gateway = services.GetRequiredService<IAiProviderGateway>();
+        using var application = With(adapter);
+        var gateway = application.Services.GetRequiredService<IAiProviderGateway>();
 
         var result = await gateway.CompleteAsync(
             new AiProviderCode("A-Fifth-Provider"), Request, "key", TestContext.Current.CancellationToken);
 
         Assert.Same(adapter.Result, result);
         Assert.Same(Request, adapter.Received);
-        Assert.Equal([adapter.Provider], gateway.Providers);
+
+        // It stands beside the four of the application, which are as they were.
+        Assert.Equal(
+            ["a-fifth-provider", "claude", "gemini", "gpt", "grok"],
+            gateway.Providers.Select(provider => provider.Value).Order());
     }
 
     [Fact]
@@ -36,13 +39,8 @@ public class AiProviderRouterTests
     {
         var first = new FakeAdapter("first");
         var second = new FakeAdapter("second");
-        await using var services = new ServiceCollection()
-            .AddLogging()
-            .AddAiProviderGateway()
-            .AddSingleton<IAiProviderAdapter>(first)
-            .AddSingleton<IAiProviderAdapter>(second)
-            .BuildServiceProvider();
-        var gateway = services.GetRequiredService<IAiProviderGateway>();
+        using var application = With(first, second);
+        var gateway = application.Services.GetRequiredService<IAiProviderGateway>();
 
         var result = await gateway.CompleteAsync(second.Provider, Request, "key", TestContext.Current.CancellationToken);
 
@@ -53,8 +51,8 @@ public class AiProviderRouterTests
     [Fact]
     public async Task A_provider_without_an_adapter_is_refused_by_name()
     {
-        await using var services = new ServiceCollection().AddLogging().AddAiProviderGateway().BuildServiceProvider();
-        var gateway = services.GetRequiredService<IAiProviderGateway>();
+        using var application = With();
+        var gateway = application.Services.GetRequiredService<IAiProviderGateway>();
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.CompleteAsync(
             new AiProviderCode("unknown"), Request, "key", TestContext.Current.CancellationToken));
@@ -63,25 +61,33 @@ public class AiProviderRouterTests
     }
 
     [Fact]
-    public async Task Two_adapters_for_one_provider_are_refused()
+    public void Two_adapters_for_one_provider_are_refused()
     {
-        await using var services = new ServiceCollection()
-            .AddLogging()
-            .AddAiProviderGateway()
-            .AddSingleton<IAiProviderAdapter>(new FakeAdapter("same"))
-            .AddSingleton<IAiProviderAdapter>(new FakeAdapter("same"))
-            .BuildServiceProvider();
+        // One more for a provider that the application has an adapter for.
+        using var application = With(new FakeAdapter("claude"));
 
-        var error = Assert.Throws<InvalidOperationException>(services.GetRequiredService<IAiProviderGateway>);
+        var error = Assert.Throws<InvalidOperationException>(application.Services.GetRequiredService<IAiProviderGateway>);
 
-        Assert.Contains("'same'", error.Message);
+        Assert.Contains("'claude'", error.Message);
     }
+
+    /// <summary>The application with adapters of the test's own, registered as a provider's adapter is.</summary>
+    private static LoggedApplication With(params IAiProviderAdapter[] adapters) =>
+        new(
+            LoggedApplication.Settings(),
+            host => host.ConfigureServices(services =>
+            {
+                foreach (var adapter in adapters)
+                {
+                    services.AddSingleton(adapter);
+                }
+            }));
 
     private sealed class FakeAdapter(string provider) : IAiProviderAdapter
     {
         public AiProviderCode Provider { get; } = new(provider);
 
-        public AiCallResult Result { get; } = new("{}", new AiTokenUsage(1, 2), TimeSpan.FromMilliseconds(3));
+        public AiCallResult Result { get; } = new(AiCallOutcome.Succeeded, "{}", new AiTokenUsage(1, 2), TimeSpan.FromMilliseconds(3));
 
         public AiCallRequest? Received { get; private set; }
 

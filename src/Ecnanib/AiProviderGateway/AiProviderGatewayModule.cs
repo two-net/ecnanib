@@ -6,7 +6,10 @@ using Ecnanib.AiProviderGateway.Adapters.Grok;
 
 namespace Ecnanib.AiProviderGateway;
 
-/// <summary>AI Provider Gateway: one adapter per provider behind a common interface (SRS 3.1).</summary>
+/// <summary>
+/// AI Provider Gateway: one adapter per provider behind a common interface (SRS 3.1). See
+/// docs/ai-providers.md.
+/// </summary>
 public static class AiProviderGatewayModule
 {
     /// <summary>
@@ -23,6 +26,14 @@ public static class AiProviderGatewayModule
     public static IServiceCollection AddAiProviderGateway(this IServiceCollection services)
     {
         services.AddSingleton<IAiProviderGateway, AiProviderRouter>();
+        services.AddGatewayHttpClient();
+
+        // The calls to a model: one adapter for each provider, and the exchange they all make.
+        services.AddSingleton<ModelCall>();
+        services.AddSingleton<IAiProviderAdapter, ClaudeAdapter>();
+        services.AddSingleton<IAiProviderAdapter, GeminiAdapter>();
+        services.AddSingleton<IAiProviderAdapter, GptAdapter>();
+        services.AddSingleton<IAiProviderAdapter, GrokAdapter>();
 
         // Whether a provider takes a key: a call that only reads, one for each provider (FR-KEY-3).
         services.AddSingleton<IAiKeyChecks, AiKeyCheckRouter>();

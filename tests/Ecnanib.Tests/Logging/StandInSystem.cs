@@ -10,10 +10,22 @@ namespace Ecnanib.Tests.Logging;
 /// Stands for a system that the application calls over HTTP, such as an AI provider or Binance:
 /// it keeps what it was sent, and answers as the test says, in place of the network.
 /// </summary>
-/// <param name="answer">What the system answers a request with. It may fail, as a connection does.</param>
-internal sealed class StandInSystem(Func<HttpRequestMessage, HttpResponseMessage> answer) : HttpMessageHandler
+internal sealed class StandInSystem : HttpMessageHandler
 {
+    private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _answer;
     private readonly List<ReceivedCall> _calls = [];
+
+    /// <param name="answer">What the system answers a request with. It may fail, as a connection does.</param>
+    public StandInSystem(Func<HttpRequestMessage, HttpResponseMessage> answer)
+        : this((request, _) => Task.FromResult(answer(request)))
+    {
+    }
+
+    /// <param name="answer">
+    /// What the system answers a request with, in its own time: it may wait, and is told when the
+    /// caller gives up.
+    /// </param>
+    public StandInSystem(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> answer) => _answer = answer;
 
     /// <summary>The calls that reached the system, in the order they came.</summary>
     public IReadOnlyList<ReceivedCall> Calls
@@ -50,14 +62,16 @@ internal sealed class StandInSystem(Func<HttpRequestMessage, HttpResponseMessage
     /// <summary>An answer without a body.</summary>
     public static HttpResponseMessage Status(HttpStatusCode status) => new(status);
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        var call = await ReceivedCall.OfAsync(request, cancellationToken);
+
         lock (_calls)
         {
-            _calls.Add(ReceivedCall.Of(request));
+            _calls.Add(call);
         }
 
-        return Task.FromResult(answer(request));
+        return await _answer(request, cancellationToken);
     }
 
     // The factory disposes a handler when it has had it for a while. This one is the test's.
@@ -69,8 +83,9 @@ internal sealed class StandInSystem(Func<HttpRequestMessage, HttpResponseMessage
 /// <summary>One call that a <see cref="StandInSystem"/> was sent.</summary>
 /// <param name="Method">The method, such as <c>GET</c>.</param>
 /// <param name="Address">The whole address, with its query.</param>
-/// <param name="Headers">The headers that the caller set, by name without regard to case.</param>
-internal sealed record ReceivedCall(string Method, Uri Address, IReadOnlyDictionary<string, string> Headers)
+/// <param name="Headers">The headers that the caller set, those of the body included, by name without regard to case.</param>
+/// <param name="Body">The body, as text, or null when the call had none.</param>
+internal sealed record ReceivedCall(string Method, Uri Address, IReadOnlyDictionary<string, string> Headers, string? Body)
 {
     /// <summary>The address without its query: the scheme, the host, and the path.</summary>
     public string Endpoint => Address.GetLeftPart(UriPartial.Path);
@@ -84,10 +99,14 @@ internal sealed record ReceivedCall(string Method, Uri Address, IReadOnlyDiction
                 .Select(pair => (pair[0], pair.Length > 1 ? Uri.UnescapeDataString(pair[1]) : string.Empty)),
         ];
 
-    public static ReceivedCall Of(HttpRequestMessage request) =>
-        new(
+    public static async Task<ReceivedCall> OfAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var headers = request.Headers.Concat(request.Content?.Headers ?? Enumerable.Empty<KeyValuePair<string, IEnumerable<string>>>());
+
+        return new ReceivedCall(
             request.Method.Method,
             request.RequestUri!,
-            request.Headers.ToDictionary(
-                header => header.Key, header => string.Join(", ", header.Value), StringComparer.OrdinalIgnoreCase));
+            headers.ToDictionary(header => header.Key, header => string.Join(", ", header.Value), StringComparer.OrdinalIgnoreCase),
+            request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken));
+    }
 }

@@ -86,7 +86,7 @@ A key is validated by asking its provider about it, with a call that only reads 
 
 - **Only the provider's answer to a wrong key is a refusal.** Each provider's check names its own, in `AiProviderGateway/Adapters/<Provider>`. A status that could also mean something else, such as 403, is no verdict: a block of the service's region must not turn every stored key invalid.
 - **Binance is asked differently in its two environments,** because its test environment has no call that reports the permissions of a key. On the real exchange one call says everything. In the test environment the account of each market is read: a market that takes the credential says whether it may trade there, and a market that refuses a credential which the other one takes is one it may not trade on. Both refusing is a refusal. A market that gives no answer leaves no verdict.
-- **The addresses are those of the configuration file:** `AiProviders:<Provider>:BaseUrl`, and `Binance:<Market>:<Environment>:BaseUrl`. A check has a time limit of its own, 15 seconds, and not the provider's `TimeoutSeconds`: a user waits for it with a form.
+- **The addresses are those of the configuration file:** `AiProviders:<Provider>:BaseUrl`, and `Binance:<Market>:<Environment>:BaseUrl`. A check has a time limit of its own, 15 seconds, and not the provider's `TimeoutSeconds`, which is for a call to a model: a user waits for a check with a form.
 
 ### When a key is validated
 
@@ -94,7 +94,7 @@ A key is validated by asking its provider about it, with a call that only reads 
 |---|---|
 | When it is saved. | In the request that brings it, before it is stored: see "Storing a key". |
 | Daily. | The job `key-validation` runs every hour, on the hour, and checks every key whose provider last answered a check a day ago or longer, and every key that was never checked. So each key is checked about a day after its last check, and not all keys at one time of day. See [background-work.md](background-work.md). |
-| When a call with it fails authentication. | Whatever made the call asks `IKeyValidation.RevalidateAiKeyAsync` or `RevalidateExchangeKeyAsync`, which checks the key at once. Nothing calls them yet: see "Not built yet". |
+| When a call with it fails authentication. | Whatever made the call asks `IKeyValidation.RevalidateAiKeyAsync` or `RevalidateExchangeKeyAsync`, which checks the key at once. A call to a model that ends as `AuthenticationFailed` is such a call. Nothing calls them yet: see "Not built yet". |
 | When its user asks. | The button "Check again" on `/account/keys`, for a user who changed something about the key at the provider. Binance shows a secret key only once, so a user who turns a permission on cannot enter the key again. It takes no proof: it shows nothing of the key and stores none. |
 
 All but the first come to `KeyValidator`, which reads the stored key, asks the provider, and records what it said.
@@ -215,8 +215,8 @@ Whether a key can withdraw is not stored: a key that can is not.
 
 ## Not built yet
 
-- Handing a key to the call of an agent that needs it, decrypted only in memory and only for that call (FR-KEY-9). So far a stored key is decrypted for the call that validates it. The calls to models and the orders come with the gateways.
-- Checking a key again when a call with it fails authentication. `IKeyValidation` takes the request, and nothing makes such a call yet. The gateways say how a call tells that authentication failed when they are built.
+- Handing a key to the call of an agent that needs it, decrypted only in memory and only for that call (FR-KEY-9). So far a stored key is decrypted for the call that validates it. The AI Provider Gateway makes the calls to models, and takes the key with each call: see "The key" in [ai-providers.md](ai-providers.md). What hands a stored key over comes with what calls a model for an agent. The orders come with the Exchange Gateway.
+- Checking a key again when a call with it fails authentication. `IKeyValidation` takes the request, and nothing asks it yet. A call to a model tells it with the outcome `AuthenticationFailed`: see "Outcomes" in [ai-providers.md](ai-providers.md). What calls a model for an agent asks `RevalidateAiKeyAsync` then. The Exchange Gateway says how a call to Binance tells it when its calls are built.
 - What Agents does when a key goes or turns out to be invalid, and before an agent starts. It implements `IKeyDependents` and asks `IKeyValidation.BlockForAsync` when agents are built.
 - Telling the user that a key is invalid (FR-NTF-1). The list of keys says so. In-app notifications are not built.
 - A share of Binance's request limit for the checks (FR-BIN-4). A check of a key on the real exchange weighs 1, and one in the test environment 25. The limiter is not built.

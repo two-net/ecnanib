@@ -3,10 +3,10 @@ using System.Text;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.Platform.Logging;
 using Ecnanib.Shared;
+using Ecnanib.Tests.AiProviderGateway;
 using Ecnanib.Tests.Settings;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Ecnanib.Tests.Logging;
 
@@ -134,19 +134,17 @@ public class OutboundCallTests
     [Fact]
     public async Task An_AI_call_is_logged_with_duration_outcome_token_usage_and_what_it_belongs_to()
     {
-        var adapter = new FakeAdapter("claude");
-        using var application = new LoggedApplication(
-            LoggedApplication.Settings(),
-            host => host.ConfigureServices(services => services.AddSingleton<IAiProviderAdapter>(adapter)));
+        var provider = new StandInSystem(_ => StandInSystem.Json(
+            HttpStatusCode.OK, ModelCalls.Claude(ModelCalls.Result, input: 11, output: 22)));
+        using var application = provider.Behind(AiProviderGatewayModule.HttpClientName);
         var gateway = application.Services.GetRequiredService<IAiProviderGateway>();
-        adapter.Logger = application.Logger("Ecnanib.Tests.FakeAdapter");
 
         // The caller, a decision cycle in time, says which agent, cycle, and role the call is for.
         using (application.Logger().BeginCorrelation(new Correlation(AgentId: "agent-3", CycleId: "cycle-8", Role: "RiskManager")))
         {
             await gateway.CompleteAsync(
                 new AiProviderCode("Claude"),
-                new AiCallRequest("claude-test-model", "The prompt text", "{}"),
+                new AiCallRequest("claude-test-model", "The prompt text", ModelCalls.Schema),
                 ApiKey,
                 TestContext.Current.CancellationToken);
         }
@@ -161,9 +159,58 @@ public class OutboundCallTests
             ["claude", "claude-test-model", "agent-3", "cycle-8", "RiskManager"],
             new[] { "Provider", "Model", "AgentId", "CycleId", "Role" }.Select(call.Text));
 
-        // What the adapter logs during the call belongs to the same provider and model.
-        var fromAdapter = Assert.Single(application.Events(), written => written.Area == "Ecnanib.Tests.FakeAdapter");
-        Assert.Equal(["claude", "claude-test-model"], new[] { "Provider", "Model" }.Select(fromAdapter.Text));
+        // The HTTP call that the adapter made for it belongs to the same provider, model, and cycle.
+        var http = Assert.Single(application.Events(), written => written.Area == HttpArea);
+        Assert.Equal("POST claude.example/v1/messages", $"{http.Text("Method")} {http.Text("Host")}{http.Text("Path")}");
+        Assert.Equal("Succeeded", http.Text("Outcome"));
+        Assert.Equal(
+            ["claude", "claude-test-model", "agent-3", "cycle-8", "RiskManager"],
+            new[] { "Provider", "Model", "AgentId", "CycleId", "Role" }.Select(http.Text));
+
+        // Not the key, and at this level neither the prompt nor the result.
+        var log = application.LogText();
+        Assert.DoesNotContain(ApiKey, log);
+        Assert.DoesNotContain("The prompt text", log);
+        Assert.DoesNotContain("bullish", log);
+    }
+
+    [Fact]
+    public async Task An_AI_call_that_gives_no_result_is_logged_as_a_warning_with_how_it_ended_and_what_it_used()
+    {
+        // A fault of the provider, and then an answer that was cut short.
+        var answers = new Queue<HttpResponseMessage>(
+        [
+            StandInSystem.Status(HttpStatusCode.InternalServerError),
+            StandInSystem.Json(
+                HttpStatusCode.OK,
+                ModelCalls.Responses("{\"bias\":", status: "incomplete", incompleteReason: "max_output_tokens", input: 11, output: 22)),
+        ]);
+        var provider = new StandInSystem(_ => answers.Dequeue());
+        using var application = provider.Behind(AiProviderGatewayModule.HttpClientName);
+        var gateway = application.Services.GetRequiredService<IAiProviderGateway>();
+
+        var request = new AiCallRequest("grok-test-model", "The prompt text", ModelCalls.Schema);
+        var failed = await gateway.CompleteAsync(new AiProviderCode("grok"), request, ApiKey, TestContext.Current.CancellationToken);
+        var cutShort = await gateway.CompleteAsync(new AiProviderCode("grok"), request, ApiKey, TestContext.Current.CancellationToken);
+
+        // Neither is an error for the caller: each is how the call ended.
+        Assert.Equal(AiCallOutcome.Failed, failed.Outcome);
+        Assert.Equal(AiCallOutcome.InvalidResult, cutShort.Outcome);
+
+        var calls = application.Events().Where(written => written.Area == RouterArea).ToList();
+        Assert.Equal(["Failed", "InvalidResult"], calls.Select(call => call.Text("Outcome")));
+        Assert.All(calls, call =>
+        {
+            Assert.Equal("Warning", call.Level);
+            Assert.InRange(call["DurationMs"].GetDouble(), 0, 60_000);
+            Assert.Equal(["grok", "grok-test-model"], new[] { "Provider", "Model" }.Select(call.Text));
+            Assert.Null(call.Exception);
+        });
+
+        // The tokens are there when the provider counted them: an answer that was cut short was paid for.
+        Assert.False(calls[0].Has("InputTokens"));
+        Assert.Equal(11, calls[1]["InputTokens"].GetInt32());
+        Assert.Equal(22, calls[1]["OutputTokens"].GetInt32());
 
         var log = application.LogText();
         Assert.DoesNotContain(ApiKey, log);
@@ -171,23 +218,25 @@ public class OutboundCallTests
     }
 
     [Fact]
-    public async Task An_AI_call_that_fails_is_logged_as_failed_and_the_error_still_reaches_the_caller()
+    public async Task An_error_that_an_adapter_did_not_expect_is_logged_as_failed_and_still_reaches_the_caller()
     {
-        var adapter = new FakeAdapter("grok") { Failure = new TimeoutException("The provider did not answer.") };
+        // An adapter of the test's own, beside the four of the application, with a fault in it.
+        var failure = new TimeoutException("The provider did not answer.");
+        var adapter = new FaultyAdapter("a-fifth-provider", failure);
         using var application = new LoggedApplication(
             LoggedApplication.Settings(),
             host => host.ConfigureServices(services => services.AddSingleton<IAiProviderAdapter>(adapter)));
         var gateway = application.Services.GetRequiredService<IAiProviderGateway>();
 
         var error = await Assert.ThrowsAsync<TimeoutException>(() => gateway.CompleteAsync(
-            adapter.Provider, new AiCallRequest("grok-test-model", "prompt", "{}"), ApiKey, TestContext.Current.CancellationToken));
+            adapter.Provider, new AiCallRequest("some-model", "prompt", "{}"), ApiKey, TestContext.Current.CancellationToken));
 
-        Assert.Same(adapter.Failure, error);
+        Assert.Same(failure, error);
         var call = Assert.Single(application.Events(), written => written.Area == RouterArea);
         Assert.Equal("Warning", call.Level);
         Assert.Equal("Failed", call.Text("Outcome"));
         Assert.True(call.Has("DurationMs"));
-        Assert.Equal(["grok", "grok-test-model"], new[] { "Provider", "Model" }.Select(call.Text));
+        Assert.Equal(["a-fifth-provider", "some-model"], new[] { "Provider", "Model" }.Select(call.Text));
         Assert.Contains("The provider did not answer.", call.Exception);
         Assert.DoesNotContain(ApiKey, application.LogText());
     }
@@ -212,25 +261,12 @@ public class OutboundCallTests
             Task.FromResult(answer(request));
     }
 
-    private sealed class FakeAdapter(string provider) : IAiProviderAdapter
+    /// <summary>An adapter with a fault: it ends a call with an error of its own.</summary>
+    private sealed class FaultyAdapter(string provider, Exception failure) : IAiProviderAdapter
     {
         public AiProviderCode Provider { get; } = new(provider);
 
-        public Exception? Failure { get; init; }
-
-        /// <summary>Where the adapter logs what it does during a call, as a real one would.</summary>
-        public ILogger? Logger { get; set; }
-
-        public Task<AiCallResult> CompleteAsync(AiCallRequest request, string apiKey, CancellationToken cancellationToken)
-        {
-            if (Failure is not null)
-            {
-                return Task.FromException<AiCallResult>(Failure);
-            }
-
-            Logger?.LogInformation("Asked the provider");
-
-            return Task.FromResult(new AiCallResult("{}", new AiTokenUsage(11, 22), TimeSpan.FromMilliseconds(3)));
-        }
+        public Task<AiCallResult> CompleteAsync(AiCallRequest request, string apiKey, CancellationToken cancellationToken) =>
+            Task.FromException<AiCallResult>(failure);
     }
 }

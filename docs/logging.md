@@ -134,18 +134,34 @@ Outbound call POST fapi.binance.com/fapi/v1/order Succeeded with status 200 in 8
 - `Usage` holds the response headers that report usage. The component that knows the system names them: the Exchange Gateway registers Binance's used-weight and order-count headers through `OutboundCallLogOptions`.
 - Request and response bodies are logged only at the debug level, which is off unless the file turns it on for the area `Ecnanib.Platform.Adapters.Http`. Bodies pass the masking like everything else. While it is on, each body is held in memory in full, so use it to investigate and then turn it off.
 
-The first calls that the application makes are the ones that validate a user's key: see "Validating a key" in [credentials.md](credentials.md). A key travels in a header, and the signature of a call to Binance in the query, so neither is logged. A provider that refuses a key answers with a status of 400 or above, so such a call is a warning: it is what the provider said, and not a fault of the application.
+The calls that the application makes so far are the ones that validate a user's key, and the calls to a model: see "Validating a key" in [credentials.md](credentials.md), and [ai-providers.md](ai-providers.md). A key travels in a header, and the signature of a call to Binance in the query, so neither is logged. A provider that refuses a key answers with a status of 400 or above, so such a call is a warning: it is what the provider said, and not a fault of the application.
 
 ```
 Outbound call GET api.anthropic.com/v1/models Failed with status 401 in 324.5 ms {"Provider": "claude"}
 Outbound call GET api.binance.com/sapi/v1/account/apiRestrictions Succeeded with status 200 in 231.5 ms {"Usage": {"x-mbx-used-weight-1m": "1"}}
 ```
 
-**AI calls.** The AI Provider Gateway also logs each call to a model, with what HTTP cannot see: the token usage.
+**AI calls.** The AI Provider Gateway also logs each call to a model, with what HTTP cannot see: how the call ended for its caller, and the token usage.
 
 ```
 AI call Succeeded in 2310.4 ms, using 1840 input and 212 output tokens {"Provider": "claude", "Model": "...", "AgentId": "42", "CycleId": "9001", "Role": "RiskManager"}
+AI call InvalidResult in 9120.7 ms, using 1840 input and 16000 output tokens {"Provider": "claude", "Model": "...", "AgentId": "42", "CycleId": "9001", "Role": "Strategist"}
+AI call TimedOut in 60000.3 ms {"Provider": "gemini", "Model": "...", "AgentId": "42", "CycleId": "9001", "Role": "MarketAnalyst"}
 ```
+
+- `Outcome` is the outcome of the call: `Succeeded`, `InvalidResult`, `TimedOut`, `AuthenticationFailed`, `ModelNotFound`, or `Failed`. See "Outcomes" in [ai-providers.md](ai-providers.md). A call that gave no result is a warning. It is not an error of the application, so the event has no exception.
+- `DurationMs` is the latency of the call, as its caller records it.
+- `InputTokens` and `OutputTokens` are there when the provider counted them, also for a call that gave no result: an answer that was cut short was paid for.
+- A call that its caller cancelled is `Canceled`, and an error that an adapter did not expect is `Failed`, with the exception.
+- The HTTP call that an adapter makes is logged as every other, under `Ecnanib.Platform.Adapters.Http`, and carries the same `Provider` and `Model`. So a call to a model is two events: what was sent and answered, and what it came to.
+
+An answer that came with a success status and holds no result has a third event, which says why, under `Ecnanib.AiProviderGateway.Adapters.ModelCall`:
+
+```
+The answer of the model holds no structured result: Truncated, which the provider calls max_tokens {"Provider": "claude", "Model": "..."}
+```
+
+`Reason` is `Refused`, `Truncated`, `NotFinished`, `NotJson`, or `Empty`. `ProviderReason` is the provider's own word for how the answer ended, and is there only when that is one short word. Nothing else that a provider writes is in an event above the debug level: not the text of an answer, and not the message of an error, which can repeat a part of a key.
 
 ## Unhandled errors
 

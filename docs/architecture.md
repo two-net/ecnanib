@@ -79,15 +79,18 @@ Three rules keep every call to an external system inside its adapter, and in the
 - Network client types (`System.Net.Http`, `System.Net.Mail`, `System.Net.WebSockets`, `System.Net.Sockets`, and the SMTP library `MailKit`) may be used only inside an `Adapters` namespace.
 - No code may create an `HttpClient`. An adapter takes one from the host's factory (a typed or named client, or `IHttpClientFactory`), and every client from the factory logs its calls (NFR-LOG-5). See [logging.md](logging.md).
 
-What an adapter learns from the network leaves it as a type of its own component, because nothing outside an `Adapters` namespace may name a network type, an error of the network included. The checks of a key answer with a `KeyVerdict`, and a provider that does not answer is one of its values.
+What an adapter learns from the network leaves it as a type of its own component, because nothing outside an `Adapters` namespace may name a network type, an error of the network included. The checks of a key answer with a `KeyVerdict`, and a provider that does not answer is one of its values. A call to a model answers with an `AiCallOutcome` in the same way: a provider that refuses, fails, or takes too long is an outcome of the call, and not an error.
 
-So far the adapters make the calls that validate a key: the list of models of each AI provider, and the permissions of a key at Binance, with the clock of each market. The calls to a model and the orders are not built. A gateway makes all its calls with one named client, `AiProviderGatewayModule.HttpClientName` or `ExchangeGatewayModule.HttpClientName`, so a test puts a handler of its own behind that name in place of the network.
+The adapters of the AI providers make the calls to a model, and the calls that validate a key, which ask for the list of a provider's models: see [ai-providers.md](ai-providers.md). The adapter of Binance so far makes the calls that validate a key: the permissions of a key, with the clock of each market. The orders are not built. A gateway makes all its calls with one named client, `AiProviderGatewayModule.HttpClientName` or `ExchangeGatewayModule.HttpClientName`, so a test puts a handler of its own behind that name in place of the network.
 
 ### Adding an AI provider
 
-1. Add a class that implements `IAiProviderAdapter` under `AiProviderGateway/Adapters/<Provider>`, and one that implements `IAiKeyChecker` beside it: the call that says whether the provider takes a key, and which of its answers is the one to a wrong key.
-2. Register both in `AddAiProviderGateway()`.
-3. Add its row to the seed data in `AiProviderGateway/AiProvider.cs` and generate a migration, as [persistence.md](persistence.md) describes.
+1. Add a class that implements `IAiProviderAdapter` under `AiProviderGateway/Adapters/<Provider>`. `ModelCall` makes the exchange, which is the same for every provider. The adapter says what is the provider's own, as an `IModelCallFormat`: the path, the header of the key, the body with the schema where the provider takes it, how an answer reads, and which of its errors is the one to a wrong key or to a model it does not have.
+2. Add a class that implements `IAiKeyChecker` beside it: the call that says whether the provider takes a key.
+3. Register both in `AddAiProviderGateway()`.
+4. Add its entry under `AiProviders` in the configuration file, with its address and its time limit, as [configuration.md](configuration.md) describes.
+5. Add its row to the seed data in `AiProviderGateway/AiProvider.cs` and generate a migration, as [persistence.md](persistence.md) describes.
+6. Add its code to the tests of the gateway, and run them against the provider itself once: see "Checking against the real providers" in [ai-providers.md](ai-providers.md).
 
 Nothing else changes. Other components call `IAiProviderGateway` and `IAiKeyChecks`, and name the provider by its `AiProviderCode`. Providers are an open set of codes, not an enum, so no caller can branch over them.
 
@@ -124,6 +127,12 @@ A user brings their own keys: one for each AI provider, and one Binance credenti
 Adding or replacing a key is the second of the sensitive actions to be built, and asks Accounts for the proof first. Every change to a key is recorded in the audit trail, by the id of the key. Deleting a key tells whatever depends on it inside the same transaction, which is how an agent will move to Attention required.
 
 A key is validated with a read-only call to its provider, through the gateways: before it is stored, daily by a job, and when a call with it fails authentication (FR-KEY-3). Only a key that its provider takes is stored, and a stored key that is refused later becomes invalid, which whatever depends on it is told as well. A Binance key that can withdraw is not stored, and one that turns out to be able to is deleted (FR-KEY-4, NFR-LEG-2). What a Binance key may trade on is recorded, and Credentials says whether it lets an agent start on a market, for Agents to ask (FR-KEY-5). Not built yet: handing a key to the call of an agent that needs it. See [credentials.md](credentials.md).
+
+## AI providers
+
+Every call to a model is made through the AI Provider Gateway, with one adapter each for Claude, Gemini, GPT, and Grok. A call takes prompt text and a result schema, and returns the structured result, its token usage, and its latency. The prompt is the same for every provider, and only how the structured result is asked for is a provider's own (FR-PRM-10). Where a call goes and how long it may take come from the configuration file.
+
+The gateway takes the user's key with each call and keeps it nowhere (FR-KEY-9). A call that gives no result ends as an outcome, and not as an error: a timeout, an answer that is no result, a failed authentication, a model that the provider does not have, or a failure. What follows from each is for the caller. Not built yet: what calls the gateway for an agent. See [ai-providers.md](ai-providers.md).
 
 ## Ownership
 
