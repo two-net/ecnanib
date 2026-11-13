@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ecnanib.Accounts;
+using Ecnanib.Shared;
 using Microsoft.AspNetCore.Antiforgery;
 
 namespace Ecnanib.WebUi;
@@ -20,6 +21,22 @@ public static class WebUiModule
 
     /// <summary>The path of the page that says an account was deleted. It is a page for visitors: nobody is signed in by then.</summary>
     public const string AccountDeletedPath = "/account/deleted";
+
+    /// <summary>The path of the page that lists the keys a user has stored (FR-KEY-2).</summary>
+    public const string KeysPath = "/account/keys";
+
+    /// <summary>The path of the page a user stores their key for an AI provider on, as a new one or in place of the stored one.</summary>
+    public static string AiKeyPath(AiProviderCode provider) => $"{KeysPath}/ai/{Uri.EscapeDataString(provider.Value)}";
+
+    /// <summary>The path of the page a user deletes their key for an AI provider on.</summary>
+    public static string DeleteAiKeyPath(AiProviderCode provider) => $"{AiKeyPath(provider)}/delete";
+
+    /// <summary>The path of the page a user stores their Binance credential for an environment on: <c>demo</c> or <c>live</c>.</summary>
+    public static string ExchangeKeyPath(TradingMode environment) =>
+        $"{KeysPath}/binance/{environment.ToString().ToLowerInvariant()}";
+
+    /// <summary>The path of the page a user deletes their Binance credential for an environment on.</summary>
+    public static string DeleteExchangeKeyPath(TradingMode environment) => $"{ExchangeKeyPath(environment)}/delete";
 
     // The export as a person reads it: indented, with the names of things and not their numbers.
     private static readonly JsonSerializerOptions ExportJson = new(JsonSerializerDefaults.Web)

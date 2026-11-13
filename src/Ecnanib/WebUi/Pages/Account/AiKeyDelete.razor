@@ -1,0 +1,86 @@
+@page "/account/keys/ai/{Provider}/delete"
+@attribute [Authorize]
+@using Ecnanib.Credentials
+@using Ecnanib.Shared
+@inject IStoredKeys StoredKeys
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. Deleting a key takes no proof
+    of who the user is: only adding and replacing one do (FR-ACC-4). The form is on the page
+    whenever one is posted, whatever is stored by then: a form that is not there cannot be
+    answered.
+*@
+
+@if (_slot is not null)
+{
+    <PageTitle>Delete your @_slot.ProviderName key</PageTitle>
+
+    <h1>Delete your @_slot.ProviderName key</h1>
+
+    @if (_slot.Key is { } stored)
+    {
+        <p>This deletes the key <code>@KeyPages.Masked(stored)</code>, at once and for good. It cannot be undone: to use @_slot.ProviderName again, you add a key anew.</p>
+    }
+
+    <p>An agent that works with @_slot.ProviderName cannot run without this key. It stops and asks for your attention.</p>
+
+    <form method="post" @formname="@KeyPages.DeleteForm" @onsubmit="DeleteAsync">
+        <AntiforgeryToken />
+
+        <button type="submit">Delete the key</button>
+    </form>
+
+    <p><a href="@WebUiModule.KeysPath">Keep the key</a></p>
+}
+
+@code {
+    private AiKeySlot? _slot;
+
+    [Parameter]
+    public string? Provider { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The provider that the path names, among the ones there are. The user is the one of
+        // the session, whatever the path says.
+        _slot = string.IsNullOrWhiteSpace(Provider)
+            ? null
+            : (await StoredKeys.StateAsync(request)).AiKeys.SingleOrDefault(slot => slot.Provider == new AiProviderCode(Provider));
+
+        if (_slot is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // There is nothing to delete where no key is stored.
+        if (HttpMethods.IsGet(request.Request.Method) && _slot.Key is null)
+        {
+            _slot = null;
+            Navigation.NavigateTo(WebUiModule.KeysPath);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (HttpContext is not { } request || _slot is null)
+        {
+            return;
+        }
+
+        await StoredKeys.DeleteAiKeyAsync(request, _slot.Provider);
+
+        // The page that says what is stored now. A reload of it deletes nothing again.
+        Navigation.NavigateTo(WebUiModule.KeysPath);
+    }
+}

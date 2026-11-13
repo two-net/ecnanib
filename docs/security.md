@@ -139,7 +139,7 @@ A secret that the application must be able to read again is stored encrypted (NF
 
 A stored value is the nonce, the ciphertext, and the tag of 16 bytes, in that order.
 
-What is encrypted this way today is the key of two-factor authentication, in `users.two_factor_secret`. See "The key" in [accounts.md](accounts.md). Not built yet: the encryption of users' API keys.
+What is encrypted this way is the key of two-factor authentication, in `users.two_factor_secret`, and the keys that users bring for the AI providers and for Binance, in `ai_credentials.encrypted_value` and `exchange_credentials.encrypted_value`. See "The key" in [accounts.md](accounts.md), and [credentials.md](credentials.md).
 
 ### Changing the master key
 

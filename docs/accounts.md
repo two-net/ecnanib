@@ -45,7 +45,7 @@ The email holds a link to `/verify-email?token=...` under `Application:PublicUrl
 - The token is 32 random bytes. The database keeps only its SHA-256 hash, so reading the database gives nobody a link that works.
 - The query parameter is called `token`, which the masking of the log recognises, so a logged request shows `token=***`. See [logging.md](logging.md).
 
-A user whose address is not verified can sign in, and cannot create agents. See "Creating agents" below.
+A user whose address is not verified can sign in, and cannot create agents or store a key. See "Creating agents" below, and "Storing a key" in [credentials.md](credentials.md).
 
 ### An address that was registered again
 
@@ -273,7 +273,18 @@ if (!await reauthentication.IsRecentAsync(request, SensitiveAction.AddOrReplaceK
 - **The check is in the action, and not only in the page that leads to it,** so it holds for a request that no page of the application made.
 - The log says which action was held back: `User {UserId} is asked to confirm who they are before {Action}`.
 
-Deleting the account is built: see "Deleting the account". It asks inside its own transaction, under the lock on the account's row, so that the answer holds until the account is gone. The other two actions are not built yet. Each calls this when it is.
+An action that changes rows asks inside its own transaction, after it has locked the row of the account, with the form of the question that takes the context:
+
+```csharp
+if (!await reauthentication.IsRecentAsync(context, request, SensitiveAction.AddOrReplaceKey))
+{
+    // Not done.
+}
+```
+
+The answer then holds until the action is done. Whatever ends the proof, such as a new password, changes that row, so it came before or waits.
+
+Deleting the account is built, and asks this way: see "Deleting the account". So is adding or replacing a key, in Credentials: see [credentials.md](credentials.md). Switching an agent to Live is not built yet. It calls this when it is.
 
 ### Proving it
 
@@ -415,10 +426,12 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `legalAcceptances` | Each document that was accepted, with its version and the time. |
 | `sessions` | Each browser that is signed in: when it signed in, and when it was last used. |
 | `auditEvents` | Each event of the account in the audit trail: the action, what it was done to, when, and the IP address it came from. |
+| `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, and when it was saved. Never the key. |
+| `exchangeKeys` | Each Binance credential that is stored: its id, the environment, the last four characters of the API key, and when it was saved. Never a key. |
 
 | Rule | Detail |
 |---|---|
-| **It holds no secret** (FR-KEY-8). | Not the hash of the password, not the key of two-factor authentication, and not the hash of a token or of a recovery code. None of them says anything about the user, and each is of use only to someone who wants in. They are not read for an export at all. |
+| **It holds no secret** (FR-KEY-8). | Not the hash of the password, not the key of two-factor authentication, not the hash of a token or of a recovery code, and not a key of an AI provider or of Binance. None of them says anything about the user, and each is of use only to someone who wants in. They are not read for an export at all. |
 | It is the user's own. | The rows are asked for with `OwnedBy`, for the user of the session. See [ownership.md](ownership.md). |
 | It is for a signed-in user. | A visitor is sent to sign in. It is not one of the three sensitive actions, so it asks for no proof. |
 | It is a file. | JSON, one thing to a line, with the names of things and not their numbers. It is sent as an attachment called `account-data-<date>.json`, and with `Cache-Control: no-store`, so that neither the browser nor anything on the way keeps it. The link is marked `download`, so the browser asks for the file once. |
@@ -426,17 +439,32 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 
 Two tables are not exported. `pending_sign_ins` holds the hash of a token and a time, for ten minutes at most. `two_factor_recovery_codes` holds hashes: the export says how many codes are left.
 
+Accounts depends on no other component, so it cannot read the rows that a component above it keeps. It declares `IExportedPart`, and that component implements and registers it, once for each section. See "When a lower component must trigger a higher one" in [architecture.md](architecture.md).
+
+```csharp
+public interface IExportedPart
+{
+    string Section { get; }
+
+    Task<IReadOnlyList<object>> ReadAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken);
+}
+```
+
+- **A part is a section of the file,** beside the ones of Accounts, under the name it gives. It is there also when the user has no such rows, as an empty list.
+- **A part asks for the rows of the user it is given,** with `OwnedBy`, and holds no secret.
+- Credentials hands over `aiKeys` and `exchangeKeys` this way. See [credentials.md](credentials.md).
+
 The log has `User {UserId} exported their data`, and nothing of the data.
 
 ## The audit trail
 
-Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). Accounts records its own: sign-ins, re-authentications, new passwords, and the changes to two-factor authentication. The other components record theirs when they are built: see "What is not recorded yet".
+Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). Accounts records its own: sign-ins, re-authentications, new passwords, and the changes to two-factor authentication. Credentials records the changes to a key. The other components record theirs when they are built: see "What is not recorded yet".
 
 | Column | What it holds |
 |---|---|
 | `user_id` | The user who did it. |
 | `action` | What was done, as the name of a member of `AuditAction`. |
-| `target` | What it was done to, as a kind and an id: `user:<id>` for an account. |
+| `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, and `exchange-key:<id>` for a Binance credential. |
 | `occurred_at` | When. |
 | `origin` | The IP address the request came from, as the connection knows it, or nothing when it does not. |
 
@@ -449,6 +477,9 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 | `TwoFactorTurnedOff` | It was turned off. |
 | `TwoFactorRecoveryCodesReplaced` | New recovery codes were made. |
 | `TwoFactorRecoveryCodeUsed` | A recovery code was used, for any of the four things a code does. |
+| `KeyAdded` | A key of an AI provider or of Binance was stored where none was. |
+| `KeyReplaced` | A key was stored in place of the one that was stored. The id of the key stays the same. |
+| `KeyDeleted` | A stored key was deleted. |
 
 - **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not. `RecordAsync` refuses a context that holds no transaction.
 - **A sign-in is recorded where the session is stored,** in `Sessions.AddAsync`, which is the one place. So no session starts without its event. A password that only leads to the page that asks for a code records nothing: nobody is signed in.
@@ -492,7 +523,6 @@ A component that may not use Accounts, such as the Decision Engine, records noth
 
 | Action of the requirement | Waits for |
 |---|---|
-| Key changes | Credentials |
 | Agent start, pause, and stop | Agents |
 | Mode switches | Agents |
 | Manual closes | Agents, which takes the request. The Decision Engine places the order. |
@@ -620,12 +650,12 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
 - Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
-- The other two sensitive actions: adding or replacing a key, and switching an agent to Live. Each asks `IReauthentication` first when it is built. See "Re-authentication".
+- The third sensitive action: switching an agent to Live. It asks `IReauthentication` first when it is built. See "Re-authentication".
 - What Agents says about the agents of a user before an account is deleted. It implements `IAgentActivity` when agents are built. See "Deleting the account".
-- The parts of the export that other components keep: keys in their masked form, agents, lessons. Accounts cannot read their rows, so each hands its part over through an interface that Accounts declares, when the first such table arrives.
+- The parts of the export that Agents and Experience keep: agents and lessons. Each hands its part over as an `IExportedPart` when it is built, as Credentials does for the keys. See "Exporting your data".
 - Preferences. None is stored yet. When one is, it is personal data of an allowed kind, and it is in the export.
 - Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
-- The rest of the audit trail: the actions of Credentials, of Agents, and of operators, each of which records its own when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
+- The rest of the audit trail: the actions of Agents and of operators, each of which records its own when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.

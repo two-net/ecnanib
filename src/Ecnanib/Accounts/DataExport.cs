@@ -6,10 +6,11 @@ namespace Ecnanib.Accounts;
 /// <summary>Reads what is stored about a user, for them to keep (NFR-SEC-9). See docs/accounts.md.</summary>
 /// <remarks>
 /// It reads the rows that Accounts keeps. A component above Accounts keeps its own, which
-/// Accounts cannot read: its part joins the export when it is built.
+/// Accounts cannot read: it hands them over as an <see cref="IExportedPart"/>.
 /// </remarks>
 internal sealed class DataExport(
     IDbContextFactory<EcnanibDbContext> contexts,
+    IEnumerable<IExportedPart> parts,
     TimeProvider clock,
     ILogger<DataExport> logger) : IDataExport
 {
@@ -67,6 +68,13 @@ internal sealed class DataExport(
             .Select(recorded => new ExportedAuditEvent(recorded.Action, recorded.Target, recorded.OccurredAt, recorded.Origin))
             .ToListAsync(cancellationToken);
 
+        // What the components above Accounts keep for the user, in the order they are registered in.
+        var others = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var part in parts)
+        {
+            others.Add(part.Section, await part.ReadAsync(context, userId, cancellationToken));
+        }
+
         logger.LogInformation("User {UserId} exported their data", userId);
 
         return new ExportedData(
@@ -79,6 +87,9 @@ internal sealed class DataExport(
                 new ExportedTwoFactor(account.TwoFactorEnabledAt is not null, account.TwoFactorEnabledAt, recoveryCodesLeft)),
             acceptances,
             sessions,
-            events);
+            events)
+        {
+            Parts = others,
+        };
     }
 }

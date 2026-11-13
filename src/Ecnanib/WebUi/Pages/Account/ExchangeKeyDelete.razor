@@ -1,0 +1,85 @@
+@page "/account/keys/binance/{Environment}/delete"
+@attribute [Authorize]
+@using Ecnanib.Credentials
+@inject IStoredKeys StoredKeys
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. Deleting a key takes no proof
+    of who the user is: only adding and replacing one do (FR-ACC-4). The form is on the page
+    whenever one is posted, whatever is stored by then: a form that is not there cannot be
+    answered.
+*@
+
+@if (_slot is not null)
+{
+    <PageTitle>Delete your Binance keys for @_slot.Environment</PageTitle>
+
+    <h1>Delete your Binance keys for @_slot.Environment</h1>
+
+    @if (_slot.Key is { } stored)
+    {
+        <p>This deletes the API key <code>@KeyPages.Masked(stored)</code> and its secret key, at once and for good. It cannot be undone: to trade in @_slot.Environment again, you add the keys anew.</p>
+    }
+
+    <p>An agent that trades in @_slot.Environment cannot run without these keys. It stops and asks for your attention. A position that is open on Binance stays as it is there, with its protective orders.</p>
+
+    <form method="post" @formname="@KeyPages.DeleteForm" @onsubmit="DeleteAsync">
+        <AntiforgeryToken />
+
+        <button type="submit">Delete the keys</button>
+    </form>
+
+    <p><a href="@WebUiModule.KeysPath">Keep the keys</a></p>
+}
+
+@code {
+    private ExchangeKeySlot? _slot;
+
+    [Parameter]
+    public string? Environment { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The environment that the path names. The user is the one of the session, whatever the
+        // path says.
+        _slot = KeyPages.EnvironmentOf(Environment) is { } environment
+            ? (await StoredKeys.StateAsync(request)).ExchangeKeys.Single(slot => slot.Environment == environment)
+            : null;
+
+        if (_slot is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // There is nothing to delete where no key is stored.
+        if (HttpMethods.IsGet(request.Request.Method) && _slot.Key is null)
+        {
+            _slot = null;
+            Navigation.NavigateTo(WebUiModule.KeysPath);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (HttpContext is not { } request || _slot is null)
+        {
+            return;
+        }
+
+        await StoredKeys.DeleteExchangeKeyAsync(request, _slot.Environment);
+
+        // The page that says what is stored now. A reload of it deletes nothing again.
+        Navigation.NavigateTo(WebUiModule.KeysPath);
+    }
+}

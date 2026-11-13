@@ -33,7 +33,10 @@ public class OwnershipModelTests
         using var context = ModelOnly.Context();
 
         Assert.Equal(
-            ["audit_events", "legal_acceptances", "pending_sign_ins", "sessions", "two_factor_recovery_codes"],
+            [
+                "ai_credentials", "audit_events", "exchange_credentials", "legal_acceptances", "pending_sign_ins",
+                "sessions", "two_factor_recovery_codes",
+            ],
             OwnershipRules.UserOwnedTables(context.Model));
         Assert.Equal(
             ["ai_providers", "background_jobs", "prompt_templates", "roles"],

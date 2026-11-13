@@ -55,7 +55,9 @@ Every type in an `Ecnanib` namespace must sit in a registered area, so new code 
 
 Sometimes a component must cause something to happen in a component above it. For example, when the Catalog marks a model as unavailable, the agents that use it must change state. The lower component declares an interface, and the higher component implements it and registers the implementation. The reference still points downward. This happens in process; there is no message broker.
 
-Accounts sends its email this way. It declares `IAccountMailer`, and Notifications implements it on top of the email adapter. It asks about a user's agents this way too, before it deletes an account: it declares `IAgentActivity`, for Agents to implement. See [accounts.md](accounts.md).
+Accounts sends its email this way. It declares `IAccountMailer`, and Notifications implements it on top of the email adapter. It asks about a user's agents this way too, before it deletes an account: it declares `IAgentActivity`, for Agents to implement. And it takes the parts of the export of a user's data that other components keep this way: it declares `IExportedPart`, which Credentials implements for the keys. See [accounts.md](accounts.md).
+
+Credentials tells whatever depends on a key this way, when the key is deleted: it declares `IKeyDependents`, for Agents to implement. See [credentials.md](credentials.md).
 
 ### Changing a rule
 
@@ -111,6 +113,12 @@ A user can delete their account, which is the first of those actions to be built
 
 Accounts also holds the audit trail: the record in the database, apart from the logs, of security- and money-relevant actions (NFR-LOG-7). An event is written in the transaction of the action it records, and is made from values that take no text, so it cannot hold a secret. Accounts records sign-ins, re-authentications, new passwords, and the changes to two-factor authentication. A component above it records its own actions through `AuditTrail`, and a test fails for an action of the requirement that is still not recorded once what does it is built. See [accounts.md](accounts.md).
 
+## Credentials
+
+A user brings their own keys: one for each AI provider, and one Binance credential for each environment, Demo and Live. Ecnanib has no key of its own for a decision or an order (FR-KEY-1, FR-KEY-2). A key is stored encrypted and is write-only: no page, export, log, or audit event holds it, and after saving only its last four characters are shown (FR-KEY-8). A user can replace or delete any key at any time (FR-KEY-10).
+
+Adding or replacing a key is the second of the sensitive actions to be built, and asks Accounts for the proof first. Every change to a key is recorded in the audit trail, by the id of the key. Deleting a key tells whatever depends on it inside the same transaction, which is how an agent will move to Attention required. Not built yet: validating a key, and handing one to the call that needs it. See [credentials.md](credentials.md).
+
 ## Ownership
 
 The only account type is the individual user, and every resource belongs to exactly one (FR-ACC-5). A row that belongs to a user carries its owner. Whatever serves a request asks for the rows of the user who is signed in, so a row of another user is not found (NFR-SEC-3, NFR-DAT-9). The vocabulary for it, `IUserOwned` and `OwnedBy`, is in `Platform`, so that a component which may not use Accounts can still say whose its rows are.
@@ -123,7 +131,7 @@ All traffic between a browser and the application uses TLS: a request over plain
 
 The application defends against injection, cross-site scripting, request forgery, and clickjacking (NFR-SEC-4). Every answer tells the browser to run no script and apply no style that is not the application's own, and to show the application in no frame. A form is taken only with the token of a page that the application served. Two rules in `ComponentRules.cs` keep the rest in place: no code sends SQL that was put together as text, and no code writes text into a page as markup.
 
-A secret that the application must read again is stored encrypted, with authenticated encryption under a master key of the configuration file, and with the id of that key beside it (NFR-SEC-5). The encryption is in `Platform`, because Accounts needs it and may not use Credentials, which will need it too. The master key can be changed: a component declares each column that holds such a secret with `AddStoredSecret`, and when the application starts, the platform encrypts every value that an earlier key encrypted again with the active one (FR-KEY-7). `Platform` never references a component for it: it finds the declarations among the registered services. See [security.md](security.md).
+A secret that the application must read again is stored encrypted, with authenticated encryption under a master key of the configuration file, and with the id of that key beside it (NFR-SEC-5). The encryption is in `Platform`, because Accounts needs it and may not use Credentials, which needs it too, for the keys that users bring. The master key can be changed: a component declares each column that holds such a secret with `AddStoredSecret`, and when the application starts, the platform encrypts every value that an earlier key encrypted again with the active one (FR-KEY-7). `Platform` never references a component for it: it finds the declarations among the registered services. See [security.md](security.md).
 
 ## Background work
 

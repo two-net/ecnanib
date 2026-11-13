@@ -44,8 +44,9 @@ public class SingleStoreTests
 
         Assert.Equal(
             [
-                "ai_providers", "audit_events", "background_jobs", "legal_acceptances", "pending_sign_ins",
-                "prompt_templates", "roles", "sessions", "two_factor_recovery_codes", "users",
+                "ai_credentials", "ai_providers", "audit_events", "background_jobs", "exchange_credentials",
+                "legal_acceptances", "pending_sign_ins", "prompt_templates", "roles", "sessions",
+                "two_factor_recovery_codes", "users",
             ],
             modelTables.Order(StringComparer.Ordinal));
         Assert.Equal(

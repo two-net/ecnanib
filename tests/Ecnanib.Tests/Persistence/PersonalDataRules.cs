@@ -60,7 +60,14 @@ internal static class PersonalDataRules
         ["pending_sign_ins.token_hash"] = "The hash of a random token, which the application made.",
         ["two_factor_recovery_codes.code_hash"] = "The hash of a random code, which the application made.",
         ["legal_acceptances.version"] = "The version of a document of the service.",
-        ["audit_events.target"] = "A kind and an id: user:<id> for an account.",
+        ["audit_events.target"] = "A kind and an id: user:<id> for an account, ai-key:<id> and exchange-key:<id> for a stored key.",
+        ["ai_credentials.provider"] = "The code of an AI provider, which is one of the rows of ai_providers.",
+        ["ai_credentials.encrypted_value"] = "A key that an AI provider made for its user, encrypted.",
+        ["ai_credentials.master_key_id"] = "The id of the master key of the configuration file that encrypted that key.",
+        ["ai_credentials.masked_suffix"] = "The last four characters of that key, which is all of it that is shown.",
+        ["exchange_credentials.encrypted_value"] = "An API key and a secret key that Binance made for its user, encrypted.",
+        ["exchange_credentials.master_key_id"] = "The id of the master key of the configuration file that encrypted those keys.",
+        ["exchange_credentials.masked_suffix"] = "The last four characters of that API key, which is all of the two that is shown.",
     };
 
     /// <summary>Every column that is listed, in any of the three lists.</summary>

@@ -1,0 +1,163 @@
+@page "/account/keys/ai/{Provider}"
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Credentials
+@using Ecnanib.Shared
+@inject IStoredKeys StoredKeys
+@inject IReauthentication Reauthentication
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: the key travels in a form
+    post. The page is shown to a user who has just proved again who they are, and to nobody else.
+    The form is on the page whenever one is posted, whatever was proved by then: a form that is
+    not there cannot be answered. Whether the key is stored is for StoreAiKeyAsync to say, which
+    asks again.
+*@
+
+@if (_slot is not null)
+{
+    <PageTitle>@Title</PageTitle>
+
+    <h1>@Title</h1>
+
+    @if (_addressNotVerified)
+    {
+        <p role="status">@KeyPages.VerifyFirst</p>
+    }
+
+    @if (_slot.Key is { } stored)
+    {
+        <p>The key that is stored now is <code>@KeyPages.Masked(stored)</code>. The new key takes its place, and the stored one is gone for good.</p>
+    }
+
+    @if (_showForm)
+    {
+        <p>Calls to @_slot.ProviderName for your agents are made with this key, and are charged to your own account there. The key is stored encrypted. Once it is saved, it is never shown again: you see only its last four characters.</p>
+
+        <form method="post" @formname="@KeyPages.StoreForm" @onsubmit="StoreAsync">
+            <AntiforgeryToken />
+
+            <div class="field">
+                <label for="api-key">API key</label>
+                @* The key is never written back into the page, and the browser is asked not to keep it. *@
+                <input id="api-key" name="ApiKey" type="password" autocomplete="off" spellcheck="false" required
+                       aria-invalid="@(_problem is not null ? "true" : null)"
+                       aria-describedby="api-key-hint" />
+                <p id="api-key-hint" class="field-hint">Paste the key as @_slot.ProviderName gave it to you.</p>
+                @if (_problem is { } problem)
+                {
+                    <p class="field-error" role="alert">@KeyPages.Says(problem)</p>
+                }
+            </div>
+
+            <button type="submit">Save the key</button>
+        </form>
+    }
+
+    <p><a href="@WebUiModule.KeysPath">Back to your keys</a></p>
+}
+
+@code {
+    private AiKeySlot? _slot;
+    private KeyProblem? _problem;
+    private bool _showForm;
+    private bool _addressNotVerified;
+
+    [Parameter]
+    public string? Provider { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? ApiKey { get; set; }
+
+    private string Title => _slot is { Key: null } ? $"Add your {_slot.ProviderName} key" : $"Replace your {_slot?.ProviderName} key";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The provider that the path names, among the ones there are. The user is the one of
+        // the session, whatever the path says.
+        var state = await StoredKeys.StateAsync(request);
+        _slot = string.IsNullOrWhiteSpace(Provider)
+            ? null
+            : state.AiKeys.SingleOrDefault(slot => slot.Provider == new AiProviderCode(Provider));
+
+        if (_slot is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        if (!HttpMethods.IsGet(request.Request.Method))
+        {
+            // A form was posted, and is answered by StoreAsync.
+            _showForm = true;
+
+            return;
+        }
+
+        if (!state.AddressVerified)
+        {
+            // No key is stored for an account whose address is not verified, so there is no
+            // form to show, and no proof to ask for.
+            _addressNotVerified = true;
+
+            return;
+        }
+
+        if (!await Reauthentication.IsRecentAsync(request, SensitiveAction.AddOrReplaceKey))
+        {
+            // Not shown, and not done, until the user has proved again who they are.
+            _slot = null;
+            Navigation.NavigateTo(KeyPages.ConfirmFirst(request.Request.Path));
+
+            return;
+        }
+
+        _showForm = true;
+    }
+
+    private async Task StoreAsync()
+    {
+        if (HttpContext is not { } request || _slot is null)
+        {
+            return;
+        }
+
+        var result = await StoredKeys.StoreAiKeyAsync(request, _slot.Provider, ApiKey ?? string.Empty);
+
+        switch (result.Outcome)
+        {
+            case StoreKeyOutcome.Stored:
+                // The page that says what is stored now. A reload of it stores nothing again.
+                Navigation.NavigateTo(WebUiModule.KeysPath);
+                break;
+
+            case StoreKeyOutcome.ConfirmationNeeded:
+                // The proof was given too long ago, or never. Nothing was stored, and the form is
+                // not posted again: the user comes back to the page and enters the key.
+                Navigation.NavigateTo(KeyPages.ConfirmFirst(request.Request.Path));
+                break;
+
+            case StoreKeyOutcome.AddressNotVerified:
+                _addressNotVerified = true;
+                break;
+
+            case StoreKeyOutcome.NoSuchProvider:
+                Navigation.NotFound();
+                break;
+
+            case StoreKeyOutcome.NotAKey:
+                _problem = result.ApiKey;
+                break;
+        }
+    }
+}

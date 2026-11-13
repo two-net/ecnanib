@@ -3,6 +3,7 @@ using System.Net;
 using System.Text.Json;
 using Ecnanib.Accounts;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.WebUi;
@@ -23,6 +24,11 @@ internal static class ExportRules
         ["legal_acceptances"] = "legalAcceptances",
         ["sessions"] = "sessions",
         ["audit_events"] = "auditEvents",
+
+        // Which keys are stored, each by its last four characters, and never a key. Credentials
+        // hands them over, and its own tests say what the sections hold: see KeyPageTests.
+        ["ai_credentials"] = "aiKeys",
+        ["exchange_credentials"] = "exchangeKeys",
     };
 
     /// <summary>The tables whose rows are not in the export, each with why.</summary>
@@ -65,7 +71,8 @@ public class DataExportTests
         var export = JsonDocument.Parse(await answer.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).RootElement;
 
         Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
-        Assert.Equal(["exportedAt", "account", "legalAcceptances", "sessions", "auditEvents"], NamesIn(export));
+        Assert.Equal(
+            ["exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "aiKeys", "exchangeKeys"], NamesIn(export));
         Assert.Equal(Morning.AddMinutes(5), export.GetProperty("exportedAt").GetDateTimeOffset());
 
         // The account: the address, and when it was registered and verified. The password is
@@ -149,17 +156,19 @@ public class DataExportTests
     {
         var clock = new TestClock(Morning);
         using var application = new AccountsApplication(clock: clock);
-        var (_, app, recoveryCodes) = await application.RegisterWithTwoFactorAsync(Ada, clock);
+        var (ada, app, recoveryCodes) = await application.RegisterWithTwoFactorAsync(Ada, clock);
         using var client = application.CreateClient();
         using var phone = application.CreateClient();
         await client.SignInAsync(Ada);
         await client.EnterCodeAsync(app.CodeAt(clock.GetUtcNow()));
 
         // Everything that the account can have of secrets is there: a session, a sign-in that
-        // waits for a code, a reset link that is out, the key, and the recovery codes.
+        // waits for a code, a reset link that is out, the key, the recovery codes, and a key of
+        // an AI provider and of Binance.
         await phone.SignInAsync(Ada);
         await application.RequestResetAsync(Ada);
         var resetToken = AccountsApplication.TokenIn(application.Email.Sent[^1]);
+        await application.GiveKeysAsync(ada.Id, clock.GetUtcNow());
 
         var user = StoredUser.Of(application.Database, Ada)!;
         var twoFactor = StoredTwoFactor.Of(application.Database, Ada);
@@ -171,8 +180,10 @@ public class DataExportTests
             .. StoredSession.All(application.Database).Select(session => session.TokenHash),
             .. StoredPendingSignIn.All(application.Database).Select(pending => pending.TokenHash),
             .. StoredRecoveryCode.All(application.Database).Select(code => code.CodeHash),
+            .. StoredAiCredential.All(application.Database).Select(key => key.EncryptedValue),
+            .. StoredExchangeCredential.All(application.Database).Select(key => key.EncryptedValue),
         ];
-        Assert.Equal(4 + 1 + TwoFactorRules.RecoveryCodeCount, stored.Length);
+        Assert.Equal(4 + 1 + TwoFactorRules.RecoveryCodeCount + 2, stored.Length);
 
         var text = await client.PageAsync(Export);
 
@@ -198,13 +209,14 @@ public class DataExportTests
     }
 
     [Fact]
-    [ProvesOwnershipOf("audit_events", "legal_acceptances", "sessions", "two_factor_recovery_codes")]
+    [ProvesOwnershipOf(
+        "ai_credentials", "audit_events", "exchange_credentials", "legal_acceptances", "sessions", "two_factor_recovery_codes")]
     public async Task The_download_holds_nothing_of_another_user()
     {
         var clock = new TestClock(Morning);
         using var application = new AccountsApplication(clock: clock, host: host => host.From("203.0.113.7"));
 
-        // Grace has more of everything than Ada: two sessions, two events, and recovery codes.
+        // Grace has more of everything than Ada: two sessions, two events, recovery codes, and keys.
         var (grace, gracesApp, gracesCodes) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
@@ -212,6 +224,7 @@ public class DataExportTests
         await gracesDesk.EnterCodeAsync(gracesApp.CodeAt(clock.GetUtcNow()));
         await gracesPhone.SignInAsync(Grace);
         await gracesPhone.EnterCodeAsync(gracesCodes[0]);
+        await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
         Assert.All(
             ExportRules.Exported.Keys,
             table => Assert.True(application.RowsOf(grace.Id)[table].Count > 0, $"Grace has no row in {table}, so nothing shows that it stays out."));
@@ -234,6 +247,10 @@ public class DataExportTests
         var recorded = Assert.Single(export.GetProperty("auditEvents").EnumerateArray());
         Assert.Equal("SignedIn", recorded.GetProperty("action").GetString());
         Assert.Equal($"user:{ada.Id}", recorded.GetProperty("target").GetString());
+
+        // She has stored no key, so the export names none.
+        Assert.Equal(0, export.GetProperty("aiKeys").GetArrayLength());
+        Assert.Equal(0, export.GetProperty("exchangeKeys").GetArrayLength());
 
         // And nothing in it is Grace's: not her address, not her id, and not a time of hers.
         Assert.DoesNotContain("grace", text, StringComparison.OrdinalIgnoreCase);
@@ -266,6 +283,7 @@ public class DataExportTests
         using var client = application.CreateClient();
         await client.SignInAsync(Ada);
         await client.EnterCodeAsync(app.CodeAt(clock.GetUtcNow()));
+        await application.GiveKeysAsync(ada.Id, clock.GetUtcNow());
 
         var rows = application.RowsOf(ada.Id);
         var export = JsonDocument.Parse(await client.PageAsync(Export)).RootElement;

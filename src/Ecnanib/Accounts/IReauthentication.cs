@@ -1,9 +1,11 @@
+using Ecnanib.Platform.Persistence;
+
 namespace Ecnanib.Accounts;
 
 /// <summary>
 /// An action that exposes keys or money. It is done only for a user who has just proved who they
 /// are again (FR-ACC-4): being signed in is not enough for it. Whatever does one of these asks
-/// <see cref="IReauthentication.IsRecentAsync"/> first.
+/// <see cref="IReauthentication.IsRecentAsync(HttpContext, SensitiveAction)"/> first.
 /// </summary>
 public enum SensitiveAction
 {
@@ -48,6 +50,16 @@ public interface IReauthentication
     /// Also false for a request that is not signed in.
     /// </returns>
     Task<bool> IsRecentAsync(HttpContext request, SensitiveAction action);
+
+    /// <summary>
+    /// The same question, asked inside the transaction that does the action, after it has locked
+    /// the row of the account. The answer then holds until the action is done: whatever ends the
+    /// proof, such as a new password, changes that row, so it came before or waits.
+    /// </summary>
+    /// <param name="context">The context that holds the transaction.</param>
+    /// <param name="request">The request that asks for the action.</param>
+    /// <param name="action">The action that is asked for.</param>
+    Task<bool> IsRecentAsync(EcnanibDbContext context, HttpContext request, SensitiveAction action);
 
     /// <summary>
     /// Where the user of a request stands, for the page that takes the proof. It fails for a

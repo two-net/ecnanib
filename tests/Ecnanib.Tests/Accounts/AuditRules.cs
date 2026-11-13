@@ -32,9 +32,6 @@ internal sealed record AuditCoverage(IReadOnlyList<AuditAction> RecordedAs, stri
 /// </remarks>
 internal static class AuditRules
 {
-    /// <summary>The namespace of the component that keeps the users' keys.</summary>
-    public const string Credentials = "Ecnanib.Credentials";
-
     /// <summary>The namespace of the component that keeps the agents.</summary>
     public const string Agents = "Ecnanib.Agents";
 
@@ -58,9 +55,11 @@ internal static class AuditRules
             AuditAction.TwoFactorRecoveryCodesReplaced,
             AuditAction.TwoFactorRecoveryCodeUsed),
 
-        ["key changes"] = AuditCoverage.Waiting(
-            Credentials,
-            "Adding, replacing, and deleting a key of an AI provider or of Binance. The event names the key by its id, and never holds it."),
+        // Of an AI provider or of Binance. The event names the key by its id, and never holds it.
+        ["key changes"] = AuditCoverage.By(
+            AuditAction.KeyAdded,
+            AuditAction.KeyReplaced,
+            AuditAction.KeyDeleted),
 
         ["agent start, pause, and stop"] = AuditCoverage.Waiting(
             Agents,

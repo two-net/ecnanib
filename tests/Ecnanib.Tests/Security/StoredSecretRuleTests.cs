@@ -29,14 +29,16 @@ public class StoredSecretRuleTests
     }
 
     [Fact]
-    public void What_is_stored_encrypted_is_the_key_of_two_factor_authentication()
+    public void What_is_stored_encrypted_is_the_key_of_two_factor_authentication_and_the_keys_that_users_bring()
     {
         using var application = new LoggedApplication(LoggedApplication.Settings());
         using var context = ModelOnly.Context();
 
         // Pinned, so that a stored secret which is added, or one that is no longer declared,
         // shows in a review as what it is.
-        Assert.Equal(["users.two_factor_secret"], StoredSecretRules.ColumnsOf(context.Model, Declared(application)));
+        Assert.Equal(
+            ["users.two_factor_secret", "ai_credentials.encrypted_value", "exchange_credentials.encrypted_value"],
+            StoredSecretRules.ColumnsOf(context.Model, Declared(application)));
         Assert.Empty(StoredSecretRules.NotTheIdOfAMasterKey);
     }
 

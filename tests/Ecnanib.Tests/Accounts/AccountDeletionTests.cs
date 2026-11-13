@@ -3,6 +3,7 @@ using System.Net;
 using Ecnanib.Accounts;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
@@ -49,16 +50,20 @@ public class AccountDeletionTests
 
         // Grace has a row in every table that holds rows of users: what she accepted, her
         // recovery codes, the event of turning two-factor authentication on, a session on her
-        // desk, and a sign-in on her phone that waits for its code.
+        // desk, a sign-in on her phone that waits for its code, and a key of an AI provider and
+        // of Binance.
         var (grace, gracesApp, _) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
         await gracesDesk.SignInAsync(Grace);
         Assert.Equal("/", (await gracesDesk.EnterCodeAsync(gracesApp.CodeAt(clock.GetUtcNow()))).Path);
         await gracesPhone.SignInAsync(Grace);
+        await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
 
-        // So has Ada, who is signed in on two browsers.
+        // So has Ada, who is signed in on two browsers. Her stored keys go with her account, at
+        // once (FR-ACC-9).
         var (ada, app, _) = await application.RegisterWithTwoFactorAsync(Ada, clock);
+        await application.GiveKeysAsync(ada.Id, clock.GetUtcNow());
         using var desk = application.CreateClient();
         using var tablet = application.CreateClient();
         using var phone = application.CreateClient();

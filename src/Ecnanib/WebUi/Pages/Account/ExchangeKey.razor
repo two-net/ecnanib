@@ -1,0 +1,175 @@
+@page "/account/keys/binance/{Environment}"
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Credentials
+@using Ecnanib.Shared
+@inject IStoredKeys StoredKeys
+@inject IReauthentication Reauthentication
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: the two keys travel in a form
+    post. The page is shown to a user who has just proved again who they are, and to nobody else.
+    The form is on the page whenever one is posted, whatever was proved by then: a form that is
+    not there cannot be answered. Whether the keys are stored is for StoreExchangeKeyAsync to say,
+    which asks again.
+*@
+
+@if (_slot is not null)
+{
+    <PageTitle>@Title</PageTitle>
+
+    <h1>@Title</h1>
+
+    @if (_addressNotVerified)
+    {
+        <p role="status">@KeyPages.VerifyFirst</p>
+    }
+
+    @if (_slot.Key is { } stored)
+    {
+        <p>The API key that is stored now is <code>@KeyPages.Masked(stored)</code>. The new keys take the place of it and of its secret key, and the stored ones are gone for good.</p>
+    }
+
+    @if (_showForm)
+    {
+        <p>This is for @KeyPages.Describe(_slot.Environment). Orders of your agents in @_slot.Environment are placed with these keys. Both are stored encrypted. Once they are saved, neither is shown again: you see only the last four characters of the API key.</p>
+
+        <form method="post" @formname="@KeyPages.StoreForm" @onsubmit="StoreAsync">
+            <AntiforgeryToken />
+
+            <div class="field">
+                <label for="api-key">API key</label>
+                @* A key is never written back into the page, and the browser is asked not to keep it. *@
+                <input id="api-key" name="ApiKey" type="password" autocomplete="off" spellcheck="false" required
+                       aria-invalid="@(_apiKeyProblem is not null ? "true" : null)" />
+                @if (_apiKeyProblem is { } apiKeyProblem)
+                {
+                    <p class="field-error" role="alert">@KeyPages.Says(apiKeyProblem)</p>
+                }
+            </div>
+
+            <div class="field">
+                <label for="secret-key">Secret key</label>
+                <input id="secret-key" name="SecretKey" type="password" autocomplete="off" spellcheck="false" required
+                       aria-invalid="@(_secretKeyProblem is not null ? "true" : null)"
+                       aria-describedby="secret-key-hint" />
+                <p id="secret-key-hint" class="field-hint">Binance shows the secret key once, when the API key is created.</p>
+                @if (_secretKeyProblem is { } secretKeyProblem)
+                {
+                    <p class="field-error" role="alert">@KeyPages.Says(secretKeyProblem)</p>
+                }
+            </div>
+
+            <button type="submit">Save the keys</button>
+        </form>
+    }
+
+    <p><a href="@WebUiModule.KeysPath">Back to your keys</a></p>
+}
+
+@code {
+    private ExchangeKeySlot? _slot;
+    private KeyProblem? _apiKeyProblem;
+    private KeyProblem? _secretKeyProblem;
+    private bool _showForm;
+    private bool _addressNotVerified;
+
+    [Parameter]
+    public string? Environment { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? ApiKey { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? SecretKey { get; set; }
+
+    private string Title => _slot is { Key: null }
+        ? $"Add your Binance keys for {_slot.Environment}"
+        : $"Replace your Binance keys for {_slot?.Environment}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The environment that the path names. The user is the one of the session, whatever the
+        // path says.
+        if (KeyPages.EnvironmentOf(Environment) is not { } environment)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        var state = await StoredKeys.StateAsync(request);
+        _slot = state.ExchangeKeys.Single(slot => slot.Environment == environment);
+
+        if (!HttpMethods.IsGet(request.Request.Method))
+        {
+            // A form was posted, and is answered by StoreAsync.
+            _showForm = true;
+
+            return;
+        }
+
+        if (!state.AddressVerified)
+        {
+            // No key is stored for an account whose address is not verified, so there is no
+            // form to show, and no proof to ask for.
+            _addressNotVerified = true;
+
+            return;
+        }
+
+        if (!await Reauthentication.IsRecentAsync(request, SensitiveAction.AddOrReplaceKey))
+        {
+            // Not shown, and not done, until the user has proved again who they are.
+            _slot = null;
+            Navigation.NavigateTo(KeyPages.ConfirmFirst(request.Request.Path));
+
+            return;
+        }
+
+        _showForm = true;
+    }
+
+    private async Task StoreAsync()
+    {
+        if (HttpContext is not { } request || _slot is null)
+        {
+            return;
+        }
+
+        var result = await StoredKeys.StoreExchangeKeyAsync(
+            request, _slot.Environment, ApiKey ?? string.Empty, SecretKey ?? string.Empty);
+
+        switch (result.Outcome)
+        {
+            case StoreKeyOutcome.Stored:
+                // The page that says what is stored now. A reload of it stores nothing again.
+                Navigation.NavigateTo(WebUiModule.KeysPath);
+                break;
+
+            case StoreKeyOutcome.ConfirmationNeeded:
+                // The proof was given too long ago, or never. Nothing was stored, and the form is
+                // not posted again: the user comes back to the page and enters the keys.
+                Navigation.NavigateTo(KeyPages.ConfirmFirst(request.Request.Path));
+                break;
+
+            case StoreKeyOutcome.AddressNotVerified:
+                _addressNotVerified = true;
+                break;
+
+            case StoreKeyOutcome.NotAKey:
+                _apiKeyProblem = result.ApiKey;
+                _secretKeyProblem = result.SecretKey;
+                break;
+        }
+    }
+}

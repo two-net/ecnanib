@@ -105,6 +105,35 @@ form > button[type=submit] {
     max-width: 32rem;
 }
 
+/* A key is shown by its last four characters, wherever a page names one, in a typeface that
+   tells letters and digits apart and at the size of the text around it. */
+code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1em;
+}
+
+/* The keys a user stored: one line for each place a key has, with what can be done about it. */
+.keys {
+    list-style: none;
+    padding: 0;
+}
+
+    /* The name in a column of its own, so that what is said about the key stays beside it
+       when it runs over more than one line. */
+    .keys > li {
+        display: grid;
+        grid-template-columns: 5rem 1fr;
+        gap: 0 1rem;
+        align-items: baseline;
+        padding: 0.5rem 0;
+    }
+
+    .keys > li > div {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 1rem;
+    }
+
 /* The bar that says who is signed in, with the sign-out button in line with its links. */
 .account-bar {
     display: flex;

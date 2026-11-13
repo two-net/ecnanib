@@ -53,15 +53,7 @@ internal sealed class Reauthentication(
         return false;
     }
 
-    /// <summary>
-    /// The same question, for a sensitive action of Accounts itself, asked inside the
-    /// transaction that does the action. The answer then holds until the action is done: with
-    /// the lock on the account's row, nothing that ends the proof comes in between.
-    /// </summary>
-    /// <param name="context">The context that holds the transaction.</param>
-    /// <param name="request">The request that asks for the action.</param>
-    /// <param name="action">The action that is asked for.</param>
-    internal async Task<bool> IsRecentAsync(EcnanibDbContext context, HttpContext request, SensitiveAction action)
+    public async Task<bool> IsRecentAsync(EcnanibDbContext context, HttpContext request, SensitiveAction action)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(request);

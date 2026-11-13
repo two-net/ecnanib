@@ -40,6 +40,18 @@ public enum AuditAction
 
     /// <summary>A recovery code was used in place of a code from the app, and is spent.</summary>
     TwoFactorRecoveryCodeUsed,
+
+    /// <summary>
+    /// A key of an AI provider or of Binance was stored where none was (FR-KEY-2). The target
+    /// names the key by its id, and the event never holds the key.
+    /// </summary>
+    KeyAdded,
+
+    /// <summary>A key was stored in place of the one that was stored (FR-KEY-10).</summary>
+    KeyReplaced,
+
+    /// <summary>A stored key was deleted, for good (FR-KEY-10).</summary>
+    KeyDeleted,
 }
 
 /// <summary>

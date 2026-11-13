@@ -300,6 +300,97 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Ecnanib.Credentials.AiCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("EncryptedValue")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("encrypted_value");
+
+                    b.Property<string>("MaskedSuffix")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("masked_suffix");
+
+                    b.Property<string>("MasterKeyId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("master_key_id");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("provider");
+
+                    b.Property<DateTimeOffset>("SavedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("saved_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_ai_credentials");
+
+                    b.HasIndex("Provider")
+                        .HasDatabaseName("ix_ai_credentials_provider");
+
+                    b.HasIndex("UserId", "Provider")
+                        .IsUnique()
+                        .HasDatabaseName("ix_ai_credentials_user_id_provider");
+
+                    b.ToTable("ai_credentials", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Credentials.ExchangeCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("EncryptedValue")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("encrypted_value");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("environment");
+
+                    b.Property<string>("MaskedSuffix")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("masked_suffix");
+
+                    b.Property<string>("MasterKeyId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("master_key_id");
+
+                    b.Property<DateTimeOffset>("SavedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("saved_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_exchange_credentials");
+
+                    b.HasIndex("UserId", "Environment")
+                        .IsUnique()
+                        .HasDatabaseName("ix_exchange_credentials_user_id_environment");
+
+                    b.ToTable("exchange_credentials", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.DecisionEngine.PromptTemplate", b =>
                 {
                     b.Property<int>("Id")
@@ -556,6 +647,33 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_sessions_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Credentials.AiCredential", b =>
+                {
+                    b.HasOne("Ecnanib.AiProviderGateway.AiProvider", null)
+                        .WithMany()
+                        .HasForeignKey("Provider")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_ai_credentials_ai_providers_provider");
+
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_ai_credentials_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Credentials.ExchangeCredential", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exchange_credentials_users_user_id");
                 });
 #pragma warning restore 612, 618
         }

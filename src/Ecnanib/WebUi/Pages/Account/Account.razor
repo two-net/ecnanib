@@ -24,9 +24,15 @@ else
     <p><a href="/account/two-factor">Turn on two-factor authentication</a></p>
 }
 
+<h2>API keys</h2>
+
+<p>Your agents work with your own keys of the AI providers and of Binance. A key is stored encrypted, and after saving you see only its last four characters.</p>
+
+<p><a href="@WebUiModule.KeysPath">Manage your API keys</a></p>
+
 <h2>Your data</h2>
 
-<p>What is stored about you is your email address, when you registered and verified it, the legal documents you accepted, the devices you are signed in on, and the security-relevant actions of your account. Your password is stored only as a hash, which is in no download.</p>
+<p>What is stored about you is your email address, when you registered and verified it, the legal documents you accepted, the devices you are signed in on, the security-relevant actions of your account, and which keys you stored. Your password is stored only as a hash, and a key only encrypted: neither is in a download, which names a key by its last four characters.</p>
 
 @* Marked as a download, so that the browser asks for the file once and does not try to show it as a page. *@
 <p><a href="@WebUiModule.ExportPath" download>Download your data</a></p>

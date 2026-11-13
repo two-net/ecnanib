@@ -58,7 +58,7 @@ A row that belongs to no user belongs to the service: vocabulary, the catalog, t
 
 | Rows of users | Rows of the service |
 |---|---|
-| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events` | `roles`, `ai_providers`, `prompt_templates`, `background_jobs` |
+| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials` | `roles`, `ai_providers`, `prompt_templates`, `background_jobs` |
 
 `users` is the account itself. No table holds both kinds of row.
 
@@ -144,7 +144,7 @@ If the rows belong to the service instead, list the table in `OwnershipRules.Ser
 
 ## Not built yet
 
-- The first resources that a request names by an id: keys and agents. The tests of today are about the rows that Accounts keeps, none of which a request names by its id.
+- The first resource that a request names by an id: an agent. The tests of today are about the rows that Accounts and Credentials keep, none of which a request names by its id. A key is named by its provider or its environment, of which every user has one, so no path names the key of another user. See [credentials.md](credentials.md).
 - The operator functions: the global halt, the status screen, and the account controls, each recorded in the audit trail. The events of an account go with it when it is deleted, so what happens to the events of an operator who deletes their own account is to be decided with them. See "Not built yet" in [accounts.md](accounts.md).
 - What a protected endpoint under `/api` answers to a visitor. See "Not built yet" in [accounts.md](accounts.md).
 - Checking again inside an interactive page. Who the user is, and whether they are an operator, is decided when the connection of such a page is made. See "Not built yet" in [accounts.md](accounts.md).

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Ecnanib.Accounts;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Http;
@@ -36,13 +37,15 @@ public class OwnershipTests
 
         // Grace has a row in every table that holds rows of users: what she accepted, her
         // recovery codes, the event of turning two-factor authentication on, a session on her
-        // desk, and a sign-in on her phone that waits for its code.
+        // desk, a sign-in on her phone that waits for its code, and a key of each kind. What a
+        // user does with keys of their own is in KeyPageTests.
         var (grace, gracesApp, _) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
         await gracesDesk.SignInAsync(Grace);
         Assert.Equal("/", (await gracesDesk.EnterCodeAsync(gracesApp.CodeAt(clock.GetUtcNow()))).Path);
         await gracesPhone.SignInAsync(Grace);
+        await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
 
         var before = application.RowsOf(grace.Id);
         Assert.All(before, table => Assert.True(table.Value.Count > 0, $"Grace has no row in {table.Key}, so nothing is compared there."));

@@ -5,6 +5,7 @@ using System.Web;
 using Ecnanib.Accounts;
 using Ecnanib.Notifications;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Platform.Security;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
@@ -121,6 +122,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>The database as a component reaches it, for a test that asks it the way a component does.</summary>
     public IDbContextFactory<EcnanibDbContext> Contexts =>
         _application.Services.GetRequiredService<IDbContextFactory<EcnanibDbContext>>();
+
+    /// <summary>What encrypts the secrets that the database holds, with the master keys of the application's file.</summary>
+    public StoredSecrets Secrets => _application.Services.GetRequiredService<StoredSecrets>();
 
     /// <summary>Every document in the version in force: what the form posts when all boxes are ticked.</summary>
     public static IReadOnlyCollection<AcceptedDocument> EveryDocument =>

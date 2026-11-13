@@ -18,4 +18,13 @@ public sealed class AuditTarget
 
     /// <summary>An account: <c>user:&lt;id&gt;</c>.</summary>
     public static AuditTarget Account(Guid userId) => new($"user:{userId}");
+
+    /// <summary>
+    /// A stored key of an AI provider, by the id of its row: <c>ai-key:&lt;id&gt;</c>. The id stays
+    /// the same when the key is replaced, and says nothing of the key.
+    /// </summary>
+    public static AuditTarget AiKey(Guid credentialId) => new($"ai-key:{credentialId}");
+
+    /// <summary>A stored key of Binance, by the id of its row: <c>exchange-key:&lt;id&gt;</c>.</summary>
+    public static AuditTarget ExchangeKey(Guid credentialId) => new($"exchange-key:{credentialId}");
 }
