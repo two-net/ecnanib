@@ -330,9 +330,18 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("saved_at");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset?>("ValidatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("validated_at");
 
                     b.HasKey("Id")
                         .HasName("pk_ai_credentials");
@@ -363,6 +372,14 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("environment");
 
+                    b.Property<bool>("FuturesTrading")
+                        .HasColumnType("boolean")
+                        .HasColumnName("futures_trading");
+
+                    b.Property<bool?>("IpRestricted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("ip_restricted");
+
                     b.Property<string>("MaskedSuffix")
                         .IsRequired()
                         .HasColumnType("text")
@@ -377,9 +394,22 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("saved_at");
 
+                    b.Property<bool>("SpotTrading")
+                        .HasColumnType("boolean")
+                        .HasColumnName("spot_trading");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset?>("ValidatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("validated_at");
 
                     b.HasKey("Id")
                         .HasName("pk_exchange_credentials");

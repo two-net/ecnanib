@@ -426,8 +426,8 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `legalAcceptances` | Each document that was accepted, with its version and the time. |
 | `sessions` | Each browser that is signed in: when it signed in, and when it was last used. |
 | `auditEvents` | Each event of the account in the audit trail: the action, what it was done to, when, and the IP address it came from. |
-| `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, and when it was saved. Never the key. |
-| `exchangeKeys` | Each Binance credential that is stored: its id, the environment, the last four characters of the API key, and when it was saved. Never a key. |
+| `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, when it was saved, and what its last check found and when. Never the key. |
+| `exchangeKeys` | Each Binance credential that is stored: its id, the environment, the last four characters of the API key, when it was saved, what its last check found and when, and what Binance said it may do: trade on Spot, trade on Futures, and work only from listed addresses. Never a key. |
 
 | Rule | Detail |
 |---|---|
@@ -462,11 +462,11 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 
 | Column | What it holds |
 |---|---|
-| `user_id` | The user who did it. |
+| `user_id` | The user who did it. For the one action that the service does itself, `KeyRejected`, the user it was done for: the owner of the key. |
 | `action` | What was done, as the name of a member of `AuditAction`. |
 | `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, and `exchange-key:<id>` for a Binance credential. |
 | `occurred_at` | When. |
-| `origin` | The IP address the request came from, as the connection knows it, or nothing when it does not. |
+| `origin` | The IP address the request came from, as the connection knows it, or nothing when it does not, or when no request did it. |
 
 | Action | Recorded when |
 |---|---|
@@ -479,7 +479,8 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 | `TwoFactorRecoveryCodeUsed` | A recovery code was used, for any of the four things a code does. |
 | `KeyAdded` | A key of an AI provider or of Binance was stored where none was. |
 | `KeyReplaced` | A key was stored in place of the one that was stored. The id of the key stays the same. |
-| `KeyDeleted` | A stored key was deleted. |
+| `KeyDeleted` | A stored key was deleted, by its user. |
+| `KeyRejected` | A stored Binance key was deleted by the service: when it was checked again, Binance reported that it can withdraw (FR-KEY-4). See "Binance permissions" in [credentials.md](credentials.md). |
 
 - **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not. `RecordAsync` refuses a context that holds no transaction.
 - **A sign-in is recorded where the session is stored,** in `Sessions.AddAsync`, which is the one place. So no session starts without its event. A password that only leads to the page that asks for a code records nothing: nobody is signed in.

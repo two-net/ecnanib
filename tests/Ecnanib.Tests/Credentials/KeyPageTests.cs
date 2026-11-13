@@ -768,8 +768,13 @@ public class KeyPageTests
             SessionAuthentication.SignInPath,
             (await client.PostAsync(KeyBrowser.DeleteExchangeKeyPage("demo"), KeyBrowser.DeleteForm, token)).Path);
 
+        // Nor does a visitor have a provider asked about a key that is stored.
+        Assert.Equal(SessionAuthentication.SignInPath, (await client.PostAsync(KeysPage, "check-ai-claude", token)).Path);
+        Assert.Equal(SessionAuthentication.SignInPath, (await client.PostAsync(KeysPage, "check-binance-demo", token)).Path);
+
         Assert.Equal(["claude"], StoredAiCredential.All(application.Database).Select(key => key.Provider));
         Assert.Equal(["Demo"], StoredExchangeCredential.All(application.Database).Select(key => key.Environment));
+        Assert.Empty(application.Providers.Asked);
     }
 
     [Fact]
@@ -793,6 +798,10 @@ public class KeyPageTests
             (KeyBrowser.ExchangeKeyPage("demo"), KeyBrowser.StoreForm, [("ApiKey", Keys.Claude), ("SecretKey", Keys.AnotherClaude)]),
             (KeyBrowser.DeleteAiKeyPage("claude"), KeyBrowser.DeleteForm, []),
             (KeyBrowser.DeleteExchangeKeyPage("demo"), KeyBrowser.DeleteForm, []),
+
+            // The forms of the list, which have a provider asked about a stored key again.
+            (KeysPage, "check-ai-claude", []),
+            (KeysPage, "check-binance-demo", []),
         ];
 
         foreach (var (path, form, fields) in forms)
@@ -928,7 +937,10 @@ public class KeyPageTests
 
         // Which keys there are, by provider, each with the id that the audit trail names it by.
         var aiKeys = export.GetProperty("aiKeys").EnumerateArray().ToList();
-        Assert.All(aiKeys, key => Assert.Equal(["id", "provider", "endsWith", "savedAt"], key.EnumerateObject().Select(member => member.Name)));
+        Assert.All(
+            aiKeys,
+            key => Assert.Equal(
+                ["id", "provider", "endsWith", "savedAt", "status", "validatedAt"], key.EnumerateObject().Select(member => member.Name)));
         Assert.Equal(
             [$"{aiKey.Id} claude Wx7Z {Morning:O}", $"{StoredAiCredential.Of(application.Database, user.Id, "grok").Id} grok grok {Morning:O}"],
             aiKeys.Select(key =>
@@ -936,7 +948,9 @@ public class KeyPageTests
                 $"{key.GetProperty("endsWith").GetString()} {key.GetProperty("savedAt").GetDateTimeOffset():O}"));
 
         var exchange = Assert.Single(export.GetProperty("exchangeKeys").EnumerateArray());
-        Assert.Equal(["id", "environment", "apiKeyEndsWith", "savedAt"], exchange.EnumerateObject().Select(member => member.Name));
+        Assert.Equal(
+            ["id", "environment", "apiKeyEndsWith", "savedAt", "status", "validatedAt", "spotTrading", "futuresTrading", "ipRestricted"],
+            exchange.EnumerateObject().Select(member => member.Name));
         Assert.Equal(exchangeKey.Id, exchange.GetProperty("id").GetGuid());
         Assert.Equal("Live", exchange.GetProperty("environment").GetString());
         Assert.Equal("Lm3N", exchange.GetProperty("apiKeyEndsWith").GetString());

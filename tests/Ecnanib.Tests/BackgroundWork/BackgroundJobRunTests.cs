@@ -331,12 +331,14 @@ public class BackgroundJobRunTests
                 .AddBackgroundJob<RegisteredJob>()),
             database);
 
-        var job = Assert.IsType<RegisteredJob>(Assert.Single(application.Services.GetServices<IBackgroundJob>()));
+        // Beside the jobs that the components of the application registered themselves.
+        var job = Assert.Single(application.Services.GetServices<IBackgroundJob>().OfType<RegisteredJob>());
         await Wait.UntilAsync(() => StoredJob.Of(database, job.Name)?.Outcome == "Succeeded", "the run of the registered job");
 
         Assert.Equal(1, job.Runs);
         var active = Assert.Single(SchedulerLog.Of(application), written => written.Template == SchedulerLog.Active);
-        Assert.Equal(1, active["JobCount"].GetInt32());
+        Assert.Equal(application.Services.GetServices<IBackgroundJob>().Count(), active["JobCount"].GetInt32());
+        Assert.Contains(application.Services.GetServices<IBackgroundJob>(), registered => registered.Name == "key-validation");
     }
 
     /// <summary>

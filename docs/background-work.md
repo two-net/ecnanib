@@ -48,6 +48,12 @@ services.AddBackgroundJob<CatalogSyncJob>();
 
 That is all. The platform's scheduler runs every registered job; a component starts no hosted service of its own for scheduled work, because that would run on every instance, without the lock.
 
+The jobs that the application has so far:
+
+| Job | Component | Schedule | What a run does |
+|---|---|---|---|
+| `key-validation` | Credentials | Every hour, on the hour | Asks the provider about each stored key that was last checked a day ago or longer (FR-KEY-3). See "Validating a key" in [credentials.md](credentials.md). |
+
 | Rule | Why |
 |---|---|
 | The name is unique and never changes. | It is the key of the job's state. Two jobs with one name stop the application from starting. A job under a new name has never run, and the old row stays behind. |
@@ -155,3 +161,5 @@ using var application = ApplicationWithJobs.On(database, clock, job);
 ```
 
 The scheduler takes the time from the `TimeProvider` service. A test replaces it with `TestClock` and sets the time, so a job that is due in a day runs within a second of the test saying that a day has passed.
+
+Every application of a test has the application's own jobs too. `key-validation` is on boundaries, so it does not run when an application starts, and with no stored key that is due it asks nobody. A test whose clock jumps over more than one hour finds its warning that the hours between were skipped, so a test that counts the scheduler's warnings names its job. To see what a run of a job does at a time of the test's choosing, a test runs the job itself: `AccountsApplication.CheckKeysAsync` does that for `key-validation`.

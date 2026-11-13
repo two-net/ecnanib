@@ -200,6 +200,14 @@ public class KeyDependentsTests
             Tell(new Told(userId, environment.ToString(), context.Database.CurrentTransaction is not null, stored));
         }
 
+        // A key that turns out to be invalid is not what these tests are about: KeyRevalidationTests are.
+        public Task AiKeyInvalidAsync(EcnanibDbContext context, Guid userId, AiProviderCode provider, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task ExchangeKeyInvalidAsync(
+            EcnanibDbContext context, Guid userId, TradingMode environment, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         private void Tell(Told told)
         {
             _told.Enqueue(told);

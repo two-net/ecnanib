@@ -52,6 +52,13 @@ public enum AuditAction
 
     /// <summary>A stored key was deleted, for good (FR-KEY-10).</summary>
     KeyDeleted,
+
+    /// <summary>
+    /// A stored Binance key was deleted by the service, for good: when it was checked again,
+    /// Binance reported that it can withdraw, and Ecnanib holds no such key (FR-KEY-4,
+    /// NFR-LEG-2). The event carries the owner of the key, and no origin: no request did it.
+    /// </summary>
+    KeyRejected,
 }
 
 /// <summary>
@@ -79,7 +86,10 @@ public sealed class AuditEvent : IUserOwned
     /// <summary>Assigned by the application when the action is recorded. A later event has a greater id.</summary>
     public Guid Id { get; }
 
-    /// <summary>The user who did it.</summary>
+    /// <summary>
+    /// The user who did it, or the user it was done for when the service did it: the owner of a
+    /// key that the service deleted.
+    /// </summary>
     public Guid UserId { get; }
 
     /// <summary>What was done.</summary>

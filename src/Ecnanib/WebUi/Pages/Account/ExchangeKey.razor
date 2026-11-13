@@ -2,8 +2,10 @@
 @attribute [Authorize]
 @using Ecnanib.Accounts
 @using Ecnanib.Credentials
+@using Ecnanib.Platform.Settings
 @using Ecnanib.Shared
 @inject IStoredKeys StoredKeys
+@inject BinanceSettings Binance
 @inject IReauthentication Reauthentication
 @inject NavigationManager Navigation
 
@@ -12,7 +14,8 @@
     post. The page is shown to a user who has just proved again who they are, and to nobody else.
     The form is on the page whenever one is posted, whatever was proved by then: a form that is
     not there cannot be answered. Whether the keys are stored is for StoreExchangeKeyAsync to say,
-    which asks again.
+    which asks again, and asks Binance about the keys before it stores them: keys that Binance
+    does not take are not stored, and keys that can withdraw never are (FR-KEY-3, FR-KEY-4).
 *@
 
 @if (_slot is not null)
@@ -26,6 +29,12 @@
         <p role="status">@KeyPages.VerifyFirst</p>
     }
 
+    @if (_notStored is not null)
+    {
+        @* What Binance said. It never repeats what was entered. *@
+        <p class="form-error" role="alert">@_notStored</p>
+    }
+
     @if (_slot.Key is { } stored)
     {
         <p>The API key that is stored now is <code>@KeyPages.Masked(stored)</code>. The new keys take the place of it and of its secret key, and the stored ones are gone for good.</p>
@@ -34,6 +43,20 @@
     @if (_showForm)
     {
         <p>This is for @KeyPages.Describe(_slot.Environment). Orders of your agents in @_slot.Environment are placed with these keys. Both are stored encrypted. Once they are saved, neither is shown again: you see only the last four characters of the API key.</p>
+
+        <p>When you save the keys, Binance is asked what they may do, with calls that only read. <strong>Make the API key without the permission to withdraw.</strong> Ecnanib never withdraws, deposits, or transfers funds, and stores no key that can withdraw. The key needs the permission to trade on the market of each agent that uses it: Spot trading, Futures trading, or both.</p>
+
+        @if (KeyPages.OutboundAddresses(Binance) is { Count: > 0 } addresses)
+        {
+            <p>A key that works only from listed IP addresses is safer. If you restrict the key at Binance, list the addresses that Ecnanib calls Binance from:</p>
+
+            <ul class="outbound-addresses">
+                @foreach (var address in addresses)
+                {
+                    <li>@address</li>
+                }
+            </ul>
+        }
 
         <form method="post" @formname="@KeyPages.StoreForm" @onsubmit="StoreAsync">
             <AntiforgeryToken />
@@ -72,6 +95,7 @@
     private ExchangeKeySlot? _slot;
     private KeyProblem? _apiKeyProblem;
     private KeyProblem? _secretKeyProblem;
+    private string? _notStored;
     private bool _showForm;
     private bool _addressNotVerified;
 
@@ -169,6 +193,13 @@
             case StoreKeyOutcome.NotAKey:
                 _apiKeyProblem = result.ApiKey;
                 _secretKeyProblem = result.SecretKey;
+                break;
+
+            case StoreKeyOutcome.Refused:
+            case StoreKeyOutcome.CanWithdraw:
+            case StoreKeyOutcome.Unreachable:
+                // Nothing was stored, and keys that were stored before are still there.
+                _notStored = KeyPages.Says(result.Outcome, _slot.Environment);
                 break;
         }
     }

@@ -12,7 +12,7 @@
     post. The page is shown to a user who has just proved again who they are, and to nobody else.
     The form is on the page whenever one is posted, whatever was proved by then: a form that is
     not there cannot be answered. Whether the key is stored is for StoreAiKeyAsync to say, which
-    asks again.
+    asks again, and asks the provider about the key before it stores it (FR-KEY-3).
 *@
 
 @if (_slot is not null)
@@ -26,6 +26,12 @@
         <p role="status">@KeyPages.VerifyFirst</p>
     }
 
+    @if (_notStored is not null)
+    {
+        @* What the provider said. It never repeats what was entered. *@
+        <p class="form-error" role="alert">@_notStored</p>
+    }
+
     @if (_slot.Key is { } stored)
     {
         <p>The key that is stored now is <code>@KeyPages.Masked(stored)</code>. The new key takes its place, and the stored one is gone for good.</p>
@@ -33,7 +39,7 @@
 
     @if (_showForm)
     {
-        <p>Calls to @_slot.ProviderName for your agents are made with this key, and are charged to your own account there. The key is stored encrypted. Once it is saved, it is never shown again: you see only its last four characters.</p>
+        <p>Calls to @_slot.ProviderName for your agents are made with this key, and are charged to your own account there. When you save it, @_slot.ProviderName is asked whether it takes the key, with a call that only reads, and the key is stored only when it does. The key is stored encrypted. Once it is saved, it is never shown again: you see only its last four characters.</p>
 
         <form method="post" @formname="@KeyPages.StoreForm" @onsubmit="StoreAsync">
             <AntiforgeryToken />
@@ -61,6 +67,7 @@
 @code {
     private AiKeySlot? _slot;
     private KeyProblem? _problem;
+    private string? _notStored;
     private bool _showForm;
     private bool _addressNotVerified;
 
@@ -157,6 +164,12 @@
 
             case StoreKeyOutcome.NotAKey:
                 _problem = result.ApiKey;
+                break;
+
+            case StoreKeyOutcome.Refused:
+            case StoreKeyOutcome.Unreachable:
+                // Nothing was stored, and a key that was stored before is still there.
+                _notStored = KeyPages.Says(result.Outcome, _slot.ProviderName);
                 break;
         }
     }

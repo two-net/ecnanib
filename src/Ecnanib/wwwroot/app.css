@@ -134,6 +134,26 @@ code {
         gap: 0.25rem 1rem;
     }
 
+    /* The button that checks a key again, in line with the links beside it. */
+    .keys form {
+        margin: 0;
+    }
+
+    .keys form > button[type=submit] {
+        margin-top: 0;
+    }
+
+    /* What is said about a key that works from any address, on a line of its own. */
+    .keys .key-warning {
+        flex-basis: 100%;
+        margin: 0.25rem 0 0;
+    }
+
+/* The addresses that the service calls Binance from, each one whole, to be copied. */
+.outbound-addresses {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 /* The bar that says who is signed in, with the sign-out button in line with its links. */
 .account-bar {
     display: flex;

@@ -1,12 +1,17 @@
 @attribute [Route(WebUiModule.KeysPath)]
 @attribute [Authorize]
 @using Ecnanib.Credentials
+@using Ecnanib.Platform.Settings
+@using Ecnanib.Shared
 @inject IStoredKeys StoredKeys
+@inject BinanceSettings Binance
 
 @*
     Rendered on the server for each request, and never interactive. The page shows which keys are
-    stored, each by its last four characters. A key itself is never read for it, and so is never
-    in what the browser gets (FR-KEY-8).
+    stored, each by its last four characters, with what its provider said when it was last asked
+    about it (FR-KEY-3). A key itself is never read for it, and so is never in what the browser
+    gets (FR-KEY-8). A form of the page asks the provider about a stored key again: the forms
+    are on the page whenever one is posted, for the keys that are stored then.
 *@
 
 <PageTitle>Your API keys</PageTitle>
@@ -15,7 +20,12 @@
 
 <p>Your agents work with your own keys: one for each AI provider, and one for Binance in each environment. Ecnanib has no key of its own for a decision or an order.</p>
 
-<p>A key is stored encrypted and is never shown again. After saving, you see only its last four characters. You can replace or delete a key at any time.</p>
+<p>A key is checked with its provider before it is stored, and again every day. It is stored encrypted and is never shown again. After saving, you see only its last four characters. You can replace or delete a key at any time.</p>
+
+@if (_checked is not null)
+{
+    <p role="status">@_checked</p>
+}
 
 @if (_state is not null)
 {
@@ -35,8 +45,14 @@
                     @if (slot.Key is { } key)
                     {
                         <span>Key <code>@KeyPages.Masked(key)</code>, saved @KeyPages.Saved(key).</span>
+                        <span>@KeyPages.Checked(key, slot.ProviderName)</span>
                         <a href="@WebUiModule.AiKeyPath(slot.Provider)">Replace the @slot.ProviderName key</a>
                         <a href="@WebUiModule.DeleteAiKeyPath(slot.Provider)">Delete the @slot.ProviderName key</a>
+                        <form method="post" @formname="@KeyPages.CheckAiForm(slot.Provider)" @onsubmit="() => CheckAiKeyAsync(slot)">
+                            <AntiforgeryToken />
+
+                            <button type="submit">Check the @slot.ProviderName key again</button>
+                        </form>
                     }
                     else
                     {
@@ -53,6 +69,8 @@
 
     <h2>Binance</h2>
 
+    <p>Ecnanib never withdraws, deposits, or transfers funds, and takes no key that can withdraw.</p>
+
     <ul class="keys">
         @foreach (var slot in _state.ExchangeKeys)
         {
@@ -62,8 +80,23 @@
                     @if (slot.Key is { } key)
                     {
                         <span>API key <code>@KeyPages.Masked(key)</code>, saved @KeyPages.Saved(key).</span>
+                        <span>@KeyPages.Checked(key, "Binance")</span>
+                        @if (slot.Permissions is { } permissions)
+                        {
+                            <span>@KeyPages.Trades(permissions)</span>
+                        }
                         <a href="@WebUiModule.ExchangeKeyPath(slot.Environment)">Replace the @slot.Environment key</a>
                         <a href="@WebUiModule.DeleteExchangeKeyPath(slot.Environment)">Delete the @slot.Environment key</a>
+                        <form method="post" @formname="@KeyPages.CheckExchangeForm(slot.Environment)" @onsubmit="() => CheckExchangeKeyAsync(slot)">
+                            <AntiforgeryToken />
+
+                            <button type="submit">Check the @slot.Environment key again</button>
+                        </form>
+                        @if (slot.Permissions is { IpRestricted: false })
+                        {
+                            @* Only where Binance reports it: its test environment does not (FR-KEY-4). *@
+                            <p class="key-warning" role="note">@KeyPages.WorksFromAnyAddress(KeyPages.OutboundAddresses(Binance))</p>
+                        }
                     }
                     else
                     {
@@ -83,6 +116,7 @@
 
 @code {
     private StoredKeysState? _state;
+    private string? _checked;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -93,5 +127,32 @@
         {
             _state = await StoredKeys.StateAsync(request);
         }
+    }
+
+    private async Task CheckAiKeyAsync(AiKeySlot slot)
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        var outcome = await StoredKeys.CheckAiKeyAsync(request, slot.Provider);
+
+        // What the provider said, and the keys as they are stored now.
+        _checked = KeyPages.Says(outcome, $"{slot.ProviderName} key");
+        _state = await StoredKeys.StateAsync(request);
+    }
+
+    private async Task CheckExchangeKeyAsync(ExchangeKeySlot slot)
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        var outcome = await StoredKeys.CheckExchangeKeyAsync(request, slot.Environment);
+
+        _checked = KeyPages.Says(outcome, $"Binance key for {slot.Environment}");
+        _state = await StoredKeys.StateAsync(request);
     }
 }

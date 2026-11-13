@@ -30,9 +30,10 @@ public class BackgroundWorkLockTests
         Assert.Empty(database.SessionsHolding(DatabaseMigration.LockKey));
         Assert.NotEqual(DatabaseMigration.LockKey, BackgroundJobs.LockKey);
 
-        // It is taken with no job to run, too, so the first job changes nothing about it.
-        var active = Assert.Single(SchedulerLog.Of(application));
-        Assert.Equal(0, active["JobCount"].GetInt32());
+        // It is taken before any job is due. The application has one job of its own, which
+        // checks the stored keys on the hour and so has nothing to do at this start.
+        var active = Assert.Single(SchedulerLog.Of(application), written => written.Template == SchedulerLog.Active);
+        Assert.Equal(1, active["JobCount"].GetInt32());
     }
 
     [Fact]

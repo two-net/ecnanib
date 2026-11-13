@@ -22,6 +22,11 @@ namespace Ecnanib.Credentials;
 /// <param name="masterKeyId">The id of the master key of the configuration file that encrypted it.</param>
 /// <param name="maskedSuffix">The last four characters of the key, which is all of it that is ever shown.</param>
 /// <param name="savedAt">When the key that is stored now was stored.</param>
+/// <param name="status">What the last check of the key found (FR-KEY-3).</param>
+/// <param name="validatedAt">
+/// When the provider last answered a check of the key that is stored now, or null when it never
+/// did. A check that got no answer leaves it as it is.
+/// </param>
 public sealed class AiCredential(
     Guid id,
     Guid userId,
@@ -29,7 +34,9 @@ public sealed class AiCredential(
     byte[] encryptedValue,
     string masterKeyId,
     string maskedSuffix,
-    DateTimeOffset savedAt) : IUserOwned
+    DateTimeOffset savedAt,
+    KeyStatus status,
+    DateTimeOffset? validatedAt) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -44,6 +51,10 @@ public sealed class AiCredential(
     public string MaskedSuffix { get; } = maskedSuffix;
 
     public DateTimeOffset SavedAt { get; } = savedAt;
+
+    public KeyStatus Status { get; } = status;
+
+    public DateTimeOffset? ValidatedAt { get; } = validatedAt;
 
     /// <summary>
     /// What the stored key of a row is bound to, so that it decrypts in that row of that user
@@ -68,6 +79,8 @@ internal sealed class AiCredentialConfiguration : IEntityTypeConfiguration<AiCre
         builder.Property(credential => credential.MasterKeyId);
         builder.Property(credential => credential.MaskedSuffix);
         builder.Property(credential => credential.SavedAt);
+        builder.Property(credential => credential.Status);
+        builder.Property(credential => credential.ValidatedAt);
 
         // One key for each provider. The index also finds the keys of a user.
         builder.HasIndex(credential => new { credential.UserId, credential.Provider }).IsUnique();

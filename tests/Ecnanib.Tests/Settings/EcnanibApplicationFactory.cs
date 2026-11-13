@@ -41,7 +41,22 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseContentRoot(_contentRoot);
+
+        // No test reaches another system over the network: a client of the host's factory gets
+        // no answer, as from a host that is down. A test that needs an answer puts a handler of
+        // its own behind the client by its name, which comes after this.
+        builder.ConfigureServices(services => services.ConfigureHttpClientDefaults(
+            http => http.ConfigurePrimaryHttpMessageHandler(() => new NoNetwork())));
+
         _configure?.Invoke(builder);
+    }
+
+    /// <summary>What every client of the host's factory ends in, unless a test says otherwise.</summary>
+    private sealed class NoNetwork : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(
+                new HttpRequestException($"The tests have no network, and {request.RequestUri?.Host} was called."));
     }
 
     /// <summary>

@@ -57,7 +57,7 @@ Sometimes a component must cause something to happen in a component above it. Fo
 
 Accounts sends its email this way. It declares `IAccountMailer`, and Notifications implements it on top of the email adapter. It asks about a user's agents this way too, before it deletes an account: it declares `IAgentActivity`, for Agents to implement. And it takes the parts of the export of a user's data that other components keep this way: it declares `IExportedPart`, which Credentials implements for the keys. See [accounts.md](accounts.md).
 
-Credentials tells whatever depends on a key this way, when the key is deleted: it declares `IKeyDependents`, for Agents to implement. See [credentials.md](credentials.md).
+Credentials tells whatever depends on a key this way, when the key is deleted or turns out to be invalid: it declares `IKeyDependents`, for Agents to implement. See [credentials.md](credentials.md).
 
 ### Changing a rule
 
@@ -69,7 +69,7 @@ Each external system sits behind an adapter with a common interface.
 
 | External system | Common interface | Adapters live in |
 |---|---|---|
-| Each AI provider | `IAiProviderAdapter` | `AiProviderGateway/Adapters/<Provider>` |
+| Each AI provider | `IAiProviderAdapter` for calls to a model, and `IAiKeyChecker` for the check of a key | `AiProviderGateway/Adapters/<Provider>` |
 | Binance | `IExchangeAdapter` | `ExchangeGateway/Adapters/Binance` |
 | Email delivery | `IEmailAdapter` | `Notifications/Adapters/<Service>`. SMTP is in `Notifications/Adapters/Smtp`. |
 
@@ -79,13 +79,17 @@ Three rules keep every call to an external system inside its adapter, and in the
 - Network client types (`System.Net.Http`, `System.Net.Mail`, `System.Net.WebSockets`, `System.Net.Sockets`, and the SMTP library `MailKit`) may be used only inside an `Adapters` namespace.
 - No code may create an `HttpClient`. An adapter takes one from the host's factory (a typed or named client, or `IHttpClientFactory`), and every client from the factory logs its calls (NFR-LOG-5). See [logging.md](logging.md).
 
+What an adapter learns from the network leaves it as a type of its own component, because nothing outside an `Adapters` namespace may name a network type, an error of the network included. The checks of a key answer with a `KeyVerdict`, and a provider that does not answer is one of its values.
+
+So far the adapters make the calls that validate a key: the list of models of each AI provider, and the permissions of a key at Binance, with the clock of each market. The calls to a model and the orders are not built. A gateway makes all its calls with one named client, `AiProviderGatewayModule.HttpClientName` or `ExchangeGatewayModule.HttpClientName`, so a test puts a handler of its own behind that name in place of the network.
+
 ### Adding an AI provider
 
-1. Add a class that implements `IAiProviderAdapter` under `AiProviderGateway/Adapters/<Provider>`.
-2. Register it in `AddAiProviderGateway()`.
+1. Add a class that implements `IAiProviderAdapter` under `AiProviderGateway/Adapters/<Provider>`, and one that implements `IAiKeyChecker` beside it: the call that says whether the provider takes a key, and which of its answers is the one to a wrong key.
+2. Register both in `AddAiProviderGateway()`.
 3. Add its row to the seed data in `AiProviderGateway/AiProvider.cs` and generate a migration, as [persistence.md](persistence.md) describes.
 
-Nothing else changes. Other components call `IAiProviderGateway` and name the provider by its `AiProviderCode`. Providers are an open set of codes, not an enum, so no caller can branch over them.
+Nothing else changes. Other components call `IAiProviderGateway` and `IAiKeyChecks`, and name the provider by its `AiProviderCode`. Providers are an open set of codes, not an enum, so no caller can branch over them.
 
 ### Placing orders
 
@@ -117,7 +121,9 @@ Accounts also holds the audit trail: the record in the database, apart from the 
 
 A user brings their own keys: one for each AI provider, and one Binance credential for each environment, Demo and Live. Ecnanib has no key of its own for a decision or an order (FR-KEY-1, FR-KEY-2). A key is stored encrypted and is write-only: no page, export, log, or audit event holds it, and after saving only its last four characters are shown (FR-KEY-8). A user can replace or delete any key at any time (FR-KEY-10).
 
-Adding or replacing a key is the second of the sensitive actions to be built, and asks Accounts for the proof first. Every change to a key is recorded in the audit trail, by the id of the key. Deleting a key tells whatever depends on it inside the same transaction, which is how an agent will move to Attention required. Not built yet: validating a key, and handing one to the call that needs it. See [credentials.md](credentials.md).
+Adding or replacing a key is the second of the sensitive actions to be built, and asks Accounts for the proof first. Every change to a key is recorded in the audit trail, by the id of the key. Deleting a key tells whatever depends on it inside the same transaction, which is how an agent will move to Attention required.
+
+A key is validated with a read-only call to its provider, through the gateways: before it is stored, daily by a job, and when a call with it fails authentication (FR-KEY-3). Only a key that its provider takes is stored, and a stored key that is refused later becomes invalid, which whatever depends on it is told as well. A Binance key that can withdraw is not stored, and one that turns out to be able to is deleted (FR-KEY-4, NFR-LEG-2). What a Binance key may trade on is recorded, and Credentials says whether it lets an agent start on a market, for Agents to ask (FR-KEY-5). Not built yet: handing a key to the call of an agent that needs it. See [credentials.md](credentials.md).
 
 ## Ownership
 
@@ -135,7 +141,7 @@ A secret that the application must read again is stored encrypted, with authenti
 
 ## Background work
 
-Scheduled work runs on one scheduler in `Platform`. A component implements `IBackgroundJob` and registers it; the scheduler keeps each job's latest run in the database, so the schedule goes on after a restart, and it runs jobs only while it holds a database lock, so they never run in two instances at once (NFR-ARC-4). `Platform` never references a component: it finds the jobs among the registered services. See [background-work.md](background-work.md).
+Scheduled work runs on one scheduler in `Platform`. A component implements `IBackgroundJob` and registers it; the scheduler keeps each job's latest run in the database, so the schedule goes on after a restart, and it runs jobs only while it holds a database lock, so they never run in two instances at once (NFR-ARC-4). `Platform` never references a component: it finds the jobs among the registered services. The first job is that of Credentials, which checks the stored keys. See [background-work.md](background-work.md).
 
 ## Logging
 

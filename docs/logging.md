@@ -134,6 +134,13 @@ Outbound call POST fapi.binance.com/fapi/v1/order Succeeded with status 200 in 8
 - `Usage` holds the response headers that report usage. The component that knows the system names them: the Exchange Gateway registers Binance's used-weight and order-count headers through `OutboundCallLogOptions`.
 - Request and response bodies are logged only at the debug level, which is off unless the file turns it on for the area `Ecnanib.Platform.Adapters.Http`. Bodies pass the masking like everything else. While it is on, each body is held in memory in full, so use it to investigate and then turn it off.
 
+The first calls that the application makes are the ones that validate a user's key: see "Validating a key" in [credentials.md](credentials.md). A key travels in a header, and the signature of a call to Binance in the query, so neither is logged. A provider that refuses a key answers with a status of 400 or above, so such a call is a warning: it is what the provider said, and not a fault of the application.
+
+```
+Outbound call GET api.anthropic.com/v1/models Failed with status 401 in 324.5 ms {"Provider": "claude"}
+Outbound call GET api.binance.com/sapi/v1/account/apiRestrictions Succeeded with status 200 in 231.5 ms {"Usage": {"x-mbx-used-weight-1m": "1"}}
+```
+
 **AI calls.** The AI Provider Gateway also logs each call to a model, with what HTTP cannot see: the token usage.
 
 ```

@@ -270,8 +270,10 @@ public class BackgroundJobStateTests
         clock.Set(Start.AddHours(24));
         await Succeeded(database, "sync");
 
+        // Nothing more is said about it. The application's own hourly job says that it skipped
+        // the hours which the clock of the test jumped over.
         Assert.Equal([new BackgroundJobRun(Start.AddHours(24))], job.Runs);
-        Assert.Single(SchedulerLog.Trouble(application));
+        Assert.Single(SchedulerLog.Trouble(application), written => written.Text("Job") == "sync");
     }
 
     /// <summary>Waits until the job's latest run is in the database as succeeded.</summary>

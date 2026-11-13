@@ -56,10 +56,13 @@ internal static class AuditRules
             AuditAction.TwoFactorRecoveryCodeUsed),
 
         // Of an AI provider or of Binance. The event names the key by its id, and never holds it.
+        // The last one is the service's own doing: a stored key that turned out to be able to
+        // withdraw, which it deletes (FR-KEY-4).
         ["key changes"] = AuditCoverage.By(
             AuditAction.KeyAdded,
             AuditAction.KeyReplaced,
-            AuditAction.KeyDeleted),
+            AuditAction.KeyDeleted,
+            AuditAction.KeyRejected),
 
         ["agent start, pause, and stop"] = AuditCoverage.Waiting(
             Agents,

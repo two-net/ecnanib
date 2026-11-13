@@ -1,4 +1,5 @@
 using Ecnanib.Accounts;
+using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Security;
 
 namespace Ecnanib.Credentials;
@@ -7,12 +8,17 @@ namespace Ecnanib.Credentials;
 public static class CredentialsModule
 {
     /// <summary>
-    /// Registers the component. What depends on a key is told when the key goes through
-    /// <see cref="IKeyDependents"/>, which Agents implements and registers.
+    /// Registers the component. What depends on a key is told when the key goes, or turns out
+    /// to be invalid, through <see cref="IKeyDependents"/>, which Agents implements and registers.
     /// </summary>
     public static IServiceCollection AddCredentials(this IServiceCollection services)
     {
         services.AddSingleton<IStoredKeys, StoredKeys>();
+
+        // What checks a stored key again with its provider, and what Agents asks about a key
+        // before an agent starts (FR-KEY-3, FR-KEY-5). The job checks every key daily.
+        services.AddSingleton<IKeyValidation, KeyValidator>();
+        services.AddBackgroundJob<KeyValidationJob>();
 
         // The keys are encrypted by the platform's StoredSecrets, and the columns that hold them
         // are declared, so that each key is encrypted again when the active master key has

@@ -26,6 +26,17 @@ namespace Ecnanib.Credentials;
 /// secret key is.
 /// </param>
 /// <param name="savedAt">When the credential that is stored now was stored.</param>
+/// <param name="status">What the last check of the credential found (FR-KEY-3).</param>
+/// <param name="validatedAt">
+/// When Binance last answered a check of the credential that is stored now, or null when it never
+/// did. A check that got no answer leaves it as it is.
+/// </param>
+/// <param name="spotTrading">Whether the credential may trade on the Spot market, as Binance last said (FR-KEY-5).</param>
+/// <param name="futuresTrading">Whether it may trade on the Futures market.</param>
+/// <param name="ipRestricted">
+/// Whether the credential works only from addresses that its owner listed at Binance, or null
+/// where Binance does not report it: its test environment does not (FR-KEY-4).
+/// </param>
 public sealed class ExchangeCredential(
     Guid id,
     Guid userId,
@@ -33,7 +44,12 @@ public sealed class ExchangeCredential(
     byte[] encryptedValue,
     string masterKeyId,
     string maskedSuffix,
-    DateTimeOffset savedAt) : IUserOwned
+    DateTimeOffset savedAt,
+    KeyStatus status,
+    DateTimeOffset? validatedAt,
+    bool spotTrading,
+    bool futuresTrading,
+    bool? ipRestricted) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -48,6 +64,16 @@ public sealed class ExchangeCredential(
     public string MaskedSuffix { get; } = maskedSuffix;
 
     public DateTimeOffset SavedAt { get; } = savedAt;
+
+    public KeyStatus Status { get; } = status;
+
+    public DateTimeOffset? ValidatedAt { get; } = validatedAt;
+
+    public bool SpotTrading { get; } = spotTrading;
+
+    public bool FuturesTrading { get; } = futuresTrading;
+
+    public bool? IpRestricted { get; } = ipRestricted;
 
     /// <summary>
     /// What the stored credential of a row is bound to, so that it decrypts in that row of that
@@ -84,6 +110,11 @@ internal sealed class ExchangeCredentialConfiguration : IEntityTypeConfiguration
         builder.Property(credential => credential.MasterKeyId);
         builder.Property(credential => credential.MaskedSuffix);
         builder.Property(credential => credential.SavedAt);
+        builder.Property(credential => credential.Status);
+        builder.Property(credential => credential.ValidatedAt);
+        builder.Property(credential => credential.SpotTrading);
+        builder.Property(credential => credential.FuturesTrading);
+        builder.Property(credential => credential.IpRestricted);
 
         // One credential for each environment. The index also finds the credentials of a user.
         builder.HasIndex(credential => new { credential.UserId, credential.Environment }).IsUnique();

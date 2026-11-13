@@ -3,10 +3,15 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
 using Ecnanib.Accounts;
+using Ecnanib.AiProviderGateway;
+using Ecnanib.Credentials;
+using Ecnanib.ExchangeGateway;
 using Ecnanib.Notifications;
+using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
@@ -58,7 +63,9 @@ internal sealed class RecordingEmail : IEmailAdapter
 
 /// <summary>
 /// The application on a database of the test's own, so that a test can say what the tables
-/// hold, with the email it sends kept by <see cref="RecordingEmail"/>.
+/// hold, with the email it sends kept by <see cref="RecordingEmail"/>, and with
+/// <see cref="StandInProviders"/> in place of the AI providers and of Binance, which take every
+/// key unless a test says otherwise.
 /// </summary>
 internal sealed class AccountsApplication : IDisposable
 {
@@ -94,6 +101,10 @@ internal sealed class AccountsApplication : IDisposable
                 {
                     services.AddSingleton<IEmailAdapter>(Email);
 
+                    // A key is stored only when its provider takes it, and no test reaches one.
+                    services.AddSingleton<IAiKeyChecks>(Providers);
+                    services.AddSingleton<IExchangeAdapter>(Providers);
+
                     if (clock is not null)
                     {
                         services.AddSingleton<TimeProvider>(clock);
@@ -108,6 +119,21 @@ internal sealed class AccountsApplication : IDisposable
     public TestDatabase Database { get; }
 
     public RecordingEmail Email { get; } = new();
+
+    /// <summary>What stands for the AI providers and for Binance when they are asked about a key.</summary>
+    public StandInProviders Providers { get; } = new();
+
+    /// <summary>What the components above Credentials ask about a user's stored keys.</summary>
+    public IKeyValidation KeyValidation => _application.Services.GetRequiredService<IKeyValidation>();
+
+    /// <summary>
+    /// Runs the job that checks the stored keys, now, as the scheduler does on the hour. A test
+    /// runs it itself to see what a run does at a time of its choosing.
+    /// </summary>
+    public Task CheckKeysAsync(DateTimeOffset scheduledFor) =>
+        _application.Services.GetServices<IBackgroundJob>()
+            .Single(job => job.Name == "key-validation")
+            .RunAsync(new BackgroundJobRun(scheduledFor), TestContext.Current.CancellationToken);
 
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 

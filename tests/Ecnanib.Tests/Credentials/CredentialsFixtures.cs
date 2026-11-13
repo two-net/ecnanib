@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
+using Ecnanib.AiProviderGateway;
 using Ecnanib.Credentials;
+using Ecnanib.ExchangeGateway;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.Persistence;
@@ -11,7 +14,15 @@ namespace Ecnanib.Tests.Credentials;
 
 /// <summary>A row of the <c>ai_credentials</c> table, read by a test directly.</summary>
 internal sealed record StoredAiCredential(
-    Guid Id, Guid UserId, string Provider, byte[] EncryptedValue, string MasterKeyId, string MaskedSuffix, DateTimeOffset SavedAt)
+    Guid Id,
+    Guid UserId,
+    string Provider,
+    byte[] EncryptedValue,
+    string MasterKeyId,
+    string MaskedSuffix,
+    DateTimeOffset SavedAt,
+    string Status,
+    DateTimeOffset? ValidatedAt)
 {
     /// <summary>Every key of an AI provider, by user and provider.</summary>
     public static IReadOnlyList<StoredAiCredential> All(TestDatabase database)
@@ -19,7 +30,7 @@ internal sealed record StoredAiCredential(
         using var connection = database.Open();
         using var command = new NpgsqlCommand(
             """
-            SELECT id, user_id, provider, encrypted_value, master_key_id, masked_suffix, saved_at
+            SELECT id, user_id, provider, encrypted_value, master_key_id, masked_suffix, saved_at, status, validated_at
             FROM ai_credentials ORDER BY user_id, provider
             """,
             connection);
@@ -35,7 +46,9 @@ internal sealed record StoredAiCredential(
                 reader.GetFieldValue<byte[]>(3),
                 reader.GetString(4),
                 reader.GetString(5),
-                reader.GetFieldValue<DateTimeOffset>(6)));
+                reader.GetFieldValue<DateTimeOffset>(6),
+                reader.GetString(7),
+                reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8)));
         }
 
         return credentials;
@@ -48,7 +61,18 @@ internal sealed record StoredAiCredential(
 
 /// <summary>A row of the <c>exchange_credentials</c> table, read by a test directly.</summary>
 internal sealed record StoredExchangeCredential(
-    Guid Id, Guid UserId, string Environment, byte[] EncryptedValue, string MasterKeyId, string MaskedSuffix, DateTimeOffset SavedAt)
+    Guid Id,
+    Guid UserId,
+    string Environment,
+    byte[] EncryptedValue,
+    string MasterKeyId,
+    string MaskedSuffix,
+    DateTimeOffset SavedAt,
+    string Status,
+    DateTimeOffset? ValidatedAt,
+    bool SpotTrading,
+    bool FuturesTrading,
+    bool? IpRestricted)
 {
     /// <summary>Every Binance credential, by user and environment.</summary>
     public static IReadOnlyList<StoredExchangeCredential> All(TestDatabase database)
@@ -56,7 +80,8 @@ internal sealed record StoredExchangeCredential(
         using var connection = database.Open();
         using var command = new NpgsqlCommand(
             """
-            SELECT id, user_id, environment, encrypted_value, master_key_id, masked_suffix, saved_at
+            SELECT id, user_id, environment, encrypted_value, master_key_id, masked_suffix, saved_at,
+                   status, validated_at, spot_trading, futures_trading, ip_restricted
             FROM exchange_credentials ORDER BY user_id, environment
             """,
             connection);
@@ -72,7 +97,12 @@ internal sealed record StoredExchangeCredential(
                 reader.GetFieldValue<byte[]>(3),
                 reader.GetString(4),
                 reader.GetString(5),
-                reader.GetFieldValue<DateTimeOffset>(6)));
+                reader.GetFieldValue<DateTimeOffset>(6),
+                reader.GetString(7),
+                reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
+                reader.GetBoolean(9),
+                reader.GetBoolean(10),
+                reader.IsDBNull(11) ? null : reader.GetBoolean(11)));
         }
 
         return credentials;
@@ -155,6 +185,17 @@ internal static class KeyBrowser
     public static Task<(string Path, string Page)> DeleteExchangeKeyAsync(this HttpClient client, string environment) =>
         client.SubmitAsync(DeleteExchangeKeyPage(environment), DeleteForm);
 
+    /// <summary>
+    /// Presses the button of the list that has the provider asked about the stored key again.
+    /// The answer is the list itself, with what the provider said.
+    /// </summary>
+    public static Task<(string Path, string Page)> CheckAiKeyAsync(this HttpClient client, string provider) =>
+        client.SubmitAsync(KeysPage, $"check-ai-{provider}");
+
+    /// <summary>Presses the button of the list that has Binance asked about the stored credential of an environment again.</summary>
+    public static Task<(string Path, string Page)> CheckExchangeKeyAsync(this HttpClient client, string environment) =>
+        client.SubmitAsync(KeysPage, $"check-binance-{environment}");
+
     /// <summary>A page as a person reads it: with the characters that the markup writes as numbers.</summary>
     public static string Read(string page) => WebUtility.HtmlDecode(page);
 
@@ -167,9 +208,10 @@ internal static class StoredKeyRows
 {
     /// <summary>
     /// Gives a user a key for an AI provider and a Binance credential, stored as the application
-    /// stores them: encrypted with its active master key, each bound to its row and its owner.
-    /// It is for a test that is about something else, and needs a row in every table that holds
-    /// rows of users. Nobody is signed in for it, and nothing is recorded.
+    /// stores them: encrypted with its active master key, each bound to its row and its owner,
+    /// and valid as of the moment it was stored, as a key is that its provider took. It is for a
+    /// test that is about something else, and needs a row in every table that holds rows of
+    /// users. Nobody is signed in for it, and nothing is recorded.
     /// </summary>
     public static async Task GiveKeysAsync(this AccountsApplication application, Guid userId, DateTimeOffset savedAt)
     {
@@ -185,10 +227,90 @@ internal static class StoredKeyRows
 
         await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
-        context.Add(new AiCredential(aiId, userId, new AiProviderCode("claude"), ai.Value, ai.KeyId, aiKey[^4..], savedAt));
+        context.Add(new AiCredential(
+            aiId, userId, new AiProviderCode("claude"), ai.Value, ai.KeyId, aiKey[^4..], savedAt, KeyStatus.Valid, savedAt));
         context.Add(new ExchangeCredential(
-            exchangeId, userId, TradingMode.Demo, exchange.Value, exchange.KeyId, apiKey[^4..], savedAt));
+            exchangeId,
+            userId,
+            TradingMode.Demo,
+            exchange.Value,
+            exchange.KeyId,
+            apiKey[^4..],
+            savedAt,
+            KeyStatus.Valid,
+            savedAt,
+            spotTrading: true,
+            futuresTrading: true,
+            ipRestricted: null));
 
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+}
+
+/// <summary>One time that <see cref="StandInProviders"/> was asked about a key.</summary>
+/// <param name="About">Whose key: the code of the AI provider, or <c>Demo</c> or <c>Live</c> for Binance.</param>
+/// <param name="Key">The key as it was handed over. For Binance, the API key.</param>
+/// <param name="SecretKey">The secret key of a Binance credential, and null for an AI provider.</param>
+internal sealed record AskedKey(string About, string Key, string? SecretKey = null);
+
+/// <summary>
+/// Stands for the AI providers and for Binance, where the application asks them about a key
+/// (FR-KEY-3): it keeps what it was asked, and answers as the test says. Unless a test says
+/// otherwise, every provider takes every key, and Binance takes every credential as one that
+/// trades on both markets and cannot withdraw.
+/// </summary>
+internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
+{
+    /// <summary>What Binance says about a credential of its test environment: it reports no permissions of a key there.</summary>
+    public static readonly ExchangeKeyCheck TakenInDemo = new(KeyVerdict.Accepted, SpotTrading: true, FuturesTrading: true);
+
+    /// <summary>What Binance says about a credential of the real exchange that a careful user made.</summary>
+    public static readonly ExchangeKeyCheck TakenInLive =
+        new(KeyVerdict.Accepted, SpotTrading: true, FuturesTrading: true, CanWithdraw: false, IpRestricted: true);
+
+    private readonly ConcurrentQueue<AskedKey> _asked = new();
+
+    /// <summary>Every time it was asked, in order.</summary>
+    public IReadOnlyList<AskedKey> Asked => [.. _asked];
+
+    /// <summary>What an AI provider, named by its code, says about a key.</summary>
+    public Func<string, string, KeyVerdict> AiAnswer { get; set; } = (_, _) => KeyVerdict.Accepted;
+
+    /// <summary>What Binance says about a credential of an environment, by its API key.</summary>
+    public Func<TradingMode, string, ExchangeKeyCheck> BinanceAnswer { get; set; } =
+        (environment, _) => environment == TradingMode.Live ? TakenInLive : TakenInDemo;
+
+    /// <summary>
+    /// When set, it runs once while a provider is asked, before the answer: for what happens to
+    /// a key in the time that its provider takes to answer.
+    /// </summary>
+    public Func<Task>? WhileAsked { get; set; }
+
+    public async Task<KeyVerdict> CheckAsync(AiProviderCode provider, string apiKey, CancellationToken cancellationToken)
+    {
+        _asked.Enqueue(new AskedKey(provider.Value, apiKey));
+        await MeanwhileAsync();
+
+        return AiAnswer(provider.Value, apiKey);
+    }
+
+    public async Task<ExchangeKeyCheck> CheckKeyAsync(TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
+    {
+        _asked.Enqueue(new AskedKey(mode.ToString(), apiKey, secretKey));
+        await MeanwhileAsync();
+
+        return BinanceAnswer(mode, apiKey);
+    }
+
+    public Task<DateTimeOffset> GetServerTimeAsync(Market market, TradingMode mode, CancellationToken cancellationToken) =>
+        Task.FromResult(TimeProvider.System.GetUtcNow());
+
+    private async Task MeanwhileAsync()
+    {
+        if (WhileAsked is { } meanwhile)
+        {
+            WhileAsked = null;
+            await meanwhile();
+        }
     }
 }
