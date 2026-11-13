@@ -1,3 +1,4 @@
+using Ecnanib.Platform.Security;
 using Microsoft.AspNetCore.Authentication;
 
 namespace Ecnanib.Accounts;
@@ -23,9 +24,15 @@ public static class AccountsModule
         services.AddSingleton<ISignIn, SignIn>();
         services.AddSingleton<IPasswordReset, PasswordReset>();
 
-        // Two-factor authentication. Its key is encrypted by the platform's StoredSecrets.
+        // Two-factor authentication. Its key is encrypted by the platform's StoredSecrets, and
+        // the column that holds it is declared, so that the key is encrypted again when the
+        // active master key has changed (FR-KEY-7).
         services.AddSingleton<TwoFactorCodes>();
         services.AddSingleton<ITwoFactor, TwoFactor>();
+        services.AddStoredSecret<User>(
+            user => user.TwoFactorSecret,
+            user => user.TwoFactorSecretKeyId,
+            user => TwoFactorCodes.BoundTo(user.Id));
 
         // What a sensitive action asks first: whether its user proved who they are again
         // (FR-ACC-4). Also registered as itself, for the sensitive action that Accounts does

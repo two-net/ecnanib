@@ -28,6 +28,8 @@ The lock and the migrations share a session, so the lock cannot be lost while a 
 
 Because the lock belongs to a session, the connection must be direct, or go through a connection pooler in session mode. Behind a pooler in transaction mode the session changes between commands, and the application logs a warning that it did not keep the lock.
 
+After the migrations, and still before the host starts, the application encrypts the stored secrets that an earlier master key encrypted again with the active one. That step takes no lock and does not keep the application from starting. See "Changing the master key" in [security.md](security.md).
+
 Once it runs, the application holds another advisory lock, with the key `BackgroundJobs.LockKey`, for as long as it is the instance that runs the background work. The same holds for that one: it needs a direct connection or a pooler in session mode. See [background-work.md](background-work.md).
 
 The log says what happened:
@@ -84,6 +86,7 @@ internal sealed class AiProviderConfiguration : IEntityTypeConfiguration<AiProvi
 | Timestamps | `DateTimeOffset` or a UTC `DateTime` in the code, which is `timestamp with time zone` in the database. A value that is not in UTC is refused when it is written (NFR-DAT-8). |
 | Partitioning | No table is partitioned, by any mechanism (NFR-DAT-4). |
 | Ownership | A table holds rows that belong to users or rows that belong to the service, and never both. An entity of the first kind implements `IUserOwned`, and its `user_id` has a foreign key that ends at `users.id`. That key is declared with `OnDelete(DeleteBehavior.Cascade)`, so that the row goes with its account (FR-ACC-9). A table of the second kind is listed in `OwnershipRules.cs` (NFR-DAT-9). See [ownership.md](ownership.md). |
+| Stored secrets | A secret that the application must read again is stored encrypted, as bytes, with the id of its master key in a column beside it whose name ends in `_key_id`. The component declares the column with `AddStoredSecret`, so that its values follow the active master key (FR-KEY-6, FR-KEY-7). See "Adding a stored secret" in [security.md](security.md). |
 | Personal data | A column of a user's row that could say who the user is, which is any column that is not an id, a flag, a number, a time, or an enum, is listed in `PersonalDataRules.cs` with what it holds (NFR-SEC-9). See "Personal data" in [accounts.md](accounts.md). |
 | Shared vocabulary | A lookup table for a type in `Shared`, such as `roles` for `Role`, is mapped in `Platform/Persistence`, so that every component can point at it. |
 | Foreign keys between components | Configured in the component that is allowed to reference the other, following the dependency rules. |
@@ -163,4 +166,4 @@ Keep each seeded text on one line in the source file. A text that spans lines wo
 2. Use `decimal` for prices, quantities, and money, and `DateTimeOffset` for timestamps.
 3. Say whose its rows are. Rows of a user implement `IUserOwned`, are read through `OwnedBy`, and go with their account. Rows of the service are listed in `OwnershipRules.cs`. See "Adding a kind of resource" in [ownership.md](ownership.md).
 4. Generate a migration, read it, and commit it.
-5. Run the tests. `ModelTests` checks the model against its migrations and against the rules for columns, `OwnershipModelTests` checks that every table says whose its rows are and that the rows of a user go with the account, and `PersonalDataTests` checks that every column which could say who a user is has been listed.
+5. Run the tests. `ModelTests` checks the model against its migrations and against the rules for columns, `OwnershipModelTests` checks that every table says whose its rows are and that the rows of a user go with the account, `PersonalDataTests` checks that every column which could say who a user is has been listed, and `StoredSecretRuleTests` checks that a column which names a master key belongs to a stored secret that is declared.

@@ -21,7 +21,8 @@ public static class PlatformModule
     /// Creates the host builder with the settings from the one configuration file registered, with
     /// no other source of settings, with logging as that file describes it, with the database it
     /// names, with the scheduler that runs the components' jobs, with the rules for TLS and
-    /// cookies, and with the encryption of stored secrets. The composition root starts here.
+    /// cookies, and with the encryption of stored secrets, which follows the active master key.
+    /// The composition root starts here.
     /// </summary>
     /// <exception cref="InvalidSettingsException">The file is missing or invalid, so the application must not start.</exception>
     public static WebApplicationBuilder CreateBuilder(string[] args)
@@ -62,8 +63,10 @@ public static class PlatformModule
         builder.Services.AddBackgroundWork();
         builder.Services.AddTransportSecurity(settings.Application);
 
-        // What encrypts the secrets a component stores, with the master keys of the file.
+        // What encrypts the secrets a component stores, with the master keys of the file, and
+        // what encrypts them again at startup when the active key has changed.
         builder.Services.AddSingleton<StoredSecrets>();
+        builder.Services.AddSingleton<StoredSecretReencryptor>();
 
         return builder;
     }

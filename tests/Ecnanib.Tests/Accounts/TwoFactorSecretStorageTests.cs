@@ -116,7 +116,7 @@ public class TwoFactorSecretStorageTests
     }
 
     [Fact]
-    public async Task A_key_encrypted_under_an_earlier_master_key_still_signs_in_after_the_active_one_changes()
+    public async Task A_key_encrypted_under_an_earlier_master_key_follows_the_active_one_and_still_signs_in()
     {
         var clock = new TestClock(Morning);
         var database = PostgresServer.CreateDatabase();
@@ -136,9 +136,10 @@ public class TwoFactorSecretStorageTests
         using var client = application.CreateClient();
         await client.SignInAsync(Ada);
 
-        // The value names its key, so it is still read.
+        // The value named its key, so it was read at the start, and encrypted again with the
+        // active one (FR-KEY-7): see ReencryptionTests. It is the same key of the same app.
         Assert.Equal("/", (await client.EnterCodeAsync(app.CodeAt(clock.GetUtcNow()))).Path);
-        Assert.Equal("k1", StoredTwoFactor.Of(database, Ada).SecretKeyId);
+        Assert.Equal("k2", StoredTwoFactor.Of(database, Ada).SecretKeyId);
 
         // A key that is stored from now on is encrypted with the active one.
         await application.RegisterWithTwoFactorAsync(Grace, clock);

@@ -230,7 +230,7 @@ Turning two-factor authentication on gives the user ten recovery codes, for the 
 
 ### The key
 
-The key is in `users.two_factor_secret`, encrypted by `StoredSecrets` with the active master key of the configuration file, and `users.two_factor_secret_key_id` names that key (NFR-SEC-5, FR-KEY-6). The value is bound to the account: copied to the row of another account, it does not decrypt. See "Stored secrets" in [security.md](security.md).
+The key is in `users.two_factor_secret`, encrypted by `StoredSecrets` with the active master key of the configuration file, and `users.two_factor_secret_key_id` names that key (NFR-SEC-5, FR-KEY-6). The value is bound to the account: copied to the row of another account, it does not decrypt. Accounts declares the column as a stored secret, so when the active master key has changed, the key is encrypted again with it at the next start, and the app of the user goes on working (FR-KEY-7). See "Stored secrets" in [security.md](security.md).
 
 It is decrypted to judge a code, in memory, and forgotten when the code is judged (FR-KEY-9). No page shows it after it is turned on.
 

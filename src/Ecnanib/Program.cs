@@ -122,6 +122,11 @@ public class Program
             // started only by app.Start(), so neither can meet a database that is behind.
             app.MigrateDatabase();
 
+            // Then the stored secrets that an earlier master key encrypted are encrypted again
+            // with the active one. The active key changes only with a start, so this is when
+            // there is something to do. It does not keep the application from starting.
+            app.ReencryptStoredSecrets();
+
             app.Start();
             app.WaitForShutdown();
 

@@ -156,6 +156,73 @@ public class StoredSecretsTests
     }
 
     [Fact]
+    public void The_keys_are_known_by_the_ids_the_file_lists_them_under()
+    {
+        var secrets = Secrets("LATER", ("earlier", Earlier), ("Later", Later));
+
+        // The active one as the file lists the key, however the file names it.
+        Assert.Equal("Later", secrets.ActiveKeyId);
+        Assert.Equal(["Later", "earlier"], secrets.KeyIds.Order(StringComparer.Ordinal));
+
+        Assert.True(secrets.Lists("earlier"));
+        Assert.True(secrets.Lists("EARLIER"));
+        Assert.False(secrets.Lists("another"));
+        Assert.False(secrets.Lists(string.Empty));
+    }
+
+    [Fact]
+    public void A_value_that_is_encrypted_again_is_the_same_secret_under_the_active_key()
+    {
+        var stored = Secrets("earlier", ("earlier", Earlier)).Encrypt(Secret, Owner);
+
+        // The file has a new key since, and marks it active. The earlier one is still listed.
+        var rotated = Secrets("later", ("earlier", Earlier), ("later", Later));
+        var moved = rotated.Reencrypt(stored, Owner);
+
+        Assert.Equal("later", moved.KeyId);
+        Assert.Equal(Secret, rotated.Decrypt(moved, Owner));
+
+        // With a nonce of its own: nothing of the earlier value is in it.
+        Assert.Equal(stored.Value.Length, moved.Value.Length);
+        Assert.NotEqual(Convert.ToHexString(stored.Value.AsSpan(0, 12)), Convert.ToHexString(moved.Value.AsSpan(0, 12)));
+        Assert.NotEqual(Convert.ToHexString(stored.Value.AsSpan(12)), Convert.ToHexString(moved.Value.AsSpan(12)));
+
+        // And it no longer needs the earlier key, which the file can then stop listing.
+        Assert.Equal(Secret, Secrets("later", ("later", Later)).Decrypt(moved, Owner));
+    }
+
+    [Fact]
+    public void A_value_stays_bound_to_its_owner_when_it_is_encrypted_again()
+    {
+        var rotated = Secrets("later", ("earlier", Earlier), ("later", Later));
+        var moved = rotated.Reencrypt(Secrets("earlier", ("earlier", Earlier)).Encrypt(Secret, Owner), Owner);
+
+        Assert.ThrowsAny<CryptographicException>(
+            () => rotated.Decrypt(moved, "two-factor:0193a3c2-0000-7000-8000-000000000002"));
+    }
+
+    [Fact]
+    public void A_value_that_cannot_be_read_is_not_encrypted_again()
+    {
+        var stored = Secrets("earlier", ("earlier", Earlier)).Encrypt(Secret, Owner);
+        var rotated = Secrets("later", ("earlier", Earlier), ("later", Later));
+
+        // Changed, in any one bit.
+        var changed = (byte[])stored.Value.Clone();
+        changed[^1] ^= 0x01;
+        Assert.ThrowsAny<CryptographicException>(() => rotated.Reencrypt(stored with { Value = changed }, Owner));
+
+        // Of another owner.
+        Assert.ThrowsAny<CryptographicException>(
+            () => rotated.Reencrypt(stored, "two-factor:0193a3c2-0000-7000-8000-000000000002"));
+
+        // Under a key that is no longer listed, or whose id now belongs to another key.
+        Assert.ThrowsAny<CryptographicException>(() => Secrets("later", ("later", Later)).Reencrypt(stored, Owner));
+        Assert.ThrowsAny<CryptographicException>(
+            () => Secrets("later", ("earlier", Later), ("later", Later)).Reencrypt(stored, Owner));
+    }
+
+    [Fact]
     public void The_application_encrypts_with_the_active_master_key_of_its_configuration_file()
     {
         // The file of the tests lists k1 and k2, and marks k2 active.

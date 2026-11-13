@@ -125,7 +125,7 @@ The application starts no process, and builds no file path from a request. `Inje
 
 ## Stored secrets
 
-A secret that the application must be able to read again is stored encrypted (NFR-SEC-5). `StoredSecrets` in `Platform/Security` does it, for every component, with the master keys of the configuration file. A secret that only needs to be recognised, such as a password or the token of a session, is not encrypted but hashed: see [accounts.md](accounts.md).
+A secret that the application must be able to read again is stored encrypted (NFR-SEC-5). `StoredSecrets` in `Platform/Security` does it, for every component, with the master keys of the configuration file. The master key can be changed: several keys may be listed, one of them is active, and every stored value is moved to it (FR-KEY-7). A secret that only needs to be recognised, such as a password or the token of a session, is not encrypted but hashed: see [accounts.md](accounts.md).
 
 | Rule | How |
 |---|---|
@@ -135,14 +135,56 @@ A secret that the application must be able to read again is stored encrypted (NF
 | New values use the active key, and earlier values still read (FR-KEY-7). | `Security:ActiveKeyId` names the key that encrypts. A value is decrypted with the key it names, so it reads for as long as `Security:MasterKeys` lists that key. Ids ignore case. |
 | A value belongs to one thing. | Whoever encrypts says what the value is bound to, such as `two-factor:<user id>`, and must say the same to decrypt. A value that is copied to another row does not decrypt there. |
 | Decrypted only for the call that needs it (FR-KEY-9). | `Decrypt` hands the secret to its caller, who uses it and clears it. Nothing keeps it. |
+| Every stored value follows the active key (FR-KEY-7). | When the application starts, it encrypts every value that names another key again, with the active one. See "Changing the master key". |
 
 A stored value is the nonce, the ciphertext, and the tag of 16 bytes, in that order.
 
-What is encrypted this way today is the key of two-factor authentication, in `users.two_factor_secret`. See "The key" in [accounts.md](accounts.md).
+What is encrypted this way today is the key of two-factor authentication, in `users.two_factor_secret`. See "The key" in [accounts.md](accounts.md). Not built yet: the encryption of users' API keys.
 
-**To change the master key,** add a key to `Security:MasterKeys` under a new id, name it in `Security:ActiveKeyId`, and keep the earlier key listed. Values that are stored from then on use the new key. **Removing a key from the file makes every value it encrypted unreadable:** a user whose two-factor key is one of them cannot sign in, and the request ends in an error.
+### Changing the master key
 
-Not built yet: the routine that encrypts every stored value again with the active key, after which an earlier key can be removed, and the encryption of users' API keys.
+1. Add a key to `Security:MasterKeys` under a new id, name it in `Security:ActiveKeyId`, and **keep the earlier key listed**. `openssl rand -base64 32` prints a key.
+2. Start the application. Before it serves a request, it encrypts every stored value again with the new key, and says so:
+
+   ```
+   Encrypted 212 stored secrets of users.two_factor_secret again, with the active master key key-2
+   Every stored secret is encrypted with the active master key key-2
+   No stored secret is encrypted with the master keys ["key-1"], so they can be taken out of the configuration file
+   ```
+
+3. Take the earlier key out of the file, now or at any later start. Keep it somewhere safe for as long as a backup of the database from its time may be restored: the values in that backup name it.
+
+The routine runs at every start, after the migrations and before anything is served or scheduled, because the active key changes only with a start. With nothing to do, it asks each declared column for the values of other keys, finds none, and writes nothing. It logs under the area `Ecnanib.Platform.Security.StoredSecretReencryptor`.
+
+| Rule | How |
+|---|---|
+| A value is encrypted again inside `StoredSecrets`. | `Reencrypt` reads the value with the key it names, encrypts it with the active key under a new nonce, and clears the secret. It is handed to nobody (FR-KEY-9). The value stays bound to what it was bound to. |
+| A row that changed meanwhile keeps what it holds. | A value is written only where the row still holds the value that was read. So a user who turns two-factor authentication off at that moment does not get the key back, and two instances that start together do not undo each other's work. |
+| A value that cannot be read is left as it is. | It is not made to look like a value of the active key. The log has an `Error` for each column and key, with how many: values that name a key the file does not list, and values that do not decrypt with the key they name, because they were changed or because the file lists another key under that id. |
+| It does not keep the application from starting. | Whatever goes wrong is logged as `Error`. What was not encrypted again is still read with the key it names, and is tried again at the next start. |
+
+**Take a key out of the file only after the log has said that no stored secret is encrypted with it.** While values are left, the log says instead, as a `Warning`, how many are still encrypted with another key. A value whose key is gone cannot be read: a user whose two-factor key is one of them cannot sign in, and the request ends in an error. Listing the key again makes the value readable again.
+
+Every instance reads the same file. One that still runs with the earlier file while another starts with the new key cannot read what the new one writes. Where two instances overlap during a deployment, first deploy the file with the new key listed and the earlier one still active, and mark the new one active with the following deployment.
+
+A page that is open while the application restarts may hold a value of the earlier key: the key of a two-factor setup that is not confirmed yet travels in its form, for at most 30 minutes. Once the earlier key is gone, that page offers a new key.
+
+### Adding a stored secret
+
+1. Store two columns: the value, as bytes, and the id of its master key, as text, in a column of its own whose name ends in `_key_id`. Both are empty together, or both required.
+2. Encrypt with `StoredSecrets.Encrypt`, and say what the value is bound to: a purpose and the id of the row or of its owner, such as `two-factor:<user id>`.
+3. Declare the column in the component's `Add<Name>()`, so that the values follow the active key:
+
+   ```csharp
+   services.AddStoredSecret<User>(
+       user => user.TwoFactorSecret,
+       user => user.TwoFactorSecretKeyId,
+       user => TwoFactorCodes.BoundTo(user.Id));
+   ```
+
+4. Decrypt where the secret is used, and clear it there: `CryptographicOperations.ZeroMemory`.
+
+[`StoredSecretRules.cs`](../tests/Ecnanib.Tests/Security/StoredSecretRules.cs) holds the model to the third step. The rule cannot tell what a column holds, so it goes by the name: a column whose name ends in `_key_id` belongs to a declared secret, or is listed there with what it holds instead. `StoredSecretRuleTests` also pins which columns are declared, so that a new one shows in a review.
 
 ## The request pipeline
 

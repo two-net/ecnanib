@@ -36,6 +36,8 @@ openssl rand -base64 32
 
 The last command prints a master key for `Security:MasterKeys`. Never deploy the tracked master key.
 
+`Security:MasterKeys` may list several keys, and `Security:ActiveKeyId` names the one that encrypts. To change the master key, add a key, name it active, keep the earlier one listed, and start the application: it encrypts every stored secret again with the new key, and its log says when the earlier one can be taken out. See "Changing the master key" in [security.md](security.md).
+
 The `Email` section has no key for encryption: the port and the sign-in decide it. A mail server that takes a sign-in must offer STARTTLS, or listen on port 465. See "Email" in [accounts.md](accounts.md).
 
 `Application:PublicUrl` is the address users reach the application at, and it must be an `https` address. A request over plain HTTP is sent on to its port, and the links in emails start with it. `Security:SessionIdleMinutes`, from 1 to 1440, is how long a session lasts without being used. See [security.md](security.md) and "Sessions" in [accounts.md](accounts.md).

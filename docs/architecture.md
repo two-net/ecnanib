@@ -123,7 +123,7 @@ All traffic between a browser and the application uses TLS: a request over plain
 
 The application defends against injection, cross-site scripting, request forgery, and clickjacking (NFR-SEC-4). Every answer tells the browser to run no script and apply no style that is not the application's own, and to show the application in no frame. A form is taken only with the token of a page that the application served. Two rules in `ComponentRules.cs` keep the rest in place: no code sends SQL that was put together as text, and no code writes text into a page as markup.
 
-A secret that the application must read again is stored encrypted, with authenticated encryption under a master key of the configuration file, and with the id of that key beside it (NFR-SEC-5). The encryption is in `Platform`, because Accounts needs it and may not use Credentials, which will need it too. See [security.md](security.md).
+A secret that the application must read again is stored encrypted, with authenticated encryption under a master key of the configuration file, and with the id of that key beside it (NFR-SEC-5). The encryption is in `Platform`, because Accounts needs it and may not use Credentials, which will need it too. The master key can be changed: a component declares each column that holds such a secret with `AddStoredSecret`, and when the application starts, the platform encrypts every value that an earlier key encrypted again with the active one (FR-KEY-7). `Platform` never references a component for it: it finds the declarations among the registered services. See [security.md](security.md).
 
 ## Background work
 

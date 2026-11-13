@@ -15,7 +15,9 @@ public sealed record EncryptedSecret(string KeyId, byte[] Value);
 /// Encrypts the secrets that the database holds, and decrypts them for the call that needs them
 /// (FR-KEY-6, FR-KEY-9). The keys are the master keys of the configuration file: new values are
 /// encrypted with the active one, and a value is read with the one it names, so that the active
-/// key can change while earlier values still read (FR-KEY-7). See docs/security.md.
+/// key can change while earlier values still read. An earlier value is then encrypted again with
+/// the active key, when the application starts: see <see cref="StoredSecretReencryption"/>
+/// (FR-KEY-7). See docs/security.md.
 /// </summary>
 /// <remarks>
 /// The encryption is AES-256-GCM, which is authenticated: a value that was changed does not
@@ -40,6 +42,20 @@ public sealed class StoredSecrets
 
         // The id as the file lists the key, however the file names the active one.
         _activeKeyId = _keys.Keys.Single(id => string.Equals(id, security.ActiveKeyId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The id of the master key that encrypts new values, as the configuration file lists it.</summary>
+    public string ActiveKeyId => _activeKeyId;
+
+    /// <summary>The ids of every master key the configuration file lists, as it lists them.</summary>
+    public IReadOnlyCollection<string> KeyIds => _keys.Keys;
+
+    /// <summary>Whether the configuration file lists a master key under an id. Ids ignore case.</summary>
+    public bool Lists(string keyId)
+    {
+        ArgumentNullException.ThrowIfNull(keyId);
+
+        return _keys.ContainsKey(keyId);
     }
 
     /// <summary>Encrypts a secret with the active master key.</summary>
@@ -98,5 +114,27 @@ public sealed class StoredSecrets
         aes.Decrypt(nonce, ciphertext, tag, secret, Encoding.UTF8.GetBytes(boundTo));
 
         return secret;
+    }
+
+    /// <summary>
+    /// Encrypts a stored secret again, with the active master key and a new nonce (FR-KEY-7). It
+    /// is read with the master key it names, and the secret is cleared before this returns: it
+    /// is handed to nobody (FR-KEY-9).
+    /// </summary>
+    /// <param name="stored">The value, as <see cref="Encrypt"/> returned it.</param>
+    /// <param name="boundTo">What the value belongs to, as it was given when the value was encrypted.</param>
+    /// <returns>The same secret, bound to the same thing, as the active master key encrypts it.</returns>
+    /// <exception cref="CryptographicException">The value cannot be read: see <see cref="Decrypt"/>.</exception>
+    public EncryptedSecret Reencrypt(EncryptedSecret stored, string boundTo)
+    {
+        var secret = Decrypt(stored, boundTo);
+        try
+        {
+            return Encrypt(secret, boundTo);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(secret);
+        }
     }
 }
