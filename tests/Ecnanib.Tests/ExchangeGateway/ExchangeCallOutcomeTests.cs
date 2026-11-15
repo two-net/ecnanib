@@ -34,7 +34,8 @@ public class ExchangeCallOutcomeTests
         foreach (var (market, mode) in BinanceCalls.Pairs)
         {
             var (apiKey, secretKey) = BinanceCalls.CredentialOf(mode);
-            var balances = await exchange.GetBalancesAsync(market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+            var balances = await exchange.GetBalancesAsync(
+                BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
 
             Assert.Equal(ExchangeCallOutcome.AuthenticationFailed, balances.Outcome);
             Assert.Empty(balances.Balances);
@@ -46,11 +47,8 @@ public class ExchangeCallOutcomeTests
     // The clock of the service is off, which is not the user's key being wrong.
     [InlineData(HttpStatusCode.BadRequest, """{ "code": -1021, "msg": "Timestamp for this request is outside of the recvWindow." }""")]
 
-    // A limit on requests, and the block that follows when it is ignored.
-    [InlineData(HttpStatusCode.TooManyRequests, """{ "code": -1003, "msg": "Too much request weight used." }""")]
-    [InlineData((HttpStatusCode)418, """{ "code": -1003, "msg": "Way too much request weight used; IP banned." }""")]
-
     // The firewall in front of the exchange, a call it does not have, and a fault of the exchange.
+    // The limit on requests is an outcome of its own: see RequestLimitTests.
     [InlineData(HttpStatusCode.Forbidden, "<html>Forbidden</html>")]
     [InlineData(HttpStatusCode.NotFound, """{ "code": -5000, "msg": "Path is invalid." }""")]
     [InlineData(HttpStatusCode.InternalServerError, """{ "code": -1000, "msg": "An unknown error occurred." }""")]
@@ -69,7 +67,8 @@ public class ExchangeCallOutcomeTests
             // A signed call, and one without a credential.
             Assert.Equal(
                 ExchangeCallOutcome.Failed,
-                (await exchange.GetBalancesAsync(market, mode, apiKey, secretKey, TestContext.Current.CancellationToken)).Outcome);
+                (await exchange.GetBalancesAsync(
+                    BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken)).Outcome);
             Assert.Equal(
                 new ExchangeTime(ExchangeCallOutcome.Failed, null),
                 await exchange.GetServerTimeAsync(market, mode, TestContext.Current.CancellationToken));
@@ -135,7 +134,8 @@ public class ExchangeCallOutcomeTests
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
         var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
 
-        var balances = await exchange.GetBalancesAsync(market, TradingMode.Demo, apiKey, secretKey, TestContext.Current.CancellationToken);
+        var balances = await exchange.GetBalancesAsync(
+            BinanceCalls.User, market, TradingMode.Demo, apiKey, secretKey, TestContext.Current.CancellationToken);
 
         // A part of a list would make the rest look empty.
         Assert.Equal(ExchangeCallOutcome.Failed, balances.Outcome);
@@ -157,7 +157,7 @@ public class ExchangeCallOutcomeTests
         foreach (var market in new[] { Market.Spot, Market.Futures })
         {
             var balances = await exchange.GetBalancesAsync(
-                market, TradingMode.Demo, apiKey, secretKey, TestContext.Current.CancellationToken);
+                BinanceCalls.User, market, TradingMode.Demo, apiKey, secretKey, TestContext.Current.CancellationToken);
 
             Assert.Equal(ExchangeCallOutcome.Succeeded, balances.Outcome);
             Assert.Empty(balances.Balances);
@@ -173,7 +173,8 @@ public class ExchangeCallOutcomeTests
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
         var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
 
-        await exchange.GetBalancesAsync(Market.Futures, TradingMode.Demo, apiKey, secretKey, TestContext.Current.CancellationToken);
+        await exchange.GetBalancesAsync(
+            BinanceCalls.User, Market.Futures, TradingMode.Demo, apiKey, secretKey, TestContext.Current.CancellationToken);
 
         // The log of outbound calls has the status, which most of Binance's errors share.
         var events = application.Events();
@@ -207,14 +208,16 @@ public class ExchangeCallOutcomeTests
             await exchange.GetServerTimeAsync(Market.Spot, TradingMode.Live, TestContext.Current.CancellationToken));
         Assert.Equal(
             ExchangeCallOutcome.Failed,
-            (await exchange.GetBalancesAsync(Market.Futures, TradingMode.Live, apiKey, secretKey, TestContext.Current.CancellationToken))
+            (await exchange.GetBalancesAsync(
+                BinanceCalls.User, Market.Futures, TradingMode.Live, apiKey, secretKey, TestContext.Current.CancellationToken))
             .Outcome);
 
         // An answer that breaks off while it is read ends the same way.
         failure = new IOException("The connection was closed.");
         Assert.Equal(
             ExchangeCallOutcome.Failed,
-            (await exchange.GetBalancesAsync(Market.Spot, TradingMode.Live, apiKey, secretKey, TestContext.Current.CancellationToken))
+            (await exchange.GetBalancesAsync(
+                BinanceCalls.User, Market.Spot, TradingMode.Live, apiKey, secretKey, TestContext.Current.CancellationToken))
             .Outcome);
 
         // A call that is given up, which nobody cancelled, took too long.
@@ -245,7 +248,7 @@ public class ExchangeCallOutcomeTests
 
         var call = signed
             ? OutcomeOfAsync(exchange.GetBalancesAsync(
-                Market.Futures, TradingMode.Live, apiKey, secretKey, TestContext.Current.CancellationToken))
+                BinanceCalls.User, Market.Futures, TradingMode.Live, apiKey, secretKey, TestContext.Current.CancellationToken))
             : OutcomeOfAsync(exchange.GetServerTimeAsync(Market.Spot, TradingMode.Live, TestContext.Current.CancellationToken));
         await reached.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 
@@ -275,7 +278,7 @@ public class ExchangeCallOutcomeTests
         var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => exchange.GetBalancesAsync(Market.Spot, TradingMode.Demo, apiKey, secretKey, cancelled.Token));
+            () => exchange.GetBalancesAsync(BinanceCalls.User, Market.Spot, TradingMode.Demo, apiKey, secretKey, cancelled.Token));
     }
 
     [Fact]

@@ -20,11 +20,19 @@ public enum ExchangeCallOutcome
     TimedOut,
 
     /// <summary>
-    /// Anything else: no connection, a limit on requests, a clock that is off, a block of the
-    /// service's address, a fault of the exchange, or an answer that is not what the exchange
-    /// sends.
+    /// Anything else: no connection, a clock that is off, a block of the service's address, a
+    /// fault of the exchange, or an answer that is not what the exchange sends.
     /// </summary>
     Failed,
+
+    /// <summary>
+    /// The limit on requests, which the exchange counts against the service as a whole
+    /// (FR-BIN-4): the limiter held the call back for longer than a call waits, and it was not
+    /// sent, or the exchange answered that it has had too many. It says nothing about a
+    /// credential. Making the call again at once gives the same: see <see cref="IExchangeLimits"/>
+    /// for when the exchange is asked again.
+    /// </summary>
+    RateLimited,
 }
 
 /// <summary>What reading the exchange's clock gave.</summary>

@@ -141,7 +141,9 @@ The gateway takes the user's key with each call and keeps it nowhere (FR-KEY-9).
 
 Every call to Binance is made through the Exchange Gateway, with one adapter behind `IExchangeAdapter`. Binance is the only exchange. The gateway reaches its Spot market and its USDⓈ-margined perpetual Futures market, each on the real exchange and in Binance's test environment, at the four addresses of the configuration file (FR-BIN-1, FR-BIN-2). A caller names a market and an environment, and nothing of Binance.
 
-The gateway takes the user's credential with each call that needs one, signs the call with it, and keeps it nowhere. A call that gives no answer ends as an outcome, and not as an error. Everything the gateway can send to Binance is a short list of calls that read, and each passes one place: it has no operation that withdraws, deposits, or transfers funds, and a test holds it to that (FR-BIN-9). Not built yet: the rate limiter, the watch on the clock, market data, the orders, and reconciliation. See [exchange.md](exchange.md).
+The gateway takes the user's credential with each call that needs one, signs the call with it, and keeps it nowhere. A call that gives no answer ends as an outcome, and not as an error. Everything the gateway can send to Binance is a short list of calls that read, and each passes one place: it has no operation that withdraws, deposits, or transfers funds, and a test holds it to that (FR-BIN-9).
+
+Binance counts its limits on requests against the address of the service, so all users spend one budget. One limiter in the gateway governs every call, for all users: it keeps the service under the part of each limit that the configuration file allows it, sends nothing while Binance signals that it has had too many, and gives the users whose calls wait their turns. A call that it holds back ends as an outcome of its own. It says what is used through `IExchangeLimits`, for the operator status screen (FR-BIN-4). Not built yet: the watch on the clock, market data, the orders, and reconciliation. See [exchange.md](exchange.md).
 
 ## Model catalog
 

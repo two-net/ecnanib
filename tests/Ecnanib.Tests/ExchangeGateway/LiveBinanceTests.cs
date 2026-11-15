@@ -23,8 +23,9 @@ namespace Ecnanib.Tests.ExchangeGateway;
 /// </para>
 /// <para>
 /// They also settle what Binance's documentation leaves open: that one credential of the test
-/// environment works at the addresses of both its markets, and how each address answers a
-/// credential that it does not know.
+/// environment works at the addresses of both its markets, how each address answers a
+/// credential that it does not know, and under which name an answer says what Binance has
+/// counted against the address, which the limiter goes by (FR-BIN-4).
 /// </para>
 /// <para>
 /// The variables are read here, by the tests. The application reads none.
@@ -57,6 +58,13 @@ public class LiveBinanceTests
         var now = DateTimeOffset.UtcNow;
         Assert.InRange(time.ServerTime!.Value, now.AddMinutes(-5), now.AddMinutes(5));
         Assert.Equal(TimeSpan.Zero, time.ServerTime.Value.Offset);
+
+        // Binance said with its answer what it has counted against this address, under the
+        // name that the limiter reads: its documentation gives the name as a pattern only.
+        var usage = application.Services.GetRequiredService<IExchangeLimits>().Usage()
+            .Single(limit => limit.Name == market.ToString() && limit.Environment == mode);
+        Assert.Equal(1, usage.Used);
+        Assert.InRange(usage.Reported ?? 0, 1, usage.Limit);
     }
 
     [Theory]
@@ -67,7 +75,8 @@ public class LiveBinanceTests
         using var application = OnTheNetwork();
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
 
-        var balances = await exchange.GetBalancesAsync(market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+        var balances = await exchange.GetBalancesAsync(
+            BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
 
         // Binance took the signature, and what it sent reads as balances. In the test
         // environment the same credential is asked at the address of each market.
@@ -85,7 +94,7 @@ public class LiveBinanceTests
         using var application = OnTheNetwork();
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
 
-        var check = await exchange.CheckKeyAsync(mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+        var check = await exchange.CheckKeyAsync(BinanceCalls.User, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
 
         // A key of the real exchange that is restricted to other addresses than this machine's is
         // refused here, as a wrong one is: allow this machine's address at Binance for the run.
@@ -105,7 +114,8 @@ public class LiveBinanceTests
         using var application = OnTheNetwork();
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
 
-        var balances = await exchange.GetBalancesAsync(market, mode, UnknownKey, UnknownSecret, TestContext.Current.CancellationToken);
+        var balances = await exchange.GetBalancesAsync(
+            BinanceCalls.User, market, mode, UnknownKey, UnknownSecret, TestContext.Current.CancellationToken);
 
         Assert.Equal(ExchangeCallOutcome.AuthenticationFailed, balances.Outcome);
     }
@@ -122,7 +132,7 @@ public class LiveBinanceTests
         // list of Binance's errors.
         Assert.Equal(
             ExchangeKeyCheck.Refused,
-            await exchange.CheckKeyAsync(mode, UnknownKey, UnknownSecret, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, mode, UnknownKey, UnknownSecret, TestContext.Current.CancellationToken));
     }
 
     /// <summary>The credential that the run was given for an environment. Without both keys, the test is skipped.</summary>

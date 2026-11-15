@@ -11,7 +11,9 @@ namespace Ecnanib.ExchangeGateway;
 /// <remarks>
 /// Every operation here reads. None withdraws, deposits, or transfers funds, and none will
 /// (FR-BIN-9). A credential is taken with each call that needs one and is kept nowhere: the
-/// gateway never fetches a stored key.
+/// gateway never fetches a stored key. Every call passes the one limiter of the gateway, which
+/// keeps the service under its part of the exchange's limit on requests, and a call that needs a
+/// credential says whose it is, so that users take turns there (FR-BIN-4).
 /// </remarks>
 public interface IExchangeAdapter
 {
@@ -29,6 +31,10 @@ public interface IExchangeAdapter
     /// Asks the exchange about a credential, with calls that only read: whether it takes the
     /// credential, and what the credential may do (FR-KEY-3, FR-KEY-4).
     /// </summary>
+    /// <param name="userId">
+    /// Whose calls these are. Calls that wait under the limit on requests take turns, one user
+    /// after the other (FR-BIN-4). It is not sent to the exchange.
+    /// </param>
     /// <param name="mode">The environment the credential is for.</param>
     /// <param name="apiKey">
     /// The user's API key. It is passed on its own, as the secret key is, so that neither is part
@@ -40,12 +46,14 @@ public interface IExchangeAdapter
     /// What the exchange said. An exchange that does not answer is
     /// <see cref="KeyVerdict.Unreachable"/>: this does not fail for it.
     /// </returns>
-    Task<ExchangeKeyCheck> CheckKeyAsync(TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken);
+    Task<ExchangeKeyCheck> CheckKeyAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken);
 
     /// <summary>
     /// Reads what the account of a credential holds on one market, with a call that is signed
     /// with the credential and only reads.
     /// </summary>
+    /// <param name="userId">Whose call it is, as in <see cref="CheckKeyAsync"/>.</param>
     /// <param name="market">The market whose account is read.</param>
     /// <param name="mode">The environment the credential is for, which is the one that is asked.</param>
     /// <param name="apiKey">The user's API key, passed on its own as in <see cref="CheckKeyAsync"/>.</param>
@@ -58,7 +66,7 @@ public interface IExchangeAdapter
     /// checked again.
     /// </returns>
     Task<ExchangeBalances> GetBalancesAsync(
-        Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken);
+        Guid userId, Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken);
 }
 
 /// <summary>What the exchange said about a credential.</summary>

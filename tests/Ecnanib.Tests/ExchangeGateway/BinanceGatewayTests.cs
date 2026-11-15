@@ -51,7 +51,8 @@ public class BinanceGatewayTests
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
         var (apiKey, secretKey) = BinanceCalls.CredentialOf(mode);
 
-        var balances = await exchange.GetBalancesAsync(market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+        var balances = await exchange.GetBalancesAsync(
+            BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
 
         Assert.Equal(ExchangeCallOutcome.Succeeded, balances.Outcome);
 
@@ -91,7 +92,7 @@ public class BinanceGatewayTests
         foreach (var (market, mode) in BinanceCalls.Pairs)
         {
             var (apiKey, secretKey) = BinanceCalls.CredentialOf(mode);
-            await exchange.GetBalancesAsync(market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+            await exchange.GetBalancesAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
         }
 
         // The credential of the test environment reaches no address of the real exchange, and
@@ -116,7 +117,7 @@ public class BinanceGatewayTests
         var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Live);
 
         var balances = await exchange.GetBalancesAsync(
-            Market.Spot, TradingMode.Live, apiKey, secretKey, TestContext.Current.CancellationToken);
+            BinanceCalls.User, Market.Spot, TradingMode.Live, apiKey, secretKey, TestContext.Current.CancellationToken);
 
         // All of an asset is what is free and what open orders hold, to the last digit.
         Assert.Equal(
@@ -136,7 +137,7 @@ public class BinanceGatewayTests
         var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
 
         var balances = await exchange.GetBalancesAsync(
-            Market.Futures, TradingMode.Demo, apiKey, secretKey, TestContext.Current.CancellationToken);
+            BinanceCalls.User, Market.Futures, TradingMode.Demo, apiKey, secretKey, TestContext.Current.CancellationToken);
 
         // An asset that the wallet holds none of is left out. One that it owes is not.
         Assert.Equal(
@@ -157,7 +158,7 @@ public class BinanceGatewayTests
         var (apiKey, secretKey) = BinanceCalls.CredentialOf(mode);
 
         await exchange.GetServerTimeAsync(market, mode, TestContext.Current.CancellationToken);
-        await exchange.GetBalancesAsync(market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+        await exchange.GetBalancesAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
 
         // A call without a credential and a signed one: each is one event.
         var calls = application.Events().Where(written => written.Area == BinanceCalls.HttpArea).ToList();
@@ -189,7 +190,7 @@ public class BinanceGatewayTests
         foreach (var (market, mode) in BinanceCalls.Pairs)
         {
             var (apiKey, secretKey) = BinanceCalls.CredentialOf(mode);
-            await exchange.GetBalancesAsync(market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+            await exchange.GetBalancesAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
         }
 
         // The calls are there, with what Binance answered.

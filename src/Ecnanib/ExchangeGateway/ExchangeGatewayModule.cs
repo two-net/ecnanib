@@ -21,6 +21,12 @@ public static class ExchangeGatewayModule
         services.AddSingleton<BinanceCall>();
         services.AddSingleton<IExchangeAdapter, BinanceAdapter>();
 
+        // The one limiter that every one of those calls passes, for all users: Binance counts
+        // its limits on requests against the address of the service (FR-BIN-4). It is one
+        // object, which also says what is used.
+        services.AddSingleton<BinanceLimiter>();
+        services.AddSingleton<IExchangeLimits>(provider => provider.GetRequiredService<BinanceLimiter>());
+
         // Binance reports the request weight and the order count it has counted against the
         // service in these response headers, one per interval, such as X-MBX-USED-WEIGHT-1M.
         // Its wallet API, which the check of a key calls, reports its weight under a name of its

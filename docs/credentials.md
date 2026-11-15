@@ -87,6 +87,7 @@ A key is validated by asking its provider about it, with a call that only reads 
 
 - **Only the provider's answer to a wrong key is a refusal.** Each provider's check names its own, in `AiProviderGateway/Adapters/<Provider>`. A status that could also mean something else, such as 403, is no verdict: a block of the service's region must not turn every stored key invalid.
 - **Binance is asked differently in its two environments,** because its test environment has no call that reports the permissions of a key. On the real exchange one call says everything. In the test environment the account of each market is read: a market that takes the credential says whether it may trade there, and a market that refuses a credential which the other one takes is one it may not trade on. Both refusing is a refusal. A market that gives no answer leaves no verdict.
+- **A check of a Binance key passes the limiter of the gateway, as its user's call** (FR-BIN-4). On the real exchange it weighs 1, and in the test environment 25. A check that the limiter holds back, or that Binance answers with its signal of too many requests, leaves no verdict: `Unreachable`. See "The limiter" in [exchange.md](exchange.md).
 - **The addresses are those of the configuration file:** `AiProviders:<Provider>:BaseUrl`, and `Binance:<Market>:<Environment>:BaseUrl`. A check has a time limit of its own, 15 seconds, and not the provider's `TimeoutSeconds`, which is for a call to a model: a user waits for a check with a form.
 
 ### When a key is validated
@@ -273,5 +274,4 @@ Whether a key can withdraw is not stored: a key that can is not.
 - The model selector, and holding the choice of a model to what a key can use when it is saved (FR-AGT-5). `IKeyModels` answers both, and nothing asks it yet.
 - Saying on `/account/keys` which models a key can use, or that it is not known. The export of a user's data says it.
 - Telling the user that a key is invalid (FR-NTF-1). The list of keys says so. In-app notifications are not built.
-- A share of Binance's request limit for the checks (FR-BIN-4). A check of a key on the real exchange weighs 1, and one in the test environment 25. The limiter is not built.
 - The usage of each AI key: calls, tokens, and estimated cost (FR-KEY-11).

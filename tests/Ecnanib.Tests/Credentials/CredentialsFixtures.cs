@@ -311,7 +311,8 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
         return AiAnswer(provider.Value, apiKey);
     }
 
-    public async Task<ExchangeKeyCheck> CheckKeyAsync(TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
+    public async Task<ExchangeKeyCheck> CheckKeyAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
     {
         _asked.Enqueue(new AskedKey(mode.ToString(), apiKey, secretKey));
         await MeanwhileAsync();
@@ -324,7 +325,7 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
 
     // An account that holds nothing: nothing of these tests reads a balance.
     public Task<ExchangeBalances> GetBalancesAsync(
-        Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken) =>
+        Guid userId, Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken) =>
         Task.FromResult(new ExchangeBalances(ExchangeCallOutcome.Succeeded, []));
 
     private async Task MeanwhileAsync()

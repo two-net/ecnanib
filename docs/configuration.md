@@ -50,6 +50,8 @@ Each entry under `AiProviders` is one AI provider, named by its code. `BaseUrl` 
 
 Each of `Binance:Spot` and `Binance:Futures` has a `BaseUrl` under `Live` and under `Demo`: the address of Binance's API for that market, on the real exchange and in Binance's test environment. An address is the host alone, such as `https://api.binance.com`. The gateway adds the path of each call, with the `/api` or `/fapi` that it begins with, so an address that already ends in one of them is wrong: Binance's page on its demo mode writes the address of Spot that way. See [exchange.md](exchange.md).
 
+`Binance:LimitSharePercent`, from 1 to 100, is the part of Binance's limits on requests that the service allows itself. Binance counts them against the address that the calls come from, so the part is of what all users together may ask in a minute. The rest is left for whatever else calls Binance from the same address. See "The limiter" in [exchange.md](exchange.md).
+
 `Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
 
 ### Permissions
@@ -111,9 +113,9 @@ The connection string is in `ConnectionStrings`, under the name of the database 
 A component takes the section it needs as a constructor parameter:
 
 ```csharp
-internal sealed class RateLimiter(BinanceSettings binance)
+internal sealed class BinanceLimiter(BinanceSettings settings)
 {
-    private readonly int _share = binance.LimitSharePercent;
+    private readonly int _percent = settings.LimitSharePercent;
 }
 ```
 

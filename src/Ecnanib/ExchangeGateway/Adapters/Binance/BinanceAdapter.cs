@@ -49,15 +49,16 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
     /// no such call, so there the account of each market is read, which says whether the
     /// credential may trade on it, and nothing about withdrawals or addresses.
     /// </summary>
-    public Task<ExchangeKeyCheck> CheckKeyAsync(TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
+    public Task<ExchangeKeyCheck> CheckKeyAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(apiKey);
         ArgumentNullException.ThrowIfNull(secretKey);
 
         return mode switch
         {
-            TradingMode.Live => CheckLiveKeyAsync(apiKey, secretKey, cancellationToken),
-            TradingMode.Demo => CheckDemoKeyAsync(apiKey, secretKey, cancellationToken),
+            TradingMode.Live => CheckLiveKeyAsync(userId, apiKey, secretKey, cancellationToken),
+            TradingMode.Demo => CheckDemoKeyAsync(userId, apiKey, secretKey, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
         };
     }
@@ -67,7 +68,7 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
     /// asked without the assets it holds none of. On Futures it is the wallet of the market.
     /// </summary>
     public async Task<ExchangeBalances> GetBalancesAsync(
-        Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
+        Guid userId, Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(apiKey);
         ArgumentNullException.ThrowIfNull(secretKey);
@@ -75,29 +76,31 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
         var answer = market switch
         {
             Market.Spot => await call.AskSignedAsync(
-                BinanceEndpoint.SpotAccount, mode, apiKey, secretKey, SpotBalances, cancellationToken),
+                BinanceEndpoint.SpotAccount, mode, userId, apiKey, secretKey, SpotBalances, cancellationToken),
             Market.Futures => await call.AskSignedAsync(
-                BinanceEndpoint.FuturesBalances, mode, apiKey, secretKey, FuturesBalances, cancellationToken),
+                BinanceEndpoint.FuturesBalances, mode, userId, apiKey, secretKey, FuturesBalances, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
         };
 
         return new ExchangeBalances(answer.Outcome, answer.Value ?? []);
     }
 
-    private async Task<ExchangeKeyCheck> CheckLiveKeyAsync(string apiKey, string secretKey, CancellationToken cancellationToken)
+    private async Task<ExchangeKeyCheck> CheckLiveKeyAsync(
+        Guid userId, string apiKey, string secretKey, CancellationToken cancellationToken)
     {
         var answer = await call.AskSignedAsync(
-            BinanceEndpoint.KeyPermissions, TradingMode.Live, apiKey, secretKey, Permissions, cancellationToken);
+            BinanceEndpoint.KeyPermissions, TradingMode.Live, userId, apiKey, secretKey, Permissions, cancellationToken);
 
         return answer.Value ?? new ExchangeKeyCheck(VerdictOf(answer.Outcome));
     }
 
-    private async Task<ExchangeKeyCheck> CheckDemoKeyAsync(string apiKey, string secretKey, CancellationToken cancellationToken)
+    private async Task<ExchangeKeyCheck> CheckDemoKeyAsync(
+        Guid userId, string apiKey, string secretKey, CancellationToken cancellationToken)
     {
         var spot = await call.AskSignedAsync(
-            BinanceEndpoint.SpotAccount, TradingMode.Demo, apiKey, secretKey, MayTrade, cancellationToken);
+            BinanceEndpoint.SpotAccount, TradingMode.Demo, userId, apiKey, secretKey, MayTrade, cancellationToken);
         var futures = await call.AskSignedAsync(
-            BinanceEndpoint.FuturesAccountSettings, TradingMode.Demo, apiKey, secretKey, MayTrade, cancellationToken);
+            BinanceEndpoint.FuturesAccountSettings, TradingMode.Demo, userId, apiKey, secretKey, MayTrade, cancellationToken);
 
         var onSpot = VerdictOf(spot.Outcome);
         var onFutures = VerdictOf(futures.Outcome);
@@ -124,7 +127,8 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
     /// <summary>
     /// What the end of a call says about the credential it was signed with. Only Binance's answer
     /// to a wrong credential is a refusal. Anything else that is not a success says nothing about
-    /// it: none of them may turn a stored key invalid.
+    /// it, a call that the limit on requests kept from Binance included: none of them may turn a
+    /// stored key invalid.
     /// </summary>
     private static KeyVerdict VerdictOf(ExchangeCallOutcome outcome) => outcome switch
     {

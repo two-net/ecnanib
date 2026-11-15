@@ -10,9 +10,10 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 
 /// <summary>
 /// The one exchange that every call to Binance makes: a GET to the address that the configuration
-/// file gives for the market and the environment, within a time limit, signed where the call
-/// needs a credential (FR-BIN-1, FR-BIN-2). What differs between calls is which
-/// <see cref="BinanceEndpoint"/> it is and how its answer reads. See docs/exchange.md.
+/// file gives for the market and the environment, when the limiter has room for it, within a
+/// time limit, signed where the call needs a credential (FR-BIN-1, FR-BIN-2, FR-BIN-4). What
+/// differs between calls is which <see cref="BinanceEndpoint"/> it is and how its answer reads.
+/// See docs/exchange.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -27,12 +28,19 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// ends the call with an error.
 /// </para>
 /// <para>
+/// Every call passes <see cref="BinanceLimiter"/> first, because this is the one place that
+/// sends. A call that the limiter does not let through is not sent, and one that Binance answers
+/// with its signal of too many requests tells the limiter, which then sends nothing for a while.
+/// Both end as <see cref="ExchangeCallOutcome.RateLimited"/>.
+/// </para>
+/// <para>
 /// The call is made once. Whether it is made again is the caller's to decide.
 /// </para>
 /// </remarks>
 internal sealed class BinanceCall(
     IHttpClientFactory clients,
     BinanceSettings settings,
+    BinanceLimiter limiter,
     TimeProvider clock,
     ILogger<BinanceCall> logger)
 {
@@ -42,6 +50,10 @@ internal sealed class BinanceCall(
     // For how long after its timestamp Binance takes a signed call, in milliseconds. It is
     // Binance's own default, said aloud.
     private const int ReceiveWindow = 5000;
+
+    // What Binance answers with when it has blocked the address of the service, which it does
+    // when its answer to too many requests, 429, is ignored.
+    private const HttpStatusCode Banned = (HttpStatusCode)418;
 
     // The errors that Binance answers a credential with which it does not take: an API key that
     // it does not know or that is not one, a signature that the secret key did not make, and a
@@ -62,11 +74,12 @@ internal sealed class BinanceCall(
         TradingMode mode,
         Func<JsonElement, T?> read,
         CancellationToken cancellationToken) =>
-        SendAsync(endpoint, mode, endpoint.Query, apiKey: null, read, cancellationToken);
+        SendAsync(endpoint, mode, userId: null, apiKey: null, secretKey: null, read, cancellationToken);
 
     /// <summary>Makes a call that is signed with a credential, and says how it ended.</summary>
     /// <param name="endpoint">The call.</param>
     /// <param name="mode">The environment that the credential is for.</param>
+    /// <param name="userId">Whose call it is, for the limiter, which gives the users whose calls wait their turns.</param>
     /// <param name="apiKey">The user's API key, which is sent in a header.</param>
     /// <param name="secretKey">The secret key that belongs to it, which signs the call and is never sent.</param>
     /// <param name="read">
@@ -77,6 +90,7 @@ internal sealed class BinanceCall(
     public Task<BinanceAnswer<T>> AskSignedAsync<T>(
         BinanceEndpoint endpoint,
         TradingMode mode,
+        Guid userId,
         string apiKey,
         string secretKey,
         Func<JsonElement, T?> read,
@@ -86,20 +100,21 @@ internal sealed class BinanceCall(
         ArgumentNullException.ThrowIfNull(apiKey);
         ArgumentNullException.ThrowIfNull(secretKey);
 
-        // The call says when it was made, by the application's clock. What is signed is the query
-        // as it is sent, and the signature is the last of it.
-        var timestamp = clock.GetUtcNow().ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
-        var own = endpoint.Query.Length == 0 ? string.Empty : $"{endpoint.Query}&";
-        var query = $"{own}recvWindow={ReceiveWindow.ToString(CultureInfo.InvariantCulture)}&timestamp={timestamp}";
+        // No user is the service itself, whose calls need no credential.
+        if (userId == Guid.Empty)
+        {
+            throw new ArgumentException("A call that is signed with a credential is a user's, and says whose.", nameof(userId));
+        }
 
-        return SendAsync(endpoint, mode, $"{query}&signature={Sign(query, secretKey)}", apiKey, read, cancellationToken);
+        return SendAsync(endpoint, mode, userId, apiKey, secretKey, read, cancellationToken);
     }
 
     private async Task<BinanceAnswer<T>> SendAsync<T>(
         BinanceEndpoint endpoint,
         TradingMode mode,
-        string query,
+        Guid? userId,
         string? apiKey,
+        string? secretKey,
         Func<JsonElement, T?> read,
         CancellationToken cancellationToken)
     {
@@ -107,10 +122,32 @@ internal sealed class BinanceCall(
         var baseUrl = settings.BaseUrl(endpoint.Market, mode);
         var address = $"{baseUrl.AbsoluteUri.TrimEnd('/')}/{endpoint.Path}";
 
+        // The limiter says when: at once, or when the turn of the call comes. A call that it
+        // holds back for longer than a call waits is not sent. That is not in the log of
+        // outbound calls, which has what was sent, so it is said here.
+        if (!await limiter.EnterAsync(endpoint, mode, userId, cancellationToken))
+        {
+            logger.LogWarning(
+                "The call {Path} on {Market} {Environment} was not sent to Binance: the limit on requests has no room for it in time",
+                endpoint.Path,
+                endpoint.Market.ToString(),
+                mode.ToString());
+
+            return Without(ExchangeCallOutcome.RateLimited);
+        }
+
+        // Signed now, and not before the wait: Binance takes a call for a few seconds after the
+        // time that it says it was made at.
+        var query = secretKey is null ? endpoint.Query : Signed(endpoint.Query, secretKey);
+
         // The limit runs on the application's clock, and covers the sending and the reading of
         // the answer.
         using var limit = new CancellationTokenSource(Limit, clock);
         using var either = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, limit.Token);
+
+        // Whether Binance answered that it has had too many requests. However the call ends
+        // after that, that is how it ended.
+        var throttled = false;
 
         try
         {
@@ -122,6 +159,18 @@ internal sealed class BinanceCall(
 
             var client = clients.CreateClient(ExchangeGatewayModule.HttpClientName);
             using var response = await client.SendAsync(request, either.Token);
+
+            // The limiter hears of every answer: of the signal, which stops the calls, and
+            // otherwise of what Binance has counted against the service.
+            throttled = response.StatusCode is HttpStatusCode.TooManyRequests or Banned;
+            if (throttled)
+            {
+                limiter.Throttled(endpoint, mode, banned: response.StatusCode == Banned, RetryAfterOf(response));
+            }
+            else
+            {
+                limiter.Answered(endpoint, mode, CountedBy(response, endpoint.Limit));
+            }
 
             var body = await ReadAsync(response, either.Token);
 
@@ -159,8 +208,13 @@ internal sealed class BinanceCall(
                     number);
             }
 
-            // Anything but a refusal says nothing about the credential: a limit on requests, a
-            // clock that is off, a block of the service's address, or a fault of the exchange.
+            if (throttled)
+            {
+                return Without(ExchangeCallOutcome.RateLimited);
+            }
+
+            // Anything but a refusal says nothing about the credential: a clock that is off, a
+            // block of the service's address, or a fault of the exchange.
             var refused = response.StatusCode == HttpStatusCode.Unauthorized
                 || (code is { } error && Refusals.Contains(error));
 
@@ -174,16 +228,51 @@ internal sealed class BinanceCall(
         catch (IOException)
         {
             // The answer broke off while it was read.
-            return Without(ExchangeCallOutcome.Failed);
+            return Without(throttled ? ExchangeCallOutcome.RateLimited : ExchangeCallOutcome.Failed);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // Binance took longer than the limit. The caller did not cancel.
-            return Without(ExchangeCallOutcome.TimedOut);
+            return Without(throttled ? ExchangeCallOutcome.RateLimited : ExchangeCallOutcome.TimedOut);
         }
 
         static BinanceAnswer<T> Without(ExchangeCallOutcome outcome) => new(outcome, default);
     }
+
+    /// <summary>
+    /// The query of a call that needs a credential, as it is sent. The call says when it was
+    /// made, by the application's clock. What is signed is the query as it is sent, and the
+    /// signature is the last of it.
+    /// </summary>
+    private string Signed(string own, string secretKey)
+    {
+        var timestamp = clock.GetUtcNow().ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        var first = own.Length == 0 ? string.Empty : $"{own}&";
+        var query = $"{first}recvWindow={ReceiveWindow.ToString(CultureInfo.InvariantCulture)}&timestamp={timestamp}";
+
+        return $"{query}&signature={Sign(query, secretKey)}";
+    }
+
+    /// <summary>
+    /// For how long Binance says to send nothing, with its signal of too many requests, or null
+    /// when it does not say. It says it in seconds, and a moment would be read as well.
+    /// </summary>
+    private TimeSpan? RetryAfterOf(HttpResponseMessage response) => response.Headers.RetryAfter switch
+    {
+        { Delta: { } wait } => wait,
+        { Date: { } until } => until - clock.GetUtcNow(),
+        _ => null,
+    };
+
+    /// <summary>
+    /// The request weight that Binance has counted against the address of the service in its
+    /// minute, as an answer says it in the header of its limit, or null when it does not.
+    /// </summary>
+    private static int? CountedBy(HttpResponseMessage response, BinanceLimit limit) =>
+        response.Headers.TryGetValues(limit.UsageHeader, out var values)
+            && int.TryParse(values.FirstOrDefault(), NumberStyles.None, CultureInfo.InvariantCulture, out var weight)
+                ? weight
+                : null;
 
     /// <summary>The body of an answer as the JSON that Binance sends, or null when it is something else.</summary>
     private static async Task<JsonElement?> ReadAsync(HttpResponseMessage response, CancellationToken cancellationToken)

@@ -48,12 +48,12 @@ public class NoFundMovementTests
         foreach (var mode in new[] { TradingMode.Live, TradingMode.Demo })
         {
             var (apiKey, secretKey) = BinanceCalls.CredentialOf(mode);
-            await exchange.CheckKeyAsync(mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+            await exchange.CheckKeyAsync(BinanceCalls.User, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
 
             foreach (var market in new[] { Market.Spot, Market.Futures })
             {
                 await exchange.GetServerTimeAsync(market, mode, TestContext.Current.CancellationToken);
-                await exchange.GetBalancesAsync(market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+                await exchange.GetBalancesAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
             }
         }
 
@@ -83,9 +83,9 @@ public class NoFundMovementTests
         foreach (var (market, mode) in BinanceCalls.Pairs)
         {
             var (apiKey, secretKey) = BinanceCalls.CredentialOf(mode);
-            await exchange.CheckKeyAsync(mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+            await exchange.CheckKeyAsync(BinanceCalls.User, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
             await exchange.GetServerTimeAsync(market, mode, TestContext.Current.CancellationToken);
-            await exchange.GetBalancesAsync(market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+            await exchange.GetBalancesAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
         }
 
         // Each of the four addresses is reached, and no other.

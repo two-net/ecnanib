@@ -289,7 +289,7 @@ internal sealed class StoredKeys(
         // Binance says whether it takes the credential and what the credential may do, with
         // calls that only read (FR-KEY-3). Only a credential that it takes is stored, and never
         // one that can withdraw (FR-KEY-4, NFR-LEG-2).
-        var check = await exchange.CheckKeyAsync(environment, key, secret, cancellationToken);
+        var check = await exchange.CheckKeyAsync(userId, environment, key, secret, cancellationToken);
         switch (check.Verdict)
         {
             case KeyVerdict.Accepted when check.CanWithdraw == true:

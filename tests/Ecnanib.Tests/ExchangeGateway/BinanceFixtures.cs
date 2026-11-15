@@ -72,6 +72,9 @@ internal static class BinanceCalls
     /// <summary>The moment that the application's clock shows, which a signed call says it was made at.</summary>
     public static readonly DateTimeOffset Now = new(2026, 11, 15, 9, 30, 0, 250, TimeSpan.Zero);
 
+    /// <summary>The user whose calls a test makes, where it does not matter whose they are.</summary>
+    public static readonly Guid User = new("0b4c2a51-6d3e-4f7a-9c18-2e5d7f9a1b30");
+
     /// <summary>Both markets, each in both environments: the four addresses of the configuration file.</summary>
     public static readonly (Market Market, TradingMode Mode)[] Pairs =
     [
@@ -139,11 +142,28 @@ internal static class BinanceCalls
     /// <param name="binance">What answers in Binance's place.</param>
     /// <param name="debug">Whether the log is at the debug level, at which the bodies of calls are written too.</param>
     /// <param name="clock">The clock of the application, when it is not one that stands still.</param>
-    public static LoggedApplication Behind(StandInSystem binance, bool debug = false, TimeProvider? clock = null) =>
-        binance.Behind(
+    /// <param name="share">
+    /// The part of Binance's limit on requests that the service allows itself, in percent, when
+    /// it is not that of the usual file, which is far more than a test uses.
+    /// </param>
+    public static LoggedApplication Behind(StandInSystem binance, bool debug = false, TimeProvider? clock = null, int? share = null)
+    {
+        var settings = LoggedApplication.Settings();
+        if (debug)
+        {
+            settings = settings.With("Logging:MinimumLevel", "Debug");
+        }
+
+        if (share is { } percent)
+        {
+            settings = settings.With("Binance:LimitSharePercent", percent);
+        }
+
+        return binance.Behind(
             ExchangeGatewayModule.HttpClientName,
-            debug ? LoggedApplication.Settings().With("Logging:MinimumLevel", "Debug") : null,
+            settings,
             services => services.AddSingleton<TimeProvider>(clock ?? new TestClock(Now)));
+    }
 
     /// <summary>
     /// What Binance works out to see that a call was signed with a secret key: the HMAC-SHA256 of

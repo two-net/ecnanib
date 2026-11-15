@@ -44,7 +44,8 @@ public class BinanceAdapterTests
         using var application = Behind(binance);
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
 
-        var check = await exchange.CheckKeyAsync(TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken);
+        var check = await exchange.CheckKeyAsync(
+            BinanceCalls.User, TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             new ExchangeKeyCheck(KeyVerdict.Accepted, SpotTrading: true, FuturesTrading: false, CanWithdraw: false, IpRestricted: true),
@@ -77,7 +78,8 @@ public class BinanceAdapterTests
         using var application = Behind(binance);
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
 
-        var check = await exchange.CheckKeyAsync(TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken);
+        var check = await exchange.CheckKeyAsync(
+            BinanceCalls.User, TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             new ExchangeKeyCheck(KeyVerdict.Accepted, SpotTrading: true, FuturesTrading: true, CanWithdraw: true, IpRestricted: false),
@@ -98,7 +100,7 @@ public class BinanceAdapterTests
         // A key is never taken for one that cannot withdraw because the answer did not say (NFR-LEG-2).
         Assert.Equal(
             ExchangeKeyCheck.Unreachable,
-            await exchange.CheckKeyAsync(TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -116,7 +118,7 @@ public class BinanceAdapterTests
 
         Assert.Equal(
             ExchangeKeyCheck.Refused,
-            await exchange.CheckKeyAsync(TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -140,10 +142,10 @@ public class BinanceAdapterTests
 
         Assert.Equal(
             ExchangeKeyCheck.Unreachable,
-            await exchange.CheckKeyAsync(TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken));
         Assert.Equal(
             ExchangeKeyCheck.Unreachable,
-            await exchange.CheckKeyAsync(TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -156,13 +158,13 @@ public class BinanceAdapterTests
 
         Assert.Equal(
             ExchangeKeyCheck.Unreachable,
-            await exchange.CheckKeyAsync(TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken));
 
         // One that takes too long ends the same way: the call is given up, and nobody cancelled.
         failure = new TaskCanceledException("Binance took too long.");
         Assert.Equal(
             ExchangeKeyCheck.Unreachable,
-            await exchange.CheckKeyAsync(TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -172,7 +174,8 @@ public class BinanceAdapterTests
         using var application = Behind(binance);
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
 
-        var check = await exchange.CheckKeyAsync(TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken);
+        var check = await exchange.CheckKeyAsync(
+            BinanceCalls.User, TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken);
 
         // Whether the key can withdraw, and whether it is restricted to addresses, is not
         // reported there. What an account says of withdrawals is about the account.
@@ -208,7 +211,7 @@ public class BinanceAdapterTests
 
         Assert.Equal(
             new ExchangeKeyCheck(KeyVerdict.Accepted, spotTrading, futuresTrading),
-            await exchange.CheckKeyAsync(TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -222,7 +225,7 @@ public class BinanceAdapterTests
 
         Assert.Equal(
             new ExchangeKeyCheck(KeyVerdict.Accepted, SpotTrading: false, FuturesTrading: true),
-            await exchange.CheckKeyAsync(TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -234,7 +237,7 @@ public class BinanceAdapterTests
 
         Assert.Equal(
             ExchangeKeyCheck.Refused,
-            await exchange.CheckKeyAsync(TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -253,7 +256,7 @@ public class BinanceAdapterTests
 
         Assert.Equal(
             ExchangeKeyCheck.Unreachable,
-            await exchange.CheckKeyAsync(TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
+            await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Demo, ApiKey, SecretKey, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -270,7 +273,7 @@ public class BinanceAdapterTests
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => exchange.CheckKeyAsync(TradingMode.Live, ApiKey, SecretKey, cancelled.Token));
+            () => exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Live, ApiKey, SecretKey, cancelled.Token));
     }
 
     [Fact]
@@ -288,7 +291,7 @@ public class BinanceAdapterTests
         using var application = Behind(binance, debug: true);
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
 
-        await exchange.CheckKeyAsync(TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken);
+        await exchange.CheckKeyAsync(BinanceCalls.User, TradingMode.Live, ApiKey, SecretKey, TestContext.Current.CancellationToken);
 
         var call = Assert.Single(application.Events(), written => written.Area == HttpArea && !written.Has("BodyOf"));
         Assert.Equal("spot-live.example", call.Text("Host"));

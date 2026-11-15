@@ -217,7 +217,7 @@ internal sealed class KeyValidator(
             return KeyCheckOutcome.Unreadable;
         }
 
-        var check = await exchange.CheckKeyAsync(environment, keys[..parting], keys[(parting + 1)..], cancellationToken);
+        var check = await exchange.CheckKeyAsync(userId, environment, keys[..parting], keys[(parting + 1)..], cancellationToken);
         var now = clock.GetUtcNow();
 
         switch (check.Verdict)
