@@ -319,8 +319,13 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
         return BinanceAnswer(mode, apiKey);
     }
 
-    public Task<DateTimeOffset> GetServerTimeAsync(Market market, TradingMode mode, CancellationToken cancellationToken) =>
-        Task.FromResult(TimeProvider.System.GetUtcNow());
+    public Task<ExchangeTime> GetServerTimeAsync(Market market, TradingMode mode, CancellationToken cancellationToken) =>
+        Task.FromResult(new ExchangeTime(ExchangeCallOutcome.Succeeded, TimeProvider.System.GetUtcNow()));
+
+    // An account that holds nothing: nothing of these tests reads a balance.
+    public Task<ExchangeBalances> GetBalancesAsync(
+        Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken) =>
+        Task.FromResult(new ExchangeBalances(ExchangeCallOutcome.Succeeded, []));
 
     private async Task MeanwhileAsync()
     {

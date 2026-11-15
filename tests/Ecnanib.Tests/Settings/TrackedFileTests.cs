@@ -1,4 +1,5 @@
 using Ecnanib.Platform.Settings;
+using Ecnanib.Shared;
 using Microsoft.Extensions.Logging;
 
 namespace Ecnanib.Tests.Settings;
@@ -33,6 +34,13 @@ public class TrackedFileTests
         Assert.Equal(4, settings.AiProviders.ByCode.Count);
         Assert.All(settings.AiProviders.ByCode.Values, provider => Assert.Equal(60, provider.TimeoutSeconds));
         Assert.Equal(new CatalogSyncSettings(IntervalHours: 24, MissedSyncsBeforeUnavailable: 2), settings.CatalogSync);
+
+        // Binance's own addresses, of each market on the real exchange and in its test
+        // environment, and of no other exchange (FR-BIN-1, FR-BIN-2).
+        Assert.Equal(new Uri("https://api.binance.com"), settings.Binance.BaseUrl(Market.Spot, TradingMode.Live));
+        Assert.Equal(new Uri("https://demo-api.binance.com"), settings.Binance.BaseUrl(Market.Spot, TradingMode.Demo));
+        Assert.Equal(new Uri("https://fapi.binance.com"), settings.Binance.BaseUrl(Market.Futures, TradingMode.Live));
+        Assert.Equal(new Uri("https://demo-fapi.binance.com"), settings.Binance.BaseUrl(Market.Futures, TradingMode.Demo));
         Assert.Equal(70, settings.Binance.LimitSharePercent);
         Assert.Equal(5, settings.Binance.ReconcileMinutes);
         Assert.Equal(

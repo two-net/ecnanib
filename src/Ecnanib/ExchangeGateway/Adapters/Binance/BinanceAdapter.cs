@@ -1,9 +1,5 @@
 using System.Globalization;
-using System.Net;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using Ecnanib.Platform.Settings;
 using Ecnanib.Shared;
 
 namespace Ecnanib.ExchangeGateway.Adapters.Binance;
@@ -11,15 +7,14 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// <summary>
 /// Binance, behind the common interface: Spot and USDⓈ-margined perpetual Futures, each on the
 /// real exchange and in Binance's test environment, at the addresses of the configuration file
-/// (FR-BIN-1, FR-BIN-2). So far it reads the clock and asks about a credential. It has no
-/// operation that moves funds (FR-BIN-9).
+/// (FR-BIN-1, FR-BIN-2). It reads the clock of a market, asks about a credential, and reads what
+/// an account holds. It has no operation that moves funds (FR-BIN-9). See docs/exchange.md.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A call that needs a credential is signed: the query is hashed with the secret key
-/// (HMAC-SHA256), and the hash is sent with it, beside the API key in a header. The secret key
-/// itself is never sent. Neither key is in a log event: the log of outbound calls leaves out
-/// the query and the headers.
+/// <see cref="BinanceCall"/> makes every call, and the calls it can make are those of
+/// <see cref="BinanceEndpoint"/>. What is here is what each answer says, in the words of the
+/// gateway: nothing of Binance's own format leaves this class.
 /// </para>
 /// <para>
 /// What a credential may do is asked differently in the two environments, because Binance's
@@ -27,38 +22,24 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// <see cref="CheckKeyAsync"/>.
 /// </para>
 /// </remarks>
-internal sealed class BinanceAdapter(IHttpClientFactory clients, BinanceSettings settings, TimeProvider clock) : IExchangeAdapter
+internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
 {
-    /// <summary>How long Binance may take to answer a call that a user waits for with a form.</summary>
-    public static readonly TimeSpan Limit = TimeSpan.FromSeconds(15);
+    // The first and the last moment that a count of milliseconds can name as a time.
+    private static readonly long EarliestTime = DateTimeOffset.MinValue.ToUnixTimeMilliseconds();
+    private static readonly long LatestTime = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds();
 
-    // For how long after its timestamp Binance takes a signed call, in milliseconds. It is
-    // Binance's own default, said aloud.
-    private const int ReceiveWindow = 5000;
-
-    // The errors that Binance answers a credential with which it does not take: an API key that
-    // it does not know or that is not one, a signature that the secret key did not make, and a
-    // key that may not do this from here, which is also what a key restricted to other addresses
-    // gets.
-    private static readonly int[] Refusals = [-1002, -1022, -2008, -2014, -2015];
-
-    public async Task<DateTimeOffset> GetServerTimeAsync(Market market, TradingMode mode, CancellationToken cancellationToken)
+    public async Task<ExchangeTime> GetServerTimeAsync(Market market, TradingMode mode, CancellationToken cancellationToken)
     {
-        var path = market switch
+        var endpoint = market switch
         {
-            Market.Spot => "api/v3/time",
-            Market.Futures => "fapi/v1/time",
+            Market.Spot => BinanceEndpoint.SpotTime,
+            Market.Futures => BinanceEndpoint.FuturesTime,
             _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
         };
 
-        var client = clients.CreateClient(ExchangeGatewayModule.HttpClientName);
-        using var response = await client.GetAsync(AddressOf(settings.BaseUrl(market, mode), path), cancellationToken);
-        response.EnsureSuccessStatusCode();
+        var answer = await call.AskAsync(endpoint, mode, ServerTime, cancellationToken);
 
-        await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var answer = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
-
-        return DateTimeOffset.FromUnixTimeMilliseconds(answer.RootElement.GetProperty("serverTime").GetInt64());
+        return new ExchangeTime(answer.Outcome, answer.Value);
     }
 
     /// <summary>
@@ -81,46 +62,53 @@ internal sealed class BinanceAdapter(IHttpClientFactory clients, BinanceSettings
         };
     }
 
+    /// <summary>
+    /// Reads what the account of a credential holds on one market. On Spot it is the account,
+    /// asked without the assets it holds none of. On Futures it is the wallet of the market.
+    /// </summary>
+    public async Task<ExchangeBalances> GetBalancesAsync(
+        Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(apiKey);
+        ArgumentNullException.ThrowIfNull(secretKey);
+
+        var answer = market switch
+        {
+            Market.Spot => await call.AskSignedAsync(
+                BinanceEndpoint.SpotAccount, mode, apiKey, secretKey, SpotBalances, cancellationToken),
+            Market.Futures => await call.AskSignedAsync(
+                BinanceEndpoint.FuturesBalances, mode, apiKey, secretKey, FuturesBalances, cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
+        };
+
+        return new ExchangeBalances(answer.Outcome, answer.Value ?? []);
+    }
+
     private async Task<ExchangeKeyCheck> CheckLiveKeyAsync(string apiKey, string secretKey, CancellationToken cancellationToken)
     {
-        // The call is of Binance's account API, which the address of the Spot market serves.
-        var answer = await AskAsync(
-            settings.BaseUrl(Market.Spot, TradingMode.Live), "sapi/v1/account/apiRestrictions", apiKey, secretKey, cancellationToken);
+        var answer = await call.AskSignedAsync(
+            BinanceEndpoint.KeyPermissions, TradingMode.Live, apiKey, secretKey, Permissions, cancellationToken);
 
-        if (answer.Verdict != KeyVerdict.Accepted)
-        {
-            return new ExchangeKeyCheck(answer.Verdict);
-        }
-
-        // Without the word on withdrawals there is no verdict: a key is never taken for one that
-        // cannot withdraw because the answer did not say (FR-KEY-4, NFR-LEG-2).
-        if (Flag(answer.Body, "enableWithdrawals") is not { } canWithdraw)
-        {
-            return ExchangeKeyCheck.Unreachable;
-        }
-
-        return new ExchangeKeyCheck(
-            KeyVerdict.Accepted,
-            SpotTrading: Flag(answer.Body, "enableSpotAndMarginTrading") ?? false,
-            FuturesTrading: Flag(answer.Body, "enableFutures") ?? false,
-            CanWithdraw: canWithdraw,
-            IpRestricted: Flag(answer.Body, "ipRestrict"));
+        return answer.Value ?? new ExchangeKeyCheck(VerdictOf(answer.Outcome));
     }
 
     private async Task<ExchangeKeyCheck> CheckDemoKeyAsync(string apiKey, string secretKey, CancellationToken cancellationToken)
     {
-        var spot = await AskAsync(
-            settings.BaseUrl(Market.Spot, TradingMode.Demo), "api/v3/account", apiKey, secretKey, cancellationToken, "omitZeroBalances=true&");
-        var futures = await AskAsync(
-            settings.BaseUrl(Market.Futures, TradingMode.Demo), "fapi/v1/accountConfig", apiKey, secretKey, cancellationToken);
+        var spot = await call.AskSignedAsync(
+            BinanceEndpoint.SpotAccount, TradingMode.Demo, apiKey, secretKey, MayTrade, cancellationToken);
+        var futures = await call.AskSignedAsync(
+            BinanceEndpoint.FuturesAccountSettings, TradingMode.Demo, apiKey, secretKey, MayTrade, cancellationToken);
+
+        var onSpot = VerdictOf(spot.Outcome);
+        var onFutures = VerdictOf(futures.Outcome);
 
         // A market that did not answer leaves its permission unknown, so there is no verdict.
-        if (spot.Verdict == KeyVerdict.Unreachable || futures.Verdict == KeyVerdict.Unreachable)
+        if (onSpot == KeyVerdict.Unreachable || onFutures == KeyVerdict.Unreachable)
         {
             return ExchangeKeyCheck.Unreachable;
         }
 
-        if (spot.Verdict == KeyVerdict.Refused && futures.Verdict == KeyVerdict.Refused)
+        if (onSpot == KeyVerdict.Refused && onFutures == KeyVerdict.Refused)
         {
             return ExchangeKeyCheck.Refused;
         }
@@ -129,79 +117,131 @@ internal sealed class BinanceAdapter(IHttpClientFactory clients, BinanceSettings
         // credential may not trade on.
         return new ExchangeKeyCheck(
             KeyVerdict.Accepted,
-            SpotTrading: spot.Verdict == KeyVerdict.Accepted && (Flag(spot.Body, "canTrade") ?? false),
-            FuturesTrading: futures.Verdict == KeyVerdict.Accepted && (Flag(futures.Body, "canTrade") ?? false));
+            SpotTrading: spot.Value ?? false,
+            FuturesTrading: futures.Value ?? false);
     }
 
-    /// <summary>Makes one signed call that reads, and says what the answer means for the credential.</summary>
-    private async Task<Answer> AskAsync(
-        Uri baseUrl, string path, string apiKey, string secretKey, CancellationToken cancellationToken, string parameters = "")
+    /// <summary>
+    /// What the end of a call says about the credential it was signed with. Only Binance's answer
+    /// to a wrong credential is a refusal. Anything else that is not a success says nothing about
+    /// it: none of them may turn a stored key invalid.
+    /// </summary>
+    private static KeyVerdict VerdictOf(ExchangeCallOutcome outcome) => outcome switch
     {
-        var timestamp = clock.GetUtcNow().ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
-        var query = $"{parameters}recvWindow={ReceiveWindow.ToString(CultureInfo.InvariantCulture)}&timestamp={timestamp}";
+        ExchangeCallOutcome.Succeeded => KeyVerdict.Accepted,
+        ExchangeCallOutcome.AuthenticationFailed => KeyVerdict.Refused,
+        _ => KeyVerdict.Unreachable,
+    };
 
-        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        limit.CancelAfter(Limit);
+    /// <summary>The time that an answer of a clock gives, or null when it gives none.</summary>
+    private static DateTimeOffset? ServerTime(JsonElement answer) =>
+        answer.ValueKind == JsonValueKind.Object
+            && answer.TryGetProperty("serverTime", out var time)
+            && time.ValueKind == JsonValueKind.Number
+            && time.TryGetInt64(out var milliseconds)
+            && milliseconds >= EarliestTime
+            && milliseconds <= LatestTime
+                ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)
+                : null;
 
-        try
-        {
-            using var request = new HttpRequestMessage(
-                HttpMethod.Get, $"{AddressOf(baseUrl, path)}?{query}&signature={Sign(query, secretKey)}");
-            request.Headers.TryAddWithoutValidation("X-MBX-APIKEY", apiKey);
-
-            var client = clients.CreateClient(ExchangeGatewayModule.HttpClientName);
-            using var response = await client.SendAsync(request, limit.Token);
-
-            var body = await ReadAsync(response, limit.Token);
-
-            if (response.IsSuccessStatusCode)
-            {
-                // An answer that is not what Binance sends is no verdict.
-                return body is { } read ? new Answer(KeyVerdict.Accepted, read) : Answer.Unreachable;
-            }
-
-            var refused = response.StatusCode == HttpStatusCode.Unauthorized
-                || (body is { } error
-                    && error.TryGetProperty("code", out var code)
-                    && code.ValueKind == JsonValueKind.Number
-                    && code.TryGetInt32(out var number)
-                    && Refusals.Contains(number));
-
-            // Anything else says nothing about the credential: a limit on requests, a clock that
-            // is off, a block of the service's address, or a fault of the exchange.
-            return refused ? Answer.Refused : Answer.Unreachable;
-        }
-        catch (HttpRequestException)
-        {
-            // No answer. The call is in the log, with why.
-            return Answer.Unreachable;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            // Binance took longer than the limit. The caller did not cancel.
-            return Answer.Unreachable;
-        }
-    }
-
-    /// <summary>The body of an answer as the JSON object that Binance sends, or null when it is something else.</summary>
-    private static async Task<JsonElement?> ReadAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    /// <summary>What the real exchange says a key may do, or null when the answer does not say whether it can withdraw.</summary>
+    private static ExchangeKeyCheck? Permissions(JsonElement answer)
     {
-        try
-        {
-            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var answer = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
-
-            return answer.RootElement.ValueKind == JsonValueKind.Object ? answer.RootElement.Clone() : null;
-        }
-        catch (JsonException)
+        // Without the word on withdrawals there is no verdict: a key is never taken for one that
+        // cannot withdraw because the answer did not say (FR-KEY-4, NFR-LEG-2).
+        if (Flag(answer, "enableWithdrawals") is not { } canWithdraw)
         {
             return null;
         }
+
+        return new ExchangeKeyCheck(
+            KeyVerdict.Accepted,
+            SpotTrading: Flag(answer, "enableSpotAndMarginTrading") ?? false,
+            FuturesTrading: Flag(answer, "enableFutures") ?? false,
+            CanWithdraw: canWithdraw,
+            IpRestricted: Flag(answer, "ipRestrict"));
     }
+
+    /// <summary>
+    /// Whether an account of the test environment may trade, or null when the answer is not an
+    /// account. An account that does not say is one that may not.
+    /// </summary>
+    private static bool? MayTrade(JsonElement answer) =>
+        answer.ValueKind == JsonValueKind.Object ? Flag(answer, "canTrade") ?? false : null;
+
+    /// <summary>What the account of the Spot market holds, or null when the answer is not that account.</summary>
+    private static List<ExchangeBalance>? SpotBalances(JsonElement answer) =>
+        answer.ValueKind == JsonValueKind.Object && answer.TryGetProperty("balances", out var balances)
+            ? BalancesOf(balances, total: null, "free", "locked")
+            : null;
+
+    /// <summary>What the wallet of the Futures market holds, or null when the answer is not its list.</summary>
+    private static List<ExchangeBalance>? FuturesBalances(JsonElement answer) =>
+        BalancesOf(answer, total: "balance", "availableBalance", locked: null);
+
+    /// <summary>
+    /// The balances of a list, each asset once, without the assets that the account holds none
+    /// of. It is null when a row of the list does not read: a part of a list would make the rest
+    /// look empty.
+    /// </summary>
+    /// <param name="rows">The list, with an asset in each row.</param>
+    /// <param name="total">The name of the whole amount of a row, or null where it is what is available and what is locked together.</param>
+    /// <param name="available">The name of the amount that a new order can use.</param>
+    /// <param name="locked">The name of the amount that open orders hold, where the whole amount is not given.</param>
+    private static List<ExchangeBalance>? BalancesOf(JsonElement rows, string? total, string available, string? locked)
+    {
+        if (rows.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var balances = new List<ExchangeBalance>();
+        var assets = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var row in rows.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object
+                || !row.TryGetProperty("asset", out var name)
+                || name.ValueKind != JsonValueKind.String
+                || name.GetString() is not { Length: > 0 } asset
+                || !assets.Add(asset)
+                || Amount(row, available) is not { } free)
+            {
+                return null;
+            }
+
+            var whole = total is not null ? Amount(row, total) : free + Amount(row, locked!);
+
+            if (whole is not { } all)
+            {
+                return null;
+            }
+
+            // An asset that is not among them is one the account holds none of.
+            if (all != 0 || free != 0)
+            {
+                balances.Add(new ExchangeBalance(asset, all, free));
+            }
+        }
+
+        return balances;
+    }
+
+    /// <summary>An amount of a row, which Binance writes as text so that no digit is lost, or null when the row has none.</summary>
+    private static decimal? Amount(JsonElement row, string name) =>
+        row.TryGetProperty(name, out var value)
+            && value.ValueKind == JsonValueKind.String
+            && decimal.TryParse(
+                value.GetString(),
+                NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                CultureInfo.InvariantCulture,
+                out var amount)
+                ? amount
+                : null;
 
     /// <summary>A yes or no of an answer, or null when the answer does not have it.</summary>
     private static bool? Flag(JsonElement body, string name) =>
-        body.TryGetProperty(name, out var value)
+        body.ValueKind == JsonValueKind.Object && body.TryGetProperty(name, out var value)
             ? value.ValueKind switch
             {
                 JsonValueKind.True => true,
@@ -209,29 +249,4 @@ internal sealed class BinanceAdapter(IHttpClientFactory clients, BinanceSettings
                 _ => null,
             }
             : null;
-
-    private static string AddressOf(Uri baseUrl, string path) => $"{baseUrl.AbsoluteUri.TrimEnd('/')}/{path}";
-
-    /// <summary>The signature of a query: its HMAC-SHA256 under the secret key, in hexadecimal.</summary>
-    private static string Sign(string query, string secretKey)
-    {
-        var key = Encoding.UTF8.GetBytes(secretKey);
-
-        try
-        {
-            return Convert.ToHexStringLower(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(query)));
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(key);
-        }
-    }
-
-    /// <summary>What one call said: the verdict, and the body of an answer that took the credential.</summary>
-    private readonly record struct Answer(KeyVerdict Verdict, JsonElement Body)
-    {
-        public static Answer Refused { get; } = new(KeyVerdict.Refused, default);
-
-        public static Answer Unreachable { get; } = new(KeyVerdict.Unreachable, default);
-    }
 }

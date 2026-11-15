@@ -6,12 +6,24 @@ namespace Ecnanib.ExchangeGateway;
 /// The common interface the exchange sits behind, so the rest of the application does not depend
 /// on Binance's request formats. Implementations live under <c>ExchangeGateway/Adapters</c>.
 /// Operations that place orders belong in the <c>ExchangeGateway.Trading</c> namespace, which
-/// only the Decision Engine may use.
+/// only the Decision Engine may use. See docs/exchange.md.
 /// </summary>
+/// <remarks>
+/// Every operation here reads. None withdraws, deposits, or transfers funds, and none will
+/// (FR-BIN-9). A credential is taken with each call that needs one and is kept nowhere: the
+/// gateway never fetches a stored key.
+/// </remarks>
 public interface IExchangeAdapter
 {
-    /// <summary>Reads the exchange's clock for one market and environment.</summary>
-    Task<DateTimeOffset> GetServerTimeAsync(Market market, TradingMode mode, CancellationToken cancellationToken);
+    /// <summary>Reads the exchange's clock for one market and environment. It needs no credential.</summary>
+    /// <param name="market">The market.</param>
+    /// <param name="mode">The environment.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>
+    /// The time, or how asking ended. An exchange that does not answer is an outcome: this does
+    /// not fail for it.
+    /// </returns>
+    Task<ExchangeTime> GetServerTimeAsync(Market market, TradingMode mode, CancellationToken cancellationToken);
 
     /// <summary>
     /// Asks the exchange about a credential, with calls that only read: whether it takes the
@@ -29,6 +41,24 @@ public interface IExchangeAdapter
     /// <see cref="KeyVerdict.Unreachable"/>: this does not fail for it.
     /// </returns>
     Task<ExchangeKeyCheck> CheckKeyAsync(TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads what the account of a credential holds on one market, with a call that is signed
+    /// with the credential and only reads.
+    /// </summary>
+    /// <param name="market">The market whose account is read.</param>
+    /// <param name="mode">The environment the credential is for, which is the one that is asked.</param>
+    /// <param name="apiKey">The user's API key, passed on its own as in <see cref="CheckKeyAsync"/>.</param>
+    /// <param name="secretKey">The secret key that belongs to it, which signs the call and is never sent.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>
+    /// The balances, or how asking ended. An exchange that does not answer is an outcome: this
+    /// does not fail for it. One that refuses the credential is
+    /// <see cref="ExchangeCallOutcome.AuthenticationFailed"/>, which is when the credential is
+    /// checked again.
+    /// </returns>
+    Task<ExchangeBalances> GetBalancesAsync(
+        Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken);
 }
 
 /// <summary>What the exchange said about a credential.</summary>

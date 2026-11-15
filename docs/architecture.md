@@ -81,9 +81,9 @@ Three rules keep every call to an external system inside its adapter, and in the
 - Network client types (`System.Net.Http`, `System.Net.Mail`, `System.Net.WebSockets`, `System.Net.Sockets`, and the SMTP library `MailKit`) may be used only inside an `Adapters` namespace.
 - No code may create an `HttpClient`. An adapter takes one from the host's factory (a typed or named client, or `IHttpClientFactory`), and every client from the factory logs its calls (NFR-LOG-5). See [logging.md](logging.md).
 
-What an adapter learns from the network leaves it as a type of its own component, because nothing outside an `Adapters` namespace may name a network type, an error of the network included. The checks of a key answer with a `KeyVerdict`, and a provider that does not answer is one of its values. A call to a model answers with an `AiCallOutcome` in the same way: a provider that refuses, fails, or takes too long is an outcome of the call, and not an error. So does the list of a provider's models, with an `AiModelListOutcome`.
+What an adapter learns from the network leaves it as a type of its own component, because nothing outside an `Adapters` namespace may name a network type, an error of the network included. The checks of a key answer with a `KeyVerdict`, and a provider that does not answer is one of its values. A call to a model answers with an `AiCallOutcome` in the same way: a provider that refuses, fails, or takes too long is an outcome of the call, and not an error. So does the list of a provider's models, with an `AiModelListOutcome`, and a call to Binance, with an `ExchangeCallOutcome`.
 
-The adapters of the AI providers make the calls to a model, the calls that validate a key, which ask for the list of a provider's models, and the calls that read that list for the catalog: see [ai-providers.md](ai-providers.md). The adapter of Binance so far makes the calls that validate a key: the permissions of a key, with the clock of each market. The orders are not built. A gateway makes all its calls with one named client, `AiProviderGatewayModule.HttpClientName` or `ExchangeGatewayModule.HttpClientName`, so a test puts a handler of its own behind that name in place of the network.
+The adapters of the AI providers make the calls to a model, the calls that validate a key, which ask for the list of a provider's models, and the calls that read that list for the catalog: see [ai-providers.md](ai-providers.md). The adapter of Binance makes the calls that read: the clock of a market, what a key may do, and what an account holds, each on the real exchange and in Binance's test environment: see [exchange.md](exchange.md). The orders are not built. A gateway makes all its calls with one named client, `AiProviderGatewayModule.HttpClientName` or `ExchangeGatewayModule.HttpClientName`, so a test puts a handler of its own behind that name in place of the network.
 
 ### Adding an AI provider
 
@@ -136,6 +136,12 @@ A key is validated with a read-only call to its provider, through the gateways: 
 Every call to a model is made through the AI Provider Gateway, with one adapter each for Claude, Gemini, GPT, and Grok. A call takes prompt text and a result schema, and returns the structured result, its token usage, and its latency. The prompt is the same for every provider, and only how the structured result is asked for is a provider's own (FR-PRM-10). Where a call goes and how long it may take come from the configuration file.
 
 The gateway takes the user's key with each call and keeps it nowhere (FR-KEY-9). A call that gives no result ends as an outcome, and not as an error: a timeout, an answer that is no result, a failed authentication, a model that the provider does not have, or a failure. What follows from each is for the caller. Not built yet: what calls the gateway for an agent. See [ai-providers.md](ai-providers.md).
+
+## Exchange
+
+Every call to Binance is made through the Exchange Gateway, with one adapter behind `IExchangeAdapter`. Binance is the only exchange. The gateway reaches its Spot market and its USDⓈ-margined perpetual Futures market, each on the real exchange and in Binance's test environment, at the four addresses of the configuration file (FR-BIN-1, FR-BIN-2). A caller names a market and an environment, and nothing of Binance.
+
+The gateway takes the user's credential with each call that needs one, signs the call with it, and keeps it nowhere. A call that gives no answer ends as an outcome, and not as an error. Everything the gateway can send to Binance is a short list of calls that read, and each passes one place: it has no operation that withdraws, deposits, or transfers funds, and a test holds it to that (FR-BIN-9). Not built yet: the rate limiter, the watch on the clock, market data, the orders, and reconciliation. See [exchange.md](exchange.md).
 
 ## Model catalog
 

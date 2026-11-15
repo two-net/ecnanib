@@ -131,14 +131,14 @@ Outbound call POST fapi.binance.com/fapi/v1/order Succeeded with status 200 in 8
 
 - The address is logged without its query, and headers are not logged.
 - `Outcome` is `Succeeded`, `Failed` (a status of 400 or above, or no answer), or `Canceled`. A failed call is a warning.
-- `Usage` holds the response headers that report usage. The component that knows the system names them: the Exchange Gateway registers Binance's used-weight and order-count headers through `OutboundCallLogOptions`.
+- `Usage` holds the response headers that report usage. The component that knows the system names them: the Exchange Gateway registers Binance's used-weight and order-count headers, and the used-weight headers of Binance's wallet API, which have a name of their own, through `OutboundCallLogOptions`.
 - Request and response bodies are logged only at the debug level, which is off unless the file turns it on for the area `Ecnanib.Platform.Adapters.Http`. Bodies pass the masking like everything else. While it is on, each body is held in memory in full, so use it to investigate and then turn it off.
 
-The calls that the application makes so far are the ones that validate a user's key, the ones that list a provider's models for the catalog, and the calls to a model: see "Validating a key" in [credentials.md](credentials.md), [catalog.md](catalog.md), and [ai-providers.md](ai-providers.md). A key travels in a header, and the signature of a call to Binance in the query, so neither is logged. A provider that refuses a key answers with a status of 400 or above, so such a call is a warning: it is what the provider said, and not a fault of the application.
+The calls that the application makes so far are the ones that validate a user's key, the ones that list a provider's models for the catalog, the calls to a model, and the calls that read from Binance: see "Validating a key" in [credentials.md](credentials.md), [catalog.md](catalog.md), [ai-providers.md](ai-providers.md), and [exchange.md](exchange.md). A key travels in a header, and the signature of a call to Binance in the query, so neither is logged. A provider that refuses a key answers with a status of 400 or above, so such a call is a warning: it is what the provider said, and not a fault of the application.
 
 ```
 Outbound call GET api.anthropic.com/v1/models Failed with status 401 in 324.5 ms {"Provider": "claude"}
-Outbound call GET api.binance.com/sapi/v1/account/apiRestrictions Succeeded with status 200 in 231.5 ms {"Usage": {"x-mbx-used-weight-1m": "1"}}
+Outbound call GET api.binance.com/sapi/v1/account/apiRestrictions Succeeded with status 200 in 231.5 ms {"Usage": {"x-sapi-used-ip-weight-1m": "1"}}
 ```
 
 **AI calls.** The AI Provider Gateway also logs each call to a model, with what HTTP cannot see: how the call ended for its caller, and the token usage.
@@ -162,6 +162,17 @@ The answer of the model holds no structured result: Truncated, which the provide
 ```
 
 `Reason` is `Refused`, `Truncated`, `NotFinished`, `NotJson`, or `Empty`. `ProviderReason` is the provider's own word for how the answer ended, and is there only when that is one short word. Nothing else that a provider writes is in an event above the debug level: not the text of an answer, and not the message of an error, which can repeat a part of a key.
+
+**Binance calls.** The Exchange Gateway logs a call to Binance once more only for what HTTP cannot see, as a warning, under `Ecnanib.ExchangeGateway.Adapters.Binance.BinanceCall`. A call that went well has the one event above.
+
+```
+Binance answered fapi/v3/balance on Futures Demo with its error -1021
+The answer of Binance to api/v3/time on Spot Live is not what the call asks for: NotJson
+```
+
+- `BinanceCode` is the number that Binance gives an error. Binance answers most of its errors with the same status, and says which it is in the body. The text of the error is not logged.
+- `Reason` is `NotJson` or `NotExpected`, for an answer that came with a success status and is not what the call asks for.
+- `Path`, `Market`, and `Environment` say which call it was. See "The log" in [exchange.md](exchange.md).
 
 ## Unhandled errors
 

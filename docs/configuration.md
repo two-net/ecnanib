@@ -48,6 +48,8 @@ Each entry under `AiProviders` is one AI provider, named by its code. `BaseUrl` 
 
 `Allow`, `Deny`, and `LiveSearch` are lists of patterns that say which of the provider's models can be selected for an agent, and which of them can search live. A model can be selected when a pattern of `Allow` names it and no pattern of `Deny` does, so an empty `Allow` allows no model of that provider. A pattern is the identifier of a model, in which `*` stands for any run of characters, such as `claude-*` or `*-preview`, and letter case is ignored. It holds no white space, and a list names no pattern twice. The tracked file allows the models that each provider names after itself, which is a start for development: a deployment lists the models it has tried. See "Which models can be selected" in [catalog.md](catalog.md).
 
+Each of `Binance:Spot` and `Binance:Futures` has a `BaseUrl` under `Live` and under `Demo`: the address of Binance's API for that market, on the real exchange and in Binance's test environment. An address is the host alone, such as `https://api.binance.com`. The gateway adds the path of each call, with the `/api` or `/fapi` that it begins with, so an address that already ends in one of them is wrong: Binance's page on its demo mode writes the address of Spot that way. See [exchange.md](exchange.md).
+
 `Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
 
 ### Permissions

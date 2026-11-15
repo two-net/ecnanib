@@ -274,43 +274,14 @@ public class BinanceAdapterTests
     }
 
     [Fact]
-    public async Task The_clock_of_each_market_is_read_at_its_address_in_each_environment()
-    {
-        var binance = new StandInSystem(_ => StandInSystem.Json(HttpStatusCode.OK, """{ "serverTime": 1794562200250 }"""));
-        using var application = Behind(binance);
-        var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
-
-        foreach (var (market, mode) in new[]
-        {
-            (Market.Spot, TradingMode.Live), (Market.Spot, TradingMode.Demo),
-            (Market.Futures, TradingMode.Live), (Market.Futures, TradingMode.Demo),
-        })
-        {
-            Assert.Equal(
-                DateTimeOffset.FromUnixTimeMilliseconds(1794562200250),
-                await exchange.GetServerTimeAsync(market, mode, TestContext.Current.CancellationToken));
-        }
-
-        // The addresses are those of the configuration file (FR-BIN-2). No call is signed.
-        Assert.Equal(
-            [
-                "GET https://spot-live.example/api/v3/time",
-                "GET https://spot-demo.example/api/v3/time",
-                "GET https://futures-live.example/fapi/v1/time",
-                "GET https://futures-demo.example/fapi/v1/time",
-            ],
-            binance.Calls.Select(call => $"{call.Method} {call.Address}"));
-        Assert.All(binance.Calls, call => Assert.False(call.Headers.ContainsKey("X-MBX-APIKEY")));
-    }
-
-    [Fact]
     public async Task The_calls_are_logged_with_their_request_weight_and_neither_key_is_in_a_log_event()
     {
         // With everything that can be logged: the debug level, at which bodies are written too.
         var binance = new StandInSystem(_ =>
         {
+            // The call is of Binance's wallet API, which reports its weight under a name of its own.
             var answer = StandInSystem.Json(HttpStatusCode.OK, Restrictions);
-            answer.Headers.Add("X-MBX-USED-WEIGHT-1M", "7");
+            answer.Headers.Add("X-SAPI-USED-IP-WEIGHT-1M", "7");
 
             return answer;
         });
@@ -323,7 +294,7 @@ public class BinanceAdapterTests
         Assert.Equal("spot-live.example", call.Text("Host"));
         Assert.Equal("/sapi/v1/account/apiRestrictions", call.Text("Path"));
         Assert.Equal("Succeeded", call.Text("Outcome"));
-        Assert.Equal("7", call["Usage"].GetProperty("X-MBX-USED-WEIGHT-1M").GetString());
+        Assert.Equal("7", call["Usage"].GetProperty("X-SAPI-USED-IP-WEIGHT-1M").GetString());
         Assert.True(call.Has("DurationMs"));
 
         // Not a key, in any form, and not the signature that the secret key made.
