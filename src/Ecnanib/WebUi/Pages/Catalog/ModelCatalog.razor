@@ -1,0 +1,100 @@
+@attribute [Route(WebUiModule.CatalogPath)]
+@attribute [Authorize]
+@using Ecnanib.Catalog
+@inject ICatalogModels Models
+
+@*
+    Rendered on the server for each request, and never interactive. The page lists the catalog
+    by provider: each model with whether its provider still offers it and with what the provider
+    says about it, and each provider with when its catalog was last synced (FR-CAT-10). What a
+    provider does not say is written as unknown, and is never guessed or left blank (FR-CAT-4).
+    The catalog is the same for every user, so nothing here is asked for by owner. What a
+    provider wrote is written as text, like everything else on a page.
+*@
+
+<PageTitle>Model catalog</PageTitle>
+
+<h1>Model catalog</h1>
+
+<p>These are the models that each AI provider lists as its own. Ecnanib reads the lists from the providers and adds nothing to them: what a provider does not say about a model is shown as unknown.</p>
+
+<p>A model can be given to an agent when "For agents" says yes, and your own key for its provider can use it. A model that its provider no longer lists stays here as unavailable.</p>
+
+@foreach (var provider in _catalog)
+{
+    var heading = $"catalog-{provider.Provider.Value}";
+
+    <section class="catalog-provider">
+        <h2 id="@heading">@provider.ProviderName</h2>
+
+        <p>@CatalogPages.Synced(provider)</p>
+
+        @if (CatalogPages.SyncFailed(provider) is { } failed)
+        {
+            <p role="note">@failed</p>
+        }
+
+        @if (provider.Models.Count == 0)
+        {
+            <p>No model of @provider.ProviderName is listed yet.</p>
+        }
+        else
+        {
+            @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
+            <div class="catalog-models" role="region" aria-labelledby="@heading" tabindex="0">
+                <table>
+                    <caption>The models of @provider.ProviderName</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Identifier</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">For agents</th>
+                            <th scope="col">Live search</th>
+                            <th scope="col">Context</th>
+                            <th scope="col">Output</th>
+                            <th scope="col">Released</th>
+                            <th scope="col">Deprecated</th>
+                            <th scope="col">Retires</th>
+                            <th scope="col">Experience</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var model in provider.Models)
+                        {
+                            <tr>
+                                <th scope="row">@(model.DisplayName ?? CatalogPages.Unknown)</th>
+                                <td><code>@model.Identifier</code></td>
+                                <td>@CatalogPages.Status(model)</td>
+                                <td>@CatalogPages.YesOrNo(model.Selectable)</td>
+                                <td>@CatalogPages.YesOrNo(model.LiveSearch)</td>
+                                <td>@CatalogPages.Tokens(model.ContextTokens)</td>
+                                <td>@CatalogPages.Tokens(model.OutputTokens)</td>
+                                <td>@CatalogPages.Day(model.ReleasedAt)</td>
+                                <td>@CatalogPages.Day(model.DeprecatedAt)</td>
+                                <td>@CatalogPages.Day(model.RetiresAt)</td>
+                                @* Named after the model, so that each link says where it leads by itself. *@
+                                <td><a href="@WebUiModule.ModelExperiencePath(model.Id)">Experience of @CatalogPages.NameOf(model)</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ProviderCatalog> _catalog = [];
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is { } request)
+        {
+            _catalog = await Models.ListAsync(request.RequestAborted);
+        }
+    }
+}

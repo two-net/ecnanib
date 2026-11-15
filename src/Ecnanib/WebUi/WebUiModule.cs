@@ -38,6 +38,15 @@ public static class WebUiModule
     /// <summary>The path of the page a user deletes their Binance credential for an environment on.</summary>
     public static string DeleteExchangeKeyPath(TradingMode environment) => $"{ExchangeKeyPath(environment)}/delete";
 
+    /// <summary>The path of the page that lists the catalog of models by provider (FR-CAT-10).</summary>
+    public const string CatalogPath = "/catalog";
+
+    /// <summary>
+    /// The path of the page of a model's experience record, which the catalog links each model
+    /// to. The model is named by its id in the catalog, which stays the same for good.
+    /// </summary>
+    public static string ModelExperiencePath(Guid modelId) => $"/experience/models/{modelId}";
+
     // The export as a person reads it: indented, with the names of things and not their numbers.
     private static readonly JsonSerializerOptions ExportJson = new(JsonSerializerDefaults.Web)
     {

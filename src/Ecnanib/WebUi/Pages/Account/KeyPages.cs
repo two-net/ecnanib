@@ -1,4 +1,3 @@
-using System.Globalization;
 using Ecnanib.Accounts;
 using Ecnanib.Credentials;
 using Ecnanib.Platform.Settings;
@@ -204,6 +203,5 @@ public static class KeyPages
     };
 
     /// <summary>A time as a person reads it. The time is UTC.</summary>
-    private static string At(DateTimeOffset time) =>
-        time.UtcDateTime.ToString("d MMMM yyyy, HH:mm", CultureInfo.InvariantCulture) + " UTC";
+    private static string At(DateTimeOffset time) => PageTimes.At(time);
 }

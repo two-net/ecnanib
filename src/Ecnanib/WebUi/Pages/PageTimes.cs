@@ -1,0 +1,18 @@
+using System.Globalization;
+
+namespace Ecnanib.WebUi.Pages;
+
+/// <summary>
+/// How a page writes a time, in one place, so that every page writes it the same way. The times
+/// are UTC, and say so.
+/// </summary>
+public static class PageTimes
+{
+    /// <summary>A moment as a person reads it, to the minute: <c>15 November 2026, 09:20 UTC</c>.</summary>
+    public static string At(DateTimeOffset time) =>
+        time.UtcDateTime.ToString("d MMMM yyyy, HH:mm", CultureInfo.InvariantCulture) + " UTC";
+
+    /// <summary>The day of a moment, in UTC: <c>15 November 2026</c>.</summary>
+    public static string Day(DateTimeOffset time) =>
+        time.UtcDateTime.ToString("d MMMM yyyy", CultureInfo.InvariantCulture);
+}

@@ -2,9 +2,9 @@
 
 Ecnanib keeps a catalog of the models that Claude, Gemini, GPT, and Grok offer. It is filled only by syncing from each provider's own list of its models: no model is hard-coded, and none is seeded (FR-CAT-1). A sync runs on a schedule, as the application starts when the catalog is empty, and on demand (FR-CAT-2). It asks with the catalog key that the configuration file holds for the provider. Where the file holds none, the provider's catalog is refreshed whenever a user's key for it is validated (FR-CAT-3). Each model is stored once, with what its provider says about it and with when it was first and last seen (FR-CAT-4). A model that is absent from a set number of syncs in a row is marked unavailable, and is never deleted (FR-CAT-5). A sync that fails leaves the catalog as it was, and every sync is recorded (FR-CAT-7).
 
-Only an eligible model can be selected for an agent: one that the configuration file allows, with patterns for each provider (FR-CAT-6). Whatever depends on a model is told when the model is marked unavailable, and nothing is put in its place (FR-CAT-8). And each time a provider took a user's key, the Catalog says which models the provider lists to that key, for Credentials to keep with the key (FR-CAT-9).
+Only an eligible model can be selected for an agent: one that the configuration file allows, with patterns for each provider (FR-CAT-6). Whatever depends on a model is told when the model is marked unavailable, and nothing is put in its place (FR-CAT-8). And each time a provider took a user's key, the Catalog says which models the provider lists to that key, for Credentials to keep with the key (FR-CAT-9). A screen lists the catalog by provider (FR-CAT-10).
 
-The code is in `src/Ecnanib/Catalog`. The providers' lists are read by the gateway, in `src/Ecnanib/AiProviderGateway/Adapters`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Catalog`, `tests/Ecnanib.Tests/AiProviderGateway/AiModelListTests.cs`, and `tests/Ecnanib.Tests/BackgroundWork/BackgroundJobDueAtStartTests.cs`.
+The code is in `src/Ecnanib/Catalog`, and the screen in `src/Ecnanib/WebUi/Pages/Catalog`. The providers' lists are read by the gateway, in `src/Ecnanib/AiProviderGateway/Adapters`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Catalog`, `tests/Ecnanib.Tests/AiProviderGateway/AiModelListTests.cs`, and `tests/Ecnanib.Tests/BackgroundWork/BackgroundJobDueAtStartTests.cs`.
 
 How a provider's list is read is in [ai-providers.md](ai-providers.md). How a job is scheduled is in [background-work.md](background-work.md). How a user's key is validated is in [credentials.md](credentials.md).
 
@@ -148,6 +148,47 @@ public interface IModelDependents
 - A model that an agent was given while the sync was storing is not among what an implementation finds. The call that then reports that the model does not exist moves that agent: see "Not built yet".
 - **Nothing implements it yet,** because agents are not built. Until then nothing depends on a model. `ModelDependentsTests` has a test that fails as soon as Agents has a table of its own and no implementation.
 
+## The catalog screen
+
+A signed-in user reads the catalog at `/catalog`, which the bar at the top of every page leads to (FR-CAT-10). The page is rendered on the server for each request. It is the same for every user: the rows of the catalog belong to the service, so nothing on it is asked for by owner, and it names no user and no key.
+
+Every provider has a part of the page, in the order of the providers' codes, also one that the catalog holds no model of. The part says when the provider's catalog was last synced, and lists the provider's models by identifier, each with:
+
+| Column | What it says |
+|---|---|
+| Name, Identifier | The `display_name` that the provider gives the model, and the identifier that a call names it by. |
+| Status | `Active`, or `Unavailable` with the day the provider last listed the model. A model that is unavailable stays on the screen, as its row stays (FR-CAT-5). |
+| For agents | Whether the model can be selected for an agent: it is `Active`, and the file allows it. See "Which models can be selected". Whether the user's own key can use it is not said here: a selector says that. |
+| Live search | Whether the file says that the model can search live. It says so of the model, also of one that the file does not allow. |
+| Context, Output, Released, Deprecated, Retires | What the provider says about the model: `context_tokens`, `output_tokens`, and the days of `released_at`, `deprecated_at`, and `retires_at`. |
+| Experience | A link to the model's experience record, at `/experience/models/<id>`. |
+
+| Rule | Detail |
+|---|---|
+| **What a provider does not say is shown as "Unknown".** | Nothing is guessed, and no cell is left blank: a blank would read as "none". A model that its provider gives no name is "Unknown" by name, and is called by its identifier where a link or a title names it. |
+| **"Last synced" is the start of the latest sync that succeeded.** | It is the time that the list is of: the models that the list named were last seen then. A provider that no sync has succeeded for says "Not synced yet". |
+| **A sync that failed since is said.** | When the latest sync of the provider failed, the page says so, with when, and that the list is as it was before (FR-CAT-7). Why it failed is not on the page: that is in the row of the sync and in the log. |
+| **What a provider wrote is shown as text.** | A name or an identifier that holds markup is written as its characters, like everything else on a page (NFR-SEC-4). |
+| **A model is linked by its id in the catalog.** | The id stays the same for good, and what a provider wrote is never part of a path. |
+| The times are UTC. | As on the other pages: see "Not built yet". |
+
+The page of a model's experience record is for signed-in users too. A path that names no model of the catalog is answered with "not found". The record itself is not built: the page names the model, with its provider, its identifier, and its status, and says that nothing is recorded yet. See "Not built yet".
+
+Both pages ask `ICatalogModels`, which reads and writes nothing else:
+
+```csharp
+public interface ICatalogModels
+{
+    Task<IReadOnlyList<ProviderCatalog>> ListAsync(CancellationToken cancellationToken);
+
+    Task<CatalogModel?> FindAsync(Guid modelId, CancellationToken cancellationToken);
+}
+```
+
+A `ProviderCatalog` is a provider with its name, when it was last synced, when its latest sync failed if it did, and its models. A `CatalogModel` is a model as its row holds it, with whether it can be selected and whether it can search live. What the provider did not say is null in it: how unknown is worded is the page's, in `CatalogPages.cs`.
+
+The syncs of a provider are read by their index, the newest row first, and no other row of `catalog_sync_runs` is read: the table has a row for every sync there ever was.
+
 ## A sync that fails
 
 | `failure` | When |
@@ -193,6 +234,8 @@ The configuration file of the tests holds no `CatalogKey`, as the tracked file h
 
 The file of the tests allows the models of Claude that `claude-*` names, but for those that `*-preview` names, and no model of another provider. A test that needs other patterns writes them into its own file, with `SettingsJson.WithJson`. What is eligible is asked through `ISelectableModels`, as a component asks.
 
+`CatalogPageTests` reads the screen as a signed-in user does, on `AccountsApplication`, which has the pages of an account. It waits for the first run of the job, and then asks for each further sync itself, with `ICatalogSync.SyncAsync`. Those syncs are minutes apart: the session of the user who reads the screen ends after 45 idle minutes in the file of the tests.
+
 ## Not built yet
 
 - What Agents does when a model becomes unavailable (FR-CAT-8). It implements `IModelDependents` when agents and their states are built, and moves the agent to Attention required.
@@ -200,7 +243,8 @@ The file of the tests allows the models of Claude that `claude-*` names, but for
 - Telling the user that a model is unavailable (FR-NTF-1). In-app notifications are not built.
 - The model selector (FR-AGT-5). It offers what `IKeyModels` of Credentials answers, and shows which models can search live.
 - Telling an agent that its model is no longer eligible, after the patterns of the file were changed. The model cannot be selected anew, and an agent that has it keeps it.
-- The catalog screen (FR-CAT-10).
+- The experience record of a model (FR-EXP-2). The catalog screen links each model to its page, which says that nothing is recorded yet. The track record takes its place there, with the statements that an experience screen makes (FR-EXP-11).
+- Times in the user's own time zone on the catalog screen (NFR-USA-3). The pages write a time through `PageTimes`, in UTC.
 - The operator's button that triggers a sync, and its event in the audit trail (FR-OPS-4, FR-OPS-5). `ICatalogSync.SyncAsync` is what it calls.
 - Deleting old rows of `catalog_sync_runs`. Every sync adds a row. With the keys of users that is a row for each check of a key, which is about one a day for each stored key.
 - Prices (FR-CAT-11). Grok lists them, and they are not kept.

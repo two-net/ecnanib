@@ -154,10 +154,55 @@ code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-/* The bar that says who is signed in, with the sign-out button in line with its links. */
+/* The catalog of models: a table for each provider. On a wide screen it fits, with what is long
+   in a cell on more than one line. It is not squeezed below a width that still reads well: on
+   a narrow screen it scrolls sideways by itself, and the page around it does not. */
+.catalog-models {
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+}
+
+    .catalog-models table {
+        border-collapse: collapse;
+        min-width: 60rem;
+    }
+
+    /* Read out as the name of the table, and not shown: the heading above says the same. */
+    .catalog-models caption {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .catalog-models th, .catalog-models td {
+        padding: 0.25rem 1rem 0.25rem 0;
+        text-align: start;
+        vertical-align: baseline;
+    }
+
+    /* An identifier is in one piece, as it is typed. */
+    .catalog-models code {
+        white-space: nowrap;
+    }
+
+    /* The name of a model beside what is said about it, as a row's heading and at its weight. */
+    .catalog-models tbody th {
+        font-weight: 600;
+    }
+
+    .catalog-models tbody tr {
+        border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    }
+
+/* The bar that says who is signed in, with the sign-out button in line with its links. On a
+   narrow screen what does not fit goes to the next line whole, and is not squeezed. */
 .account-bar {
     display: flex;
-    gap: 1rem;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
     align-items: center;
     margin-bottom: 1rem;
 }

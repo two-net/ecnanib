@@ -1,0 +1,55 @@
+@page "/experience/models/{ModelId:guid}"
+@attribute [Authorize]
+@using Ecnanib.Catalog
+@using Ecnanib.WebUi.Pages.Catalog
+@inject ICatalogModels Models
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. It is the page of a model's
+    experience record, which the catalog links each model to (FR-CAT-10). The record itself is
+    not built: the page names the model and says that nothing is recorded yet, and the track
+    record takes its place here (FR-EXP-2). A model is named by its id in the catalog, and a
+    path that names none is answered with "not found". A model is never deleted, so the page of
+    one that its provider no longer offers stays.
+*@
+
+@if (_model is not null)
+{
+    <PageTitle>Experience of @CatalogPages.NameOf(_model)</PageTitle>
+
+    <h1>Experience of @CatalogPages.NameOf(_model)</h1>
+
+    <p>A model of @_model.ProviderName, which names it <code>@_model.Identifier</code>.</p>
+
+    <p>Status in the catalog: @CatalogPages.Status(_model)</p>
+
+    <p>Nothing is recorded yet about how this model has traded. Its track record is shown here once there is one.</p>
+
+    <p><a href="@WebUiModule.CatalogPath">Back to the model catalog</a></p>
+}
+
+@code {
+    private CatalogModel? _model;
+
+    [Parameter]
+    public Guid ModelId { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        _model = await Models.FindAsync(ModelId, request.RequestAborted);
+
+        if (_model is null)
+        {
+            Navigation.NotFound();
+        }
+    }
+}
