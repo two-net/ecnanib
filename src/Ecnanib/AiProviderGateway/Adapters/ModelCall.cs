@@ -72,7 +72,7 @@ internal sealed class ModelCall(
             var client = clients.CreateClient(AiProviderGatewayModule.HttpClientName);
             using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, either.Token);
 
-            var body = await ReadAsync(response, either.Token);
+            var body = await response.ReadObjectAsync(either.Token);
             var latency = clock.GetElapsedTime(started);
 
             if (!response.IsSuccessStatusCode)
@@ -144,22 +144,6 @@ internal sealed class ModelCall(
         }
 
         throw new ArgumentException("The schema of the result must be a JSON object.", nameof(request));
-    }
-
-    /// <summary>The body of an answer as the JSON object that a provider sends, or null when it is something else.</summary>
-    private static async Task<JsonElement?> ReadAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var answer = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
-
-            return answer.RootElement.ValueKind == JsonValueKind.Object ? answer.RootElement.Clone() : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 
     private static bool IsJsonObject(string? text)

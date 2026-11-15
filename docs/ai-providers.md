@@ -2,9 +2,11 @@
 
 Every call to a model goes through the AI Provider Gateway: one adapter each for Claude, Gemini, GPT, and Grok, behind a common interface (SRS 3.1, NFR-ARC-3). A call takes prompt text and a result schema, and returns the structured result with its token usage and its latency. The prompt is the same for every provider. Only how the structured result is asked for is a provider's own (FR-PRM-10).
 
+The gateway also asks each provider for the list of its models, which is what the catalog is filled from (FR-CAT-1): see "The list of models".
+
 The code is in `src/Ecnanib/AiProviderGateway`. The rules below are enforced by tests in `tests/Ecnanib.Tests/AiProviderGateway`, `tests/Ecnanib.Tests/AiProviderRouterTests.cs`, and `tests/Ecnanib.Tests/Architecture`.
 
-How a key is checked with its provider is in [credentials.md](credentials.md). How a call is logged is in [logging.md](logging.md). How a provider is added is in [architecture.md](architecture.md).
+How a key is checked with its provider is in [credentials.md](credentials.md). What the catalog does with a list is in [catalog.md](catalog.md). How a call is logged is in [logging.md](logging.md). How a provider is added is in [architecture.md](architecture.md).
 
 ## The call
 
@@ -72,7 +74,7 @@ A call that gives no result is not an error. Its result says how it ended, so th
 - **`store: false`** keeps GPT and Grok from keeping the prompt and the answer, which both do for thirty days unless told otherwise (NFR-SEC-8).
 - **The model of Gemini is part of the address.** The adapter takes it with or without the `models/` of the list of models, and escapes it, so an id cannot say where the call goes.
 - GPT and Grok share one format, in `Adapters/ResponsesFormat.cs`. What they answer an error with differs, and each adapter says that for itself.
-- What a provider has in common between the check of a key and a call to a model, the header of the key and the answer to a wrong one, is in `Adapters/<Provider>/<Provider>Api.cs`.
+- What a provider has in common between the check of a key, the list of its models, and a call to a model, the header of the key and the answer to a wrong one, is in `Adapters/<Provider>/<Provider>Api.cs`.
 
 ## Usage
 
@@ -111,6 +113,59 @@ A user's key for the provider is given with each call (FR-KEY-1).
 
 At the debug level the log of outbound calls writes the bodies of requests and answers, the prompt and a provider's error included. It masks what has the shape of a key: see "Masking" in [logging.md](logging.md).
 
+## The list of models
+
+```csharp
+public interface IAiModelLists
+{
+    IReadOnlyCollection<AiProviderCode> Providers { get; }
+
+    Task<AiModelList> ListAsync(AiProviderCode provider, string apiKey, CancellationToken cancellationToken);
+}
+
+public sealed record AiModelList(AiModelListOutcome Outcome, IReadOnlyList<ListedAiModel> Models);
+
+public sealed record ListedAiModel(
+    string Id, string? DisplayName, int? ContextTokens, int? OutputTokens,
+    DateTimeOffset? ReleasedAt, DateTimeOffset? DeprecatedAt, DateTimeOffset? RetiresAt);
+```
+
+The key comes with the call, as with a call to a model: the service's own for the catalog, or a user's. Only the Catalog asks for a list. See [catalog.md](catalog.md).
+
+| | Claude | Gemini | GPT | Grok |
+|---|---|---|---|---|
+| Call | `GET /v1/models?limit=1000` | `GET /v1beta/models?pageSize=1000` | `GET /v1/models` | `GET /v1/models` |
+| The next page | `after_id`, with the `last_id` of the page before, while `has_more` | `pageToken`, with the `nextPageToken` of the page before, while there is one | None: one answer | None: one answer |
+| `Id` | `id` | `name`, without the `models/` before it | `id` | `id` |
+| `DisplayName` | `display_name` | `displayName` | | |
+| `ContextTokens` | `max_input_tokens` | `inputTokenLimit` | | `context_length` |
+| `OutputTokens` | `max_tokens` | `outputTokenLimit` | | |
+| `ReleasedAt` | `created_at` | | `created` | `created` |
+| `DeprecatedAt` | `deprecated_at` | | | |
+| `RetiresAt` | `retires_at` | | `shutdown_date` | |
+| A wrong key | 401 | 401, or 400 with the reason `API_KEY_INVALID` | 401 | 401, or 400 |
+
+| Outcome | When |
+|---|---|
+| `Listed` | The provider listed its models. `Models` holds every one of them, each once. |
+| `AuthenticationFailed` | The provider answered as it answers a wrong key. |
+| `TimedOut` | The list took longer than 45 seconds, all pages together. |
+| `Failed` | Anything else: no connection, a limit on requests, a fault of the provider, or an answer that is not its list. |
+
+| Rule | Detail |
+|---|---|
+| **What a provider does not say is null** (FR-CAT-4). | Null is unknown. So is a field that is of another kind than expected, a number of tokens that is not above zero, and a date at the start of 1970, which is how a provider writes one that it does not know. Nothing is guessed: GPT and Grok give a model no name for people, so it has none. |
+| **A list is whole or it is none.** | A page that fails, an answer that is not the provider's list, a model without an identifier, a list with no model at all, and pages that do not end are `Failed`, with no model. The catalog counts a model that a list lacks as missing, so a part of a list would make models look gone. |
+| A model is listed once. | One that two pages name, because the list changed between them, is one model. |
+| **A model that an account trained itself is left out.** | GPT lists such a model to its account alone, under an identifier that begins with `ft:` and names the account. The list may be asked with a user's key, and the catalog is the same for every user. |
+| A time is in UTC, to the microsecond. | That is what the database keeps, so a value that was stored equals the one of the next list. A day alone, as GPT gives for a shutdown, is the start of that day. |
+| The limit is the list's own. | 45 seconds, and not the provider's `TimeoutSeconds`, which is for a call to a model. It leaves the catalog the time to store the list within the minute that a sync may take (NFR-PRF-4). |
+| The key is where the provider takes it. | In the header, as for a call to a model. The same holds for the log: see "The key". |
+
+An answer whose status says that the call went well, and that is no list all the same, is logged as a warning under `Ecnanib.AiProviderGateway.Adapters.ModelListCall`, with why in a word of the gateway's own: `NotAList`, `NoModels`, `PagesRepeat`, or `TooManyPages`.
+
+Claude lists the models that are active or deprecated. One that is retired is no longer listed, which is how the catalog comes to mark it unavailable.
+
 ## Result schemas
 
 A schema is sent to the provider as it is, so a schema that is meant for any of them stays inside what all four take:
@@ -131,27 +186,30 @@ ECNANIB_LIVE_CLAUDE_KEY=... ECNANIB_LIVE_CLAUDE_MODEL=... \
   dotnet test --solution Ecnanib.slnx --filter-class "*LiveProviderTests"
 ```
 
-The variables are `ECNANIB_LIVE_<PROVIDER>_KEY` and `ECNANIB_LIVE_<PROVIDER>_MODEL`, with `CLAUDE`, `GEMINI`, `GPT`, or `GROK`. Give them for one provider or for several. For each provider that has both, three calls are made, at the addresses of the tracked configuration file:
+The variables are `ECNANIB_LIVE_<PROVIDER>_KEY` and `ECNANIB_LIVE_<PROVIDER>_MODEL`, with `CLAUDE`, `GEMINI`, `GPT`, or `GROK`. Give them for one provider or for several. For each provider that has both, three calls to a model are made, and its models are listed twice, at the addresses of the tracked configuration file:
 
 | Call | What it must end as |
 |---|---|
 | A small prompt with a schema, to the model that was given. | `Succeeded`, with a result of the schema and a usage. |
 | The same with a key that is none. It costs nothing. | `AuthenticationFailed` |
 | The same to a model that does not exist. | `ModelNotFound` |
+| The list of models. It costs nothing. | `Listed`, with the model that was given among the models, and with what the list of that provider is read for. |
+| The same with a key that is none. | `AuthenticationFailed` |
 
 The tests read the variables. The application reads none (NFR-CFG-2).
 
-Run it when an adapter is added or changed, and when a provider changes its API. Three things rest on documentation alone until a run has shown them:
+Run it when an adapter is added or changed, and when a provider changes its API. These things rest on documentation alone until a run has shown them:
 
 - The names of the usage counts of GPT, which are taken from Grok's documentation of the same format.
 - What Grok answers a wrong key and a missing model with. Grok does not document the body of its errors.
 - That Gemini takes a schema as `responseJsonSchema` with `generateContent`. Its documentation now leads with a newer way of calling a model.
+- What each list says about a model beyond its identifier: the limits and the dates of Claude, under the version of its API that the gateway names, the `shutdown_date` of GPT, and the `context_length` of Grok. A field that a provider does not send is unknown, and nothing fails for it.
+- That GPT lists a model that an account trained under an identifier that begins with `ft:`.
 
 ## Not built yet
 
 - What hands a stored key to a call, and has the key checked again when the call ends as `AuthenticationFailed` (FR-KEY-9, FR-KEY-3). It comes with what calls the gateway for an agent.
 - Validating a result against its schema, and calling again after a timeout or an invalid result (FR-TEAM-6, FR-TEAM-9).
-- Listing a provider's models, for the catalog (FR-CAT-1).
 - Live search for the Sentiment Analyst (FR-CYC-3).
 - Breakers for repeated failures of a provider or a key (NFR-REL-4).
 - Recording the usage of each call, for the reports (FR-TEAM-8, FR-RPT-3).

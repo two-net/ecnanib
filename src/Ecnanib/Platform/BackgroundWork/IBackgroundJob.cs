@@ -33,6 +33,33 @@ public interface IBackgroundJob
     Task RunAsync(BackgroundJobRun run, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// A job on an interval that can be due when the background work starts, although its interval
+/// has not passed: a catalog sync when the catalog is empty, for example. A job implements this
+/// beside <see cref="IBackgroundJob"/>. See docs/background-work.md.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The scheduler asks once each time this instance takes up the background work, under the lock
+/// that the work runs under, and before any job starts. It does not ask a job that is due
+/// anyway, nor one whose latest run never finished: that one waits until it is next due, as
+/// always.
+/// </para>
+/// <para>
+/// Only a job on an interval can be due this way. A job on UTC boundaries runs for a boundary,
+/// and the start of the work is none, so the application does not start with one that asks.
+/// </para>
+/// </remarks>
+public interface IDueAtStart
+{
+    /// <summary>
+    /// Whether the job has work to do now that the background work starts. An error that leaves
+    /// this is logged, and the job then runs when it is next due.
+    /// </summary>
+    /// <param name="cancellationToken">Canceled when the application stops, or loses the lock.</param>
+    Task<bool> IsDueAtStartAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>One run of a job.</summary>
 /// <param name="ScheduledFor">
 /// The time the run was due, in UTC. For a job on UTC boundaries it is the boundary itself, such

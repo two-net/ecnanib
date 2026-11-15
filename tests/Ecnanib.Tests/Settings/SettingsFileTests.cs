@@ -16,7 +16,7 @@ public class SettingsFileTests
     [Fact]
     public void Every_setting_in_the_outline_is_read_from_the_file()
     {
-        var settings = Load(SettingsJson.Valid());
+        var settings = Load(SettingsJson.Valid().WithCatalogKey());
 
         Assert.Equal("Ecnanib Test", settings.Application.Name);
         Assert.Equal(new Uri("https://ecnanib.example"), settings.Application.PublicUrl);
@@ -127,6 +127,10 @@ public class SettingsFileTests
         { "Security:SessionIdleMinutes", "0", "Security:SessionIdleMinutes" },
         { "AiProviders:Claude:TimeoutSeconds", "601", "AiProviders:Claude:TimeoutSeconds" },
         { "Binance:LimitSharePercent", "101", "Binance:LimitSharePercent" },
+        { "CatalogSync:IntervalHours", "0", "CatalogSync:IntervalHours" },
+        { "CatalogSync:IntervalHours", "8761", "CatalogSync:IntervalHours" },
+        { "CatalogSync:MissedSyncsBeforeUnavailable", "0", "CatalogSync:MissedSyncsBeforeUnavailable" },
+        { "CatalogSync:MissedSyncsBeforeUnavailable", "101", "CatalogSync:MissedSyncsBeforeUnavailable" },
         { "Trading:Aggressive:MinRewardToRisk", "0.9", "Trading:Aggressive:MinRewardToRisk" },
         { "Trading:Aggressive:LiquidationBuffer", "1.4", "Trading:Aggressive:LiquidationBuffer" },
         { "Trading:Aggressive:RiskPerTradePercent", "[0, 2, 5]", "Trading:Aggressive:RiskPerTradePercent:0" },
@@ -263,7 +267,7 @@ public class SettingsFileTests
     [Fact]
     public void Secrets_do_not_print()
     {
-        var settings = Load(SettingsJson.Valid());
+        var settings = Load(SettingsJson.Valid().WithCatalogKey());
 
         var printed = string.Join(
             Environment.NewLine, settings, settings.ConnectionStrings, settings.Security, settings.Email, settings.AiProviders);
@@ -279,6 +283,7 @@ public class SettingsFileTests
     public void Optional_keys_may_be_left_out_or_left_empty()
     {
         var settings = Load(SettingsJson.Valid()
+            .WithCatalogKey()
             .Without("AiProviders:Claude:CatalogKey")
             .Without("Email:User")
             .With("Email:Password", "")

@@ -51,7 +51,7 @@ A path that names no provider or no environment is answered with "not found". Wh
 
 ## Write-only
 
-A key comes in with a form, is shown to its provider, is encrypted, and is stored. No page and no export reads it back. One place decrypts a stored key: `KeyValidator`, for the call that asks the provider about it again (FR-KEY-8, FR-KEY-9).
+A key comes in with a form, is shown to its provider, is encrypted, and is stored. No page and no export reads it back. One place decrypts a stored key: `KeyValidator`, for the call that asks the provider about it again (FR-KEY-8, FR-KEY-9). A key of an AI provider that the provider took is handed on once more, to the Catalog, which may ask the provider for the list of its models with it: see "The catalog".
 
 | Where | How a key stays out of it |
 |---|---|
@@ -59,11 +59,12 @@ A key comes in with a form, is shown to its provider, is encrypted, and is store
 | A page | What a page shows is read from the columns beside the key: `masked_suffix`, which is its last four characters, `saved_at`, and what the last check found. The encrypted key is not read for a page at all. A key is shown as `••••` and those four characters. Of a Binance credential they are the last four of the API key, and nothing of the secret key is stored readable or shown. |
 | A form | A field that takes a key is never written back into the page, also when what was entered is refused or the provider did not take it, and the message that says why does not repeat it. The fields ask the browser not to keep what is typed. |
 | A provider | A key is sent to its own provider and to nothing else, in a header of the call: never in an address, which is logged. The secret key of a Binance credential is not sent at all: it signs the call. |
+| The catalog | The Catalog hands a key that it is given to the gateway for one list of models, and keeps it nowhere. Its rows name no user and no key. See "The key" in [catalog.md](catalog.md). |
 | The log | No event of this component takes a key or its last characters. An event names the user, and the provider or the environment: `User {UserId} added a key of the AI provider {Provider}`. The log of the call to the provider leaves out the headers and the query, which hold the key and the signature. The tests read the log at the `Debug` level and find no key in it, in any form that bytes are written in. See "Masking" in [logging.md](logging.md) for what protects a key that is logged by mistake, and what does not. |
 | The audit trail | An event names the key by the id of its row, and nothing that makes an event takes text. See "The audit trail" in [accounts.md](accounts.md). |
 | The export | The sections `aiKeys` and `exchangeKeys` say which keys are stored: the id, the provider or the environment, the last four characters, when it was saved, and what the last check found. See "Exporting your data" in [accounts.md](accounts.md). |
 | An error | No exception of this component carries what was entered, and an unhandled error shows the user a reference id and nothing else. See "Unhandled errors" in [logging.md](logging.md). |
-| A prompt | Nothing that composes a prompt can read a key. What decrypts one is internal to this component, and hands the key to the gateway and to nothing else. |
+| A prompt | Nothing that composes a prompt can read a key. What decrypts one is internal to this component, and hands the key to the gateway and, for the list of the provider's models, to the Catalog, and to nothing else. |
 
 ## Validating a key
 
@@ -109,7 +110,7 @@ All but the first come to `KeyValidator`, which reads the stored key, asks the p
 
 | Rule | Detail |
 |---|---|
-| **A stored key is decrypted in one place, for one call** (FR-KEY-9). | `KeyValidator` reads the key, hands it to the gateway, and clears the bytes it was decrypted into. |
+| **A stored key is decrypted in one place, for the check** (FR-KEY-9). | `KeyValidator` reads the key, hands it to the gateway, and clears the bytes it was decrypted into. A key that the provider took is handed to the Catalog as well, for the list of the provider's models: see "The catalog". |
 | **A key that is replaced meanwhile keeps what was found about itself.** | The provider is asked with no transaction open. What it said is written only where the row still holds the encrypted value that was read. A key that took its place was checked when it was stored, and is not given the old key's result. |
 | **Every change to a user's keys takes one lock first.** | A write that tells what depends on the key locks the row of the account, then tells, then changes the row of the key: the order in which a user's own deletion does it. |
 | A key is asked about once a minute at most. | A provider that gives no answer leaves no time in the row, so the attempts are counted in memory. A button that is pressed again, or a call that fails again and again, does not have the provider asked each time. |
@@ -117,6 +118,17 @@ All but the first come to `KeyValidator`, which reads the stored key, asks the p
 | A provider that is down is asked once in a run. | After the first key that it gives no answer about, the job leaves that provider, or that environment of Binance, alone until the next hour. |
 
 The log has an event for a key that turned out invalid, was deleted, or could not be checked, under the area `Ecnanib.Credentials.KeyValidator`: `The key of user {UserId} for the AI provider {Provider} was refused by the provider, and is invalid`. A key that is still valid is not logged: the log of outbound calls has the call.
+
+### The catalog
+
+When a provider took a user's key, Credentials tells the Catalog, with `ICatalogSync.KeyValidatedAsync`: after a key is stored, and after a stored key was checked and written as `Valid`. Where the configuration file holds no catalog key for the provider, the Catalog refreshes the provider's catalog with the user's key (FR-CAT-3). See [catalog.md](catalog.md).
+
+| Rule | Detail |
+|---|---|
+| **Credentials does not decide.** | It may not read the file's catalog key, which `NoSharedKeyTests` holds it to. It tells the Catalog of every key that a provider took, and the Catalog uses the key or does not. |
+| **The catalog is told after the key is written.** | With no transaction open, and no lock held. A key that was refused, or that the provider gave no answer about, is not handed on. |
+| **What the list gives says nothing about the key.** | A provider that gives no list, and a catalog that cannot be written, are the Catalog's to record and to log. The key is stored and `Valid` all the same, and the page says so. |
+| The form waits for the list. | The list may take 15 seconds, which is what the check itself may take, and storing it takes a moment more. A provider whose list ran out of that time is then left alone for a minute. |
 
 ## Binance permissions
 

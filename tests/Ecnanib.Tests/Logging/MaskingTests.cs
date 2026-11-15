@@ -1,5 +1,10 @@
+using Ecnanib.AiProviderGateway;
 using Ecnanib.Platform.Settings;
+using Ecnanib.Tests.Catalog;
+using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Ecnanib.Tests.Logging;
@@ -121,7 +126,14 @@ public class MaskingTests
     public void A_secret_of_the_configuration_file_is_masked_by_its_value_under_any_name()
     {
         using var console = new ConsoleCapture();
-        using var application = new LoggedApplication(LoggedApplication.Settings());
+
+        // With the key that the file may hold for the catalog. An application that has one syncs
+        // the catalog with it as it starts, so what stands for the providers answers, and the
+        // database is the test's own.
+        using var application = new LoggedApplication(
+            LoggedApplication.Settings().WithCatalogKey(),
+            host => host.ConfigureServices(services => services.AddSingleton<IAiModelLists>(new StandInModelLists())),
+            PostgresServer.CreateDatabase());
         var settings = application.Services.GetService(typeof(EcnanibSettings)) as EcnanibSettings;
         Assert.NotNull(settings);
 

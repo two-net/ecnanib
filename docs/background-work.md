@@ -53,6 +53,7 @@ The jobs that the application has so far:
 | Job | Component | Schedule | What a run does |
 |---|---|---|---|
 | `key-validation` | Credentials | Every hour, on the hour | Asks the provider about each stored key that was last checked a day ago or longer (FR-KEY-3). See "Validating a key" in [credentials.md](credentials.md). |
+| `catalog-sync` | Catalog | Every `CatalogSync:IntervalHours`, and when the work starts with an empty catalog | Syncs the catalog of every provider that the configuration file holds a catalog key for (FR-CAT-2). See [catalog.md](catalog.md). |
 
 | Rule | Why |
 |---|---|
@@ -74,6 +75,23 @@ There are two kinds. They differ in what becomes of the time that passed while t
 | `BackgroundJobSchedule.AtUtcBoundaries(period)` | At every multiple of the period since midnight, in UTC: with 15 minutes, at 00:00, 00:15, 00:30. The period must divide a day into equal parts. | The job waits for the next boundary. Boundaries that passed are skipped and never made up for (FR-CYC-8). |
 
 The run is told when it was due, in `BackgroundJobRun.ScheduledFor`. For a job on boundaries that is the boundary itself, such as the close of a candle.
+
+### A job that is due when the work starts
+
+A job on an interval can have work when the background work starts, although its interval has not passed: the catalog is synced at startup when it is empty (FR-CAT-2). Such a job implements `IDueAtStart` beside `IBackgroundJob`:
+
+```csharp
+public Task<bool> IsDueAtStartAsync(CancellationToken cancellationToken) => sync.IsEmptyAsync(cancellationToken);
+```
+
+| Rule | Why |
+|---|---|
+| The scheduler asks once each time the instance takes up the work, before any job starts. | That is at the start of the application, and again after the lock was lost and taken back. It asks under the lock, so an instance that stands by does not ask. |
+| A job that says yes runs at once, and its interval goes on from that run. | The run is the job's latest run, like any other. |
+| A job that is due anyway is not asked. | One that has never run, one whose interval has passed, and one whose latest run was stopped. |
+| **A job whose latest run never finished is not asked.** | It runs when it is next due, whatever it would say: a job that brings the process down must not do so at every start. |
+| An error that leaves the question is logged once, as `Error`, and counts as no. | The question is the job's own. It does not keep the other jobs from running. |
+| Only a job on an interval can be asked. | A run on boundaries is for its boundary, and the start of the work is none. The application does not start with a job on boundaries that implements `IDueAtStart`. |
 
 Jobs do not wait for each other: each runs when it is due. A job never runs twice at the same time. If a run is still going when the next one is due, the next one waits until it ends, on an interval, or is skipped, on boundaries. Either is logged as a warning.
 
@@ -104,7 +122,7 @@ What follows a run depends on how it ended:
 | Did its work. | `Succeeded` | The job runs when it is next due. |
 | Threw an error. | `Failed` | The error is logged once, as `Error`. The job runs when it is next due: a failure that repeats does not become a loop. |
 | Was stopped by the application, when it shut down or lost the lock. | `Stopped` | The work is still to do. A job on an interval is due at once when the background work starts again. A job on boundaries waits for the next boundary, as always. |
-| Was running when the process ended. | A start with no end | It is reported once, as a warning, when the background work starts again. The job is not run at once, but when it is next due: a job that brings the process down must not do so at every start. |
+| Was running when the process ended. | A start with no end | It is reported once, as a warning, when the background work starts again. The job is not run at once, but when it is next due: a job that brings the process down must not do so at every start. That holds for a job that would say it is due when the work starts, which is then not asked. |
 
 ## The lock
 
@@ -147,6 +165,7 @@ The scheduler logs under the area `Ecnanib.Platform.BackgroundWork.BackgroundJob
 | `Information` | `Background job catalog-sync was stopped after 812.0 ms, before it was done` |
 | `Error` | `Background job catalog-sync failed after 95.3 ms. It runs again when it is next due`, with the error |
 | `Warning` | A run that never finished, a run that is held back because the one before it is still going, a boundary that was skipped because its run could not start in time, a start or an outcome that could not be written, and a lock that was lost. |
+| `Error` | `Background job catalog-sync could not say whether it is due now that the background work starts. It runs when it is next due, at ...`, with the error |
 | `Error` | `The background work cannot go on. This instance tries again every second until it can`, with the error. Logged once for as long as it lasts. |
 
 What a job logs itself is up to the job. It opens its own correlation scope for what it works on, as [logging.md](logging.md) describes.
@@ -162,4 +181,4 @@ using var application = ApplicationWithJobs.On(database, clock, job);
 
 The scheduler takes the time from the `TimeProvider` service. A test replaces it with `TestClock` and sets the time, so a job that is due in a day runs within a second of the test saying that a day has passed.
 
-Every application of a test has the application's own jobs too. `key-validation` is on boundaries, so it does not run when an application starts, and with no stored key that is due it asks nobody. A test whose clock jumps over more than one hour finds its warning that the hours between were skipped, so a test that counts the scheduler's warnings names its job. To see what a run of a job does at a time of the test's choosing, a test runs the job itself: `AccountsApplication.CheckKeysAsync` does that for `key-validation`.
+Every application of a test has the application's own jobs too. `key-validation` is on boundaries, so it does not run when an application starts, and with no stored key that is due it asks nobody. `catalog-sync` is on an interval, so it runs once when an application first starts on a database. The configuration file of the tests holds no catalog key, so that run asks nobody and writes nothing but the job's own row. A test that compares what the tables hold before and after a request leaves `background_jobs` out, as `AccountsApplication.EverythingStored` does. A test whose clock jumps over more than one hour finds its warning that the hours between were skipped, so a test that counts the scheduler's warnings names its job. To see what a run of a job does at a time of the test's choosing, a test runs the job itself: `AccountsApplication.CheckKeysAsync` does that for `key-validation`, and `CatalogApplication.RunJobAsync` for `catalog-sync`. `AskedJob` is a job that is asked whether it is due when the work starts, and answers as the test says.

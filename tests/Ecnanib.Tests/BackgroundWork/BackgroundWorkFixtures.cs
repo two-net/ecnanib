@@ -27,6 +27,7 @@ internal static class SchedulerLog
     public const string Skipped = "Background job {Job} is still running since {StartedAt}, so its run due at {DueAt} is skipped";
     public const string SessionEnded = "The database session that holds the background work lock has ended or does not answer, so this instance stops its jobs and stands by";
     public const string CannotGoOn = "The background work cannot go on. This instance tries again every second until it can";
+    public const string CannotSay = "Background job {Job} could not say whether it is due now that the background work starts. It runs when it is next due, at {NextRun}";
 
     /// <summary>The events the scheduler has written so far, read while the application is still writing.</summary>
     public static IReadOnlyList<LoggedEvent> Of(LoggedApplication application)
@@ -120,6 +121,43 @@ internal sealed class RecordingJob(
     /// <summary>Work that goes on until the application stops it.</summary>
     public static Task UntilStopped(BackgroundJobRun run, CancellationToken cancellationToken) =>
         Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+}
+
+/// <summary>
+/// A job on an interval that records its runs, and that is asked whether it is due when the
+/// background work starts: it keeps how often it was asked, and answers as the test says.
+/// </summary>
+internal sealed class AskedJob(string name, BackgroundJobSchedule schedule, Func<bool> dueAtStart) : IBackgroundJob, IDueAtStart
+{
+    private readonly ConcurrentQueue<BackgroundJobRun> _runs = new();
+    private int _asked;
+
+    public string Name => name;
+
+    public BackgroundJobSchedule Schedule => schedule;
+
+    /// <summary>The runs that have started, in order.</summary>
+    public IReadOnlyList<BackgroundJobRun> Runs => [.. _runs];
+
+    /// <summary>How often the scheduler asked whether the job is due.</summary>
+    public int Asked => Volatile.Read(ref _asked);
+
+    /// <summary>What the job answers. A test can change it between two starts of the work.</summary>
+    public Func<bool> DueAtStart { get; set; } = dueAtStart;
+
+    public Task RunAsync(BackgroundJobRun run, CancellationToken cancellationToken)
+    {
+        _runs.Enqueue(run);
+
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> IsDueAtStartAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _asked);
+
+        return Task.FromResult(DueAtStart());
+    }
 }
 
 /// <summary>

@@ -58,7 +58,7 @@ A row that belongs to no user belongs to the service: vocabulary, the catalog, t
 
 | Rows of users | Rows of the service |
 |---|---|
-| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials` | `roles`, `ai_providers`, `prompt_templates`, `background_jobs` |
+| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials` | `roles`, `ai_providers`, `ai_models`, `catalog_sync_runs`, `prompt_templates`, `background_jobs` |
 
 `users` is the account itself. No table holds both kinds of row.
 

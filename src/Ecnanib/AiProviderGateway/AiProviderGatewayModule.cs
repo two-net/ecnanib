@@ -20,8 +20,9 @@ public static class AiProviderGatewayModule
 
     /// <summary>
     /// Registers the gateway. Each provider adapter is added here as one more
-    /// <see cref="IAiProviderAdapter"/> registration, and the check of its keys as one more
-    /// <see cref="IAiKeyChecker"/>, and nothing outside this component changes.
+    /// <see cref="IAiProviderAdapter"/> registration, the check of its keys as one more
+    /// <see cref="IAiKeyChecker"/>, and the list of its models as one more
+    /// <see cref="IAiModelLister"/>, and nothing outside this component changes.
     /// </summary>
     public static IServiceCollection AddAiProviderGateway(this IServiceCollection services)
     {
@@ -42,6 +43,15 @@ public static class AiProviderGatewayModule
         services.AddSingleton<IAiKeyChecker, GeminiKeyCheck>();
         services.AddSingleton<IAiKeyChecker, GptKeyCheck>();
         services.AddSingleton<IAiKeyChecker, GrokKeyCheck>();
+
+        // The list of a provider's models, which the catalog is filled from: one for each
+        // provider, and the exchange they all make (FR-CAT-1).
+        services.AddSingleton<IAiModelLists, AiModelListRouter>();
+        services.AddSingleton<ModelListCall>();
+        services.AddSingleton<IAiModelLister, ClaudeModelList>();
+        services.AddSingleton<IAiModelLister, GeminiModelList>();
+        services.AddSingleton<IAiModelLister, GptModelList>();
+        services.AddSingleton<IAiModelLister, GrokModelList>();
 
         return services;
     }

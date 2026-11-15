@@ -19,7 +19,7 @@ namespace Ecnanib.Tests.AiProviderGateway;
 /// environment of the run: <c>ECNANIB_LIVE_CLAUDE_KEY</c> and <c>ECNANIB_LIVE_CLAUDE_MODEL</c>,
 /// and the same with <c>GEMINI</c>, <c>GPT</c>, and <c>GROK</c>. So the suite never reaches a
 /// provider by itself, and no key is stored. A run costs what three small calls to a model cost,
-/// on the key that was given. See docs/ai-providers.md.
+/// on the key that was given. The lists of models cost nothing. See docs/ai-providers.md.
 /// </para>
 /// <para>
 /// The variables are read here, by the tests. The application reads none.
@@ -89,6 +89,69 @@ public class LiveProviderTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(AiCallOutcome.ModelNotFound, result.Outcome);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_provider_lists_its_models_as_the_list_reads_them(string code)
+    {
+        var (key, model) = GivenFor(code);
+        using var application = OnTheNetwork();
+        var lists = application.Services.GetRequiredService<IAiModelLists>();
+
+        var list = await lists.ListAsync(new AiProviderCode(code), key, TestContext.Current.CancellationToken);
+
+        Assert.Equal(AiModelListOutcome.Listed, list.Outcome);
+        Assert.Equal(list.Models.Count, list.Models.Select(listed => listed.Id).Distinct(StringComparer.Ordinal).Count());
+
+        // The model that was given is among them, under the id that a call names it by. Gemini
+        // lists it with "models/" before the id, which the catalog leaves out.
+        var given = Assert.Single(list.Models, listed => listed.Id == model || $"models/{listed.Id}" == model);
+
+        // What the list of this provider is read for, and what its documentation says it holds.
+        switch (code)
+        {
+            case "claude":
+                Assert.NotNull(given.DisplayName);
+                Assert.NotNull(given.ContextTokens);
+                Assert.NotNull(given.OutputTokens);
+                Assert.NotNull(given.ReleasedAt);
+                break;
+
+            case "gemini":
+                Assert.NotNull(given.DisplayName);
+                Assert.NotNull(given.ContextTokens);
+                Assert.NotNull(given.OutputTokens);
+                break;
+
+            case "gpt":
+                Assert.NotNull(given.ReleasedAt);
+                break;
+
+            default:
+                Assert.NotNull(given.ContextTokens);
+                Assert.NotNull(given.ReleasedAt);
+                break;
+        }
+
+        // No date that a provider gave is one that it does not know, or one of another time zone.
+        Assert.All(
+            list.Models.SelectMany(listed => new[] { listed.ReleasedAt, listed.DeprecatedAt, listed.RetiresAt }).OfType<DateTimeOffset>(),
+            moment => Assert.True(moment > DateTimeOffset.UnixEpoch && moment.Offset == TimeSpan.Zero));
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_provider_answers_a_wrong_key_to_its_list_as_the_list_expects(string code)
+    {
+        _ = GivenFor(code);
+        using var application = OnTheNetwork();
+        var lists = application.Services.GetRequiredService<IAiModelLists>();
+
+        var list = await lists.ListAsync(
+            new AiProviderCode(code), "not-a-key-0123456789-abcdefghij-klmnop", TestContext.Current.CancellationToken);
+
+        Assert.Equal(AiModelListOutcome.AuthenticationFailed, list.Outcome);
     }
 
     /// <summary>The key and the model that the run was given for a provider. Without both, the test is skipped.</summary>

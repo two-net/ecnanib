@@ -11,6 +11,7 @@ using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.Catalog;
 using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
@@ -65,7 +66,8 @@ internal sealed class RecordingEmail : IEmailAdapter
 /// The application on a database of the test's own, so that a test can say what the tables
 /// hold, with the email it sends kept by <see cref="RecordingEmail"/>, and with
 /// <see cref="StandInProviders"/> in place of the AI providers and of Binance, which take every
-/// key unless a test says otherwise.
+/// key unless a test says otherwise, and <see cref="StandInModelLists"/> in place of the
+/// providers' lists of their models.
 /// </summary>
 internal sealed class AccountsApplication : IDisposable
 {
@@ -105,6 +107,10 @@ internal sealed class AccountsApplication : IDisposable
                     services.AddSingleton<IAiKeyChecks>(Providers);
                     services.AddSingleton<IExchangeAdapter>(Providers);
 
+                    // A key that its provider takes is handed to the catalog, which may list the
+                    // provider's models with it (FR-CAT-3).
+                    services.AddSingleton<IAiModelLists>(ModelLists);
+
                     if (clock is not null)
                     {
                         services.AddSingleton<TimeProvider>(clock);
@@ -122,6 +128,9 @@ internal sealed class AccountsApplication : IDisposable
 
     /// <summary>What stands for the AI providers and for Binance when they are asked about a key.</summary>
     public StandInProviders Providers { get; } = new();
+
+    /// <summary>What stands for the AI providers when they are asked for the list of their models.</summary>
+    public StandInModelLists ModelLists { get; } = new();
 
     /// <summary>What the components above Credentials ask about a user's stored keys.</summary>
     public IKeyValidation KeyValidation => _application.Services.GetRequiredService<IKeyValidation>();
@@ -188,11 +197,15 @@ internal sealed class AccountsApplication : IDisposable
     public Task<PasswordResetOutcome> ResetAsync(string token, string newPassword) =>
         PasswordReset.ResetAsync(token, newPassword, AuditOrigin.Unknown, TestContext.Current.CancellationToken);
 
-    /// <summary>Every row of every table, as the database would hand it to whoever reads it.</summary>
+    /// <summary>
+    /// Every row of every table, as the database would hand it to whoever reads it, but for the
+    /// state of the scheduled jobs: a job that is due as the application starts writes its row
+    /// in its own time, which is nothing that a request did.
+    /// </summary>
     public string EverythingStored() =>
         string.Join(
             Environment.NewLine,
-            Database.Tables().SelectMany(table =>
+            Database.Tables().Where(table => table != "background_jobs").SelectMany(table =>
                 Database.Column($"""SELECT row_to_json(stored)::text FROM "{table}" stored""")));
 
     /// <summary>

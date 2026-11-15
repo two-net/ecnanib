@@ -198,7 +198,42 @@ internal sealed class BackgroundJobScheduler(
                     job.Name,
                     state.LastStartedAt,
                     job.NextRun);
+
+                continue;
             }
+
+            // A job that waits may have work all the same, now that the work starts.
+            if (job.NextRun > now && await IsDueAtStartAsync(job, stopping))
+            {
+                job.NextRun = now;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Asks a job that can be due when the background work starts whether it is. What goes wrong
+    /// with the question is the job's own, so it does not keep the other jobs from running.
+    /// </summary>
+    private async Task<bool> IsDueAtStartAsync(Scheduled job, CancellationToken stopping)
+    {
+        if (job.Job is not IDueAtStart asked)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await asked.IsDueAtStartAsync(stopping);
+        }
+        catch (Exception error) when (!stopping.IsCancellationRequested)
+        {
+            logger.LogError(
+                error,
+                "Background job {Job} could not say whether it is due now that the background work starts. It runs when it is next due, at {NextRun}",
+                job.Name,
+                job.NextRun);
+
+            return false;
         }
     }
 
@@ -492,6 +527,14 @@ internal sealed class BackgroundJobScheduler(
             if (job.Schedule is null)
             {
                 throw new InvalidOperationException($"The background job '{job.Name}' has no schedule.");
+            }
+
+            if (job is IDueAtStart && job.Schedule.SkipsMissedRuns)
+            {
+                // A run on boundaries is for its boundary, and the start of the work is none.
+                throw new InvalidOperationException(
+                    $"The background job '{job.Name}' runs on UTC boundaries, so it cannot be due when the background work starts. " +
+                    "Only a job on an interval can.");
             }
 
             scheduled.Add(new Scheduled(job));

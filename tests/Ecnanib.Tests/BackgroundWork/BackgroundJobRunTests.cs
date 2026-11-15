@@ -220,6 +220,7 @@ public class BackgroundJobRunTests
         var failed = Assert.Single(SchedulerLog.Trouble(application));
         Assert.Equal("Warning", failed.Level);
         Assert.Equal(SchedulerLog.NotStarted, failed.Template);
+        Assert.Equal("sync", failed.Text("Job"));
         Assert.Equal(0, SchedulerLog.Count(application, SchedulerLog.StartedElsewhere));
     }
 
@@ -378,7 +379,9 @@ public class BackgroundJobRunTests
         public override ValueTask<int> NonQueryExecutedAsync(
             DbCommand command, CommandExecutedEventData eventData, int result, CancellationToken cancellationToken = default)
         {
+            // Of the job of the test, and not of a job of the application's own, which starts beside it.
             if (command.CommandText.Contains("INSERT INTO background_jobs", StringComparison.Ordinal)
+                && command.Parameters.Cast<DbParameter>().Any(parameter => parameter.Value is "sync")
                 && Interlocked.Exchange(ref _lost, 1) == 0)
             {
                 throw new InvalidOperationException("The connection was lost before the answer arrived.");

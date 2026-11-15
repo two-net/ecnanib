@@ -124,7 +124,7 @@ public class SecretMaskTests
     [Fact]
     public void Every_secret_of_the_configuration_file_is_known_to_the_mask()
     {
-        using var directory = new Settings.SettingsDirectory(Settings.SettingsJson.Valid());
+        using var directory = new Settings.SettingsDirectory(Settings.SettingsJson.Valid().WithCatalogKey());
         var mask = SecretMask.For(SettingsFile.Load(directory.SettingsPath));
 
         Assert.Equal("m: ***", mask.Text($"m: {Settings.SettingsJson.MasterKey}"));

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Ecnanib.Accounts;
 using Ecnanib.AiProviderGateway;
+using Ecnanib.Catalog;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
@@ -23,6 +24,10 @@ namespace Ecnanib.Credentials;
 /// and in no error: an event names the user, and the provider or the environment.
 /// </para>
 /// <para>
+/// A key of an AI provider that the provider took is handed on once more, to the catalog, which
+/// may ask the provider for the list of its models with it and keeps it nowhere (FR-CAT-3).
+/// </para>
+/// <para>
 /// The provider is asked with no transaction open. What it said is then written only where the
 /// row still holds the value that was read, so a key that was replaced meanwhile never gets what
 /// was said about the one before it.
@@ -39,6 +44,7 @@ internal sealed class KeyValidator(
     StoredSecrets secrets,
     IAiKeyChecks aiProviders,
     IExchangeAdapter exchange,
+    ICatalogSync catalog,
     IEnumerable<IKeyDependents> dependents,
     TimeProvider clock,
     ILogger<KeyValidator> logger) : IKeyValidation
@@ -104,7 +110,17 @@ internal sealed class KeyValidator(
                         .SetProperty(credential => credential.ValidatedAt, now),
                     cancellationToken);
 
-                return written == 0 ? KeyCheckOutcome.Changed : KeyCheckOutcome.Valid;
+                if (written == 0)
+                {
+                    return KeyCheckOutcome.Changed;
+                }
+
+                // The provider took the key, so the catalog may list the provider's models with
+                // it, which it does when the service has no key of its own for that (FR-CAT-3).
+                // What the list gives says nothing about the key.
+                await catalog.KeyValidatedAsync(provider, key, cancellationToken);
+
+                return KeyCheckOutcome.Valid;
             }
 
             case KeyVerdict.Refused:

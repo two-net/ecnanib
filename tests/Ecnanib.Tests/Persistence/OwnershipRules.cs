@@ -23,6 +23,8 @@ internal static class OwnershipRules
     {
         ["roles"] = "The four roles on the team that runs an agent: vocabulary, seeded through migrations.",
         ["ai_providers"] = "The four AI providers: seeded through migrations.",
+        ["ai_models"] = "The catalog of the models that the providers offer, which is the same for every user (FR-CAT-4).",
+        ["catalog_sync_runs"] = "The syncs of the catalog: when each ran and how it ended. A row names no user, also when a user's key was used.",
         ["prompt_templates"] = "The prompts that the system supplies, which are the same for every user.",
         ["background_jobs"] = "The latest run of each scheduled job of the application.",
     };

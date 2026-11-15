@@ -70,6 +70,22 @@ internal readonly record struct ModelAnswer(AnswerEnd End, string? Text, AiToken
 /// <summary>Reads the parts of an answer, each of which may be missing or of another kind than expected.</summary>
 internal static class AnswerReading
 {
+    /// <summary>The body of an answer as the JSON object that a provider sends, or null when it is something else.</summary>
+    public static async Task<JsonElement?> ReadObjectAsync(this HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var answer = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
+
+            return answer.RootElement.ValueKind == JsonValueKind.Object ? answer.RootElement.Clone() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>The member of an object, or null when this is no object or has no such member.</summary>
     public static JsonElement? Member(this JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var member) ? member : null;

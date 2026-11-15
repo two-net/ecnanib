@@ -19,10 +19,18 @@ internal sealed class SettingsJson
 
     private SettingsJson(JsonObject root) => _root = root;
 
+    /// <summary>The key that <see cref="WithCatalogKey"/> gives the service for the models of Claude.</summary>
+    public const string CatalogKey = "claude-catalog-key";
+
     /// <summary>
     /// A complete file that passes validation. Its values differ from the defaults in the tracked
     /// file, so a test that reads one back knows it came from this file.
     /// </summary>
+    /// <remarks>
+    /// It holds no catalog key, as the tracked file holds none: an application that has one
+    /// syncs the catalog of that provider as it starts, and no test reaches a provider. A test
+    /// that is about the key adds it, with <see cref="WithCatalogKey"/>.
+    /// </remarks>
     public static SettingsJson Valid() => Parse(
         """
         {
@@ -48,7 +56,7 @@ internal sealed class SettingsJson
           },
           "Email": { "Host": "mail.example", "Port": 2525, "User": "mailer", "Password": "email-password", "From": "noreply@ecnanib.example" },
           "AiProviders": {
-            "Claude": { "BaseUrl": "https://claude.example", "CatalogKey": "claude-catalog-key", "TimeoutSeconds": 30, "Allow": [ "claude-*" ], "Deny": [ "*-preview" ], "LiveSearch": [] },
+            "Claude": { "BaseUrl": "https://claude.example", "CatalogKey": "", "TimeoutSeconds": 30, "Allow": [ "claude-*" ], "Deny": [ "*-preview" ], "LiveSearch": [] },
             "Gemini": { "BaseUrl": "https://gemini.example", "CatalogKey": "", "TimeoutSeconds": 31, "Allow": [], "Deny": [], "LiveSearch": [] },
             "GPT": { "BaseUrl": "https://gpt.example", "CatalogKey": "", "TimeoutSeconds": 32, "Allow": [], "Deny": [], "LiveSearch": [] },
             "Grok": { "BaseUrl": "https://grok.example", "CatalogKey": "", "TimeoutSeconds": 33, "Allow": [], "Deny": [], "LiveSearch": [ "grok-*" ] }
@@ -109,6 +117,9 @@ internal sealed class SettingsJson
 
     /// <summary>Points the file at a database of the test's own.</summary>
     public SettingsJson OnDatabase(TestDatabase database) => With("ConnectionStrings:EcnanibDbContext", database.ConnectionString);
+
+    /// <summary>Gives the service a key of its own for the models of Claude, and of no other provider.</summary>
+    public SettingsJson WithCatalogKey() => With("AiProviders:Claude:CatalogKey", CatalogKey);
 
     /// <summary>Sets a key, adding it when it is not there.</summary>
     public SettingsJson With(string key, JsonNode? value)

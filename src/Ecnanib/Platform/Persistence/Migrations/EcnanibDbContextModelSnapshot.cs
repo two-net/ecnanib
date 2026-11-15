@@ -300,6 +300,127 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Ecnanib.Catalog.AiModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int?>("ContextTokens")
+                        .HasColumnType("integer")
+                        .HasColumnName("context_tokens");
+
+                    b.Property<DateTimeOffset?>("DeprecatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deprecated_at");
+
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("text")
+                        .HasColumnName("display_name");
+
+                    b.Property<DateTimeOffset>("FirstSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_seen_at");
+
+                    b.Property<string>("Identifier")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("identifier");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<int>("MissedSyncs")
+                        .HasColumnType("integer")
+                        .HasColumnName("missed_syncs");
+
+                    b.Property<int?>("OutputTokens")
+                        .HasColumnType("integer")
+                        .HasColumnName("output_tokens");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("provider");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at");
+
+                    b.Property<DateTimeOffset?>("RetiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("retires_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_ai_models");
+
+                    b.HasIndex("Provider", "Identifier")
+                        .IsUnique()
+                        .HasDatabaseName("ix_ai_models_provider_identifier");
+
+                    b.ToTable("ai_models", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Catalog.CatalogSyncRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Added")
+                        .HasColumnType("integer")
+                        .HasColumnName("added");
+
+                    b.Property<string>("Cause")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("cause");
+
+                    b.Property<int>("Changed")
+                        .HasColumnType("integer")
+                        .HasColumnName("changed");
+
+                    b.Property<string>("Failure")
+                        .HasColumnType("text")
+                        .HasColumnName("failure");
+
+                    b.Property<DateTimeOffset>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("result");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<int>("Unavailable")
+                        .HasColumnType("integer")
+                        .HasColumnName("unavailable");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_sync_runs");
+
+                    b.HasIndex("Provider", "StartedAt")
+                        .HasDatabaseName("ix_catalog_sync_runs_provider_started_at");
+
+                    b.ToTable("catalog_sync_runs", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Credentials.AiCredential", b =>
                 {
                     b.Property<Guid>("Id")
@@ -677,6 +798,26 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_sessions_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Catalog.AiModel", b =>
+                {
+                    b.HasOne("Ecnanib.AiProviderGateway.AiProvider", null)
+                        .WithMany()
+                        .HasForeignKey("Provider")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_ai_models_ai_providers_provider");
+                });
+
+            modelBuilder.Entity("Ecnanib.Catalog.CatalogSyncRun", b =>
+                {
+                    b.HasOne("Ecnanib.AiProviderGateway.AiProvider", null)
+                        .WithMany()
+                        .HasForeignKey("Provider")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_sync_runs_ai_providers_provider");
                 });
 
             modelBuilder.Entity("Ecnanib.Credentials.AiCredential", b =>

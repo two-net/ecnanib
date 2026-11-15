@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Ecnanib.Accounts;
 using Ecnanib.AiProviderGateway;
+using Ecnanib.Catalog;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
@@ -20,6 +21,10 @@ namespace Ecnanib.Credentials;
 /// encrypted, and is stored. Nothing here reads it back: what a page shows is read from the
 /// columns beside it. The key is in no log event and in no error, and the audit trail names it
 /// by the id of its row.
+/// </para>
+/// <para>
+/// A key of an AI provider that is stored is handed on once more, to the catalog, which may ask
+/// the provider for the list of its models with it and keeps it nowhere (FR-CAT-3).
 /// </para>
 /// <para>
 /// The provider is asked about a key before it is stored, with a call that only reads. A
@@ -43,6 +48,7 @@ internal sealed class StoredKeys(
     IReauthentication reauthentication,
     IAiKeyChecks aiProviders,
     IExchangeAdapter exchange,
+    ICatalogSync catalog,
     IKeyValidation validation,
     IEnumerable<IKeyDependents> dependents,
     TimeProvider clock,
@@ -235,6 +241,11 @@ internal sealed class StoredKeys(
         {
             logger.LogInformation("User {UserId} replaced their key of the AI provider {Provider}", userId, provider.Value);
         }
+
+        // The provider took the key, so the catalog may list the provider's models with it, which
+        // it does when the service has no key of its own for that (FR-CAT-3). The key is stored
+        // by now, with no transaction open, and what the list gives says nothing about the key.
+        await catalog.KeyValidatedAsync(provider, key, cancellationToken);
 
         return new StoreKeyResult(StoreKeyOutcome.Stored);
     }

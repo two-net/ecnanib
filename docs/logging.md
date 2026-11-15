@@ -87,7 +87,7 @@ Events inside a request or a cycle carry the properties that say what they belon
 |---|---|
 | `RequestId` | `UseRequestCorrelation()`, for every HTTP request. It comes first in the pipeline. |
 | `UserId` | `UseUserCorrelation()`, when the request is signed in: the id of the account. It comes right after authentication, which is what knows the user. See [accounts.md](accounts.md). |
-| `Provider`, `Model` | The AI Provider Gateway, around each call to a model. |
+| `Provider`, `Model` | The AI Provider Gateway, around each call to a model. `Provider` alone around a check of a key and a list of models, and by the Catalog around a sync. |
 | `AgentId`, `CycleId`, `Role` | The component that runs a cycle and calls the team. |
 | `ExchangeOrderId` | The component that places or tracks an order. |
 
@@ -134,7 +134,7 @@ Outbound call POST fapi.binance.com/fapi/v1/order Succeeded with status 200 in 8
 - `Usage` holds the response headers that report usage. The component that knows the system names them: the Exchange Gateway registers Binance's used-weight and order-count headers through `OutboundCallLogOptions`.
 - Request and response bodies are logged only at the debug level, which is off unless the file turns it on for the area `Ecnanib.Platform.Adapters.Http`. Bodies pass the masking like everything else. While it is on, each body is held in memory in full, so use it to investigate and then turn it off.
 
-The calls that the application makes so far are the ones that validate a user's key, and the calls to a model: see "Validating a key" in [credentials.md](credentials.md), and [ai-providers.md](ai-providers.md). A key travels in a header, and the signature of a call to Binance in the query, so neither is logged. A provider that refuses a key answers with a status of 400 or above, so such a call is a warning: it is what the provider said, and not a fault of the application.
+The calls that the application makes so far are the ones that validate a user's key, the ones that list a provider's models for the catalog, and the calls to a model: see "Validating a key" in [credentials.md](credentials.md), [catalog.md](catalog.md), and [ai-providers.md](ai-providers.md). A key travels in a header, and the signature of a call to Binance in the query, so neither is logged. A provider that refuses a key answers with a status of 400 or above, so such a call is a warning: it is what the provider said, and not a fault of the application.
 
 ```
 Outbound call GET api.anthropic.com/v1/models Failed with status 401 in 324.5 ms {"Provider": "claude"}

@@ -69,7 +69,7 @@ Each external system sits behind an adapter with a common interface.
 
 | External system | Common interface | Adapters live in |
 |---|---|---|
-| Each AI provider | `IAiProviderAdapter` for calls to a model, and `IAiKeyChecker` for the check of a key | `AiProviderGateway/Adapters/<Provider>` |
+| Each AI provider | `IAiProviderAdapter` for calls to a model, `IAiKeyChecker` for the check of a key, and `IAiModelLister` for the list of its models | `AiProviderGateway/Adapters/<Provider>` |
 | Binance | `IExchangeAdapter` | `ExchangeGateway/Adapters/Binance` |
 | Email delivery | `IEmailAdapter` | `Notifications/Adapters/<Service>`. SMTP is in `Notifications/Adapters/Smtp`. |
 
@@ -79,20 +79,21 @@ Three rules keep every call to an external system inside its adapter, and in the
 - Network client types (`System.Net.Http`, `System.Net.Mail`, `System.Net.WebSockets`, `System.Net.Sockets`, and the SMTP library `MailKit`) may be used only inside an `Adapters` namespace.
 - No code may create an `HttpClient`. An adapter takes one from the host's factory (a typed or named client, or `IHttpClientFactory`), and every client from the factory logs its calls (NFR-LOG-5). See [logging.md](logging.md).
 
-What an adapter learns from the network leaves it as a type of its own component, because nothing outside an `Adapters` namespace may name a network type, an error of the network included. The checks of a key answer with a `KeyVerdict`, and a provider that does not answer is one of its values. A call to a model answers with an `AiCallOutcome` in the same way: a provider that refuses, fails, or takes too long is an outcome of the call, and not an error.
+What an adapter learns from the network leaves it as a type of its own component, because nothing outside an `Adapters` namespace may name a network type, an error of the network included. The checks of a key answer with a `KeyVerdict`, and a provider that does not answer is one of its values. A call to a model answers with an `AiCallOutcome` in the same way: a provider that refuses, fails, or takes too long is an outcome of the call, and not an error. So does the list of a provider's models, with an `AiModelListOutcome`.
 
-The adapters of the AI providers make the calls to a model, and the calls that validate a key, which ask for the list of a provider's models: see [ai-providers.md](ai-providers.md). The adapter of Binance so far makes the calls that validate a key: the permissions of a key, with the clock of each market. The orders are not built. A gateway makes all its calls with one named client, `AiProviderGatewayModule.HttpClientName` or `ExchangeGatewayModule.HttpClientName`, so a test puts a handler of its own behind that name in place of the network.
+The adapters of the AI providers make the calls to a model, the calls that validate a key, which ask for the list of a provider's models, and the calls that read that list for the catalog: see [ai-providers.md](ai-providers.md). The adapter of Binance so far makes the calls that validate a key: the permissions of a key, with the clock of each market. The orders are not built. A gateway makes all its calls with one named client, `AiProviderGatewayModule.HttpClientName` or `ExchangeGatewayModule.HttpClientName`, so a test puts a handler of its own behind that name in place of the network.
 
 ### Adding an AI provider
 
 1. Add a class that implements `IAiProviderAdapter` under `AiProviderGateway/Adapters/<Provider>`. `ModelCall` makes the exchange, which is the same for every provider. The adapter says what is the provider's own, as an `IModelCallFormat`: the path, the header of the key, the body with the schema where the provider takes it, how an answer reads, and which of its errors is the one to a wrong key or to a model it does not have.
 2. Add a class that implements `IAiKeyChecker` beside it: the call that says whether the provider takes a key.
-3. Register both in `AddAiProviderGateway()`.
-4. Add its entry under `AiProviders` in the configuration file, with its address and its time limit, as [configuration.md](configuration.md) describes.
-5. Add its row to the seed data in `AiProviderGateway/AiProvider.cs` and generate a migration, as [persistence.md](persistence.md) describes.
-6. Add its code to the tests of the gateway, and run them against the provider itself once: see "Checking against the real providers" in [ai-providers.md](ai-providers.md).
+3. Add a class that implements `IAiModelLister` beside them: the list of the provider's models. `ModelListCall` makes the exchange. The class says what is the provider's own, as an `IModelListFormat`: the path of a page, how a page reads and names the next one, and what the provider says about a model.
+4. Register all three in `AddAiProviderGateway()`.
+5. Add its entry under `AiProviders` in the configuration file, with its address and its time limit, as [configuration.md](configuration.md) describes.
+6. Add its row to the seed data in `AiProviderGateway/AiProvider.cs` and generate a migration, as [persistence.md](persistence.md) describes.
+7. Add its code to the tests of the gateway, and run them against the provider itself once: see "Checking against the real providers" in [ai-providers.md](ai-providers.md).
 
-Nothing else changes. Other components call `IAiProviderGateway` and `IAiKeyChecks`, and name the provider by its `AiProviderCode`. Providers are an open set of codes, not an enum, so no caller can branch over them.
+Nothing else changes. Other components call `IAiProviderGateway`, `IAiKeyChecks`, and `IAiModelLists`, and name the provider by its `AiProviderCode`. Providers are an open set of codes, not an enum, so no caller can branch over them.
 
 ### Placing orders
 
@@ -134,6 +135,12 @@ Every call to a model is made through the AI Provider Gateway, with one adapter 
 
 The gateway takes the user's key with each call and keeps it nowhere (FR-KEY-9). A call that gives no result ends as an outcome, and not as an error: a timeout, an answer that is no result, a failed authentication, a model that the provider does not have, or a failure. What follows from each is for the caller. Not built yet: what calls the gateway for an agent. See [ai-providers.md](ai-providers.md).
 
+## Model catalog
+
+The Catalog keeps the models that the four providers offer. It is filled only from each provider's own list of its models, which the gateway reads: no model is hard-coded (FR-CAT-1). The catalog is synced on a schedule, as the application starts when it is empty, and on demand, with the key that the configuration file holds for the provider for this alone (FR-CAT-2, FR-CAT-3). Where the file holds none, Credentials hands the Catalog each key of a user that the provider took, and the Catalog lists the provider's models with it and keeps it nowhere.
+
+A model is stored once, with what its provider says about it, and what the provider does not say is unknown (FR-CAT-4). A model that enough syncs in a row lack is marked unavailable, and is never deleted (FR-CAT-5). With the keys of users it must also have gone unseen for long enough, because one key may see fewer models than another. A sync that fails for one provider leaves that provider's catalog as it was and the others alone, and every sync is recorded (FR-CAT-7). Not built yet: which models can be selected, and what follows for an agent whose model is gone. See [catalog.md](catalog.md).
+
 ## Ownership
 
 The only account type is the individual user, and every resource belongs to exactly one (FR-ACC-5). A row that belongs to a user carries its owner. Whatever serves a request asks for the rows of the user who is signed in, so a row of another user is not found (NFR-SEC-3, NFR-DAT-9). The vocabulary for it, `IUserOwned` and `OwnedBy`, is in `Platform`, so that a component which may not use Accounts can still say whose its rows are.
@@ -150,7 +157,7 @@ A secret that the application must read again is stored encrypted, with authenti
 
 ## Background work
 
-Scheduled work runs on one scheduler in `Platform`. A component implements `IBackgroundJob` and registers it; the scheduler keeps each job's latest run in the database, so the schedule goes on after a restart, and it runs jobs only while it holds a database lock, so they never run in two instances at once (NFR-ARC-4). `Platform` never references a component: it finds the jobs among the registered services. The first job is that of Credentials, which checks the stored keys. See [background-work.md](background-work.md).
+Scheduled work runs on one scheduler in `Platform`. A component implements `IBackgroundJob` and registers it; the scheduler keeps each job's latest run in the database, so the schedule goes on after a restart, and it runs jobs only while it holds a database lock, so they never run in two instances at once (NFR-ARC-4). `Platform` never references a component: it finds the jobs among the registered services. The jobs so far are that of Credentials, which checks the stored keys, and that of Catalog, which syncs the model catalog. A job on an interval can also be due when the work starts, which is how the catalog is synced at startup when it is empty. See [background-work.md](background-work.md).
 
 ## Logging
 
