@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using Ecnanib.AiProviderGateway;
+using Ecnanib.Catalog;
+using Ecnanib.Platform.Persistence;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.AiProviderGateway;
@@ -7,6 +9,7 @@ using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Settings;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.Catalog;
 
@@ -14,7 +17,9 @@ namespace Ecnanib.Tests.Catalog;
 /// A sync authenticates with the catalog key that the configuration file holds for the provider.
 /// When the file holds none for a provider, that provider's catalog is refreshed whenever a
 /// user's key for it is validated (FR-CAT-3). The user's key is handed on for the one list and is
-/// kept nowhere, and what the list gives says nothing about the key.
+/// kept nowhere, and what the list gives says nothing about the key. Whichever key the catalog
+/// is synced with, a user's key is asked for the list of its provider's models when the
+/// provider took it, and the catalog answers with what the provider listed to it (FR-CAT-9).
 /// </summary>
 public class CatalogKeyTests
 {
@@ -112,27 +117,174 @@ public class CatalogKeyTests
     }
 
     [Fact]
-    public async Task With_a_catalog_key_for_a_provider_the_keys_of_users_are_not_used_for_it()
+    public async Task With_a_catalog_key_for_a_provider_a_users_key_lists_its_models_and_syncs_nothing()
     {
-        // The service has a key of its own for Claude, and none for GPT.
+        // The service has a key of its own for Claude, and none for GPT. A user's key for Claude
+        // is listed a model that the key of the service is not.
         var clock = new TestClock(Morning);
         using var application = new AccountsApplication(clock: clock, settings: file => file.WithCatalogKey());
+        application.ModelLists.Answer = (provider, key) => key == Keys.Claude
+            ? StandInModelLists.Listed(StandInModelLists.Model("claude-test-model"), StandInModelLists.Model("claude-of-this-key-alone"))
+            : StandInModelLists.Listed(StandInModelLists.Model($"{provider}-test-model"), StandInModelLists.Model($"{provider}-test-model-mini"));
         using var client = application.CreateClient();
         await application.RegisterVerifiedAsync(Ada);
+        await Wait.UntilAsync(() => StoredCatalogSync.All(application.Database).Count == 1, "the sync as the application first starts");
+        var synced = StoredAiModel.Of(application.Database, "claude");
+
+        // Some minutes on, so that a sync with the user's key would show in the catalog.
+        clock.Set(Morning.AddMinutes(5));
         await client.SignInAsync(Ada);
         await client.ConfirmIdentityAsync();
-        await Wait.UntilAsync(() => StoredCatalogSync.All(application.Database).Count == 1, "the sync as the application first starts");
 
         Assert.Equal(KeysPage, (await client.StoreAiKeyAsync("claude", Keys.Claude)).Path);
         Assert.Equal(KeysPage, (await client.StoreAiKeyAsync("gpt", GptKey)).Path);
 
-        // Claude was asked with the key of the file, and with no other. GPT was asked with the user's.
+        // Both providers were asked for their models with the user's key: that is how it is
+        // known what the key can use (FR-CAT-9).
         Assert.Equal(
-            [new AskedList("claude", SettingsJson.CatalogKey), new AskedList("gpt", GptKey)],
+            [new AskedList("claude", SettingsJson.CatalogKey), new AskedList("claude", Keys.Claude), new AskedList("gpt", GptKey)],
             application.ModelLists.Asked);
+
+        // Only the catalog of GPT was synced with it. That of Claude is the key of the file's
+        // to fill: it is as that key left it, to the time each model was last seen, and no sync
+        // is recorded for the list that the user's key was given.
         Assert.Equal(
             [("claude", "Scheduled"), ("gpt", "KeyValidated")],
             StoredCatalogSync.All(application.Database).Select(sync => (sync.Provider, sync.Cause)));
+        Assert.Equal(synced, StoredAiModel.Of(application.Database, "claude"));
+        Assert.Equal(["claude-test-model", "claude-test-model-mini"], synced.Select(model => model.Identifier));
+    }
+
+    [Fact]
+    public async Task Telling_the_catalog_of_a_key_answers_with_the_models_that_the_provider_listed_to_it()
+    {
+        // One provider that the service has a key for, and one that it has none for. Each lists
+        // to a key what the key may use, which is different for each key.
+        var providers = new StandInModelLists
+        {
+            Answer = (provider, key) => key switch
+            {
+                SettingsJson.CatalogKey => StandInModelLists.Listed(StandInModelLists.Model("claude-a"), StandInModelLists.Model("claude-b")),
+                "the-key-of-a-user-who-sees-more" => StandInModelLists.Listed(
+                    StandInModelLists.Model($"{provider}-c"), StandInModelLists.Model($"{provider}-a")),
+                _ => StandInModelLists.Listed(StandInModelLists.Model($"{provider}-a")),
+            },
+        };
+        using var application = await new CatalogApplication(
+            new TestClock(Morning), providers: providers, settings: file => file.WithCatalogKey()).StartedAsync();
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        // The identifiers, as the provider wrote them and in its order, with one that the
+        // catalog does not hold among them: the catalog of Claude is not this key's to fill.
+        Assert.Equal(["claude-c", "claude-a"], await application.Catalog.KeyValidatedAsync(Claude, "the-key-of-a-user-who-sees-more", cancellationToken));
+        Assert.Equal(["claude-a"], await application.Catalog.KeyValidatedAsync(Claude, "the-key-of-another-user", cancellationToken));
+        Assert.Equal(["claude-a", "claude-b"], StoredAiModel.Of(application.Database, "claude").Select(model => model.Identifier));
+
+        // Where the catalog is synced with the keys of users, the answer is the same, and the
+        // catalog then holds what was listed.
+        Assert.Equal(["gemini-c", "gemini-a"], await application.Catalog.KeyValidatedAsync(Gemini, "the-key-of-a-user-who-sees-more", cancellationToken));
+        Assert.Equal(["gemini-a"], await application.Catalog.KeyValidatedAsync(Gemini, "the-key-of-another-user", cancellationToken));
+        Assert.Equal(["gemini-a", "gemini-c"], StoredAiModel.Of(application.Database, "gemini").Select(model => model.Identifier));
+
+        // No answer names a user, and none is kept by the catalog: whose key it was is not told.
+        Assert.Equal(
+            [("claude", "Scheduled"), ("gemini", "KeyValidated"), ("gemini", "KeyValidated")],
+            StoredCatalogSync.All(application.Database).Select(sync => (sync.Provider, sync.Cause)));
+    }
+
+    [Fact]
+    public async Task A_provider_that_gives_a_users_key_no_list_is_answered_as_not_known()
+    {
+        var clock = new TestClock(Morning);
+        var providers = new StandInModelLists();
+        using var application = await new CatalogApplication(clock, providers: providers, settings: file => file.WithCatalogKey()).StartedAsync();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var synced = StoredAiModel.All(application.Database);
+
+        // With the key of the service for the provider, and without one: no list is no answer,
+        // and not a list of nothing.
+        foreach (var outcome in new[] { AiModelListOutcome.Failed, AiModelListOutcome.AuthenticationFailed })
+        {
+            providers.Answer = (_, _) => StandInModelLists.Ended(outcome);
+
+            Assert.Null(await application.Catalog.KeyValidatedAsync(Claude, "the-key-of-a-user", cancellationToken));
+            Assert.Null(await application.Catalog.KeyValidatedAsync(Gemini, "the-key-of-a-user", cancellationToken));
+        }
+
+        // So is a list that failed outright.
+        providers.Answer = (_, _) => throw new InvalidOperationException("The list could not be read.");
+
+        Assert.Null(await application.Catalog.KeyValidatedAsync(Claude, "the-key-of-a-user", cancellationToken));
+
+        // Where the service has a key of its own, the catalog is as it was, and no sync is
+        // recorded for a list that was only to say what a key can use. The log says each time
+        // that it is not known: twice as a warning, and once as an error of the application.
+        Assert.Equal(synced, StoredAiModel.All(application.Database));
+        Assert.Equal(["Scheduled"], StoredCatalogSync.Of(application.Database, "claude").Select(sync => sync.Cause));
+        Assert.Equal(
+            ["Warning", "Warning", "Error"],
+            application.CatalogEvents()
+                .Where(written => written.Template.Contains("Which models the key can use is not known", StringComparison.Ordinal))
+                .Select(written => written.Level));
+
+        // Where it has none, each of them is a sync that failed, as before.
+        Assert.Equal(
+            ["NoList", "KeyRefused"], StoredCatalogSync.Of(application.Database, "gemini").Select(sync => sync.Failure));
+
+        // A list that ran out of time is not known either, and the provider is then left alone
+        // for a minute, whichever key the catalog is synced with: the next key is not listed.
+        providers.Answer = (_, _) => StandInModelLists.Ended(AiModelListOutcome.TimedOut);
+        Assert.Null(await application.Catalog.KeyValidatedAsync(Claude, "the-key-of-a-user", cancellationToken));
+
+        var asked = providers.Asked.Count;
+        providers.Answer = (_, _) => StandInModelLists.Listed(StandInModelLists.Model("claude-a"));
+        clock.Set(Morning.AddSeconds(59));
+
+        Assert.Null(await application.Catalog.KeyValidatedAsync(Claude, "the-key-of-the-next-user", cancellationToken));
+        Assert.Equal(asked, providers.Asked.Count);
+
+        // After the minute it is asked again, and answers.
+        clock.Set(Morning.AddSeconds(60));
+
+        Assert.Equal(["claude-a"], await application.Catalog.KeyValidatedAsync(Claude, "the-key-of-the-next-user", cancellationToken));
+    }
+
+    [Fact]
+    public async Task A_list_that_could_not_be_stored_was_listed_to_the_key_all_the_same()
+    {
+        // The catalog of Claude is synced with the keys of users here. What depends on a model
+        // cannot be told, so a sync that would mark a model fails, and stores nothing.
+        const string wide = "the-key-of-a-user-who-sees-both";
+        const string narrow = "the-key-of-a-user-who-sees-one";
+
+        var clock = new TestClock(Morning);
+        var providers = new StandInModelLists
+        {
+            Answer = (_, key) => key == wide
+                ? StandInModelLists.Listed(StandInModelLists.Model("claude-a"), StandInModelLists.Model("claude-b"))
+                : StandInModelLists.Listed(StandInModelLists.Model("claude-a")),
+        };
+        using var application = await new CatalogApplication(
+            clock, providers: providers, services: services => services.AddSingleton<IModelDependents>(new FailingDependents())).StartedAsync();
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        await application.Catalog.KeyValidatedAsync(Claude, wide, cancellationToken);
+
+        // The key that sees one is checked daily. The fourth day is the first on which no key
+        // has listed the other model for long enough, so that sync would mark it, and fails.
+        for (var day = 1; day <= 4; day++)
+        {
+            clock.Set(Morning.AddDays(day));
+
+            Assert.Equal(["claude-a"], await application.Catalog.KeyValidatedAsync(Claude, narrow, cancellationToken));
+        }
+
+        // What the provider listed to the key is what the key can use, whatever became of the
+        // catalog: the sync is recorded as one that failed, and the model is as it was.
+        Assert.Equal(
+            ["Succeeded", "Succeeded", "Succeeded", "Succeeded", "Failed"],
+            StoredCatalogSync.Of(application.Database, "claude").Select(sync => sync.Result));
+        Assert.Equal("Active", StoredAiModel.Of(application.Database, "claude", "claude-b").Status);
     }
 
     [Fact]
@@ -321,5 +473,13 @@ public class CatalogKeyTests
         // The key is in no table readable, and in no log event, at the level that logs the most.
         Assert.All(Keys.FormsOf(GptKey), form => Assert.DoesNotContain(form, application.EverythingStored()));
         Assert.All(Keys.FormsOf(GptKey), form => Assert.DoesNotContain(form, application.LogText()));
+    }
+
+    /// <summary>Stands for what depends on a model, and can never be told: a change to the agents that cannot be stored.</summary>
+    private sealed class FailingDependents : IModelDependents
+    {
+        public Task ModelsUnavailableAsync(
+            EcnanibDbContext context, AiProviderCode provider, IReadOnlyList<Guid> modelIds, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The agents of the test could not be changed.");
     }
 }

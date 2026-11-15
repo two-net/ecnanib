@@ -427,6 +427,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.PrimitiveCollection<string[]>("AccessibleModels")
+                        .HasColumnType("text[]")
+                        .HasColumnName("accessible_models");
+
                     b.Property<byte[]>("EncryptedValue")
                         .IsRequired()
                         .HasColumnType("bytea")

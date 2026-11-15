@@ -13,6 +13,10 @@ using Npgsql;
 namespace Ecnanib.Tests.Credentials;
 
 /// <summary>A row of the <c>ai_credentials</c> table, read by a test directly.</summary>
+/// <param name="AccessibleModels">
+/// The identifiers of the models that the provider listed to the key, or null when the row
+/// holds none: it is not known then what the key can use.
+/// </param>
 internal sealed record StoredAiCredential(
     Guid Id,
     Guid UserId,
@@ -22,7 +26,8 @@ internal sealed record StoredAiCredential(
     string MaskedSuffix,
     DateTimeOffset SavedAt,
     string Status,
-    DateTimeOffset? ValidatedAt)
+    DateTimeOffset? ValidatedAt,
+    IReadOnlyList<string>? AccessibleModels)
 {
     /// <summary>Every key of an AI provider, by user and provider.</summary>
     public static IReadOnlyList<StoredAiCredential> All(TestDatabase database)
@@ -30,7 +35,8 @@ internal sealed record StoredAiCredential(
         using var connection = database.Open();
         using var command = new NpgsqlCommand(
             """
-            SELECT id, user_id, provider, encrypted_value, master_key_id, masked_suffix, saved_at, status, validated_at
+            SELECT id, user_id, provider, encrypted_value, master_key_id, masked_suffix, saved_at, status, validated_at,
+                   accessible_models
             FROM ai_credentials ORDER BY user_id, provider
             """,
             connection);
@@ -48,7 +54,8 @@ internal sealed record StoredAiCredential(
                 reader.GetString(5),
                 reader.GetFieldValue<DateTimeOffset>(6),
                 reader.GetString(7),
-                reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8)));
+                reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
+                reader.IsDBNull(9) ? null : reader.GetFieldValue<string[]>(9)));
         }
 
         return credentials;
@@ -211,7 +218,8 @@ internal static class StoredKeyRows
     /// stores them: encrypted with its active master key, each bound to its row and its owner,
     /// and valid as of the moment it was stored, as a key is that its provider took. It is for a
     /// test that is about something else, and needs a row in every table that holds rows of
-    /// users. Nobody is signed in for it, and nothing is recorded.
+    /// users. Nobody is signed in for it, and nothing is recorded. No provider has listed its
+    /// models to the key of the AI provider, so it is not known what that key can use.
     /// </summary>
     public static async Task GiveKeysAsync(this AccountsApplication application, Guid userId, DateTimeOffset savedAt)
     {
@@ -228,7 +236,16 @@ internal static class StoredKeyRows
         await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
         context.Add(new AiCredential(
-            aiId, userId, new AiProviderCode("claude"), ai.Value, ai.KeyId, aiKey[^4..], savedAt, KeyStatus.Valid, savedAt));
+            aiId,
+            userId,
+            new AiProviderCode("claude"),
+            ai.Value,
+            ai.KeyId,
+            aiKey[^4..],
+            savedAt,
+            KeyStatus.Valid,
+            savedAt,
+            accessibleModels: null));
         context.Add(new ExchangeCredential(
             exchangeId,
             userId,

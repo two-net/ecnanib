@@ -89,11 +89,13 @@ internal sealed class CatalogApplication : IDisposable
     /// <param name="database">A database that an earlier application of the test has used.</param>
     /// <param name="providers">What stands for the providers, when an earlier application of the test has used it.</param>
     /// <param name="settings">Changes to the configuration file, such as a catalog key.</param>
+    /// <param name="services">Further services of the test's own, such as something that depends on a model.</param>
     public CatalogApplication(
         TimeProvider? clock = null,
         TestDatabase? database = null,
         StandInModelLists? providers = null,
-        Func<SettingsJson, SettingsJson>? settings = null)
+        Func<SettingsJson, SettingsJson>? settings = null,
+        Action<IServiceCollection>? services = null)
     {
         Database = database ?? PostgresServer.CreateDatabase();
         Providers = providers ?? new StandInModelLists();
@@ -102,14 +104,16 @@ internal sealed class CatalogApplication : IDisposable
 
         _application = new LoggedApplication(
             settings?.Invoke(file) ?? file,
-            host => host.ConfigureServices(services =>
+            host => host.ConfigureServices(registered =>
             {
-                services.AddSingleton<IAiModelLists>(Providers);
+                registered.AddSingleton<IAiModelLists>(Providers);
 
                 if (clock is not null)
                 {
-                    services.AddSingleton(clock);
+                    registered.AddSingleton(clock);
                 }
+
+                services?.Invoke(registered);
             }),
             Database);
     }
@@ -121,6 +125,9 @@ internal sealed class CatalogApplication : IDisposable
 
     /// <summary>What syncs the catalog outside the schedule.</summary>
     public ICatalogSync Catalog => _application.Services.GetRequiredService<ICatalogSync>();
+
+    /// <summary>What says which models of the catalog can be selected.</summary>
+    public ISelectableModels Selectable => _application.Services.GetRequiredService<ISelectableModels>();
 
     /// <summary>
     /// Starts the application, and waits until the job that syncs the catalog has had its first

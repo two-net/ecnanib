@@ -23,8 +23,9 @@ namespace Ecnanib.Credentials;
 /// by the id of its row.
 /// </para>
 /// <para>
-/// A key of an AI provider that is stored is handed on once more, to the catalog, which may ask
-/// the provider for the list of its models with it and keeps it nowhere (FR-CAT-3).
+/// A key of an AI provider that is stored is handed on once more, to the catalog, which asks
+/// the provider for the list of its models with it and keeps it nowhere (FR-CAT-3). What the
+/// provider listed to the key is then kept with the key, as the models it can use (FR-CAT-9).
 /// </para>
 /// <para>
 /// The provider is asked about a key before it is stored, with a call that only reads. A
@@ -49,6 +50,7 @@ internal sealed class StoredKeys(
     IAiKeyChecks aiProviders,
     IExchangeAdapter exchange,
     ICatalogSync catalog,
+    KeyModels models,
     IKeyValidation validation,
     IEnumerable<IKeyDependents> dependents,
     TimeProvider clock,
@@ -200,13 +202,14 @@ internal sealed class StoredKeys(
         if (storedId is null)
         {
             context.Set<AiCredential>().Add(
-                new AiCredential(id, userId, provider, encrypted.Value, encrypted.KeyId, suffix, now, KeyStatus.Valid, now));
+                new AiCredential(
+                    id, userId, provider, encrypted.Value, encrypted.KeyId, suffix, now, KeyStatus.Valid, now, accessibleModels: null));
             await context.SaveChangesAsync(cancellationToken);
         }
         else
         {
             // In place: the row keeps its id, and the key that was stored is gone with this
-            // statement, with what was found about it.
+            // statement, with what was found about it, the models that it could use included.
             await context.Set<AiCredential>()
                 .OwnedBy(userId)
                 .Where(credential => credential.Id == id)
@@ -217,7 +220,8 @@ internal sealed class StoredKeys(
                         .SetProperty(credential => credential.MaskedSuffix, suffix)
                         .SetProperty(credential => credential.SavedAt, now)
                         .SetProperty(credential => credential.Status, KeyStatus.Valid)
-                        .SetProperty(credential => credential.ValidatedAt, now),
+                        .SetProperty(credential => credential.ValidatedAt, now)
+                        .SetProperty(credential => credential.AccessibleModels, (string[]?)null),
                     cancellationToken);
         }
 
@@ -242,10 +246,13 @@ internal sealed class StoredKeys(
             logger.LogInformation("User {UserId} replaced their key of the AI provider {Provider}", userId, provider.Value);
         }
 
-        // The provider took the key, so the catalog may list the provider's models with it, which
-        // it does when the service has no key of its own for that (FR-CAT-3). The key is stored
-        // by now, with no transaction open, and what the list gives says nothing about the key.
-        await catalog.KeyValidatedAsync(provider, key, cancellationToken);
+        // The provider took the key, so the catalog asks it for the list of its models with the
+        // key: that says which models the key can use, which is kept with the key (FR-CAT-9),
+        // and refreshes the catalog when the service has no key of its own for that (FR-CAT-3).
+        // The key is stored by now, with no transaction open, and what the list gives says
+        // nothing about the key.
+        var listed = await catalog.KeyValidatedAsync(provider, key, cancellationToken);
+        await models.RecordAsync(userId, provider, id, encrypted.Value, listed, cancellationToken);
 
         return new StoreKeyResult(StoreKeyOutcome.Stored);
     }
@@ -590,8 +597,18 @@ internal sealed class StoredKeys(
 /// <param name="SavedAt">When it was stored.</param>
 /// <param name="Status">What the last check of it found.</param>
 /// <param name="ValidatedAt">When the provider last answered a check of it, or null when it never did.</param>
+/// <param name="Models">
+/// The identifiers of the models that the provider listed to it, or null when it has listed
+/// none to it yet (FR-CAT-9).
+/// </param>
 public sealed record ExportedAiKey(
-    Guid Id, string Provider, string EndsWith, DateTimeOffset SavedAt, KeyStatus Status, DateTimeOffset? ValidatedAt);
+    Guid Id,
+    string Provider,
+    string EndsWith,
+    DateTimeOffset SavedAt,
+    KeyStatus Status,
+    DateTimeOffset? ValidatedAt,
+    IReadOnlyList<string>? Models);
 
 /// <summary>A Binance credential in the export of a user's data: which one it is, and never its keys (FR-KEY-8).</summary>
 /// <param name="Id">The id that the audit trail names the credential by.</param>
@@ -633,13 +650,14 @@ internal sealed class AiKeysExport : IExportedPart
                 credential.SavedAt,
                 credential.Status,
                 credential.ValidatedAt,
+                credential.AccessibleModels,
             })
             .ToListAsync(cancellationToken);
 
         return
         [
             .. keys.Select(key => new ExportedAiKey(
-                key.Id, key.Provider.Value, key.MaskedSuffix, key.SavedAt, key.Status, key.ValidatedAt)),
+                key.Id, key.Provider.Value, key.MaskedSuffix, key.SavedAt, key.Status, key.ValidatedAt, key.AccessibleModels)),
         ];
     }
 }

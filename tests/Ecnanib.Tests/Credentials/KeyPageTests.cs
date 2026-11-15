@@ -940,12 +940,18 @@ public class KeyPageTests
         Assert.All(
             aiKeys,
             key => Assert.Equal(
-                ["id", "provider", "endsWith", "savedAt", "status", "validatedAt"], key.EnumerateObject().Select(member => member.Name)));
+                ["id", "provider", "endsWith", "savedAt", "status", "validatedAt", "models"],
+                key.EnumerateObject().Select(member => member.Name)));
         Assert.Equal(
             [$"{aiKey.Id} claude Wx7Z {Morning:O}", $"{StoredAiCredential.Of(application.Database, user.Id, "grok").Id} grok grok {Morning:O}"],
             aiKeys.Select(key =>
                 $"{key.GetProperty("id").GetGuid()} {key.GetProperty("provider").GetString()} " +
                 $"{key.GetProperty("endsWith").GetString()} {key.GetProperty("savedAt").GetDateTimeOffset():O}"));
+
+        // And which models each can use: the identifiers that its provider listed to it (FR-CAT-9).
+        Assert.Equal(
+            ["claude-test-model claude-test-model-mini", "grok-test-model grok-test-model-mini"],
+            aiKeys.Select(key => string.Join(' ', key.GetProperty("models").EnumerateArray().Select(model => model.GetString()))));
 
         var exchange = Assert.Single(export.GetProperty("exchangeKeys").EnumerateArray());
         Assert.Equal(

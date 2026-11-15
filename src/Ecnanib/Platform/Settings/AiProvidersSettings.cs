@@ -38,9 +38,18 @@ public sealed record AiProvidersSettings(IReadOnlyDictionary<AiProviderCode, AiP
 /// The service's own key for syncing the model catalog, or null to sync with users' keys (FR-CAT-3).
 /// </param>
 /// <param name="TimeoutSeconds">How long a call may take.</param>
-/// <param name="Allow">Patterns of the models that may be selected (FR-CAT-6).</param>
-/// <param name="Deny">Patterns of the models that may not be selected.</param>
-/// <param name="LiveSearch">Patterns of the models that can search live.</param>
+/// <param name="Allow">
+/// Patterns of the models that may be selected (FR-CAT-6). A pattern is the identifier of a
+/// model, in which <c>*</c> stands for any run of characters, and letter case is ignored. A
+/// model that no pattern names may not be selected, so an empty list allows none.
+/// </param>
+/// <param name="Deny">
+/// Patterns of the models that may not be selected, whatever <paramref name="Allow"/> says.
+/// </param>
+/// <param name="LiveSearch">
+/// Patterns of the models that can search live. It says so of a model that may be selected, and
+/// allows none by itself.
+/// </param>
 public sealed record AiProviderSettings(
     Uri BaseUrl,
     Secret? CatalogKey,
@@ -58,6 +67,27 @@ public sealed record AiProviderSettings(
             Patterns(file, $"{key}:Deny"),
             Patterns(file, $"{key}:LiveSearch"));
 
-    private static List<string> Patterns(SettingsReader file, string key) =>
-        file.List(key).Select(file.Text).ToList();
+    private static List<string> Patterns(SettingsReader file, string key)
+    {
+        var patterns = file.List(key).Select(item => Pattern(file, item)).ToList();
+        file.Distinct(key, patterns);
+
+        return patterns;
+    }
+
+    /// <summary>
+    /// One pattern. An identifier of a model is in one piece, so a pattern with white space in
+    /// it would name no model, and is most likely two patterns that were written as one.
+    /// </summary>
+    private static string Pattern(SettingsReader file, string key)
+    {
+        var pattern = file.Text(key);
+        if (pattern.Any(char.IsWhiteSpace))
+        {
+            file.Problem(key, "must be the identifier of a model, with * for any characters and no white space");
+            return string.Empty;
+        }
+
+        return pattern;
+    }
 }

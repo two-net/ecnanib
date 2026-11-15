@@ -27,6 +27,12 @@ namespace Ecnanib.Credentials;
 /// When the provider last answered a check of the key that is stored now, or null when it never
 /// did. A check that got no answer leaves it as it is.
 /// </param>
+/// <param name="accessibleModels">
+/// The identifiers of the models that the provider listed to the key that is stored now, when
+/// the provider last took it and gave its list, as the provider writes them (FR-CAT-9). Null
+/// when it is not known what the key can use: the provider has given no list to it yet. The
+/// models of the catalog that the key can use are those with one of these identifiers.
+/// </param>
 public sealed class AiCredential(
     Guid id,
     Guid userId,
@@ -36,7 +42,8 @@ public sealed class AiCredential(
     string maskedSuffix,
     DateTimeOffset savedAt,
     KeyStatus status,
-    DateTimeOffset? validatedAt) : IUserOwned
+    DateTimeOffset? validatedAt,
+    string[]? accessibleModels) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -55,6 +62,8 @@ public sealed class AiCredential(
     public KeyStatus Status { get; } = status;
 
     public DateTimeOffset? ValidatedAt { get; } = validatedAt;
+
+    public string[]? AccessibleModels { get; } = accessibleModels;
 
     /// <summary>
     /// What the stored key of a row is bound to, so that it decrypts in that row of that user
@@ -81,6 +90,10 @@ internal sealed class AiCredentialConfiguration : IEntityTypeConfiguration<AiCre
         builder.Property(credential => credential.SavedAt);
         builder.Property(credential => credential.Status);
         builder.Property(credential => credential.ValidatedAt);
+
+        // What the provider listed to the key, in one column of the key's own row: it is
+        // written whole, and goes with the key.
+        builder.Property(credential => credential.AccessibleModels);
 
         // One key for each provider. The index also finds the keys of a user.
         builder.HasIndex(credential => new { credential.UserId, credential.Provider }).IsUnique();

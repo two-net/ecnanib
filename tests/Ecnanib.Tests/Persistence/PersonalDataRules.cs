@@ -65,6 +65,7 @@ internal static class PersonalDataRules
         ["ai_credentials.encrypted_value"] = "A key that an AI provider made for its user, encrypted.",
         ["ai_credentials.master_key_id"] = "The id of the master key of the configuration file that encrypted that key.",
         ["ai_credentials.masked_suffix"] = "The last four characters of that key, which is all of it that is shown.",
+        ["ai_credentials.accessible_models"] = "The identifiers of the provider's models that the provider listed to that key.",
         ["exchange_credentials.encrypted_value"] = "An API key and a secret key that Binance made for its user, encrypted.",
         ["exchange_credentials.master_key_id"] = "The id of the master key of the configuration file that encrypted those keys.",
         ["exchange_credentials.masked_suffix"] = "The last four characters of that API key, which is all of the two that is shown.",

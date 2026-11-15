@@ -426,7 +426,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `legalAcceptances` | Each document that was accepted, with its version and the time. |
 | `sessions` | Each browser that is signed in: when it signed in, and when it was last used. |
 | `auditEvents` | Each event of the account in the audit trail: the action, what it was done to, when, and the IP address it came from. |
-| `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, when it was saved, and what its last check found and when. Never the key. |
+| `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, when it was saved, what its last check found and when, and the identifiers of the models that the provider listed to it, or nothing where it has listed none yet. Never the key. |
 | `exchangeKeys` | Each Binance credential that is stored: its id, the environment, the last four characters of the API key, when it was saved, what its last check found and when, and what Binance said it may do: trade on Spot, trade on Futures, and work only from listed addresses. Never a key. |
 
 | Rule | Detail |

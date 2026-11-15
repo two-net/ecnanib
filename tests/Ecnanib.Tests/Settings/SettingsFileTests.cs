@@ -168,6 +168,11 @@ public class SettingsFileTests
         { "AiProviders", "{}", "AiProviders" },
         { "AiProviders:Claude:BaseUrl", "\"\"", "AiProviders:Claude:BaseUrl" },
         { "AiProviders:Claude:Allow", "[\"\"]", "AiProviders:Claude:Allow:0" },
+
+        // A pattern is the identifier of a model, which is in one piece, and is listed once.
+        { "AiProviders:Claude:Allow", "[\"claude-* gpt-*\"]", "AiProviders:Claude:Allow:0" },
+        { "AiProviders:Claude:Deny", "[\"*-preview\", \"claude-\\t*\"]", "AiProviders:Claude:Deny:1" },
+        { "AiProviders:Grok:LiveSearch", "[\"grok-*\", \"GROK-*\"]", "AiProviders:Grok:LiveSearch" },
         { "Binance:Spot:Demo", "{}", "Binance:Spot:Demo:BaseUrl" },
         { "Binance:Symbols", "[]", "Binance:Symbols" },
         { "Binance:Symbols", "[\"btcusdt\"]", "Binance:Symbols:0" },

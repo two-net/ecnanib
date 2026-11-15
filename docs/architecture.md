@@ -59,6 +59,8 @@ Accounts sends its email this way. It declares `IAccountMailer`, and Notificatio
 
 Credentials tells whatever depends on a key this way, when the key is deleted or turns out to be invalid: it declares `IKeyDependents`, for Agents to implement. See [credentials.md](credentials.md).
 
+The Catalog tells whatever depends on a model this way, when a sync marks the model unavailable: it declares `IModelDependents`, for Agents to implement. See [catalog.md](catalog.md).
+
 ### Changing a rule
 
 Edit `ComponentRules.cs`. The allow-lists are deliberately tight, so a new dependency is a decision made in one visible place. The tests reject a change that creates a cycle.
@@ -127,7 +129,7 @@ A user brings their own keys: one for each AI provider, and one Binance credenti
 
 Adding or replacing a key is the second of the sensitive actions to be built, and asks Accounts for the proof first. Every change to a key is recorded in the audit trail, by the id of the key. Deleting a key tells whatever depends on it inside the same transaction, which is how an agent will move to Attention required.
 
-A key is validated with a read-only call to its provider, through the gateways: before it is stored, daily by a job, and when a call with it fails authentication (FR-KEY-3). Only a key that its provider takes is stored, and a stored key that is refused later becomes invalid, which whatever depends on it is told as well. A Binance key that can withdraw is not stored, and one that turns out to be able to is deleted (FR-KEY-4, NFR-LEG-2). What a Binance key may trade on is recorded, and Credentials says whether it lets an agent start on a market, for Agents to ask (FR-KEY-5). Not built yet: handing a key to the call of an agent that needs it. See [credentials.md](credentials.md).
+A key is validated with a read-only call to its provider, through the gateways: before it is stored, daily by a job, and when a call with it fails authentication (FR-KEY-3). Only a key that its provider takes is stored, and a stored key that is refused later becomes invalid, which whatever depends on it is told as well. A Binance key that can withdraw is not stored, and one that turns out to be able to is deleted (FR-KEY-4, NFR-LEG-2). What a Binance key may trade on is recorded, and Credentials says whether it lets an agent start on a market, for Agents to ask (FR-KEY-5). Which models an AI key can use is recorded each time its provider takes it, and Credentials says which models a user can select with their keys, for Agents to ask (FR-CAT-9). Not built yet: handing a key to the call of an agent that needs it. See [credentials.md](credentials.md).
 
 ## AI providers
 
@@ -137,9 +139,11 @@ The gateway takes the user's key with each call and keeps it nowhere (FR-KEY-9).
 
 ## Model catalog
 
-The Catalog keeps the models that the four providers offer. It is filled only from each provider's own list of its models, which the gateway reads: no model is hard-coded (FR-CAT-1). The catalog is synced on a schedule, as the application starts when it is empty, and on demand, with the key that the configuration file holds for the provider for this alone (FR-CAT-2, FR-CAT-3). Where the file holds none, Credentials hands the Catalog each key of a user that the provider took, and the Catalog lists the provider's models with it and keeps it nowhere.
+The Catalog keeps the models that the four providers offer. It is filled only from each provider's own list of its models, which the gateway reads: no model is hard-coded (FR-CAT-1). The catalog is synced on a schedule, as the application starts when it is empty, and on demand, with the key that the configuration file holds for the provider for this alone (FR-CAT-2, FR-CAT-3). Credentials hands the Catalog each key of a user that its provider took. The Catalog lists the provider's models with it, keeps it nowhere, and answers with what the provider listed to it, which is what that key can use (FR-CAT-9). Where the file holds no key for the provider, that list also fills the provider's catalog.
 
-A model is stored once, with what its provider says about it, and what the provider does not say is unknown (FR-CAT-4). A model that enough syncs in a row lack is marked unavailable, and is never deleted (FR-CAT-5). With the keys of users it must also have gone unseen for long enough, because one key may see fewer models than another. A sync that fails for one provider leaves that provider's catalog as it was and the others alone, and every sync is recorded (FR-CAT-7). Not built yet: which models can be selected, and what follows for an agent whose model is gone. See [catalog.md](catalog.md).
+A model is stored once, with what its provider says about it, and what the provider does not say is unknown (FR-CAT-4). A model that enough syncs in a row lack is marked unavailable, and is never deleted (FR-CAT-5). With the keys of users it must also have gone unseen for long enough, because one key may see fewer models than another. A sync that fails for one provider leaves that provider's catalog as it was and the others alone, and every sync is recorded (FR-CAT-7).
+
+Only an eligible model can be selected for an agent: one that its provider still offers and that the configuration file allows, with allow and deny patterns for each provider. The file also says which models can search live (FR-CAT-6). Whatever depends on a model is told inside the transaction that marks it unavailable, and no other model is ever put in its place (FR-CAT-8). Not built yet: what Agents does when it is told, and what follows a call that reports that the model does not exist. See [catalog.md](catalog.md).
 
 ## Ownership
 

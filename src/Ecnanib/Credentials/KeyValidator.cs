@@ -25,7 +25,9 @@ namespace Ecnanib.Credentials;
 /// </para>
 /// <para>
 /// A key of an AI provider that the provider took is handed on once more, to the catalog, which
-/// may ask the provider for the list of its models with it and keeps it nowhere (FR-CAT-3).
+/// asks the provider for the list of its models with it and keeps it nowhere (FR-CAT-3). What
+/// the provider listed to the key is then kept with the key, as the models it can use
+/// (FR-CAT-9).
 /// </para>
 /// <para>
 /// The provider is asked with no transaction open. What it said is then written only where the
@@ -45,6 +47,7 @@ internal sealed class KeyValidator(
     IAiKeyChecks aiProviders,
     IExchangeAdapter exchange,
     ICatalogSync catalog,
+    KeyModels models,
     IEnumerable<IKeyDependents> dependents,
     TimeProvider clock,
     ILogger<KeyValidator> logger) : IKeyValidation
@@ -115,10 +118,13 @@ internal sealed class KeyValidator(
                     return KeyCheckOutcome.Changed;
                 }
 
-                // The provider took the key, so the catalog may list the provider's models with
-                // it, which it does when the service has no key of its own for that (FR-CAT-3).
-                // What the list gives says nothing about the key.
-                await catalog.KeyValidatedAsync(provider, key, cancellationToken);
+                // The provider took the key, so the catalog asks it for the list of its models
+                // with the key: that says which models the key can use, which is kept with the
+                // key (FR-CAT-9), and refreshes the catalog when the service has no key of its
+                // own for that (FR-CAT-3). What the list gives says nothing about the key, and a
+                // provider that gives none leaves what was known of the key.
+                var listed = await catalog.KeyValidatedAsync(provider, key, cancellationToken);
+                await models.RecordAsync(userId, provider, stored.Id, stored.EncryptedValue, listed, cancellationToken);
 
                 return KeyCheckOutcome.Valid;
             }

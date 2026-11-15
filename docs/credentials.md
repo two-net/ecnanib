@@ -2,7 +2,7 @@
 
 A user brings their own keys: one for each AI provider, and one Binance credential for each environment, Demo and Live (FR-KEY-1, FR-KEY-2). A key is stored encrypted and is write-only: after saving, only its last four characters are shown (FR-KEY-8). A user can replace or delete any key at any time, and deletion is permanent (FR-KEY-10). Adding or replacing a key takes a fresh proof of who the user is (FR-ACC-4), and every change to a key is recorded in the audit trail (NFR-LOG-7).
 
-A key is validated with a read-only call to its provider: when it is saved, again daily, and when a call with it fails authentication (FR-KEY-3). Only a key that its provider takes is stored. A Binance key that can withdraw is never held: Ecnanib takes no custody of funds (FR-KEY-4, NFR-LEG-2). A Binance key that lacks the permission of an agent's market keeps that agent from starting (FR-KEY-5).
+A key is validated with a read-only call to its provider: when it is saved, again daily, and when a call with it fails authentication (FR-KEY-3). Only a key that its provider takes is stored. A Binance key that can withdraw is never held: Ecnanib takes no custody of funds (FR-KEY-4, NFR-LEG-2). A Binance key that lacks the permission of an agent's market keeps that agent from starting (FR-KEY-5). Which models an AI key can use is recorded each time its provider takes it, and a user is offered only those for an agent (FR-CAT-9).
 
 The code is in `src/Ecnanib/Credentials`, and the pages in `src/Ecnanib/WebUi/Pages/Account`. The calls to the providers are in the gateways: `src/Ecnanib/AiProviderGateway/Adapters` and `src/Ecnanib/ExchangeGateway/Adapters/Binance`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Credentials`, `tests/Ecnanib.Tests/AiProviderGateway`, and `tests/Ecnanib.Tests/ExchangeGateway`.
 
@@ -51,7 +51,7 @@ A path that names no provider or no environment is answered with "not found". Wh
 
 ## Write-only
 
-A key comes in with a form, is shown to its provider, is encrypted, and is stored. No page and no export reads it back. One place decrypts a stored key: `KeyValidator`, for the call that asks the provider about it again (FR-KEY-8, FR-KEY-9). A key of an AI provider that the provider took is handed on once more, to the Catalog, which may ask the provider for the list of its models with it: see "The catalog".
+A key comes in with a form, is shown to its provider, is encrypted, and is stored. No page and no export reads it back. One place decrypts a stored key: `KeyValidator`, for the call that asks the provider about it again (FR-KEY-8, FR-KEY-9). A key of an AI provider that the provider took is handed on once more, to the Catalog, which asks the provider for the list of its models with it: see "The catalog".
 
 | Where | How a key stays out of it |
 |---|---|
@@ -62,7 +62,7 @@ A key comes in with a form, is shown to its provider, is encrypted, and is store
 | The catalog | The Catalog hands a key that it is given to the gateway for one list of models, and keeps it nowhere. Its rows name no user and no key. See "The key" in [catalog.md](catalog.md). |
 | The log | No event of this component takes a key or its last characters. An event names the user, and the provider or the environment: `User {UserId} added a key of the AI provider {Provider}`. The log of the call to the provider leaves out the headers and the query, which hold the key and the signature. The tests read the log at the `Debug` level and find no key in it, in any form that bytes are written in. See "Masking" in [logging.md](logging.md) for what protects a key that is logged by mistake, and what does not. |
 | The audit trail | An event names the key by the id of its row, and nothing that makes an event takes text. See "The audit trail" in [accounts.md](accounts.md). |
-| The export | The sections `aiKeys` and `exchangeKeys` say which keys are stored: the id, the provider or the environment, the last four characters, when it was saved, and what the last check found. See "Exporting your data" in [accounts.md](accounts.md). |
+| The export | The sections `aiKeys` and `exchangeKeys` say which keys are stored: the id, the provider or the environment, the last four characters, when it was saved, and what the last check found. For an AI key that includes the identifiers of the models that its provider listed to it. See "Exporting your data" in [accounts.md](accounts.md). |
 | An error | No exception of this component carries what was entered, and an unhandled error shows the user a reference id and nothing else. See "Unhandled errors" in [logging.md](logging.md). |
 | A prompt | Nothing that composes a prompt can read a key. What decrypts one is internal to this component, and hands the key to the gateway and, for the list of the provider's models, to the Catalog, and to nothing else. |
 
@@ -102,7 +102,7 @@ All but the first come to `KeyValidator`, which reads the stored key, asks the p
 
 | Result | What is written |
 |---|---|
-| The provider took the key. | `Valid`, the time, and for Binance what the key may do. |
+| The provider took the key. | `Valid`, the time, and for Binance what the key may do. For an AI provider, the models that it then lists to the key: see "The models a key can use". |
 | The provider refused it. | `Invalid`, and the time. What depends on the key is told: see "What depends on a key". The key stays stored, and is asked about again every day: it is valid again when the provider takes it. |
 | The provider gave no answer. | Nothing. The key is as it was, and still due. |
 | Binance reports that the key can withdraw. | The key is deleted. See "Binance permissions". |
@@ -121,14 +121,53 @@ The log has an event for a key that turned out invalid, was deleted, or could no
 
 ### The catalog
 
-When a provider took a user's key, Credentials tells the Catalog, with `ICatalogSync.KeyValidatedAsync`: after a key is stored, and after a stored key was checked and written as `Valid`. Where the configuration file holds no catalog key for the provider, the Catalog refreshes the provider's catalog with the user's key (FR-CAT-3). See [catalog.md](catalog.md).
+When a provider took a user's key, Credentials tells the Catalog, with `ICatalogSync.KeyValidatedAsync`: after a key is stored, and after a stored key was checked and written as `Valid`. The Catalog asks the provider for the list of its models with the key, and answers with the identifiers that the provider listed to it. Where the configuration file holds no catalog key for the provider, the Catalog also refreshes the provider's catalog with that list (FR-CAT-3). See [catalog.md](catalog.md).
 
 | Rule | Detail |
 |---|---|
-| **Credentials does not decide.** | It may not read the file's catalog key, which `NoSharedKeyTests` holds it to. It tells the Catalog of every key that a provider took, and the Catalog uses the key or does not. |
+| **Credentials does not decide.** | It may not read the file's catalog key, which `NoSharedKeyTests` holds it to. It tells the Catalog of every key that a provider took, and the Catalog syncs with the key or does not. |
 | **The catalog is told after the key is written.** | With no transaction open, and no lock held. A key that was refused, or that the provider gave no answer about, is not handed on. |
 | **What the list gives says nothing about the key.** | A provider that gives no list, and a catalog that cannot be written, are the Catalog's to record and to log. The key is stored and `Valid` all the same, and the page says so. |
 | The form waits for the list. | The list may take 15 seconds, which is what the check itself may take, and storing it takes a moment more. A provider whose list ran out of that time is then left alone for a minute. |
+
+### The models a key can use
+
+A provider does not list the same models to every key: Grok lists the models that a key may use, and GPT those of the key's project. So what the Catalog answers is kept with the key, in `ai_credentials.accessible_models`, as the models that the key can use (FR-CAT-9).
+
+| Rule | Detail |
+|---|---|
+| **What is kept is the provider's identifiers,** as it wrote them. | They are held against the catalog when someone asks, by provider and identifier. A model that the catalog comes to hold later is offered without the key being checked again, and what the key was listed does not depend on what the catalog held at that moment. |
+| **Empty is not known.** | A key that its provider has listed nothing to yet has no list. That is not a list of nothing: a provider's list is never empty. |
+| **A key that takes the place of another starts with nothing known.** | The statement that stores the new key empties the column. What the key before it could use says nothing about this one. |
+| **A list is written only where the row still holds the key that it was asked with.** | The provider is asked with no transaction open. A key that was replaced or deleted meanwhile gets nothing of what was listed to the one before it: one statement, which then changes no row. |
+| **A provider that gives no list leaves what was recorded.** | The key is the same key, and what it could use at its last check is the best that is known of it. The next check asks again: the daily one, or the one its user asks for. |
+| A list that cannot be written fails nothing. | The key is stored and valid by then. The log has an `Error`, under the area `Ecnanib.Credentials.KeyModels`, and the next check asks again. |
+
+Which of these a user can select for an agent is for `IKeyModels` to say. A model selector offers what it answers, and a choice is held to it when it is saved (FR-CAT-6, FR-CAT-9).
+
+```csharp
+public interface IKeyModels
+{
+    Task<IReadOnlyList<ProviderModels>> SelectableAsync(Guid userId, CancellationToken cancellationToken);
+
+    Task<ModelBlock?> BlockForAsync(Guid userId, Guid modelId, CancellationToken cancellationToken);
+}
+```
+
+`SelectableAsync` answers for every AI provider, in the order of their codes: the models that can be selected at all, by the Catalog's `ISelectableModels`, and that the user's key for the provider can use. A provider that offers the user nothing is among them, with why.
+
+| `BlockForAsync` answers | When |
+|---|---|
+| Nothing | The model can be selected, and the user's key for its provider can use it. |
+| `NotSelectable` | Nobody can select the model: the catalog holds no such model, its provider no longer offers it, or the configuration file does not allow it. See "Which models can be selected" in [catalog.md](catalog.md). |
+| `NoKey` | The user has stored no key for the provider of the model. |
+| `KeyNotValid` | The provider refused the key when it was last checked, or the key was never checked. What the key could use is kept, and is offered again when the provider takes the key again. |
+| `NotKnown` | The provider took the key, and has given no list to it yet. A selector says to check the key again on `/account/keys`. |
+| `NotListed` | The provider did not list the model to the key. |
+
+- It is answered from what the last check recorded, and asks no provider.
+- It takes the user by id, as `IKeyValidation` does, and asks for the rows of that user with `OwnedBy`. `KeyModelsTests` has the test with two users.
+- **Nothing asks it yet,** because agents are not built. `KeyModelsTests` has a test that fails as soon as Agents has a table of its own and takes no `IKeyModels`.
 
 ## Binance permissions
 
@@ -211,7 +250,7 @@ public interface IKeyDependents
 
 | Table | Columns |
 |---|---|
-| `ai_credentials` | `id`, `user_id`, `provider`, `encrypted_value`, `master_key_id`, `masked_suffix`, `saved_at`, `status`, `validated_at`. One row for each `(user_id, provider)`. `provider` points at `ai_providers.code`. |
+| `ai_credentials` | `id`, `user_id`, `provider`, `encrypted_value`, `master_key_id`, `masked_suffix`, `saved_at`, `status`, `validated_at`, `accessible_models`. One row for each `(user_id, provider)`. `provider` points at `ai_providers.code`. |
 | `exchange_credentials` | `id`, `user_id`, `environment`, `encrypted_value`, `master_key_id`, `masked_suffix`, `saved_at`, `status`, `validated_at`, `spot_trading`, `futures_trading`, `ip_restricted`. One row for each `(user_id, environment)`. `environment` is `Demo` or `Live`. |
 
 Both hold rows of users: their entities implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. The rows of an account are deleted with it. `saved_at` is when the key that is stored now was stored.
@@ -220,6 +259,7 @@ Both hold rows of users: their entities implement `IUserOwned`, and what is aske
 |---|---|
 | `status` | What the last check found: `Valid`, `Invalid`, or `Unchecked`. `Unchecked` is a key that was stored before keys were checked: the migration leaves the rows that were there so, and the job takes them with its next run. A key that is stored now is never `Unchecked`. |
 | `validated_at` | When the provider last answered a check of the key that is stored now. Empty for a key that was never checked. A check that got no answer leaves it as it is. |
+| `accessible_models` | The identifiers of the models that the provider listed to the key that is stored now, when it last took the key and gave its list. Empty when it is not known what the key can use. See "The models a key can use". |
 | `spot_trading`, `futures_trading` | Whether the credential may trade on each market, as Binance last said. |
 | `ip_restricted` | Whether the credential works only from listed addresses, or empty where Binance does not report it: its test environment does not. |
 
@@ -230,7 +270,8 @@ Whether a key can withdraw is not stored: a key that can is not.
 - Handing a key to the call of an agent that needs it, decrypted only in memory and only for that call (FR-KEY-9). So far a stored key is decrypted for the call that validates it. The AI Provider Gateway makes the calls to models, and takes the key with each call: see "The key" in [ai-providers.md](ai-providers.md). What hands a stored key over comes with what calls a model for an agent. The orders come with the Exchange Gateway.
 - Checking a key again when a call with it fails authentication. `IKeyValidation` takes the request, and nothing asks it yet. A call to a model tells it with the outcome `AuthenticationFailed`: see "Outcomes" in [ai-providers.md](ai-providers.md). What calls a model for an agent asks `RevalidateAiKeyAsync` then. The Exchange Gateway says how a call to Binance tells it when its calls are built.
 - What Agents does when a key goes or turns out to be invalid, and before an agent starts. It implements `IKeyDependents` and asks `IKeyValidation.BlockForAsync` when agents are built.
+- The model selector, and holding the choice of a model to what a key can use when it is saved (FR-AGT-5). `IKeyModels` answers both, and nothing asks it yet.
+- Saying on `/account/keys` which models a key can use, or that it is not known. The export of a user's data says it.
 - Telling the user that a key is invalid (FR-NTF-1). The list of keys says so. In-app notifications are not built.
 - A share of Binance's request limit for the checks (FR-BIN-4). A check of a key on the real exchange weighs 1, and one in the test environment 25. The limiter is not built.
 - The usage of each AI key: calls, tokens, and estimated cost (FR-KEY-11).
-- Which catalog models a key can use (FR-CAT-9).

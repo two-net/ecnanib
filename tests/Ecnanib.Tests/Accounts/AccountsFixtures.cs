@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Web;
 using Ecnanib.Accounts;
 using Ecnanib.AiProviderGateway;
+using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Notifications;
@@ -134,6 +135,12 @@ internal sealed class AccountsApplication : IDisposable
 
     /// <summary>What the components above Credentials ask about a user's stored keys.</summary>
     public IKeyValidation KeyValidation => _application.Services.GetRequiredService<IKeyValidation>();
+
+    /// <summary>What says which models a user can select, as far as their keys go.</summary>
+    public IKeyModels KeyModels => _application.Services.GetRequiredService<IKeyModels>();
+
+    /// <summary>What syncs the catalog outside the schedule.</summary>
+    public ICatalogSync Catalog => _application.Services.GetRequiredService<ICatalogSync>();
 
     /// <summary>
     /// Runs the job that checks the stored keys, now, as the scheduler does on the hour. A test

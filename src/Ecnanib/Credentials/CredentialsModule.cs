@@ -20,6 +20,11 @@ public static class CredentialsModule
         services.AddSingleton<IKeyValidation, KeyValidator>();
         services.AddBackgroundJob<KeyValidationJob>();
 
+        // One object keeps which models a key can use, for what stores a key and for what
+        // checks one again, and says from that which models a user can select (FR-CAT-9).
+        services.AddSingleton<KeyModels>();
+        services.AddSingleton<IKeyModels>(provider => provider.GetRequiredService<KeyModels>());
+
         // The keys are encrypted by the platform's StoredSecrets, and the columns that hold them
         // are declared, so that each key is encrypted again when the active master key has
         // changed (FR-KEY-7).

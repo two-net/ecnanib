@@ -11,8 +11,9 @@ namespace Ecnanib.Catalog;
 /// <summary>
 /// Syncs the catalog of one provider's models from the provider's own list: asks the gateway for
 /// the list, stores what it says, and records the sync (FR-CAT-1 to FR-CAT-5, FR-CAT-7). It is
-/// what the job, a request for a sync, and a user's key that its provider took all come to. See
-/// docs/catalog.md.
+/// what the job, a request for a sync, and a user's key that its provider took all come to. It
+/// also says which models a provider listed to a user's key, for Credentials to record
+/// (FR-CAT-9). See docs/catalog.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,12 +25,18 @@ namespace Ecnanib.Catalog;
 /// A list is the provider's whole catalog or the sync fails: the gateway hands on no part of
 /// one. A model that a list lacks is counted as missed, and is marked unavailable when it was
 /// missed often enough. With the keys of users it must also have gone unseen for long enough:
-/// see <see cref="UnseenWithUsersKeys"/>.
+/// see <see cref="UnseenWithUsersKeys"/>. Whatever depends on a model is told in the transaction
+/// that marks it, through <see cref="IModelDependents"/> (FR-CAT-8).
 /// </para>
 /// <para>
 /// A key is handed to the gateway for the one list. Nothing here keeps it: the service's own is
 /// read from the configuration file for each sync, and a user's comes with the call that tells
 /// of it. A row of a sync names neither a user nor a key.
+/// </para>
+/// <para>
+/// A user's key is asked for the list of its provider every time the provider took it. Where
+/// the service has no key of its own for the provider, that list is the sync. Where it has one,
+/// the list says only what the user's key can use, and nothing of it is stored here.
 /// </para>
 /// </remarks>
 internal sealed class CatalogSync(
@@ -37,6 +44,7 @@ internal sealed class CatalogSync(
     AiProvidersSettings providers,
     CatalogSyncSettings settings,
     IDbContextFactory<EcnanibDbContext> contexts,
+    IEnumerable<IModelDependents> dependents,
     TimeProvider clock,
     ILogger<CatalogSync> logger) : ICatalogSync
 {
@@ -105,30 +113,34 @@ internal sealed class CatalogSync(
     {
         var synced = await SyncedWithTheServiceKeyAsync(cancellationToken);
 
-        return await Task.WhenAll(synced.Select(provider =>
+        var syncs = await Task.WhenAll(synced.Select(provider =>
             SyncProviderAsync(provider.Code, provider.CatalogKey.Reveal(), cause, within: null, cancellationToken)));
+
+        return [.. syncs.Select(sync => sync.Run)];
     }
 
-    public async Task KeyValidatedAsync(AiProviderCode provider, string apiKey, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<string>?> KeyValidatedAsync(
+        AiProviderCode provider, string apiKey, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(apiKey);
 
-        // A provider that the service has a key for is synced with that one, on the schedule.
-        if (!providers.ByCode.TryGetValue(provider, out var entry)
-            || entry.CatalogKey is not null
-            || !lists.Providers.Contains(provider))
+        if (!providers.ByCode.TryGetValue(provider, out var entry) || !lists.Providers.Contains(provider))
         {
-            return;
+            return null;
         }
 
         if (IsLeftAlone(provider))
         {
-            return;
+            return null;
         }
 
-        var run = await SyncProviderAsync(provider, apiKey, CatalogSyncCause.KeyValidated, UserKeyLimit, cancellationToken);
+        // A provider that the service has a key for is synced with that one, on the schedule.
+        // The user's key is then asked only for what it can use, and the catalog stays as it is.
+        var (listed, timedOut) = entry.CatalogKey is null
+            ? await SyncWithUsersKeyAsync(provider, apiKey, cancellationToken)
+            : await ListForUsersKeyAsync(provider, apiKey, cancellationToken);
 
-        if (run.Failure is CatalogSyncFailure.TimedOut)
+        if (timedOut)
         {
             _silentSince[provider] = clock.GetUtcNow();
         }
@@ -136,6 +148,8 @@ internal sealed class CatalogSync(
         {
             _silentSince.TryRemove(provider, out _);
         }
+
+        return listed;
     }
 
     /// <summary>
@@ -161,6 +175,56 @@ internal sealed class CatalogSync(
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Syncs the catalog of a provider with a user's key, and says what the provider listed to
+    /// it. A list that could not be stored was listed to the key all the same.
+    /// </summary>
+    private async Task<(IReadOnlyList<string>? Listed, bool TimedOut)> SyncWithUsersKeyAsync(
+        AiProviderCode provider, string apiKey, CancellationToken cancellationToken)
+    {
+        var sync = await SyncProviderAsync(provider, apiKey, CatalogSyncCause.KeyValidated, UserKeyLimit, cancellationToken);
+
+        return (sync.Listed, sync.Run.Failure is CatalogSyncFailure.TimedOut);
+    }
+
+    /// <summary>
+    /// Asks a provider that the service has a key of its own for what it lists to a user's key.
+    /// Nothing of the list is stored, and no sync is recorded: the catalog is the service's key's
+    /// to fill. It ends with an error only when the caller cancels.
+    /// </summary>
+    private async Task<(IReadOnlyList<string>? Listed, bool TimedOut)> ListForUsersKeyAsync(
+        AiProviderCode provider, string apiKey, CancellationToken cancellationToken)
+    {
+        // Everything logged for the list names the provider. The key is never given to the logger.
+        using var asking = logger.BeginCorrelation(new Correlation(Provider: provider.Value));
+
+        try
+        {
+            var list = await ListAsync(provider, apiKey, UserKeyLimit, cancellationToken);
+
+            if (list.Outcome == AiModelListOutcome.Listed)
+            {
+                return (IdentifiersOf(list), false);
+            }
+
+            logger.LogWarning(
+                "The AI provider {Provider} gave a user's key no list of its models: {Failure}. Which models the key can use is not known",
+                provider.Value,
+                FailureOf(list.Outcome));
+
+            return (null, list.Outcome == AiModelListOutcome.TimedOut);
+        }
+        catch (Exception error) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(
+                error,
+                "The AI provider {Provider} could not be asked for the models that it lists to a user's key, because of an error. Which models the key can use is not known",
+                provider.Value);
+
+            return (null, false);
+        }
     }
 
     /// <summary>
@@ -218,7 +282,7 @@ internal sealed class CatalogSync(
     /// <param name="cause">Why the catalog is synced.</param>
     /// <param name="within">A shorter time for the list than the gateway gives it, or null.</param>
     /// <param name="cancellationToken">Cancels the sync.</param>
-    private async Task<CatalogSyncRun> SyncProviderAsync(
+    private async Task<Synced> SyncProviderAsync(
         AiProviderCode provider,
         string apiKey,
         CatalogSyncCause cause,
@@ -229,6 +293,9 @@ internal sealed class CatalogSync(
         using var sync = logger.BeginCorrelation(new Correlation(Provider: provider.Value));
 
         var startedAt = Now();
+
+        // What the provider listed, once it has: a list that could not be stored was listed all the same.
+        IReadOnlyList<string>? listed = null;
 
         // The one limit on the sync as a whole, on the application's clock. The list has a
         // shorter one of its own, and what is left of this one is for storing it.
@@ -241,15 +308,11 @@ internal sealed class CatalogSync(
 
             if (list.Outcome != AiModelListOutcome.Listed)
             {
-                var failure = list.Outcome switch
-                {
-                    AiModelListOutcome.AuthenticationFailed => CatalogSyncFailure.KeyRefused,
-                    AiModelListOutcome.TimedOut => CatalogSyncFailure.TimedOut,
-                    _ => CatalogSyncFailure.NoList,
-                };
-
-                return await NotSyncedAsync(provider, cause, startedAt, failure, cancellationToken);
+                return new Synced(
+                    await NotSyncedAsync(provider, cause, startedAt, FailureOf(list.Outcome), cancellationToken), Listed: null);
             }
+
+            listed = IdentifiersOf(list);
 
             var run = await StoreAsync(provider, cause, startedAt, list.Models, either.Token);
 
@@ -261,14 +324,15 @@ internal sealed class CatalogSync(
                 run.Changed,
                 run.Unavailable);
 
-            return run;
+            return new Synced(run, listed);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && limit.IsCancellationRequested)
         {
             // The sync ran out of its time, most likely while it waited to store the list behind
             // another sync of the provider. The caller did not cancel. The transaction is gone
             // with what it wrote.
-            return await NotSyncedAsync(provider, cause, startedAt, CatalogSyncFailure.TimedOut, cancellationToken);
+            return new Synced(
+                await NotSyncedAsync(provider, cause, startedAt, CatalogSyncFailure.TimedOut, cancellationToken), listed);
         }
         catch (Exception error) when (!cancellationToken.IsCancellationRequested)
         {
@@ -276,9 +340,21 @@ internal sealed class CatalogSync(
             logger.LogError(
                 error, "The catalog of the AI provider {Provider} was not synced, because of an error. The catalog stays as it is", provider.Value);
 
-            return await RecordFailureAsync(provider, cause, startedAt, CatalogSyncFailure.Error, cancellationToken);
+            return new Synced(
+                await RecordFailureAsync(provider, cause, startedAt, CatalogSyncFailure.Error, cancellationToken), listed);
         }
     }
+
+    /// <summary>Why a provider gave no list, in the word that a failed sync is recorded with.</summary>
+    private static CatalogSyncFailure FailureOf(AiModelListOutcome outcome) => outcome switch
+    {
+        AiModelListOutcome.AuthenticationFailed => CatalogSyncFailure.KeyRefused,
+        AiModelListOutcome.TimedOut => CatalogSyncFailure.TimedOut,
+        _ => CatalogSyncFailure.NoList,
+    };
+
+    /// <summary>The identifiers of the models of a list, as the provider wrote them.</summary>
+    private static IReadOnlyList<string> IdentifiersOf(AiModelList list) => [.. list.Models.Select(model => model.Id)];
 
     /// <summary>Says, and records, a sync that failed for something other than an error of the application.</summary>
     private Task<CatalogSyncRun> NotSyncedAsync(
@@ -442,6 +518,14 @@ internal sealed class CatalogSync(
         {
             var goneIds = gone.Select(model => model.Id).ToArray();
 
+            // What depends on the models is told before they are marked, in this transaction:
+            // what it changes is stored when they are marked, and not when they are not. A model
+            // is told of once, when it becomes unavailable (FR-CAT-8).
+            foreach (var dependent in dependents)
+            {
+                await dependent.ModelsUnavailableAsync(context, provider, goneIds, cancellationToken);
+            }
+
             await context.Set<AiModel>()
                 .Where(model => goneIds.Contains(model.Id))
                 .ExecuteUpdateAsync(row => row.SetProperty(model => model.Status, AiModelStatus.Unavailable), cancellationToken);
@@ -550,4 +634,12 @@ internal sealed class CatalogSync(
 
         return new DateTimeOffset(ticks - (ticks % TimeSpan.TicksPerMicrosecond), TimeSpan.Zero);
     }
+
+    /// <summary>A sync of one provider, with what the provider listed for it.</summary>
+    /// <param name="Run">The sync, as it is recorded.</param>
+    /// <param name="Listed">
+    /// The identifiers of the models that the provider listed, or null when it gave no list. A
+    /// list that could not be stored is here all the same.
+    /// </param>
+    private sealed record Synced(CatalogSyncRun Run, IReadOnlyList<string>? Listed);
 }

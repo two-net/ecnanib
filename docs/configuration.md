@@ -46,6 +46,8 @@ Each entry under `AiProviders` is one AI provider, named by its code. `BaseUrl` 
 
 `CatalogKey` is the service's own key for the provider, for syncing the model catalog and for nothing else. It may be left empty: the provider's catalog is then refreshed with the keys of users, whenever one is validated. `CatalogSync:IntervalHours`, from 1 to 8760, is the time between two syncs on the schedule. `CatalogSync:MissedSyncsBeforeUnavailable`, from 1 to 100, is how many syncs in a row may lack a model before the model is marked unavailable. See [catalog.md](catalog.md).
 
+`Allow`, `Deny`, and `LiveSearch` are lists of patterns that say which of the provider's models can be selected for an agent, and which of them can search live. A model can be selected when a pattern of `Allow` names it and no pattern of `Deny` does, so an empty `Allow` allows no model of that provider. A pattern is the identifier of a model, in which `*` stands for any run of characters, such as `claude-*` or `*-preview`, and letter case is ignored. It holds no white space, and a list names no pattern twice. The tracked file allows the models that each provider names after itself, which is a start for development: a deployment lists the models it has tried. See "Which models can be selected" in [catalog.md](catalog.md).
+
 `Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
 
 ### Permissions
