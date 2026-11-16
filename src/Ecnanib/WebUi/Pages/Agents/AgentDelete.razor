@@ -19,6 +19,8 @@
 
     <h1>Delete the agent @_agent.Name</h1>
 
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
     @if (_notDeleted is not null)
     {
         <p class="form-error" role="alert">@_notDeleted</p>

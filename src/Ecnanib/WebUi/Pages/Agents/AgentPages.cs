@@ -1,16 +1,19 @@
 using System.Globalization;
 using Ecnanib.Accounts;
 using Ecnanib.Agents;
+using Ecnanib.Credentials;
 using Ecnanib.Platform.Settings;
 using Ecnanib.Shared;
+using Ecnanib.WebUi.Pages.Account;
 
 namespace Ecnanib.WebUi.Pages.Agents;
 
 /// <summary>
 /// What the pages of a user's agents have in common: the names of their forms, how a setting is
 /// written, what they say about a setting that cannot be stored, and what they say about the
-/// state of an agent and the controls that change it (FR-AGT-1, FR-AGT-2, FR-AGT-10). Every
-/// setting and every state is explained in plain language (NFR-USA-2).
+/// state of an agent and the controls that change it (FR-AGT-1, FR-AGT-2, FR-AGT-10), and what
+/// they say about its mode and about switching it (FR-AGT-7, FR-UI-3). Every setting and every
+/// state is explained in plain language (NFR-USA-2).
 /// </summary>
 public static class AgentPages
 {
@@ -25,6 +28,55 @@ public static class AgentPages
 
     /// <summary>The name of the form that closes the open position of an agent.</summary>
     public const string ClosePositionForm = "close-agent-position";
+
+    /// <summary>The name of the form that switches an agent to Live (FR-AGT-7).</summary>
+    public const string SwitchToLiveForm = "switch-agent-to-live";
+
+    /// <summary>The name of the form that switches an agent back to Demo.</summary>
+    public const string SwitchToDemoForm = "switch-agent-to-demo";
+
+    /// <summary>The value of the box that a user ticks to confirm the risk of trading with real money (FR-AGT-7).</summary>
+    public const string RiskConfirmed = "confirmed";
+
+    /// <summary>
+    /// The value of the button that saves a change to the capital or to a risk setting of an
+    /// agent in Live, after the page asked once more (FR-UI-3).
+    /// </summary>
+    public const string ConfirmLive = "live";
+
+    /// <summary>What the button that saves such a change says.</summary>
+    public const string SaveForLive = "Save for Live";
+
+    /// <summary>What the pages say about when the mode of an agent can be switched (FR-AGT-8).</summary>
+    public const string ModeLocked =
+        "The mode can be switched only while the agent is a draft, or is stopped with no open position or orders.";
+
+    /// <summary>What a page says before something is done to an agent in Live (FR-UI-3).</summary>
+    public const string ActsOnLive =
+        "This agent is in Live: this acts on your real Binance account, with real money.";
+
+    /// <summary>
+    /// What the form of the settings says when it asks once more: the capital or a risk setting
+    /// of an agent in Live was changed, and nothing is stored until its user says so again.
+    /// </summary>
+    public const string ConfirmSaveForLive =
+        "This agent is in Live. The capital and the risk settings you entered apply to trading with real money, from the " +
+        "agent's next cycle. Nothing is saved yet. Check them, and press \"" + SaveForLive + "\" to save them.";
+
+    /// <summary>What the page that switches an agent to Live says to a form that came without the confirmation.</summary>
+    public const string ConfirmRiskFirst = "Tick the box to confirm that you understand the risk. Nothing was switched.";
+
+    /// <summary>
+    /// What trading with real money risks, in plain language, on the page that switches an agent
+    /// to Live (FR-AGT-7, NFR-LEG-1). The risk disclosure says it in full.
+    /// </summary>
+    public static IReadOnlyList<string> LiveRisks { get; } =
+    [
+        "In Live the agent places real orders in your Binance account, with real money. Nobody looks at an order before it is placed.",
+        "Automated trading can lose all of the capital you allocate to the agent.",
+        "The risk settings are deliberately aggressive, which makes large losses more likely. On Futures, leverage can cause losses quickly.",
+        "Results in Demo do not predict results in Live, and past results do not predict future results. Nothing in this service is investment advice.",
+    ];
 
     /// <summary>The value of the choice that closes the open position of an agent that is stopped (FR-AGT-11).</summary>
     public const string ClosePosition = "close";
@@ -276,7 +328,70 @@ public static class AgentPages
     {
         SaveAgentOutcome.EmailNotVerified => VerifyFirst,
         SaveAgentOutcome.AgentLimitReached => LimitReached(maxAgents),
+
+        // A copy is in Demo. These two are said of a copy of an agent in Live alone: the symbol
+        // of an agent in Demo was held to its market there already.
+        SaveAgentOutcome.SymbolsUnknown =>
+            "A copy is made in Demo, and Binance gave no answer about which symbols the market has there. Nothing was copied. " +
+            "Try again in a moment.",
+        SaveAgentOutcome.Invalid =>
+            "A copy is made in Demo, and the market of this agent does not have its symbol there. Nothing was copied.",
         _ => null,
+    };
+
+    /// <summary>What a page says of the mode of an agent, beside its badge: where the agent trades.</summary>
+    public static string TradesIn(TradingMode mode) => $"The agent trades in {KeyPages.Describe(mode)}.";
+
+    /// <summary>
+    /// The control that a path names, or null when it names none: <c>start</c>, <c>pause</c>, or
+    /// <c>resume</c>. Stopping an agent has a page of its own.
+    /// </summary>
+    public static AgentControl? ControlNamed(string? text) =>
+        new AgentControl?[] { AgentControl.Start, AgentControl.Pause, AgentControl.Resume }
+            .SingleOrDefault(control => string.Equals(control.ToString(), text, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// What a page says when an agent was not switched to a mode, or cannot be now. For a Live
+    /// key that stands in the way, it says what is wrong with the key, and names the permission
+    /// that it lacks (FR-AGT-7, FR-KEY-5).
+    /// </summary>
+    /// <param name="refusal">How the switch ended, or would end.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="to">The mode that was asked for.</param>
+    public static string Says(ModeSwitchResult refusal, AgentView agent, TradingMode to)
+    {
+        ArgumentNullException.ThrowIfNull(refusal);
+        ArgumentNullException.ThrowIfNull(agent);
+
+        return refusal.Outcome switch
+        {
+            ModeSwitchOutcome.StructureLocked => $"This agent is {InWords(agent.State)}. {ModeLocked}",
+            ModeSwitchOutcome.KeyBlocks when refusal.Block is { } block => Says(block),
+            ModeSwitchOutcome.SymbolsUnknown =>
+                $"Binance gave no answer about which symbols {agent.Market} has in {to}, so the symbol could not be checked and " +
+                "nothing was switched. Try again in a moment.",
+            ModeSwitchOutcome.SymbolNotOnMarket =>
+                $"{agent.Market} does not have {agent.Symbol} in {to}. Give the agent a symbol that the market has in both " +
+                "Demo and Live, on the page of its settings, and switch it then.",
+            ModeSwitchOutcome.RiskNotConfirmed => ConfirmRiskFirst,
+            _ => throw new ArgumentOutOfRangeException(nameof(refusal), refusal.Outcome, "The outcome has no message."),
+        };
+    }
+
+    /// <summary>What a user is told when their Binance key for Live keeps an agent from being switched to Live.</summary>
+    private static string Says(StartBlock block) => block switch
+    {
+        StartBlock.NoKey => "No Binance key is stored for Live. Add one, and switch the agent then.",
+        StartBlock.NotValid =>
+            "Your Binance key for Live is not valid: Binance did not take it when it was last checked. Replace it, or check " +
+            "it again on the page of your keys, and switch the agent then.",
+        StartBlock.SpotTradingMissing =>
+            "Your Binance key for Live lacks the Spot trading permission, which this agent's market needs. Turn on Spot " +
+            "trading for the key at Binance, check the key again on the page of your keys, and switch the agent then.",
+        StartBlock.FuturesTradingMissing =>
+            "Your Binance key for Live lacks the Futures trading permission, which this agent's market needs. Turn on " +
+            "Futures trading for the key at Binance, check the key again on the page of your keys, and switch the agent then.",
+        _ => throw new ArgumentOutOfRangeException(nameof(block), block, "The block has no message."),
     };
 
     /// <summary>What a page says to a user who may not create one more agent, or null to one who may.</summary>

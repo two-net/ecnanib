@@ -1,6 +1,5 @@
 using System.Reflection;
 using Ecnanib.Accounts;
-using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.Architecture;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
@@ -101,7 +100,6 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
             var reason = coverage.WaitsFor switch
             {
                 AuditRules.OperatorFunctions => WhyOperatorFunctionsAreBuilt(),
-                AuditRules.LiveSwitch => WhyTheLiveSwitchIsBuilt(),
                 _ => model.Model.GetEntityTypes().Any(entity => IsWithin(entity.ClrType.Namespace, coverage.WaitsFor!))
                     ? $"{coverage.WaitsFor} stores rows of its own"
                     : null,
@@ -136,20 +134,6 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
 
         // And a call of IsOperator is seen where there is one: the policy itself makes it.
         Assert.Contains(CallersOfIsOperator(), caller => IsWithin(caller, "Ecnanib.Accounts"));
-    }
-
-    [Fact]
-    public void What_tells_that_the_switch_to_live_is_built_can_see_it()
-    {
-        // Switching an agent to Live takes a fresh proof of who the user is (FR-AGT-7), so what
-        // switches one takes the service that says whether there is one. The test above looks
-        // for a type of Agents that does. Nothing of Agents does yet: every agent is in Demo.
-        Assert.Null(WhyTheLiveSwitchIsBuilt());
-
-        // Where a type takes it, it is found, whoever may call its constructor.
-        Assert.Equal(
-            [typeof(PlantedSwitch).FullName!],
-            AuditRules.FindTakersOf(typeof(IReauthentication), typeof(AuditRulesTests).Assembly, typeof(PlantedSwitch).Namespace!));
     }
 
     [Fact]
@@ -213,16 +197,6 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
         return caller is null ? null : $"{caller} asks whether its user is an operator";
     }
 
-    /// <summary>
-    /// Why the switch of an agent to Live counts as built, or null while it is not: a type of
-    /// Agents that takes the service which says whether its user has just proved who they are.
-    /// The switch takes that proof (FR-AGT-7), and nothing else of Agents does.
-    /// </summary>
-    private static string? WhyTheLiveSwitchIsBuilt() =>
-        AuditRules.FindTakersOf(typeof(IReauthentication), typeof(IReauthentication).Assembly, AgentsRules.Namespace) is [var asks, ..]
-            ? $"{asks} asks for a fresh proof of who its user is"
-            : null;
-
     /// <summary>The page and endpoint routes that the running application serves.</summary>
     private IEnumerable<RouteEndpoint> Endpoints() =>
         application.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>();
@@ -235,12 +209,6 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
     /// <summary>True when a type or a namespace is in a namespace, or nested in it.</summary>
     private static bool IsWithin(string? name, string @namespace) =>
         name is not null && (name == @namespace || name.StartsWith(@namespace + ".", StringComparison.Ordinal));
-
-    /// <summary>Stands for what switches an agent to Live: it takes the proof of who the user is.</summary>
-    private sealed class PlantedSwitch(IReauthentication proof)
-    {
-        public IReauthentication Proof { get; } = proof;
-    }
 
     /// <summary>A type with members that take text, and with members that the rule leaves alone.</summary>
     private sealed class Planted

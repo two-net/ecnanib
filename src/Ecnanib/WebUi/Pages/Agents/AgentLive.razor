@@ -1,0 +1,204 @@
+@page "/agents/{Id:guid}/live"
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Account
+@using Ecnanib.WebUi.Pages.Legal
+@inject IStoredAgents Agents
+@inject IAgentModes Modes
+@inject IReauthentication Reauthentication
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page switches an agent of
+    the user from Demo to Live, where it trades with real money (FR-AGT-7). It says first what
+    stands in the way, and asks for nothing then: an agent that is neither a draft nor stopped
+    with nothing open, a Live key that is missing, is not valid, or lacks the permission of the
+    agent's market, and a symbol that the market lacks in Live. Otherwise it is shown to a user
+    who has just proved again who they are, and to nobody else, and its form takes the
+    confirmation of the risk. The form is on the page whenever one is posted, whatever was proved
+    by then: a form that is not there cannot be answered. Whether the agent is switched is for
+    SwitchToLiveAsync to say, which asks all of it again under the lock.
+*@
+
+@if (_agent is not null)
+{
+    <PageTitle>Switch the agent @_agent.Name to Live</PageTitle>
+
+    <h1>Switch the agent @_agent.Name to Live</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
+    @if (_notSwitched is not null)
+    {
+        <p class="form-error" role="alert">@_notSwitched</p>
+
+        @if (_keyBlocks)
+        {
+            <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
+        }
+        else if (_symbolBlocks)
+        {
+            <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+        }
+    }
+
+    @if (_showForm)
+    {
+        <p>In Live the agent trades in your real Binance account, with your Binance key for Live. Its state stays as it is: <strong>@AgentPages.Describe(_agent.State)</strong>. It trades nothing until you start it.</p>
+
+        <ul>
+            @foreach (var risk in AgentPages.LiveRisks)
+            {
+                <li>@risk</li>
+            }
+        </ul>
+
+        <p>The <a href="@LegalPages.RiskDisclosurePath" target="_blank" rel="noopener">risk disclosure</a> says this in full.</p>
+
+        <form method="post" @formname="@AgentPages.SwitchToLiveForm" @onsubmit="SwitchAsync">
+            <AntiforgeryToken />
+
+            <div class="field">
+                @* Not ticked for its user: the confirmation is theirs to give, each time. *@
+                <input id="live-risk" name="Risk" type="checkbox" required value="@AgentPages.RiskConfirmed"
+                       aria-invalid="@(_riskNotConfirmed ? "true" : null)"
+                       aria-describedby="@(_riskNotConfirmed ? "live-risk-error" : null)" />
+                <label for="live-risk">I understand that in Live this agent trades with real money in my Binance account, and that I can lose all of the capital I allocated to it.</label>
+                @if (_riskNotConfirmed)
+                {
+                    <p id="live-risk-error" class="field-error" role="alert">@AgentPages.ConfirmRiskFirst</p>
+                }
+            </div>
+
+            <button type="submit">Switch the agent to Live</button>
+        </form>
+    }
+    else if (_notSwitched is null)
+    {
+        <p role="status">This agent is in Live.</p>
+    }
+
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm ? "Keep the agent in Demo" : "State of the agent")</a></p>
+}
+
+@code {
+    private AgentView? _agent;
+    private string? _notSwitched;
+    private bool _showForm;
+    private bool _keyBlocks;
+    private bool _symbolBlocks;
+    private bool _riskNotConfirmed;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    /// <summary>The box that confirms the risk, when it was ticked.</summary>
+    [SupplyParameterFromForm(Name = "Risk")]
+    private string? RiskEntry { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        if (!HttpMethods.IsGet(request.Request.Method))
+        {
+            // A form was posted, and is answered by SwitchAsync, whatever the agent is by now.
+            _showForm = true;
+
+            return;
+        }
+
+        // What stands in the way is said first, and no proof is asked for then: there is
+        // nothing to do with one. An agent that is in Live already has nothing to switch.
+        if (await Modes.BlockOfAsync(request, Id, TradingMode.Live) is { } block)
+        {
+            Say(block);
+
+            return;
+        }
+
+        if (!await Reauthentication.IsRecentAsync(request, SensitiveAction.SwitchAgentToLive))
+        {
+            // Not shown, and not done, until the user has proved again who they are.
+            _agent = null;
+            Navigation.NavigateTo(KeyPages.ConfirmFirst(request.Request.Path));
+
+            return;
+        }
+
+        _showForm = true;
+    }
+
+    private async Task SwitchAsync()
+    {
+        if (HttpContext is not { } request || _agent is null)
+        {
+            return;
+        }
+
+        var result = await Modes.SwitchToLiveAsync(request, Id, riskConfirmed: RiskEntry == AgentPages.RiskConfirmed);
+
+        switch (result.Outcome)
+        {
+            case ModeSwitchOutcome.Switched:
+                // The page that says what the agent is now. A reload of it switches nothing again.
+                Navigation.NavigateTo(WebUiModule.AgentStatePath(Id));
+                break;
+
+            case ModeSwitchOutcome.ProofNeeded:
+                // The proof was given too long ago, or never. Nothing was switched, and the form
+                // is not posted again: the user comes back to the page and confirms the risk.
+                Navigation.NavigateTo(KeyPages.ConfirmFirst(request.Request.Path));
+                break;
+
+            case ModeSwitchOutcome.RiskNotConfirmed:
+                _riskNotConfirmed = true;
+                break;
+
+            case ModeSwitchOutcome.NotFound:
+                // The agent was deleted, on another browser, since the page was shown.
+                _agent = null;
+                Navigation.NotFound();
+                break;
+
+            default:
+                // Nothing was switched. The page says why, and has no form: what stands in the
+                // way is not changed here.
+                _showForm = false;
+                Say(result);
+                break;
+        }
+    }
+
+    /// <summary>Says what stands in the way, with where it is changed. An agent that is in Live already is said as that.</summary>
+    private void Say(ModeSwitchResult block)
+    {
+        if (_agent is null || block.Outcome is ModeSwitchOutcome.Switched or ModeSwitchOutcome.NotFound)
+        {
+            return;
+        }
+
+        _notSwitched = AgentPages.Says(block, _agent, TradingMode.Live);
+        _keyBlocks = block.Outcome == ModeSwitchOutcome.KeyBlocks;
+        _symbolBlocks = block.Outcome == ModeSwitchOutcome.SymbolNotOnMarket;
+    }
+}

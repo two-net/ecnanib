@@ -377,6 +377,11 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("changed_at");
 
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("mode");
+
                     b.Property<string>("State")
                         .IsRequired()
                         .HasColumnType("text")

@@ -21,14 +21,18 @@ public class AgentsRulesTests
         var unlisted = AgentsRules.UnlistedOperations();
         Assert.True(
             unlisted.Count == 0,
-            $"These operations of Agents are listed neither in {nameof(AgentsRules)}.{nameof(AgentsRules.SettingsOperations)} " +
-            $"nor in {nameof(AgentsRules.ControlOperations)}: {string.Join(", ", unlisted)}. If one of them starts, pauses, " +
-            "resumes, or stops an agent, or closes a position, it is a control: it asks what blocks a start where it starts one " +
-            "(AgentStartBlockTests), and records the action in the audit trail (AuditRulesTests). If one switches the mode of " +
-            "an agent, the audit trail waits for it (AuditRulesTests). Build what applies, and then list the operation with " +
-            "what it does.");
+            $"These operations of Agents are listed neither in {nameof(AgentsRules)}.{nameof(AgentsRules.SettingsOperations)}, " +
+            $"nor in {nameof(AgentsRules.ControlOperations)}, nor in {nameof(AgentsRules.ModeOperations)}: " +
+            $"{string.Join(", ", unlisted)}. If one of them starts, pauses, resumes, or stops an agent, or closes a position, " +
+            "it is a control: it asks what blocks a start where it starts one (AgentStartBlockTests), and records the action " +
+            "in the audit trail (AuditRulesTests). If one switches the mode of an agent, it takes what a switch to Live " +
+            "takes (FR-AGT-7), and records the switch in the audit trail. Build what applies, and then list the operation " +
+            "with what it does.");
 
-        var listed = AgentsRules.SettingsOperations.Concat(AgentsRules.ControlOperations).ToList();
+        var listed = AgentsRules.SettingsOperations
+            .Concat(AgentsRules.ControlOperations)
+            .Concat(AgentsRules.ModeOperations)
+            .ToList();
 
         var gone = listed.Select(operation => operation.Key).Except(operations).Order(StringComparer.Ordinal).ToList();
         Assert.True(gone.Count == 0, $"These are listed as operations of Agents, and Agents has none of that name: {string.Join(", ", gone)}");
@@ -36,8 +40,8 @@ public class AgentsRulesTests
         Assert.All(listed, operation =>
             Assert.False(string.IsNullOrWhiteSpace(operation.Value), $"{operation.Key} does not say what it does."));
 
-        // An operation is one or the other.
-        Assert.Empty(AgentsRules.SettingsOperations.Keys.Intersect(AgentsRules.ControlOperations.Keys));
+        // An operation is in one list, and in no other.
+        Assert.Equal(listed.Count, listed.Select(operation => operation.Key).Distinct().Count());
     }
 
     [Fact]
@@ -45,7 +49,8 @@ public class AgentsRulesTests
     {
         // Pinned, so that a control that is added shows in a review as what it is: one more
         // thing that the service does with the money of a user. What other components ask of
-        // an agent that can run is asked from here on: their tests find these.
+        // an agent that can run is asked from here on: their tests find these. The last two
+        // switch the mode of an agent, and the first of them puts real money at stake.
         Assert.Equal(
             [
                 "IAgentControls.ClosePositionAsync",
@@ -54,8 +59,51 @@ public class AgentsRulesTests
                 "IAgentControls.StartAsync",
                 "IAgentControls.StopAsync",
                 "IAgentExposure.ClosePositionAtMarketAsync",
+                "IAgentModes.SwitchToDemoAsync",
+                "IAgentModes.SwitchToLiveAsync",
             ],
             AgentsRules.OperationsBeyondSettings());
+    }
+
+    [Fact]
+    public void What_an_agent_did_is_stored_with_the_mode_it_did_it_in()
+    {
+        using var model = ModelOnly.Context();
+
+        // An agent is switched between Demo and Live, and what it did before the switch stays
+        // what it was: every table with rows of an agent says the mode in each row (FR-BIN-11).
+        // The changes of its state do. A table of positions, orders, trades, or results that is
+        // added later is found here until it does as well.
+        var unlabeled = AgentsRules.TablesOfAgentRowsWithoutMode(model.Model, typeof(Agent))
+            .Where(table => !AgentsRules.AgentRowsWithoutMode.ContainsKey(table))
+            .ToList();
+
+        Assert.True(
+            unlabeled.Count == 0,
+            $"These tables hold rows of an agent, and no row of them says a mode: {string.Join(", ", unlabeled)}. An agent is " +
+            "switched between Demo and Live, so what it did is labeled row by row with the mode it did it in, and Demo " +
+            "results are never combined with Live results (FR-BIN-11). Give the table a column \"mode\", written when the row " +
+            $"is, or list it in {nameof(AgentsRules)}.{nameof(AgentsRules.AgentRowsWithoutMode)} with why nothing in it is a " +
+            "result. See docs/agents.md.");
+
+        Assert.Contains("mode", model.Model.FindEntityType(typeof(AgentStateChange))!.GetProperties().Select(property => property.GetColumnName()));
+
+        // A table that is listed is one of the model, and says why.
+        Assert.All(AgentsRules.AgentRowsWithoutMode, listed =>
+        {
+            Assert.Contains(model.Model.GetEntityTypes(), entity => entity.GetTableName() == listed.Key);
+            Assert.False(string.IsNullOrWhiteSpace(listed.Value), $"{listed.Key} does not say why it holds no mode.");
+        });
+    }
+
+    [Fact]
+    public void A_table_of_what_an_agent_did_that_says_no_mode_is_found()
+    {
+        using var planted = new PlantedContext();
+
+        // Found: the positions of an agent, which point at it and say no mode. Not found: the
+        // roles of an agent, which say one, and the orders, which point at no agent.
+        Assert.Equal(["agent_positions"], AgentsRules.TablesOfAgentRowsWithoutMode(planted.Model, typeof(Planted.PlantedAgent)));
     }
 
     [Fact]
@@ -119,6 +167,7 @@ public class AgentsRulesTests
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Planted.PlantedModel>().ToTable("planted_models");
+            modelBuilder.Entity<Planted.PlantedAgent>().ToTable("planted_agents");
 
             // Found: a role of an agent, with the model that it was given.
             modelBuilder.Entity<Planted.PlantedRole>(role =>
@@ -126,6 +175,10 @@ public class AgentsRulesTests
                 role.ToTable("planted_roles");
                 role.Property(row => row.ModelId).HasColumnName("model_id");
                 role.HasOne<Planted.PlantedModel>().WithMany().HasForeignKey(row => row.ModelId);
+
+                // A row of an agent that says the mode it is of.
+                role.Property(row => row.Mode).HasColumnName("mode");
+                role.HasOne<Planted.PlantedAgent>().WithMany().HasForeignKey(row => row.AgentId);
             });
 
             // Not found: it points at a model, and is of another component.
@@ -135,7 +188,12 @@ public class AgentsRulesTests
                 elsewhere.HasOne<Planted.PlantedModel>().WithMany().HasForeignKey(row => row.ModelId);
             });
 
-            modelBuilder.Entity<Planted.PlantedPosition>().ToTable("agent_positions");
+            // A row of an agent that says no mode.
+            modelBuilder.Entity<Planted.PlantedPosition>(position =>
+            {
+                position.ToTable("agent_positions");
+                position.HasOne<Planted.PlantedAgent>().WithMany().HasForeignKey(row => row.AgentId);
+            });
             modelBuilder.Entity<Planted.PlantedOrder>().ToTable("orders");
 
             // Not found: neither word is in its name, though "order" is in "border".

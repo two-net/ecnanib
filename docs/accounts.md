@@ -284,7 +284,7 @@ if (!await reauthentication.IsRecentAsync(context, request, SensitiveAction.AddO
 
 The answer then holds until the action is done. Whatever ends the proof, such as a new password, changes that row, so it came before or waits.
 
-Deleting the account is built, and asks this way: see "Deleting the account". So is adding or replacing a key, in Credentials: see [credentials.md](credentials.md). Switching an agent to Live is not built yet. It calls this when it is.
+Deleting the account is built, and asks this way: see "Deleting the account". So is adding or replacing a key, in Credentials: see [credentials.md](credentials.md). And so is switching an agent to Live, in Agents: see "The switch to Live" in [agents.md](agents.md).
 
 ### Proving it
 
@@ -487,6 +487,7 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 | `AgentRiskSettingsChanged` | A risk setting of an agent was changed. |
 | `AgentStarted`, `AgentPaused`, `AgentResumed`, `AgentStopped` | The user started, paused, resumed, or stopped an agent. |
 | `AgentPositionCloseRequested` | The user asked for the position of an agent to be closed at market, by hand. It is recorded when it is asked for, before the order. See "The audit trail" in [agents.md](agents.md). |
+| `AgentSwitchedToLive`, `AgentSwitchedToDemo` | The user switched an agent from Demo to Live, where it trades with real money, or back. See "The mode" in [agents.md](agents.md). |
 
 - **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not. `RecordAsync` refuses a context that holds no transaction.
 - **A sign-in is recorded where the session is stored,** in `Sessions.AddAsync`, which is the one place. So no session starts without its event. A password that only leads to the page that asks for a code records nothing: nobody is signed in.
@@ -530,12 +531,11 @@ A component that may not use Accounts, such as the Decision Engine, records noth
 
 | Action of the requirement | Waits for |
 |---|---|
-| Mode switches | The switch of an agent to Live |
 | Operator actions | The first operator function |
 
-What a user does to an agent is recorded: risk setting changes, starts, pauses, resumes, and stops, and manual closes. Agents takes the request for a manual close and records it, and whatever keeps positions places the order. See "The audit trail" in [agents.md](agents.md).
+What a user does to an agent is recorded: risk setting changes, starts, pauses, resumes, and stops, manual closes, and switches of its mode. Agents takes the request for a manual close and records it, and whatever keeps positions places the order. See "The audit trail" in [agents.md](agents.md).
 
-`AuditRulesTests` fails for an action that still waits once what it waits for is built. For the mode switches, that is once a type of Agents takes `IReauthentication`: switching an agent to Live takes a fresh proof of who the user is (FR-AGT-7), and nothing else of Agents does. For the operator actions, it is once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`. It also fails for a member of `AuditAction` that no marked test shows being recorded.
+`AuditRulesTests` fails for an action that still waits once what it waits for is built. For the operator actions, that is once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`. It also fails for a member of `AuditAction` that no marked test shows being recorded.
 
 ## Passwords
 
@@ -659,11 +659,10 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
 - Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
-- The third sensitive action: switching an agent to Live. It asks `IReauthentication` first when it is built. See "Re-authentication".
 - The part of the export that Experience keeps: lessons. It hands its part over as an `IExportedPart` when it is built, as Credentials does for the keys and Agents for the agents. See "Exporting your data".
 - Preferences. None is stored yet. When one is, it is personal data of an allowed kind, and it is in the export.
 - Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
-- The rest of the audit trail: switching the mode of an agent, and the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
+- The rest of the audit trail: the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.

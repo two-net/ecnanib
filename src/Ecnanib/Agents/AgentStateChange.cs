@@ -1,5 +1,6 @@
 using Ecnanib.Accounts;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -10,20 +11,28 @@ namespace Ecnanib.Agents;
 /// state the agent came to, why, and when (FR-AGT-10). The first row of an agent is its
 /// creation. See docs/agents.md.
 /// </summary>
+/// <remarks>
+/// A change says the mode that the agent was in when it happened, and keeps saying it when the
+/// agent is switched: what an agent did in Demo is labeled as Demo for good, and is never read
+/// as what it did in Live (FR-BIN-11).
+/// </remarks>
 /// <param name="id">Assigned by the application when the change is recorded. A later change has a greater id.</param>
 /// <param name="agentId">The agent whose state changed.</param>
 /// <param name="userId">The user whose agent it is.</param>
+/// <param name="mode">The mode the agent was in when its state changed.</param>
 /// <param name="state">The state the agent came to.</param>
 /// <param name="cause">Why it did.</param>
 /// <param name="changedAt">When it did.</param>
 public sealed class AgentStateChange(
-    Guid id, Guid agentId, Guid userId, AgentState state, AgentStateCause cause, DateTimeOffset changedAt) : IUserOwned
+    Guid id, Guid agentId, Guid userId, TradingMode mode, AgentState state, AgentStateCause cause, DateTimeOffset changedAt) : IUserOwned
 {
     public Guid Id { get; } = id;
 
     public Guid AgentId { get; } = agentId;
 
     public Guid UserId { get; } = userId;
+
+    public TradingMode Mode { get; } = mode;
 
     public AgentState State { get; } = state;
 
@@ -43,6 +52,7 @@ internal sealed class AgentStateChangeConfiguration : IEntityTypeConfiguration<A
         builder.Property(change => change.Id).ValueGeneratedNever();
         builder.Property(change => change.AgentId);
         builder.Property(change => change.UserId);
+        builder.Property(change => change.Mode);
         builder.Property(change => change.State);
         builder.Property(change => change.Cause);
         builder.Property(change => change.ChangedAt);
@@ -74,19 +84,21 @@ internal static class AgentStateChanges
     // The millisecond of the id that was handed out last.
     private static long _lastMillisecond;
 
-    /// <summary>The first change of an agent: its creation, in the state and at the time that its row says.</summary>
+    /// <summary>The first change of an agent: its creation, in the mode, in the state, and at the time that its row says.</summary>
     /// <param name="agent">The agent, which is stored with the change.</param>
     public static AgentStateChange First(Agent agent)
     {
         ArgumentNullException.ThrowIfNull(agent);
 
-        return new AgentStateChange(NextId(), agent.Id, agent.UserId, agent.State, agent.StateCause, agent.StateChangedAt);
+        return new AgentStateChange(
+            NextId(), agent.Id, agent.UserId, agent.Mode, agent.State, agent.StateCause, agent.StateChangedAt);
     }
 
     /// <summary>
     /// Moves an agent of a user to a state, inside the transaction of whoever asks: the row of
     /// the agent says the state, its cause, and since when, and a change with the same three is
-    /// recorded. Whoever asks has locked the row of the account, and commits.
+    /// recorded, with the mode that the agent is in. Whoever asks has locked the row of the
+    /// account, and commits.
     /// </summary>
     /// <remarks>
     /// It saves the context: the statement that updates the row directly does not write what the
@@ -95,6 +107,10 @@ internal static class AgentStateChanges
     /// <param name="context">The context that holds the transaction.</param>
     /// <param name="userId">The user whose agent it is.</param>
     /// <param name="agentId">The agent.</param>
+    /// <param name="mode">
+    /// The mode that the agent is in, as its row says under the lock. The change is labeled with
+    /// it (FR-BIN-11): the mode of an agent is switched only while its state stays as it is.
+    /// </param>
     /// <param name="state">The state it comes to.</param>
     /// <param name="cause">Why it does.</param>
     /// <param name="at">When it does.</param>
@@ -107,6 +123,7 @@ internal static class AgentStateChanges
         EcnanibDbContext context,
         Guid userId,
         Guid agentId,
+        TradingMode mode,
         AgentState state,
         AgentStateCause cause,
         DateTimeOffset at,
@@ -130,7 +147,7 @@ internal static class AgentStateChanges
                     .SetProperty(agent => agent.StateChangedAt, at),
                 cancellationToken);
 
-        context.Set<AgentStateChange>().Add(new AgentStateChange(NextId(), agentId, userId, state, cause, at));
+        context.Set<AgentStateChange>().Add(new AgentStateChange(NextId(), agentId, userId, mode, state, cause, at));
 
         await context.SaveChangesAsync(cancellationToken);
     }

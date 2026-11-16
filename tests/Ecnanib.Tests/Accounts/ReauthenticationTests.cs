@@ -16,9 +16,10 @@ namespace Ecnanib.Tests.Accounts;
 /// Sensitive actions require re-authentication (FR-ACC-4): adding or replacing a key, switching an
 /// agent to Live, and deleting the account are done only for a user who has just proved again who
 /// they are, with their password and, when they have two-factor authentication on, a code. The
-/// check is made on the server. Deleting the account is built, and <see cref="AccountDeletionTests"/>
-/// is about it. So is adding or replacing a key: see <c>KeyPageTests</c>. Switching an agent to
-/// Live is not yet, so a handler of the tests stands for all three here: it asks first, as they do.
+/// check is made on the server. <see cref="AccountDeletionTests"/> is about deleting the account,
+/// <c>KeyPageTests</c> about adding or replacing a key, and <c>AgentModeSwitchTests</c> about
+/// switching an agent to Live. A handler of the tests stands for all three here: it asks first,
+/// as they do.
 /// </summary>
 public class ReauthenticationTests
 {

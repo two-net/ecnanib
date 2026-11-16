@@ -209,6 +209,7 @@ public interface IKeyValidation
 - It is answered from what the last check recorded, and asks Binance nothing.
 - `KeyPages.Says` makes the message of a block, which names the permission and says what to do: turn it on at Binance, and check the key again on `/account/keys`.
 - **Agents asks it before an agent starts, and before one is resumed,** under the lock that a change to a key takes, so that the answer holds until the agent runs. The page of the agent's state shows the message. `AgentStartBlockTests` holds Agents to asking. See "The controls" in [agents.md](agents.md).
+- **Agents asks it about the Live key before it switches an agent to Live** (FR-AGT-7): no agent is put where it trades with real money without a valid Live key that may trade on its market. The page that switches says what is wrong with the key, in words of its own, and leads to `/account/keys`. See "The switch to Live" in [agents.md](agents.md).
 
 ## Deleting a key
 

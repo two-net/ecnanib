@@ -63,7 +63,9 @@ public class AgentPageTests
         Assert.Equal(["BTCUSDT", "SOLUSDT"], AgentBrowser.SymbolsOfferedOn(form));
         Assert.Contains("<option value=\"Spot\" selected>Spot</option>", form);
         Assert.Contains("<option value selected>Choose a timeframe</option>", form);
-        Assert.Contains("Mode: <strong>Demo</strong>.", form);
+        Assert.Contains($"<p>Mode: {AgentBrowser.Badge(TradingMode.Demo)} The agent trades in Binance's test environment, with no real funds.</p>", AgentBrowser.Read(form));
+        Assert.Contains("<p>A new agent is in Demo. You can switch it to Live once it is created.</p>", form);
+        Assert.DoesNotContain("name=\"Mode\"", form);
 
         // Every risk setting says what it is, with its bounds and its default (NFR-USA-2).
         Assert.Contains("From 0.25 to 4 percent. The default is 1.5.", form);
@@ -94,7 +96,7 @@ public class AgentPageTests
 
         Assert.Contains($"<th scope=\"row\"><a href=\"/agents/{agent.Id}\">Swing on Bitcoin</a></th>", list);
         Assert.All(
-            new[] { "<td>Demo</td>", "<td>Futures</td>", "<td><code>BTCUSDT</code></td>", "<td>4H</td>", "<td>2500.5 USDT</td>", "<td>Draft</td>" },
+            new[] { $"<td>{AgentBrowser.Badge(TradingMode.Demo)}</td>", "<td>Futures</td>", "<td><code>BTCUSDT</code></td>", "<td>4H</td>", "<td>2500.5 USDT</td>", "<td>Draft</td>" },
             cell => Assert.Contains(cell, list));
         Assert.Contains("<p>You have 1 of 7 agents.</p>", list);
 
@@ -870,6 +872,9 @@ public class AgentPageTests
     [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/state")]
     [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/stop")]
     [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/close-position")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/live")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/demo")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/confirm/start")]
     public async Task A_visitor_who_opens_its_pages_is_sent_to_sign_in(string page)
     {
         using var application = AgentsApplication.With(new StandInMarketData());
@@ -907,6 +912,10 @@ public class AgentPageTests
             (AgentBrowser.AgentStatePage(running), AgentBrowser.ResumeForm, []),
             (AgentBrowser.StopAgentPage(running), AgentBrowser.StopForm, [("Position", AgentPages.ClosePosition)]),
             (AgentBrowser.ClosePositionPage(running), AgentBrowser.ClosePositionForm, []),
+            (AgentBrowser.SwitchToLivePage(agent), AgentBrowser.SwitchToLiveForm, [AgentBrowser.RiskConfirmed]),
+            (AgentBrowser.SwitchToDemoPage(agent), AgentBrowser.SwitchToDemoForm, []),
+            (AgentBrowser.ConfirmControlPage(agent, "start"), AgentBrowser.StartForm, []),
+            (AgentBrowser.ConfirmControlPage(running, "pause"), AgentBrowser.PauseForm, []),
         ];
 
         foreach (var (path, form, fields) in forms)
@@ -949,6 +958,10 @@ public class AgentPageTests
             (AgentBrowser.AgentStatePage(running), AgentBrowser.ResumeForm, []),
             (AgentBrowser.StopAgentPage(running), AgentBrowser.StopForm, [("Position", AgentPages.ClosePosition)]),
             (AgentBrowser.ClosePositionPage(running), AgentBrowser.ClosePositionForm, []),
+            (AgentBrowser.SwitchToLivePage(agent.Id), AgentBrowser.SwitchToLiveForm, [AgentBrowser.RiskConfirmed]),
+            (AgentBrowser.SwitchToDemoPage(agent.Id), AgentBrowser.SwitchToDemoForm, []),
+            (AgentBrowser.ConfirmControlPage(agent.Id, "start"), AgentBrowser.StartForm, []),
+            (AgentBrowser.ConfirmControlPage(running, "pause"), AgentBrowser.PauseForm, []),
         ];
 
         foreach (var (path, form, fields) in forms)
@@ -977,6 +990,12 @@ public class AgentPageTests
     [InlineData("/agents/swing/state")]
     [InlineData("/agents/swing/stop")]
     [InlineData("/agents/swing/close-position")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/live")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/demo")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/confirm/start")]
+    [InlineData("/agents/swing/live")]
+    [InlineData("/agents/swing/demo")]
+    [InlineData("/agents/swing/confirm/start")]
     public async Task A_path_that_names_no_agent_of_the_user_is_not_found(string page)
     {
         using var application = AgentsApplication.With(new StandInMarketData());

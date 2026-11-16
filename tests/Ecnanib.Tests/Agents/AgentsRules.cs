@@ -9,22 +9,22 @@ namespace Ecnanib.Tests.Agents;
 /// <summary>
 /// What of Agents is built, in one place. Other components hold Agents to what it does:
 /// Credentials to asking whether a key lets an agent start and to being told when a key goes,
-/// and the audit trail to recording what starts, stops, and closes. The Catalog still waits, for
-/// what is told when a model goes. Their tests ask here what Agents can do. This file is the
+/// and the audit trail to recording what starts, stops, closes, and switches the mode. The
+/// Catalog still waits, for what is told when a model goes. Their tests ask here what Agents can do. This file is the
 /// source of truth: <c>docs/agents.md</c> explains it, and <see cref="AgentsRulesTests"/> holds
 /// it to the code.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Agents keeps the agents of users and their settings, and starts, pauses, resumes, and stops
-/// them, and closes their positions by hand. It switches none to Live, and gives no role a
-/// model. So an agent is in Demo, runs with the Binance credential of its user, and uses no
-/// model.
+/// Agents keeps the agents of users and their settings, starts, pauses, resumes, and stops
+/// them, closes their positions by hand, and switches them between Demo and Live. It gives no
+/// role a model. So an agent is created in Demo, runs with the Binance credential of its user
+/// for its mode, and uses no model.
 /// </para>
 /// <para>
-/// Every operation of a public interface of Agents is listed here, as one that keeps settings
-/// or as a control: one that is added fails <see cref="AgentsRulesTests"/> until someone lists
-/// it, and so decides what it is. And a foreign key from a table of Agents to the catalog's
+/// Every operation of a public interface of Agents is listed here, as one that keeps settings,
+/// as a control, or as a switch of the mode: one that is added fails
+/// <see cref="AgentsRulesTests"/> until someone lists it, and so decides what it is. And a foreign key from a table of Agents to the catalog's
 /// models is a model that an agent uses: the tests that wait for a model choice fail from then
 /// on.
 /// </para>
@@ -50,6 +50,7 @@ internal static class AgentsRules
         ["IStoredAgents.CloneAsync"] = "Creates a copy of an agent, which is a draft in Demo.",
         ["IStoredAgents.DeleteAsync"] = "Deletes an agent that is a draft, or is stopped with nothing open.",
         ["IAgentControls.HistoryAsync"] = "Reads the changes of the state of one agent.",
+        ["IAgentModes.BlockOfAsync"] = "Reads what stands in the way of switching the mode of an agent. It switches nothing.",
         ["IAgentExposure.HasOpenPositionOrOrdersAsync"] =
             "Asked by Agents, and answered by whatever keeps positions and orders. It is no operation on an agent.",
         ["IAgentExposure.HasOpenPositionAsync"] =
@@ -63,7 +64,7 @@ internal static class AgentsRules
     /// (<c>AgentStartBlockTests</c>), being told when a key goes (<c>KeyDependentsTests</c>), and
     /// recording the action in the audit trail (<c>AuditRulesTests</c>). To list a control that
     /// is added later is to decide that it does all of that which applies to it. None of them
-    /// switches the mode of an agent.
+    /// switches the mode of an agent: see <see cref="ModeOperations"/>.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> ControlOperations = new Dictionary<string, string>
     {
@@ -78,6 +79,21 @@ internal static class AgentsRules
             "Closes the position of an agent by hand: it records the request in the audit trail, and asks whatever keeps positions.",
         ["IAgentExposure.ClosePositionAtMarketAsync"] =
             "Asked by Agents of whatever keeps positions, after Agents recorded the request of the user. Agents places no order.",
+    };
+
+    /// <summary>
+    /// The operations of Agents that switch the mode of an agent, each with what it does. An
+    /// agent in Live trades with real money, so a switch to Live takes a valid Live key, the
+    /// confirmation of the risk, and a fresh proof of who the user is (FR-AGT-7), and every
+    /// switch is recorded in the audit trail (<c>AuditRulesTests</c>). To list one that is
+    /// added later is to decide that it does all of that which applies to it.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> ModeOperations = new Dictionary<string, string>
+    {
+        ["IAgentModes.SwitchToLiveAsync"] =
+            "Switches an agent from Demo to Live, with a valid Live key, the confirmation of the risk, and a fresh proof of " +
+            "who its user is, and records the switch in the audit trail.",
+        ["IAgentModes.SwitchToDemoAsync"] = "Switches an agent from Live back to Demo, and records the switch in the audit trail.",
     };
 
     /// <summary>The operations of the application's Agents component: each as <c>Interface.Method</c>, in order.</summary>
@@ -101,9 +117,38 @@ internal static class AgentsRules
     public static IReadOnlyList<string> OperationsBeyondSettings() =>
         [.. Operations().Where(operation => !SettingsOperations.ContainsKey(operation))];
 
-    /// <summary>The operations of Agents that are listed neither as keeping settings nor as a control.</summary>
+    /// <summary>The operations of Agents that are listed neither as keeping settings, nor as a control, nor as a switch of the mode.</summary>
     public static IReadOnlyList<string> UnlistedOperations() =>
-        [.. OperationsBeyondSettings().Where(operation => !ControlOperations.ContainsKey(operation))];
+        [
+            .. OperationsBeyondSettings()
+                .Where(operation => !ControlOperations.ContainsKey(operation) && !ModeOperations.ContainsKey(operation)),
+        ];
+
+    /// <summary>
+    /// The tables that hold what an agent did, and do not say the mode it did it in: each table
+    /// with a foreign key to the table of an entity, other than that table itself, that has no
+    /// column <c>mode</c>. An agent is switched between Demo and Live, so what it did is labeled
+    /// row by row, and is never read through the mode that the agent is in now: what it did in
+    /// Demo is Demo for good, and is not combined with what it did in Live (FR-BIN-11).
+    /// </summary>
+    /// <param name="model">The model.</param>
+    /// <param name="agent">The entity that the rows are of: an agent.</param>
+    public static IReadOnlyList<string> TablesOfAgentRowsWithoutMode(IModel model, Type agent) =>
+    [
+        .. from entity in model.GetEntityTypes()
+           where entity.ClrType != agent
+               && entity.GetForeignKeys().Any(key => key.PrincipalEntityType.ClrType == agent)
+           let table = entity.GetTableName() ?? entity.ClrType.Name
+           where entity.GetProperties().All(property => property.GetColumnName() != "mode")
+           orderby table
+           select table,
+    ];
+
+    /// <summary>
+    /// The tables with rows of an agent that need not say a mode, each with why. A table is
+    /// listed here only when nothing in it is a result of what an agent did: there is none yet.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> AgentRowsWithoutMode = new Dictionary<string, string>();
 
     /// <summary>
     /// The models that the agents of the application's model use: each foreign key from a table

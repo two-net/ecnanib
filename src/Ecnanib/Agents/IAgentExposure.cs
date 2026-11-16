@@ -99,6 +99,20 @@ internal static class AgentExposures
     }
 
     /// <summary>
+    /// Whether the mode, market, symbol, and timeframe of an agent can be changed, and the agent
+    /// deleted (FR-AGT-8). What an agent holds on the exchange is asked only of a stopped one:
+    /// a draft never held anything, and an active agent is refused whatever it holds.
+    /// </summary>
+    public static async Task<bool> StructureCanChangeAsync(
+        this IEnumerable<IAgentExposure> exposures, EcnanibDbContext context, Agent agent, CancellationToken cancellationToken)
+    {
+        var holds = agent.State == AgentState.Stopped
+            && await exposures.HoldPositionOrOrdersAsync(context, agent.Id, cancellationToken);
+
+        return AgentStates.StructureCanChange(agent.State, holds);
+    }
+
+    /// <summary>
     /// Closes the open position of an agent at market. It failed when anything that keeps
     /// positions says so, and nothing was open when nothing closed one.
     /// </summary>

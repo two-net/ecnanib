@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ecnanib.Accounts;
+using Ecnanib.Agents;
 using Ecnanib.Shared;
 using Microsoft.AspNetCore.Antiforgery;
 
@@ -70,6 +71,23 @@ public static class WebUiModule
 
     /// <summary>The path of the page a user closes the open position of an agent on, at any time (FR-AGT-12).</summary>
     public static string CloseAgentPositionPath(Guid agentId) => $"{AgentPath(agentId)}/close-position";
+
+    /// <summary>
+    /// The path of the page a user switches an agent from Demo to Live on, with the confirmation
+    /// of the risk and after a fresh proof of who they are (FR-AGT-7).
+    /// </summary>
+    public static string SwitchAgentToLivePath(Guid agentId) => $"{AgentPath(agentId)}/live";
+
+    /// <summary>The path of the page a user switches an agent from Live back to Demo on.</summary>
+    public static string SwitchAgentToDemoPath(Guid agentId) => $"{AgentPath(agentId)}/demo";
+
+    /// <summary>
+    /// The path of the page that asks once more before an agent is started, paused, or resumed:
+    /// <c>start</c>, <c>pause</c>, or <c>resume</c>. A control of an agent in Live leads to it
+    /// (FR-UI-3). Stopping an agent has a page of its own.
+    /// </summary>
+    public static string ConfirmAgentControlPath(Guid agentId, AgentControl control) =>
+        $"{AgentPath(agentId)}/confirm/{control.ToString().ToLowerInvariant()}";
 
     // The export as a person reads it: indented, with the names of things and not their numbers.
     private static readonly JsonSerializerOptions ExportJson = new(JsonSerializerDefaults.Web)

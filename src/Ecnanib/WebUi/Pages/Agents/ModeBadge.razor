@@ -1,0 +1,15 @@
+@using Ecnanib.Shared
+
+@*
+    The badge of the mode of an agent: Demo or Live (FR-UI-3). Every page of an agent shows it
+    under its heading, and the list shows it for each agent. It says the mode as a word, and does
+    not rely on its colour. Its look is in app.css: a page carries no style of its own.
+*@
+
+<span class="mode-badge @(Mode == TradingMode.Live ? "mode-live" : "mode-demo")">@Mode</span>
+
+@code {
+    /// <summary>The mode that the badge says.</summary>
+    [Parameter, EditorRequired]
+    public TradingMode Mode { get; set; }
+}

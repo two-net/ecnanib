@@ -1,7 +1,8 @@
 namespace Ecnanib.Tests.Agents.Planted;
 
 // What AgentsRulesTests plants to show that the rules find what they look for: a component with
-// operations that keep no settings, and with a row that points at a model. Nothing else uses it.
+// operations that keep no settings, with a row that points at a model, and with rows of an agent
+// that say the mode they are of, or do not. Nothing else uses it.
 
 /// <summary>Found: a public interface of the namespace, with what starts and pauses an agent.</summary>
 public interface IPlantedControls
@@ -35,18 +36,30 @@ public sealed class PlantedModel
     public Guid Id { get; set; }
 }
 
-/// <summary>Stands for a role of an agent that was given a model.</summary>
+/// <summary>Stands for an agent.</summary>
+public sealed class PlantedAgent
+{
+    public Guid Id { get; set; }
+}
+
+/// <summary>Stands for a role of an agent that was given a model. Its row says the mode it is of.</summary>
 public sealed class PlantedRole
 {
     public Guid Id { get; set; }
 
     public Guid ModelId { get; set; }
+
+    public Guid AgentId { get; set; }
+
+    public string Mode { get; set; } = "Demo";
 }
 
-/// <summary>Stands for a position of an agent.</summary>
+/// <summary>Stands for a position of an agent. Its row says no mode.</summary>
 public sealed class PlantedPosition
 {
     public Guid Id { get; set; }
+
+    public Guid AgentId { get; set; }
 }
 
 /// <summary>Stands for an order.</summary>

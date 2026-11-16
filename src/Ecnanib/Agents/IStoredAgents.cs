@@ -15,9 +15,9 @@ namespace Ecnanib.Agents;
 /// that user only. An agent of another user is not found (NFR-SEC-3).
 /// </para>
 /// <para>
-/// What starts, pauses, resumes, and stops an agent is <see cref="IAgentControls"/>: nothing here
-/// changes the state of an agent. What switches an agent to Live, and what gives the roles of
-/// its team their models, are not built yet. So an agent is in Demo.
+/// What starts, pauses, resumes, and stops an agent is <see cref="IAgentControls"/>, and what
+/// switches it between Demo and Live is <see cref="IAgentModes"/>: nothing here changes the
+/// state of an agent or its mode. What gives the roles of its team their models is not built yet.
 /// </para>
 /// </remarks>
 public interface IStoredAgents
@@ -50,11 +50,19 @@ public interface IStoredAgents
     /// or orders (FR-AGT-8). A change to a risk setting is recorded in the audit trail
     /// (NFR-LOG-7).
     /// </summary>
-    Task<SaveAgentResult> SaveAsync(HttpContext request, Guid agentId, AgentEntry entry);
+    /// <param name="request">The request of the signed-in user.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="entry">What was entered.</param>
+    /// <param name="confirmedForLive">
+    /// Whether the user was asked once more, and confirmed. It counts for an agent in Live: a
+    /// change to its capital or to a risk setting is not stored without it (FR-UI-3).
+    /// </param>
+    Task<SaveAgentResult> SaveAsync(HttpContext request, Guid agentId, AgentEntry entry, bool confirmedForLive);
 
     /// <summary>
-    /// Creates a copy of an agent, under a name of its own, in Demo and in Draft. It counts
-    /// against the fair-use limit as any agent does.
+    /// Creates a copy of an agent, under a name of its own, in Demo and in Draft, whatever mode
+    /// the agent is in. It counts against the fair-use limit as any agent does. An agent in Live
+    /// is copied only when its market has its symbol in Demo as well (FR-AGT-6).
     /// </summary>
     Task<SaveAgentResult> CloneAsync(HttpContext request, Guid agentId);
 
@@ -241,6 +249,12 @@ public enum SaveAgentOutcome
 
     /// <summary>The user has no agent of that id.</summary>
     NotFound,
+
+    /// <summary>
+    /// The agent is in Live, the capital or a risk setting was changed, and its user was not
+    /// asked once more (FR-UI-3). Nothing was stored.
+    /// </summary>
+    NotConfirmedForLive,
 }
 
 /// <summary>What creating, changing, or copying an agent gave.</summary>

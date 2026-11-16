@@ -277,6 +277,28 @@ fieldset {
     margin: 0 0 0.5rem;
 }
 
+/* The badge of the mode of an agent, wherever an agent is shown: Demo or Live (FR-UI-3). It says
+   the mode as a word, so it does not rely on its colour. Demo is an outline in the colour of the
+   text around it. Live is filled, in the red of an error, because real money is at stake: it
+   brings its own background, so it reads the same on a light page and on a dark one. */
+.mode-badge {
+    display: inline-block;
+    padding: 0 0.5em;
+    border: 1px solid currentColor;
+    border-radius: 0.25rem;
+    font-size: 0.875em;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.mode-live {
+    background-color: #b3261e;
+    border-color: #b3261e;
+    color: #ffffff;
+}
+
 /* What happens to an open position when its agent is stopped: one choice under another, each
    with what it means below it. */
 .choice {

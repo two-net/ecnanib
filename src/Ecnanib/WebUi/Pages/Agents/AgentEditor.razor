@@ -4,7 +4,6 @@
 @using Ecnanib.Agents
 @using Ecnanib.Platform.Settings
 @using Ecnanib.Shared
-@using Ecnanib.WebUi.Pages.Account
 @inject IStoredAgents Agents
 @inject TradingSettings Trading
 @inject NavigationManager Navigation
@@ -16,7 +15,10 @@
     SaveAsync, on the server: the risk settings to the hard bounds of the configuration file,
     and the symbol to the symbols that the chosen market has (FR-AGT-6, FR-RSK-2). The list of
     symbols follows the market with a press of a button, which stores nothing. The form is on
-    the page whenever one is posted: a form that is not there cannot be answered.
+    the page whenever one is posted: a form that is not there cannot be answered. The badge of
+    the mode is under the heading: a new agent is in Demo, and the form offers no choice of the
+    mode, which is switched on a page of its own (FR-AGT-7). A change to the capital or to a
+    risk setting of an agent in Live is asked about once more before it is stored (FR-UI-3).
 *@
 
 @if (_found)
@@ -24,6 +26,25 @@
     <PageTitle>@Title</PageTitle>
 
     <h1>@Title</h1>
+
+    <p>Mode: <ModeBadge Mode="@_mode" /> @AgentPages.TradesIn(_mode)</p>
+
+    @if (_agent is null)
+    {
+        <p>A new agent is in Demo. You can switch it to Live once it is created.</p>
+    }
+    else if (!_agent.StructureCanChange)
+    {
+        <p role="note">@AgentPages.ModeLocked</p>
+    }
+    else if (_agent.Mode == TradingMode.Demo)
+    {
+        <p><a href="@WebUiModule.SwitchAgentToLivePath(_agent.Id)">Switch the agent to Live</a></p>
+    }
+    else
+    {
+        <p><a href="@WebUiModule.SwitchAgentToDemoPath(_agent.Id)">Switch the agent to Demo</a></p>
+    }
 
     @if (_notNow is not null)
     {
@@ -57,8 +78,6 @@
                     <p class="field-error" role="alert">@nameProblem</p>
                 }
             </div>
-
-            <p>Mode: <strong>@_mode</strong>. The agent trades in @KeyPages.Describe(_mode).</p>
 
             @if (_structureCanChange)
             {
@@ -202,7 +221,17 @@
                 </div>
             </fieldset>
 
-            <button type="submit">@(_agent is null ? "Create the agent" : "Save the agent")</button>
+            @if (_confirmLive)
+            {
+                @* Asked once more: nothing is stored until this button is pressed. *@
+                <p class="form-error" role="alert">@AgentPages.ConfirmSaveForLive</p>
+
+                <button type="submit" name="Confirm" value="@AgentPages.ConfirmLive">@AgentPages.SaveForLive</button>
+            }
+            else
+            {
+                <button type="submit">@(_agent is null ? "Create the agent" : "Save the agent")</button>
+            }
         </form>
 
         <h2>Roles</h2>
@@ -235,6 +264,7 @@
     private IReadOnlyDictionary<AgentField, AgentProblem> _problems = new Dictionary<AgentField, AgentProblem>();
     private string? _notNow;
     private string? _notSaved;
+    private bool _confirmLive;
 
     /// <summary>The agent that the path names. The page that creates an agent names none.</summary>
     [Parameter]
@@ -276,6 +306,13 @@
     /// <summary>The button that shows the symbols of the chosen market, when that is what was pressed.</summary>
     [SupplyParameterFromForm]
     private string? Show { get; set; }
+
+    /// <summary>
+    /// The button that saves a change to the capital or to a risk setting of an agent in Live,
+    /// when that is what was pressed: the page asked once more, and this is the answer.
+    /// </summary>
+    [SupplyParameterFromForm]
+    private string? Confirm { get; set; }
 
     private string Title => _agent is null ? "Create an agent" : $"Settings of the agent {_agent.Name}";
 
@@ -382,7 +419,7 @@
 
         var result = _agent is null
             ? await Agents.CreateAsync(request, entry)
-            : await Agents.SaveAsync(request, _agent.Id, entry);
+            : await Agents.SaveAsync(request, _agent.Id, entry, confirmedForLive: Confirm == AgentPages.ConfirmLive);
 
         switch (result.Outcome)
         {
@@ -415,6 +452,12 @@
 
             case SaveAgentOutcome.StructureLocked:
                 _notSaved = $"Nothing was saved. {AgentPages.StructureLocked}";
+                break;
+
+            case SaveAgentOutcome.NotConfirmedForLive:
+                // Nothing was stored. The form is back as it was entered, with the button that
+                // says so once more.
+                _confirmLive = true;
                 break;
         }
     }

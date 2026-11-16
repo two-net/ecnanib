@@ -9,9 +9,8 @@ namespace Ecnanib.Tests.Accounts;
 /// </summary>
 /// <param name="RecordedAs">The members that record it. Empty while it waits.</param>
 /// <param name="WaitsFor">
-/// What it waits for: the namespace of the component that will do the action,
-/// <see cref="AuditRules.LiveSwitch"/>, or <see cref="AuditRules.OperatorFunctions"/>. Null
-/// when it is recorded.
+/// What it waits for: the namespace of the component that will do the action, or
+/// <see cref="AuditRules.OperatorFunctions"/>. Null when it is recorded.
 /// </param>
 /// <param name="What">For an action that waits: what is to be recorded, and by whom.</param>
 internal sealed record AuditCoverage(IReadOnlyList<AuditAction> RecordedAs, string? WaitsFor, string? What)
@@ -33,14 +32,6 @@ internal sealed record AuditCoverage(IReadOnlyList<AuditAction> RecordedAs, stri
 /// </remarks>
 internal static class AuditRules
 {
-    /// <summary>
-    /// What the switches of an agent's mode wait for: the first type of Agents that asks for a
-    /// fresh proof of who its user is, which switching an agent to Live takes (FR-AGT-7). Agents
-    /// starts and stops agents, and switches none: every agent is in Demo. Nothing else of
-    /// Agents takes that proof.
-    /// </summary>
-    public const string LiveSwitch = "the switch of an agent to Live";
-
     /// <summary>
     /// What the actions of operators wait for: the first function that asks whether its user is
     /// an operator. They have no component of their own.
@@ -79,9 +70,11 @@ internal static class AuditRules
             AuditAction.AgentPaused,
             AuditAction.AgentStopped),
 
-        ["mode switches"] = AuditCoverage.Waiting(
-            LiveSwitch,
-            "Switching an agent between Demo and Live (FR-AGT-7)."),
+        // Switching an agent from Demo to Live, where it trades with real money, and back
+        // (FR-AGT-7). The event names the agent by its id.
+        ["mode switches"] = AuditCoverage.By(
+            AuditAction.AgentSwitchedToLive,
+            AuditAction.AgentSwitchedToDemo),
 
         // Closing a position by hand: with "Close position now", or as the agent is stopped
         // (FR-AGT-11, FR-AGT-12). Agents takes the request and records it, before the order.
@@ -108,22 +101,6 @@ internal static class AuditRules
         [AuditAction.PasswordChanged] =
             "A new password by a link from the mail is how an account is taken over by whoever reads that mail.",
     };
-
-    /// <summary>
-    /// The types of a namespace of an assembly that take a service: each that has a constructor
-    /// with a parameter of the service's type, public or not.
-    /// </summary>
-    public static IReadOnlyList<string> FindTakersOf(Type service, Assembly assembly, string @namespace) =>
-    [
-        .. from type in assembly.GetTypes()
-           where type.Namespace is { } name
-               && (name == @namespace || name.StartsWith(@namespace + ".", StringComparison.Ordinal))
-           where type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-               .SelectMany(constructor => constructor.GetParameters())
-               .Any(parameter => parameter.ParameterType == service)
-           orderby type.FullName
-           select type.FullName!,
-    ];
 
     /// <summary>
     /// The members of some types that take text, or anything at all, from whoever uses them:

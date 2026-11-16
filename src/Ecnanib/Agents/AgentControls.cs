@@ -34,14 +34,14 @@ internal sealed class AgentControls(
     TimeProvider clock,
     ILogger<AgentControls> logger) : IAgentControls
 {
-    public Task<AgentControlResult> StartAsync(HttpContext request, Guid agentId) =>
-        MoveAsync(request, agentId, AgentControl.Start, AgentStateCause.UserStarted, AuditAction.AgentStarted);
+    public Task<AgentControlResult> StartAsync(HttpContext request, Guid agentId, bool confirmedForLive) =>
+        MoveAsync(request, agentId, AgentControl.Start, AgentStateCause.UserStarted, AuditAction.AgentStarted, confirmedForLive);
 
-    public Task<AgentControlResult> PauseAsync(HttpContext request, Guid agentId) =>
-        MoveAsync(request, agentId, AgentControl.Pause, AgentStateCause.UserPaused, AuditAction.AgentPaused);
+    public Task<AgentControlResult> PauseAsync(HttpContext request, Guid agentId, bool confirmedForLive) =>
+        MoveAsync(request, agentId, AgentControl.Pause, AgentStateCause.UserPaused, AuditAction.AgentPaused, confirmedForLive);
 
-    public Task<AgentControlResult> ResumeAsync(HttpContext request, Guid agentId) =>
-        MoveAsync(request, agentId, AgentControl.Resume, AgentStateCause.UserResumed, AuditAction.AgentResumed);
+    public Task<AgentControlResult> ResumeAsync(HttpContext request, Guid agentId, bool confirmedForLive) =>
+        MoveAsync(request, agentId, AgentControl.Resume, AgentStateCause.UserResumed, AuditAction.AgentResumed, confirmedForLive);
 
     public async Task<StopAgentResult> StopAsync(HttpContext request, Guid agentId, PositionAtStop? choice)
     {
@@ -94,7 +94,7 @@ internal sealed class AgentControls(
             var now = clock.GetUtcNow();
             var origin = AuditOrigin.Of(request);
 
-            await AgentStateChanges.MoveAsync(context, userId, agentId, stopped, cause, now, cancellationToken);
+            await AgentStateChanges.MoveAsync(context, userId, agentId, agent.Mode, stopped, cause, now, cancellationToken);
 
             await AuditTrail.RecordAsync(
                 context, userId, AuditAction.AgentStopped, AuditTarget.Agent(agentId), now, origin, cancellationToken);
@@ -193,12 +193,12 @@ internal sealed class AgentControls(
             .ToListAsync(cancellationToken);
 
         return new AgentStateHistory(
-            [.. latest.Select(change => new AgentStateChangeView(change.State, change.Cause, change.ChangedAt))], total);
+            [.. latest.Select(change => new AgentStateChangeView(change.Mode, change.State, change.Cause, change.ChangedAt))], total);
     }
 
     /// <summary>Starts, pauses, or resumes an agent: the controls that ask nothing about a position.</summary>
     private async Task<AgentControlResult> MoveAsync(
-        HttpContext request, Guid agentId, AgentControl control, AgentStateCause cause, AuditAction action)
+        HttpContext request, Guid agentId, AgentControl control, AgentStateCause cause, AuditAction action, bool confirmedForLive)
     {
         var userId = SignedInUser.RequiredIdOf(request);
         var cancellationToken = request.RequestAborted;
@@ -228,6 +228,14 @@ internal sealed class AgentControls(
                 agent.State);
 
             return new AgentControlResult(AgentControlOutcome.NotOffered);
+        }
+
+        if (agent.Mode == TradingMode.Live && !confirmedForLive)
+        {
+            // The control would act on an agent that trades with real money, and its user was
+            // not asked once more (FR-UI-3). Decided under the lock, of the mode that the agent
+            // is in now: a form of a page that showed the agent in Demo does not start it in Live.
+            return new AgentControlResult(AgentControlOutcome.NotConfirmedForLive);
         }
 
         if (next == AgentState.Running)
@@ -264,7 +272,7 @@ internal sealed class AgentControls(
 
         var now = clock.GetUtcNow();
 
-        await AgentStateChanges.MoveAsync(context, userId, agentId, next, cause, now, cancellationToken);
+        await AgentStateChanges.MoveAsync(context, userId, agentId, agent.Mode, next, cause, now, cancellationToken);
 
         // Starting, pausing, and stopping an agent are money-relevant, and are recorded with
         // the change (NFR-LOG-7).
@@ -401,7 +409,7 @@ internal sealed class AgentKeyDependents(TimeProvider clock, ILogger<AgentKeyDep
         foreach (var agent in agents.Where(agent => AgentStates.NeedsItsKey(agent.State)))
         {
             await AgentStateChanges.MoveAsync(
-                context, userId, agent.Id, AgentState.AttentionRequired, cause, now, cancellationToken);
+                context, userId, agent.Id, environment, AgentState.AttentionRequired, cause, now, cancellationToken);
 
             // Stored when the change to the key is, and not when it is not: both are of the
             // transaction of whoever tells.

@@ -1,0 +1,148 @@
+@page "/agents/{Id:guid}/demo"
+@attribute [Authorize]
+@using Ecnanib.Agents
+@using Ecnanib.Shared
+@inject IStoredAgents Agents
+@inject IAgentModes Modes
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page switches an agent of
+    the user from Live back to Demo. It takes no proof of who the user is, and no key: no money
+    is at stake in Demo. The page asks once more instead. The agent is switched only while it is
+    a draft, or is stopped with no open position or orders, and only where its market has its
+    symbol in Demo, which SwitchToDemoAsync asks again under the lock. The form is on the page
+    whenever one is posted, whatever the agent is by then: a form that is sent twice finds the
+    agent in Demo the second time, and is answered as the first one was.
+*@
+
+@if (_agent is not null)
+{
+    <PageTitle>Switch the agent @_agent.Name to Demo</PageTitle>
+
+    <h1>Switch the agent @_agent.Name to Demo</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
+    @if (_notSwitched is not null)
+    {
+        <p class="form-error" role="alert">@_notSwitched</p>
+
+        @if (_symbolBlocks)
+        {
+            <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+        }
+    }
+
+    @if (_showForm)
+    {
+        <p>In Demo the agent trades in Binance's test environment, with your Binance key for Demo, and no money is at stake. Its state stays as it is: <strong>@AgentPages.Describe(_agent.State)</strong>. What it did in Live stays labeled as Live.</p>
+
+        <p>Switching it to Live again takes your confirmation of the risk, and a fresh proof of who you are.</p>
+
+        <form method="post" @formname="@AgentPages.SwitchToDemoForm" @onsubmit="SwitchAsync">
+            <AntiforgeryToken />
+
+            <button type="submit">Switch the agent to Demo</button>
+        </form>
+    }
+    else if (_notSwitched is null)
+    {
+        <p role="status">This agent is in Demo.</p>
+    }
+
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm ? "Keep the agent in Live" : "State of the agent")</a></p>
+}
+
+@code {
+    private AgentView? _agent;
+    private string? _notSwitched;
+    private bool _showForm;
+    private bool _symbolBlocks;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        if (!HttpMethods.IsGet(request.Request.Method))
+        {
+            // A form was posted, and is answered by SwitchAsync, whatever the agent is by now.
+            _showForm = true;
+
+            return;
+        }
+
+        // What stands in the way is said in place of the form. An agent that is in Demo already
+        // has nothing to switch.
+        if (await Modes.BlockOfAsync(request, Id, TradingMode.Demo) is { } block)
+        {
+            Say(block);
+
+            return;
+        }
+
+        _showForm = true;
+    }
+
+    private async Task SwitchAsync()
+    {
+        if (HttpContext is not { } request || _agent is null)
+        {
+            return;
+        }
+
+        var result = await Modes.SwitchToDemoAsync(request, Id);
+
+        switch (result.Outcome)
+        {
+            case ModeSwitchOutcome.Switched:
+                // The page that says what the agent is now. A reload of it switches nothing again.
+                Navigation.NavigateTo(WebUiModule.AgentStatePath(Id));
+                break;
+
+            case ModeSwitchOutcome.NotFound:
+                // The agent was deleted, on another browser, since the page was shown.
+                _agent = null;
+                Navigation.NotFound();
+                break;
+
+            default:
+                // Nothing was switched. The page says why, and has no form.
+                _showForm = false;
+                Say(result);
+                break;
+        }
+    }
+
+    /// <summary>Says what stands in the way, with where it is changed. An agent that is in Demo already is said as that.</summary>
+    private void Say(ModeSwitchResult block)
+    {
+        if (_agent is null || block.Outcome is ModeSwitchOutcome.Switched or ModeSwitchOutcome.NotFound)
+        {
+            return;
+        }
+
+        _notSwitched = AgentPages.Says(block, _agent, TradingMode.Demo);
+        _symbolBlocks = block.Outcome == ModeSwitchOutcome.SymbolNotOnMarket;
+    }
+}

@@ -1,0 +1,170 @@
+@page "/agents/{Id:guid}/confirm/{Control}"
+@attribute [Authorize]
+@using Ecnanib.Agents
+@using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Account
+@inject IStoredAgents Agents
+@inject IAgentControls Controls
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page asks once more
+    before an agent of the user is started, paused, or resumed: the path names which. The
+    controls of an agent in Live lead here, because each acts on trading with real money
+    (FR-UI-3), as stopping an agent and closing its position lead to pages of their own. The
+    form of this page is the answer to the question, so it tells StartAsync, PauseAsync, and
+    ResumeAsync that its user confirmed. The form is on the page whenever one is posted, whatever
+    state the agent is in by then: a form that is sent twice finds the agent where the first one
+    left it, and is answered as the first one was.
+*@
+
+@if (_agent is not null && _control is { } control)
+{
+    <PageTitle>@AgentPages.Describe(control) @_agent.Name</PageTitle>
+
+    <h1>@AgentPages.Describe(control) @_agent.Name</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
+    @if (_refused is not null)
+    {
+        <p class="form-error" role="alert">@_refused</p>
+
+        @if (_keyBlocks)
+        {
+            <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
+        }
+    }
+
+    @if (_showForm)
+    {
+        <p>@AgentPages.Explain(control)</p>
+
+        @if (_agent.Mode == TradingMode.Live)
+        {
+            <p><strong>@AgentPages.ActsOnLive</strong></p>
+        }
+
+        <form method="post" @formname="@AgentPages.FormOf(control)" @onsubmit="AnswerAsync">
+            <AntiforgeryToken />
+
+            <button type="submit">@AgentPages.Describe(control)</button>
+        </form>
+    }
+    else if (_refused is null)
+    {
+        <p role="status">@AgentPages.NotOffered(control, _agent.State)</p>
+    }
+
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm ? "Keep the agent as it is" : "State of the agent")</a></p>
+}
+
+@code {
+    private AgentView? _agent;
+    private AgentControl? _control;
+    private string? _refused;
+    private bool _showForm;
+    private bool _keyBlocks;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    /// <summary>The control that the path names: <c>start</c>, <c>pause</c>, or <c>resume</c>.</summary>
+    [Parameter]
+    public string? Control { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The control that the path names. A path that names none is no page.
+        _control = AgentPages.ControlNamed(Control);
+
+        if (_control is not { } control)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // A form that was posted is answered by AnswerAsync, whatever state the agent is in now.
+        _showForm = !HttpMethods.IsGet(request.Request.Method)
+            || AgentStates.After(_agent.State, control) is not null;
+    }
+
+    private async Task AnswerAsync()
+    {
+        if (HttpContext is not { } request || _agent is null || _control is not { } control)
+        {
+            return;
+        }
+
+        // The form of this page is what asks once more: its user confirmed by sending it.
+        var result = control switch
+        {
+            AgentControl.Start => await Controls.StartAsync(request, Id, confirmedForLive: true),
+            AgentControl.Pause => await Controls.PauseAsync(request, Id, confirmedForLive: true),
+            _ => await Controls.ResumeAsync(request, Id, confirmedForLive: true),
+        };
+
+        switch (result.Outcome)
+        {
+            case AgentControlOutcome.Done:
+                // The page that says what state the agent is in now. A reload of it sends no form again.
+                Navigation.NavigateTo(WebUiModule.AgentStatePath(Id));
+
+                return;
+
+            case AgentControlOutcome.NotFound:
+                // The agent was deleted, on another browser, since the page was shown.
+                _agent = null;
+                Navigation.NotFound();
+
+                return;
+
+            case AgentControlOutcome.KeyBlocks when result.Block is { } block:
+                // Names the permission that the key lacks, where that is what blocks (FR-KEY-5).
+                _refused = KeyPages.Says(block, _agent.Mode);
+                _keyBlocks = true;
+                break;
+
+            case AgentControlOutcome.AnotherAgentActive:
+                _refused = AgentPages.AnotherAgentActive(_agent);
+                break;
+        }
+
+        // Nothing changed. The page is shown as the agent is now, with why.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        if (_refused is null)
+        {
+            // The control is not offered in the state that the agent is in now.
+            _refused = AgentPages.NotOffered(control, _agent.State);
+            _showForm = false;
+        }
+    }
+}

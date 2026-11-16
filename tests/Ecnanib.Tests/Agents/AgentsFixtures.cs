@@ -6,6 +6,7 @@ using Ecnanib.Platform.Persistence;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Microsoft.AspNetCore.Hosting;
@@ -86,14 +87,15 @@ internal sealed record StoredAgent(
 }
 
 /// <summary>A row of the <c>agent_state_changes</c> table, read by a test directly.</summary>
-internal sealed record StoredAgentStateChange(Guid Id, Guid AgentId, Guid UserId, string State, string Cause, DateTimeOffset ChangedAt)
+internal sealed record StoredAgentStateChange(
+    Guid Id, Guid AgentId, Guid UserId, string Mode, string State, string Cause, DateTimeOffset ChangedAt)
 {
     /// <summary>Every change, in the order they were recorded in.</summary>
     public static IReadOnlyList<StoredAgentStateChange> All(TestDatabase database)
     {
         using var connection = database.Open();
         using var command = new NpgsqlCommand(
-            "SELECT id, agent_id, user_id, state, cause, changed_at FROM agent_state_changes ORDER BY changed_at, id",
+            "SELECT id, agent_id, user_id, mode, state, cause, changed_at FROM agent_state_changes ORDER BY changed_at, id",
             connection);
         using var reader = command.ExecuteReader();
 
@@ -106,7 +108,8 @@ internal sealed record StoredAgentStateChange(Guid Id, Guid AgentId, Guid UserId
                 reader.GetGuid(2),
                 reader.GetString(3),
                 reader.GetString(4),
-                reader.GetFieldValue<DateTimeOffset>(5)));
+                reader.GetString(5),
+                reader.GetFieldValue<DateTimeOffset>(6)));
         }
 
         return changes;
@@ -168,6 +171,31 @@ internal static class AgentBrowser
 
     /// <summary>The page that closes its open position.</summary>
     public static string ClosePositionPage(Guid agentId) => $"/agents/{agentId}/close-position";
+
+    /// <summary>The page that switches an agent to Live.</summary>
+    public static string SwitchToLivePage(Guid agentId) => $"/agents/{agentId}/live";
+
+    /// <summary>The page that switches it back to Demo.</summary>
+    public static string SwitchToDemoPage(Guid agentId) => $"/agents/{agentId}/demo";
+
+    /// <summary>
+    /// The page that asks once more before an agent is started, paused, or resumed:
+    /// <c>start</c>, <c>pause</c>, or <c>resume</c>.
+    /// </summary>
+    public static string ConfirmControlPage(Guid agentId, string control) => $"/agents/{agentId}/confirm/{control}";
+
+    /// <summary>The form that switches an agent to Live.</summary>
+    public const string SwitchToLiveForm = "switch-agent-to-live";
+
+    /// <summary>The form that switches it back to Demo.</summary>
+    public const string SwitchToDemoForm = "switch-agent-to-demo";
+
+    /// <summary>What the form that switches an agent to Live brings when the box that confirms the risk is ticked.</summary>
+    public static readonly (string Name, string Value) RiskConfirmed = ("Risk", "confirmed");
+
+    /// <summary>The badge of a mode, as a page writes it.</summary>
+    public static string Badge(TradingMode mode) =>
+        $"<span class=\"mode-badge mode-{mode.ToString().ToLowerInvariant()}\">{mode}</span>";
 
     /// <summary>
     /// What the form brings for an agent whose settings are all in order: within the bounds of
@@ -242,6 +270,38 @@ internal static class AgentBrowser
     /// <summary>Presses the button of the page that closes the open position of an agent.</summary>
     public static Task<(string Path, string Page)> ClosePositionAsync(this HttpClient client, Guid agentId) =>
         client.SubmitAsync(ClosePositionPage(agentId), ClosePositionForm);
+
+    /// <summary>
+    /// Ticks the box that confirms the risk on the page that switches an agent to Live, presses
+    /// its button, and follows where the answer leads. The page is shown to a user who has just
+    /// proved who they are, and whose agent nothing keeps in Demo.
+    /// </summary>
+    public static Task<(string Path, string Page)> SwitchToLiveAsync(this HttpClient client, Guid agentId) =>
+        client.SubmitAsync(SwitchToLivePage(agentId), SwitchToLiveForm, RiskConfirmed);
+
+    /// <summary>Presses the button of the page that switches an agent back to Demo.</summary>
+    public static Task<(string Path, string Page)> SwitchToDemoAsync(this HttpClient client, Guid agentId) =>
+        client.SubmitAsync(SwitchToDemoPage(agentId), SwitchToDemoForm);
+
+    /// <summary>
+    /// Presses the button of the page that asks once more before an agent is started, paused, or
+    /// resumed, as the user of an agent in Live does: <c>start</c>, <c>pause</c>, or <c>resume</c>.
+    /// </summary>
+    public static Task<(string Path, string Page)> ConfirmControlAsync(this HttpClient client, Guid agentId, string control) =>
+        client.SubmitAsync(ConfirmControlPage(agentId, control), $"{control}-agent");
+
+    /// <summary>
+    /// Gives the signed-in user a Binance key for Live that Binance takes, as a user does: they
+    /// prove who they are, and store the key on its page.
+    /// </summary>
+    public static async Task StoreLiveKeyAsync(this HttpClient client)
+    {
+        await client.ConfirmIdentityAsync();
+
+        var (path, page) = await client.StoreExchangeKeyAsync("live", Keys.BinanceApi, Keys.BinanceSecret);
+
+        Assert.True(path == KeyBrowser.KeysPage, $"The Live key was not stored:{Environment.NewLine}{page}");
+    }
 
     /// <summary>A page as a person reads it: with the characters that the markup writes as numbers.</summary>
     public static string Read(string page) => WebUtility.HtmlDecode(page);
@@ -441,7 +501,7 @@ internal static class StoredAgentRows
             cause,
             stateChangedAt: at,
             createdAt: at));
-        context.Add(new AgentStateChange(Guid.CreateVersion7(), id, userId, state, cause, at));
+        context.Add(new AgentStateChange(Guid.CreateVersion7(), id, userId, mode, state, cause, at));
 
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 

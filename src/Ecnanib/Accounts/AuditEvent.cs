@@ -91,6 +91,16 @@ public enum AuditAction
     /// it is asked for, before the order: what places the order records nothing here.
     /// </summary>
     AgentPositionCloseRequested,
+
+    /// <summary>
+    /// The user switched an agent from Demo to Live, where it trades with real money: with a
+    /// valid Live key, a risk confirmation, and a fresh proof of who they are (FR-AGT-7). The
+    /// target names the agent by its id.
+    /// </summary>
+    AgentSwitchedToLive,
+
+    /// <summary>The user switched an agent from Live back to Demo.</summary>
+    AgentSwitchedToDemo,
 }
 
 /// <summary>

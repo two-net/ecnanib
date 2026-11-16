@@ -1,6 +1,7 @@
 @page "/agents/{Id:guid}/state"
 @attribute [Authorize]
 @using Ecnanib.Agents
+@using Ecnanib.Shared
 @using Ecnanib.WebUi.Pages.Account
 @inject IStoredAgents Agents
 @inject IAgentControls Controls
@@ -12,9 +13,13 @@
     changes of its state with their causes and times (FR-AGT-10, NFR-USA-2). Its forms start,
     pause, and resume the agent: each is offered in the states that AgentStates.After names, and
     what a form asks for is decided again on the server, under the lock, by IAgentControls.
-    Stopping the agent and closing its position each have a page that asks once more. When a
-    form is posted, all three forms are on the page: a form that is not there cannot be
-    answered, and one that is sent twice finds the agent in another state the second time.
+    Stopping the agent and closing its position each have a page that asks once more. For an
+    agent in Live, starting, pausing, and resuming lead to a page that asks once more as well,
+    and a form that is posted here all the same changes nothing: StartAsync, PauseAsync, and
+    ResumeAsync are told that nobody was asked (FR-UI-3). When a form is posted, all three forms
+    are on the page: a form that is not there cannot be answered, and one that is sent twice
+    finds the agent in another state the second time. The badge of the mode is under the
+    heading, and each change of the state says the mode it happened in (FR-BIN-11).
 *@
 
 @if (_agent is not null)
@@ -22,6 +27,8 @@
     <PageTitle>State of the agent @_agent.Name</PageTitle>
 
     <h1>State of the agent @_agent.Name</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> The agent trades <code>@_agent.Symbol</code> on @_agent.Market in @KeyPages.Describe(_agent.Mode).</p>
 
     @if (_refused is not null)
     {
@@ -32,8 +39,6 @@
             <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
         }
     }
-
-    <p>Mode: <strong>@_agent.Mode</strong>. The agent trades <code>@_agent.Symbol</code> on @_agent.Market in @KeyPages.Describe(_agent.Mode).</p>
 
     <p>State: <strong>@AgentPages.Describe(_agent.State)</strong>, since @PageTimes.At(_agent.StateChangedAt). @AgentPages.Explain(_agent.State)</p>
 
@@ -53,6 +58,13 @@
                 <button type="submit">@AgentPages.Describe(control)</button>
             </form>
         }
+        else if (AsksFirst(control))
+        {
+            @* In Live: the control leads to the page that asks once more, as stopping does. *@
+            <p>@AgentPages.Explain(control)</p>
+
+            <p><a href="@WebUiModule.ConfirmAgentControlPath(_agent.Id, control)">@AgentPages.Describe(control)</a></p>
+        }
     }
 
     @if (AgentStates.After(_agent.State, AgentControl.Stop) is not null)
@@ -67,6 +79,30 @@
         <p>The agent has an open position. You can close it at any time, at the market price, in whatever state the agent is.</p>
 
         <p><a href="@WebUiModule.CloseAgentPositionPath(_agent.Id)">@AgentPages.ClosePositionNow</a></p>
+    }
+
+    <h2>Mode</h2>
+
+    @if (_agent.Mode == TradingMode.Demo)
+    {
+        <p>In Demo the agent trades in Binance's test environment, and no money is at stake. In Live it trades in your real Binance account, with real money.</p>
+    }
+    else
+    {
+        <p>In Live the agent trades in your real Binance account, with real money. In Demo it trades in Binance's test environment, and no money is at stake.</p>
+    }
+
+    @if (!_agent.StructureCanChange)
+    {
+        <p role="note">@AgentPages.ModeLocked</p>
+    }
+    else if (_agent.Mode == TradingMode.Demo)
+    {
+        <p><a href="@WebUiModule.SwitchAgentToLivePath(_agent.Id)">Switch the agent to Live</a></p>
+    }
+    else
+    {
+        <p><a href="@WebUiModule.SwitchAgentToDemoPath(_agent.Id)">Switch the agent to Demo</a></p>
     }
 
     @if (_history is not null)
@@ -89,6 +125,7 @@
                 <thead>
                     <tr>
                         <th scope="col">When</th>
+                        <th scope="col">Mode</th>
                         <th scope="col">State</th>
                         <th scope="col">Why</th>
                     </tr>
@@ -98,6 +135,7 @@
                     {
                         <tr>
                             <td>@PageTimes.At(change.ChangedAt)</td>
+                            <td><ModeBadge Mode="@change.Mode" /></td>
                             <td>@AgentPages.Describe(change.State)</td>
                             <td>@AgentPages.Says(change.Cause)</td>
                         </tr>
@@ -155,11 +193,13 @@
             return;
         }
 
+        // A form of this page is one press: nobody was asked once more. So it changes nothing
+        // of an agent in Live, whatever mode the page showed the agent in.
         var result = control switch
         {
-            AgentControl.Start => await Controls.StartAsync(request, Id),
-            AgentControl.Pause => await Controls.PauseAsync(request, Id),
-            _ => await Controls.ResumeAsync(request, Id),
+            AgentControl.Start => await Controls.StartAsync(request, Id, confirmedForLive: false),
+            AgentControl.Pause => await Controls.PauseAsync(request, Id, confirmedForLive: false),
+            _ => await Controls.ResumeAsync(request, Id, confirmedForLive: false),
         };
 
         switch (result.Outcome)
@@ -175,6 +215,12 @@
                 // The agent was deleted, on another browser, since the page was shown.
                 _agent = null;
                 Navigation.NotFound();
+
+                return;
+
+            case AgentControlOutcome.NotConfirmedForLive:
+                // The agent is in Live, and nothing was done: the page that asks once more.
+                Navigation.NavigateTo(WebUiModule.ConfirmAgentControlPath(Id, control));
 
                 return;
 
@@ -211,6 +257,14 @@
         return _agent is not null;
     }
 
+    /// <summary>
+    /// Whether the page has the one-press form of a control: for an agent in Demo, in the states
+    /// that the control is offered in, and whenever a form was posted.
+    /// </summary>
     private bool Shows(AgentControl control) =>
-        _posted || (_agent is not null && AgentStates.After(_agent.State, control) is not null);
+        _posted || (_agent is { Mode: TradingMode.Demo } && AgentStates.After(_agent.State, control) is not null);
+
+    /// <summary>Whether a control leads to the page that asks once more: for an agent in Live, in the states that it is offered in.</summary>
+    private bool AsksFirst(AgentControl control) =>
+        _agent is { Mode: TradingMode.Live } && AgentStates.After(_agent.State, control) is not null;
 }

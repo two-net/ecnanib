@@ -1,4 +1,5 @@
 using Ecnanib.Credentials;
+using Ecnanib.Shared;
 
 namespace Ecnanib.Agents;
 
@@ -26,19 +27,31 @@ public interface IAgentControls
     /// (FR-KEY-5), and so does another active agent of the user for the same credential, market,
     /// and symbol (FR-AGT-9).
     /// </summary>
-    Task<AgentControlResult> StartAsync(HttpContext request, Guid agentId);
+    /// <param name="request">The request of the signed-in user.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="confirmedForLive">
+    /// Whether the user was asked once more, and confirmed. It counts for an agent in Live, which
+    /// trades with real money: no control acts on one without it (FR-UI-3).
+    /// </param>
+    Task<AgentControlResult> StartAsync(HttpContext request, Guid agentId, bool confirmedForLive);
 
     /// <summary>
     /// Pauses an agent that runs: it runs no cycle and opens no position. An open position stays
     /// open with its protective orders.
     /// </summary>
-    Task<AgentControlResult> PauseAsync(HttpContext request, Guid agentId);
+    /// <param name="request">The request of the signed-in user.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="confirmedForLive">Whether the user was asked once more, and confirmed. It counts for an agent in Live.</param>
+    Task<AgentControlResult> PauseAsync(HttpContext request, Guid agentId, bool confirmedForLive);
 
     /// <summary>
     /// Resumes an agent that is paused, is halted, or requires attention: it runs again. What
     /// blocks a start as far as the credential goes blocks this as well.
     /// </summary>
-    Task<AgentControlResult> ResumeAsync(HttpContext request, Guid agentId);
+    /// <param name="request">The request of the signed-in user.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="confirmedForLive">Whether the user was asked once more, and confirmed. It counts for an agent in Live.</param>
+    Task<AgentControlResult> ResumeAsync(HttpContext request, Guid agentId, bool confirmedForLive);
 
     /// <summary>
     /// Stops an agent that was started. When it has an open position, its user chooses whether
@@ -85,6 +98,12 @@ public enum AgentControlOutcome
     /// (FR-AGT-9). Nothing changed.
     /// </summary>
     AnotherAgentActive,
+
+    /// <summary>
+    /// The agent is in Live, and its user was not asked once more before the control (FR-UI-3).
+    /// Nothing changed.
+    /// </summary>
+    NotConfirmedForLive,
 }
 
 /// <summary>What starting, pausing, or resuming an agent gave.</summary>
@@ -152,7 +171,8 @@ public sealed record AgentStateHistory(IReadOnlyList<AgentStateChangeView> Chang
 }
 
 /// <summary>One change of the state of an agent.</summary>
+/// <param name="Mode">The mode the agent was in when its state changed (FR-BIN-11).</param>
 /// <param name="State">The state the agent came to.</param>
 /// <param name="Cause">Why it did.</param>
 /// <param name="ChangedAt">When it did.</param>
-public sealed record AgentStateChangeView(AgentState State, AgentStateCause Cause, DateTimeOffset ChangedAt);
+public sealed record AgentStateChangeView(TradingMode Mode, AgentState State, AgentStateCause Cause, DateTimeOffset ChangedAt);

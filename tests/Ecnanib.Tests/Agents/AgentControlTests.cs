@@ -185,7 +185,8 @@ public class AgentControlTests
             exported.Select(change => $"{change.GetProperty("state").GetString()} {change.GetProperty("cause").GetString()}"));
         Assert.All(exported, change =>
         {
-            Assert.Equal(["agentId", "state", "cause", "changedAt"], change.EnumerateObject().Select(property => property.Name));
+            Assert.Equal(["agentId", "mode", "state", "cause", "changedAt"], change.EnumerateObject().Select(property => property.Name));
+            Assert.Equal("Demo", change.GetProperty("mode").GetString());
             Assert.Equal(agent.Id, change.GetProperty("agentId").GetGuid());
         });
         Assert.Equal(Morning.AddMinutes(4), exported[^1].GetProperty("changedAt").GetDateTimeOffset());
@@ -497,6 +498,7 @@ public class AgentControlTests
                     Guid.CreateVersion7(Morning.AddMinutes(minute)),
                     agent,
                     user.Id,
+                    TradingMode.Demo,
                     minute % 2 == 1 ? AgentState.Running : AgentState.Paused,
                     minute % 2 == 1 ? AgentStateCause.UserResumed : AgentStateCause.UserPaused,
                     Morning.AddMinutes(minute)));
@@ -615,15 +617,24 @@ public class AgentControlTests
     }
 
     /// <summary>The changes of a state that a page lists, in the order of the page: when, the state, and why.</summary>
-    internal static IReadOnlyList<(string When, string State, string Why)> ChangesOn(string page)
+    internal static IReadOnlyList<(string When, string State, string Why)> ChangesOn(string page) =>
+        [.. RowsOfChangesOn(page).Select(row => (row.Groups[1].Value, row.Groups[3].Value, row.Groups[4].Value))];
+
+    /// <summary>The mode that a page says for each change of a state, in the order of the page: the word of its badge.</summary>
+    internal static IReadOnlyList<string> ModesOfChangesOn(string page) =>
+        [.. RowsOfChangesOn(page).Select(row => Regex.Replace(row.Groups[2].Value, "<[^>]+>", string.Empty).Trim())];
+
+    /// <summary>The rows of the table of changes on a page: when, the mode, the state, and why.</summary>
+    private static IReadOnlyList<Match> RowsOfChangesOn(string page)
     {
         var table = Regex.Match(page, "<caption>State changes</caption>.*?</table>", RegexOptions.Singleline);
         Assert.True(table.Success, $"The page lists no changes of a state:{Environment.NewLine}{page}");
 
-        return
-        [
-            .. Regex.Matches(table.Value, @"<tr>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*</tr>", RegexOptions.Singleline)
-                .Select(row => (row.Groups[1].Value, row.Groups[2].Value, row.Groups[3].Value)),
-        ];
+        return Regex
+            .Matches(
+                table.Value,
+                @"<tr>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*</tr>",
+                RegexOptions.Singleline)
+            .ToList();
     }
 }

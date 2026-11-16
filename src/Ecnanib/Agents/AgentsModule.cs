@@ -19,6 +19,9 @@ public static class AgentsModule
         // (FR-AGT-1, FR-AGT-10 to FR-AGT-12).
         services.AddSingleton<IAgentControls, AgentControls>();
 
+        // What switches an agent between Demo and Live (FR-AGT-7).
+        services.AddSingleton<IAgentModes, AgentModes>();
+
         // What Credentials tells when a key is deleted or refused: an agent that runs with it
         // moves to Attention required (FR-KEY-10).
         services.AddSingleton<IKeyDependents, AgentKeyDependents>();

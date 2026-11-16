@@ -4,7 +4,9 @@ A user creates, changes, copies, and deletes agents, and no user has two agents 
 
 A user starts, pauses, resumes, and stops an agent, and the agent follows the states of the specification (FR-AGT-1, SRS 3.3). Every change of its state is recorded with its cause and its time, and shown (FR-AGT-10). A user who stops an agent that has an open position chooses whether the position is closed at market or kept with its protective orders (FR-AGT-11), and can close the position of an agent at any time (FR-AGT-12).
 
-Agents keeps the settings and the state of agents. It runs no cycle and places no order: nothing does yet. Nothing switches an agent to Live, and no role of its team is given a model. So every agent is in Demo, and an agent that runs does nothing more than be in that state. What an agent holds on the exchange is asked of whatever keeps positions and orders, which is not built: see "What an agent holds".
+A new agent is in Demo. Its user switches it to Live with a valid Live Binance key, a confirmation of the risk, and a fresh proof of who they are, and the switch is recorded in the audit trail (FR-AGT-7). Every page of an agent shows a Demo or Live badge, and every action that affects Live trading asks for confirmation (FR-UI-3). What an agent did in Demo stays labeled as Demo, and is never combined with what it does in Live (FR-BIN-11).
+
+Agents keeps the settings, the state, and the mode of agents. It runs no cycle and places no order: nothing does yet. No role of its team is given a model. So an agent that runs does nothing more than be in that state. What an agent holds on the exchange is asked of whatever keeps positions and orders, which is not built: see "What an agent holds".
 
 The code is in `src/Ecnanib/Agents`, and the pages in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Agents`.
 
@@ -15,7 +17,7 @@ Whose rows a request reaches is in [ownership.md](ownership.md). The fair-use li
 | Setting | What it is | Rule |
 |---|---|---|
 | Name | What its user calls the agent. | 1 to 60 characters, in one line. Spaces around it are dropped. **A user has no two agents of one name** (FR-AGT-1). Names are compared as they are written: `Swing` and `swing` are two names. Another user may use the same name. |
-| Mode | Demo, which is Binance's test environment, or Live. | **A new agent is in Demo.** The page shows the mode and offers no choice of it: the switch to Live is not built. |
+| Mode | Demo, which is Binance's test environment, or Live, which is the real Binance account of the user. | **A new agent is in Demo** (FR-AGT-7). The form shows the mode, as its badge, and offers no choice of it: the mode is switched on a page of its own. See "The mode". |
 | Market | Spot or Futures (FR-AGT-4). | One of the two. It sets the exchange interface, the allowed actions, and the prompt variant: see "What goes by the timeframe and the market". |
 | Symbol | The one symbol the agent trades. | One of `Binance:Symbols` that the chosen market has in the agent's environment (FR-AGT-6). See "The symbols". |
 | Timeframe | 15m, 1H, 4H, or 1D (FR-AGT-3). | One of the four, by its code. The form has no default: its user chooses. |
@@ -53,7 +55,7 @@ Task<IReadOnlyList<MarketSymbols>> SymbolsAsync(TradingMode mode, CancellationTo
 ```
 
 - **The exchange says which symbols a market has,** through `IExchangeMarketData.GetSymbolsAsync`, which answers with the symbols of the file that the market has in an environment, each with the asset that it is priced in. Its answer is shared and kept for an hour: see "Symbols" in [exchange.md](exchange.md).
-- **It is asked about the agent's own environment.** A new agent is in Demo, so its symbol is one that the market has in Binance's test environment.
+- **It is asked about the agent's own environment.** A new agent is in Demo, so its symbol is one that the market has in Binance's test environment. An agent in Live is offered the symbols that its market has in Live, and an agent is switched only to an environment whose market has its symbol: see "The mode".
 - **The list follows the market.** A page is not interactive. The form has a second button, "Show the symbols of this market", which stores nothing: the form comes back with the symbols of the market that is chosen, and with everything else as it was entered.
 - **A symbol that the chosen market lacks is refused on the server,** whatever the form offered, and so is one that the file does not list.
 - **Nothing is saved while the exchange gives no answer.** The form says that no symbol can be chosen now, and a form that is posted all the same stores nothing: a symbol is not taken on trust.
@@ -97,7 +99,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | **The market, the symbol, and the timeframe change only while the agent is in `Draft`, or is `Stopped` with no open position or orders** (FR-AGT-8). | `AgentStates.StructureCanChange`, asked under the lock, of the state that the agent has then. The page shows the three as they are, with why, and offers no choice of them. A form that brings another all the same is refused, and nothing of it is stored. |
 | The name, the capital, and the risk settings change in any state. | A change applies from the next cycle. |
 | **An agent is deleted while it is in `Draft`, or is `Stopped` with no open position or orders.** | An active agent is stopped first. |
-| The mode goes by the same rule as the market. | What switches an agent to Live asks `AgentStates.StructureCanChange` when it is built. |
+| **The mode goes by the same rule as the market** (FR-AGT-8). | `IAgentModes` asks `AgentStates.StructureCanChange` under the lock, in either direction. See "The mode". |
 
 ### The controls
 
@@ -117,11 +119,11 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 - **A draft is not stopped:** it was never started. It is deleted.
 - **A stopped agent is started again.** Its market, symbol, and timeframe can be changed before, while it holds nothing.
 - A halted agent is resumed by its user. What halts an agent says with its cause when the agent may be resumed, when it is built: a daily loss limit halts until the next UTC day (FR-RSK-8).
-- Starting an agent in Demo takes no proof of who the user is, and no page asks once more: no agent is in Live.
+- **A control of an agent in Live asks once more** (FR-UI-3). Starting, pausing, and resuming an agent in Demo are one press, and none takes a proof of who the user is in either mode: the switch to Live took it. See "Asking once more in Live".
 
 ### The changes of a state
 
-**The state of an agent is written in one place,** `AgentStateChanges.MoveAsync`, inside the transaction of whatever changes it. It writes the state, its cause, and the time to the row of the agent, and records a change with the same three in `agent_state_changes`. So the row of an agent and the latest of its changes say the same. It refuses a context that holds no transaction.
+**The state of an agent is written in one place,** `AgentStateChanges.MoveAsync`, inside the transaction of whatever changes it. It writes the state, its cause, and the time to the row of the agent, and records a change with the same three in `agent_state_changes`, with the mode that the agent is in. So the row of an agent and the latest of its changes say the same. It refuses a context that holds no transaction.
 
 - **An agent has a history from when it is created.** Creating an agent and copying one store its first change, with the cause `Created`. A copy starts a history of its own.
 - **The cause is a member of `AgentStateCause`,** stored by its name, and shown in words by `AgentPages.Says`:
@@ -136,7 +138,8 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `ExchangeKeyDeleted`, `ExchangeKeyInvalid` | The Binance key of its mode was deleted, or refused by Binance, while it ran. |
 
 - What changes the state of an agent adds the members of its causes when it is built.
-- **The changes are shown on the page of the agent's state,** latest first, each with its time, its state, and its cause in words. A page shows the latest 50, and says so when there are more. `IAgentControls.HistoryAsync` reads them.
+- **A change says the mode that the agent was in when it happened,** and keeps saying it when the agent is switched (FR-BIN-11). A switch of the mode is no change of the state, and has no cause: the audit trail has it. See "Demo is labeled as Demo".
+- **The changes are shown on the page of the agent's state,** latest first, each with its time, its mode, its state, and its cause in words. A page shows the latest 50, and says so when there are more. `IAgentControls.HistoryAsync` reads them.
 - The id of a change starts with a time in milliseconds, and each one that is handed out is of a later millisecond than the one before. So the changes of one agent are in order also when the clock gives two of them the same time.
 - The changes of an agent are deleted with it, and those of an account with the account. They are in the export of a user's data, as the section `agentStateChanges`.
 
@@ -202,6 +205,72 @@ Credentials tells whatever depends on a key when the key is deleted or turns out
 - The user resumes the agent once a valid key is stored. Until then the resume is blocked, with the message that says what is wrong with the key.
 - **No agent depends on a key of an AI provider yet,** because no agent is given a model. `AgentKeyDependentsTests` has a test that fails as soon as one is.
 
+## The mode
+
+An agent is in Demo, which is Binance's test environment with no real funds, or in Live, which is the real Binance account of its user. `IAgentModes` switches it, for the user who is signed in on the request:
+
+| Operation | What it does |
+|---|---|
+| `SwitchToLiveAsync` | Switches an agent from Demo to Live, with a valid Live key, the confirmation of the risk, and a fresh proof of who the user is (FR-AGT-7). |
+| `SwitchToDemoAsync` | Switches an agent from Live back to Demo. It takes neither a key, nor a confirmation, nor a proof: no money is at stake in Demo. |
+| `BlockOfAsync` | Says what stands in the way of a switch now, apart from the confirmation and the proof, for a page to say before it asks for either. It switches nothing. |
+
+- **A new agent is in Demo, and so is a copy** (FR-AGT-7). `AgentEntry` has no mode: a form that brings one all the same is not read.
+- **The mode is switched only while the agent is in `Draft`, or is `Stopped` with no open position or orders** (FR-AGT-8): the rule of the market, `AgentStates.StructureCanChange`, asked under the lock. So no agent changes its environment while it runs or holds anything, and a switch never meets the index of FR-AGT-9, which is over the active rows.
+- **The state of the agent stays as it is.** A switch starts nothing: its user starts the agent, in the mode that it is in then.
+- **A switch is one transaction, which starts by locking the row of the account,** as the controls do. Everything that a switch takes is asked under the lock, whatever a page showed or asked.
+- **The symbol is held to the market of the new environment** (FR-AGT-6). A market has symbols of its own in each environment. The exchange is asked which before the transaction, about both markets, so that the answer covers the agent as it is found under the lock. An agent whose symbol the market lacks there is not switched, and neither is one while the exchange gives no answer. The asset that the symbol is priced in there is stored with the switch.
+- **A form that is sent twice is answered as the first one was.** It finds the agent in the mode that was asked for, whatever became of the agent since, and records nothing again.
+- A switch is recorded in the audit trail: see "The audit trail".
+
+### The switch to Live
+
+In Live an agent trades with real money, so `SwitchToLiveAsync` asks for more. It asks in this order, the first that fails is the answer, and nothing is switched then:
+
+| What it asks | The answer when it fails |
+|---|---|
+| The agent is a draft, or is stopped with nothing open. | `StructureLocked` |
+| **A valid Live key that may trade on the market of the agent.** `IKeyValidation.BlockForAsync` of Credentials says so for the Live environment, from what the last check of the key recorded: it is what a start asks. A key that lacks the permission of the agent's market stands in the way as well, because the agent could not start with it. | `KeyBlocks`, with the block |
+| The market of the agent has its symbol in Live. | `SymbolsUnknown`, `SymbolNotOnMarket` |
+| **A fresh proof of who the user is** (FR-ACC-4). `IReauthentication.IsRecentAsync` of Accounts says so for `SensitiveAction.SwitchAgentToLive`, inside the transaction. | `ProofNeeded` |
+| **The confirmation of the risk.** The form has a box for it, which is never ticked for its user. | `RiskNotConfirmed` |
+
+- **The page says first what stands in the way, and asks for nothing then:** an agent that is not a draft and not stopped with nothing open, what is wrong with the Live key, with a link to the keys, and a symbol that the market lacks in Live, with a link to the settings. `AgentPages.Says` has the texts. There is nothing to do with a proof while one of them holds.
+- **Otherwise the page is shown to a user who has just proved who they are, and to nobody else.** It sends anyone else to `/confirm-identity`, and from there back, as the pages of the keys do. A form that is posted without the proof switches nothing, and leads there as well. See "Re-authentication" in [accounts.md](accounts.md).
+- The page says what is at stake in plain language, with `AgentPages.LiveRisks`, and leads to the risk disclosure (NFR-LEG-1).
+- **The confirmation is not stored on its own.** No agent is switched without it, so the event of the switch in the audit trail stands for it.
+
+### The badge
+
+**Every page of an agent shows the badge of its mode under its heading** (FR-UI-3). `ModeBadge` says `Demo` or `Live` as a word, and does not rely on its colour: its look is in `app.css`. The list has the badge in the row of each agent, and the form that creates an agent has the one of Demo. `AgentModeBadgeTests` asks every route of `Ecnanib.WebUi.Pages.Agents`, so a page that is added fails it until it shows the badge.
+
+### Asking once more in Live
+
+**Every action that affects Live trading asks for confirmation** (FR-UI-3):
+
+| Action on an agent in Live | How it asks |
+|---|---|
+| Start, pause, resume | The page of the state has no button for them. Each leads to `/agents/<id>/confirm/<control>`, which says what the control does and that it acts on the real account, and has the button. |
+| Stop, "Close position now" | Each has a page that asks once more, in either mode. For an agent in Live it says that it acts on the real account. |
+| A change to the capital or to a risk setting | Nothing is stored at first. The form comes back as it was entered, says that the agent is in Live, and has the button "Save for Live". |
+| The switch to Live | The box that confirms the risk. |
+
+- **What asks is decided on the server, under the lock, of the mode that the agent is in then.** `StartAsync`, `PauseAsync`, `ResumeAsync`, and `SaveAsync` take `confirmedForLive`, and answer `NotConfirmedForLive` for an agent in Live without it. So the one-press form of a page that showed the agent in Demo starts nothing in Live: it leads to the page that asks.
+- A form that is sent twice is answered before that: the agent is where the control leads already.
+- A new name is not asked about, and neither is a form that brings the settings as they are.
+- **Stopping an agent and closing its position take no such answer.** Their pages ask in either mode, and neither meets an agent whose mode changed under it: a switch takes an agent that is stopped and holds nothing.
+- An agent in Demo is started, paused, and resumed with one press. The page that asks once more is there for it all the same.
+- Deleting an agent asks once more in either mode, and affects no trading: an agent is deleted only while it is a draft, or is stopped with nothing open.
+- Deleting and replacing the Live key have pages of their own, in Credentials. Checking a key again is one press: what the check finds is the service's doing, and no action of the user on Live trading.
+
+### Demo is labeled as Demo
+
+**What an agent did is stored with the mode it did it in, row by row, and is never read through the mode that the agent is in now** (FR-BIN-11). So what an agent did in Demo stays Demo after it is switched to Live, and is not combined with what it does there.
+
+- **A change of the state says its mode:** `agent_state_changes.mode`, written by `AgentStateChanges.MoveAsync` with the mode that the agent is in under the lock. The page of the state shows it for each change, as a badge, and the export has it.
+- **No results are stored yet:** no trade, no position, and no profit or loss. What stores them gives each row its mode. `AgentsRulesTests` fails for a table that has rows of an agent and no column `mode`, unless `AgentsRules.AgentRowsWithoutMode` lists it with why nothing in it is a result.
+- **Nothing is added up over both modes.** What counts the agents of a user counts them whatever their mode: the fair-use limit, and whether an account has an active agent. Neither is a result.
+
 ## Creating, changing, copying, and deleting
 
 `IStoredAgents` does all four, for the user who is signed in on the request.
@@ -209,13 +278,13 @@ Credentials tells whatever depends on a key when the key is deleted or turns out
 | Operation | What it does |
 |---|---|
 | `CreateAsync` | Stores a new agent, in Demo and in `Draft`, with the first change of its state. |
-| `SaveAsync` | Changes the settings of an agent, and neither its state nor its mode. |
-| `CloneAsync` | Stores a copy of an agent, with its market, symbol, timeframe, capital, and risk settings. **A copy is a new agent:** in Demo and in `Draft`, whatever the agent it was made from is, and created when it was copied. Its name is "Copy of" and the name of the agent, with a number after it when that name is taken, cut to the length of a name. The answer is the page of the copy, where it is given a name of its own. |
+| `SaveAsync` | Changes the settings of an agent, and neither its state nor its mode. A change to the capital or to a risk setting of an agent in Live is stored only once its user was asked once more: see "Asking once more in Live". |
+| `CloneAsync` | Stores a copy of an agent, with its market, symbol, timeframe, capital, and risk settings. **A copy is a new agent:** in Demo and in `Draft`, whatever the agent it was made from is, and created when it was copied. Its name is "Copy of" and the name of the agent, with a number after it when that name is taken, cut to the length of a name. The answer is the page of the copy, where it is given a name of its own. **An agent in Live is copied only where its market has its symbol in Demo as well:** the exchange is asked before the transaction, the copy is priced in the asset of the symbol there, and the list says why nothing was copied when the market lacks it or the exchange gives no answer. An agent in Demo is copied without a question to the exchange. |
 | `DeleteAsync` | Deletes an agent, at once and for good. It takes no proof of who the user is: it exposes no key and moves no money. The page asks once more instead, and offers to keep the agent. |
 
 - **A user who may create no agent is told that first,** before anything that was entered is looked at. `IFairUse.MayCreateAgentAsync` of Accounts says whether the address is verified and whether the user has `Limits:MaxAgentsPerUser` agents already. The list and the page of the form say why, and have no form. A copy is one more agent, and counts as one.
 - **Every change is one transaction, which starts by locking the row of the account,** as what changes a key does, and as the controls of an agent do. So two changes to the agents of one user happen one after the other, and what one read under the lock holds until it ends: how many agents the user has, which names are taken, and what state an agent is in. The deletion of the account takes the stronger lock of a deletion, so no agent is created or started in an account that is being deleted.
-- **The exchange is asked before the transaction, and never inside it.** A call that waits for the exchange would hold the lock for as long. What may have changed meanwhile is asked again under the lock.
+- **The exchange is asked before the transaction, and never inside it.** A call that waits for the exchange would hold the lock for as long. What may have changed meanwhile is asked again under the lock. An agent whose mode was switched while the exchange was asked is not saved: what was asked about its symbol was asked of the other environment. The page says to try again.
 - **A form that is sent twice is answered as the first one was.** Deleting where no agent is deletes nothing, and leads to the list.
 - **An agent of another user is not found:** its pages answer "not found", as for an agent that does not exist, and a form that is posted at them changes nothing. See [ownership.md](ownership.md).
 
@@ -225,14 +294,18 @@ The pages are rendered on the server for each request, and none is interactive. 
 
 | Page | What it is |
 |---|---|
-| `/agents` | The agents of the user, oldest first: name, mode, market, symbol, timeframe, capital, and state. It says how many agents the user has of how many an account can have, and leads to the form unless the user may create none. Each agent has a link to the page of its state, a button that copies it, and a link to the page that deletes it, and an agent that has an open position has "Close position now". Under the table it says what each state means. |
+| `/agents` | The agents of the user, oldest first: name, mode as its badge, market, symbol, timeframe, capital, and state. It says how many agents the user has of how many an account can have, and leads to the form unless the user may create none. Each agent has a link to the page of its state, a button that copies it, and a link to the page that deletes it, and an agent that has an open position has "Close position now". Under the table it says what each state means. |
 | `/agents/new` | The form that creates an agent. |
-| `/agents/<id>` | The same form, with the settings of the agent. It says the state, and leads to the page of the state. |
-| `/agents/<id>/state` | The state of the agent, since when, what it means, and why the agent is in it. The buttons that start, pause, and resume the agent, each in the states that it is offered in, a link to the page that stops it, and "Close position now" when it has an open position. The changes of its state, latest first. |
+| `/agents/<id>` | The same form, with the settings of the agent. It says the state, and leads to the page of the state and to the page that switches the mode. For an agent in Live it asks once more before a change to the capital or to a risk setting is stored. |
+| `/agents/<id>/state` | The state of the agent, since when, what it means, and why the agent is in it. The buttons that start, pause, and resume the agent, each in the states that it is offered in, a link to the page that stops it, and "Close position now" when it has an open position. For an agent in Live, links to the page that asks once more stand in place of the three buttons. A link to the page that switches the mode, or when the mode can be switched. The changes of its state, latest first, each with its mode. |
+| `/agents/<id>/confirm/<control>` | The page that asks once more before the agent is started, paused, or resumed: `start`, `pause`, or `resume`. Another name is no page. |
+| `/agents/<id>/live` | The page that switches the agent to Live: what stands in the way, or what is at stake, the box that confirms the risk, and the button. It is shown to a user who has just proved who they are. |
+| `/agents/<id>/demo` | The page that asks once more, with the button that switches the agent back to Demo. |
 | `/agents/<id>/stop` | The page that stops the agent, with the choice of what happens to its open position when it has one. |
 | `/agents/<id>/close-position` | The page that asks once more, with the button "Close position now". |
 | `/agents/<id>/delete` | The page that asks once more, with the button that deletes the agent. |
 
+- **Every page of an agent has the badge of its mode under its heading** (FR-UI-3). See "The badge".
 - **A control that changes nothing says why on the page it was pressed on,** and one that did what was asked leads to the page of the state by a request that changes nothing, so a reload sends no form again. A position that was closed is said on the page that closed it: no other page would say it.
 - When a form of the page of the state is posted, all three of its forms are on the page: a form that is not there cannot be answered, and one that is sent twice finds the agent in another state the second time.
 - What a user named an agent is written as text, like everything else on a page, and is in no log event.
@@ -251,7 +324,8 @@ The rows of an account go with it: `agents.user_id` points at `users` with a for
 
 | Of whom | Through | What for |
 |---|---|---|
-| Credentials | `IKeyValidation.BlockForAsync` | Whether the Binance key of the user lets an agent run on its market, before a start and a resume (FR-KEY-5). |
+| Credentials | `IKeyValidation.BlockForAsync` | Whether the Binance key of the user lets an agent run on its market, before a start and a resume (FR-KEY-5), and whether their Live key does, before an agent is switched to Live (FR-AGT-7). |
+| Accounts | `IReauthentication.IsRecentAsync` | Whether the user has just proved who they are, before an agent is switched to Live (FR-ACC-4). |
 | Credentials tells Agents | `IKeyDependents` | That a key is being deleted or marked invalid: the agents that run with it move to `AttentionRequired` (FR-KEY-10). See "When a key goes". |
 | Accounts | `IFairUse.MayCreateAgentAsync` | Whether the user may create one more agent (FR-ACC-1, FR-ACC-7). |
 | Accounts | `AuditTrail.RecordAsync` | Recording what a user does to an agent (NFR-LOG-7). See "The audit trail". |
@@ -259,14 +333,15 @@ The rows of an account go with it: `agents.user_id` points at `users` with a for
 
 ### What other components hold Agents to
 
-Other components declared interfaces for Agents before it could do what they are about, each with a test that waited for it. [`AgentsRules.cs`](../tests/Ecnanib.Tests/Agents/AgentsRules.cs) is the source of truth for what Agents can do, and those tests ask it. Every method of a public interface of `Ecnanib.Agents` is listed there, in one of two lists:
+Other components declared interfaces for Agents before it could do what they are about, each with a test that waited for it. [`AgentsRules.cs`](../tests/Ecnanib.Tests/Agents/AgentsRules.cs) is the source of truth for what Agents can do, and those tests ask it. Every method of a public interface of `Ecnanib.Agents` is listed there, in one of three lists:
 
 | List | What is in it |
 |---|---|
 | `SettingsOperations` | What keeps the settings of agents, or only reads or answers. |
 | `ControlOperations` | What does more with an agent: starting, pausing, resuming, and stopping it, and closing its position. |
+| `ModeOperations` | What switches the mode of an agent: to Live, and back to Demo. |
 
-A method that is added is in neither list, and fails `AgentsRulesTests` until someone lists it, and so decides what it is.
+A method that is added is in none of them, and fails `AgentsRulesTests` until someone lists it, and so decides what it is.
 
 | What tells that Agents can do more | How |
 |---|---|
@@ -278,12 +353,13 @@ A method that is added is in neither list, and fails `AgentsRulesTests` until so
 | Asking `IKeyValidation.BlockForAsync` before an agent starts (FR-KEY-5) | An agent that can run. **Built.** | `AgentStartBlockTests` |
 | Implementing `IKeyDependents` (FR-KEY-10) | An agent that can run. **Built** for the Binance key. | `KeyDependentsTests` |
 | Recording starts, pauses, stops, and manual closes in the audit trail (NFR-LOG-7) | An agent that can run. **Built.** | `AuditRulesTests` |
-| Recording mode switches in the audit trail (NFR-LOG-7) | What switches an agent to Live: a type of Agents that takes `IReauthentication`, which the switch needs (FR-AGT-7). Waits. | `AuditRulesTests` |
+| Recording mode switches in the audit trail (NFR-LOG-7) | An agent that can be switched. **Built.** | `AuditRulesTests` |
+| Storing what an agent did with the mode it did it in (FR-BIN-11) | A table with rows of an agent. **Built** for the changes of a state, which is the one there is. | `AgentsRulesTests` |
 | Moving an agent when the key of its model's provider goes (FR-KEY-10) | A model choice. Waits. | `AgentKeyDependentsTests` |
 | Implementing `IModelDependents`, which moves an agent to Attention required when its model goes (FR-CAT-8) | A model choice. Waits. | `ModelDependentsTests` |
 | Asking `IKeyModels` which models a user can select (FR-CAT-9) | A model choice. Waits. | `KeyModelsTests` |
 
-**To add an operation to Agents,** list it in `AgentsRules`, as one that keeps settings or as a control. A control asks what blocks a start where it starts an agent, and records what the user did in the audit trail.
+**To add an operation to Agents,** list it in `AgentsRules`, as one that keeps settings, as a control, or as a switch of the mode. A control asks what blocks a start where it starts an agent, asks once more where it acts on an agent in Live, and records what the user did in the audit trail.
 
 ## The audit trail
 
@@ -297,10 +373,13 @@ What a user does to an agent that is money-relevant is recorded, in the transact
 | `AgentResumed` | The user resumed it, which is a start. |
 | `AgentStopped` | The user stopped it. |
 | `AgentPositionCloseRequested` | The user asked for its position to be closed at market: with "Close position now", or as they stopped the agent. |
+| `AgentSwitchedToLive` | The user switched it from Demo to Live. |
+| `AgentSwitchedToDemo` | The user switched it from Live back to Demo. |
 
 - **One event for each form that changed a risk setting,** whichever of the five and however many. A form that brings the settings as they are records nothing, however the numbers are written: `1.50` is `1.5`.
 - **Setting them for the first time changes none.** Creating an agent and copying one record nothing, and neither does deleting one.
-- **A control that changes nothing records nothing:** one that is refused, one that is not offered in the state of the agent, and a form that is sent twice.
+- **A control that changes nothing records nothing:** one that is refused, one that is not offered in the state of the agent, one that was not asked about for an agent in Live, and a form that is sent twice.
+- **A switch that is refused records nothing,** whatever stood in its way, and neither does a form that is sent twice. The proof that the switch to Live takes is an event of its own, `Reauthenticated`, recorded when it was given.
 - **A manual close is recorded when it is asked for, before the order.** What places the order may not use Accounts, and records nothing. So the request stands in the trail whatever becomes of the order. Stopping an agent and choosing to close its position records both, `AgentStopped` and `AgentPositionCloseRequested`.
 - **What the service does to the state of an agent is no action of a user,** and is not in the audit trail: an agent that moves to Attention required when its key goes. The changes of the state record it, with its cause.
 - An event holds no number and no name. What the settings and the state are now is on the pages of the agent and in the export.
@@ -313,7 +392,7 @@ See "The audit trail" in [accounts.md](accounts.md).
 | Table | Columns |
 |---|---|
 | `agents` | `id`, `user_id`, `name`, `mode`, `market`, `symbol`, `quote_asset`, `timeframe`, `allocated_capital`, `risk_per_trade_percent`, `leverage_cap`, `daily_loss_percent`, `drawdown_percent`, `max_entry_distance_percent`, `state`, `state_cause`, `state_changed_at`, `created_at`. One row for each `(user_id, name)`. At most one active row for each `(user_id, mode, market, symbol)`. |
-| `agent_state_changes` | `id`, `agent_id`, `user_id`, `state`, `cause`, `changed_at`. One row for each change of the state of an agent, the first of them its creation. Indexed by `(agent_id, changed_at)`. |
+| `agent_state_changes` | `id`, `agent_id`, `user_id`, `mode`, `state`, `cause`, `changed_at`. One row for each change of the state of an agent, the first of them its creation. Indexed by `(agent_id, changed_at)`. |
 
 The tables hold rows of users: `Agent` and `AgentStateChange` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. The rows of an account are deleted with it, and the changes of an agent with the agent.
 
@@ -324,10 +403,11 @@ The tables hold rows of users: `Agent` and `AgentStateChange` implement `IUserOw
 | `allocated_capital` and the percentages | Exact decimals. |
 | `state_changed_at` | Since when the agent is in its state. For a draft, when it was created. |
 | `agent_state_changes.state`, `cause`, `changed_at` | The state the agent came to, as the name of a member of `AgentState`, why, as the name of a member of `AgentStateCause`, and when. The latest row of an agent says what its row in `agents` says. |
+| `agent_state_changes.mode` | The mode the agent was in when its state changed, as the name of a member of `TradingMode`. It stays as it was written when the agent is switched (FR-BIN-11). |
 
 An agent's id is a version 7 UUID that the application assigns, and so is the id of a change. `name` is what its user typed: it is listed in `PersonalDataRules` with what it holds, is in the export, and is in no log event. A change holds nothing that a user typed.
 
-The migration that added `agent_state_changes` gave every agent that was stored then its first change, from what its row said: its state, the cause, and since when.
+The migration that added `agent_state_changes` gave every agent that was stored then its first change, from what its row said: its state, the cause, and since when. The migration that added `agent_state_changes.mode` gave every change that was stored then the mode of its agent: nothing switched the mode of an agent before it.
 
 ## The log
 
@@ -351,6 +431,10 @@ User {UserId} was refused stopping agent {AgentId}, which is {AgentState}
 User {UserId} asked to close the position of agent {AgentId} at market: {PositionCloseOutcome}
 The position of agent {AgentId} could not be closed at market, as user {UserId} asked. It is open as it was
 Agent {AgentId} of user {UserId} requires attention with the change to the Binance key for {TradingMode}: {AgentStateCause}
+User {UserId} switched agent {AgentId} from {PreviousTradingMode} to {TradingMode}
+User {UserId} was refused switching agent {AgentId} to {TradingMode}: {ModeSwitchOutcome}
+User {UserId} could not change agent {AgentId}: it was switched to {TradingMode} meanwhile
+User {UserId} could not copy agent {AgentId}: the exchange did not say which symbols {Market} has in {TradingMode}
 ```
 
 An event names a user and an agent by their ids, and never holds a name or a number of the settings. A position that could not be closed is a warning. The event of an agent that requires attention is written inside the transaction that changes the key, and stands for a change that is stored with it.
@@ -362,8 +446,7 @@ An event names a user and an agent by their ids, and never holds a name or a num
 - What halts an agent when a loss limit is reached, and what resumes it after a daily loss limit, on the next UTC day (FR-RSK-8). A halted agent is resumed and stopped by its user already.
 - The other causes of Attention required: a model that is unavailable (FR-CAT-8), an exchange setting that conflicts (FR-BIN-F2), and calls that fail repeatedly (NFR-REL-4). With the second comes refusing a start while the account is in a conflicting mode or holds a position in the symbol.
 - Telling the user that an agent was halted or needs attention (FR-NTF-1), and showing a change of state without a reload (FR-NTF-2). In-app notifications are not built.
-- Switching an agent to Live, with a valid Live key, a risk confirmation, and a fresh proof of who the user is (FR-AGT-7). `SensitiveAction.SwitchAgentToLive` of Accounts is there for it. A copy of a Live agent is in Demo, where its market may lack its symbol: what switches an agent decides what a copy does then.
-- Asking once more before a control acts on an agent in Live (FR-UI-3). Stopping an agent and closing a position ask once more already. Starting, pausing, and resuming are one press: no agent is in Live. It comes with the switch to Live.
 - Giving each role of the team its provider and model (FR-AGT-5, FR-TEAM-1 to FR-TEAM-5). The page names the four roles, and stores nothing of them. With it come moving an agent when the key of its model's provider goes, and when its model does.
-- The Demo or Live badge on every agent screen (FR-UI-3). The pages say the mode in words.
+- The results of an agent: its trades, its positions, and its profit or loss. None is stored. What stores them gives each row the mode it is of, and adds nothing up over both modes (FR-BIN-11): see "Demo is labeled as Demo".
+- A record of the risk confirmation of its own, with the version of the risk disclosure that was confirmed. The event of the switch in the audit trail stands for the confirmation.
 - The agent detail screen (FR-RPT-2), and the times of an agent in the local time of its user. The page of the state of an agent is where its position, its trades, and its decisions will be shown.

@@ -196,8 +196,8 @@ public class AgentKeyDependentsTests
         await client.ConfirmIdentityAsync();
         await client.StoreExchangeKeyAsync("live", Keys.BinanceApi, Keys.BinanceSecret);
 
-        // An agent runs in Demo. Nothing switches an agent to Live yet, so the test stores one
-        // that runs there.
+        // An agent runs in Demo, and another in Live, which the test stores as it runs there,
+        // without the steps that switch an agent and start it.
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "In Demo"));
         var inDemo = StoredAgent.Named(application.Database, "In Demo").Id;
         await client.StartAgentAsync(inDemo);

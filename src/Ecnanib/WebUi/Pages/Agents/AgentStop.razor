@@ -1,6 +1,7 @@
 @page "/agents/{Id:guid}/stop"
 @attribute [Authorize]
 @using Ecnanib.Agents
+@using Ecnanib.Shared
 @inject IStoredAgents Agents
 @inject IAgentControls Controls
 @inject NavigationManager Navigation
@@ -20,6 +21,8 @@
 
     <h1>Stop the agent @_agent.Name</h1>
 
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
     @if (_said is not null)
     {
         <p class="form-error" role="alert">@_said</p>
@@ -32,6 +35,11 @@
     else if (_showForm)
     {
         <p>@AgentPages.Explain(AgentControl.Stop)</p>
+
+        @if (_agent.Mode == TradingMode.Live)
+        {
+            <p><strong>@AgentPages.ActsOnLive</strong></p>
+        }
 
         <form method="post" @formname="@AgentPages.StopForm" @onsubmit="StopAsync">
             <AntiforgeryToken />

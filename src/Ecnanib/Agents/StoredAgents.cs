@@ -73,24 +73,8 @@ internal sealed class StoredAgents(
         return agent is null ? null : await ViewOfAsync(context, agent, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<MarketSymbols>> SymbolsAsync(TradingMode mode, CancellationToken cancellationToken)
-    {
-        var markets = Enum.GetValues<Market>();
-        var read = await Task.WhenAll(markets.Select(market => marketData.GetSymbolsAsync(market, mode, cancellationToken)));
-
-        return
-        [
-            .. markets.Zip(read, (market, symbols) => new MarketSymbols(
-                market,
-                symbols.Outcome == ExchangeCallOutcome.Succeeded,
-                [
-                    // Of the file alone, whatever else the market has: an agent is given no other (FR-AGT-6).
-                    .. symbols.Symbols
-                        .Where(symbol => binance.Symbols.Contains(symbol.Symbol, StringComparer.Ordinal))
-                        .Select(symbol => new SymbolChoice(symbol.Symbol, symbol.QuoteAsset)),
-                ])),
-        ];
-    }
+    public Task<IReadOnlyList<MarketSymbols>> SymbolsAsync(TradingMode mode, CancellationToken cancellationToken) =>
+        AgentSymbols.ReadAsync(marketData, binance, mode, cancellationToken);
 
     public async Task<SaveAgentResult> CreateAsync(HttpContext request, AgentEntry entry)
     {
@@ -180,7 +164,7 @@ internal sealed class StoredAgents(
         return new SaveAgentResult(SaveAgentOutcome.Saved, agent.Id);
     }
 
-    public async Task<SaveAgentResult> SaveAsync(HttpContext request, Guid agentId, AgentEntry entry)
+    public async Task<SaveAgentResult> SaveAsync(HttpContext request, Guid agentId, AgentEntry entry, bool confirmedForLive)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
@@ -253,6 +237,17 @@ internal sealed class StoredAgents(
             return new SaveAgentResult(SaveAgentOutcome.NotFound);
         }
 
+        if (agent.Mode != before.Mode)
+        {
+            // The agent was switched, on another browser, while the exchange was asked. What was
+            // asked about its symbol was asked of the other environment, and the asset that the
+            // symbol is priced in is the one of that environment: nothing of it is stored.
+            logger.LogInformation(
+                "User {UserId} could not change agent {AgentId}: it was switched to {TradingMode} meanwhile", userId, agentId, agent.Mode);
+
+            return new SaveAgentResult(SaveAgentOutcome.SymbolsUnknown, agentId);
+        }
+
         // The market, the symbol, and the timeframe change only while the agent is in Draft, or
         // is Stopped with no open position or orders (FR-AGT-8). Asked under the lock, of the
         // state that the agent has now.
@@ -260,7 +255,7 @@ internal sealed class StoredAgents(
             || settings.Symbol != agent.Symbol
             || settings.Timeframe != agent.Timeframe;
 
-        if (structureChanges && !await StructureCanChangeAsync(context, agent, cancellationToken))
+        if (structureChanges && !await exposures.StructureCanChangeAsync(context, agent, cancellationToken))
         {
             logger.LogInformation(
                 "User {UserId} was refused changing the market, symbol, or timeframe of agent {AgentId}, which is {AgentState}",
@@ -278,6 +273,19 @@ internal sealed class StoredAgents(
         if (taken)
         {
             return Invalid(AgentField.Name, AgentProblem.Taken, agentId);
+        }
+
+        // A change to the capital or to a risk setting of an agent in Live is a change to what
+        // it does with real money, and is asked about once more (FR-UI-3). Decided under the
+        // lock, of the mode that the agent is in now, whatever the page showed. A new name is
+        // not asked about.
+        var riskChanged = settings.Risk != RiskOf(agent);
+
+        if (agent.Mode == TradingMode.Live
+            && !confirmedForLive
+            && (riskChanged || settings.AllocatedCapital != agent.AllocatedCapital))
+        {
+            return new SaveAgentResult(SaveAgentOutcome.NotConfirmedForLive, agentId);
         }
 
         await context.Set<Agent>()
@@ -300,7 +308,6 @@ internal sealed class StoredAgents(
 
         // A change to a risk setting is money-relevant, and is recorded with the change
         // (NFR-LOG-7). The event names the agent by its id, and holds no number.
-        var riskChanged = settings.Risk != RiskOf(agent);
         if (riskChanged)
         {
             await AuditTrail.RecordAsync(
@@ -332,6 +339,28 @@ internal sealed class StoredAgents(
         var userId = SignedInUser.RequiredIdOf(request);
         var cancellationToken = request.RequestAborted;
 
+        // A copy is in Demo, whatever the agent it is made from is (FR-AGT-7). The symbol of an
+        // agent in Demo was held to its market there when it was stored. The symbol of one in
+        // Live was held to its market in Live, so the exchange is asked whether the market has
+        // it in Demo: before the transaction, and never inside it.
+        Agent? seen;
+        await using (var asking = await contexts.CreateDbContextAsync(cancellationToken))
+        {
+            seen = await asking.Set<Agent>()
+                .AsNoTracking()
+                .OwnedBy(userId)
+                .SingleOrDefaultAsync(agent => agent.Id == agentId, cancellationToken);
+        }
+
+        if (seen is null)
+        {
+            return new SaveAgentResult(SaveAgentOutcome.NotFound);
+        }
+
+        (bool Known, string? QuoteAsset)? inDemo = seen.Mode == TradingMode.Demo
+            ? null
+            : await QuoteAssetOfAsync(seen.Market, TradingMode.Demo, seen.Symbol, cancellationToken);
+
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
@@ -340,6 +369,7 @@ internal sealed class StoredAgents(
             return new SaveAgentResult(SaveAgentOutcome.NotFound);
         }
 
+        // Read again under the lock: this is the agent until the transaction ends.
         var source = await context.Set<Agent>()
             .AsNoTracking()
             .OwnedBy(userId)
@@ -361,11 +391,40 @@ internal sealed class StoredAgents(
             return new SaveAgentResult(refusal);
         }
 
+        var quoteAsset = source.QuoteAsset;
+
+        if (source.Mode != TradingMode.Demo)
+        {
+            // What the exchange said is about the market and the symbol that the agent had
+            // before the lock. An agent that was switched or changed meanwhile was not asked
+            // about, and neither was one that the exchange gave no answer for: a symbol is not
+            // taken on trust.
+            if (inDemo is not { Known: true } answer || seen.Market != source.Market || seen.Symbol != source.Symbol)
+            {
+                logger.LogInformation(
+                    "User {UserId} could not copy agent {AgentId}: the exchange did not say which symbols {Market} has in {TradingMode}",
+                    userId,
+                    agentId,
+                    source.Market,
+                    TradingMode.Demo);
+
+                return new SaveAgentResult(SaveAgentOutcome.SymbolsUnknown);
+            }
+
+            if (answer.QuoteAsset is null)
+            {
+                // The market has the symbol in Live, and not in Demo, where the copy would be.
+                return Invalid(AgentField.Symbol, AgentProblem.NotOnMarket);
+            }
+
+            quoteAsset = answer.QuoteAsset;
+        }
+
         // The settings of the agent, under a name of its own. A copy is a new agent: it is in
         // Demo and in Draft, whatever the agent it was made from is (FR-AGT-7).
         var now = clock.GetUtcNow();
         var copy = NewAgent(userId, AgentRules.CopyNameOf(source.Name, names), TradingMode.Demo, source.Market, source.Symbol,
-            source.QuoteAsset, source.Timeframe, source.AllocatedCapital, RiskOf(source), now);
+            quoteAsset, source.Timeframe, source.AllocatedCapital, RiskOf(source), now);
 
         context.Set<Agent>().Add(copy);
         context.Set<AgentStateChange>().Add(AgentStateChanges.First(copy));
@@ -411,7 +470,7 @@ internal sealed class StoredAgents(
             return DeleteAgentOutcome.NotStopped;
         }
 
-        if (!await StructureCanChangeAsync(context, agent, cancellationToken))
+        if (!await exposures.StructureCanChangeAsync(context, agent, cancellationToken))
         {
             logger.LogInformation(
                 "User {UserId} was refused deleting agent {AgentId}, which has an open position or open orders", userId, agentId);
@@ -547,7 +606,7 @@ internal sealed class StoredAgents(
             agent.StateCause,
             agent.StateChangedAt,
             agent.CreatedAt,
-            await StructureCanChangeAsync(context, agent, cancellationToken),
+            await exposures.StructureCanChangeAsync(context, agent, cancellationToken),
             await HoldsPositionAsync(context, agent, cancellationToken));
 
     /// <summary>
@@ -556,19 +615,6 @@ internal sealed class StoredAgents(
     /// </summary>
     private async Task<bool> HoldsPositionAsync(EcnanibDbContext context, Agent agent, CancellationToken cancellationToken) =>
         agent.State != AgentState.Draft && await exposures.HoldPositionAsync(context, agent.Id, cancellationToken);
-
-    /// <summary>
-    /// Whether the market, symbol, and timeframe of an agent can be changed, and the agent
-    /// deleted (FR-AGT-8). What an agent holds on the exchange is asked only of a stopped one:
-    /// a draft never held anything, and an active agent is refused whatever it holds.
-    /// </summary>
-    private async Task<bool> StructureCanChangeAsync(EcnanibDbContext context, Agent agent, CancellationToken cancellationToken)
-    {
-        var holds = agent.State == AgentState.Stopped
-            && await exposures.HoldPositionOrOrdersAsync(context, agent.Id, cancellationToken);
-
-        return AgentStates.StructureCanChange(agent.State, holds);
-    }
 }
 
 /// <summary>
@@ -667,10 +713,12 @@ internal sealed class AgentsExport : IExportedPart
 
 /// <summary>A change of the state of an agent in the export of a user's data (NFR-SEC-9).</summary>
 /// <param name="AgentId">The agent whose state changed, by the id that the section of the agents has.</param>
+/// <param name="Mode">The mode the agent was in when its state changed: Demo is said as Demo (FR-BIN-11).</param>
 /// <param name="State">The state the agent came to.</param>
 /// <param name="Cause">Why it did.</param>
 /// <param name="ChangedAt">When it did.</param>
-public sealed record ExportedAgentStateChange(Guid AgentId, AgentState State, AgentStateCause Cause, DateTimeOffset ChangedAt);
+public sealed record ExportedAgentStateChange(
+    Guid AgentId, TradingMode Mode, AgentState State, AgentStateCause Cause, DateTimeOffset ChangedAt);
 
 /// <summary>The changes of the states of a user's agents, for the export of their data (NFR-SEC-9, FR-AGT-10).</summary>
 internal sealed class AgentStateChangesExport : IExportedPart
@@ -687,6 +735,10 @@ internal sealed class AgentStateChangesExport : IExportedPart
             .ThenBy(change => change.Id)
             .ToListAsync(cancellationToken);
 
-        return [.. changes.Select(change => new ExportedAgentStateChange(change.AgentId, change.State, change.Cause, change.ChangedAt))];
+        return
+        [
+            .. changes.Select(change => new ExportedAgentStateChange(
+                change.AgentId, change.Mode, change.State, change.Cause, change.ChangedAt)),
+        ];
     }
 }
