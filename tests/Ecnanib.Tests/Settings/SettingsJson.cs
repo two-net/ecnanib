@@ -82,9 +82,9 @@ internal sealed class SettingsJson
             "DefaultRoles": { "MarketAnalyst": "Claude", "SentimentAnalyst": "Grok", "Strategist": "GPT", "RiskManager": "Gemini" },
             "Aggressive": {
               "RiskPerTradePercent": [ 0.25, 1.5, 4 ],
-              "MinRewardToRisk": 1.75,
+              "MinRewardToRisk": [ 1.25, 1.75 ],
               "LeverageCap": [ 2, 4, 8 ],
-              "LiquidationBuffer": 2.5,
+              "LiquidationBuffer": [ 1.75, 2.5 ],
               "DailyLossPercent": [ 1, 5, 12 ],
               "DrawdownPercent": [ 8, 20, 40 ],
               "MaxEntryDistancePercent": [ 0.2, 0.8, 2 ]

@@ -51,9 +51,9 @@ public class TrackedFileTests
         Assert.Equal(
             new AggressiveSettings(
                 RiskPerTradePercent: new Bounded<decimal>(0.5m, 2m, 5m),
-                MinRewardToRisk: 1.5m,
+                MinRewardToRisk: new Floored<decimal>(1.0m, 1.5m),
                 LeverageCap: new Bounded<int>(1, 5, 10),
-                LiquidationBuffer: 2.0m,
+                LiquidationBuffer: new Floored<decimal>(1.5m, 2.0m),
                 DailyLossPercent: new Bounded<decimal>(2m, 6m, 15m),
                 DrawdownPercent: new Bounded<decimal>(10m, 25m, 50m),
                 MaxEntryDistancePercent: new Bounded<decimal>(0.1m, 1m, 3m)),

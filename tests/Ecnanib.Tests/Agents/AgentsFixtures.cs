@@ -30,7 +30,9 @@ internal sealed record StoredAgent(
     string Timeframe,
     decimal AllocatedCapital,
     decimal RiskPerTradePercent,
+    decimal MinRewardToRisk,
     int LeverageCap,
+    decimal LiquidationBuffer,
     decimal DailyLossPercent,
     decimal DrawdownPercent,
     decimal MaxEntryDistancePercent,
@@ -46,8 +48,8 @@ internal sealed record StoredAgent(
         using var command = new NpgsqlCommand(
             """
             SELECT id, user_id, name, mode, market, symbol, quote_asset, timeframe, allocated_capital,
-                   risk_per_trade_percent, leverage_cap, daily_loss_percent, drawdown_percent, max_entry_distance_percent,
-                   state, state_cause, state_changed_at, created_at
+                   risk_per_trade_percent, min_reward_to_risk, leverage_cap, liquidation_buffer, daily_loss_percent,
+                   drawdown_percent, max_entry_distance_percent, state, state_cause, state_changed_at, created_at
             FROM agents ORDER BY created_at, id
             """,
             connection);
@@ -67,14 +69,16 @@ internal sealed record StoredAgent(
                 reader.GetString(7),
                 reader.GetDecimal(8),
                 reader.GetDecimal(9),
-                reader.GetInt32(10),
-                reader.GetDecimal(11),
+                reader.GetDecimal(10),
+                reader.GetInt32(11),
                 reader.GetDecimal(12),
                 reader.GetDecimal(13),
-                reader.GetString(14),
-                reader.GetString(15),
-                reader.GetFieldValue<DateTimeOffset>(16),
-                reader.GetFieldValue<DateTimeOffset>(17)));
+                reader.GetDecimal(14),
+                reader.GetDecimal(15),
+                reader.GetString(16),
+                reader.GetString(17),
+                reader.GetFieldValue<DateTimeOffset>(18),
+                reader.GetFieldValue<DateTimeOffset>(19)));
         }
 
         return agents;
@@ -251,7 +255,9 @@ internal static class AgentBrowser
         string timeframe = "1H",
         string capital = "1000",
         string riskPerTrade = "1.5",
+        string minRewardToRisk = "1.75",
         string leverageCap = "4",
+        string liquidationBuffer = "2.5",
         string dailyLoss = "5",
         string drawdown = "20",
         string entryDistance = "0.8") =>
@@ -262,7 +268,9 @@ internal static class AgentBrowser
         ("Timeframe", timeframe),
         ("AllocatedCapital", capital),
         ("RiskPerTradePercent", riskPerTrade),
+        ("MinRewardToRisk", minRewardToRisk),
         ("LeverageCap", leverageCap),
+        ("LiquidationBuffer", liquidationBuffer),
         ("DailyLossPercent", dailyLoss),
         ("DrawdownPercent", drawdown),
         ("MaxEntryDistancePercent", entryDistance),
@@ -593,7 +601,9 @@ internal static class StoredAgentRows
             Timeframe.OneHour,
             allocatedCapital: 1000m,
             riskPerTradePercent: 1.5m,
+            minRewardToRisk: 1.75m,
             leverageCap: 4,
+            liquidationBuffer: 2.5m,
             dailyLossPercent: 5m,
             drawdownPercent: 20m,
             maxEntryDistancePercent: 0.8m,

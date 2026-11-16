@@ -80,9 +80,9 @@ public class SettingsFileTests
         Assert.Equal(
             new AggressiveSettings(
                 RiskPerTradePercent: new Bounded<decimal>(0.25m, 1.5m, 4m),
-                MinRewardToRisk: 1.75m,
+                MinRewardToRisk: new Floored<decimal>(1.25m, 1.75m),
                 LeverageCap: new Bounded<int>(2, 4, 8),
-                LiquidationBuffer: 2.5m,
+                LiquidationBuffer: new Floored<decimal>(1.75m, 2.5m),
                 DailyLossPercent: new Bounded<decimal>(1m, 5m, 12m),
                 DrawdownPercent: new Bounded<decimal>(8m, 20m, 40m),
                 MaxEntryDistancePercent: new Bounded<decimal>(0.2m, 0.8m, 2m)),
@@ -137,13 +137,19 @@ public class SettingsFileTests
         { "CatalogSync:IntervalHours", "8761", "CatalogSync:IntervalHours" },
         { "CatalogSync:MissedSyncsBeforeUnavailable", "0", "CatalogSync:MissedSyncsBeforeUnavailable" },
         { "CatalogSync:MissedSyncsBeforeUnavailable", "101", "CatalogSync:MissedSyncsBeforeUnavailable" },
-        { "Trading:Aggressive:MinRewardToRisk", "0.9", "Trading:Aggressive:MinRewardToRisk" },
-        { "Trading:Aggressive:LiquidationBuffer", "1.4", "Trading:Aggressive:LiquidationBuffer" },
+        { "Trading:Aggressive:MinRewardToRisk", "[0, 1.5]", "Trading:Aggressive:MinRewardToRisk:0" },
+        { "Trading:Aggressive:MinRewardToRisk", "[1, 100.5]", "Trading:Aggressive:MinRewardToRisk:1" },
+        { "Trading:Aggressive:LiquidationBuffer", "[1, 2]", "Trading:Aggressive:LiquidationBuffer:0" },
         { "Trading:Aggressive:RiskPerTradePercent", "[0, 2, 5]", "Trading:Aggressive:RiskPerTradePercent:0" },
         { "Trading:Aggressive:DrawdownPercent", "[10, 25, 101]", "Trading:Aggressive:DrawdownPercent:2" },
         { "Trading:Aggressive:LeverageCap", "[1, 5, 126]", "Trading:Aggressive:LeverageCap:2" },
         { "Trading:Aggressive:RiskPerTradePercent", "[3, 2, 5]", "Trading:Aggressive:RiskPerTradePercent" },
         { "Trading:Aggressive:DailyLossPercent", "[2, 6]", "Trading:Aggressive:DailyLossPercent" },
+
+        // A setting with a floor is two numbers, the minimum and the default, in that order.
+        { "Trading:Aggressive:MinRewardToRisk", "1.5", "Trading:Aggressive:MinRewardToRisk" },
+        { "Trading:Aggressive:MinRewardToRisk", "[1, 1.5, 3]", "Trading:Aggressive:MinRewardToRisk" },
+        { "Trading:Aggressive:LiquidationBuffer", "[2.5, 2]", "Trading:Aggressive:LiquidationBuffer" },
         { "Experience:Board:MinUsers", "0", "Experience:Board:MinUsers" },
         { "Retention:AuditDays", "-1", "Retention:AuditDays" },
         { "Limits:MaxAgentsPerUser", "0", "Limits:MaxAgentsPerUser" },
@@ -198,6 +204,9 @@ public class SettingsFileTests
         // live in the database, so the file has no place for them (NFR-CFG-6).
         { "Limits:MaxAgentsPerUsers", "10", "Limits:MaxAgentsPerUsers" },
         { "Trading:StaleSeconds:1W", "3600", "Trading:StaleSeconds:1W" },
+
+        // The product has one trading profile, Aggressive: the file has no place for another (FR-RSK-1).
+        { "Trading:Conservative", "{ \"RiskPerTradePercent\": [0.1, 0.5, 1] }", "Trading:Conservative" },
         { "Logging:Outputs:Console:Colors", "true", "Logging:Outputs:Console:Colors" },
         { "Application:GlobalHalt", "true", "Application:GlobalHalt" },
         { "Agents", "{ \"Default\": { \"Timeframe\": \"1H\" } }", "Agents" },

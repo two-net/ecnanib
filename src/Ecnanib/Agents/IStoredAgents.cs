@@ -146,13 +146,17 @@ public sealed record AgentView(
 /// configuration file (FR-RSK-2, SRS Appendix B). Percentages are of the agent's equity.
 /// </summary>
 /// <param name="RiskPerTradePercent">The share of equity risked on one trade.</param>
+/// <param name="MinRewardToRisk">The lowest reward-to-risk ratio a plan may have at entry.</param>
 /// <param name="LeverageCap">The highest leverage on Futures.</param>
+/// <param name="LiquidationBuffer">How many times further than the stop-loss the liquidation price must be on Futures.</param>
 /// <param name="DailyLossPercent">The loss in one day that halts the agent.</param>
 /// <param name="DrawdownPercent">The fall from peak equity that halts the agent.</param>
 /// <param name="MaxEntryDistancePercent">How far an entry price may be from the current price.</param>
 public sealed record AgentRisk(
     decimal RiskPerTradePercent,
+    decimal MinRewardToRisk,
     int LeverageCap,
+    decimal LiquidationBuffer,
     decimal DailyLossPercent,
     decimal DrawdownPercent,
     decimal MaxEntryDistancePercent);
@@ -181,7 +185,9 @@ public sealed record SymbolChoice(string Symbol, string QuoteAsset);
 /// <param name="Timeframe">The code of the timeframe: <c>15m</c>, <c>1H</c>, <c>4H</c>, or <c>1D</c>.</param>
 /// <param name="AllocatedCapital">The allocated capital, in the quote asset of the symbol.</param>
 /// <param name="RiskPerTradePercent">The risk per trade, in percent.</param>
+/// <param name="MinRewardToRisk">The minimum reward-to-risk ratio.</param>
 /// <param name="LeverageCap">The leverage cap, a whole number.</param>
+/// <param name="LiquidationBuffer">The liquidation buffer, a factor.</param>
 /// <param name="DailyLossPercent">The daily loss limit, in percent.</param>
 /// <param name="DrawdownPercent">The drawdown limit, in percent.</param>
 /// <param name="MaxEntryDistancePercent">The most distance of an entry from the current price, in percent.</param>
@@ -193,7 +199,9 @@ public sealed record AgentEntry(
     string? Timeframe,
     string? AllocatedCapital,
     string? RiskPerTradePercent,
+    string? MinRewardToRisk,
     string? LeverageCap,
+    string? LiquidationBuffer,
     string? DailyLossPercent,
     string? DrawdownPercent,
     string? MaxEntryDistancePercent,
@@ -208,7 +216,9 @@ public enum AgentField
     Timeframe,
     AllocatedCapital,
     RiskPerTradePercent,
+    MinRewardToRisk,
     LeverageCap,
+    LiquidationBuffer,
     DailyLossPercent,
     DrawdownPercent,
     MaxEntryDistancePercent,
@@ -327,6 +337,9 @@ public static class AgentRules
     /// <summary>The most decimal places of a risk setting that is a percentage.</summary>
     public const int PercentDecimals = 2;
 
+    /// <summary>The most decimal places of a risk setting that is a factor: the reward-to-risk ratio and the liquidation buffer.</summary>
+    public const int FactorDecimals = 2;
+
     /// <summary>The most capital that an agent can be allocated: more than any account holds, and still a number the form can take.</summary>
     public const decimal MaximumCapital = 1_000_000_000_000m;
 
@@ -376,10 +389,12 @@ public static class AgentRules
         }
 
         var riskPerTrade = Percent(AgentField.RiskPerTradePercent, entry.RiskPerTradePercent, bounds.RiskPerTradePercent);
+        var rewardToRisk = Factor(AgentField.MinRewardToRisk, entry.MinRewardToRisk, bounds.MinRewardToRisk);
+        var leverage = Whole(AgentField.LeverageCap, entry.LeverageCap, bounds.LeverageCap);
+        var liquidationBuffer = Factor(AgentField.LiquidationBuffer, entry.LiquidationBuffer, bounds.LiquidationBuffer);
         var dailyLoss = Percent(AgentField.DailyLossPercent, entry.DailyLossPercent, bounds.DailyLossPercent);
         var drawdown = Percent(AgentField.DrawdownPercent, entry.DrawdownPercent, bounds.DrawdownPercent);
         var entryDistance = Percent(AgentField.MaxEntryDistancePercent, entry.MaxEntryDistancePercent, bounds.MaxEntryDistancePercent);
-        var leverage = Whole(AgentField.LeverageCap, entry.LeverageCap, bounds.LeverageCap);
 
         return problems.Count > 0
             ? null
@@ -389,7 +404,14 @@ public static class AgentRules
                 symbol,
                 timeframe!.Value,
                 capital!.Value,
-                new AgentRisk(riskPerTrade!.Value, leverage!.Value, dailyLoss!.Value, drawdown!.Value, entryDistance!.Value));
+                new AgentRisk(
+                    riskPerTrade!.Value,
+                    rewardToRisk!.Value,
+                    leverage!.Value,
+                    liquidationBuffer!.Value,
+                    dailyLoss!.Value,
+                    drawdown!.Value,
+                    entryDistance!.Value));
 
         TChoice? Chosen<TChoice>(AgentField field, string? text, Func<string?, TChoice?> among)
             where TChoice : struct
@@ -447,6 +469,25 @@ public static class AgentRules
             }
 
             if (number < within.Minimum || number > within.Maximum)
+            {
+                problems[field] = AgentProblem.OutOfBounds;
+
+                return null;
+            }
+
+            return number;
+        }
+
+        // A factor has a floor, and no highest value of its own: it is held to the highest that
+        // a factor takes at all, which the configuration file is held to as well.
+        decimal? Factor(AgentField field, string? text, Floored<decimal> within)
+        {
+            if (Number(field, text, FactorDecimals) is not { } number)
+            {
+                return null;
+            }
+
+            if (number < within.Minimum || number > AggressiveSettings.HighestFactor)
             {
                 problems[field] = AgentProblem.OutOfBounds;
 

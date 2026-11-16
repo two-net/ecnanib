@@ -4,6 +4,7 @@ using Ecnanib.Agents;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 using Ecnanib.Platform.Settings;
+using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
 using Ecnanib.WebUi.Pages.Account;
 
@@ -469,6 +470,23 @@ public static class AgentPages
     public static string Within(Bounded<int> bounds) =>
         $"A whole number from {Number(bounds.Minimum)} to {Number(bounds.Maximum)}. The default is {Number(bounds.Default)}.";
 
+    /// <summary>The floor of a risk setting that is a factor, and its default, as a hint under its field.</summary>
+    public static string Within(Floored<decimal> floor) =>
+        $"{Number(floor.Minimum)} or higher. The default is {Number(floor.Default)}.";
+
+    /// <summary>What the form says above the limits that no user changes (FR-RSK-2).</summary>
+    public const string FixedLimitsIntro = "Two more limits are fixed. They are the same for every agent, and cannot be changed:";
+
+    /// <summary>
+    /// The limits of the profile that the specification fixes, in plain language (SRS Appendix
+    /// B, NFR-USA-2). The form says them, and has no field for them.
+    /// </summary>
+    public static IReadOnlyList<string> FixedLimitsExplained { get; } =
+    [
+        $"On Spot, a position is worth at most {Number(FixedLimits.SpotPositionPercentOfEquity)} percent of the agent's equity.",
+        $"An agent has no more than {Number(FixedLimits.OpenPositionsPerAgent)} position open at a time.",
+    ];
+
     /// <summary>What is wrong with what was entered for a setting. It says what the setting takes.</summary>
     /// <param name="field">The setting.</param>
     /// <param name="problem">What is wrong with it.</param>
@@ -503,6 +521,17 @@ public static class AgentPages
             (AgentField.LeverageCap, AgentProblem.OutOfBounds) =>
                 $"The leverage cap is from {Number(bounds.LeverageCap.Minimum)} to {Number(bounds.LeverageCap.Maximum)}.",
             (AgentField.LeverageCap, _) => "Enter the leverage cap as a whole number.",
+
+            (AgentField.MinRewardToRisk, AgentProblem.Missing) => "Enter the minimum reward-to-risk ratio.",
+            (AgentField.MinRewardToRisk, AgentProblem.OutOfBounds) =>
+                $"The minimum reward-to-risk ratio is {FromFloor(bounds.MinRewardToRisk)}.",
+            (AgentField.LiquidationBuffer, AgentProblem.Missing) => "Enter the liquidation buffer.",
+            (AgentField.LiquidationBuffer, AgentProblem.OutOfBounds) =>
+                $"The liquidation buffer is {FromFloor(bounds.LiquidationBuffer)}.",
+            (AgentField.MinRewardToRisk or AgentField.LiquidationBuffer, AgentProblem.TooPrecise) =>
+                $"Enter the number with {AgentRules.FactorDecimals.ToString(CultureInfo.InvariantCulture)} decimal places at most.",
+            (AgentField.MinRewardToRisk or AgentField.LiquidationBuffer, _) =>
+                "Enter a number, with digits and a decimal point: 2 or 1.5.",
 
             (_, AgentProblem.Missing) => "Enter a percentage.",
             (_, AgentProblem.TooPrecise) =>
@@ -591,6 +620,10 @@ public static class AgentPages
         AgentCreation.AgentLimitReached => LimitReached(maxAgents),
         _ => null,
     };
+
+    /// <summary>What a factor takes: its floor or higher, up to the highest that a factor takes at all.</summary>
+    private static string FromFloor(Floored<decimal> floor) =>
+        $"{Number(floor.Minimum)} or higher, and {Number(AggressiveSettings.HighestFactor)} at most";
 
     /// <summary>The bounds of a risk setting that is a percentage, or null for a setting that is none.</summary>
     private static Bounded<decimal>? PercentBoundsOf(AgentField field, AggressiveSettings bounds) => field switch

@@ -56,6 +56,8 @@ Each of `Binance:Spot` and `Binance:Futures` has a `BaseUrl` under `Live` and un
 
 `Binance:ClockCheckSeconds`, from 30 to 3600, is the time between two readings of Binance's clocks, which the clock of the service is held against. `Binance:ClockToleranceMilliseconds`, from 1 to 999, is how far the clock of the service may be from Binance's, ahead of it or behind it, before new entries pause. Binance refuses a signed call whose time is a second or more ahead of its own, so the tolerance is below that. See "The clock" in [exchange.md](exchange.md).
 
+`Trading:Aggressive` is the one trading profile: the hard bounds that a user chooses each risk setting of an agent within, and the default that a new agent starts from. A list of three numbers is the minimum, the default, and the maximum, in that order. `MinRewardToRisk` and `LiquidationBuffer` are lists of two, the minimum and the default: a user raises either from its minimum. A percentage is above 0 and at most 100, and `LeverageCap` is from 1 to 125. The reward-to-risk ratio is above 0, the liquidation buffer is above 1, and neither is above 100. The file has no place for a second profile. See "The risk settings" in [agents.md](agents.md).
+
 `Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
 
 ### Permissions

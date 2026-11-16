@@ -360,7 +360,9 @@ internal sealed class StoredAgents(
                     .SetProperty(stored => stored.Timeframe, settings.Timeframe)
                     .SetProperty(stored => stored.AllocatedCapital, settings.AllocatedCapital)
                     .SetProperty(stored => stored.RiskPerTradePercent, settings.Risk.RiskPerTradePercent)
+                    .SetProperty(stored => stored.MinRewardToRisk, settings.Risk.MinRewardToRisk)
                     .SetProperty(stored => stored.LeverageCap, settings.Risk.LeverageCap)
+                    .SetProperty(stored => stored.LiquidationBuffer, settings.Risk.LiquidationBuffer)
                     .SetProperty(stored => stored.DailyLossPercent, settings.Risk.DailyLossPercent)
                     .SetProperty(stored => stored.DrawdownPercent, settings.Risk.DrawdownPercent)
                     .SetProperty(stored => stored.MaxEntryDistancePercent, settings.Risk.MaxEntryDistancePercent),
@@ -568,8 +570,15 @@ internal sealed class StoredAgents(
     }
 
     /// <summary>The risk settings that a row holds.</summary>
-    private static AgentRisk RiskOf(Agent agent) =>
-        new(agent.RiskPerTradePercent, agent.LeverageCap, agent.DailyLossPercent, agent.DrawdownPercent, agent.MaxEntryDistancePercent);
+    internal static AgentRisk RiskOf(Agent agent) =>
+        new(
+            agent.RiskPerTradePercent,
+            agent.MinRewardToRisk,
+            agent.LeverageCap,
+            agent.LiquidationBuffer,
+            agent.DailyLossPercent,
+            agent.DrawdownPercent,
+            agent.MaxEntryDistancePercent);
 
     /// <summary>A new agent: in Draft, because its user created it.</summary>
     private static Agent NewAgent(
@@ -594,7 +603,9 @@ internal sealed class StoredAgents(
             timeframe,
             allocatedCapital,
             risk.RiskPerTradePercent,
+            risk.MinRewardToRisk,
             risk.LeverageCap,
+            risk.LiquidationBuffer,
             risk.DailyLossPercent,
             risk.DrawdownPercent,
             risk.MaxEntryDistancePercent,
@@ -776,12 +787,7 @@ internal sealed class AgentsExport : IExportedPart
                 agent.Timeframe.Code(),
                 agent.AllocatedCapital,
                 agent.QuoteAsset,
-                new AgentRisk(
-                    agent.RiskPerTradePercent,
-                    agent.LeverageCap,
-                    agent.DailyLossPercent,
-                    agent.DrawdownPercent,
-                    agent.MaxEntryDistancePercent),
+                StoredAgents.RiskOf(agent),
                 agent.State,
                 agent.StateCause,
                 agent.StateChangedAt,

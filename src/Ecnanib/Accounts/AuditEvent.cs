@@ -61,9 +61,10 @@ public enum AuditAction
     KeyRejected,
 
     /// <summary>
-    /// A risk setting of an agent was changed: its risk per trade, its leverage cap, its daily
-    /// loss limit, its drawdown limit, or how far an entry may be from the price (FR-RSK-2). The
-    /// target names the agent by its id, and the event holds no number.
+    /// A risk setting of an agent was changed: its risk per trade, its minimum reward-to-risk
+    /// ratio, its leverage cap, its liquidation buffer, its daily loss limit, its drawdown limit,
+    /// or how far an entry may be from the price (FR-RSK-2). The target names the agent by its
+    /// id, and the event holds no number.
     /// </summary>
     AgentRiskSettingsChanged,
 

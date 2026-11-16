@@ -58,8 +58,10 @@ public sealed record DefaultRolesSettings(
 }
 
 /// <summary>
-/// The one trading profile (FR-RSK-1). A three-value setting gives the hard bounds a user may
-/// choose within and the default. The other limits are fixed here. Percentages are of agent equity.
+/// The one trading profile (FR-RSK-1): the hard bounds a user may choose a risk setting of an
+/// agent within, and the default (SRS Appendix B). A three-value setting has a lowest and a
+/// highest value. A two-value setting has a floor, and may be raised from it. Percentages are of
+/// agent equity.
 /// </summary>
 /// <param name="RiskPerTradePercent">The share of equity risked on one trade.</param>
 /// <param name="MinRewardToRisk">The lowest reward-to-risk ratio a plan may have at entry.</param>
@@ -70,16 +72,22 @@ public sealed record DefaultRolesSettings(
 /// <param name="MaxEntryDistancePercent">How far an entry price may be from the current price.</param>
 public sealed record AggressiveSettings(
     Bounded<decimal> RiskPerTradePercent,
-    decimal MinRewardToRisk,
+    Floored<decimal> MinRewardToRisk,
     Bounded<int> LeverageCap,
-    decimal LiquidationBuffer,
+    Floored<decimal> LiquidationBuffer,
     Bounded<decimal> DailyLossPercent,
     Bounded<decimal> DrawdownPercent,
     Bounded<decimal> MaxEntryDistancePercent)
 {
-    // The floors that SRS Appendix B fixes for the two settings that have no bounds in the file.
-    private const decimal LowestRewardToRisk = 1.0m;
-    private const decimal LowestLiquidationBuffer = 1.5m;
+    /// <summary>
+    /// The highest value that the reward-to-risk ratio and the liquidation buffer take, in the
+    /// file and from a user: more than any plan reaches, and still a number a form can take.
+    /// Neither has a highest value of its own (SRS Appendix B).
+    /// </summary>
+    public const decimal HighestFactor = 100m;
+
+    // A liquidation price that is no further from the entry than the stop-loss is reached first.
+    private const decimal NoBuffer = 1m;
 
     // The highest leverage Binance offers on any contract.
     private const int HighestLeverage = 125;
@@ -87,9 +95,9 @@ public sealed record AggressiveSettings(
     internal static AggressiveSettings Read(SettingsReader file) =>
         new(
             Percent(file, "RiskPerTradePercent"),
-            file.Number("Trading:Aggressive:MinRewardToRisk", LowestRewardToRisk),
+            file.Floor("Trading:Aggressive:MinRewardToRisk", above: 0, upTo: HighestFactor),
             file.WholeBounds("Trading:Aggressive:LeverageCap", minimum: 1, maximum: HighestLeverage),
-            file.Number("Trading:Aggressive:LiquidationBuffer", LowestLiquidationBuffer),
+            file.Floor("Trading:Aggressive:LiquidationBuffer", above: NoBuffer, upTo: HighestFactor),
             Percent(file, "DailyLossPercent"),
             Percent(file, "DrawdownPercent"),
             Percent(file, "MaxEntryDistancePercent"));

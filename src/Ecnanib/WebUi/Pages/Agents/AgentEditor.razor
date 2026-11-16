@@ -173,7 +173,7 @@
             <fieldset>
                 <legend>Risk settings</legend>
 
-                <p>These are hard limits: the AI roles cannot override them. They are deliberately aggressive, and make large losses more likely. A change applies from the agent's next cycle.</p>
+                <p>Every agent trades the one profile, Aggressive. These are its hard limits: the AI roles cannot override them. They are deliberately aggressive, and make large losses more likely. A change applies from the agent's next cycle.</p>
 
                 <div class="field">
                     <label for="agent-risk-per-trade">Risk per trade, in percent</label>
@@ -187,6 +187,17 @@
                 </div>
 
                 <div class="field">
+                    <label for="agent-reward-to-risk">Minimum reward-to-risk ratio</label>
+                    <input id="agent-reward-to-risk" name="MinRewardToRisk" type="text" inputmode="decimal" value="@RewardToRiskEntry" autocomplete="off" required
+                           aria-invalid="@Invalid(AgentField.MinRewardToRisk)" aria-describedby="agent-reward-to-risk-hint" />
+                    <p id="agent-reward-to-risk-hint" class="field-hint">How much a trade must aim to gain for what it risks, before the agent enters it. At 1.5, a trade that loses 100 at its stop-loss must aim for a profit of 150 or more. @AgentPages.Within(Trading.Aggressive.MinRewardToRisk)</p>
+                    @if (Problem(AgentField.MinRewardToRisk) is { } rewardToRiskProblem)
+                    {
+                        <p class="field-error" role="alert">@rewardToRiskProblem</p>
+                    }
+                </div>
+
+                <div class="field">
                     <label for="agent-leverage-cap">Leverage cap</label>
                     <input id="agent-leverage-cap" name="LeverageCap" type="text" inputmode="numeric" value="@LeverageCapEntry" autocomplete="off" required
                            aria-invalid="@Invalid(AgentField.LeverageCap)" aria-describedby="agent-leverage-cap-hint" />
@@ -194,6 +205,17 @@
                     @if (Problem(AgentField.LeverageCap) is { } leverageCapProblem)
                     {
                         <p class="field-error" role="alert">@leverageCapProblem</p>
+                    }
+                </div>
+
+                <div class="field">
+                    <label for="agent-liquidation-buffer">Liquidation buffer</label>
+                    <input id="agent-liquidation-buffer" name="LiquidationBuffer" type="text" inputmode="decimal" value="@LiquidationBufferEntry" autocomplete="off" required
+                           aria-invalid="@Invalid(AgentField.LiquidationBuffer)" aria-describedby="agent-liquidation-buffer-hint" />
+                    <p id="agent-liquidation-buffer-hint" class="field-hint">How many times further from the entry price than the stop-loss the estimated liquidation price must be. At 2, a trade whose stop-loss is 1 percent away is entered only when its liquidation price is 2 percent away or more. It counts on Futures only: on Spot nothing is liquidated. @AgentPages.Within(Trading.Aggressive.LiquidationBuffer)</p>
+                    @if (Problem(AgentField.LiquidationBuffer) is { } liquidationBufferProblem)
+                    {
+                        <p class="field-error" role="alert">@liquidationBufferProblem</p>
                     }
                 </div>
 
@@ -229,6 +251,15 @@
                         <p class="field-error" role="alert">@entryDistanceProblem</p>
                     }
                 </div>
+
+                @* The limits that the specification fixes: said, and never asked for (FR-RSK-2). *@
+                <p>@AgentPages.FixedLimitsIntro</p>
+                <ul>
+                    @foreach (var limit in AgentPages.FixedLimitsExplained)
+                    {
+                        <li>@limit</li>
+                    }
+                </ul>
             </fieldset>
 
             <fieldset class="agent-roles">
@@ -352,8 +383,14 @@
     [SupplyParameterFromForm(Name = "RiskPerTradePercent")]
     private string? RiskPerTradeEntry { get; set; }
 
+    [SupplyParameterFromForm(Name = "MinRewardToRisk")]
+    private string? RewardToRiskEntry { get; set; }
+
     [SupplyParameterFromForm(Name = "LeverageCap")]
     private string? LeverageCapEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "LiquidationBuffer")]
+    private string? LiquidationBufferEntry { get; set; }
 
     [SupplyParameterFromForm(Name = "DailyLossPercent")]
     private string? DailyLossEntry { get; set; }
@@ -460,7 +497,9 @@
             var defaults = Trading.Aggressive;
             MarketEntry = Market.Spot.ToString();
             RiskPerTradeEntry = AgentPages.Number(defaults.RiskPerTradePercent.Default);
+            RewardToRiskEntry = AgentPages.Number(defaults.MinRewardToRisk.Default);
             LeverageCapEntry = AgentPages.Number(defaults.LeverageCap.Default);
+            LiquidationBufferEntry = AgentPages.Number(defaults.LiquidationBuffer.Default);
             DailyLossEntry = AgentPages.Number(defaults.DailyLossPercent.Default);
             DrawdownEntry = AgentPages.Number(defaults.DrawdownPercent.Default);
             EntryDistanceEntry = AgentPages.Number(defaults.MaxEntryDistancePercent.Default);
@@ -473,7 +512,9 @@
             TimeframeEntry = _agent.Timeframe.Code();
             CapitalEntry = AgentPages.Number(_agent.AllocatedCapital);
             RiskPerTradeEntry = AgentPages.Number(_agent.Risk.RiskPerTradePercent);
+            RewardToRiskEntry = AgentPages.Number(_agent.Risk.MinRewardToRisk);
             LeverageCapEntry = AgentPages.Number(_agent.Risk.LeverageCap);
+            LiquidationBufferEntry = AgentPages.Number(_agent.Risk.LiquidationBuffer);
             DailyLossEntry = AgentPages.Number(_agent.Risk.DailyLossPercent);
             DrawdownEntry = AgentPages.Number(_agent.Risk.DrawdownPercent);
             EntryDistanceEntry = AgentPages.Number(_agent.Risk.MaxEntryDistancePercent);
@@ -519,7 +560,9 @@
             TimeframeEntry,
             CapitalEntry,
             RiskPerTradeEntry,
+            RewardToRiskEntry,
             LeverageCapEntry,
+            LiquidationBufferEntry,
             DailyLossEntry,
             DrawdownEntry,
             EntryDistanceEntry,

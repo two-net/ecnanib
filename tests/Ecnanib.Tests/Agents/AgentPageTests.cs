@@ -57,9 +57,10 @@ public class AgentPageTests
 
         Assert.Contains("<h1>Create an agent</h1>", form);
         Assert.Equal(
-            ("1.5", "4", "5", "20", "0.8"),
-            (ValueOf(form, "RiskPerTradePercent"), ValueOf(form, "LeverageCap"), ValueOf(form, "DailyLossPercent"),
-                ValueOf(form, "DrawdownPercent"), ValueOf(form, "MaxEntryDistancePercent")));
+            ("1.5", "1.75", "4", "2.5", "5", "20", "0.8"),
+            (ValueOf(form, "RiskPerTradePercent"), ValueOf(form, "MinRewardToRisk"), ValueOf(form, "LeverageCap"),
+                ValueOf(form, "LiquidationBuffer"), ValueOf(form, "DailyLossPercent"), ValueOf(form, "DrawdownPercent"),
+                ValueOf(form, "MaxEntryDistancePercent")));
         Assert.Equal(["BTCUSDT", "SOLUSDT"], AgentBrowser.SymbolsOfferedOn(form));
         Assert.Contains("<option value=\"Spot\" selected>Spot</option>", form);
         Assert.Contains("<option value selected>Choose a timeframe</option>", form);
@@ -70,6 +71,11 @@ public class AgentPageTests
         // Every risk setting says what it is, with its bounds and its default (NFR-USA-2).
         Assert.Contains("From 0.25 to 4 percent. The default is 1.5.", form);
         Assert.Contains("A whole number from 2 to 8. The default is 4.", form);
+        Assert.Contains("1.25 or higher. The default is 1.75.", form);
+        Assert.Contains("1.75 or higher. The default is 2.5.", form);
+
+        // They are the settings of the one profile, and the form names it (FR-RSK-1).
+        Assert.Contains("Every agent trades the one profile, Aggressive.", form);
 
         // The four roles of the team are named, each with what it does (FR-TEAM-1). What a role
         // is given is shown in AgentRoleTests.
@@ -86,7 +92,9 @@ public class AgentPageTests
             timeframe: "4H",
             capital: "2500.50",
             riskPerTrade: "2.25",
+            minRewardToRisk: "2",
             leverageCap: "6",
+            liquidationBuffer: "3.5",
             dailyLoss: "7",
             drawdown: "30",
             entryDistance: "1.2"));
@@ -115,7 +123,9 @@ public class AgentPageTests
                 "FourHours",
                 2500.5m,
                 2.25m,
+                2m,
                 6,
+                3.5m,
                 7m,
                 30m,
                 1.2m,
@@ -246,7 +256,9 @@ public class AgentPageTests
 
     [Theory]
     [InlineData("RiskPerTradePercent", "0.24", "0.25", "4", "4.01", "This setting is from 0.25 to 4 percent.")]
+    [InlineData("MinRewardToRisk", "1.24", "1.25", "100", "100.01", "The minimum reward-to-risk ratio is 1.25 or higher, and 100 at most.")]
     [InlineData("LeverageCap", "1", "2", "8", "9", "The leverage cap is from 2 to 8.")]
+    [InlineData("LiquidationBuffer", "1.74", "1.75", "100", "100.01", "The liquidation buffer is 1.75 or higher, and 100 at most.")]
     [InlineData("DailyLossPercent", "0.99", "1", "12", "12.01", "This setting is from 1 to 12 percent.")]
     [InlineData("DrawdownPercent", "7.99", "8", "40", "40.01", "This setting is from 8 to 40 percent.")]
     [InlineData("MaxEntryDistancePercent", "0.19", "0.2", "2", "2.01", "This setting is from 0.2 to 2 percent.")]
@@ -290,6 +302,52 @@ public class AgentPageTests
         }
     }
 
+    [Fact]
+    public async Task The_limits_that_the_specification_fixes_are_said_on_the_form_and_no_form_changes_them()
+    {
+        using var application = AgentsApplication.With(new StandInMarketData(), new TestClock(Morning));
+        using var client = application.CreateClient();
+        await application.RegisterVerifiedAsync(Ada);
+        await client.SignInAsync(Ada);
+
+        // The form says both in plain language, and that they cannot be changed (NFR-USA-2).
+        var form = AgentBrowser.Read(await client.PageAsync(NewAgentPage));
+
+        Assert.Contains("<p>Two more limits are fixed. They are the same for every agent, and cannot be changed:</p>", form);
+        Assert.Contains("<li>On Spot, a position is worth at most 100 percent of the agent's equity.</li>", form);
+        Assert.Contains("<li>An agent has no more than 1 position open at a time.</li>", form);
+
+        // The risk settings have a field for each of the seven that are an agent's, in the
+        // order of the specification, and for nothing else: neither of the two is asked for.
+        var settings = Regex.Match(form, "<legend>Risk settings</legend>.*?</fieldset>", RegexOptions.Singleline);
+
+        Assert.True(settings.Success, $"The page has no risk settings:{Environment.NewLine}{form}");
+        Assert.Equal(
+            [
+                "RiskPerTradePercent", "MinRewardToRisk", "LeverageCap", "LiquidationBuffer", "DailyLossPercent", "DrawdownPercent",
+                "MaxEntryDistancePercent",
+            ],
+            Regex.Matches(settings.Value, " name=\"([^\"]+)\"").Select(field => field.Groups[1].Value));
+
+        // A form that brings them all the same stores what a form without them stores.
+        Assert.Equal(AgentsPage, (await client.CreateAgentAsync(AgentBrowser.Entry(name: "As offered"))).Path);
+        Assert.Equal(
+            AgentsPage,
+            (await client.CreateAgentAsync(
+            [
+                .. AgentBrowser.Entry(name: "With more"),
+                ("SpotPositionPercentOfEquity", "500"),
+                ("MaxPositionPercent", "500"),
+                ("OpenPositionsPerAgent", "3"),
+                ("OpenPositions", "3"),
+            ])).Path);
+
+        var offered = StoredAgent.Named(application.Database, "As offered");
+        var withMore = StoredAgent.Named(application.Database, "With more");
+
+        Assert.Equal(offered with { Id = withMore.Id, Name = "With more" }, withMore);
+    }
+
     [Theory]
     [InlineData("Name", "", "Enter a name.")]
     [InlineData("Name", "   ", "Enter a name.")]
@@ -317,6 +375,12 @@ public class AgentPageTests
     [InlineData("LeverageCap", "", "Enter the leverage cap.")]
     [InlineData("LeverageCap", "2.5", "Enter the leverage cap as a whole number.")]
     [InlineData("LeverageCap", "five", "Enter the leverage cap as a whole number.")]
+    [InlineData("MinRewardToRisk", "", "Enter the minimum reward-to-risk ratio.")]
+    [InlineData("MinRewardToRisk", "high", "Enter a number, with digits and a decimal point: 2 or 1.5.")]
+    [InlineData("MinRewardToRisk", "1.555", "Enter the number with 2 decimal places at most.")]
+    [InlineData("LiquidationBuffer", "", "Enter the liquidation buffer.")]
+    [InlineData("LiquidationBuffer", "-2", "Enter a number, with digits and a decimal point: 2 or 1.5.")]
+    [InlineData("LiquidationBuffer", "2.005", "Enter the number with 2 decimal places at most.")]
     public async Task What_is_entered_for_a_setting_is_held_to_what_the_setting_takes(string field, string entered, string message)
     {
         using var application = AgentsApplication.With(new StandInMarketData(), new TestClock(Morning));
@@ -421,6 +485,7 @@ public class AgentPageTests
 
         Assert.Contains("<h1>Settings of the agent Swing</h1>", editor);
         Assert.Equal(("Swing", "1000", "1.5", "4"), (ValueOf(editor, "Name"), ValueOf(editor, "AllocatedCapital"), ValueOf(editor, "RiskPerTradePercent"), ValueOf(editor, "LeverageCap")));
+        Assert.Equal(("1.75", "2.5"), (ValueOf(editor, "MinRewardToRisk"), ValueOf(editor, "LiquidationBuffer")));
         Assert.Contains("<option value=\"Spot\" selected>Spot</option>", editor);
         Assert.Contains("<option value=\"SOLUSDT\" selected>", editor);
         Assert.Contains("<option value=\"1H\" selected>", editor);
@@ -435,7 +500,9 @@ public class AgentPageTests
             timeframe: "1D",
             capital: "300.25",
             riskPerTrade: "0.5",
+            minRewardToRisk: "1.25",
             leverageCap: "8",
+            liquidationBuffer: "4",
             dailyLoss: "2",
             drawdown: "10",
             entryDistance: "0.2"));
@@ -453,7 +520,9 @@ public class AgentPageTests
                 Timeframe = "OneDay",
                 AllocatedCapital = 300.25m,
                 RiskPerTradePercent = 0.5m,
+                MinRewardToRisk = 1.25m,
                 LeverageCap = 8,
+                LiquidationBuffer = 4m,
                 DailyLossPercent = 2m,
                 DrawdownPercent = 10m,
                 MaxEntryDistancePercent = 0.2m,
@@ -1039,11 +1108,11 @@ public class AgentPageTests
         // however the numbers are written.
         clock.Set(Morning.AddMinutes(1));
         await client.SaveAgentAsync(agent.Id, AgentBrowser.Entry(name: "Renamed", capital: "50", timeframe: "4H"));
-        await client.SaveAgentAsync(agent.Id, AgentBrowser.Entry(name: "Renamed", riskPerTrade: "1.50", dailyLoss: "5.0", entryDistance: "0.80"));
+        await client.SaveAgentAsync(agent.Id, AgentBrowser.Entry(name: "Renamed", riskPerTrade: "1.50", liquidationBuffer: "2.50", dailyLoss: "5.0", entryDistance: "0.80"));
 
         Assert.DoesNotContain(StoredAuditEvent.All(application.Database), recorded => recorded.Action.StartsWith("Agent", StringComparison.Ordinal));
 
-        // A change to each of the five is recorded, once for each form that was saved.
+        // A change to each of the seven is recorded, once for each form that was saved.
         (string Name, string Value)[][] changes =
         [
             AgentBrowser.Entry(name: "Renamed", riskPerTrade: "2"),
@@ -1051,6 +1120,8 @@ public class AgentPageTests
             AgentBrowser.Entry(name: "Renamed", riskPerTrade: "2", leverageCap: "5", dailyLoss: "6"),
             AgentBrowser.Entry(name: "Renamed", riskPerTrade: "2", leverageCap: "5", dailyLoss: "6", drawdown: "25"),
             AgentBrowser.Entry(name: "Renamed", riskPerTrade: "2", leverageCap: "5", dailyLoss: "6", drawdown: "25", entryDistance: "1"),
+            AgentBrowser.Entry(name: "Renamed", riskPerTrade: "2", leverageCap: "5", dailyLoss: "6", drawdown: "25", entryDistance: "1", minRewardToRisk: "2"),
+            AgentBrowser.Entry(name: "Renamed", riskPerTrade: "2", leverageCap: "5", dailyLoss: "6", drawdown: "25", entryDistance: "1", minRewardToRisk: "2", liquidationBuffer: "3"),
         ];
 
         for (var change = 0; change < changes.Length; change++)
@@ -1072,7 +1143,7 @@ public class AgentPageTests
             .ToList();
 
         Assert.Equal(
-            [.. Enumerable.Range(0, 5).Select(change => $"AgentRiskSettingsChanged agent:{agent.Id} {Morning.AddMinutes(10 + change):O}")],
+            [.. Enumerable.Range(0, changes.Length).Select(change => $"AgentRiskSettingsChanged agent:{agent.Id} {Morning.AddMinutes(10 + change):O}")],
             events.Select(recorded => $"{recorded.Action} {recorded.Target} {recorded.OccurredAt:O}"));
         Assert.All(events, recorded => Assert.Equal((user.Id, "203.0.113.7"), (recorded.UserId, recorded.Origin)));
 
@@ -1082,7 +1153,7 @@ public class AgentPageTests
 
         // The log tells the same in its own words, without the name of the action.
         Assert.Equal(
-            5,
+            changes.Length,
             application.Events().Count(written => written.Template == "User {UserId} changed the risk settings of agent {AgentId}"));
         Assert.DoesNotContain(application.Events(), written => written.ToString().Contains("AgentRiskSettingsChanged", StringComparison.Ordinal));
     }
@@ -1148,7 +1219,8 @@ public class AgentPageTests
         await application.RegisterVerifiedAsync(Ada);
         await client.SignInAsync(Ada);
         await client.CreateAgentAsync(AgentBrowser.Entry(
-            name: "Swing", market: "Futures", timeframe: "4H", capital: "640.5", riskPerTrade: "3", leverageCap: "7", dailyLoss: "9", drawdown: "35", entryDistance: "1.5"));
+            name: "Swing", market: "Futures", timeframe: "4H", capital: "640.5", riskPerTrade: "3", minRewardToRisk: "2.25", leverageCap: "7",
+            liquidationBuffer: "3", dailyLoss: "9", drawdown: "35", entryDistance: "1.5"));
         var agent = Assert.Single(StoredAgent.All(application.Database));
 
         var export = JsonDocument.Parse(await client.PageAsync("/account/export")).RootElement;
@@ -1176,9 +1248,17 @@ public class AgentPageTests
 
         var risk = exported.GetProperty("risk");
         Assert.Equal(
-            (3m, 7, 9m, 35m, 1.5m),
+            [
+                "riskPerTradePercent", "minRewardToRisk", "leverageCap", "liquidationBuffer", "dailyLossPercent", "drawdownPercent",
+                "maxEntryDistancePercent",
+            ],
+            risk.EnumerateObject().Select(property => property.Name));
+        Assert.Equal(
+            (3m, 2.25m, 7, 3m, 9m, 35m, 1.5m),
             (risk.GetProperty("riskPerTradePercent").GetDecimal(),
+                risk.GetProperty("minRewardToRisk").GetDecimal(),
                 risk.GetProperty("leverageCap").GetInt32(),
+                risk.GetProperty("liquidationBuffer").GetDecimal(),
                 risk.GetProperty("dailyLossPercent").GetDecimal(),
                 risk.GetProperty("drawdownPercent").GetDecimal(),
                 risk.GetProperty("maxEntryDistancePercent").GetDecimal()));

@@ -150,24 +150,6 @@ internal sealed class SettingsReader
         return number;
     }
 
-    public decimal Number(string key, decimal minimum)
-    {
-        var rule = $"must be a number, {Show(minimum)} or more";
-
-        if (!TryDecimal(key, rule, out var number))
-        {
-            return 0;
-        }
-
-        if (number < minimum)
-        {
-            Problem(key, rule);
-            return 0;
-        }
-
-        return number;
-    }
-
     public bool Flag(string key) =>
         TryScalar(key, Kind.Flag, "must be true or false", out var text) && bool.Parse(text);
 
@@ -257,25 +239,38 @@ internal sealed class SettingsReader
     }
 
     /// <summary>Three numbers in the order minimum, default, maximum, each above and up to the given limits.</summary>
-    public Bounded<decimal> Bounds(string key, decimal above, decimal upTo)
+    public Bounded<decimal> Bounds(string key, decimal above, decimal upTo) =>
+        ThreeValues<decimal>(key, item => Within(item, above, upTo));
+
+    /// <summary>Two numbers in the order minimum, default, each above and up to the given limits.</summary>
+    public Floored<decimal> Floor(string key, decimal above, decimal upTo)
     {
-        var rule = $"must be a number above {Show(above)} and at most {Show(upTo)}";
-
-        return ThreeValues<decimal>(key, item =>
+        var items = List(key);
+        if (!_nodes.TryGetValue(key, out var node) || node.Kind != Kind.List)
         {
-            if (!TryDecimal(item, rule, out var number))
-            {
-                return null;
-            }
+            return default;
+        }
 
-            if (number <= above || number > upTo)
-            {
-                Problem(item, rule);
-                return null;
-            }
+        if (items.Count != 2)
+        {
+            Problem(key, "must be a list of two numbers: minimum, default");
+            _closed.Add(key);
+            return default;
+        }
 
-            return number;
-        });
+        var minimum = Within(items[0], above, upTo);
+        var @default = Within(items[1], above, upTo);
+        if (minimum is null || @default is null)
+        {
+            return default;
+        }
+
+        if (minimum.Value > @default.Value)
+        {
+            Problem(key, "must be in the order minimum, default");
+        }
+
+        return new Floored<decimal>(minimum.Value, @default.Value);
     }
 
     /// <summary>Three whole numbers in the order minimum, default, maximum, each within the given range.</summary>
@@ -485,6 +480,25 @@ internal sealed class SettingsReader
         }
 
         return names;
+    }
+
+    /// <summary>A number of a list, above and up to the given limits, or null when it is none.</summary>
+    private decimal? Within(string item, decimal above, decimal upTo)
+    {
+        var rule = $"must be a number above {Show(above)} and at most {Show(upTo)}";
+
+        if (!TryDecimal(item, rule, out var number))
+        {
+            return null;
+        }
+
+        if (number <= above || number > upTo)
+        {
+            Problem(item, rule);
+            return null;
+        }
+
+        return number;
     }
 
     private Bounded<T> ThreeValues<T>(string key, Func<string, T?> read)

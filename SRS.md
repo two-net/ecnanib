@@ -622,7 +622,7 @@ These are logical entities, not a physical schema. The physical schema follows f
 
 ## 7. Configuration file outline
 
-The outline below shows what the single configuration file contains. Key names and the JSON form are illustrative; section 5.2 is the requirement. Three-value lists are minimum, default, and maximum.
+The outline below shows what the single configuration file contains. Key names and the JSON form are illustrative; section 5.2 is the requirement. Three-value lists are minimum, default, and maximum. Two-value lists are minimum and default.
 
 ```json
 {
@@ -661,9 +661,9 @@ The outline below shows what the single configuration file contains. Key names a
     },
     "Aggressive": {
       "RiskPerTradePercent": [0.5, 2, 5],
-      "MinRewardToRisk": 1.5,
+      "MinRewardToRisk": [1.0, 1.5],
       "LeverageCap": [1, 5, 10],
-      "LiquidationBuffer": 2.0,
+      "LiquidationBuffer": [1.5, 2.0],
       "DailyLossPercent": [2, 6, 15],
       "DrawdownPercent": [10, 25, 50],
       "MaxEntryDistancePercent": [0.1, 1, 3]

@@ -287,6 +287,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("leverage_cap");
 
+                    b.Property<decimal>("LiquidationBuffer")
+                        .HasColumnType("numeric")
+                        .HasColumnName("liquidation_buffer");
+
                     b.Property<string>("Market")
                         .IsRequired()
                         .HasColumnType("text")
@@ -295,6 +299,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.Property<decimal>("MaxEntryDistancePercent")
                         .HasColumnType("numeric")
                         .HasColumnName("max_entry_distance_percent");
+
+                    b.Property<decimal>("MinRewardToRisk")
+                        .HasColumnType("numeric")
+                        .HasColumnName("min_reward_to_risk");
 
                     b.Property<string>("Mode")
                         .IsRequired()

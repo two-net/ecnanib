@@ -23,7 +23,7 @@ Whose rows a request reaches is in [ownership.md](ownership.md). The fair-use li
 | Timeframe | 15m, 1H, 4H, or 1D (FR-AGT-3). | One of the four, by its code. The form has no default: its user chooses. |
 | Team | The four roles that run the agent, each with a provider and one of its models (FR-AGT-5). | A model that can be selected, and that the user's own key can use. A role may wait for its model while the agent does not run. See "The team". |
 | Allocated capital | How much the agent may trade with, in the asset that its symbol is priced in. | A number above 0, with 8 decimal places at most. It is not held to the balance of the account: an entry that the balance does not cover is skipped when it is due (FR-BIN-S3, FR-BIN-F6). |
-| Risk settings | Risk per trade, leverage cap, daily loss limit, drawdown limit, and maximum entry distance. | Each within the hard bounds of `Trading:Aggressive`. See "The risk settings". |
+| Risk settings | Risk per trade, minimum reward-to-risk ratio, leverage cap, liquidation buffer, daily loss limit, drawdown limit, and maximum entry distance. | Each within the hard bounds of `Trading:Aggressive`. See "The risk settings". |
 
 - **The settings are checked on the server,** by `IStoredAgents`, whatever a form offered or a browser checked. A form brings text, and `AgentRules.Read` says what is wrong with it, field by field. Everything that is wrong is said at once, each at its field, and what was entered stays in the form.
 - A number is digits with at most one decimal point: no sign, no thousands separator, and no exponent, the same in every country.
@@ -32,20 +32,23 @@ Whose rows a request reaches is in [ownership.md](ownership.md). The fair-use li
 
 ### The risk settings
 
-The product has one profile, Aggressive. Its defaults and hard bounds are in the configuration file, and a user adjusts the settings of an agent only within the bounds (FR-RSK-1, FR-RSK-2).
+The product has one profile, Aggressive. Its defaults and hard bounds are in the configuration file, and a user adjusts the settings of an agent only within the bounds (FR-RSK-1, FR-RSK-2). The settings are those of Appendix B of the specification, in its order, and the form names the profile.
 
 | Setting | Key of the file | In the tracked file |
 |---|---|---|
 | Risk per trade, as a share of the agent's equity | `Trading:Aggressive:RiskPerTradePercent` | 0.5 to 5, default 2 |
+| Minimum reward-to-risk ratio at entry | `Trading:Aggressive:MinRewardToRisk` | 1 or higher, default 1.5 |
 | Leverage cap on Futures | `Trading:Aggressive:LeverageCap` | 1 to 10, default 5 |
+| Liquidation buffer on Futures | `Trading:Aggressive:LiquidationBuffer` | 1.5 or higher, default 2 |
 | Daily loss limit, as a share of the agent's equity | `Trading:Aggressive:DailyLossPercent` | 2 to 15, default 6 |
 | Drawdown limit from the agent's peak equity | `Trading:Aggressive:DrawdownPercent` | 10 to 50, default 25 |
 | Maximum distance of an entry from the current price | `Trading:Aggressive:MaxEntryDistancePercent` | 0.1 to 3, default 1 |
 
 - **A new agent starts from the defaults.** The form shows them, and says the bounds and the default under each field, with what the setting does in plain language (NFR-USA-2).
-- **A value outside the bounds is refused on the server,** on either side, and the bounds themselves are taken. A percentage has 2 decimal places at most, and the leverage cap is a whole number.
-- The leverage cap is stored for every agent and counts on Futures only: an agent on Spot keeps it for when its market is changed.
-- **The settings that the file fixes are not an agent's.** The minimum reward-to-risk ratio and the liquidation buffer are single values of the file, the same for every agent, and so are the two that the specification fixes: a position on Spot is at most the agent's equity, and an agent has one position. No page offers them.
+- **A value outside the bounds is refused on the server,** on either side, and the bounds themselves are taken. A percentage and a factor have 2 decimal places at most, and the leverage cap is a whole number.
+- **The reward-to-risk ratio and the liquidation buffer have a floor, and no highest value of their own.** A user raises either from its floor. Both are held to `AggressiveSettings.HighestFactor`, which is 100: more than any plan reaches, and still a number that a form can take. The file is held to it as well.
+- The leverage cap and the liquidation buffer are stored for every agent and count on Futures only: an agent on Spot keeps them for when its market is changed.
+- **Two limits are fixed, and are not an agent's** (SRS Appendix B): a position on Spot is worth at most 100 percent of the agent's equity, and an agent has one open position at a time. `FixedLimits` in `RiskGuard` has them. The file has no key for them, and the form says them and has no field for them. A form that brings them all the same stores nothing of them.
 - **A change is recorded in the audit trail** (NFR-LOG-7): see "The audit trail".
 - A change applies from the agent's next cycle (FR-AGT-8), also for an agent that runs. Nothing runs a cycle yet: what does reads the settings as they are when it starts.
 
@@ -430,7 +433,7 @@ What a user does to an agent that is money-relevant is recorded, in the transact
 | `AgentSwitchedToLive` | The user switched it from Demo to Live. |
 | `AgentSwitchedToDemo` | The user switched it from Live back to Demo. |
 
-- **One event for each form that changed a risk setting,** whichever of the five and however many. A form that brings the settings as they are records nothing, however the numbers are written: `1.50` is `1.5`.
+- **One event for each form that changed a risk setting,** whichever of the seven and however many. A form that brings the settings as they are records nothing, however the numbers are written: `1.50` is `1.5`.
 - **Setting them for the first time changes none.** Creating an agent and copying one record nothing, and neither does deleting one.
 - **A control that changes nothing records nothing:** one that is refused, one that is not offered in the state of the agent, one that was not asked about for an agent in Live, and a form that is sent twice.
 - **A switch that is refused records nothing,** whatever stood in its way, and neither does a form that is sent twice. The proof that the switch to Live takes is an event of its own, `Reauthenticated`, recorded when it was given.
@@ -446,7 +449,7 @@ See "The audit trail" in [accounts.md](accounts.md).
 
 | Table | Columns |
 |---|---|
-| `agents` | `id`, `user_id`, `name`, `mode`, `market`, `symbol`, `quote_asset`, `timeframe`, `allocated_capital`, `risk_per_trade_percent`, `leverage_cap`, `daily_loss_percent`, `drawdown_percent`, `max_entry_distance_percent`, `state`, `state_cause`, `state_changed_at`, `created_at`. One row for each `(user_id, name)`. At most one active row for each `(user_id, mode, market, symbol)`. |
+| `agents` | `id`, `user_id`, `name`, `mode`, `market`, `symbol`, `quote_asset`, `timeframe`, `allocated_capital`, `risk_per_trade_percent`, `min_reward_to_risk`, `leverage_cap`, `liquidation_buffer`, `daily_loss_percent`, `drawdown_percent`, `max_entry_distance_percent`, `state`, `state_cause`, `state_changed_at`, `created_at`. One row for each `(user_id, name)`. At most one active row for each `(user_id, mode, market, symbol)`. |
 | `agent_roles` | `agent_id`, `role`, `user_id`, `model_id`. One row for each role of an agent that has a model: `(agent_id, role)` is its key. `role` points at `roles`, and `model_id` at `ai_models`. |
 | `agent_state_changes` | `id`, `agent_id`, `user_id`, `mode`, `state`, `cause`, `changed_at`. One row for each change of the state of an agent, the first of them its creation. Indexed by `(agent_id, changed_at)`. |
 
@@ -456,7 +459,7 @@ The tables hold rows of users: `Agent`, `AgentRole`, and `AgentStateChange` impl
 |---|---|
 | `mode`, `market`, `timeframe`, `state`, `state_cause` | The name of a member of `TradingMode`, `Market`, `Timeframe`, `AgentState`, and `AgentStateCause`. |
 | `quote_asset` | The asset that the symbol is priced in, as Binance named it when the symbol was stored. |
-| `allocated_capital` and the percentages | Exact decimals. |
+| `allocated_capital`, the percentages, `min_reward_to_risk`, and `liquidation_buffer` | Exact decimals. |
 | `state_changed_at` | Since when the agent is in its state. For a draft, when it was created. |
 | `agent_roles.role` | The name of a member of `Role`, which is the key of its row in `roles`. |
 | `agent_roles.model_id` | The model of the catalog that the role was given. A model is never deleted, so the row finds it for good, also once its provider no longer offers it. The provider of the role is the one of the model. The row says no mode: it is a setting, and no result (FR-BIN-11). |
@@ -468,6 +471,8 @@ An agent's id is a version 7 UUID that the application assigns, and so is the id
 The migration that added `agent_roles` gave no agent a model: an agent that was stored then has a team of roles that wait for theirs, and is started once its user has given each one. An agent that ran then was not moved: nothing calls a model yet, and it is asked about its team when it is next started or resumed.
 
 The migration that added `agent_state_changes` gave every agent that was stored then its first change, from what its row said: its state, the cause, and since when. The migration that added `agent_state_changes.mode` gave every change that was stored then the mode of its agent: nothing switched the mode of an agent before it.
+
+The migration that added `min_reward_to_risk` and `liquidation_buffer` gave every agent that was stored then 1.5 and 2, the defaults of the specification, which the tracked file carries. Until then both were single values of the file, the same for every agent. A migration reads no file, so a deployment whose file has other values finds these two in its rows, and the user of an agent changes them on its form.
 
 ## The log
 
@@ -506,6 +511,8 @@ An event names a user and an agent by their ids, and never holds a name or a num
 
 - What keeps positions and orders, which answers `IAgentExposure` and closes a position. Until it is built, no agent has a position: stopping an agent asks for no choice, and no "Close position now" is shown. With it comes cancelling an entry that has not filled when its agent stops running (FR-BIN-S2).
 - The cycles, the data package, and the prompts that go by the timeframe and the market of an agent. An agent that runs is in that state, and nothing more happens. What runs a cycle asks `AgentStates.RunsCycles`.
+- What enforces the risk settings and the two fixed limits on a trade: the Risk Guard (FR-RSK-3). Agents keeps the settings, and holds them to the bounds when they are saved.
+- Holding a stored risk setting to bounds that the file is given later. An agent whose value is outside bounds that were narrowed since keeps it, and so does a copy of it. Its form shows the value, and is saved only once the value is within the bounds.
 - What halts an agent when a loss limit is reached, and what resumes it after a daily loss limit, on the next UTC day (FR-RSK-8). A halted agent is resumed and stopped by its user already.
 - The other causes of Attention required: a call that reports that a model does not exist (FR-CAT-8), an exchange setting that conflicts (FR-BIN-F2), and calls that fail repeatedly (NFR-REL-4). With the second comes refusing a start while the account is in a conflicting mode or holds a position in the symbol. The first comes with what calls a model for an agent.
 - Moving an agent that runs when its user's key for a provider can no longer use a model of its team. Which models a key can use is recorded when its provider lists them: when a key is stored or replaced, and at each check. A list that comes to lack the model, and a key that is replaced, tell Agents nothing, and the list is written apart from the lock of the account, so a start may go by the list as it was a moment before. Such an agent is refused the next time it is started or resumed, and until then the call that reports that the model does not exist is what moves it. See "The models a key can use" in [credentials.md](credentials.md).

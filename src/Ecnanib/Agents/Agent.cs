@@ -27,7 +27,9 @@ namespace Ecnanib.Agents;
 /// <param name="timeframe">The candle length it works on (FR-AGT-3).</param>
 /// <param name="allocatedCapital">The capital its user allocated to it, in the quote asset.</param>
 /// <param name="riskPerTradePercent">The share of its equity that it risks on one trade, in percent.</param>
+/// <param name="minRewardToRisk">The lowest reward-to-risk ratio that a plan of it may have at entry.</param>
 /// <param name="leverageCap">The highest leverage it uses on Futures.</param>
+/// <param name="liquidationBuffer">How many times further from its entry than the stop-loss the liquidation price must be on Futures.</param>
 /// <param name="dailyLossPercent">The loss in one day that halts it, as a share of its equity in percent.</param>
 /// <param name="drawdownPercent">The fall from its peak equity that halts it, in percent.</param>
 /// <param name="maxEntryDistancePercent">How far an entry price may be from the current price, in percent.</param>
@@ -46,7 +48,9 @@ public sealed class Agent(
     Timeframe timeframe,
     decimal allocatedCapital,
     decimal riskPerTradePercent,
+    decimal minRewardToRisk,
     int leverageCap,
+    decimal liquidationBuffer,
     decimal dailyLossPercent,
     decimal drawdownPercent,
     decimal maxEntryDistancePercent,
@@ -75,7 +79,11 @@ public sealed class Agent(
 
     public decimal RiskPerTradePercent { get; } = riskPerTradePercent;
 
+    public decimal MinRewardToRisk { get; } = minRewardToRisk;
+
     public int LeverageCap { get; } = leverageCap;
+
+    public decimal LiquidationBuffer { get; } = liquidationBuffer;
 
     public decimal DailyLossPercent { get; } = dailyLossPercent;
 
@@ -110,7 +118,9 @@ internal sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
         builder.Property(agent => agent.Timeframe);
         builder.Property(agent => agent.AllocatedCapital);
         builder.Property(agent => agent.RiskPerTradePercent);
+        builder.Property(agent => agent.MinRewardToRisk);
         builder.Property(agent => agent.LeverageCap);
+        builder.Property(agent => agent.LiquidationBuffer);
         builder.Property(agent => agent.DailyLossPercent);
         builder.Property(agent => agent.DrawdownPercent);
         builder.Property(agent => agent.MaxEntryDistancePercent);
