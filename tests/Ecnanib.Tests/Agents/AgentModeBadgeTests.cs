@@ -109,6 +109,7 @@ public class AgentModeBadgeTests
 
         // An agent is created, started, and stopped in Demo.
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "Swing"));
+        await application.GiveTeamsAsync(user.Id, Morning);
         var agent = Assert.Single(StoredAgent.All(application.Database)).Id;
         clock.Set(Morning.AddMinutes(1));
         await client.StartAgentAsync(agent);

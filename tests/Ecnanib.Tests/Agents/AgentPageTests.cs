@@ -71,10 +71,12 @@ public class AgentPageTests
         Assert.Contains("From 0.25 to 4 percent. The default is 1.5.", form);
         Assert.Contains("A whole number from 2 to 8. The default is 4.", form);
 
-        // The four roles of the team are named. Their models are not chosen here yet.
+        // The four roles of the team are named, each with what it does (FR-TEAM-1). What a role
+        // is given is shown in AgentRoleTests.
         Assert.All(
             new[] { "Market Analyst", "Sentiment Analyst", "Strategist", "Risk Manager" },
-            role => Assert.Contains($"<dt>{role}</dt>", form));
+            role => Assert.Contains($"<h3>{role}</h3>", form));
+        Assert.Contains("Combines both reports, recalled lessons, and the current position into a trade plan.", form);
 
         clock.Set(Morning.AddMinutes(5));
         var (path, list) = await client.CreateAgentAsync(AgentBrowser.Entry(
@@ -481,7 +483,12 @@ public class AgentPageTests
 
         Assert.Contains("<p>Market: <strong>Spot</strong>. Symbol: <strong>BTCUSDT</strong>. Timeframe: <strong>1H</strong>.</p>", editor);
         Assert.Contains($"<p role=\"note\">{AgentPages.StructureLocked}</p>", editor);
-        Assert.DoesNotContain("<select", editor);
+        Assert.All(
+            new[] { "agent-market", "agent-symbol", "agent-timeframe" },
+            choice => Assert.DoesNotContain($"<select id=\"{choice}\"", editor));
+
+        // The models of its roles are offered all the same: they change in any state (FR-AGT-8).
+        Assert.Contains("<select id=\"agent-strategist-model\"", editor);
 
         // A form that brings another market, symbol, or timeframe all the same is refused on
         // the server, each of them, and nothing of it is stored, the rest of the form included.

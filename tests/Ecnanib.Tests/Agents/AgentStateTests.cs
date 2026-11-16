@@ -99,6 +99,9 @@ public class AgentStateTests
                 "UserStoppedKeepingPosition",
                 "ExchangeKeyDeleted",
                 "ExchangeKeyInvalid",
+                "AiKeyDeleted",
+                "AiKeyInvalid",
+                "ModelUnavailable",
             ],
             Enum.GetNames<AgentStateCause>());
     }

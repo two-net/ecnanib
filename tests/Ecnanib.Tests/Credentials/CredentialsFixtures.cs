@@ -223,9 +223,7 @@ internal static class StoredKeyRows
     /// </summary>
     public static async Task GiveKeysAsync(this AccountsApplication application, Guid userId, DateTimeOffset savedAt)
     {
-        var aiId = Guid.CreateVersion7();
-        var aiKey = Keys.Of(userId.ToString("N"), "claude");
-        var ai = application.Secrets.Encrypt(Encoding.UTF8.GetBytes(aiKey), AiCredential.BoundTo(aiId, userId));
+        await application.GiveAiKeyAsync(userId, "claude", savedAt, accessibleModels: null);
 
         var exchangeId = Guid.CreateVersion7();
         var apiKey = Keys.Of(userId.ToString("N"), "demo");
@@ -235,17 +233,6 @@ internal static class StoredKeyRows
 
         await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
-        context.Add(new AiCredential(
-            aiId,
-            userId,
-            new AiProviderCode("claude"),
-            ai.Value,
-            ai.KeyId,
-            aiKey[^4..],
-            savedAt,
-            KeyStatus.Valid,
-            savedAt,
-            accessibleModels: null));
         context.Add(new ExchangeCredential(
             exchangeId,
             userId,
@@ -259,6 +246,42 @@ internal static class StoredKeyRows
             spotTrading: true,
             futuresTrading: true,
             ipRestricted: null));
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Gives a user a key for one AI provider, stored as the application stores it, and valid as
+    /// of the moment it was stored. Nobody is signed in for it, and nothing is recorded.
+    /// </summary>
+    /// <param name="application">The application.</param>
+    /// <param name="userId">The user.</param>
+    /// <param name="provider">The code of the provider.</param>
+    /// <param name="savedAt">When the key was stored, and taken by its provider.</param>
+    /// <param name="accessibleModels">
+    /// The identifiers that the provider listed to the key, or null when it has listed none yet,
+    /// so that it is not known what the key can use.
+    /// </param>
+    public static async Task GiveAiKeyAsync(
+        this AccountsApplication application, Guid userId, string provider, DateTimeOffset savedAt, string[]? accessibleModels)
+    {
+        var id = Guid.CreateVersion7();
+        var key = Keys.Of(userId.ToString("N"), provider);
+        var stored = application.Secrets.Encrypt(Encoding.UTF8.GetBytes(key), AiCredential.BoundTo(id, userId));
+
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        context.Add(new AiCredential(
+            id,
+            userId,
+            new AiProviderCode(provider),
+            stored.Value,
+            stored.KeyId,
+            key[^4..],
+            savedAt,
+            KeyStatus.Valid,
+            savedAt,
+            accessibleModels));
 
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }

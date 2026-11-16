@@ -72,8 +72,9 @@ public class AgentsRulesTests
 
         // An agent is switched between Demo and Live, and what it did before the switch stays
         // what it was: every table with rows of an agent says the mode in each row (FR-BIN-11).
-        // The changes of its state do. A table of positions, orders, trades, or results that is
-        // added later is found here until it does as well.
+        // The changes of its state do. The models of its roles are settings, and are listed as
+        // such. A table of positions, orders, trades, or results that is added later is found
+        // here until it says the mode as well.
         var unlabeled = AgentsRules.TablesOfAgentRowsWithoutMode(model.Model, typeof(Agent))
             .Where(table => !AgentsRules.AgentRowsWithoutMode.ContainsKey(table))
             .ToList();
@@ -117,13 +118,16 @@ public class AgentsRulesTests
     }
 
     [Fact]
-    public void No_agent_uses_a_model_yet_and_a_model_that_one_uses_is_found()
+    public void An_agent_uses_the_models_of_its_roles_and_a_model_that_one_uses_is_found()
     {
         using var model = ModelOnly.Context();
 
-        // Agents has a table of its own, and none of its rows points at a model of the catalog.
-        Assert.Contains(model.Model.GetEntityTypes(), entity => AgentsRules.IsOfAgents(entity.ClrType));
-        Assert.Empty(AgentsRules.ModelChoices(model.Model));
+        // Pinned, so that another way for an agent to use a model shows in a review as what it
+        // is: one more thing that Agents is told about when a key or a model goes, and asks
+        // Credentials about before it is stored (KeyModelsTests, ModelDependentsTests,
+        // AgentKeyDependentsTests). An agent uses the models that its roles were given, and no
+        // other (FR-AGT-5).
+        Assert.Equal(["agent_roles.model_id"], AgentsRules.ModelChoices(model.Model));
 
         // In a model where a row of the component does, it is found, by its table and its column.
         using var planted = new PlantedContext();

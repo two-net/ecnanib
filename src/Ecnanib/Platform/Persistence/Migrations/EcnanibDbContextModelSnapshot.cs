@@ -358,6 +358,39 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("agents", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Agents.AgentRole", b =>
+                {
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Role")
+                        .HasColumnType("text")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("ModelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("model_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("AgentId", "Role")
+                        .HasName("pk_agent_roles");
+
+                    b.HasIndex("ModelId")
+                        .HasDatabaseName("ix_agent_roles_model_id");
+
+                    b.HasIndex("Role")
+                        .HasDatabaseName("ix_agent_roles_role");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_agent_roles_user_id");
+
+                    b.ToTable("agent_roles", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Agents.AgentStateChange", b =>
                 {
                     b.Property<Guid>("Id")
@@ -954,6 +987,37 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_agents_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Agents.AgentRole", b =>
+                {
+                    b.HasOne("Ecnanib.Agents.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_roles_agents_agent_id");
+
+                    b.HasOne("Ecnanib.Catalog.AiModel", null)
+                        .WithMany()
+                        .HasForeignKey("ModelId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_roles_ai_models_model_id");
+
+                    b.HasOne("Ecnanib.Platform.Persistence.RoleRow", null)
+                        .WithMany()
+                        .HasForeignKey("Role")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_roles_roles_role");
+
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_roles_users_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Agents.AgentStateChange", b =>

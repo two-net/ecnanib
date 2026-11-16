@@ -12,9 +12,9 @@ namespace Ecnanib.Catalog;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing implements it until an agent is given a model: Agents starts and stops agents, and
-/// gives no role a model yet. Until then nothing depends on a model, and a model is marked
-/// without anything being told.
+/// Agents implements it: a role of an agent's team is given a model of the catalog, and an
+/// agent that runs with a model that goes moves to Attention required. Its roles keep the
+/// models that its user gave them.
 /// </para>
 /// <para>
 /// It is told inside the transaction that stores the sync, before the rows of the models

@@ -112,7 +112,7 @@ Only an eligible model can be selected for an agent (FR-CAT-6). Which models are
 - **To allow a model is to say that it can do the work of a role.** Every role returns a structured result (FR-TEAM-6), so a model that cannot return one is not allowed. There is no list for that capability beside `Allow`: it would say the same again.
 - **`LiveSearch` says something of a model, and allows none.** A model that cannot search live is selected like any other: its role runs without live data.
 - **A model that can be selected is `Active` too.** One that its provider no longer offers cannot be selected until the provider lists it again.
-- **Nothing of this is stored.** The file is read once, as the application starts, and the patterns are held against the active models when someone asks. A pattern that was changed holds for every model of the catalog from the next start, with no sync in between. A model that the file no longer allows tells nothing to an agent that was given it before.
+- **Nothing of this is stored.** The file is read once, as the application starts, and the patterns are held against the active models when someone asks. A pattern that was changed holds for every model of the catalog from the next start, with no sync in between. A model that the file no longer allows tells nothing to an agent that was given it before: the agent is not started or resumed with it, and one that runs is not told. See "Not built yet".
 
 `ISelectableModels` answers, the same for every user:
 
@@ -125,7 +125,7 @@ public interface ISelectableModels
 }
 ```
 
-A `SelectableModel` is the id of the model in the catalog, its provider, its identifier, its name, and whether it can search live. Which of these a user's own key can use is for Credentials to say, and that is what a selector offers: see "The models a key can use" in [credentials.md](credentials.md).
+A `SelectableModel` is the id of the model in the catalog, its provider, its identifier, its name, and whether it can search live. Which of these a user's own key can use is for Credentials to say, and that is what the form of an agent offers for each role of its team: see "The models a key can use" in [credentials.md](credentials.md), and "The team" in [agents.md](agents.md). A role stores the id of its model, and `ICatalogModels.FindAsync` finds the model for good, also once it is gone.
 
 ### What depends on a model
 
@@ -146,7 +146,7 @@ public interface IModelDependents
 - **An implementation commits nothing, and takes the owner of an agent from the agent's row.** With the keys of users the sync runs in the request of the user whose key listed the models, and the agents are those of every user.
 - **It minds the locks.** The transaction holds the row of the provider and the rows of its models, and two providers are synced at the same time. An implementation locks its rows in one order, and takes no lock on a model while it holds one on an account. It takes nothing of Credentials, which itself takes the Catalog.
 - A model that an agent was given while the sync was storing is not among what an implementation finds. The call that then reports that the model does not exist moves that agent: see "Not built yet".
-- **Nothing implements it yet,** because no agent uses a model: Agents keeps the settings of agents, and gives no role a model. `ModelDependentsTests` has a test that fails as soon as a row of Agents points at a model and Agents has no implementation. See "What other components hold Agents to" in [agents.md](agents.md).
+- **Agents implements it,** as `AgentModelDependents`: the agents that run with a model that goes move to Attention required, with the cause `ModelUnavailable`, and their roles keep the models that their users gave them. It locks the accounts concerned in the order of their ids, and takes no lock on a model. `ModelDependentsTests` holds Agents to being told, for every row of Agents that points at a model, and `AgentModelDependentsTests` shows what it does. See "When a model goes" in [agents.md](agents.md).
 
 ## The catalog screen
 
@@ -238,11 +238,9 @@ The file of the tests allows the models of Claude that `claude-*` names, but for
 
 ## Not built yet
 
-- What Agents does when a model becomes unavailable (FR-CAT-8). It implements `IModelDependents` when the roles of an agent are given their models, and moves the agent to Attention required.
 - What follows a call that reports that the model does not exist (FR-CAT-8). The gateway answers such a call with the outcome `ModelNotFound`: see "Outcomes" in [ai-providers.md](ai-providers.md). What calls a model for an agent moves the agent then. The Catalog is not told, and marks nothing for it: a model is marked by the provider's list alone.
 - Telling the user that a model is unavailable (FR-NTF-1). In-app notifications are not built.
-- The model selector (FR-AGT-5). It offers what `IKeyModels` of Credentials answers, and shows which models can search live.
-- Telling an agent that its model is no longer eligible, after the patterns of the file were changed. The model cannot be selected anew, and an agent that has it keeps it.
+- Telling an agent that its model is no longer eligible, after the patterns of the file were changed. The model cannot be selected anew, and an agent that has it keeps it: it is not started or resumed with it, and one that runs with it runs on.
 - The experience record of a model (FR-EXP-2). The catalog screen links each model to its page, which says that nothing is recorded yet. The track record takes its place there, with the statements that an experience screen makes (FR-EXP-11).
 - Times in the user's own time zone on the catalog screen (NFR-USA-3). The pages write a time through `PageTimes`, in UTC.
 - The operator's button that triggers a sync, and its event in the audit trail (FR-OPS-4, FR-OPS-5). `ICatalogSync.SyncAsync` is what it calls.

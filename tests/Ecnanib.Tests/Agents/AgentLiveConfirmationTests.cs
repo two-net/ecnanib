@@ -112,6 +112,7 @@ public class AgentLiveConfirmationTests
 
         // An agent in Demo, whose page of the state has the button that starts it with one press.
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "Swing"));
+        await application.GiveTeamsAsync(user.Id, Morning);
         var agent = Assert.Single(StoredAgent.All(application.Database)).Id;
         var statePage = AgentBrowser.AgentStatePage(agent);
         var stale = await client.PageAsync(statePage);

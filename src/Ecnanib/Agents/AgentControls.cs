@@ -1,4 +1,5 @@
 using Ecnanib.Accounts;
+using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Shared;
@@ -30,6 +31,7 @@ namespace Ecnanib.Agents;
 internal sealed class AgentControls(
     IDbContextFactory<EcnanibDbContext> contexts,
     IKeyValidation keys,
+    AgentRoles roles,
     IEnumerable<IAgentExposure> exposures,
     TimeProvider clock,
     ILogger<AgentControls> logger) : IAgentControls
@@ -268,6 +270,25 @@ internal sealed class AgentControls(
 
                 return new AgentControlResult(AgentControlOutcome.AnotherAgentActive);
             }
+
+            // An agent runs with its whole team: every role has a model, and each model is one
+            // that its user can select now, with a key that is valid (FR-TEAM-1, FR-KEY-10,
+            // FR-CAT-8). Asked under the lock that deleting a key and marking one invalid take,
+            // as the Binance credential is. No provider is asked.
+            var blocked = await roles.BlocksAsync(context, userId, agentId, cancellationToken);
+
+            if (blocked.Count > 0)
+            {
+                logger.LogInformation(
+                    "User {UserId} was refused the control {AgentControl} of agent {AgentId}: {RoleCount} of the roles of its team cannot work ({Roles})",
+                    userId,
+                    control,
+                    agentId,
+                    blocked.Count,
+                    string.Join(", ", blocked.Select(role => $"{role.Role}: {role.Problem}")));
+
+                return new AgentControlResult(AgentControlOutcome.RolesBlock, Roles: blocked);
+            }
         }
 
         var now = clock.GetUtcNow();
@@ -355,9 +376,10 @@ internal sealed class AgentControls(
 }
 
 /// <summary>
-/// Moves the agents that run with a Binance credential to Attention required when the credential
-/// is deleted or refused (FR-KEY-10). Credentials tells it, inside the transaction that deletes
-/// the key or marks it, which has locked the row of the account. See docs/agents.md.
+/// Moves the agents that run with a key to Attention required when the key is deleted or refused
+/// (FR-KEY-10): the Binance credential of their environment, or the key of an AI provider that a
+/// role of their team uses. Credentials tells it, inside the transaction that deletes the key or
+/// marks it, which has locked the row of the account. See docs/agents.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -367,19 +389,21 @@ internal sealed class AgentControls(
 /// it, and is asked about its credential when it is started or resumed.
 /// </para>
 /// <para>
-/// No agent depends on a key of an AI provider yet: an agent is given no model. What gives the
-/// roles of a team their models moves the agents whose team uses the provider.
+/// A user has one key for each AI provider, whatever the environment, so the agents that depend
+/// on it are those of the user, in Demo and in Live, that have a role whose model is of the
+/// provider. Of them too, the ones that run are moved, and the others are asked about their team
+/// when they are started or resumed.
 /// </para>
 /// </remarks>
 internal sealed class AgentKeyDependents(TimeProvider clock, ILogger<AgentKeyDependents> logger) : IKeyDependents
 {
     public Task AiKeyDeletedAsync(
         EcnanibDbContext context, Guid userId, AiProviderCode provider, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
+        RequireAttentionAsync(context, userId, provider, AgentStateCause.AiKeyDeleted, cancellationToken);
 
     public Task AiKeyInvalidAsync(
         EcnanibDbContext context, Guid userId, AiProviderCode provider, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
+        RequireAttentionAsync(context, userId, provider, AgentStateCause.AiKeyInvalid, cancellationToken);
 
     public Task ExchangeKeyDeletedAsync(
         EcnanibDbContext context, Guid userId, TradingMode environment, CancellationToken cancellationToken) =>
@@ -418,6 +442,41 @@ internal sealed class AgentKeyDependents(TimeProvider clock, ILogger<AgentKeyDep
                 agent.Id,
                 userId,
                 environment,
+                cause);
+        }
+    }
+
+    private async Task RequireAttentionAsync(
+        EcnanibDbContext context, Guid userId, AiProviderCode provider, AgentStateCause cause, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // The agents of the user that have a role whose model is of the provider, in the order
+        // of their ids, in either environment. A user has few: they are read, and the code says
+        // which of them needs the key.
+        var agents = await context.Set<Agent>()
+            .AsNoTracking()
+            .OwnedBy(userId)
+            .Where(agent => context.Set<AgentRole>().Any(role =>
+                role.AgentId == agent.Id
+                && context.Set<AiModel>().Any(model => model.Id == role.ModelId && model.Provider == provider)))
+            .OrderBy(agent => agent.Id)
+            .Select(agent => new { agent.Id, agent.State, agent.Mode })
+            .ToListAsync(cancellationToken);
+
+        var now = clock.GetUtcNow();
+
+        foreach (var agent in agents.Where(agent => AgentStates.NeedsItsKey(agent.State)))
+        {
+            // Labeled with the mode that the agent is in, as every change of its state is (FR-BIN-11).
+            await AgentStateChanges.MoveAsync(
+                context, userId, agent.Id, agent.Mode, AgentState.AttentionRequired, cause, now, cancellationToken);
+
+            logger.LogInformation(
+                "Agent {AgentId} of user {UserId} requires attention with the change to the key for the AI provider {Provider}: {AgentStateCause}",
+                agent.Id,
+                userId,
+                provider.Value,
                 cause);
         }
     }

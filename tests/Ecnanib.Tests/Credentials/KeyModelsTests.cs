@@ -385,15 +385,17 @@ public class KeyModelsTests
     }
 
     [Fact]
-    public void Once_an_agent_is_given_a_model_the_component_that_keeps_agents_asks_which_models_can_be_selected()
+    public void An_agent_is_given_a_model_so_the_component_that_keeps_agents_asks_which_models_can_be_selected()
     {
         using var model = ModelOnly.Context();
 
-        // Agents keeps the settings of agents, and no model is selected for one: no row of
-        // Agents points at a model. As soon as one does, Agents must ask: neither the Catalog
-        // nor Credentials can keep an agent from being given a model that cannot be selected,
-        // or that its user's key cannot use.
+        // A role of an agent is given a model: rows of Agents point at models of the catalog.
+        // So Agents must ask: neither the Catalog nor Credentials can keep an agent from being
+        // given a model that cannot be selected, or that its user's key cannot use. What it
+        // offers and what it stores is in AgentRoleTests.
         var modelChoices = AgentsRules.ModelChoices(model.Model);
+
+        Assert.NotEmpty(modelChoices);
         var asks = typeof(IKeyModels).Assembly.GetTypes()
             .Where(AgentsRules.IsOfAgents)
             .SelectMany(type => type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))

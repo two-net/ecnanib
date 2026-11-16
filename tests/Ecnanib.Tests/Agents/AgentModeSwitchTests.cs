@@ -416,11 +416,12 @@ public class AgentModeSwitchTests
         var clock = new TestClock(Morning);
         using var application = AgentsApplication.With(new StandInMarketData(), clock);
         using var client = application.CreateClient();
-        await application.RegisterVerifiedAsync(Ada);
+        var user = await application.RegisterVerifiedAsync(Ada);
         await client.SignInAsync(Ada);
         await client.StoreLiveKeyAsync();
         await client.CreateAgentAsync(AgentBrowser.Entry());
         var agent = Assert.Single(StoredAgent.All(application.Database));
+        await application.GiveTeamsAsync(user.Id, Morning);
         var livePage = AgentBrowser.SwitchToLivePage(agent.Id);
         var statePage = AgentBrowser.AgentStatePage(agent.Id);
         var token = Browser.AntiforgeryTokenIn(await client.PageAsync(livePage));

@@ -6,8 +6,8 @@ namespace Ecnanib.Agents;
 /// </summary>
 /// <remarks>
 /// An agent is created in <see cref="Draft"/>. Its user starts, pauses, resumes, and stops it
-/// (FR-AGT-1), and the service moves it to <see cref="AttentionRequired"/> when the key it runs
-/// with goes. Which control leads where is in <see cref="AgentStates.After"/>. Nothing moves an
+/// (FR-AGT-1), and the service moves it to <see cref="AttentionRequired"/> when a key it runs
+/// with goes, or a model of its team does. Which control leads where is in <see cref="AgentStates.After"/>. Nothing moves an
 /// agent to <see cref="Halted"/> yet: what watches the loss limits does, when it is built.
 /// </remarks>
 public enum AgentState
@@ -64,6 +64,15 @@ public enum AgentStateCause
 
     /// <summary>Binance refused the credential of the agent's environment while the agent ran (FR-KEY-10).</summary>
     ExchangeKeyInvalid,
+
+    /// <summary>The key of an AI provider that a role of the agent's team uses was deleted while the agent ran (FR-KEY-10).</summary>
+    AiKeyDeleted,
+
+    /// <summary>An AI provider refused the key that a role of the agent's team uses while the agent ran (FR-KEY-10).</summary>
+    AiKeyInvalid,
+
+    /// <summary>The provider of a model that a role of the agent's team was given no longer offers it, while the agent ran (FR-CAT-8).</summary>
+    ModelUnavailable,
 }
 
 /// <summary>What a user does to the state of an agent (FR-AGT-1).</summary>
@@ -105,10 +114,11 @@ public static class AgentStates
     public static bool TakesNewEntries(AgentState state) => state == AgentState.Running;
 
     /// <summary>
-    /// Whether an agent in a state needs the Binance credential of its environment now: while
-    /// it is Running. Such an agent moves to Attention required when the credential is deleted
-    /// or refused (FR-KEY-10). An agent that does not run is asked about its credential when it
-    /// is started or resumed, and stays as its user left it until then.
+    /// Whether an agent in a state needs the Binance credential of its environment now, and the
+    /// keys and the models of its team: while it is Running. Such an agent moves to Attention
+    /// required when one of them is deleted, is refused, or is gone (FR-KEY-10, FR-CAT-8). An
+    /// agent that does not run is asked about them when it is started or resumed, and stays as
+    /// its user left it until then.
     /// </summary>
     public static bool NeedsItsKey(AgentState state) => state == AgentState.Running;
 

@@ -48,6 +48,7 @@ public class AgentControlTests
         await application.GiveKeysAsync(user.Id, Morning);
         await client.SignInAsync(Ada);
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "Swing"));
+        await application.GiveTeamsAsync(user.Id, Morning);
         var agent = Assert.Single(StoredAgent.All(application.Database));
         var statePage = AgentBrowser.AgentStatePage(agent.Id);
 
@@ -209,6 +210,7 @@ public class AgentControlTests
         await application.GiveKeysAsync(user.Id, Morning);
         await client.SignInAsync(Ada);
         await client.CreateAgentAsync(AgentBrowser.Entry());
+        await application.GiveTeamsAsync(user.Id, Morning);
         var agent = Assert.Single(StoredAgent.All(application.Database));
         var statePage = AgentBrowser.AgentStatePage(agent.Id);
         var token = Browser.AntiforgeryTokenIn(await client.PageAsync(statePage));
@@ -331,6 +333,7 @@ public class AgentControlTests
         await client.SignInAsync(Ada);
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "On Spot"));
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "On Futures", market: "Futures"));
+        await application.GiveTeamsAsync(user.Id, Morning);
         var spot = StoredAgent.Named(application.Database, "On Spot");
         var futures = StoredAgent.Named(application.Database, "On Futures");
 
@@ -410,6 +413,7 @@ public class AgentControlTests
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "Second", timeframe: "4H"));
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "On Futures", market: "Futures"));
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "Another symbol", symbol: "SOLUSDT"));
+        await application.GiveTeamsAsync(user.Id, Morning);
         var first = StoredAgent.Named(application.Database, "First");
         var second = StoredAgent.Named(application.Database, "Second");
 
@@ -532,6 +536,7 @@ public class AgentControlTests
         await gracesBrowser.SignInAsync(Grace);
         await gracesBrowser.CreateAgentAsync(AgentBrowser.Entry(name: "Grace's swing"));
         await gracesBrowser.CreateAgentAsync(AgentBrowser.Entry(name: "Grace's draft", symbol: "SOLUSDT"));
+        await application.GiveTeamsAsync(grace.Id, Morning);
         var running = StoredAgent.Named(application.Database, "Grace's swing");
         var draft = StoredAgent.Named(application.Database, "Grace's draft");
         await gracesBrowser.StartAgentAsync(running.Id);
@@ -547,6 +552,7 @@ public class AgentControlTests
         using var client = application.CreateClient();
         await client.SignInAsync(Ada);
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "Ada's swing"));
+        await application.GiveTeamsAsync(ada.Id, Morning);
         var own = Assert.Single(StoredAgent.Of(application.Database, ada.Id));
         var token = Browser.AntiforgeryTokenIn(await client.PageAsync(AgentBrowser.AgentStatePage(own.Id)));
 

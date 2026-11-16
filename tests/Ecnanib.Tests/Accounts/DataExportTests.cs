@@ -31,10 +31,11 @@ internal static class ExportRules
         ["ai_credentials"] = "aiKeys",
         ["exchange_credentials"] = "exchangeKeys",
 
-        // The agents with their settings, and the changes of their states. Agents hands them
-        // over, and its own tests say what the sections hold: see AgentPageTests and
-        // AgentControlTests.
+        // The agents with their settings, the models of their roles, and the changes of their
+        // states. Agents hands them over, and its own tests say what the sections hold: see
+        // AgentPageTests, AgentRoleTests, and AgentControlTests.
         ["agents"] = "agents",
+        ["agent_roles"] = "agentRoles",
         ["agent_state_changes"] = "agentStateChanges",
     };
 
@@ -79,7 +80,10 @@ public class DataExportTests
 
         Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
         Assert.Equal(
-            ["exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "aiKeys", "exchangeKeys", "agents", "agentStateChanges"],
+            [
+                "exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "aiKeys", "exchangeKeys", "agents",
+                "agentRoles", "agentStateChanges",
+            ],
             NamesIn(export));
         Assert.Equal(Morning.AddMinutes(5), export.GetProperty("exportedAt").GetDateTimeOffset());
 
@@ -218,14 +222,14 @@ public class DataExportTests
 
     [Fact]
     [ProvesOwnershipOf(
-        "agent_state_changes", "agents", "ai_credentials", "audit_events", "exchange_credentials", "legal_acceptances",
-        "sessions", "two_factor_recovery_codes")]
+        "agent_roles", "agent_state_changes", "agents", "ai_credentials", "audit_events", "exchange_credentials",
+        "legal_acceptances", "sessions", "two_factor_recovery_codes")]
     public async Task The_download_holds_nothing_of_another_user()
     {
         var clock = new TestClock(Morning);
         using var application = new AccountsApplication(clock: clock, host: host => host.From("203.0.113.7"));
 
-        // Grace has more of everything than Ada: two sessions, two events, recovery codes, keys, and an agent.
+        // Grace has more of everything than Ada: two sessions, two events, recovery codes, keys, and an agent with its team.
         var (grace, gracesApp, gracesCodes) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
@@ -234,7 +238,7 @@ public class DataExportTests
         await gracesPhone.SignInAsync(Grace);
         await gracesPhone.EnterCodeAsync(gracesCodes[0]);
         await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
-        await application.GiveAgentAsync(grace.Id, clock.GetUtcNow());
+        await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true);
         Assert.All(
             ExportRules.Exported.Keys,
             table => Assert.True(application.RowsOf(grace.Id)[table].Count > 0, $"Grace has no row in {table}, so nothing shows that it stays out."));
@@ -262,6 +266,7 @@ public class DataExportTests
         Assert.Equal(0, export.GetProperty("aiKeys").GetArrayLength());
         Assert.Equal(0, export.GetProperty("exchangeKeys").GetArrayLength());
         Assert.Equal(0, export.GetProperty("agents").GetArrayLength());
+        Assert.Equal(0, export.GetProperty("agentRoles").GetArrayLength());
         Assert.Equal(0, export.GetProperty("agentStateChanges").GetArrayLength());
 
         // And nothing in it is Grace's: not her address, not her id, and not a time of hers.
@@ -296,7 +301,7 @@ public class DataExportTests
         await client.SignInAsync(Ada);
         await client.EnterCodeAsync(app.CodeAt(clock.GetUtcNow()));
         await application.GiveKeysAsync(ada.Id, clock.GetUtcNow());
-        await application.GiveAgentAsync(ada.Id, clock.GetUtcNow());
+        await application.GiveAgentAsync(ada.Id, clock.GetUtcNow(), team: true);
 
         var rows = application.RowsOf(ada.Id);
         var export = JsonDocument.Parse(await client.PageAsync(Export)).RootElement;

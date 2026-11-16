@@ -1,16 +1,16 @@
 # Agents
 
-A user creates, changes, copies, and deletes agents, and no user has two agents of one name (FR-AGT-1). An agent has a name, a mode, a market, a symbol, a timeframe, allocated capital, and risk settings within the hard bounds of the configuration file (FR-AGT-2, FR-RSK-2). The symbol is one of the configuration file that the chosen market has (FR-AGT-6). A user whose email address is not verified creates no agent, and no user has more agents than the fair-use limit allows (FR-ACC-1, FR-ACC-7).
+A user creates, changes, copies, and deletes agents, and no user has two agents of one name (FR-AGT-1). An agent has a name, a mode, a market, a symbol, a timeframe, a team, allocated capital, and risk settings within the hard bounds of the configuration file (FR-AGT-2, FR-RSK-2). The symbol is one of the configuration file that the chosen market has (FR-AGT-6). The team is four roles, and its user gives each role a provider and a specific model of the catalog (FR-AGT-5, FR-TEAM-1). A user whose email address is not verified creates no agent, and no user has more agents than the fair-use limit allows (FR-ACC-1, FR-ACC-7).
 
 A user starts, pauses, resumes, and stops an agent, and the agent follows the states of the specification (FR-AGT-1, SRS 3.3). Every change of its state is recorded with its cause and its time, and shown (FR-AGT-10). A user who stops an agent that has an open position chooses whether the position is closed at market or kept with its protective orders (FR-AGT-11), and can close the position of an agent at any time (FR-AGT-12).
 
 A new agent is in Demo. Its user switches it to Live with a valid Live Binance key, a confirmation of the risk, and a fresh proof of who they are, and the switch is recorded in the audit trail (FR-AGT-7). Every page of an agent shows a Demo or Live badge, and every action that affects Live trading asks for confirmation (FR-UI-3). What an agent did in Demo stays labeled as Demo, and is never combined with what it does in Live (FR-BIN-11).
 
-Agents keeps the settings, the state, and the mode of agents. It runs no cycle and places no order: nothing does yet. No role of its team is given a model. So an agent that runs does nothing more than be in that state. What an agent holds on the exchange is asked of whatever keeps positions and orders, which is not built: see "What an agent holds".
+Agents keeps the settings, the state, and the mode of agents, and the models of their roles. It runs no cycle and places no order: nothing does yet. So an agent that runs does nothing more than be in that state, and no role calls its model. What an agent holds on the exchange is asked of whatever keeps positions and orders, which is not built: see "What an agent holds".
 
 The code is in `src/Ecnanib/Agents`, and the pages in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Agents`.
 
-Whose rows a request reaches is in [ownership.md](ownership.md). The fair-use limit, the audit trail, the export of a user's data, and the deletion of an account are in [accounts.md](accounts.md). The symbols of a market are in [exchange.md](exchange.md), and the bounds of the risk settings in [configuration.md](configuration.md).
+Whose rows a request reaches is in [ownership.md](ownership.md). The fair-use limit, the audit trail, the export of a user's data, and the deletion of an account are in [accounts.md](accounts.md). The symbols of a market are in [exchange.md](exchange.md), and the bounds of the risk settings in [configuration.md](configuration.md). Which models can be selected is in [catalog.md](catalog.md), and which of them a user's key can use in [credentials.md](credentials.md).
 
 ## The settings
 
@@ -21,13 +21,14 @@ Whose rows a request reaches is in [ownership.md](ownership.md). The fair-use li
 | Market | Spot or Futures (FR-AGT-4). | One of the two. It sets the exchange interface, the allowed actions, and the prompt variant: see "What goes by the timeframe and the market". |
 | Symbol | The one symbol the agent trades. | One of `Binance:Symbols` that the chosen market has in the agent's environment (FR-AGT-6). See "The symbols". |
 | Timeframe | 15m, 1H, 4H, or 1D (FR-AGT-3). | One of the four, by its code. The form has no default: its user chooses. |
+| Team | The four roles that run the agent, each with a provider and one of its models (FR-AGT-5). | A model that can be selected, and that the user's own key can use. A role may wait for its model while the agent does not run. See "The team". |
 | Allocated capital | How much the agent may trade with, in the asset that its symbol is priced in. | A number above 0, with 8 decimal places at most. It is not held to the balance of the account: an entry that the balance does not cover is skipped when it is due (FR-BIN-S3, FR-BIN-F6). |
 | Risk settings | Risk per trade, leverage cap, daily loss limit, drawdown limit, and maximum entry distance. | Each within the hard bounds of `Trading:Aggressive`. See "The risk settings". |
 
 - **The settings are checked on the server,** by `IStoredAgents`, whatever a form offered or a browser checked. A form brings text, and `AgentRules.Read` says what is wrong with it, field by field. Everything that is wrong is said at once, each at its field, and what was entered stays in the form.
 - A number is digits with at most one decimal point: no sign, no thousands separator, and no exponent, the same in every country.
 - **The row names no Binance credential.** A user has one credential for each environment (FR-KEY-2), so the credential of an agent is the one of its user for its mode, and is found that way when it is needed. A foreign key to the credential's row would delete the agent with the key, or keep the key from being deleted.
-- **The team is shown, and not stored.** Every agent has the four roles, and the page names them with what each does. Giving a role its provider and model is not built: see "Not built yet".
+- **The row names no model either.** The model of each role is a row of its own, in `agent_roles`: see "The team".
 
 ### The risk settings
 
@@ -47,6 +48,40 @@ The product has one profile, Aggressive. Its defaults and hard bounds are in the
 - **The settings that the file fixes are not an agent's.** The minimum reward-to-risk ratio and the liquidation buffer are single values of the file, the same for every agent, and so are the two that the specification fixes: a position on Spot is at most the agent's equity, and an agent has one position. No page offers them.
 - **A change is recorded in the audit trail** (NFR-LOG-7): see "The audit trail".
 - A change applies from the agent's next cycle (FR-AGT-8), also for an agent that runs. Nothing runs a cycle yet: what does reads the settings as they are when it starts.
+
+### The team
+
+Every agent has the four roles of the specification, which work one after the other in each cycle (FR-TEAM-1, SRS 4.5): the Market Analyst, the Sentiment Analyst, the Strategist, and the Risk Manager. `Role` in `Shared` names them, and the form says what each does.
+
+```csharp
+Task<RoleChoices> RoleChoicesAsync(HttpContext request);
+```
+
+**For each role the user selects the provider and the specific model** (FR-AGT-5). The form has two choices for each role, one of the provider and one of the model, and `RoleChoicesAsync` says what they offer:
+
+| Rule | Detail |
+|---|---|
+| **A new agent starts from four different providers** (FR-TEAM-2). | The provider of each role is the one that `Trading:DefaultRoles` of the configuration file gives it (FR-TEAM-3): in the tracked file GPT for the Market Analyst, Grok for the Sentiment Analyst, Gemini for the Strategist, and Claude for the Risk Manager. The model is for the user to choose: the form starts with none. |
+| **Only a model that can be selected, and that the user's own key can use, is offered** (FR-CAT-6, FR-CAT-9). | `IKeyModels.SelectableAsync` of Credentials says which, for every provider, from what was recorded when the provider last took the user's key. No provider is asked. A model says the name its provider gives it, with its identifier, and whether it can search live. |
+| **The list of models follows the provider.** | A page is not interactive. The button "Show the models of the chosen providers" stores nothing: the form comes back with the models of the provider that is chosen for each role, and with everything else as it was entered. It is the button of the symbols, for the roles. |
+| **A choice is held to the same on the server, whatever the form offered.** | `IKeyModels.BlockForAsync` is asked when a role is given a model that it does not have: before the transaction, so that everything that is wrong with a form is said at once, and again under the lock, which is the lock that a change to a key takes. A model that only another user's key can use is refused like any other that the user cannot select. |
+| **The model says the provider.** | A model is of one provider, so `agent_roles` stores the model alone. A model that is not of the provider chosen beside it is refused: the user chose a provider, and no model of it yet. The form comes back with the models of that provider. |
+| **The choice is of the agent** (FR-AGT-5). | Two agents of one user can use different models of the same provider, and a copy of an agent has the models of its roles, in rows of its own. |
+| **A role may wait for its model while the agent does not run.** | A user who has no key yet creates an agent all the same, and gives its roles their models later. **An agent is started only with its whole team:** see "The controls". |
+| **A role that has a model keeps one.** | It is given another in any state, and the change applies from the agent's next cycle (FR-AGT-8). A form that says that such a role has no model is refused. A form that brings nothing of a role says nothing about it, and the role is as it was. |
+| **A role that keeps its model is not asked about again.** | As an agent keeps the symbol it has. So the name, the capital, and the risk settings of an agent are saved while the key of a provider of its team is gone. The form shows the model that the role has, and says that it cannot be selected now. The team is asked about, whole, when the agent is started or resumed. |
+
+**One provider may hold more than one role** (FR-TEAM-5). A user who lacks a key for a provider gives its role another provider: the form says under such a role that no key is stored for its provider, and that another provider can take the role. Nothing keeps a user from a team of fewer than four providers. The form warns of it:
+
+| Warning | When |
+|---|---|
+| The team is reduced. | A provider holds more than one role. The warning names the provider. |
+| The Strategist and the Risk Manager use the same provider. | The two have one provider. It is said of its own, because the Risk Manager reviews the plan of the Strategist. |
+
+- `AgentRoleRules.WarningsOf` says what to warn of, from the provider of each role, and `AgentPages` has the texts.
+- **The form warns of the providers that it holds now.** A provider is given a second role only by choosing it and pressing the button that shows its models, so the warning is on the form before such a team is saved, and on the form of the agent whenever it is shown afterwards.
+- **Giving a role a model is no event of the audit trail** (NFR-LOG-7 does not name it), and changes no state. For an agent in Live it is asked about once more, as a change to a risk setting is: see "Asking once more in Live".
+- **The default mapping is a setting of the file, and no data:** a role that has no model shows the provider that the file names now.
 
 ### The symbols
 
@@ -86,7 +121,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `Running` | Its user starts or resumes it. | Yes | Yes | Managed by the team | Yes |
 | `Paused` | Its user pauses it. | No | No | Stays open with its protective orders | Yes |
 | `Halted` | A loss limit of the Risk Guard is reached (FR-RSK-8). Nothing does this yet. | No | No | Closed by the system | Yes |
-| `AttentionRequired` | The Binance key that it runs with is deleted or refused. The other causes of the specification are not built. | No | No | Stays open with its protective orders | Yes |
+| `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, or the provider of a model of its team no longer offers the model. The other causes of the specification are not built. | No | No | Stays open with its protective orders | Yes |
 | `Stopped` | Its user stops it. | No | No | Closed or kept, as its user chose | No |
 
 - **Only a running agent runs cycles and opens positions.** `AgentStates.RunsCycles` and `AgentStates.TakesNewEntries` say so, for what runs a cycle and what places an entry to ask.
@@ -97,7 +132,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | **An agent is active in every state but `Draft` and `Stopped`.** | `AgentStates.IsActive`. A state that is added later is active until it is said not to be. |
 | **A user has at most one active agent for each Binance credential, market, and symbol** (FR-AGT-9). | The credential is the user and the mode. What starts an agent asks first, under the lock, and says which rule stands in the way. The database holds to it as well, with a unique index on `(user_id, mode, market, symbol)` over the rows that are active: so it holds whatever changes a state. A user has any number of drafts and stopped agents for the same three. |
 | **The market, the symbol, and the timeframe change only while the agent is in `Draft`, or is `Stopped` with no open position or orders** (FR-AGT-8). | `AgentStates.StructureCanChange`, asked under the lock, of the state that the agent has then. The page shows the three as they are, with why, and offers no choice of them. A form that brings another all the same is refused, and nothing of it is stored. |
-| The name, the capital, and the risk settings change in any state. | A change applies from the next cycle. |
+| The name, the capital, the risk settings, and the models of the roles change in any state (FR-AGT-8). | A change applies from the next cycle. |
 | **An agent is deleted while it is in `Draft`, or is `Stopped` with no open position or orders.** | An active agent is stopped first. |
 | **The mode goes by the same rule as the market** (FR-AGT-8). | `IAgentModes` asks `AgentStates.StructureCanChange` under the lock, in either direction. See "The mode". |
 
@@ -116,6 +151,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 - **A form that is sent twice is answered as the first one was.** It finds the agent in the state that the control leads to, which is what was asked for, and records nothing again.
 - **A Binance key that is missing, is not valid, or lacks the permission of the agent's market blocks a start and a resume** (FR-KEY-5). `IKeyValidation.BlockForAsync` of Credentials says so, from what the last check of the key recorded, and the page shows the message of `KeyPages.Says`, which names the missing permission, with a link to the keys. It is asked under the lock that a change to a key takes, so the answer holds until the agent runs. Pausing and stopping ask nothing of the key.
 - **Another active agent for the same credential, market, and symbol blocks a start** (FR-AGT-9). An agent that is resumed is active already.
+- **An agent runs with its whole team, so a role that cannot work blocks a start and a resume** (FR-TEAM-1): a role that has no model, and a role whose model its user cannot select now, because the key of its provider is missing or not valid, the key cannot use the model, or the model can no longer be selected. `IKeyModels.BlockForAsync` of Credentials says so for the model of each role, under the same lock, and asks no provider. The page names each such role with what to do about it, and leads to the settings of the agent and to the keys. Pausing and stopping ask nothing of the team.
 - **A draft is not stopped:** it was never started. It is deleted.
 - **A stopped agent is started again.** Its market, symbol, and timeframe can be changed before, while it holds nothing.
 - A halted agent is resumed by its user. What halts an agent says with its cause when the agent may be resumed, when it is built: a daily loss limit halts until the next UTC day (FR-RSK-8).
@@ -136,6 +172,8 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `UserStoppedClosingPosition` | The user stopped it, and chose to close its position at market. |
 | `UserStoppedKeepingPosition` | The user stopped it, and chose to keep its position with its protective orders. |
 | `ExchangeKeyDeleted`, `ExchangeKeyInvalid` | The Binance key of its mode was deleted, or refused by Binance, while it ran. |
+| `AiKeyDeleted`, `AiKeyInvalid` | The key of an AI provider that a role of its team uses was deleted, or refused by the provider, while it ran. |
+| `ModelUnavailable` | The provider of a model that a role of its team was given no longer offers the model, while it ran. |
 
 - What changes the state of an agent adds the members of its causes when it is built.
 - **A change says the mode that the agent was in when it happened,** and keeps saying it when the agent is switched (FR-BIN-11). A switch of the mode is no change of the state, and has no cause: the audit trail has it. See "Demo is labeled as Demo".
@@ -203,7 +241,20 @@ Credentials tells whatever depends on a key when the key is deleted or turns out
 - The change is stored when the change to the key is, and not when it is not: both are of one transaction, which has locked the row of the account.
 - **The service does it, and no user:** the change is recorded as a change of the state, and not in the audit trail, which has the deletion of the key.
 - The user resumes the agent once a valid key is stored. Until then the resume is blocked, with the message that says what is wrong with the key.
-- **No agent depends on a key of an AI provider yet,** because no agent is given a model. `AgentKeyDependentsTests` has a test that fails as soon as one is.
+- **The agents that run with a model of an AI provider move to `AttentionRequired`** when the user's key for that provider is deleted or refused, with the cause `AiKeyDeleted` or `AiKeyInvalid`. A user has one key for each AI provider, whatever the environment, so they are the running agents of the user, in Demo and in Live, that have a role whose model is of the provider. An agent whose team uses no model of that provider runs on.
+- **No role is given another model.** The roles of the agent point at the models that its user chose, and its user resumes it once a valid key is stored that can use them, or gives the roles other models.
+
+### When a model goes
+
+The Catalog tells whatever depends on a model when a sync marks the model unavailable, through `IModelDependents`, inside the transaction that marks it. Agents implements it, as `AgentModelDependents` (FR-CAT-8). See "When a model becomes unavailable" in [catalog.md](catalog.md).
+
+- **The agents that run with the model move to `AttentionRequired`,** with the cause `ModelUnavailable`: the running agents that have a role on it, whoever they belong to. An agent that does not run stays as its user left it, and is asked about its team when it is resumed.
+- **The system does not substitute another model on its own** (FR-CAT-8). The role keeps the model that its user gave it. The form of the agent shows it, says that it cannot be selected now, and its user gives the role another.
+- **The accounts are locked one after the other, in the order of their ids,** as what changes an agent or a key locks its account, and the agents of each are read and moved under its lock, with the time as it is then: a change that waited for the lock is later than the one that held it. Two providers are synced at the same time, and lock in the same order. No lock is taken on a model: the transaction of the sync holds the rows of the models already, and what changes an agent takes no lock on a model that the sync would have to wait for.
+- The change is stored when the model is marked, and not when it is not. A change that cannot be stored fails the sync, and the model is as it was.
+- **The service does it, and no user:** the change is recorded as a change of the state, and not in the audit trail.
+- A model that is active again resumes no agent: its user does.
+- **A model that the configuration file no longer allows moves no agent.** It stops being one that can be selected, so an agent that has it is not started or resumed with it. See "Not built yet".
 
 ## The mode
 
@@ -252,7 +303,7 @@ In Live an agent trades with real money, so `SwitchToLiveAsync` asks for more. I
 |---|---|
 | Start, pause, resume | The page of the state has no button for them. Each leads to `/agents/<id>/confirm/<control>`, which says what the control does and that it acts on the real account, and has the button. |
 | Stop, "Close position now" | Each has a page that asks once more, in either mode. For an agent in Live it says that it acts on the real account. |
-| A change to the capital or to a risk setting | Nothing is stored at first. The form comes back as it was entered, says that the agent is in Live, and has the button "Save for Live". |
+| A change to the capital, to a risk setting, or to the model of a role | Nothing is stored at first. The form comes back as it was entered, says that the agent is in Live, and has the button "Save for Live". |
 | The switch to Live | The box that confirms the risk. |
 
 - **What asks is decided on the server, under the lock, of the mode that the agent is in then.** `StartAsync`, `PauseAsync`, `ResumeAsync`, and `SaveAsync` take `confirmedForLive`, and answer `NotConfirmedForLive` for an agent in Live without it. So the one-press form of a page that showed the agent in Demo starts nothing in Live: it leads to the page that asks.
@@ -277,9 +328,9 @@ In Live an agent trades with real money, so `SwitchToLiveAsync` asks for more. I
 
 | Operation | What it does |
 |---|---|
-| `CreateAsync` | Stores a new agent, in Demo and in `Draft`, with the first change of its state. |
-| `SaveAsync` | Changes the settings of an agent, and neither its state nor its mode. A change to the capital or to a risk setting of an agent in Live is stored only once its user was asked once more: see "Asking once more in Live". |
-| `CloneAsync` | Stores a copy of an agent, with its market, symbol, timeframe, capital, and risk settings. **A copy is a new agent:** in Demo and in `Draft`, whatever the agent it was made from is, and created when it was copied. Its name is "Copy of" and the name of the agent, with a number after it when that name is taken, cut to the length of a name. The answer is the page of the copy, where it is given a name of its own. **An agent in Live is copied only where its market has its symbol in Demo as well:** the exchange is asked before the transaction, the copy is priced in the asset of the symbol there, and the list says why nothing was copied when the market lacks it or the exchange gives no answer. An agent in Demo is copied without a question to the exchange. |
+| `CreateAsync` | Stores a new agent, in Demo and in `Draft`, with the first change of its state, and with the models that were chosen for its roles. |
+| `SaveAsync` | Changes the settings of an agent, the models of its roles among them, and neither its state nor its mode. A change to the capital, to a risk setting, or to the model of a role of an agent in Live is stored only once its user was asked once more: see "Asking once more in Live". |
+| `CloneAsync` | Stores a copy of an agent, with its market, symbol, timeframe, capital, and risk settings, and with the models of its roles. **A copy is a new agent:** in Demo and in `Draft`, whatever the agent it was made from is, and created when it was copied. Its name is "Copy of" and the name of the agent, with a number after it when that name is taken, cut to the length of a name. The answer is the page of the copy, where it is given a name of its own. **An agent in Live is copied only where its market has its symbol in Demo as well:** the exchange is asked before the transaction, the copy is priced in the asset of the symbol there, and the list says why nothing was copied when the market lacks it or the exchange gives no answer. An agent in Demo is copied without a question to the exchange. |
 | `DeleteAsync` | Deletes an agent, at once and for good. It takes no proof of who the user is: it exposes no key and moves no money. The page asks once more instead, and offers to keep the agent. |
 
 - **A user who may create no agent is told that first,** before anything that was entered is looked at. `IFairUse.MayCreateAgentAsync` of Accounts says whether the address is verified and whether the user has `Limits:MaxAgentsPerUser` agents already. The list and the page of the form say why, and have no form. A copy is one more agent, and counts as one.
@@ -295,9 +346,9 @@ The pages are rendered on the server for each request, and none is interactive. 
 | Page | What it is |
 |---|---|
 | `/agents` | The agents of the user, oldest first: name, mode as its badge, market, symbol, timeframe, capital, and state. It says how many agents the user has of how many an account can have, and leads to the form unless the user may create none. Each agent has a link to the page of its state, a button that copies it, and a link to the page that deletes it, and an agent that has an open position has "Close position now". Under the table it says what each state means. |
-| `/agents/new` | The form that creates an agent. |
-| `/agents/<id>` | The same form, with the settings of the agent. It says the state, and leads to the page of the state and to the page that switches the mode. For an agent in Live it asks once more before a change to the capital or to a risk setting is stored. |
-| `/agents/<id>/state` | The state of the agent, since when, what it means, and why the agent is in it. The buttons that start, pause, and resume the agent, each in the states that it is offered in, a link to the page that stops it, and "Close position now" when it has an open position. For an agent in Live, links to the page that asks once more stand in place of the three buttons. A link to the page that switches the mode, or when the mode can be switched. The changes of its state, latest first, each with its mode. |
+| `/agents/new` | The form that creates an agent. Each role has a choice of its provider, which starts from the default mapping, and a choice of its model. See "The team". |
+| `/agents/<id>` | The same form, with the settings of the agent and the models of its roles. It says the state, and leads to the page of the state and to the page that switches the mode. For an agent in Live it asks once more before a change to the capital, to a risk setting, or to the model of a role is stored. |
+| `/agents/<id>/state` | The state of the agent, since when, what it means, and why the agent is in it. The buttons that start, pause, and resume the agent, each in the states that it is offered in, a link to the page that stops it, and "Close position now" when it has an open position. An agent that was not started or resumed because of its team is told which roles stand in the way. For an agent in Live, links to the page that asks once more stand in place of the three buttons. A link to the page that switches the mode, or when the mode can be switched. The changes of its state, latest first, each with its mode. |
 | `/agents/<id>/confirm/<control>` | The page that asks once more before the agent is started, paused, or resumed: `start`, `pause`, or `resume`. Another name is no page. |
 | `/agents/<id>/live` | The page that switches the agent to Live: what stands in the way, or what is at stake, the box that confirms the risk, and the button. It is shown to a user who has just proved who they are. |
 | `/agents/<id>/demo` | The page that asks once more, with the button that switches the agent back to Demo. |
@@ -316,9 +367,9 @@ The pages are rendered on the server for each request, and none is interactive. 
 | Who asks | Through | What Agents answers |
 |---|---|---|
 | Accounts, before it deletes an account | `IAgentActivity` | Whether an agent of the user is active (FR-ACC-9). A draft was never started, and stands in the way no more than a stopped agent. It locks the rows of the user's agents for the rest of the transaction, in the order of their ids. |
-| Accounts, for the export of a user's data | `IExportedPart` | The section `agents`: each agent with its settings and its state (NFR-SEC-9). |
+| Accounts, for the export of a user's data | `IExportedPart` | The section `agents`: each agent with its settings and its state (NFR-SEC-9). The section `agentRoles`: each role that has a model, with the provider and the identifier of the model. The section `agentStateChanges`: each change of a state. |
 
-The rows of an account go with it: `agents.user_id` points at `users` with a foreign key that deletes the rows with the account.
+The rows of an account go with it: `agents.user_id`, `agent_roles.user_id`, and `agent_state_changes.user_id` point at `users` with a foreign key that deletes the rows with the account.
 
 ### What Agents asks, and is told
 
@@ -326,7 +377,10 @@ The rows of an account go with it: `agents.user_id` points at `users` with a for
 |---|---|---|
 | Credentials | `IKeyValidation.BlockForAsync` | Whether the Binance key of the user lets an agent run on its market, before a start and a resume (FR-KEY-5), and whether their Live key does, before an agent is switched to Live (FR-AGT-7). |
 | Accounts | `IReauthentication.IsRecentAsync` | Whether the user has just proved who they are, before an agent is switched to Live (FR-ACC-4). |
+| Credentials | `IKeyModels.SelectableAsync`, `BlockForAsync` | Which models the user can select for a role, and whether a model that a role is given, or has, is one of them (FR-CAT-6, FR-CAT-9). See "The team". |
+| The Catalog | `ICatalogModels` | The names of the providers as users read them, and the name of a model that a role has, also once the model is gone. |
 | Credentials tells Agents | `IKeyDependents` | That a key is being deleted or marked invalid: the agents that run with it move to `AttentionRequired` (FR-KEY-10). See "When a key goes". |
+| The Catalog tells Agents | `IModelDependents` | That models are being marked unavailable: the agents that run with one move to `AttentionRequired` (FR-CAT-8). See "When a model goes". |
 | Accounts | `IFairUse.MayCreateAgentAsync` | Whether the user may create one more agent (FR-ACC-1, FR-ACC-7). |
 | Accounts | `AuditTrail.RecordAsync` | Recording what a user does to an agent (NFR-LOG-7). See "The audit trail". |
 | Whatever keeps positions and orders | `IAgentExposure` | What an agent holds, and closing its position. See "What an agent holds". |
@@ -346,7 +400,7 @@ A method that is added is in none of them, and fails `AgentsRulesTests` until so
 | What tells that Agents can do more | How |
 |---|---|
 | **An agent can run** | An operation that is not in `SettingsOperations`. There are some now: the controls. |
-| **A model choice** | A foreign key from a table of Agents to `ai_models`. There is none. |
+| **A model choice** | A foreign key from a table of Agents to `ai_models`. There is one, `agent_roles.model_id`, and `AgentsRulesTests` pins it: another way for an agent to use a model shows there. |
 
 | What is held to, or waits | For | Test |
 |---|---|---|
@@ -354,10 +408,10 @@ A method that is added is in none of them, and fails `AgentsRulesTests` until so
 | Implementing `IKeyDependents` (FR-KEY-10) | An agent that can run. **Built** for the Binance key. | `KeyDependentsTests` |
 | Recording starts, pauses, stops, and manual closes in the audit trail (NFR-LOG-7) | An agent that can run. **Built.** | `AuditRulesTests` |
 | Recording mode switches in the audit trail (NFR-LOG-7) | An agent that can be switched. **Built.** | `AuditRulesTests` |
-| Storing what an agent did with the mode it did it in (FR-BIN-11) | A table with rows of an agent. **Built** for the changes of a state, which is the one there is. | `AgentsRulesTests` |
-| Moving an agent when the key of its model's provider goes (FR-KEY-10) | A model choice. Waits. | `AgentKeyDependentsTests` |
-| Implementing `IModelDependents`, which moves an agent to Attention required when its model goes (FR-CAT-8) | A model choice. Waits. | `ModelDependentsTests` |
-| Asking `IKeyModels` which models a user can select (FR-CAT-9) | A model choice. Waits. | `KeyModelsTests` |
+| Storing what an agent did with the mode it did it in (FR-BIN-11) | A table with rows of an agent. **Built** for the changes of a state. The models of the roles are settings, and are listed in `AgentsRules.AgentRowsWithoutMode` as that. | `AgentsRulesTests` |
+| Moving an agent when the key of its model's provider goes (FR-KEY-10) | A model choice. **Built.** | `AgentKeyDependentsTests` |
+| Implementing `IModelDependents`, which moves an agent to Attention required when its model goes (FR-CAT-8) | A model choice. **Built.** | `ModelDependentsTests`, `AgentModelDependentsTests` |
+| Asking `IKeyModels` which models a user can select (FR-CAT-9) | A model choice. **Built.** | `KeyModelsTests`, `AgentRoleTests` |
 
 **To add an operation to Agents,** list it in `AgentsRules`, as one that keeps settings, as a control, or as a switch of the mode. A control asks what blocks a start where it starts an agent, asks once more where it acts on an agent in Live, and records what the user did in the audit trail.
 
@@ -381,7 +435,8 @@ What a user does to an agent that is money-relevant is recorded, in the transact
 - **A control that changes nothing records nothing:** one that is refused, one that is not offered in the state of the agent, one that was not asked about for an agent in Live, and a form that is sent twice.
 - **A switch that is refused records nothing,** whatever stood in its way, and neither does a form that is sent twice. The proof that the switch to Live takes is an event of its own, `Reauthenticated`, recorded when it was given.
 - **A manual close is recorded when it is asked for, before the order.** What places the order may not use Accounts, and records nothing. So the request stands in the trail whatever becomes of the order. Stopping an agent and choosing to close its position records both, `AgentStopped` and `AgentPositionCloseRequested`.
-- **What the service does to the state of an agent is no action of a user,** and is not in the audit trail: an agent that moves to Attention required when its key goes. The changes of the state record it, with its cause.
+- **What the service does to the state of an agent is no action of a user,** and is not in the audit trail: an agent that moves to Attention required when a key or a model of its team goes. The changes of the state record it, with its cause.
+- **Giving a role a model records nothing.** The requirement names the risk settings, and not the team. What the roles have now is on the form of the agent and in the export.
 - An event holds no number and no name. What the settings and the state are now is on the pages of the agent and in the export.
 - The events of an agent stay when the agent is deleted: they are the account's, and go with the account.
 
@@ -392,9 +447,10 @@ See "The audit trail" in [accounts.md](accounts.md).
 | Table | Columns |
 |---|---|
 | `agents` | `id`, `user_id`, `name`, `mode`, `market`, `symbol`, `quote_asset`, `timeframe`, `allocated_capital`, `risk_per_trade_percent`, `leverage_cap`, `daily_loss_percent`, `drawdown_percent`, `max_entry_distance_percent`, `state`, `state_cause`, `state_changed_at`, `created_at`. One row for each `(user_id, name)`. At most one active row for each `(user_id, mode, market, symbol)`. |
+| `agent_roles` | `agent_id`, `role`, `user_id`, `model_id`. One row for each role of an agent that has a model: `(agent_id, role)` is its key. `role` points at `roles`, and `model_id` at `ai_models`. |
 | `agent_state_changes` | `id`, `agent_id`, `user_id`, `mode`, `state`, `cause`, `changed_at`. One row for each change of the state of an agent, the first of them its creation. Indexed by `(agent_id, changed_at)`. |
 
-The tables hold rows of users: `Agent` and `AgentStateChange` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. The rows of an account are deleted with it, and the changes of an agent with the agent.
+The tables hold rows of users: `Agent`, `AgentRole`, and `AgentStateChange` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. The rows of an account are deleted with it, and the roles and the changes of an agent with the agent.
 
 | Column | What it holds |
 |---|---|
@@ -402,10 +458,14 @@ The tables hold rows of users: `Agent` and `AgentStateChange` implement `IUserOw
 | `quote_asset` | The asset that the symbol is priced in, as Binance named it when the symbol was stored. |
 | `allocated_capital` and the percentages | Exact decimals. |
 | `state_changed_at` | Since when the agent is in its state. For a draft, when it was created. |
+| `agent_roles.role` | The name of a member of `Role`, which is the key of its row in `roles`. |
+| `agent_roles.model_id` | The model of the catalog that the role was given. A model is never deleted, so the row finds it for good, also once its provider no longer offers it. The provider of the role is the one of the model. The row says no mode: it is a setting, and no result (FR-BIN-11). |
 | `agent_state_changes.state`, `cause`, `changed_at` | The state the agent came to, as the name of a member of `AgentState`, why, as the name of a member of `AgentStateCause`, and when. The latest row of an agent says what its row in `agents` says. |
 | `agent_state_changes.mode` | The mode the agent was in when its state changed, as the name of a member of `TradingMode`. It stays as it was written when the agent is switched (FR-BIN-11). |
 
 An agent's id is a version 7 UUID that the application assigns, and so is the id of a change. `name` is what its user typed: it is listed in `PersonalDataRules` with what it holds, is in the export, and is in no log event. A change holds nothing that a user typed.
+
+The migration that added `agent_roles` gave no agent a model: an agent that was stored then has a team of roles that wait for theirs, and is started once its user has given each one. An agent that ran then was not moved: nothing calls a model yet, and it is asked about its team when it is next started or resumed.
 
 The migration that added `agent_state_changes` gave every agent that was stored then its first change, from what its row said: its state, the cause, and since when. The migration that added `agent_state_changes.mode` gave every change that was stored then the mode of its agent: nothing switched the mode of an agent before it.
 
@@ -427,26 +487,32 @@ User {UserId} stopped agent {AgentId}, which was {AgentState}: {AgentStateCause}
 User {UserId} was refused the control {AgentControl} of agent {AgentId}, which is {AgentState}
 User {UserId} was refused the control {AgentControl} of agent {AgentId}: the Binance key for {TradingMode} blocks it ({StartBlock})
 User {UserId} was refused starting agent {AgentId}: another agent of theirs is active for the same market and symbol
+User {UserId} was refused the control {AgentControl} of agent {AgentId}: {RoleCount} of the roles of its team cannot work ({Roles})
 User {UserId} was refused stopping agent {AgentId}, which is {AgentState}
 User {UserId} asked to close the position of agent {AgentId} at market: {PositionCloseOutcome}
 The position of agent {AgentId} could not be closed at market, as user {UserId} asked. It is open as it was
 Agent {AgentId} of user {UserId} requires attention with the change to the Binance key for {TradingMode}: {AgentStateCause}
+Agent {AgentId} of user {UserId} requires attention with the change to the key for the AI provider {Provider}: {AgentStateCause}
+Agent {AgentId} of user {UserId} requires attention: the AI provider {Provider} no longer offers a model of its team
 User {UserId} switched agent {AgentId} from {PreviousTradingMode} to {TradingMode}
 User {UserId} was refused switching agent {AgentId} to {TradingMode}: {ModeSwitchOutcome}
 User {UserId} could not change agent {AgentId}: it was switched to {TradingMode} meanwhile
 User {UserId} could not copy agent {AgentId}: the exchange did not say which symbols {Market} has in {TradingMode}
 ```
 
-An event names a user and an agent by their ids, and never holds a name or a number of the settings. A position that could not be closed is a warning. The event of an agent that requires attention is written inside the transaction that changes the key, and stands for a change that is stored with it.
+An event names a user and an agent by their ids, and never holds a name or a number of the settings. What keeps a team from working is said by the names of the roles and of what is wrong with each. A position that could not be closed is a warning. The event of an agent that requires attention is written inside the transaction that changes the key, or that marks the model, and stands for a change that is stored with it.
 
 ## Not built yet
 
 - What keeps positions and orders, which answers `IAgentExposure` and closes a position. Until it is built, no agent has a position: stopping an agent asks for no choice, and no "Close position now" is shown. With it comes cancelling an entry that has not filled when its agent stops running (FR-BIN-S2).
 - The cycles, the data package, and the prompts that go by the timeframe and the market of an agent. An agent that runs is in that state, and nothing more happens. What runs a cycle asks `AgentStates.RunsCycles`.
 - What halts an agent when a loss limit is reached, and what resumes it after a daily loss limit, on the next UTC day (FR-RSK-8). A halted agent is resumed and stopped by its user already.
-- The other causes of Attention required: a model that is unavailable (FR-CAT-8), an exchange setting that conflicts (FR-BIN-F2), and calls that fail repeatedly (NFR-REL-4). With the second comes refusing a start while the account is in a conflicting mode or holds a position in the symbol.
+- The other causes of Attention required: a call that reports that a model does not exist (FR-CAT-8), an exchange setting that conflicts (FR-BIN-F2), and calls that fail repeatedly (NFR-REL-4). With the second comes refusing a start while the account is in a conflicting mode or holds a position in the symbol. The first comes with what calls a model for an agent.
+- Moving an agent that runs when its user's key for a provider can no longer use a model of its team. Which models a key can use is recorded when its provider lists them: when a key is stored or replaced, and at each check. A list that comes to lack the model, and a key that is replaced, tell Agents nothing, and the list is written apart from the lock of the account, so a start may go by the list as it was a moment before. Such an agent is refused the next time it is started or resumed, and until then the call that reports that the model does not exist is what moves it. See "The models a key can use" in [credentials.md](credentials.md).
+- Moving an agent that runs when the configuration file stops allowing a model of its team. Such a model can no longer be selected, and the agent is not started or resumed with it, but nothing tells an agent that runs. See "Not built yet" in [catalog.md](catalog.md).
 - Telling the user that an agent was halted or needs attention (FR-NTF-1), and showing a change of state without a reload (FR-NTF-2). In-app notifications are not built.
-- Giving each role of the team its provider and model (FR-AGT-5, FR-TEAM-1 to FR-TEAM-5). The page names the four roles, and stores nothing of them. With it come moving an agent when the key of its model's provider goes, and when its model does.
+- Recommending a team by measured strength, and applying it in one action (FR-TEAM-4), and reassigning the roles of an agent by strength on its own (FR-TEAM-10). The default mapping is the starting point until there is something to measure.
+- The calls of the roles (FR-TEAM-6 to FR-TEAM-9). A role has its model, and nothing calls it yet.
 - The results of an agent: its trades, its positions, and its profit or loss. None is stored. What stores them gives each row the mode it is of, and adds nothing up over both modes (FR-BIN-11): see "Demo is labeled as Demo".
 - A record of the risk confirmation of its own, with the version of the risk disclosure that was confirmed. The event of the switch in the audit trail stands for the confirmation.
 - The agent detail screen (FR-RPT-2), and the times of an agent in the local time of its user. The page of the state of an agent is where its position, its trades, and its decisions will be shown.

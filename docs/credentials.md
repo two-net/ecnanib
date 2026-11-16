@@ -144,7 +144,7 @@ A provider does not list the same models to every key: Grok lists the models tha
 | **A provider that gives no list leaves what was recorded.** | The key is the same key, and what it could use at its last check is the best that is known of it. The next check asks again: the daily one, or the one its user asks for. |
 | A list that cannot be written fails nothing. | The key is stored and valid by then. The log has an `Error`, under the area `Ecnanib.Credentials.KeyModels`, and the next check asks again. |
 
-Which of these a user can select for an agent is for `IKeyModels` to say. A model selector offers what it answers, and a choice is held to it when it is saved (FR-CAT-6, FR-CAT-9).
+Which of these a user can select for an agent is for `IKeyModels` to say. The form of an agent offers what it answers for each role of the agent's team, and a choice is held to it when it is saved (FR-CAT-6, FR-CAT-9).
 
 ```csharp
 public interface IKeyModels
@@ -163,12 +163,12 @@ public interface IKeyModels
 | `NotSelectable` | Nobody can select the model: the catalog holds no such model, its provider no longer offers it, or the configuration file does not allow it. See "Which models can be selected" in [catalog.md](catalog.md). |
 | `NoKey` | The user has stored no key for the provider of the model. |
 | `KeyNotValid` | The provider refused the key when it was last checked, or the key was never checked. What the key could use is kept, and is offered again when the provider takes the key again. |
-| `NotKnown` | The provider took the key, and has given no list to it yet. A selector says to check the key again on `/account/keys`. |
+| `NotKnown` | The provider took the key, and has given no list to it yet. The form of an agent says to check the key again on `/account/keys`. |
 | `NotListed` | The provider did not list the model to the key. |
 
 - It is answered from what the last check recorded, and asks no provider.
 - It takes the user by id, as `IKeyValidation` does, and asks for the rows of that user with `OwnedBy`. `KeyModelsTests` has the test with two users.
-- **Nothing asks it yet,** because no agent is given a model. `KeyModelsTests` has a test that fails as soon as a row of Agents points at a model and Agents takes no `IKeyModels`. See "What other components hold Agents to" in [agents.md](agents.md).
+- **Agents asks it.** `SelectableAsync` is what the form of an agent offers for each role. `BlockForAsync` is asked when a role is given a model, under the lock that a change to a key takes, and for the model of every role before an agent is started or resumed: an agent runs only with a team whose models its user can select. `KeyModelsTests` holds Agents to asking, for every row of Agents that points at a model. See "The team" in [agents.md](agents.md).
 
 ## Binance permissions
 
@@ -246,7 +246,7 @@ public interface IKeyDependents
 - **A key that the service deletes is told like one that its user deletes:** the Binance key that turned out to be able to withdraw.
 - **It is told once that a key is invalid:** when a key that was not invalid becomes so. A key that is still refused the next day tells nothing again.
 - It is not told when a key is added or replaced, nor when an invalid key is valid again: a key is then where an agent looks for it, and its user starts the agent.
-- **Agents implements it.** The agents that run with a Binance credential move to Attention required when it is deleted or refused. An agent that does not run stays as its user left it, and is asked about its key when it is resumed. No agent depends on a key of an AI provider yet, because none is given a model. `KeyDependentsTests` holds Agents to being told. See "When a key goes" in [agents.md](agents.md).
+- **Agents implements it.** The agents that run with a Binance credential move to Attention required when it is deleted or refused. So do the agents that run with a model of an AI provider when the user's key for that provider is, in Demo and in Live: a role of an agent's team calls its model with that key. An agent that does not run stays as its user left it, and is asked about its keys when it is resumed. `KeyDependentsTests` holds Agents to being told. See "When a key goes" in [agents.md](agents.md).
 
 ## The data
 
@@ -271,8 +271,7 @@ Whether a key can withdraw is not stored: a key that can is not.
 
 - Handing a key to the call of an agent that needs it, decrypted only in memory and only for that call (FR-KEY-9). So far a stored key is decrypted for the call that validates it. The AI Provider Gateway makes the calls to models, and takes the key with each call: see "The key" in [ai-providers.md](ai-providers.md). What hands a stored key over comes with what calls a model for an agent. The Exchange Gateway takes a credential with each call in the same way: see "The credential" in [exchange.md](exchange.md). What hands a stored credential over comes with what calls Binance for an agent.
 - Checking a key again when a call with it fails authentication. `IKeyValidation` takes the request, and nothing asks it yet. A call to a model tells it with the outcome `AuthenticationFailed`: see "Outcomes" in [ai-providers.md](ai-providers.md). What calls a model for an agent asks `RevalidateAiKeyAsync` then. A call to Binance tells it with the same outcome: see "Outcomes" in [exchange.md](exchange.md). What calls Binance for an agent asks `RevalidateExchangeKeyAsync` then.
-- What Agents does when the key of an AI provider goes or turns out to be invalid. No agent is given a model yet, so none depends on such a key. It comes with the models of an agent's team.
-- The model selector, and holding the choice of a model to what a key can use when it is saved (FR-AGT-5). `IKeyModels` answers both, and nothing asks it yet.
+- Telling Agents when the list of the models that a key can use changes: when a key is replaced, and when a check records a list that lacks a model that an agent runs with. `IKeyDependents` is told when a key is deleted or becomes invalid, and not then. See "Not built yet" in [agents.md](agents.md).
 - Saying on `/account/keys` which models a key can use, or that it is not known. The export of a user's data says it.
 - Telling the user that a key is invalid (FR-NTF-1). The list of keys says so. In-app notifications are not built.
 - The usage of each AI key: calls, tokens, and estimated cost (FR-KEY-11).

@@ -34,7 +34,7 @@ public class OwnershipModelTests
 
         Assert.Equal(
             [
-                "agent_state_changes", "agents", "ai_credentials", "audit_events", "exchange_credentials",
+                "agent_roles", "agent_state_changes", "agents", "ai_credentials", "audit_events", "exchange_credentials",
                 "legal_acceptances", "pending_sign_ins", "sessions", "two_factor_recovery_codes",
             ],
             OwnershipRules.UserOwnedTables(context.Model));

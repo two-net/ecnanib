@@ -266,8 +266,8 @@ public enum KeyCheckOutcome
 /// <remarks>
 /// <para>
 /// Agents implements it: an agent that runs with a Binance credential moves to Attention
-/// required when the credential goes. No agent is given a model yet, so none depends on a key
-/// of an AI provider, and Agents does nothing when it is told about one.
+/// required when the credential goes, and so does one that runs with a model of an AI provider
+/// when the key of its user for that provider goes.
 /// </para>
 /// <para>
 /// It is told inside the transaction that deletes the key or marks it, before the row changes,

@@ -25,7 +25,8 @@ public interface IAgentControls
     /// Starts an agent that is a draft, or is stopped: it runs. A Binance credential that is
     /// missing, is not valid, or lacks the permission of the agent's market blocks the start
     /// (FR-KEY-5), and so does another active agent of the user for the same credential, market,
-    /// and symbol (FR-AGT-9).
+    /// and symbol (FR-AGT-9). An agent runs with its whole team: a role that has no model blocks
+    /// the start, and so does a role whose model its user cannot select now (FR-TEAM-1).
     /// </summary>
     /// <param name="request">The request of the signed-in user.</param>
     /// <param name="agentId">The agent.</param>
@@ -46,7 +47,7 @@ public interface IAgentControls
 
     /// <summary>
     /// Resumes an agent that is paused, is halted, or requires attention: it runs again. What
-    /// blocks a start as far as the credential goes blocks this as well.
+    /// blocks a start as far as the credential and the team go blocks this as well.
     /// </summary>
     /// <param name="request">The request of the signed-in user.</param>
     /// <param name="agentId">The agent.</param>
@@ -104,12 +105,20 @@ public enum AgentControlOutcome
     /// Nothing changed.
     /// </summary>
     NotConfirmedForLive,
+
+    /// <summary>
+    /// The team of the agent keeps it from running: a role has no model, or a role has a model
+    /// that its user cannot select now, because the key of its provider is missing or not valid,
+    /// or the model is gone (FR-TEAM-1, FR-KEY-10, FR-CAT-8). Nothing changed.
+    /// </summary>
+    RolesBlock,
 }
 
 /// <summary>What starting, pausing, or resuming an agent gave.</summary>
 /// <param name="Outcome">How it ended.</param>
 /// <param name="Block">What about the credential keeps the agent from running, when that is how it ended.</param>
-public sealed record AgentControlResult(AgentControlOutcome Outcome, StartBlock? Block = null);
+/// <param name="Roles">What about its team keeps the agent from running, role by role, when that is how it ended.</param>
+public sealed record AgentControlResult(AgentControlOutcome Outcome, StartBlock? Block = null, IReadOnlyList<RoleBlock>? Roles = null);
 
 /// <summary>What happens to the open position of an agent that is stopped, as its user chooses (FR-AGT-11).</summary>
 public enum PositionAtStop

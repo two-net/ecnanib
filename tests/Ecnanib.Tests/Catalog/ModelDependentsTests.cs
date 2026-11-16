@@ -16,8 +16,9 @@ namespace Ecnanib.Tests.Catalog;
 /// When a model assigned to an agent becomes unavailable, the agent moves to Attention required,
 /// and the system does not substitute another model on its own (FR-CAT-8). The Catalog may not
 /// use Agents, so it tells whatever depends on a model through <see cref="IModelDependents"/>,
-/// inside the transaction that marks the model. No agent is given a model yet, so a stand-in of
-/// the tests is told for them, as Agents will be.
+/// inside the transaction that marks the model. Here a stand-in of the tests is told, beside
+/// Agents, to show how the Catalog tells. What Agents does when it is told is in
+/// <c>AgentModelDependentsTests</c>.
 /// </summary>
 /// <remarks>
 /// The file of the tests lets a model miss 3 syncs: the third sync in a row that lacks a model
@@ -163,17 +164,18 @@ public class ModelDependentsTests
     }
 
     [Fact]
-    public void Once_an_agent_uses_a_model_the_component_that_keeps_agents_is_told_when_the_model_becomes_unavailable()
+    public void An_agent_uses_a_model_so_the_component_that_keeps_agents_is_told_when_the_model_becomes_unavailable()
     {
         using var application = new EcnanibApplicationFactory();
         using var model = ModelOnly.Context();
 
-        // Agents keeps the settings of agents, and nothing of it is told. No agent uses a model
-        // yet: no row of Agents points at one. As soon as one does, Agents must be told: the
-        // Catalog cannot look at agents itself.
+        // An agent uses the models of its roles: rows of Agents point at models of the catalog.
+        // So Agents must be told when one of them goes: the Catalog cannot look at agents
+        // itself. It holds for every row of Agents that comes to point at a model.
         var modelChoices = AgentsRules.ModelChoices(model.Model);
         var isTold = application.Services.GetServices<IModelDependents>().Any(dependent => AgentsRules.IsOfAgents(dependent.GetType()));
 
+        Assert.NotEmpty(modelChoices);
         Assert.True(
             isTold || modelChoices.Count == 0,
             $"An agent uses a model now ({string.Join(", ", modelChoices)}), and nothing of Agents is told when a model that " +
@@ -224,10 +226,10 @@ public class ModelDependentsTests
     }
 
     /// <summary>
-    /// Stands for Agents, which is not built yet: it is told when models become unavailable,
-    /// keeps how it was told, and fails when a test tells it to. As Agents will change the state
-    /// of an agent, it changes something with the context it is given: it leaves a mark on the
-    /// models that go, where a test can see whether the change was stored.
+    /// Stands for something that depends on a model, as Agents does: it is told when models
+    /// become unavailable, keeps how it was told, and fails when a test tells it to. As Agents
+    /// changes the state of an agent, it changes something with the context it is given: it
+    /// leaves a mark on the models that go, where a test can see whether the change was stored.
     /// </summary>
     private sealed class StandInDependents : IModelDependents
     {

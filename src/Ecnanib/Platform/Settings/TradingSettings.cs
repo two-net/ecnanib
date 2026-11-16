@@ -22,6 +22,16 @@ public sealed record DefaultRolesSettings(
     AiProviderCode Strategist,
     AiProviderCode RiskManager)
 {
+    /// <summary>The provider that fills a role on a new agent, until its user chooses another.</summary>
+    public AiProviderCode Of(Role role) => role switch
+    {
+        Role.MarketAnalyst => MarketAnalyst,
+        Role.SentimentAnalyst => SentimentAnalyst,
+        Role.Strategist => Strategist,
+        Role.RiskManager => RiskManager,
+        _ => throw new ArgumentOutOfRangeException(nameof(role), role, "The role has no default provider."),
+    };
+
     internal static DefaultRolesSettings Read(SettingsReader file, AiProvidersSettings aiProviders)
     {
         return new DefaultRolesSettings(

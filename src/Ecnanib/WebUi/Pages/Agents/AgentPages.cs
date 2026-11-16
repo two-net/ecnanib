@@ -1,6 +1,7 @@
 using System.Globalization;
 using Ecnanib.Accounts;
 using Ecnanib.Agents;
+using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 using Ecnanib.Platform.Settings;
 using Ecnanib.Shared;
@@ -56,12 +57,14 @@ public static class AgentPages
         "This agent is in Live: this acts on your real Binance account, with real money.";
 
     /// <summary>
-    /// What the form of the settings says when it asks once more: the capital or a risk setting
-    /// of an agent in Live was changed, and nothing is stored until its user says so again.
+    /// What the form of the settings says when it asks once more: the capital, a risk setting,
+    /// or the model of a role of an agent in Live was changed, and nothing is stored until its
+    /// user says so again.
     /// </summary>
     public const string ConfirmSaveForLive =
-        "This agent is in Live. The capital and the risk settings you entered apply to trading with real money, from the " +
-        "agent's next cycle. Nothing is saved yet. Check them, and press \"" + SaveForLive + "\" to save them.";
+        "This agent is in Live. The capital, the risk settings, and the models of the roles you entered apply to trading " +
+        "with real money, from the agent's next cycle. Nothing is saved yet. Check them, and press \"" + SaveForLive +
+        "\" to save them.";
 
     /// <summary>What the page that switches an agent to Live says to a form that came without the confirmation.</summary>
     public const string ConfirmRiskFirst = "Tick the box to confirm that you understand the risk. Nothing was switched.";
@@ -100,6 +103,39 @@ public static class AgentPages
     /// A page is not interactive, so the list of symbols follows the market with a press of it.
     /// </summary>
     public const string ShowSymbols = "symbols";
+
+    /// <summary>
+    /// The value of the button that shows the models of the providers that are chosen for the
+    /// roles, and stores nothing. A page is not interactive, so the list of models of a role
+    /// follows its provider with a press of it.
+    /// </summary>
+    public const string ShowModels = "models";
+
+    /// <summary>What that button says.</summary>
+    public const string ShowModelsButton = "Show the models of the chosen providers";
+
+    /// <summary>What the choice of a model says while none is chosen.</summary>
+    public const string ChooseModel = "Choose a model";
+
+    /// <summary>What the form says about the roles, above them (FR-TEAM-1, FR-AGT-8).</summary>
+    public const string RolesExplained =
+        "Every agent is run by four AI roles, which work one after the other in each cycle. Give each role a provider and " +
+        "one of its models. You can choose among the models that your own key for the provider can use. A role may wait " +
+        "for its model while the agent is a draft: the agent is started once every role has one. A change applies from " +
+        "the agent's next cycle.";
+
+    /// <summary>
+    /// What the form says of a role whose model cannot be selected now: its user sees which
+    /// model the role has, and that the agent does not run with it.
+    /// </summary>
+    public const string ModelNotSelectableNow =
+        "The model that this role has cannot be selected now: the key of its provider is missing or not valid, or the " +
+        "model is no longer offered. The agent is not started or resumed with it. See to the key, or give the role another model.";
+
+    /// <summary>What a page says above the roles that keep an agent from being started or resumed (FR-TEAM-1).</summary>
+    public static string RolesBlock(AgentControl control) =>
+        $"The agent was not {(control == AgentControl.Resume ? "resumed" : "started")}: it runs once every role of its team " +
+        "has a model that your keys can use.";
 
     /// <summary>What a page says to a user whose email address is not verified, in place of the form that creates an agent (FR-ACC-1).</summary>
     public const string VerifyFirst =
@@ -196,6 +232,15 @@ public static class AgentPages
         AgentStateCause.ExchangeKeyInvalid =>
             "Binance refused your key for the agent's mode while the agent ran. Replace the key, or check it again on the " +
             "page of your keys, and resume the agent.",
+        AgentStateCause.AiKeyDeleted =>
+            "Your key for an AI provider that a role of the agent uses was deleted while the agent ran. Add a key, or give " +
+            "the role a model of another provider, and resume the agent.",
+        AgentStateCause.AiKeyInvalid =>
+            "An AI provider refused your key, which a role of the agent uses, while the agent ran. Replace the key, or " +
+            "check it again on the page of your keys, and resume the agent.",
+        AgentStateCause.ModelUnavailable =>
+            "The provider of a model that a role of the agent uses no longer offers it. No other model was put in its " +
+            "place. Give the role another model on the page of the agent's settings, and resume the agent.",
         _ => throw new ArgumentOutOfRangeException(nameof(cause), cause, "The cause has no description."),
     };
 
@@ -270,6 +315,151 @@ public static class AgentPages
         Role.RiskManager => ("Risk Manager", "Reviews the plan independently, and approves, reduces, or vetoes it."),
         _ => throw new ArgumentOutOfRangeException(nameof(role), role, "The role has no description."),
     };
+
+    /// <summary>A role as the ids of its fields name it: <c>market-analyst</c>.</summary>
+    public static string IdOf(Role role) => role switch
+    {
+        Role.MarketAnalyst => "market-analyst",
+        Role.SentimentAnalyst => "sentiment-analyst",
+        Role.Strategist => "strategist",
+        Role.RiskManager => "risk-manager",
+        _ => throw new ArgumentOutOfRangeException(nameof(role), role, "The role has no id."),
+    };
+
+    /// <summary>The name of the field that brings the provider of a role: <c>MarketAnalystProvider</c>.</summary>
+    public static string ProviderField(Role role) => $"{role}Provider";
+
+    /// <summary>The name of the field that brings the model of a role: <c>MarketAnalystModel</c>.</summary>
+    public static string ModelField(Role role) => $"{role}Model";
+
+    /// <summary>
+    /// A model as a choice names it: the name its provider gives it with its identifier, or the
+    /// identifier alone when the provider gives no name. A model that can search live says so,
+    /// which counts most for the Sentiment Analyst.
+    /// </summary>
+    public static string Describe(SelectableModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        var name = NameOf(model.Identifier, model.DisplayName);
+
+        return model.LiveSearch ? $"{name}, searches live" : name;
+    }
+
+    /// <summary>A model as a page names it, from its identifier and the name its provider gives it.</summary>
+    public static string NameOf(string identifier, string? displayName) =>
+        string.IsNullOrWhiteSpace(displayName) || string.Equals(displayName, identifier, StringComparison.Ordinal)
+            ? identifier
+            : $"{displayName} ({identifier})";
+
+    /// <summary>
+    /// What the form says under a role whose provider offers its user no model, or null when
+    /// the provider offers some. A user who lacks a key for a provider is told that another
+    /// provider can take the role (FR-TEAM-5).
+    /// </summary>
+    public static string? Says(ProviderChoice provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+
+        return provider switch
+        {
+            { Block: ModelBlock.NoKey } =>
+                $"You have no key for {provider.Name}. Store one on the page of your keys, or choose another provider for this role.",
+            { Block: ModelBlock.KeyNotValid } =>
+                $"Your key for {provider.Name} is not valid: {provider.Name} did not take it when it was last checked, or it " +
+                "was not checked yet. Replace it or check it again on the page of your keys, or choose another provider for this role.",
+            { Block: ModelBlock.NotKnown } =>
+                $"It is not known yet which models your key for {provider.Name} can use. Check the key again on the page of " +
+                "your keys, or choose another provider for this role.",
+            { Models.Count: 0 } =>
+                $"Your key for {provider.Name} can use none of the models that can be selected for an agent. Choose another " +
+                "provider for this role.",
+            _ => null,
+        };
+    }
+
+    /// <summary>What is wrong with what was chosen for a role, at its field. It says what to do.</summary>
+    /// <param name="role">The role.</param>
+    /// <param name="problem">What is wrong.</param>
+    /// <param name="providerName">The name of the provider that is chosen for the role.</param>
+    public static string Says(Role role, RoleProblem problem, string providerName)
+    {
+        var name = Describe(role).Name;
+
+        return problem switch
+        {
+            RoleProblem.Missing => $"Choose a model for the {name}. A role that has a model keeps one: you can give it another.",
+            RoleProblem.NotOfProvider =>
+                $"The model that was chosen is not one of {providerName}. Choose a model of {providerName}: the list shows them now.",
+            RoleProblem.NotSelectable =>
+                "That model cannot be selected: its provider no longer offers it, or it is not allowed for agents. Choose another.",
+            RoleProblem.NoKey => "You have no key for the provider of that model. Store one on the page of your keys, or choose another model.",
+            RoleProblem.KeyNotValid =>
+                "Your key for the provider of that model is not valid. Replace it or check it again on the page of your keys, " +
+                "or choose another model.",
+            RoleProblem.NotKnown =>
+                "It is not known yet which models your key for the provider of that model can use. Check the key again on the " +
+                "page of your keys.",
+            RoleProblem.NotListed => "Your key for the provider of that model cannot use it. Choose one of the models listed.",
+            _ => $"Choose a model for the {name} from the list.",
+        };
+    }
+
+    /// <summary>
+    /// Whether what is wrong with the model of a role is about the key of its provider, so that
+    /// the page of the keys is where to see to it. A role that has no model, and a model that
+    /// nobody can select, are seen to in the settings of the agent.
+    /// </summary>
+    public static bool IsAboutAKey(RoleProblem problem) =>
+        problem is RoleProblem.NoKey or RoleProblem.KeyNotValid or RoleProblem.NotKnown or RoleProblem.NotListed;
+
+    /// <summary>What a page says of one role that keeps an agent from being started or resumed.</summary>
+    public static string Says(RoleBlock block)
+    {
+        ArgumentNullException.ThrowIfNull(block);
+
+        var name = Describe(block.Role).Name;
+
+        return block.Problem switch
+        {
+            RoleProblem.NoKey =>
+                $"The {name} uses {block.ModelName}, and you have no key for {block.ProviderName}. Store one, or give the role another model.",
+            RoleProblem.KeyNotValid =>
+                $"The {name} uses {block.ModelName}, and your key for {block.ProviderName} is not valid. Replace it or check it " +
+                "again on the page of your keys, or give the role another model.",
+            RoleProblem.NotKnown =>
+                $"The {name} uses {block.ModelName}, and it is not known yet which models your key for {block.ProviderName} " +
+                "can use. Check the key again on the page of your keys.",
+            RoleProblem.NotListed =>
+                $"The {name} uses {block.ModelName}, which your key for {block.ProviderName} cannot use. Give the role another model.",
+            RoleProblem.NotSelectable =>
+                $"The {name} uses {block.ModelName}, which cannot be selected any more: {block.ProviderName} no longer offers " +
+                "it, or it is not allowed for agents. Give the role another model.",
+            _ => $"The {name} has no model. Choose one on the page of the agent's settings.",
+        };
+    }
+
+    /// <summary>
+    /// What the form warns of when a provider holds more than one role: the team is reduced
+    /// (FR-TEAM-5). Nothing keeps a user from it.
+    /// </summary>
+    /// <param name="providerNames">The names of the providers that hold more than one role.</param>
+    public static string ReducedTeam(IReadOnlyList<string> providerNames)
+    {
+        ArgumentNullException.ThrowIfNull(providerNames);
+
+        var holders = string.Join(" and ", providerNames);
+        var verb = providerNames.Count == 1 ? "holds" : "each hold";
+
+        return $"The team is reduced: {holders} {verb} more than one role. A team works best with four different providers, " +
+            "which do not share the same blind spots. You can save it as it is.";
+    }
+
+    /// <summary>What the form warns of when the Strategist and the Risk Manager use the same provider (FR-TEAM-5).</summary>
+    /// <param name="providerName">The name of the provider that both use.</param>
+    public static string SameProviderReviews(string providerName) =>
+        $"The Strategist and the Risk Manager both use {providerName}. The Risk Manager reviews the Strategist's plan " +
+        "independently, and a model of the same provider is more likely to agree with it than one of another.";
 
     /// <summary>The bounds of a risk setting that is a percentage, and its default, as a hint under its field.</summary>
     public static string Within(Bounded<decimal> bounds) =>

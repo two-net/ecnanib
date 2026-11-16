@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Net;
 using Ecnanib.Agents;
+using Ecnanib.Catalog;
+using Ecnanib.Credentials;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Shared;
@@ -10,6 +12,7 @@ using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -124,6 +127,46 @@ internal sealed record StoredAgentStateChange(
         [.. Of(database, agentId).Select(change => $"{change.State}: {change.Cause}")];
 }
 
+/// <summary>
+/// A row of the <c>agent_roles</c> table, read by a test directly, with the provider and the
+/// identifier of the model that it points at.
+/// </summary>
+internal sealed record StoredAgentRole(Guid AgentId, Guid UserId, string Role, Guid ModelId, string Provider, string Model)
+{
+    /// <summary>Every role that has a model, by agent, in the order of the roles.</summary>
+    public static IReadOnlyList<StoredAgentRole> All(TestDatabase database)
+    {
+        using var connection = database.Open();
+        using var command = new NpgsqlCommand(
+            """
+            SELECT role.agent_id, role.user_id, role.role, role.model_id, model.provider, model.identifier
+            FROM agent_roles AS role
+            JOIN ai_models AS model ON model.id = role.model_id
+            ORDER BY role.agent_id
+            """,
+            connection);
+        using var reader = command.ExecuteReader();
+
+        var roles = new List<StoredAgentRole>();
+        while (reader.Read())
+        {
+            roles.Add(new StoredAgentRole(
+                reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetGuid(3), reader.GetString(4), reader.GetString(5)));
+        }
+
+        // The roles in the order they work in, which is the order of the enum, and not of their names.
+        return [.. roles.OrderBy(role => role.AgentId).ThenBy(role => Enum.Parse<Role>(role.Role))];
+    }
+
+    /// <summary>The roles of one agent that have a model, in the order of the roles.</summary>
+    public static IReadOnlyList<StoredAgentRole> Of(TestDatabase database, Guid agentId) =>
+        [.. All(database).Where(role => role.AgentId == agentId)];
+
+    /// <summary>The team of one agent as a test names it: each role as <c>Role: identifier</c>, in order.</summary>
+    public static IReadOnlyList<string> Told(TestDatabase database, Guid agentId) =>
+        [.. Of(database, agentId).Select(role => $"{role.Role}: {role.Model}")];
+}
+
 /// <summary>What a browser does with the pages of a user's agents.</summary>
 internal static class AgentBrowser
 {
@@ -228,6 +271,61 @@ internal static class AgentBrowser
     /// <summary>What a form brings, with one field as something else.</summary>
     public static (string Name, string Value)[] With(this (string Name, string Value)[] fields, string name, string value) =>
         [.. fields.Select(field => field.Name == name ? (name, value) : field)];
+
+    /// <summary>The four roles, as the fields of the form and the rows of the table name them, in the order they work in.</summary>
+    public static readonly IReadOnlyList<string> Roles = ["MarketAnalyst", "SentimentAnalyst", "Strategist", "RiskManager"];
+
+    /// <summary>
+    /// What a form brings, with a provider and a model chosen for one role: <c>MarketAnalyst</c>,
+    /// <c>claude</c>, and the id of the model, or nothing where no model is chosen.
+    /// </summary>
+    public static (string Name, string Value)[] WithRole(
+        this (string Name, string Value)[] fields, string role, string provider, Guid? model) =>
+        [
+            .. fields.Where(field => field.Name != $"{role}Provider" && field.Name != $"{role}Model"),
+            ($"{role}Provider", provider),
+            ($"{role}Model", model?.ToString() ?? string.Empty),
+        ];
+
+    /// <summary>What a form brings, with the same provider and model chosen for every role.</summary>
+    public static (string Name, string Value)[] WithTeam(this (string Name, string Value)[] fields, string provider, Guid model) =>
+        Roles.Aggregate(fields, (brought, role) => brought.WithRole(role, provider, model));
+
+    /// <summary>The choice of a page with an id, whole.</summary>
+    private static string ChoiceOn(string page, string id)
+    {
+        var choice = System.Text.RegularExpressions.Regex.Match(
+            page, $"<select id=\"{id}\".*?</select>", System.Text.RegularExpressions.RegexOptions.Singleline);
+        Assert.True(choice.Success, $"The page has no choice with the id {id}:{Environment.NewLine}{page}");
+
+        return choice.Value;
+    }
+
+    /// <summary>What a choice of a page offers, in order: each as its value and what it says.</summary>
+    private static IReadOnlyList<(string Value, string Text, bool Selected)> OptionsOn(string page, string id) =>
+    [
+        .. System.Text.RegularExpressions.Regex.Matches(ChoiceOn(page, id), "<option value(?:=\"([^\"]*)\")?( selected)?>([^<]*)</option>")
+            .Select(option => (option.Groups[1].Value, WebUtility.HtmlDecode(option.Groups[3].Value), option.Groups[2].Success)),
+    ];
+
+    /// <summary>The code of the provider that the form on a page has chosen for a role: <c>market-analyst</c>.</summary>
+    public static string ProviderChosenOn(string page, string role) =>
+        OptionsOn(page, $"agent-{role}-provider").Single(option => option.Selected).Value;
+
+    /// <summary>The models that the form on a page offers for a role, in order, as it names them. The first choice, of no model, is not among them.</summary>
+    public static IReadOnlyList<string> ModelsOfferedOn(string page, string role) =>
+        [.. OptionsOn(page, $"agent-{role}-model").Where(option => option.Value.Length > 0).Select(option => option.Text)];
+
+    /// <summary>What the form on a page has chosen as the model of a role, as it names it: <c>Choose a model</c> when none is.</summary>
+    public static string ModelChosenOn(string page, string role) =>
+        OptionsOn(page, $"agent-{role}-model").Single(option => option.Selected).Text;
+
+    /// <summary>What a page warns of, in order.</summary>
+    public static IReadOnlyList<string> WarningsOn(string page) =>
+    [
+        .. System.Text.RegularExpressions.Regex.Matches(page, "<p class=\"form-warning\" role=\"note\">([^<]*)</p>")
+            .Select(warning => WebUtility.HtmlDecode(warning.Groups[1].Value)),
+    ];
 
     /// <summary>Fills in the form that creates an agent and saves it, and follows where the answer leads.</summary>
     public static Task<(string Path, string Page)> CreateAgentAsync(this HttpClient client, params (string Name, string Value)[] fields) =>
@@ -464,7 +562,8 @@ internal static class StoredAgentRows
     /// Gives a user an agent, stored as the application stores one, in the state that the test
     /// names, with the one change that says so. It is for a test that needs an agent in a state
     /// without the steps that lead there, or in a state that nothing leads to yet. Nobody is
-    /// signed in for it, and nothing is recorded in the audit trail.
+    /// signed in for it, and nothing is recorded in the audit trail. The agent has a whole team,
+    /// as <see cref="GiveTeamAsync"/> gives one, unless the test says that it has none.
     /// </summary>
     /// <returns>The id of the agent.</returns>
     public static async Task<Guid> GiveAgentAsync(
@@ -476,7 +575,8 @@ internal static class StoredAgentRows
         Market market = Market.Spot,
         string symbol = "BTCUSDT",
         TradingMode mode = TradingMode.Demo,
-        AgentStateCause cause = AgentStateCause.Created)
+        AgentStateCause cause = AgentStateCause.Created,
+        bool team = true)
     {
         var id = Guid.CreateVersion7();
 
@@ -505,6 +605,160 @@ internal static class StoredAgentRows
 
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
+        if (team)
+        {
+            await application.GiveTeamAsync(userId, id, at);
+        }
+
         return id;
+    }
+
+    /// <summary>The model that <see cref="GiveTeamAsync"/> gives every role, unless a test names another: one that the file of the tests allows.</summary>
+    public const string TeamModel = "claude-test-model";
+
+    /// <summary>
+    /// Gives an agent of a user a whole team, without the pages that choose one: every role has
+    /// the same model, the catalog holds that model, and the user has a valid key for its
+    /// provider that can use it. It is for a test that is about something else, and needs an
+    /// agent that can be started. Nobody is signed in for it, and nothing is recorded.
+    /// </summary>
+    /// <returns>The id of the model in the catalog.</returns>
+    public static async Task<Guid> GiveTeamAsync(
+        this AccountsApplication application,
+        Guid userId,
+        Guid agentId,
+        DateTimeOffset at,
+        string provider = "claude",
+        string model = TeamModel)
+    {
+        var modelId = Guid.Empty;
+
+        foreach (var role in Enum.GetValues<Role>())
+        {
+            modelId = await application.GiveRoleAsync(userId, agentId, role, at, provider, model);
+        }
+
+        return modelId;
+    }
+
+    /// <summary>
+    /// Gives one role of an agent a model, in place of the one it has, as
+    /// <see cref="GiveTeamAsync"/> gives every role one: the catalog holds the model, and the
+    /// user has a valid key for its provider that can use it.
+    /// </summary>
+    /// <returns>The id of the model in the catalog.</returns>
+    public static async Task<Guid> GiveRoleAsync(
+        this AccountsApplication application,
+        Guid userId,
+        Guid agentId,
+        Role role,
+        DateTimeOffset at,
+        string provider = "claude",
+        string model = TeamModel)
+    {
+        var modelId = await application.GiveModelAsync(provider, model, at);
+
+        await application.LetKeyUseAsync(userId, provider, model, at);
+
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        await context.Set<AgentRole>()
+            .Where(given => given.AgentId == agentId && given.Role == role)
+            .ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+
+        context.Add(new AgentRole(agentId, userId, role, modelId));
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return modelId;
+    }
+
+    /// <summary>
+    /// Gives every agent that a user has now a whole team, as <see cref="GiveTeamAsync"/> gives
+    /// one. It is for a test that creates its agents on their pages, where a user without a key
+    /// for an AI provider is offered no model, and then starts them.
+    /// </summary>
+    public static async Task GiveTeamsAsync(this AccountsApplication application, Guid userId, DateTimeOffset at)
+    {
+        foreach (var agent in StoredAgent.Of(application.Database, userId))
+        {
+            await application.GiveTeamAsync(userId, agent.Id, at);
+        }
+    }
+
+    /// <summary>
+    /// Puts a model in the catalog, as a sync that found it in its provider's list does, unless
+    /// the catalog holds it already.
+    /// </summary>
+    /// <returns>The id of the model in the catalog.</returns>
+    public static async Task<Guid> GiveModelAsync(
+        this AccountsApplication application, string provider, string identifier, DateTimeOffset at, string? displayName = null)
+    {
+        var code = new AiProviderCode(provider);
+
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        var known = await context.Set<AiModel>()
+            .Where(model => model.Provider == code && model.Identifier == identifier)
+            .Select(model => (Guid?)model.Id)
+            .SingleOrDefaultAsync(TestContext.Current.CancellationToken);
+
+        if (known is { } id)
+        {
+            return id;
+        }
+
+        id = Guid.CreateVersion7();
+
+        context.Add(new AiModel(
+            id,
+            code,
+            identifier,
+            displayName,
+            contextTokens: null,
+            outputTokens: null,
+            releasedAt: null,
+            deprecatedAt: null,
+            retiresAt: null,
+            AiModelStatus.Active,
+            missedSyncs: 0,
+            firstSeenAt: at,
+            lastSeenAt: at));
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return id;
+    }
+
+    /// <summary>
+    /// Makes the key of a user for an AI provider one that can use a model: the provider has
+    /// listed the model to it, among whatever it listed before. A user who has no key for the
+    /// provider is given one, valid as of the moment it was stored.
+    /// </summary>
+    public static async Task LetKeyUseAsync(
+        this AccountsApplication application, Guid userId, string provider, string identifier, DateTimeOffset at)
+    {
+        var code = new AiProviderCode(provider);
+
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        var key = await context.Set<AiCredential>()
+            .Where(credential => credential.UserId == userId && credential.Provider == code)
+            .Select(credential => new { credential.Id, credential.AccessibleModels })
+            .SingleOrDefaultAsync(TestContext.Current.CancellationToken);
+
+        if (key is null)
+        {
+            await application.GiveAiKeyAsync(userId, provider, at, [identifier]);
+
+            return;
+        }
+
+        string[] listed = [.. (key.AccessibleModels ?? []).Append(identifier).Distinct(StringComparer.Ordinal)];
+
+        await context.Set<AiCredential>()
+            .Where(credential => credential.Id == key.Id)
+            .ExecuteUpdateAsync(
+                row => row.SetProperty(credential => credential.AccessibleModels, listed), TestContext.Current.CancellationToken);
     }
 }

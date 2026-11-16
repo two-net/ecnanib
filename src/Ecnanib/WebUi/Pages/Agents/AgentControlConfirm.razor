@@ -30,7 +30,20 @@
     {
         <p class="form-error" role="alert">@_refused</p>
 
-        @if (_keyBlocks)
+        @if (_roles is not null)
+        {
+            @* Each role that keeps the agent from running, with what to do about it (FR-TEAM-1). *@
+            <ul class="agent-role-blocks">
+                @foreach (var role in _roles)
+                {
+                    <li>@AgentPages.Says(role)</li>
+                }
+            </ul>
+
+            <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+        }
+
+        @if (_keyBlocks || (_roles?.Any(role => AgentPages.IsAboutAKey(role.Problem)) ?? false))
         {
             <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
         }
@@ -65,6 +78,7 @@
     private string? _refused;
     private bool _showForm;
     private bool _keyBlocks;
+    private IReadOnlyList<RoleBlock>? _roles;
 
     [Parameter]
     public Guid Id { get; set; }
@@ -147,6 +161,12 @@
 
             case AgentControlOutcome.AnotherAgentActive:
                 _refused = AgentPages.AnotherAgentActive(_agent);
+                break;
+
+            case AgentControlOutcome.RolesBlock when result.Roles is { } roles:
+                // Names each role that has no model, or whose model its user cannot select now.
+                _refused = AgentPages.RolesBlock(control);
+                _roles = roles;
                 break;
         }
 

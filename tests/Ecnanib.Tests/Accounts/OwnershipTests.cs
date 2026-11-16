@@ -39,8 +39,8 @@ public class OwnershipTests
         // Grace has a row in every table that holds rows of users: what she accepted, her
         // recovery codes, the event of turning two-factor authentication on, a session on her
         // desk, a sign-in on her phone that waits for its code, a key of each kind, and an
-        // agent. What a user does with keys of their own is in KeyPageTests, and with agents of
-        // their own in AgentPageTests.
+        // agent with its team. What a user does with keys of their own is in KeyPageTests, and
+        // with agents of their own in AgentPageTests and AgentRoleTests.
         var (grace, gracesApp, _) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
@@ -48,7 +48,7 @@ public class OwnershipTests
         Assert.Equal("/", (await gracesDesk.EnterCodeAsync(gracesApp.CodeAt(clock.GetUtcNow()))).Path);
         await gracesPhone.SignInAsync(Grace);
         await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
-        await application.GiveAgentAsync(grace.Id, clock.GetUtcNow());
+        await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true);
 
         var before = application.RowsOf(grace.Id);
         Assert.All(before, table => Assert.True(table.Value.Count > 0, $"Grace has no row in {table.Key}, so nothing is compared there."));

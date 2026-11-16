@@ -269,12 +269,43 @@ fieldset {
     max-width: 30rem;
 }
 
-.agent-roles dt, .agent-states dt {
+.agent-states dt {
     font-weight: 600;
 }
 
-.agent-roles dd, .agent-states dd {
+.agent-states dd {
     margin: 0 0 0.5rem;
+}
+
+/* The roles of an agent's team: each role is one field, with the choice of its provider and the
+   choice of its model one under the other, and one button under all four shows the models of
+   the providers that are chosen. */
+.agent-roles h3 {
+    font-size: 1rem;
+    margin: 0;
+}
+
+.agent-roles .field > label {
+    margin-top: 0.5rem;
+}
+
+.agent-role-blocks {
+    margin: 0.25rem 0 1rem;
+}
+
+/* What a form warns of, and does not refuse. It says so in words, and is marked by a line at its
+   side, in a colour that reads on a light page and on a dark one: the text keeps the colour of
+   the text around it. */
+.form-warning {
+    border-left: 0.25rem solid #9a6700;
+    margin: 0 0 1rem;
+    padding-left: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    .form-warning {
+        border-left-color: #d4a72c;
+    }
 }
 
 /* The badge of the mode of an agent, wherever an agent is shown: Demo or Live (FR-UI-3). It says

@@ -2,6 +2,7 @@
 @page "/agents/{Id:guid}"
 @attribute [Authorize]
 @using Ecnanib.Agents
+@using Ecnanib.Catalog
 @using Ecnanib.Platform.Settings
 @using Ecnanib.Shared
 @inject IStoredAgents Agents
@@ -17,8 +18,17 @@
     symbols follows the market with a press of a button, which stores nothing. The form is on
     the page whenever one is posted: a form that is not there cannot be answered. The badge of
     the mode is under the heading: a new agent is in Demo, and the form offers no choice of the
-    mode, which is switched on a page of its own (FR-AGT-7). A change to the capital or to a
-    risk setting of an agent in Live is asked about once more before it is stored (FR-UI-3).
+    mode, which is switched on a page of its own (FR-AGT-7). A change to the capital, to a risk
+    setting, or to the model of a role of an agent in Live is asked about once more before it is
+    stored (FR-UI-3).
+
+    Each of the four roles of the team has a choice of a provider and a choice of a model
+    (FR-AGT-5, FR-TEAM-1). On a new agent the providers are those of the default mapping of the
+    configuration file, four different ones (FR-TEAM-2, FR-TEAM-3). The models that a role is
+    offered are those of its provider that the user's own key can use, and that can be selected
+    at all (FR-CAT-6, FR-CAT-9): the list follows the provider with a press of a button, which
+    stores nothing, as the symbols follow the market. A provider may hold more than one role,
+    and the form warns of it where it shows the providers (FR-TEAM-5).
 *@
 
 @if (_found)
@@ -221,6 +231,69 @@
                 </div>
             </fieldset>
 
+            <fieldset class="agent-roles">
+                <legend>Roles</legend>
+
+                <p>@AgentPages.RolesExplained</p>
+
+                @* Said of the providers that the form holds now, so before a reduced team is saved (FR-TEAM-5). *@
+                @foreach (var warning in Warnings())
+                {
+                    <p class="form-warning" role="note">@warning</p>
+                }
+
+                @foreach (var role in AgentRoleRules.All)
+                {
+                    var (name, job) = AgentPages.Describe(role);
+                    var id = AgentPages.IdOf(role);
+                    var provider = ProviderOf(role);
+                    var models = ModelsOf(role);
+                    var chosen = ModelIdEntry(role) is { } chosenId ? models.FirstOrDefault(model => model.Id == chosenId) : null;
+
+                    <div class="field">
+                        <h3>@name</h3>
+
+                        <p id="agent-@(id)-hint" class="field-hint">@job</p>
+
+                        <label for="agent-@(id)-provider">Provider of the @name</label>
+                        <select id="agent-@(id)-provider" name="@AgentPages.ProviderField(role)">
+                            @foreach (var offered in _choices.Providers)
+                            {
+                                <option value="@offered.Provider.Value" selected="@(offered.Provider == provider?.Provider)">@offered.Name</option>
+                            }
+                        </select>
+
+                        <label for="agent-@(id)-model">Model of the @name</label>
+                        <select id="agent-@(id)-model" name="@AgentPages.ModelField(role)"
+                                aria-invalid="@Invalid(role)" aria-describedby="agent-@(id)-hint">
+                            <option value="" selected="@(chosen is null)">@AgentPages.ChooseModel</option>
+                            @foreach (var model in models)
+                            {
+                                <option value="@model.Id" selected="@(model == chosen)">@AgentPages.Describe(model)@(Selectable(role, model) ? "" : ", cannot be selected now")</option>
+                            }
+                        </select>
+
+                        @if (models.Any(model => !Selectable(role, model)))
+                        {
+                            <p role="note">@AgentPages.ModelNotSelectableNow</p>
+                        }
+
+                        @if (provider is not null && AgentPages.Says(provider) is { } nothingOffered)
+                        {
+                            <p role="note">@nothingOffered <a href="@WebUiModule.KeysPath">Your keys</a></p>
+                        }
+
+                        @if (Problem(role) is { } roleProblem)
+                        {
+                            <p class="field-error" role="alert">@roleProblem</p>
+                        }
+                    </div>
+                }
+
+                @* Stores nothing: the form comes back with the models of the providers that are chosen now. *@
+                <button type="submit" name="Show" value="@AgentPages.ShowModels" formnovalidate>@AgentPages.ShowModelsButton</button>
+            </fieldset>
+
             @if (_confirmLive)
             {
                 @* Asked once more: nothing is stored until this button is pressed. *@
@@ -233,20 +306,6 @@
                 <button type="submit">@(_agent is null ? "Create the agent" : "Save the agent")</button>
             }
         </form>
-
-        <h2>Roles</h2>
-
-        <p>Every agent is run by four AI roles, which work one after the other in each cycle.</p>
-
-        <dl class="agent-roles">
-            @foreach (var role in Enum.GetValues<Role>())
-            {
-                var (name, job) = AgentPages.Describe(role);
-
-                <dt>@name</dt>
-                <dd>@job</dd>
-            }
-        </dl>
     }
 
     <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
@@ -262,6 +321,8 @@
     private Market _market = Market.Spot;
     private IReadOnlyList<SymbolChoice> _offered = [];
     private IReadOnlyDictionary<AgentField, AgentProblem> _problems = new Dictionary<AgentField, AgentProblem>();
+    private IReadOnlyDictionary<Role, RoleProblem> _roleProblems = new Dictionary<Role, RoleProblem>();
+    private RoleChoices _choices = new([], new Dictionary<Role, AiProviderCode>());
     private string? _notNow;
     private string? _notSaved;
     private bool _confirmLive;
@@ -303,13 +364,43 @@
     [SupplyParameterFromForm(Name = "MaxEntryDistancePercent")]
     private string? EntryDistanceEntry { get; set; }
 
-    /// <summary>The button that shows the symbols of the chosen market, when that is what was pressed.</summary>
+    // The provider and the model of each role, as the form brings them. A form field is a
+    // property of its own, so there are eight: see ProviderEntry and ModelEntry.
+    [SupplyParameterFromForm(Name = "MarketAnalystProvider")]
+    private string? MarketAnalystProviderEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "MarketAnalystModel")]
+    private string? MarketAnalystModelEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "SentimentAnalystProvider")]
+    private string? SentimentAnalystProviderEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "SentimentAnalystModel")]
+    private string? SentimentAnalystModelEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "StrategistProvider")]
+    private string? StrategistProviderEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "StrategistModel")]
+    private string? StrategistModelEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "RiskManagerProvider")]
+    private string? RiskManagerProviderEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "RiskManagerModel")]
+    private string? RiskManagerModelEntry { get; set; }
+
+    /// <summary>
+    /// The button that shows the symbols of the chosen market, or the one that shows the models
+    /// of the chosen providers, when that is what was pressed. Either stores nothing.
+    /// </summary>
     [SupplyParameterFromForm]
     private string? Show { get; set; }
 
     /// <summary>
-    /// The button that saves a change to the capital or to a risk setting of an agent in Live,
-    /// when that is what was pressed: the page asked once more, and this is the answer.
+    /// The button that saves a change to the capital, to a risk setting, or to the model of a
+    /// role of an agent in Live, when that is what was pressed: the page asked once more, and
+    /// this is the answer.
     /// </summary>
     [SupplyParameterFromForm]
     private string? Confirm { get; set; }
@@ -347,6 +438,7 @@
             // A form was posted, and is answered by SaveAsync, with what it brought.
             _showForm = true;
             await OfferSymbolsAsync(request);
+            _choices = await Agents.RoleChoicesAsync(request);
 
             return;
         }
@@ -389,6 +481,20 @@
 
         _showForm = true;
         await OfferSymbolsAsync(request);
+        _choices = await Agents.RoleChoicesAsync(request);
+
+        // A role that has a model starts from it, and from its provider. A role that has none,
+        // which is every role of a new agent, starts from the provider that the configuration
+        // file gives it (FR-TEAM-2, FR-TEAM-3), and its model is for its user to choose.
+        foreach (var role in AgentRoleRules.All)
+        {
+            var has = _agent?.Roles.FirstOrDefault(given => given.Role == role);
+
+            Enter(
+                role,
+                (has?.Provider ?? _choices.Defaults.GetValueOrDefault(role)).Value,
+                has?.ModelId.ToString());
+        }
     }
 
     private async Task SaveAsync()
@@ -400,8 +506,9 @@
 
         if (Show is not null)
         {
-            // The other button: nothing is stored, and the form is back with the symbols of the
-            // market that is chosen now, and with everything else as it was entered.
+            // Another button: nothing is stored, and the form is back with the symbols of the
+            // market that is chosen now, with the models of the providers that are chosen now,
+            // and with everything else as it was entered.
             return;
         }
 
@@ -415,7 +522,8 @@
             LeverageCapEntry,
             DailyLossEntry,
             DrawdownEntry,
-            EntryDistanceEntry);
+            EntryDistanceEntry,
+            [.. AgentRoleRules.All.Select(role => new RoleEntry(role, ProviderEntry(role), ModelEntry(role)))]);
 
         var result = _agent is null
             ? await Agents.CreateAsync(request, entry)
@@ -436,6 +544,7 @@
 
             case SaveAgentOutcome.Invalid:
                 _problems = result.Problems;
+                _roleProblems = result.RoleProblems;
                 break;
 
             case SaveAgentOutcome.EmailNotVerified:
@@ -486,4 +595,156 @@
         _problems.TryGetValue(field, out var problem) ? AgentPages.Says(field, problem, Trading.Aggressive) : null;
 
     private string? Invalid(AgentField field) => _problems.ContainsKey(field) ? "true" : null;
+
+    private string? Problem(Role role)
+    {
+        if (!_roleProblems.TryGetValue(role, out var problem))
+        {
+            return null;
+        }
+
+        // A form that names a provider which is none says nothing that the page can name: it
+        // is told to choose from the list, and not that a model is "not one of" another provider.
+        if (problem == RoleProblem.NotOfProvider && !HoldsAProvider(role))
+        {
+            problem = RoleProblem.NotAModel;
+        }
+
+        return AgentPages.Says(role, problem, ProviderOf(role)?.Name ?? "the provider");
+    }
+
+    private string? Invalid(Role role) => _roleProblems.ContainsKey(role) ? "true" : null;
+
+    /// <summary>The code of the provider that the form holds for a role.</summary>
+    private string? ProviderEntry(Role role) => role switch
+    {
+        Role.MarketAnalyst => MarketAnalystProviderEntry,
+        Role.SentimentAnalyst => SentimentAnalystProviderEntry,
+        Role.Strategist => StrategistProviderEntry,
+        _ => RiskManagerProviderEntry,
+    };
+
+    /// <summary>The id of the model that the form holds for a role, or nothing when none is chosen.</summary>
+    private string? ModelEntry(Role role) => role switch
+    {
+        Role.MarketAnalyst => MarketAnalystModelEntry,
+        Role.SentimentAnalyst => SentimentAnalystModelEntry,
+        Role.Strategist => StrategistModelEntry,
+        _ => RiskManagerModelEntry,
+    };
+
+    /// <summary>
+    /// The model that the form holds for a role, read as the server reads it: an id, whatever
+    /// way it is written. Null when none is chosen, and when what was brought is no id.
+    /// </summary>
+    private Guid? ModelIdEntry(Role role) =>
+        Guid.TryParse((ModelEntry(role) ?? string.Empty).Trim(), out var id) ? id : null;
+
+    /// <summary>Whether the provider that the form holds for a role is one of the providers.</summary>
+    private bool HoldsAProvider(Role role)
+    {
+        var held = (ProviderEntry(role) ?? string.Empty).Trim();
+
+        return held.Length > 0 && _choices.Of(new AiProviderCode(held)) is not null;
+    }
+
+    /// <summary>Puts a provider and a model in the fields of a role, as the form shows them first.</summary>
+    private void Enter(Role role, string provider, string? model)
+    {
+        switch (role)
+        {
+            case Role.MarketAnalyst:
+                (MarketAnalystProviderEntry, MarketAnalystModelEntry) = (provider, model);
+                break;
+
+            case Role.SentimentAnalyst:
+                (SentimentAnalystProviderEntry, SentimentAnalystModelEntry) = (provider, model);
+                break;
+
+            case Role.Strategist:
+                (StrategistProviderEntry, StrategistModelEntry) = (provider, model);
+                break;
+
+            default:
+                (RiskManagerProviderEntry, RiskManagerModelEntry) = (provider, model);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The provider that is chosen for a role now: the one that the form holds, when it is one
+    /// of the providers. Otherwise the one of the model that the role has, or the default one.
+    /// </summary>
+    private ProviderChoice? ProviderOf(Role role)
+    {
+        var held = (ProviderEntry(role) ?? string.Empty).Trim();
+
+        if (held.Length > 0 && _choices.Of(new AiProviderCode(held)) is { } chosen)
+        {
+            return chosen;
+        }
+
+        var fallback = _agent?.Roles.FirstOrDefault(given => given.Role == role)?.Provider
+            ?? _choices.Defaults.GetValueOrDefault(role);
+
+        return _choices.Of(fallback) ?? _choices.Providers.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// The models that the form lists for a role: those of its provider that the user can
+    /// select. The model that the role has stays among them while the role has that provider,
+    /// also when it cannot be selected any more, so that the form shows what is stored, and the
+    /// other settings can be saved while a key is gone.
+    /// </summary>
+    private IReadOnlyList<SelectableModel> ModelsOf(Role role)
+    {
+        if (ProviderOf(role) is not { } provider)
+        {
+            return [];
+        }
+
+        var has = _agent?.Roles.FirstOrDefault(given => given.Role == role);
+
+        return has is not null && has.Provider == provider.Provider && provider.Models.All(model => model.Id != has.ModelId)
+            ? [new SelectableModel(has.ModelId, has.Provider, has.Identifier, has.DisplayName, LiveSearch: false), .. provider.Models]
+            : provider.Models;
+    }
+
+    /// <summary>Whether a model that the form lists for a role is one that the user can select now.</summary>
+    private bool Selectable(Role role, SelectableModel model) =>
+        ProviderOf(role) is { } provider && provider.Models.Any(offered => offered.Id == model.Id);
+
+    /// <summary>
+    /// What the form warns of for the providers that it holds for the roles now (FR-TEAM-5): a
+    /// provider that holds more than one role, and the Strategist and the Risk Manager on the
+    /// same one.
+    /// </summary>
+    private IReadOnlyList<string> Warnings()
+    {
+        var providers = new Dictionary<Role, AiProviderCode>();
+        foreach (var role in AgentRoleRules.All)
+        {
+            if (ProviderOf(role) is { } provider)
+            {
+                providers[role] = provider.Provider;
+            }
+        }
+
+        var warned = AgentRoleRules.WarningsOf(providers);
+        var warnings = new List<string>();
+
+        if (warned.Reduced)
+        {
+            warnings.Add(AgentPages.ReducedTeam([.. warned.Repeated.Select(NameOf)]));
+        }
+
+        if (warned.StrategistAndRiskManager is { } both)
+        {
+            warnings.Add(AgentPages.SameProviderReviews(NameOf(both)));
+        }
+
+        return warnings;
+
+        string NameOf(AiProviderCode provider) => _choices.Of(provider)?.Name ?? provider.Value;
+    }
 }

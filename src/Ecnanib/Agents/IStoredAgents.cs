@@ -17,7 +17,12 @@ namespace Ecnanib.Agents;
 /// <para>
 /// What starts, pauses, resumes, and stops an agent is <see cref="IAgentControls"/>, and what
 /// switches it between Demo and Live is <see cref="IAgentModes"/>: nothing here changes the
-/// state of an agent or its mode. What gives the roles of its team their models is not built yet.
+/// state of an agent or its mode.
+/// </para>
+/// <para>
+/// The team of an agent is among its settings: each of its four roles is given a model of the
+/// catalog, which says the provider too (FR-AGT-5, FR-TEAM-1). A role may be without a model
+/// while its agent does not run. The agent is started only when every role has one.
 /// </para>
 /// </remarks>
 public interface IStoredAgents
@@ -38,31 +43,44 @@ public interface IStoredAgents
     Task<IReadOnlyList<MarketSymbols>> SymbolsAsync(TradingMode mode, CancellationToken cancellationToken);
 
     /// <summary>
+    /// What the user can give the roles of an agent: for every AI provider, the models that can
+    /// be selected at all and that the user's own key can use (FR-CAT-6, FR-CAT-9), and the
+    /// provider that the configuration file gives each role by default (FR-TEAM-2, FR-TEAM-3).
+    /// It asks no provider: it is answered from what was recorded of the user's keys.
+    /// </summary>
+    Task<RoleChoices> RoleChoicesAsync(HttpContext request);
+
+    /// <summary>
     /// Creates an agent with what was entered, in Demo and in Draft. A user whose email address
     /// is not verified creates none, and neither does one who has as many agents as the
-    /// fair-use limit allows (FR-ACC-1, FR-ACC-7).
+    /// fair-use limit allows (FR-ACC-1, FR-ACC-7). A role is given the model that was chosen for
+    /// it, which is one that the user can select, and has none when none was chosen (FR-AGT-5).
     /// </summary>
     Task<SaveAgentResult> CreateAsync(HttpContext request, AgentEntry entry);
 
     /// <summary>
     /// Changes the settings of an agent to what was entered. The market, the symbol, and the
     /// timeframe change only while the agent is in Draft, or is Stopped with no open position
-    /// or orders (FR-AGT-8). A change to a risk setting is recorded in the audit trail
-    /// (NFR-LOG-7).
+    /// or orders (FR-AGT-8). The models of its roles change in any state, and apply from its
+    /// next cycle: a model that a role is newly given is one that the user can select, and a
+    /// role that has a model keeps one (FR-AGT-5). A change to a risk setting is recorded in the
+    /// audit trail (NFR-LOG-7).
     /// </summary>
     /// <param name="request">The request of the signed-in user.</param>
     /// <param name="agentId">The agent.</param>
     /// <param name="entry">What was entered.</param>
     /// <param name="confirmedForLive">
     /// Whether the user was asked once more, and confirmed. It counts for an agent in Live: a
-    /// change to its capital or to a risk setting is not stored without it (FR-UI-3).
+    /// change to its capital, to a risk setting, or to the model of a role is not stored
+    /// without it (FR-UI-3).
     /// </param>
     Task<SaveAgentResult> SaveAsync(HttpContext request, Guid agentId, AgentEntry entry, bool confirmedForLive);
 
     /// <summary>
     /// Creates a copy of an agent, under a name of its own, in Demo and in Draft, whatever mode
-    /// the agent is in. It counts against the fair-use limit as any agent does. An agent in Live
-    /// is copied only when its market has its symbol in Demo as well (FR-AGT-6).
+    /// the agent is in, with the models that its roles have. It counts against the fair-use
+    /// limit as any agent does. An agent in Live is copied only when its market has its symbol
+    /// in Demo as well (FR-AGT-6).
     /// </summary>
     Task<SaveAgentResult> CloneAsync(HttpContext request, Guid agentId);
 
@@ -101,6 +119,10 @@ public sealed record StoredAgentList(IReadOnlyList<AgentView> Agents, AgentCreat
 /// Whether it has an open position now, which its user can close at any time (FR-AGT-12), and is
 /// asked about when they stop the agent (FR-AGT-11).
 /// </param>
+/// <param name="Roles">
+/// The roles of its team that have a model, each with its model, in the order of the roles
+/// (FR-AGT-5). A role that is not among them has none yet.
+/// </param>
 public sealed record AgentView(
     Guid Id,
     string Name,
@@ -116,7 +138,8 @@ public sealed record AgentView(
     DateTimeOffset StateChangedAt,
     DateTimeOffset CreatedAt,
     bool StructureCanChange,
-    bool HasOpenPosition);
+    bool HasOpenPosition,
+    IReadOnlyList<AgentRoleView> Roles);
 
 /// <summary>
 /// The risk settings of an agent that its user chooses, each within the hard bounds of the
@@ -162,6 +185,7 @@ public sealed record SymbolChoice(string Symbol, string QuoteAsset);
 /// <param name="DailyLossPercent">The daily loss limit, in percent.</param>
 /// <param name="DrawdownPercent">The drawdown limit, in percent.</param>
 /// <param name="MaxEntryDistancePercent">The most distance of an entry from the current price, in percent.</param>
+/// <param name="Roles">What was chosen for the roles of the team: for each, a provider and a model.</param>
 public sealed record AgentEntry(
     string? Name,
     string? Market,
@@ -172,7 +196,8 @@ public sealed record AgentEntry(
     string? LeverageCap,
     string? DailyLossPercent,
     string? DrawdownPercent,
-    string? MaxEntryDistancePercent);
+    string? MaxEntryDistancePercent,
+    IReadOnlyList<RoleEntry> Roles);
 
 /// <summary>A setting of an agent that a form has a field for.</summary>
 public enum AgentField
@@ -251,8 +276,8 @@ public enum SaveAgentOutcome
     NotFound,
 
     /// <summary>
-    /// The agent is in Live, the capital or a risk setting was changed, and its user was not
-    /// asked once more (FR-UI-3). Nothing was stored.
+    /// The agent is in Live, the capital, a risk setting, or the model of a role was changed,
+    /// and its user was not asked once more (FR-UI-3). Nothing was stored.
     /// </summary>
     NotConfirmedForLive,
 }
@@ -261,12 +286,20 @@ public enum SaveAgentOutcome
 /// <param name="Outcome">How it ended.</param>
 /// <param name="AgentId">The agent that is stored now, when one is.</param>
 /// <param name="Problems">What is wrong with what was entered, by field, when something is.</param>
+/// <param name="RoleProblems">What is wrong with what was chosen for the roles, by role, when something is.</param>
 public sealed record SaveAgentResult(
-    SaveAgentOutcome Outcome, Guid? AgentId = null, IReadOnlyDictionary<AgentField, AgentProblem>? Problems = null)
+    SaveAgentOutcome Outcome,
+    Guid? AgentId = null,
+    IReadOnlyDictionary<AgentField, AgentProblem>? Problems = null,
+    IReadOnlyDictionary<Role, RoleProblem>? RoleProblems = null)
 {
     /// <summary>What is wrong with what was entered, by field. It is empty unless something is.</summary>
     public IReadOnlyDictionary<AgentField, AgentProblem> Problems { get; } =
         Problems ?? new Dictionary<AgentField, AgentProblem>();
+
+    /// <summary>What is wrong with what was chosen for the roles, by role. It is empty unless something is.</summary>
+    public IReadOnlyDictionary<Role, RoleProblem> RoleProblems { get; } =
+        RoleProblems ?? new Dictionary<Role, RoleProblem>();
 }
 
 /// <summary>How deleting an agent ended.</summary>

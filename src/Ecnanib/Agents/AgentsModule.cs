@@ -1,4 +1,5 @@
 using Ecnanib.Accounts;
+using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 
 namespace Ecnanib.Agents;
@@ -15,6 +16,10 @@ public static class AgentsModule
     {
         services.AddSingleton<IStoredAgents, StoredAgents>();
 
+        // What gives the roles of an agent's team their models, and asks Credentials which
+        // models a user can select (FR-AGT-5, FR-CAT-6, FR-CAT-9).
+        services.AddSingleton<AgentRoles>();
+
         // What starts, pauses, resumes, and stops an agent, and closes its position by hand
         // (FR-AGT-1, FR-AGT-10 to FR-AGT-12).
         services.AddSingleton<IAgentControls, AgentControls>();
@@ -26,13 +31,18 @@ public static class AgentsModule
         // moves to Attention required (FR-KEY-10).
         services.AddSingleton<IKeyDependents, AgentKeyDependents>();
 
+        // What the Catalog tells when a sync marks a model unavailable: an agent that runs with
+        // it moves to Attention required, and no other model is put in its place (FR-CAT-8).
+        services.AddSingleton<IModelDependents, AgentModelDependents>();
+
         // What Accounts asks before it deletes an account: whether an agent of the user is
         // active (FR-ACC-9).
         services.AddSingleton<IAgentActivity, AgentActivity>();
 
         // The parts of the export of a user's data that this component keeps (NFR-SEC-9): the
-        // agents, and the changes of their states.
+        // agents, the models of their roles, and the changes of their states.
         services.AddSingleton<IExportedPart, AgentsExport>();
+        services.AddSingleton<IExportedPart, AgentRolesExport>();
         services.AddSingleton<IExportedPart, AgentStateChangesExport>();
 
         return services;

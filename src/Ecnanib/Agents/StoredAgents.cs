@@ -22,12 +22,19 @@ namespace Ecnanib.Agents;
 /// The exchange is asked which symbols a market has before the transaction, and never inside
 /// it: a call that waits for the exchange would hold the lock for as long.
 /// </para>
+/// <para>
+/// The models that were chosen for the roles are held to what the user can select twice: before
+/// the transaction, so that everything that is wrong with a form is said at once, and again
+/// under the lock, which is the lock that a change to a key takes. So a role is not given a model
+/// whose key was deleted between the question and the answer (FR-CAT-6, FR-CAT-9).
+/// </para>
 /// </remarks>
 internal sealed class StoredAgents(
     IDbContextFactory<EcnanibDbContext> contexts,
     IFairUse fairUse,
     IExchangeMarketData marketData,
     IEnumerable<IAgentExposure> exposures,
+    AgentRoles roles,
     TradingSettings trading,
     BinanceSettings binance,
     TimeProvider clock,
@@ -47,10 +54,12 @@ internal sealed class StoredAgents(
             .ThenBy(agent => agent.Id)
             .ToListAsync(cancellationToken);
 
+        var given = await AgentRoles.OfUserAsync(context, userId, cancellationToken);
+
         var views = new List<AgentView>(agents.Count);
         foreach (var agent in agents)
         {
-            views.Add(await ViewOfAsync(context, agent, cancellationToken));
+            views.Add(await ViewOfAsync(context, agent, [.. given[agent.Id]], cancellationToken));
         }
 
         return new StoredAgentList(
@@ -70,11 +79,17 @@ internal sealed class StoredAgents(
             .OwnedBy(userId)
             .SingleOrDefaultAsync(agent => agent.Id == agentId, cancellationToken);
 
-        return agent is null ? null : await ViewOfAsync(context, agent, cancellationToken);
+        return agent is null
+            ? null
+            : await ViewOfAsync(
+                context, agent, await AgentRoles.OfAgentAsync(context, userId, agentId, cancellationToken), cancellationToken);
     }
 
     public Task<IReadOnlyList<MarketSymbols>> SymbolsAsync(TradingMode mode, CancellationToken cancellationToken) =>
         AgentSymbols.ReadAsync(marketData, binance, mode, cancellationToken);
+
+    public Task<RoleChoices> RoleChoicesAsync(HttpContext request) =>
+        roles.ChoicesAsync(SignedInUser.RequiredIdOf(request), request.RequestAborted);
 
     public async Task<SaveAgentResult> CreateAsync(HttpContext request, AgentEntry entry)
     {
@@ -96,9 +111,15 @@ internal sealed class StoredAgents(
         }
 
         var problems = new Dictionary<AgentField, AgentProblem>();
-        if (AgentRules.Read(entry, trading.Aggressive, binance.Symbols, problems) is not { } settings)
+        var roleProblems = new Dictionary<Role, RoleProblem>();
+
+        // Both are read before either is answered: everything that is wrong is said at once.
+        var settings = AgentRules.Read(entry, trading.Aggressive, binance.Symbols, problems);
+        await roles.ReadAsync(userId, entry.Roles, stored: [], roleProblems, cancellationToken);
+
+        if (settings is null || roleProblems.Count > 0)
         {
-            return new SaveAgentResult(SaveAgentOutcome.Invalid, Problems: problems);
+            return new SaveAgentResult(SaveAgentOutcome.Invalid, Problems: problems, RoleProblems: roleProblems);
         }
 
         // A new agent is in Demo (FR-AGT-7), so its symbol is one that the market has there.
@@ -148,13 +169,28 @@ internal sealed class StoredAgents(
             return Invalid(AgentField.Name, AgentProblem.Taken);
         }
 
+        // Asked again under the lock, which a change to a key takes too: these are the models
+        // that the user can select until the transaction ends.
+        var chosen = await roles.ReadAsync(userId, entry.Roles, stored: [], roleProblems, cancellationToken);
+        if (roleProblems.Count > 0)
+        {
+            return new SaveAgentResult(SaveAgentOutcome.Invalid, RoleProblems: roleProblems);
+        }
+
         var now = clock.GetUtcNow();
         var agent = NewAgent(userId, settings.Name, mode, settings.Market, settings.Symbol, quoteAsset, settings.Timeframe,
             settings.AllocatedCapital, settings.Risk, now);
 
         // With its first change: an agent has a history from when it is created (FR-AGT-10).
+        // And with the models that were chosen for its roles (FR-AGT-5).
         context.Set<Agent>().Add(agent);
         context.Set<AgentStateChange>().Add(AgentStateChanges.First(agent));
+
+        foreach (var choice in chosen)
+        {
+            context.Set<AgentRole>().Add(new AgentRole(agent.Id, userId, choice.Role, choice.ModelId));
+        }
+
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -172,12 +208,18 @@ internal sealed class StoredAgents(
         var cancellationToken = request.RequestAborted;
 
         Agent? before;
+        IReadOnlyList<AgentRoleView> givenBefore = [];
         await using (var asking = await contexts.CreateDbContextAsync(cancellationToken))
         {
             before = await asking.Set<Agent>()
                 .AsNoTracking()
                 .OwnedBy(userId)
                 .SingleOrDefaultAsync(agent => agent.Id == agentId, cancellationToken);
+
+            if (before is not null)
+            {
+                givenBefore = await AgentRoles.OfAgentAsync(asking, userId, agentId, cancellationToken);
+            }
         }
 
         if (before is null)
@@ -186,9 +228,15 @@ internal sealed class StoredAgents(
         }
 
         var problems = new Dictionary<AgentField, AgentProblem>();
-        if (AgentRules.Read(entry, trading.Aggressive, binance.Symbols, problems) is not { } settings)
+        var roleProblems = new Dictionary<Role, RoleProblem>();
+
+        // Both are read before either is answered: everything that is wrong is said at once.
+        var settings = AgentRules.Read(entry, trading.Aggressive, binance.Symbols, problems);
+        await roles.ReadAsync(userId, entry.Roles, givenBefore, roleProblems, cancellationToken);
+
+        if (settings is null || roleProblems.Count > 0)
         {
-            return new SaveAgentResult(SaveAgentOutcome.Invalid, agentId, problems);
+            return new SaveAgentResult(SaveAgentOutcome.Invalid, agentId, problems, roleProblems);
         }
 
         // The exchange is asked only about a market and a symbol that the agent does not have
@@ -275,15 +323,27 @@ internal sealed class StoredAgents(
             return Invalid(AgentField.Name, AgentProblem.Taken, agentId);
         }
 
-        // A change to the capital or to a risk setting of an agent in Live is a change to what
-        // it does with real money, and is asked about once more (FR-UI-3). Decided under the
-        // lock, of the mode that the agent is in now, whatever the page showed. A new name is
-        // not asked about.
+        // The models of the roles, held to what the user can select now, against the models
+        // that the roles have under the lock, which a change to a key takes too. A role that
+        // keeps its model is not asked about: it changes in any state, and only when its user
+        // gives it another (FR-AGT-5, FR-AGT-8).
+        var given = await AgentRoles.OfAgentAsync(context, userId, agentId, cancellationToken);
+        var chosen = await roles.ReadAsync(userId, entry.Roles, given, roleProblems, cancellationToken);
+
+        if (roleProblems.Count > 0)
+        {
+            return new SaveAgentResult(SaveAgentOutcome.Invalid, agentId, RoleProblems: roleProblems);
+        }
+
+        // A change to the capital, to a risk setting, or to the model of a role of an agent in
+        // Live is a change to what it does with real money, and is asked about once more
+        // (FR-UI-3). Decided under the lock, of the mode that the agent is in now, whatever the
+        // page showed. A new name is not asked about.
         var riskChanged = settings.Risk != RiskOf(agent);
 
         if (agent.Mode == TradingMode.Live
             && !confirmedForLive
-            && (riskChanged || settings.AllocatedCapital != agent.AllocatedCapital))
+            && (riskChanged || settings.AllocatedCapital != agent.AllocatedCapital || chosen.Count > 0))
         {
             return new SaveAgentResult(SaveAgentOutcome.NotConfirmedForLive, agentId);
         }
@@ -305,6 +365,8 @@ internal sealed class StoredAgents(
                     .SetProperty(stored => stored.DrawdownPercent, settings.Risk.DrawdownPercent)
                     .SetProperty(stored => stored.MaxEntryDistancePercent, settings.Risk.MaxEntryDistancePercent),
                 cancellationToken);
+
+        await AgentRoles.StoreAsync(context, userId, agentId, chosen, cancellationToken);
 
         // A change to a risk setting is money-relevant, and is recorded with the change
         // (NFR-LOG-7). The event names the agent by its id, and holds no number.
@@ -428,6 +490,21 @@ internal sealed class StoredAgents(
 
         context.Set<Agent>().Add(copy);
         context.Set<AgentStateChange>().Add(AgentStateChanges.First(copy));
+
+        // The models of its roles are settings of the agent, and are copied with the others
+        // (FR-AGT-5). They are not asked about here: the copy is a draft, and its team is asked
+        // about when it is started.
+        var team = await context.Set<AgentRole>()
+            .AsNoTracking()
+            .OwnedBy(userId)
+            .Where(role => role.AgentId == agentId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var role in team)
+        {
+            context.Set<AgentRole>().Add(new AgentRole(copy.Id, userId, role.Role, role.ModelId));
+        }
+
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -591,7 +668,8 @@ internal sealed class StoredAgents(
             : (false, null);
     }
 
-    private async Task<AgentView> ViewOfAsync(EcnanibDbContext context, Agent agent, CancellationToken cancellationToken) =>
+    private async Task<AgentView> ViewOfAsync(
+        EcnanibDbContext context, Agent agent, IReadOnlyList<AgentRoleView> given, CancellationToken cancellationToken) =>
         new(
             agent.Id,
             agent.Name,
@@ -607,7 +685,8 @@ internal sealed class StoredAgents(
             agent.StateChangedAt,
             agent.CreatedAt,
             await exposures.StructureCanChangeAsync(context, agent, cancellationToken),
-            await HoldsPositionAsync(context, agent, cancellationToken));
+            await HoldsPositionAsync(context, agent, cancellationToken),
+            given);
 
     /// <summary>
     /// Whether an agent has an open position, which its user can close at any time (FR-AGT-12).

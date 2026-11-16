@@ -8,25 +8,27 @@ namespace Ecnanib.Tests.Agents;
 
 /// <summary>
 /// What of Agents is built, in one place. Other components hold Agents to what it does:
-/// Credentials to asking whether a key lets an agent start and to being told when a key goes,
-/// and the audit trail to recording what starts, stops, closes, and switches the mode. The
-/// Catalog still waits, for what is told when a model goes. Their tests ask here what Agents can do. This file is the
-/// source of truth: <c>docs/agents.md</c> explains it, and <see cref="AgentsRulesTests"/> holds
-/// it to the code.
+/// Credentials to asking whether a key lets an agent start, to asking which models a user can
+/// select, and to being told when a key goes, the Catalog to being told when a model goes, and
+/// the audit trail to recording what starts, stops, closes, and switches the mode. Their tests
+/// ask here what Agents can do. This file is the source of truth: <c>docs/agents.md</c> explains
+/// it, and <see cref="AgentsRulesTests"/> holds it to the code.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Agents keeps the agents of users and their settings, starts, pauses, resumes, and stops
-/// them, closes their positions by hand, and switches them between Demo and Live. It gives no
-/// role a model. So an agent is created in Demo, runs with the Binance credential of its user
-/// for its mode, and uses no model.
+/// Agents keeps the agents of users and their settings, gives the roles of their teams their
+/// models, starts, pauses, resumes, and stops them, closes their positions by hand, and switches
+/// them between Demo and Live. So an agent is created in Demo, and runs with the Binance
+/// credential of its user for its mode and with the models of its roles, each with the key of
+/// its user for the provider of the model.
 /// </para>
 /// <para>
 /// Every operation of a public interface of Agents is listed here, as one that keeps settings,
 /// as a control, or as a switch of the mode: one that is added fails
-/// <see cref="AgentsRulesTests"/> until someone lists it, and so decides what it is. And a foreign key from a table of Agents to the catalog's
-/// models is a model that an agent uses: the tests that wait for a model choice fail from then
-/// on.
+/// <see cref="AgentsRulesTests"/> until someone lists it, and so decides what it is. And a
+/// foreign key from a table of Agents to the catalog's models is a model that an agent uses:
+/// <see cref="ModelChoices(IModel)"/> finds each, and the tests of Credentials and of the
+/// Catalog hold Agents to what follows from it.
 /// </para>
 /// </remarks>
 internal static class AgentsRules
@@ -45,9 +47,12 @@ internal static class AgentsRules
         ["IStoredAgents.ListAsync"] = "Reads the agents of a user.",
         ["IStoredAgents.FindAsync"] = "Reads one agent of a user.",
         ["IStoredAgents.SymbolsAsync"] = "Reads the symbols that an agent can be given on each market.",
-        ["IStoredAgents.CreateAsync"] = "Creates an agent, which is a draft in Demo.",
-        ["IStoredAgents.SaveAsync"] = "Changes the settings of an agent, and neither its state nor its mode.",
-        ["IStoredAgents.CloneAsync"] = "Creates a copy of an agent, which is a draft in Demo.",
+        ["IStoredAgents.RoleChoicesAsync"] =
+            "Reads the models that a user can give the roles of an agent, and the provider that each role has by default.",
+        ["IStoredAgents.CreateAsync"] = "Creates an agent, which is a draft in Demo, with the models that were chosen for its roles.",
+        ["IStoredAgents.SaveAsync"] =
+            "Changes the settings of an agent, the models of its roles among them, and neither its state nor its mode.",
+        ["IStoredAgents.CloneAsync"] = "Creates a copy of an agent, which is a draft in Demo, with the models of its roles.",
         ["IStoredAgents.DeleteAsync"] = "Deletes an agent that is a draft, or is stopped with nothing open.",
         ["IAgentControls.HistoryAsync"] = "Reads the changes of the state of one agent.",
         ["IAgentModes.BlockOfAsync"] = "Reads what stands in the way of switching the mode of an agent. It switches nothing.",
@@ -146,14 +151,19 @@ internal static class AgentsRules
 
     /// <summary>
     /// The tables with rows of an agent that need not say a mode, each with why. A table is
-    /// listed here only when nothing in it is a result of what an agent did: there is none yet.
+    /// listed here only when nothing in it is a result of what an agent did.
     /// </summary>
-    public static readonly IReadOnlyDictionary<string, string> AgentRowsWithoutMode = new Dictionary<string, string>();
+    public static readonly IReadOnlyDictionary<string, string> AgentRowsWithoutMode = new Dictionary<string, string>
+    {
+        ["agent_roles"] =
+            "The model that a role of an agent was given is a setting of the agent, as its risk settings are, and no " +
+            "result of what the agent did. It stays as it is when the agent is switched between Demo and Live.",
+    };
 
     /// <summary>
     /// The models that the agents of the application's model use: each foreign key from a table
-    /// of Agents to the catalog's models, as <c>table.column</c>. While there is none, no agent
-    /// uses a model.
+    /// of Agents to the catalog's models, as <c>table.column</c>. An agent uses the models that
+    /// the roles of its team were given (FR-AGT-5).
     /// </summary>
     public static IReadOnlyList<string> ModelChoices(IModel model) => ModelChoices(model, Namespace, typeof(AiModel));
 

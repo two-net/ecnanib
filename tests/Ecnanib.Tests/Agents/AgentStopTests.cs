@@ -281,6 +281,7 @@ public class AgentStopTests
         await application.GiveKeysAsync(user.Id, Morning);
         await client.SignInAsync(Ada);
         await client.CreateAgentAsync(AgentBrowser.Entry(name: "Holding", market: nameof(Market.Futures)));
+        await application.GiveTeamsAsync(user.Id, Morning);
         var agent = Assert.Single(StoredAgent.All(application.Database));
         await client.StartAgentAsync(agent.Id);
         exposure.Holds(agent.Id);
