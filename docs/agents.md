@@ -102,13 +102,13 @@ Task<IReadOnlyList<MarketSymbols>> SymbolsAsync(TradingMode mode, CancellationTo
 
 ### What goes by the timeframe and the market
 
-The timeframe sets the cycle schedule, the data window, and the prompt variant (FR-AGT-3). The market sets the exchange interface, the allowed actions, and the prompt variant (FR-AGT-4). Nothing runs a cycle or composes a prompt yet. What is built is the one stored choice, under the names that what goes by it uses, and `AgentRuleTests` holds the names together. The templates of the prompts are built as well, and the page of an agent's prompts shows those of its market and its timeframe: see [prompts.md](prompts.md).
+The timeframe sets the cycle schedule, the data window, and the prompt variant (FR-AGT-3). The market sets the exchange interface, the allowed actions, and the prompt variant (FR-AGT-4). Nothing runs a cycle yet. What is built is the one stored choice, under the names that what goes by it uses, and `AgentRuleTests` holds the names together. The prompts are built as well: a module for each timeframe and each market, what composes the prompt of a role call from the modules of an agent's own market and timeframe, and the page of an agent's prompts, which shows them. See [prompts.md](prompts.md).
 
 | What goes by it | How it names the choice |
 |---|---|
 | The candles that the gateway reads, which a cycle starts with | `CandleInterval` has a member of the same name as each `Timeframe`, and the week besides, for context alone. |
 | The stale limit after a candle closes | `Trading:StaleSeconds` has a key for each code, and `StaleSecondsSettings` a property of each name. |
-| The prompt for the timeframe | A template is seeded under each code: `15m`, `1H`, `4H`, `1D`. |
+| The prompt for the timeframe | A template is seeded under each code: `15m`, `1H`, `4H`, `1D`. `AgentContext.Of` takes the timeframe and the market of a stored agent, and the modules of its prompts follow from them (FR-PRM-4). |
 | The exchange interface | The gateway takes a `Market` with every call, and names nothing of Binance. |
 | The prompt for the market, which says which actions it allows | A template is seeded under each name: `Spot`, `Futures`. |
 
@@ -511,7 +511,7 @@ An event names a user and an agent by their ids, and never holds a name or a num
 ## Not built yet
 
 - What keeps positions and orders, which answers `IAgentExposure` and closes a position. Until it is built, no agent has a position: stopping an agent asks for no choice, and no "Close position now" is shown. With it comes cancelling an entry that has not filled when its agent stops running (FR-BIN-S2).
-- The cycles, the data package, and composing the prompts that go by the timeframe and the market of an agent. The templates are stored, and a user reads those of an agent: see [prompts.md](prompts.md). An agent that runs is in that state, and nothing more happens. What runs a cycle asks `AgentStates.RunsCycles`.
+- The cycles and the data package. The prompts that go by the timeframe and the market of an agent are composed, and a user reads their templates, but nothing asks for a prompt yet: see [prompts.md](prompts.md). An agent that runs is in that state, and nothing more happens. What runs a cycle asks `AgentStates.RunsCycles`.
 - What enforces the risk settings and the two fixed limits on a trade: the Risk Guard (FR-RSK-3). Agents keeps the settings, and holds them to the bounds when they are saved.
 - Holding a stored risk setting to bounds that the file is given later. An agent whose value is outside bounds that were narrowed since keeps it, and so does a copy of it. Its form shows the value, and is saved only once the value is within the bounds.
 - What halts an agent when a loss limit is reached, and what resumes it after a daily loss limit, on the next UTC day (FR-RSK-8). A halted agent is resumed and stopped by its user already.

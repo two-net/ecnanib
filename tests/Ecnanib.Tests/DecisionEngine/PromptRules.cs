@@ -11,7 +11,9 @@ namespace Ecnanib.Tests.DecisionEngine;
 /// are managed by the system and delivered as seed data (FR-PRM-7): nothing of the application
 /// but the seed creates one. And each role output records the template versions it used
 /// (FR-PRM-6): role outputs are not built, so the rule waits for the table that stores them.
-/// <c>docs/prompts.md</c> explains both, and <see cref="PromptRulesTests"/> holds them to the code.
+/// And what composes a prompt is given no template: the modules follow from the settings of the
+/// agent, so a mismatched combination cannot be chosen (FR-PRM-4).
+/// <c>docs/prompts.md</c> explains them, and <see cref="PromptRulesTests"/> holds them to the code.
 /// </summary>
 internal static class PromptRules
 {
@@ -53,6 +55,58 @@ internal static class PromptRules
            orderby table
            select table,
     ];
+
+    /// <summary>
+    /// The types that name a template, or say which one. What composes a prompt is given none of
+    /// them: the modules follow from the market and the timeframe of the agent (FR-PRM-4).
+    /// </summary>
+    public static readonly IReadOnlySet<Type> Templates =
+        new HashSet<Type> { typeof(PromptTemplate), typeof(TemplatesInUse), typeof(PromptTemplateKind) };
+
+    /// <summary>
+    /// Everything that a caller hands to an interface: each parameter of each of its methods,
+    /// and what a parameter holds, down to the values. A market that is handed over in two
+    /// places is found twice, so that two places which could disagree show.
+    /// </summary>
+    public static IReadOnlyList<Given> GivenTo(Type composition) =>
+    [
+        .. from method in composition.GetMethods()
+           from parameter in method.GetParameters()
+           from given in Within($"{method.Name}({parameter.Name})", parameter.ParameterType, [])
+           select given,
+    ];
+
+    /// <summary>One thing that a caller hands over.</summary>
+    /// <param name="Where">Where it is handed over: the parameter, and the path to the value inside it.</param>
+    /// <param name="What">Its type.</param>
+    internal sealed record Given(string Where, Type What);
+
+    private static IEnumerable<Given> Within(string where, Type type, IReadOnlyList<Type> holders)
+    {
+        yield return new Given(where, type);
+
+        // What a list or an optional value is of.
+        var of = type.IsArray ? [type.GetElementType()!] : type.IsGenericType ? type.GetGenericArguments() : [];
+
+        foreach (var given in of.SelectMany(element => Within($"{where}[]", element, holders)))
+        {
+            yield return given;
+        }
+
+        // What a type of the application holds. A type that holds itself is looked into once.
+        if (type.Namespace?.StartsWith("Ecnanib", StringComparison.Ordinal) != true || type.IsEnum || holders.Contains(type))
+        {
+            yield break;
+        }
+
+        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            foreach (var given in Within($"{where}.{property.Name}", property.PropertyType, [.. holders, type]))
+            {
+                yield return given;
+            }
+        }
+    }
 
     private static IEnumerable<IEntityType> RoleOutputs(IModel model) =>
         from entity in model.GetEntityTypes()

@@ -1,4 +1,6 @@
+using Ecnanib.Agents;
 using Ecnanib.DecisionEngine;
+using Ecnanib.Shared;
 using Ecnanib.Tests.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -63,6 +65,71 @@ public class PromptRulesTests
         // itself, and the one that a table of its own points at a template for.
         Assert.Equal(["role_outputs"], PromptRules.RoleOutputTablesWithoutTemplates(planted.Model, typeof(PlantedTemplate)));
     }
+
+    [Fact]
+    public void What_composes_a_prompt_is_given_no_template_and_one_market_and_one_timeframe()
+    {
+        var given = PromptRules.GivenTo(typeof(IPromptComposition));
+
+        // The rule looks into what is handed over: it finds the context of the agent, and the
+        // limits inside it.
+        Assert.Contains(given, part => part.What == typeof(AgentContext));
+        Assert.Contains(given, part => part.What == typeof(AgentRisk));
+
+        var templates = given.Where(part => PromptRules.Templates.Contains(part.What)).Select(part => part.Where).ToList();
+
+        Assert.True(
+            templates.Count == 0,
+            $"What composes a prompt is handed a template, or told which one: {string.Join(", ", templates)}. The modules of a " +
+            "prompt are selected from the agent's settings, and a mismatched combination cannot be chosen (FR-PRM-4): " +
+            "IPromptComposition reads the templates itself, by the market and the timeframe of the context. See docs/prompts.md.");
+
+        // The market and the timeframe are said once, by the context of the agent. A second
+        // place could say another, and the modules would follow one of the two.
+        Assert.Equal(
+            ["ComposeAsync(parts).Agent.Market"],
+            given.Where(part => part.What == typeof(Market)).Select(part => part.Where));
+        Assert.Equal(
+            ["ComposeAsync(parts).Agent.Timeframe"],
+            given.Where(part => part.What == typeof(Timeframe)).Select(part => part.Where));
+    }
+
+    [Fact]
+    public void A_composition_that_is_handed_a_template_or_a_second_market_is_found()
+    {
+        var given = PromptRules.GivenTo(typeof(IPlantedComposition));
+
+        // Found: the modules that a caller chose, in a list and as the templates of an agent,
+        // and what a template is of inside them.
+        Assert.Equal(
+            [
+                "ComposeAsync(parts).Chosen",
+                "ComposeAsync(parts).Chosen.Market",
+                "ComposeAsync(parts).Chosen.Market.Kind",
+                "ComposeAsync(parts).Chosen.Profile",
+                "ComposeAsync(parts).Chosen.Profile.Kind",
+                "ComposeAsync(parts).Chosen.Roles[]",
+                "ComposeAsync(parts).Chosen.Roles[].Kind",
+                "ComposeAsync(parts).Chosen.Timeframe",
+                "ComposeAsync(parts).Chosen.Timeframe.Kind",
+                "ComposeAsync(parts).Modules[]",
+                "ComposeAsync(parts).Modules[].Kind",
+            ],
+            given.Where(part => PromptRules.Templates.Contains(part.What)).Select(part => part.Where).Order(StringComparer.Ordinal));
+
+        // Found: the market that is said beside the one of the context.
+        Assert.Equal(
+            ["ComposeAsync(market)", "ComposeAsync(parts).Agent.Market"],
+            given.Where(part => part.What == typeof(Market)).Select(part => part.Where).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>A composition whose caller chooses the modules, and says the market twice.</summary>
+    private interface IPlantedComposition
+    {
+        Task<string> ComposeAsync(Role role, PlantedParts parts, Market market, CancellationToken cancellationToken);
+    }
+
+    private sealed record PlantedParts(AgentContext Agent, IReadOnlyList<PromptTemplate> Modules, TemplatesInUse? Chosen);
 
     /// <summary>A model with tables of role outputs that name a template, and one that names none.</summary>
     private sealed class PlantedContext() : DbContext(new DbContextOptionsBuilder().UseNpgsql().Options)

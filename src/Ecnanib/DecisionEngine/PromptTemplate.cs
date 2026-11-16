@@ -75,7 +75,9 @@ internal sealed class PromptTemplateConfiguration : IEntityTypeConfiguration<Pro
     /// Every version of every template that was ever released, and so every row of the table.
     /// Version 1 of each has the outline the specification gives for it: the role's job and
     /// structured result (SRS 4.5), the timeframe and market modules (SRS 4.6), and the
-    /// Aggressive profile (FR-PRM-5). The full wording follows as later versions.
+    /// Aggressive profile (FR-PRM-5). Version 2 of each module has its full wording: what a
+    /// timeframe sets (FR-PRM-2), what a market sets (FR-PRM-3), and how the profile trades
+    /// (FR-PRM-5). The full wording of the roles follows as later versions of theirs.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -89,7 +91,12 @@ internal sealed class PromptTemplateConfiguration : IEntityTypeConfiguration<Pro
     /// </para>
     /// <para>
     /// Each text is one line. A text that spans lines in this file would change with the line
-    /// endings of a checkout, and with it the model.
+    /// endings of a checkout, and with it the model. A text that has paragraphs says where one
+    /// ends with <c>\n</c>, which is the same in every checkout.
+    /// </para>
+    /// <para>
+    /// A module has no placeholder: it is sent as a user reads it. It names the limits of the
+    /// agent as "the stated limits", and the context of the agent states them in the prompt.
     /// </para>
     /// </remarks>
     private static class Versions
@@ -137,6 +144,73 @@ internal sealed class PromptTemplateConfiguration : IEntityTypeConfiguration<Pro
             Of(11, PromptTemplateKind.Profile, "Aggressive", version: 1,
                 "Look for opportunities actively, act on moderate-conviction setups, use the full risk allowed, " +
                 "and trade both directions on Futures, while always defining a stop-loss and staying within the stated limits."),
+
+            // The full wording of the modules (FR-PRM-2, FR-PRM-3, FR-PRM-5).
+            Of(12, PromptTemplateKind.Market, nameof(Market.Spot), version: 2,
+                "Market: Binance Spot. The agent buys the asset itself with the quote currency, and sells what it bought to exit.\n" +
+                "Long-only. The allowed actions are open long, hold, close, and adjust protection. Open long buys the asset. " +
+                "Hold changes nothing. Close sells the open position. " +
+                "Adjust protection moves the stop-loss or the take-profit of the open position.\n" +
+                "No leverage and no shorting. A bearish view means staying in the quote currency: close an open long, " +
+                "or hold with no position. Never plan a short or a leveraged position."),
+            Of(13, PromptTemplateKind.Market, nameof(Market.Futures), version: 2,
+                "Market: Binance USDⓈ-margined perpetual Futures.\n" +
+                "Long and short. The allowed actions are open long, open short, hold, close, reverse, and adjust protection. " +
+                "Reverse closes the open position and then opens one on the opposite side.\n" +
+                "Leverage: the system sets the leverage and the quantity, and never goes above the leverage cap of the stated limits. " +
+                "Choose neither: shape the trade through the stop-loss and the risk fraction.\n" +
+                "Isolated margin: only the margin of the position itself backs it, " +
+                "and the exchange liquidates the position when the loss nears that margin.\n" +
+                "Liquidation distance: the estimated liquidation price must be further from the entry than the stop-loss, " +
+                "by the liquidation buffer of the stated limits, or the plan is rejected. Keep the stop-loss well inside it.\n" +
+                "Funding: an open position pays or receives funding at each funding time. " +
+                "Weigh the funding cost over the expected holding period against the target of the trade.\n" +
+                "Exits are reduce-only: the stop-loss and the take-profit only reduce the position, " +
+                "and never open one on the other side."),
+
+            Of(14, PromptTemplateKind.Timeframe, "15m", version: 2,
+                "Style: intraday momentum and pullbacks. Look for moves that are under way on the 15m candles and for pullbacks within them. " +
+                "Pay close attention to fees and spread: a 15m move is small, " +
+                "so take only setups whose target is worth several times the cost of entering and leaving.\n" +
+                "Context: closed 15m candles, with 1H and 4H candles for context. Read the direction on 4H and 1H first, " +
+                "then time the entry on 15m. A setup against both higher timeframes needs a clear reason.\n" +
+                "Expected holding period: minutes to hours. Plan a stop-loss and a take-profit that a move of that length can reach, " +
+                "and do not plan to hold a position for days."),
+            Of(15, PromptTemplateKind.Timeframe, "1H", version: 2,
+                "Style: intraday to short swing. Trade the moves that take shape over one session or a few: " +
+                "a trend that continues after a pullback, a break of a range that holds, " +
+                "or a turn at a level that the higher timeframes show.\n" +
+                "Context: closed 1H candles, with 4H and 1D candles for context. Read the direction on 1D and 4H first, " +
+                "then find the setup and the entry on 1H.\n" +
+                "Expected holding period: hours to days. Give the stop-loss room for the swings of an hour, " +
+                "and set a take-profit that can be reached within days."),
+            Of(16, PromptTemplateKind.Timeframe, "4H", version: 2,
+                "Style: swing. Trade the swings of a trend or of a wide range, from one turn to the next, " +
+                "and let the moves inside a single 4H candle pass.\n" +
+                "Context: closed 4H candles, with 1D and 1W candles for context. Read the trend and the main levels on 1W and 1D first, " +
+                "then find the setup and the entry on 4H.\n" +
+                "Expected holding period: days to weeks. Place the stop-loss beyond the level that would prove the swing wrong, " +
+                "and set the take-profit at the next main level."),
+            Of(17, PromptTemplateKind.Timeframe, "1D", version: 2,
+                "Style: position. Trade the main trend and its large turns, and leave the moves of a single day aside.\n" +
+                "Context: closed 1D candles, with 1W candles for context. Read the trend and the main levels on 1W first, " +
+                "then find the setup and the entry on 1D.\n" +
+                "Expected holding period: weeks to months. Use a stop-loss beyond the level that would end the trend, " +
+                "and a take-profit far enough to be worth the wait."),
+
+            Of(18, PromptTemplateKind.Profile, "Aggressive", version: 2,
+                "Profile: Aggressive.\n" +
+                "Look for opportunities actively. At every cycle, ask whether there is a trade to take, " +
+                "and do not wait for a perfect setup.\n" +
+                "Act on moderate-conviction setups. A setup that is more likely right than wrong, " +
+                "with a reward that meets the minimum reward-to-risk ratio, is enough to act on. Say hold when nothing reaches that.\n" +
+                "Use the full risk allowed. When you act, plan with the whole risk per trade of the stated limits, " +
+                "and reduce it only for a reason that you name.\n" +
+                "Trade both directions on Futures: take a short as readily as a long when the read is bearish. " +
+                "On Spot, a bearish read means no position.\n" +
+                "Always define a stop-loss. Every plan to open a position names its stop-loss, with no exception.\n" +
+                "Stay within the stated limits. The limits of the agent context are fixed: " +
+                "never plan beyond them, and never suggest a way around them."),
         ]);
 
         /// <summary>The rows of the table: each version, in use when it is the latest of its kind and subject.</summary>

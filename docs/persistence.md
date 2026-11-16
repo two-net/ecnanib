@@ -157,7 +157,7 @@ Roles, providers, and prompt templates are seeded through migrations (NFR-DAT-10
 
 Models are never seeded: the catalog is filled only by syncing (FR-CAT-1). The default role mapping is configuration, not data (FR-TEAM-3).
 
-A prompt template has a kind (role, market, timeframe, or profile), a subject (which one of that kind, such as `MarketAnalyst` or `15m`), and a version. Version 1 of each carries the outline from the specification. **A version is never changed** (FR-PRM-6): to change a template, add a row with the next version, which takes the earlier one out of use. A trigger on the table refuses everything else that is asked of a stored row, so a migration that edits or deletes a seeded template fails where it is applied. See [prompts.md](prompts.md).
+A prompt template has a kind (role, market, timeframe, or profile), a subject (which one of that kind, such as `MarketAnalyst` or `15m`), and a version. Version 1 of each carries the outline from the specification, and version 2 of each module, which is a template of a market, a timeframe, or the profile, its full wording. **A version is never changed** (FR-PRM-6): to change a template, add a row with the next version, which takes the earlier one out of use. A trigger on the table refuses everything else that is asked of a stored row, so a migration that edits or deletes a seeded template fails where it is applied. See [prompts.md](prompts.md).
 
 A seeded row is found by its key. Changing a key, such as renaming a member of `Role`, therefore generates a delete and an insert. Edit that one migration by hand so that it updates the row in place, or the rows pointing at it stand in the way.
 

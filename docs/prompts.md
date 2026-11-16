@@ -2,7 +2,9 @@
 
 The prompt of a role call is composed from templates: the instructions of the role, and a module each for the market, the timeframe, and the trading profile of the agent (FR-PRM-1). The templates are managed by the system and delivered as seed data, through migrations (FR-PRM-7, NFR-DAT-10). A template is versioned: a version is never changed, an edit creates a new version, and each role output records the template versions it used (FR-PRM-6). A user reads the templates that their agents use, and cannot edit them (FR-PRM-7).
 
-What is built is the templates themselves: their table, their seed, the rule of their versions, what reads the ones in use, and the page that shows a user the prompts of an agent. Nothing composes a prompt or calls a model yet, and no role output is stored: see "Not built yet".
+The modules are selected from the settings of the agent: one for each of its two possible markets, one for each of its four possible timeframes, and the one of the Aggressive profile (FR-PRM-2 to FR-PRM-5). Whatever asks for a prompt hands over no template, so a module that does not go with the agent cannot be chosen (FR-PRM-4).
+
+What is built is the templates, with the full wording of the modules, and what composes a prompt from them: their table, their seed, the rule of their versions, what reads the ones in use, what composes the prompt of a role call, and the page that shows a user the prompts of an agent. Nothing calls a model yet, and no role output is stored: see "Not built yet".
 
 The code is in `src/Ecnanib/DecisionEngine`, and the page in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, and by `SeedDataTests` in `tests/Ecnanib.Tests/Persistence`.
 
@@ -29,8 +31,36 @@ A template is a row of `prompt_templates`, and a row is one version of it.
 | `Profile` | `Aggressive` |
 
 - **Each kind and subject has one version in use.** A unique index over the rows that are in use holds the database to at most one, and `SeedDataTests` holds the seed to one for every role, market, timeframe, and profile. Another unique index holds a kind and subject to one row for each version.
-- **Version 1 of each has the outline that the specification gives for it:** the job and the structured result of the role (SRS 4.5), the modules of the timeframes and the markets (SRS 4.6), and the Aggressive profile (FR-PRM-5). The full wording follows as later versions.
+- **Version 1 of each has the outline that the specification gives for it:** the job and the structured result of the role (SRS 4.5), the modules of the timeframes and the markets (SRS 4.6), and the Aggressive profile (FR-PRM-5).
+- **Version 2 of each module has its full wording:** see "The modules". The roles are in version 1, and their full wording follows as later versions of theirs.
 - **The rows belong to the service.** The templates are the same for every user, so the table is listed in `OwnershipRules.cs`, and a row names no user.
+
+## The modules
+
+A module is what every role of an agent is told about its market, about its timeframe, or about how to trade. There are seven: four of a timeframe, two of a market, and one of the profile. Their wording is in `PromptTemplateConfiguration.Versions`, and a user reads it on the page of an agent's prompts. `PromptModuleTests` holds each to what the specification outlines for it.
+
+**A timeframe module sets the style, the context, and the expected holding period** (FR-PRM-2), in a paragraph each:
+
+| Timeframe | Style | Context | Expected holding period |
+|---|---|---|---|
+| `15m` | Intraday momentum and pullbacks, with close attention to fees and spread. | 15m candles, with 1H and 4H context. | Minutes to hours |
+| `1H` | Intraday to short swing. | 1H candles, with 4H and 1D context. | Hours to days |
+| `4H` | Swing. | 4H candles, with 1D and 1W context. | Days to weeks |
+| `1D` | Position. | 1D candles, with 1W context. | Weeks to months |
+
+**A market module sets the direction and the allowed actions** (FR-PRM-3):
+
+| Market | What the module sets |
+|---|---|
+| `Spot` | Long-only. The actions are open long, hold, close, and adjust protection. No leverage and no shorting: a bearish view means staying in the quote currency. |
+| `Futures` | Long and short. The actions of Spot, with open short and reverse. Leverage within the cap, which the system sets and no model chooses (FR-RSK-5), isolated margin, the liquidation distance, the funding cost over the expected holding period, and reduce-only exits. |
+
+**The profile module says how the Aggressive profile trades** (FR-PRM-5), with a paragraph for each instruction: look for opportunities actively, act on moderate-conviction setups, use the full risk allowed, and trade both directions on Futures, while always defining a stop-loss and staying within the stated limits.
+
+- **A module has no placeholder.** It is sent as a user reads it. It names the limits of the agent as "the stated limits", and the context of the agent states them in the same prompt: see "Composing a prompt".
+- **A module says what its kind is about, and nothing of another.** The module of a timeframe names no market, and the module of a market no timeframe: it says "the expected holding period", which the module of the timeframe sets. So each of the eight combinations is two modules that were written apart.
+- **A paragraph ends with `\n`,** written as that in the source file, which is the same in every checkout.
+- The module of a market tells a role which actions it has. What holds a plan to them is not built: see "Not built yet".
 
 ## A version is never changed
 
@@ -89,7 +119,81 @@ public sealed record TemplatesInUse(
 | **It asks for no owner.** | The templates are the service's. Whose agent a question is about is settled by whoever asks, before it asks: the page finds the agent among those of the signed-in user. |
 | **A template that is missing is an error of the seed.** | A kind and subject with no version in use throws, and names it. No user can cause it. |
 
-`TemplatesInUse.For(role)` is the four templates that one call of a role uses, in the order a prompt is composed in. It is what composes a prompt takes, and what the output of the call records.
+`TemplatesInUse.For(role)` is the four templates that one call of a role uses, in the order a prompt is composed in. It is what the composition of a prompt goes by, and what the output of the call records.
+
+## Composing a prompt
+
+```csharp
+public interface IPromptComposition
+{
+    Task<ComposedPrompt> ComposeAsync(Role role, PromptParts parts, CancellationToken cancellationToken);
+}
+
+public sealed record PromptParts(AgentContext Agent, string DataPackage, IReadOnlyList<string> Lessons);
+
+public sealed record AgentContext(
+    Market Market, Timeframe Timeframe, string Symbol, string QuoteAsset,
+    decimal Equity, PositionContext? Position, AgentRisk Limits);
+
+public sealed record ComposedPrompt(string Text, IReadOnlyList<PromptTemplate> Templates);
+```
+
+**The prompt of a role call has seven parts, in the order of the specification** (FR-PRM-1), each under a heading:
+
+| Part | Heading | Where it comes from |
+|---|---|---|
+| The instructions of the role | `# Role instructions` | The template of the role, in the version in use. |
+| The market module | `# Market` | The template of the market of the context. |
+| The timeframe module | `# Timeframe` | The template of the timeframe of the context. |
+| The Aggressive profile module | `# Profile` | The template of the profile. |
+| The context of the agent | `# Agent context` | `PromptParts.Agent`: the symbol, the equity, the position, and the limits. |
+| The data package | `# Data package` | `PromptParts.DataPackage`, as the text that whatever builds the package writes (FR-CYC-2). |
+| Recalled lessons | `# Recalled lessons` | `PromptParts.Lessons`, numbered in the order they were recalled in (FR-EXP-7). |
+
+| Rule | Detail |
+|---|---|
+| **The modules are selected from the agent's settings** (FR-PRM-4). | `ComposeAsync` reads the templates itself, with `IPromptTemplates.InUseAsync`, by the market and the timeframe of the context. `AgentContext.Of(agent, equity, position)` makes the context of a stored agent from its own settings, so whatever runs a cycle names neither a market nor a timeframe. |
+| **A mismatched combination cannot be chosen** (FR-PRM-4). | Nothing that is handed to `IPromptComposition` is a template, or says which one, and the market and the timeframe are said in one place. `PromptRulesTests` looks into everything that a caller hands over, and fails for a template, and for a second market or timeframe. The context and the modules say the same market: the same value selects the module and is written into the context. |
+| **All eight combinations are composed.** | `PromptCompositionTests` composes each market with each timeframe, for each role, and holds each prompt to the two modules of its own and to none of the other five. |
+| **The limits are stated as the market has them.** | The settings of the agent, and the limits that the specification fixes, from `FixedLimits` of the Risk Guard: one open position, and on Spot a position worth at most the equity. The leverage cap and the liquidation buffer are stated on Futures only. They are "the stated limits" of the modules. |
+| **A short position on Spot is refused.** | An agent on Spot is long-only (FR-BIN-S1). `ComposeAsync` throws for a context that says otherwise, however the context was made. |
+| **A part that the call is given nothing for is there all the same.** | An empty data package and no lessons are each written as `None.`, so every prompt has the seven parts. |
+| **The same parts give the same prompt.** | A line ends with a line feed on every system, and a number is written the same in every country, with no zero after its last digit: `1.50` is `1.5`. |
+| **The text is the same for every provider** (FR-PRM-10). | Nothing of a provider is in it. How the structured result is asked for is the adapter's: see [ai-providers.md](ai-providers.md). |
+| **The prompt says which templates it was composed from.** | `ComposedPrompt.Templates` is `TemplatesInUse.For(role)`, each with its id and its version: what the output of the call records (FR-PRM-6). |
+| **The context has no name and no id.** | `AgentContext` has no field for the name that a user gave the agent, and none for an id of the agent, the user, or the account. What holds every composed prompt to holding no personal data is not built: see "Not built yet". |
+
+- **Whatever runs a cycle decides what a call of a role is given** (FR-TEAM-6): which text of the data package, and which lessons. The composition places them as they are, and adds nothing to them. The lessons are for the Strategist and the Risk Manager (FR-EXP-7): what recalls them hands the two analysts none.
+- **The equity and the position are handed over.** Nothing keeps the results or the position of an agent yet, so the context takes both from whoever asks.
+- It composes, and nothing more: it calls no model, stores nothing, and asks for no owner. Whose agent a prompt is for is settled by whoever asks.
+
+A prompt, from its fifth part on, for an agent on Futures that has no position:
+
+```
+# Agent context
+Symbol: BTCUSDT, priced in USDT
+Market: Futures
+Timeframe: 4H
+Equity: 1040.5 USDT
+Position: none
+Limits:
+- Risk per trade: at most 2% of equity
+- Reward-to-risk ratio at entry: at least 1.5
+- Distance of an entry from the current price: at most 1%
+- Daily loss limit: 6% of equity
+- Drawdown limit: 25% from peak equity
+- Open positions: at most 1
+- Leverage: at most 5x
+- Liquidation buffer: the liquidation price at least 2 times as far from the entry as the stop-loss
+
+# Data package
+None.
+
+# Recalled lessons
+None.
+```
+
+A position is one line: `Position: short, quantity 0.015, entry price 61000, stop-loss 62500, take-profit 58000`.
 
 ## The page
 
@@ -110,14 +214,17 @@ Whether users may edit prompts, or add instructions of their own for an agent, i
 **Each role output records the template versions it used** (FR-PRM-6, FR-TEAM-8). Role outputs are not built: the role pipeline stores them. What is built is what the pipeline needs for it, and a test that waits.
 
 - A version is a row that is never changed and never deleted, so a role output that points at the row says for good what the model was told.
-- `TemplatesInUse.For(role)` hands out the four templates of a call, each with its id.
+- `TemplatesInUse.For(role)` hands out the four templates of a call, each with its id, and `ComposedPrompt.Templates` is those that a prompt was composed from.
 - **`PromptRulesTests` fails as soon as a table of role outputs is in the model and its rows name no template.** A table is one of role outputs by its name: it has the word `role` in it, and the word `output` or `call`. It names a template when it has a foreign key to `prompt_templates`, or when a table that hangs on it has one.
 - Declare the foreign key with `OnDelete(DeleteBehavior.Restrict)`, as every key to a seeded table is: see [persistence.md](persistence.md).
 
 ## Not built yet
 
-- Composing a prompt from the templates, the agent's context, the data package, and recalled lessons (FR-PRM-1 to FR-PRM-5), and the full wording of the templates, which arrives as later versions.
-- The instructions about untrusted content, and keeping personal data out of a prompt (FR-PRM-8, FR-PRM-9).
+- The full wording of the instructions of the roles, which arrives as later versions of their templates, with the schema of what each role answers (FR-TEAM-6). The roles are in version 1, which is the outline of the specification.
+- What hands a prompt its parts: the data package of a cycle (FR-CYC-2), the lessons that are recalled for the Strategist and the Risk Manager (FR-EXP-7), and the equity and the position of an agent. With the role pipeline come the reports of the analysts, which the Strategist is given, and the plan, which the Risk Manager is given (FR-TEAM-6).
+- Calling a model with a composed prompt (FR-TEAM-6). Nothing asks `IPromptComposition` but its tests.
+- Holding a plan to the actions that the module of its market allows (FR-CYC-4). The module tells a role which they are.
+- The instructions about untrusted content, and a test that holds every composed prompt to holding no secret and no personal data (FR-PRM-8, FR-PRM-9).
 - The role outputs, and with them the record of the template versions that each used (FR-TEAM-8). See "What a role output records".
 - Showing the earlier versions of a template. The page shows what an agent uses now. What a past call was told is shown with the decision record, which points at the versions it used (FR-CYC-10).
 - Prompts that a user edits, or instructions that a user adds for an agent (Q5).
