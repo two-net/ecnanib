@@ -25,12 +25,14 @@ All are for signed-in users, and rendered on the server for each request.
 
 | Path | What it does |
 |---|---|
-| `/account/keys` | Lists every provider and both environments, each with the key that is stored or with none, and leads to the pages below. A stored key is shown with what its last check found and when, and a Binance credential with what it may trade on and, where it works from any address, the warning about that. Each stored key has a button that checks it again. The account page leads here. |
-| `/account/keys/ai/<provider>` | Stores the key for a provider, as a new one or in place of the stored one. The provider is its code, such as `claude`. It says so when the provider did not take the key. |
+| `/account/keys` | Lists every provider and both environments, each with the key that is stored or with none, and leads to the pages below. Above the keys of the AI providers it says what a provider is sent, under whose key, and under whose terms (NFR-SEC-8). A stored key is shown with what its last check found and when, and a Binance credential with what it may trade on and, where it works from any address, the warning about that. Each stored key has a button that checks it again. The account page leads here. |
+| `/account/keys/ai/<provider>` | Stores the key for a provider, as a new one or in place of the stored one. The provider is its code, such as `claude`. It says so when the provider did not take the key. With the form, so before a key is saved, it says what that provider is sent under the key, and that the provider handles it under its own terms (NFR-SEC-8). |
 | `/account/keys/binance/<environment>` | Stores the API key and the secret key for an environment: `demo` or `live`. It says that no key may withdraw, shows the addresses that the service calls Binance from, and says so when Binance did not take the keys. |
 | `/account/keys/ai/<provider>/delete`, `/account/keys/binance/<environment>/delete` | Says which key goes, and deletes it when the button is pressed. |
 
 A path that names no provider or no environment is answered with "not found". Whose keys a page shows is never in the path: it is the user of the session.
+
+**The pages tell a user what goes to the AI providers they configure** (NFR-SEC-8): the prompts of their agents' roles, which are limited to market data, the settings of the agent, the state of its position, and lessons, and which never hold an email address, a password, or a key. `KeyPages.SentToProviders` and `KeyPages.SentTo` have the text, `KeyPageTests` holds the pages to it, and what holds a prompt to it is in [prompts.md](prompts.md). The pages of Binance say nothing of it: an exchange is sent no prompt.
 
 ## Storing a key
 

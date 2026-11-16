@@ -7,9 +7,10 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// Composes the prompt of a role call (FR-PRM-1). The templates are read here, by the market
-/// and the timeframe of the agent's context, and are given by nobody (FR-PRM-4).
+/// and the timeframe of the agent's context, and are given by nobody (FR-PRM-4). No part is
+/// placed that holds a secret, an email address, or an account identifier (FR-PRM-9).
 /// </summary>
-internal sealed class PromptComposition(IPromptTemplates templates) : IPromptComposition
+internal sealed class PromptComposition(IPromptTemplates templates, PromptScreen screen) : IPromptComposition
 {
     /// <summary>What a part says when the call was given nothing for it.</summary>
     private const string Nothing = "None.";
@@ -57,8 +58,18 @@ internal sealed class PromptComposition(IPromptTemplates templates) : IPromptCom
     /// One part of a prompt, under its heading. A line ends with a line feed, on every system:
     /// the same parts give the same prompt.
     /// </summary>
-    private static void Part(StringBuilder text, string heading, string body)
+    /// <remarks>
+    /// Every part passes the screen before it is placed, the templates among them: a prompt
+    /// holds no secret, no email address, and no account identifier, whoever wrote the part
+    /// (FR-PRM-9). The refusal names the part, and not what was found in it.
+    /// </remarks>
+    private void Part(StringBuilder text, string heading, string body)
     {
+        if (screen.LeakIn(body) is { } leak)
+        {
+            throw new PromptRefusedException(heading, leak);
+        }
+
         if (text.Length > 0)
         {
             text.Append("\n\n");

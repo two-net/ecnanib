@@ -4,7 +4,7 @@ using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
-using Microsoft.EntityFrameworkCore;
+using static Ecnanib.Tests.DecisionEngine.ComposedPrompts;
 
 namespace Ecnanib.Tests.DecisionEngine;
 
@@ -21,12 +21,6 @@ public class PromptCompositionTests
     private const string Data = "Closed candles, indicators, and the context of the higher timeframes: the data package of the cycle.";
 
     private static readonly DateTimeOffset Morning = new(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
-
-    /// <summary>The headings of the seven parts, in the order of the specification.</summary>
-    private static readonly string[] Headings =
-    [
-        "Role instructions", "Market", "Timeframe", "Profile", "Agent context", "Data package", "Recalled lessons",
-    ];
 
     [Fact]
     public async Task A_prompt_is_composed_from_its_seven_parts_in_the_order_of_the_specification()
@@ -330,48 +324,6 @@ public class PromptCompositionTests
 
         // An agent on another timeframe is composed as before.
         Assert.Equal(otherBefore.Text, (await composition.ComposeAsync(Role.MarketAnalyst, fourHours, TestContext.Current.CancellationToken)).Text);
-    }
-
-    /// <summary>The context of an agent on a market and a timeframe, with settings that say every limit.</summary>
-    private static AgentContext Context(Market market, Timeframe timeframe, PositionContext? position = null) =>
-        new(
-            market,
-            timeframe,
-            "BTCUSDT",
-            "USDT",
-            Equity: 1040.50m,
-            position,
-            new AgentRisk(
-                RiskPerTradePercent: 1.50m,
-                MinRewardToRisk: 1.75m,
-                LeverageCap: 4,
-                LiquidationBuffer: 2.50m,
-                DailyLossPercent: 5.00m,
-                DrawdownPercent: 20m,
-                MaxEntryDistancePercent: 0.80m));
-
-    /// <summary>An agent as it is stored, which is what its context is made from.</summary>
-    private static async Task<Agent> StoredAsync(AccountsApplication application, Guid agentId)
-    {
-        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
-
-        return await context.Set<Agent>().AsNoTracking().SingleAsync(agent => agent.Id == agentId, TestContext.Current.CancellationToken);
-    }
-
-    /// <summary>The headings of a prompt, in the order it has them.</summary>
-    private static IReadOnlyList<string> HeadingsOf(string prompt) =>
-        [.. prompt.Split('\n').Where(line => line.StartsWith("# ", StringComparison.Ordinal)).Select(line => line[2..])];
-
-    /// <summary>What a prompt says under one of its headings.</summary>
-    private static string PartOf(string prompt, string heading)
-    {
-        var start = prompt.IndexOf($"# {heading}\n", StringComparison.Ordinal);
-        Assert.True(start >= 0, $"The prompt has no part \"{heading}\".");
-
-        start += heading.Length + 3;
-        var end = prompt.IndexOf("\n\n# ", start, StringComparison.Ordinal);
-
-        return end < 0 ? prompt[start..] : prompt[start..end];
     }
 
     /// <summary>Holds a text to having each of the parts once, and each after the one before it.</summary>

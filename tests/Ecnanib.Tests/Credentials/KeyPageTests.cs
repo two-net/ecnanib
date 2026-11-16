@@ -109,6 +109,50 @@ public class KeyPageTests
     }
 
     [Fact]
+    public async Task The_pages_say_what_an_AI_provider_is_sent_under_whose_key_and_under_whose_terms()
+    {
+        // The four kinds of data that a provider is sent, and what it never is (NFR-SEC-8).
+        const string Limited =
+            "What is sent is limited to market data, the settings of the agent, the state of its position, and lessons from " +
+            "its earlier trades.";
+        const string Never = "It never holds your email address, your password, your keys, or anything else that says who you are.";
+
+        using var application = new AccountsApplication(clock: new TestClock(Morning));
+        using var client = application.CreateClient();
+        await application.RegisterVerifiedAsync(Ada);
+        await client.SignInAsync(Ada);
+
+        // The page of the keys says it of the providers that the user configures, above their
+        // keys: the data goes to them, under the user's own keys and the providers' terms.
+        var keys = KeyBrowser.Read(await client.PageAsync(KeysPage));
+
+        Assert.Contains(
+            "each of its roles sends its prompt to the AI provider of the model you gave it, under your own key for that provider.", keys);
+        Assert.Contains(Limited, keys);
+        Assert.Contains(Never, keys);
+        Assert.Contains("Each provider handles what it is sent under its own terms, which apply to your account with it.", keys);
+        Assert.True(keys.IndexOf(Limited, StringComparison.Ordinal) < keys.IndexOf("<strong>Claude</strong>", StringComparison.Ordinal));
+
+        await client.ConfirmIdentityAsync();
+
+        // The page that takes the key of a provider says it of that provider, by its name, and
+        // before the field that takes the key: a user is told before the key is saved.
+        foreach (var (provider, name) in new[] { ("claude", "Claude"), ("gemini", "Gemini"), ("gpt", "GPT"), ("grok", "Grok") })
+        {
+            var page = KeyBrowser.Read(await client.PageAsync(KeyBrowser.AiKeyPage(provider)));
+
+            Assert.Contains($"each role that you gave a model of {name} sends its prompt to {name}, under this key.", page);
+            Assert.Contains(Limited, page);
+            Assert.Contains(Never, page);
+            Assert.Contains($"{name} handles what it is sent under its own terms, which apply to your account there.", page);
+            Assert.True(page.IndexOf(Limited, StringComparison.Ordinal) < page.IndexOf("name=\"ApiKey\"", StringComparison.Ordinal));
+        }
+
+        // The pages of Binance say nothing of it: an exchange is sent no prompt.
+        Assert.DoesNotContain(Limited, KeyBrowser.Read(await client.PageAsync(KeyBrowser.ExchangeKeyPage("demo"))));
+    }
+
+    [Fact]
     public async Task After_saving_a_key_is_shown_only_by_its_last_four_characters()
     {
         using var application = new AccountsApplication();

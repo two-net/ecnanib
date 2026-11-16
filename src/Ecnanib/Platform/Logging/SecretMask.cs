@@ -122,6 +122,26 @@ public sealed partial class SecretMask
         return text;
     }
 
+    /// <summary>
+    /// True when <paramref name="text"/> holds what is a secret whatever stands around it: a
+    /// value from the configuration file, a key in a format that an AI provider issues, or a
+    /// signed token.
+    /// </summary>
+    /// <remarks>
+    /// It is narrower than <see cref="Text"/>, which also goes by a word beside a value, such as
+    /// <c>Basic</c> or <c>key=</c>. That is right for a log, where masking too much costs
+    /// nothing. This is asked where a finding refuses something, so it finds no secret in
+    /// ordinary prose such as "basic structure" (FR-PRM-9). See docs/prompts.md.
+    /// </remarks>
+    public bool Holds(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        return _values.Any(value => text.Contains(value, StringComparison.Ordinal))
+            || ProviderKey().IsMatch(text)
+            || SignedToken().IsMatch(text);
+    }
+
     /// <summary>The words of a name in lower case: <c>X-MBX-APIKEY</c> is x, mbx, apikey; <c>ActiveKeyId</c> is active, key, id.</summary>
     private static List<string> WordsOf(string name)
     {

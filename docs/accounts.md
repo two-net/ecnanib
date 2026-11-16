@@ -669,4 +669,4 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.
 - Ending a session inside an interactive page. A page that is rendered for each request is checked on each request. An interactive page keeps a connection open, which is not checked again after it is made. No page is interactive yet; the first one must check the session itself.
 - Removing accounts that were never verified, and the sessions and waiting sign-ins of users who never come back.
-- The wording of the legal documents.
+- The wording of the legal documents. The Privacy Policy is to say what goes to AI providers, under whose keys and whose terms (NFR-SEC-8): the pages of the keys and the page of an agent's prompts say it already. See [prompts.md](prompts.md).

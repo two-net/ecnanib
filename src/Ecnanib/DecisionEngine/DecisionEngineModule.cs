@@ -16,8 +16,12 @@ public static class DecisionEngineModule
         // template arrives with a migration (NFR-DAT-10).
         services.AddSingleton<IPromptTemplates, PromptTemplates>();
 
+        // What a prompt never holds: a secret, an email address, or an account identifier
+        // (FR-PRM-9). It knows the secrets of the configuration file from the mask of the log.
+        services.AddSingleton<PromptScreen>();
+
         // The prompt of a role call, from the templates of the agent's market and timeframe and
-        // from what the call is given. It calls no model.
+        // from what the call is given. Every part of it passes the screen. It calls no model.
         services.AddSingleton<IPromptComposition, PromptComposition>();
 
         return services;

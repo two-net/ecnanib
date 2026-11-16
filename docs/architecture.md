@@ -45,7 +45,7 @@ Dependencies between components point one way. Each component may reference only
 The allow-lists are in [`ComponentRules.cs`](../tests/Ecnanib.Tests/Architecture/ComponentRules.cs). That file is the source of truth; this document does not repeat it. In outline:
 
 - The gateways, the Risk Guard, and Accounts are leaves. They depend on no other component.
-- The Decision Engine sits above every component except the Web UI. It cannot use Accounts, so personal data cannot reach a prompt.
+- The Decision Engine sits above every component except the Web UI. It cannot use Accounts, so personal data cannot reach a prompt (FR-PRM-9). It is the one component that calls a model, so what a provider is sent is a prompt that it composed (NFR-SEC-8).
 - The Web UI and the API are on top, and nothing depends on them.
 - Only Catalog, Credentials, and the Decision Engine may use the AI Provider Gateway.
 
@@ -181,7 +181,11 @@ The Decision Engine keeps the prompt templates: the instructions of each role, a
 
 `IPromptTemplates` answers with the templates in use for the market and the timeframe of an agent, and only reads. A user reads the prompts that an agent of theirs uses on a page of the agent, and cannot edit them (FR-PRM-7).
 
-`IPromptComposition` composes the prompt of a role call from seven parts: the instructions of the role, the modules of the market, the timeframe, and the profile, the context of the agent with its symbol, its equity, its position, and its limits, the data package, and recalled lessons (FR-PRM-1). It reads the templates itself, by the market and the timeframe that the context of the agent says once, and is handed none. So the modules are selected from the agent's settings, for each of the eight combinations, and a mismatched one cannot be chosen (FR-PRM-4). The prompt says which template versions it was composed from. Not built yet: what hands a prompt its data package and its lessons, the full wording of the roles, calling a model, and the role outputs, each of which records the template versions it used. A test waits for the table that stores them. See [prompts.md](prompts.md).
+`IPromptComposition` composes the prompt of a role call from seven parts: the instructions of the role, the modules of the market, the timeframe, and the profile, the context of the agent with its symbol, its equity, its position, and its limits, the data package, and recalled lessons (FR-PRM-1). It reads the templates itself, by the market and the timeframe that the context of the agent says once, and is handed none. So the modules are selected from the agent's settings, for each of the eight combinations, and a mismatched one cannot be chosen (FR-PRM-4). The prompt says which template versions it was composed from.
+
+The instructions of every role tell its model to treat news, social posts, and web content as untrusted data, to ignore instructions found inside such content, and to return only the defined schema (FR-PRM-8). A prompt never holds a secret, an email address, an account identifier, or other personal data: what a caller hands to `IPromptComposition` has no place for one, and a prompt that would hold one all the same is not composed (FR-PRM-9). What is handed over is what an AI provider is sent, and is limited to market data, agent settings, position state, and lessons, each value listed with its kind in the tests. The pages of the keys and the page of an agent's prompts tell users that it goes to the providers they configure, under their own keys and those providers' terms (NFR-SEC-8).
+
+Not built yet: what hands a prompt its data package and its lessons, the full wording of the roles, calling a model, checking a result against its schema (NFR-SEC-7), and the role outputs, each of which records the template versions it used. A test waits for the table that stores them. See [prompts.md](prompts.md).
 
 ## Ownership
 

@@ -121,6 +121,41 @@ public class SecretMaskTests
         Assert.Same(text, Mask.Text(text));
     }
 
+    [Theory]
+
+    // The value of a known secret, wherever it is.
+    [InlineData("it was a-known-secret-value, in a sentence")]
+
+    // The formats AI providers issue, and signed tokens.
+    [InlineData("the key sk-ant-api03-abcdefghijklmnop was used")]
+    [InlineData("xai-abcdefghijklmnopqrstuvwxyz")]
+    [InlineData("AIzaSyA1234567890abcdefghijklmnopqrstuvw")]
+    [InlineData("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk")]
+    public void Text_that_holds_a_secret_whatever_stands_around_it_is_said_to_hold_one(string text)
+    {
+        Assert.True(Mask.Holds(text));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Order 42 for BTCUSDT was filled at 64250.5")]
+
+    // A known secret that is too short to be told from a word.
+    [InlineData("a short word")]
+
+    // What the log masks for the word beside it. Prose says the same, and holds no secret
+    // beyond doubt: a prompt is not refused for it (FR-PRM-9).
+    [InlineData("The basic structure of the range held.")]
+    [InlineData("basic dXNlcjpwYXNzd29yZA==")]
+    [InlineData("Authorization: Bearer abc123.def456-ghi")]
+    [InlineData("Takeaway: the key = patience, and the token = time.")]
+    [InlineData("""{"key":"the upper band","symbol":"BTCUSDT"}""")]
+    [InlineData("Host=db;Username=app;Password=hunter2;Database=x")]
+    public void Text_that_holds_none_beyond_doubt_is_not(string text)
+    {
+        Assert.False(Mask.Holds(text));
+    }
+
     [Fact]
     public void Every_secret_of_the_configuration_file_is_known_to_the_mask()
     {
@@ -131,5 +166,10 @@ public class SecretMaskTests
         Assert.Equal("e: ***", mask.Text("e: email-password"));
         Assert.Equal("c: ***", mask.Text("c: claude-catalog-key"));
         Assert.Equal("d: ***", mask.Text("d: Host=db.example;Database=ecnanib;Username=app;Password=database-password"));
+
+        // And each is a secret wherever it is, which is what refuses a prompt that holds one.
+        Assert.All(
+            new[] { Settings.SettingsJson.MasterKey, "email-password", "claude-catalog-key" },
+            secret => Assert.True(mask.Holds($"A report quotes {secret} as its source.")));
     }
 }

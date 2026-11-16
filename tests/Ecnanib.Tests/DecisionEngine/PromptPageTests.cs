@@ -43,6 +43,18 @@ public partial class PromptPageTests
         Assert.Contains("they cannot be edited", page);
         Assert.Contains("A version is never changed", page);
 
+        // It says what a provider is sent with the prompts, under whose key, and under whose
+        // terms (NFR-SEC-8), and leads to the keys.
+        var read = AgentBrowser.Read(page);
+
+        Assert.Contains("each of its roles sends its prompt to the AI provider of the model you gave it, under your own key", read);
+        Assert.Contains(
+            "What is sent is limited to market data, the settings of the agent, the state of its position, and lessons from its earlier trades.",
+            read);
+        Assert.Contains("It never holds your email address, your password, your keys, or anything else that says who you are.", read);
+        Assert.Contains("Each provider handles what it is sent under its own terms", read);
+        Assert.Contains("<a href=\"/account/keys\">Your keys</a>", page);
+
         // The four roles, in the order they work in, and then the three modules that go by the
         // settings of this agent: each under its name, with its version and its text as stored.
         Assert.Equal(

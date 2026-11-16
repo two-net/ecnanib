@@ -3,6 +3,7 @@
 @using Ecnanib.Agents
 @using Ecnanib.DecisionEngine
 @using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Account
 @inject IStoredAgents Agents
 @inject IPromptTemplates Templates
 @inject NavigationManager Navigation
@@ -14,7 +15,8 @@
     version (FR-PRM-7). Which they are follows from the settings of the agent, and from nothing
     that is asked for here. The templates are the same for every user, and are the system's: the
     page has no form, and nothing that is posted at it is taken. A template is written as text,
-    like everything else on a page. The badge of the mode is under the heading (FR-UI-3).
+    like everything else on a page. The badge of the mode is under the heading (FR-UI-3). The
+    page says what a provider is sent with the prompts, and under whose key and terms (NFR-SEC-8).
 *@
 
 @if (_agent is not null && _templates is not null)
@@ -28,6 +30,9 @@
     <p>@AgentPages.PromptsExplained</p>
 
     <p>@AgentPages.PromptVersionsExplained</p>
+
+    @* What goes to a provider with these prompts, and under whose key and terms (NFR-SEC-8). *@
+    <p>@KeyPages.SentToProviders <a href="@WebUiModule.KeysPath">Your keys</a></p>
 
     <h2>Roles</h2>
 

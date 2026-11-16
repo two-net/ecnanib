@@ -41,6 +41,29 @@ public static class KeyPages
     public const string VerifyFirst =
         "A key can be stored once your email address is verified. Open the link in the email you were sent when you registered.";
 
+    /// <summary>
+    /// What an AI provider is sent, and what it never is, as every page says it (NFR-SEC-8). The
+    /// four kinds of data are the ones that a prompt is composed from: see docs/prompts.md.
+    /// </summary>
+    private const string WhatIsSent =
+        "What is sent is limited to market data, the settings of the agent, the state of its position, and lessons from " +
+        "its earlier trades. It never holds your email address, your password, your keys, or anything else that says who you are.";
+
+    /// <summary>
+    /// What the pages say about the data that goes to AI providers: to the providers that the
+    /// user configures, under the user's own keys and those providers' terms (NFR-SEC-8).
+    /// </summary>
+    public const string SentToProviders =
+        "When an agent works, each of its roles sends its prompt to the AI provider of the model you gave it, under your " +
+        "own key for that provider. " + WhatIsSent + " Each provider handles what it is sent under its own terms, which " +
+        "apply to your account with it.";
+
+    /// <summary>The same, on the page that takes the key of one provider, before the key is saved.</summary>
+    /// <param name="providerName">The name of the provider, as users read it.</param>
+    public static string SentTo(string providerName) =>
+        $"When an agent works, each role that you gave a model of {providerName} sends its prompt to {providerName}, under " +
+        $"this key. {WhatIsSent} {providerName} handles what it is sent under its own terms, which apply to your account there.";
+
     /// <summary>A stored key as it is shown: dots, and its last four characters.</summary>
     public static string Masked(StoredKey key)
     {

@@ -4,7 +4,7 @@ How requests travel between a browser and the application: over TLS, with cookie
 
 The options, the headers, and the encryption are in `src/Ecnanib/Platform/Security`, and the order of the request pipeline is in `src/Ecnanib/Program.cs`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Security`, `tests/Ecnanib.Tests/Accounts`, and `tests/Ecnanib.Tests/Architecture`.
 
-Sign-in, sessions, password reset, two-factor authentication, and re-authentication before a sensitive action are in [accounts.md](accounts.md). So is what is stored about a person, and how a user exports and deletes it (NFR-SEC-9). Whose data a request reaches, and the check that an operator function requires, are in [ownership.md](ownership.md). How often signing in, registering, and asking for a password reset may be tried is under "Limits on attempts" in [accounts.md](accounts.md).
+Sign-in, sessions, password reset, two-factor authentication, and re-authentication before a sensitive action are in [accounts.md](accounts.md). So is what is stored about a person, and how a user exports and deletes it (NFR-SEC-9). Whose data a request reaches, and the check that an operator function requires, are in [ownership.md](ownership.md). How often signing in, registering, and asking for a password reset may be tried is under "Limits on attempts" in [accounts.md](accounts.md). What an AI provider is sent, how a prompt is kept free of secrets and personal data, and what a prompt tells a model about untrusted content are in [prompts.md](prompts.md) (FR-PRM-8, FR-PRM-9, NFR-SEC-8).
 
 ## TLS
 

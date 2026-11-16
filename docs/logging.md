@@ -119,6 +119,8 @@ What the rules cannot recognise is a secret that is not in the configuration fil
 - If a secret must be named in an event, name it for what it is, such as `{ApiKey}`. It is then masked.
 - Never log request headers.
 
+`SecretMask.Holds` says whether a text holds a secret beyond doubt: by value, and by the key formats of the AI providers and signed tokens, without the rules that go by a word beside a value. It is asked where a finding refuses something, and masks nothing: what composes a prompt asks it, so that no prompt holds a secret (FR-PRM-9). See [prompts.md](prompts.md).
+
 ## Outbound calls
 
 Every call to an AI provider or to Binance is logged with its duration, its outcome, and its usage (NFR-LOG-5).

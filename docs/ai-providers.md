@@ -34,6 +34,7 @@ public readonly record struct AiTokenUsage(int InputTokens, int OutputTokens);
 | **The call is made once.** | The gateway does not call again after a failure. Whether a call is made again is its caller's to decide (FR-TEAM-9). |
 | **The model that was asked for answers, or none.** | A provider may offer to hand a refused request to another model. The gateway does not take that: the system never puts another model in the place of the one that was chosen (FR-CAT-8), and experience is measured for each model. |
 | The key comes with the call. | See "The key". |
+| **Only the Decision Engine calls a model** (NFR-SEC-8). | The prompt is what a provider is sent, and `IPromptComposition` composes it from market data, agent settings, position state, and lessons, with no secret and no personal data in it (FR-PRM-9). `PromptRulesTests` fails for a call of a model from another component. See [prompts.md](prompts.md). |
 
 `CompleteAsync` ends with an error in three cases, none of which is a provider's doing: the caller cancelled, the provider has no adapter or no entry in the configuration file, or the call has no model, no prompt, no key, or a schema that is not a JSON object. Everything else is an outcome.
 

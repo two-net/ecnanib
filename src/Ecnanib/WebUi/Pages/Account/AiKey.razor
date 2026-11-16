@@ -41,6 +41,9 @@
     {
         <p>Calls to @_slot.ProviderName for your agents are made with this key, and are charged to your own account there. When you save it, @_slot.ProviderName is asked whether it takes the key, with a call that only reads, and the key is stored only when it does. The key is stored encrypted. Once it is saved, it is never shown again: you see only its last four characters.</p>
 
+        @* Said before the key is saved: what the provider is sent with it, and under whose terms (NFR-SEC-8). *@
+        <p>@KeyPages.SentTo(_slot.ProviderName)</p>
+
         <form method="post" @formname="@KeyPages.StoreForm" @onsubmit="StoreAsync">
             <AntiforgeryToken />
 

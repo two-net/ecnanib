@@ -9,9 +9,16 @@ namespace Ecnanib.DecisionEngine;
 /// and recalled lessons (FR-PRM-1). See docs/prompts.md.
 /// </summary>
 /// <remarks>
+/// <para>
 /// It is given no template. The modules follow from the market and the timeframe of the agent,
 /// which the context of the agent says once, so a module that does not go with the agent cannot
 /// be chosen (FR-PRM-4). It calls no model, and stores nothing.
+/// </para>
+/// <para>
+/// What it is given is what a provider is sent, and is limited to market data, the settings of
+/// the agent, the state of its position, and lessons (NFR-SEC-8). A prompt that would hold a
+/// secret, an email address, or an account identifier is not composed (FR-PRM-9).
+/// </para>
 /// </remarks>
 public interface IPromptComposition
 {
@@ -23,7 +30,45 @@ public interface IPromptComposition
     /// <param name="parts">What the prompt is composed from besides the templates.</param>
     /// <param name="cancellationToken">Cancels the question.</param>
     /// <exception cref="ArgumentException">The context names a short position of an agent on Spot, which is long-only.</exception>
+    /// <exception cref="PromptRefusedException">
+    /// A part of the prompt would hold a secret, an email address, or an account identifier,
+    /// which a prompt never holds (FR-PRM-9).
+    /// </exception>
     Task<ComposedPrompt> ComposeAsync(Role role, PromptParts parts, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// No prompt was composed: one of its parts would hold what a prompt never holds, a secret, an
+/// email address, or an account identifier (FR-PRM-9). So nothing of the kind is sent to a
+/// provider (NFR-SEC-8), however a part came to hold it.
+/// </summary>
+/// <remarks>
+/// It says which part and what kind of thing, and never what was found: a message is logged.
+/// Whatever runs a cycle makes no call with such a prompt, and the cycle ends with no decision.
+/// </remarks>
+/// <param name="part">The heading of the part of the prompt that would hold it.</param>
+/// <param name="holds">What kind of thing the part would hold.</param>
+public sealed class PromptRefusedException(string part, PromptLeak holds) : Exception(Describe(part, holds))
+{
+    /// <summary>The heading of the part of the prompt that would hold it, such as <c>Data package</c>.</summary>
+    public string Part { get; } = part;
+
+    /// <summary>What kind of thing the part would hold.</summary>
+    public PromptLeak Holds { get; } = holds;
+
+    private static string Describe(string part, PromptLeak holds)
+    {
+        var what = holds switch
+        {
+            PromptLeak.Secret => "a secret",
+            PromptLeak.EmailAddress => "an email address",
+            PromptLeak.Identifier => "an account identifier",
+            _ => throw new ArgumentOutOfRangeException(nameof(holds), holds, "No such kind of leak."),
+        };
+
+        return $"No prompt is composed: its part \"{part}\" would hold {what}. A prompt never holds secrets, email " +
+            "addresses, account identifiers, or other personal data (FR-PRM-9). See docs/prompts.md.";
+    }
 }
 
 /// <summary>
@@ -34,11 +79,12 @@ public interface IPromptComposition
 /// <param name="DataPackage">
 /// The data package of the cycle, as the text that the role reads (FR-CYC-2). What builds the
 /// package writes it: it is placed as it is, and nothing is added to it. Empty when the call is
-/// given none.
+/// given none. It holds market data, and nothing that says whose agent it is for (NFR-SEC-8).
 /// </param>
 /// <param name="Lessons">
 /// The lessons that were recalled for the call, most recent first (FR-EXP-7). What recalls them
-/// says which and how many: they are placed as they are. Empty when none was recalled.
+/// says which and how many: they are placed as they are. Empty when none was recalled. A lesson
+/// is about a trade, and names no user and no agent.
 /// </param>
 public sealed record PromptParts(AgentContext Agent, string DataPackage, IReadOnlyList<string> Lessons);
 

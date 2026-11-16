@@ -8,8 +8,9 @@ namespace Ecnanib.Tests.DecisionEngine;
 
 /// <summary>
 /// Holds <see cref="PromptRules"/> to the code: templates are managed by the system and
-/// delivered as seed data (FR-PRM-7), and each role output records the template versions it
-/// used (FR-PRM-6).
+/// delivered as seed data (FR-PRM-7), each role output records the template versions it used
+/// (FR-PRM-6), and what an AI provider is sent is limited to market data, agent settings,
+/// position state, and lessons (NFR-SEC-8), with nothing that says whose it is (FR-PRM-9).
 /// </summary>
 public class PromptRulesTests
 {
@@ -122,6 +123,113 @@ public class PromptRulesTests
             ["ComposeAsync(market)", "ComposeAsync(parts).Agent.Market"],
             given.Where(part => part.What == typeof(Market)).Select(part => part.Where).Order(StringComparer.Ordinal));
     }
+
+    [Fact]
+    public void What_a_provider_is_sent_is_market_data_agent_settings_position_state_and_lessons()
+    {
+        // One operation composes a prompt, from the role, the parts, and nothing else.
+        var compose = Assert.Single(typeof(IPromptComposition).GetMethods());
+
+        Assert.Equal(["role", "parts", "cancellationToken"], compose.GetParameters().Select(parameter => parameter.Name));
+
+        // Every value that is handed over is listed with its kind, and none is an identifier
+        // or a text that does not say what it holds.
+        var violations = PromptRules.FindUnlisted(typeof(IPromptComposition));
+
+        Assert.True(
+            violations.Count == 0,
+            "What composes a prompt is handed what an AI provider is sent. Data sent to AI providers is limited to market " +
+            "data, agent settings, position state, and lessons (NFR-SEC-8), and a prompt holds no secret, no email address, " +
+            "no account identifier, and no other personal data (FR-PRM-9). See docs/prompts.md:" +
+            Environment.NewLine + string.Join(Environment.NewLine, violations.Select(violation => $"  {violation}")));
+
+        // The four kinds of the requirement, and each of them is sent.
+        Assert.Equal(["MarketData", "AgentSettings", "PositionState", "Lessons"], Enum.GetNames<SentData>());
+        Assert.Equal(Enum.GetValues<SentData>(), PromptRules.Sent.Values.Distinct().Order());
+    }
+
+    [Fact]
+    public void The_texts_that_a_provider_is_sent_are_the_symbol_its_asset_the_data_package_and_the_lessons()
+    {
+        // Pinned, so that a change to the list shows in a review as what it is: a decision
+        // about what a provider is sent that could say who a user is.
+        Assert.Equal(
+            [
+                "ComposeAsync(parts).Agent.QuoteAsset",
+                "ComposeAsync(parts).Agent.Symbol",
+                "ComposeAsync(parts).DataPackage",
+                "ComposeAsync(parts).Lessons[]",
+            ],
+            PromptRules.FreeText.Keys.Order(StringComparer.Ordinal));
+        Assert.All(PromptRules.FreeText, text => Assert.False(string.IsNullOrWhiteSpace(text.Value), $"{text.Key} does not say what it holds."));
+
+        // The market data is the data package, and the lessons are the lessons: everything
+        // else that is sent is a setting of the agent, or the state of its position.
+        Assert.Equal(["ComposeAsync(parts).DataPackage"], Listed(SentData.MarketData));
+        Assert.Equal(["ComposeAsync(parts).Lessons[]"], Listed(SentData.Lessons));
+        Assert.All(Listed(SentData.AgentSettings).Concat(Listed(SentData.PositionState)), sent =>
+            Assert.StartsWith("ComposeAsync(parts).Agent.", sent, StringComparison.Ordinal));
+
+        // No id of the agent, of its user, or of anything else is among them, and no name.
+        var given = PromptRules.DataGivenTo(typeof(IPromptComposition));
+
+        Assert.DoesNotContain(given, value => value.What == typeof(Guid));
+        Assert.DoesNotContain(given, value => value.Where.Contains("Name", StringComparison.Ordinal));
+
+        static IEnumerable<string> Listed(SentData kind) =>
+            PromptRules.Sent.Where(sent => sent.Value == kind).Select(sent => sent.Key).Order(StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void A_composition_that_is_handed_a_name_or_an_identifier_is_found()
+    {
+        const string NotListed =
+            "is handed over, and is not listed. List it in PromptRules.Sent as market data, agent settings, position state, " +
+            "or lessons, or do not hand it over.";
+        const string Identifier = "is an identifier. A prompt holds no account identifier (FR-PRM-9).";
+        const string Text = "is text, and does not say what it holds. List it in PromptRules.FreeText.";
+
+        // Found: the id of the agent and the id of its user, which are identifiers, and the
+        // name of the agent, which is text that nothing vouches for. Not found: the context,
+        // the data package, and the lessons, which are listed.
+        Assert.Equal(
+            [
+                $"ComposeAsync(parts).AgentId: {Identifier}",
+                $"ComposeAsync(parts).AgentId: {NotListed}",
+                $"ComposeAsync(parts).AgentName: {NotListed}",
+                $"ComposeAsync(parts).AgentName: {Text}",
+                $"ComposeAsync(userId): {Identifier}",
+                $"ComposeAsync(userId): {NotListed}",
+            ],
+            PromptRules.FindUnlisted(typeof(IPlantedNamingComposition)));
+    }
+
+    [Fact]
+    public void Only_the_Decision_Engine_calls_a_model()
+    {
+        // The rule finds the calls that the tests make, so it would find one of the application.
+        Assert.NotEmpty(PromptRules.CallersOfModels(typeof(PromptRulesTests).Assembly));
+
+        var others = PromptRules.CallersOfModels(typeof(Program).Assembly)
+            .Where(caller => !caller.StartsWith(PromptRules.CallsModels, StringComparison.Ordinal))
+            .ToList();
+
+        Assert.True(
+            others.Count == 0,
+            $"These call a model, or put together what a call is made with, and are not of the Decision Engine: {string.Join(", ", others)}. " +
+            "Data sent to AI providers is limited to market data, agent settings, position state, and lessons (NFR-SEC-8). " +
+            "What holds a call to that is the prompt, which IPromptComposition composes and screens: so a model is called by " +
+            "the Decision Engine alone, with a prompt that it composed. See docs/prompts.md.");
+    }
+
+    /// <summary>A composition whose caller says whose agent the prompt is for, and what the agent is called.</summary>
+    private interface IPlantedNamingComposition
+    {
+        Task<string> ComposeAsync(Role role, PlantedNamingParts parts, Guid userId, CancellationToken cancellationToken);
+    }
+
+    private sealed record PlantedNamingParts(
+        AgentContext Agent, string DataPackage, IReadOnlyList<string> Lessons, string AgentName, Guid AgentId);
 
     /// <summary>A composition whose caller chooses the modules, and says the market twice.</summary>
     private interface IPlantedComposition

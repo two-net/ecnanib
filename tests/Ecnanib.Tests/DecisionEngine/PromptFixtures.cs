@@ -1,7 +1,11 @@
 using System.Text.RegularExpressions;
+using Ecnanib.Agents;
 using Ecnanib.DecisionEngine;
+using Ecnanib.Shared;
+using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 namespace Ecnanib.Tests.DecisionEngine;
@@ -68,6 +72,58 @@ internal sealed record StoredTemplate(int Id, string Kind, string Subject, int V
         transaction.Commit();
 
         return next;
+    }
+}
+
+/// <summary>What a test composes a prompt from, and what it reads in one that was composed.</summary>
+internal static class ComposedPrompts
+{
+    /// <summary>The headings of the seven parts, in the order of the specification.</summary>
+    public static readonly string[] Headings =
+    [
+        "Role instructions", "Market", "Timeframe", "Profile", "Agent context", "Data package", "Recalled lessons",
+    ];
+
+    /// <summary>The context of an agent on a market and a timeframe, with settings that say every limit.</summary>
+    public static AgentContext Context(Market market, Timeframe timeframe, PositionContext? position = null) =>
+        new(
+            market,
+            timeframe,
+            "BTCUSDT",
+            "USDT",
+            Equity: 1040.50m,
+            position,
+            new AgentRisk(
+                RiskPerTradePercent: 1.50m,
+                MinRewardToRisk: 1.75m,
+                LeverageCap: 4,
+                LiquidationBuffer: 2.50m,
+                DailyLossPercent: 5.00m,
+                DrawdownPercent: 20m,
+                MaxEntryDistancePercent: 0.80m));
+
+    /// <summary>An agent as it is stored, which is what its context is made from.</summary>
+    public static async Task<Agent> StoredAsync(AccountsApplication application, Guid agentId)
+    {
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        return await context.Set<Agent>().AsNoTracking().SingleAsync(agent => agent.Id == agentId, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>The headings of a prompt, in the order it has them.</summary>
+    public static IReadOnlyList<string> HeadingsOf(string prompt) =>
+        [.. prompt.Split('\n').Where(line => line.StartsWith("# ", StringComparison.Ordinal)).Select(line => line[2..])];
+
+    /// <summary>What a prompt says under one of its headings.</summary>
+    public static string PartOf(string prompt, string heading)
+    {
+        var start = prompt.IndexOf($"# {heading}\n", StringComparison.Ordinal);
+        Assert.True(start >= 0, $"The prompt has no part \"{heading}\".");
+
+        start += heading.Length + 3;
+        var end = prompt.IndexOf("\n\n# ", start, StringComparison.Ordinal);
+
+        return end < 0 ? prompt[start..] : prompt[start..end];
     }
 }
 
