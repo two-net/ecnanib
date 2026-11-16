@@ -36,6 +36,12 @@ public static class ExchangeGatewayModule
         services.AddSingleton<IExchangeClock>(provider => provider.GetRequiredService<BinanceClock>());
         services.AddBackgroundJob<BinanceClockJob>();
 
+        // The market data, which is read once and shared by all who need it, because every read
+        // costs of the one budget (FR-BIN-3). It is one object, which holds what was read in
+        // memory for as long as it counts, and nothing in the database (NFR-DAT-6). It reads
+        // when it is asked, so it has no job.
+        services.AddSingleton<IExchangeMarketData, BinanceMarketData>();
+
         // Binance reports the request weight and the order count it has counted against the
         // service in these response headers, one per interval, such as X-MBX-USED-WEIGHT-1M.
         // Its wallet API, which the check of a key calls, reports its weight under a name of its

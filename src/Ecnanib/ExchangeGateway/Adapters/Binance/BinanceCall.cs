@@ -187,7 +187,8 @@ internal sealed class BinanceCall(
             }
             else
             {
-                limiter.Answered(endpoint, mode, CountedBy(response, endpoint.Limit));
+                // But for a call whose answer Binance says not to go by.
+                limiter.Answered(endpoint, mode, endpoint.ReportsUsage ? CountedBy(response, endpoint.Limit) : null);
             }
 
             var body = await ReadAsync(response, either.Token);

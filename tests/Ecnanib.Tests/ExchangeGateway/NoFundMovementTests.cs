@@ -16,13 +16,22 @@ public class NoFundMovementTests
     // Everything that the gateway sends to Binance, whatever it is asked, in any market and any
     // environment. Binance keeps the calls that move funds in its wallet API, under sapi:
     // withdrawals, the addresses of deposits, and transfers between wallets. The one call that
-    // the gateway makes there reads what a key may do.
+    // the gateway makes there reads what a key may do. The calls of the market data are of
+    // Binance's public API, which takes no credential and so can move nothing.
     private static readonly string[] Reads =
     [
         "GET /api/v3/account",
+        "GET /api/v3/exchangeInfo",
+        "GET /api/v3/klines",
+        "GET /api/v3/ticker/price",
         "GET /api/v3/time",
         "GET /fapi/v1/accountConfig",
+        "GET /fapi/v1/exchangeInfo",
+        "GET /fapi/v1/klines",
+        "GET /fapi/v1/openInterest",
+        "GET /fapi/v1/premiumIndex",
         "GET /fapi/v1/time",
+        "GET /fapi/v2/ticker/price",
         "GET /fapi/v3/balance",
         "GET /sapi/v1/account/apiRestrictions",
     ];
@@ -36,14 +45,27 @@ public class NoFundMovementTests
         nameof(IExchangeAdapter.GetServerTimeAsync),
     ];
 
+    // The same of the market data, which the gateway reads for everyone.
+    private static readonly string[] MarketDataOperations =
+    [
+        nameof(IExchangeMarketData.GetCandlesAsync),
+        nameof(IExchangeMarketData.GetMarkPriceAsync),
+        nameof(IExchangeMarketData.GetOpenInterestAsync),
+        nameof(IExchangeMarketData.GetPriceAsync),
+        nameof(IExchangeMarketData.GetSymbolsAsync),
+    ];
+
     [Fact]
     public async Task Whatever_the_gateway_is_asked_it_sends_binance_nothing_but_calls_that_read()
     {
         Assert.Equal(Operations, typeof(IExchangeAdapter).GetMembers().Select(member => member.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            MarketDataOperations, typeof(IExchangeMarketData).GetMembers().Select(member => member.Name).Order(StringComparer.Ordinal));
 
         var binance = BinanceCalls.ThatAnswers();
         using var application = BinanceCalls.Behind(binance);
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
+        var marketData = application.Services.GetRequiredService<IExchangeMarketData>();
 
         foreach (var mode in new[] { TradingMode.Live, TradingMode.Demo })
         {
@@ -54,7 +76,15 @@ public class NoFundMovementTests
             {
                 await exchange.GetServerTimeAsync(market, mode, TestContext.Current.CancellationToken);
                 await exchange.GetBalancesAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+
+                await marketData.GetCandlesAsync(
+                    market, mode, MarketService.Symbol, CandleInterval.OneHour, TestContext.Current.CancellationToken);
+                await marketData.GetPriceAsync(market, mode, MarketService.Symbol, TestContext.Current.CancellationToken);
+                await marketData.GetSymbolsAsync(market, mode, TestContext.Current.CancellationToken);
             }
+
+            await marketData.GetMarkPriceAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
+            await marketData.GetOpenInterestAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
         }
 
         // All of the list, and nothing that is not on it.
@@ -77,8 +107,9 @@ public class NoFundMovementTests
         var binance = BinanceCalls.ThatAnswers();
         using var application = BinanceCalls.Behind(binance);
 
-        // One adapter is behind the common interface.
+        // One adapter is behind the common interface, and the market data has one source.
         var exchange = Assert.Single(application.Services.GetServices<IExchangeAdapter>());
+        var marketData = Assert.Single(application.Services.GetServices<IExchangeMarketData>());
 
         foreach (var (market, mode) in BinanceCalls.Pairs)
         {
@@ -86,6 +117,13 @@ public class NoFundMovementTests
             await exchange.CheckKeyAsync(BinanceCalls.User, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
             await exchange.GetServerTimeAsync(market, mode, TestContext.Current.CancellationToken);
             await exchange.GetBalancesAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+
+            await marketData.GetCandlesAsync(
+                market, mode, MarketService.Symbol, CandleInterval.OneDay, TestContext.Current.CancellationToken);
+            await marketData.GetPriceAsync(market, mode, MarketService.Symbol, TestContext.Current.CancellationToken);
+            await marketData.GetSymbolsAsync(market, mode, TestContext.Current.CancellationToken);
+            await marketData.GetMarkPriceAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
+            await marketData.GetOpenInterestAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
         }
 
         // Each of the four addresses is reached, and no other.

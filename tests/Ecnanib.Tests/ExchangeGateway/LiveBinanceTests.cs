@@ -28,6 +28,12 @@ namespace Ecnanib.Tests.ExchangeGateway;
 /// counted against the address, which the limiter goes by (FR-BIN-4).
 /// </para>
 /// <para>
+/// The market data needs no credential, and is asked under the same condition all the same, so
+/// that no run reaches Binance that was not meant to. Those tests settle that the test
+/// environment serves the calls of the market data, what they cost, and that the whole list of
+/// a market's symbols arrives within the limit of a call (FR-BIN-3).
+/// </para>
+/// <para>
 /// The variables are read here, by the tests. The application reads none.
 /// </para>
 /// </remarks>
@@ -37,6 +43,9 @@ public class LiveBinanceTests
     // sent to Binance, so it names nothing: not the application, and not who runs the tests.
     private const string UnknownKey = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01";
     private const string UnknownSecret = "ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsrqponmlkjihgfedcba9876543210ZY";
+
+    // A symbol of the tracked configuration file, which both markets have in both environments.
+    private const string TrackedSymbol = "BTCUSDT";
 
     public static TheoryData<Market, TradingMode> MarketsAndEnvironments => BinanceCalls.MarketsAndEnvironments;
 
@@ -133,6 +142,90 @@ public class LiveBinanceTests
         Assert.Equal(
             ExchangeKeyCheck.Refused,
             await exchange.CheckKeyAsync(BinanceCalls.User, mode, UnknownKey, UnknownSecret, TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [MemberData(nameof(MarketsAndEnvironments))]
+    public async Task The_candles_of_a_symbol_are_read_and_the_newest_closed_within_its_length(Market market, TradingMode mode)
+    {
+        _ = GivenFor(mode);
+        using var application = OnTheNetwork();
+        var data = application.Services.GetRequiredService<IExchangeMarketData>();
+
+        foreach (var (interval, _, length) in BinanceCalls.Intervals)
+        {
+            var candles = await data.GetCandlesAsync(market, mode, TrackedSymbol, interval, TestContext.Current.CancellationToken);
+
+            // Binance took the call, and what it sent reads as candles: no more than a read
+            // gives, in the order of their time, each of the length that was asked for.
+            Assert.Equal(ExchangeCallOutcome.Succeeded, candles.Outcome);
+            Assert.InRange(candles.Candles.Count, 1, ExchangeCandles.Most);
+            Assert.All(candles.Candles, candle => Assert.Equal(length, candle.ClosedAt - candle.OpenedAt));
+            Assert.All(
+                candles.Candles.Zip(candles.Candles.Skip(1)), pair => Assert.True(pair.First.ClosedAt <= pair.Second.OpenedAt));
+
+            // The newest is closed, and is the latest that is: the candle after it is in
+            // progress, which is what the gateway takes the last row of an answer for. In a
+            // quiet market of the test environment Binance may begin a candle late.
+            var now = DateTimeOffset.UtcNow;
+            Assert.InRange(candles.Candles[^1].ClosedAt, now - length - TimeSpan.FromMinutes(5), now.AddMinutes(5));
+        }
+
+        // Each read cost 2 of request weight, on both markets: Binance counts the rows of the
+        // Futures market, and a read asks for the most that cost 2.
+        var usage = application.Services.GetRequiredService<IExchangeLimits>().Usage()
+            .Single(limit => limit.Name == market.ToString() && limit.Environment == mode);
+        Assert.Equal(2 * BinanceCalls.Intervals.Length, usage.Used);
+        Assert.InRange(usage.Reported ?? 0, usage.Used, usage.Limit);
+    }
+
+    [Theory]
+    [MemberData(nameof(MarketsAndEnvironments))]
+    public async Task The_price_and_the_rules_of_a_symbol_are_read(Market market, TradingMode mode)
+    {
+        _ = GivenFor(mode);
+        using var application = OnTheNetwork();
+        var data = application.Services.GetRequiredService<IExchangeMarketData>();
+
+        var price = await data.GetPriceAsync(market, mode, TrackedSymbol, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeCallOutcome.Succeeded, price.Outcome);
+        Assert.True(price.Price > 0);
+
+        // The whole list of the market arrives within the limit of a call, and the symbol is
+        // among those that it has, with rules that an order can keep.
+        var symbols = await data.GetSymbolsAsync(market, mode, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeCallOutcome.Succeeded, symbols.Outcome);
+
+        var symbol = Assert.Single(symbols.Symbols, listed => listed.Symbol == TrackedSymbol);
+        Assert.Equal(("BTC", "USDT"), (symbol.BaseAsset, symbol.QuoteAsset));
+        Assert.True(symbol.PriceStep > 0 && symbol.QuantityStep > 0 && symbol.MinValue > 0);
+        Assert.True(symbol.MinQuantity > 0 && symbol.MaxQuantity > symbol.MinQuantity);
+    }
+
+    [Theory]
+    [MemberData(nameof(Environments))]
+    public async Task The_mark_price_the_funding_and_the_open_interest_of_a_symbol_of_the_Futures_market_are_read(TradingMode mode)
+    {
+        _ = GivenFor(mode);
+        using var application = OnTheNetwork();
+        var data = application.Services.GetRequiredService<IExchangeMarketData>();
+
+        var markPrice = await data.GetMarkPriceAsync(mode, TrackedSymbol, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeCallOutcome.Succeeded, markPrice.Outcome);
+        Assert.True(markPrice.MarkPrice > 0);
+
+        // Funding is paid every few hours, so the next one is ahead, and not far.
+        var now = DateTimeOffset.UtcNow;
+        Assert.InRange(markPrice.FundingRate!.Value, -0.1m, 0.1m);
+        Assert.InRange(markPrice.NextFundingAt!.Value, now.AddMinutes(-5), now.AddHours(9));
+
+        var openInterest = await data.GetOpenInterestAsync(mode, TrackedSymbol, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeCallOutcome.Succeeded, openInterest.Outcome);
+        Assert.True(openInterest.OpenInterest >= 0);
     }
 
     /// <summary>The credential that the run was given for an environment. Without both keys, the test is skipped.</summary>

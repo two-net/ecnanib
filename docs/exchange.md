@@ -2,7 +2,7 @@
 
 Every call to Binance goes through the Exchange Gateway: one adapter behind a common interface (SRS 3.1, NFR-ARC-3). Binance is the only exchange. The gateway reaches its Spot market and its USDⓈ-margined perpetual Futures market, each on the real exchange and in Binance's test environment, with Binance's official public APIs, at the four addresses of the configuration file (FR-BIN-1, FR-BIN-2).
 
-A call that needs a credential is signed with the user's own, for the environment that is asked. The gateway has no operation that withdraws, deposits, or transfers funds (FR-BIN-9). Every call passes one limiter, for all users, because Binance counts its limits on requests against the address of the service (FR-BIN-4). The clock of the service is held against Binance's, and new entries pause while it is off (FR-BIN-5). Every call is logged with its duration, its outcome, and the request weight that Binance reports (NFR-LOG-5).
+A call that needs a credential is signed with the user's own, for the environment that is asked. The gateway has no operation that withdraws, deposits, or transfers funds (FR-BIN-9). Every call passes one limiter, for all users, because Binance counts its limits on requests against the address of the service (FR-BIN-4). The clock of the service is held against Binance's, and new entries pause while it is off (FR-BIN-5). Market data is read once and shared by all who need it, and is held in memory for a short time and nowhere else (FR-BIN-3, NFR-DAT-6). Every call is logged with its duration, its outcome, and the request weight that Binance reports (NFR-LOG-5).
 
 The code is in `src/Ecnanib/ExchangeGateway`. The rules below are enforced by tests in `tests/Ecnanib.Tests/ExchangeGateway` and `tests/Ecnanib.Tests/Architecture`.
 
@@ -40,6 +40,8 @@ public sealed record ExchangeBalance(string Asset, decimal Total, decimal Availa
 
 An operation ends with an error in two cases, neither of which is Binance's doing: the caller cancelled, or what it was given is no call, which is one without a key or without a user, or for a market or an environment that does not exist. Everything else is an outcome.
 
+Candles, prices, and the rules of the symbols are not read through this interface, where a call is made once for whoever makes it. They have an interface of their own, `IExchangeMarketData`, behind which a read is shared: see "Market data".
+
 ## Markets and environments
 
 | Market | Environment | Setting | In the tracked file |
@@ -66,12 +68,21 @@ These are all the calls that the gateway makes. Each is a `GET`.
 | The account of Spot: what it holds, and whether it may trade | `/api/v3/account?omitZeroBalances=true` | Yes | 20 |
 | Whether the account of Futures may trade, in the test environment | `/fapi/v1/accountConfig` | Yes | 5 |
 | What the wallet of Futures holds | `/fapi/v3/balance` | Yes | 5 |
+| The candles of a symbol on Spot | `/api/v3/klines?symbol=…&interval=…&limit=499` | No | 2 |
+| The candles of a symbol on Futures | `/fapi/v1/klines?symbol=…&interval=…&limit=499` | No | 2 |
+| The price of a symbol on Spot | `/api/v3/ticker/price?symbol=…` | No | 2 |
+| The price of a symbol on Futures | `/fapi/v2/ticker/price?symbol=…` | No | 1 |
+| The symbols of Spot, with their rules | `/api/v3/exchangeInfo?showPermissionSets=false` | No | 20 |
+| The symbols of Futures, with their rules | `/fapi/v1/exchangeInfo` | No | 1 |
+| The mark price of a symbol on Futures, with its funding | `/fapi/v1/premiumIndex?symbol=…` | No | 1 |
+| The open interest of a symbol on Futures | `/fapi/v1/openInterest?symbol=…` | No | 1 |
 
 | Rule | Detail |
 |---|---|
-| **The list is in one place.** | `Adapters/Binance/BinanceEndpoint.cs` has one value for each call: the market whose address serves it, its path, its query where it has one of its own, its weight, and the limit that Binance counts it against. Nothing outside that class can make one. |
+| **The list is in one place.** | `Adapters/Binance/BinanceEndpoint.cs` has one value for each call: the market whose address serves it, its path, its query, its weight, and the limit that Binance counts it against. Nothing outside that class can make one. |
 | **Every call passes one place.** | `Adapters/Binance/BinanceCall.cs` makes the exchange: the limiter, the address, the signature, the time limit, and what the answer means. It takes a `BinanceEndpoint` and nothing else. `NoFundMovementTests` fails when another type of the gateway takes a client from the host's factory or sends with one. |
-| No call takes a parameter of its caller yet. | The one query, `omitZeroBalances=true`, is a part of its call. Parameters come with the first call that needs one, and are then percent-encoded before they are signed, which Binance requires. |
+| **A parameter of a caller is percent-encoded,** which Binance requires. | The calls of the market data take a symbol, and the candles the length of a candle. `BinanceEndpoint` makes such a call from the one of the list that it is, so what a caller gives is one value of one parameter, whatever it is. A query that a call always has, such as `omitZeroBalances=true`, is a part of its call. |
+| The candles of Futures cost 2 for what is asked. | Binance counts them by the rows that are asked for: 1 below 100, 2 below 500, 5 up to 1,000. A read asks for 499, which is the most that cost 2: see "Market data". |
 | **The time limit is 15 seconds,** on the application's clock. | It covers the sending and the reading of the answer, and not the wait for a turn at the limiter before them. A call that runs into it ends as `TimedOut`. |
 | The weight is what Binance documents. | The limiter counts it: see "The limiter". What Binance has counted is in the log, and the limiter goes by it when it is more. |
 
@@ -107,7 +118,7 @@ Binance counts its limits on requests against the address that the calls come fr
 | **Any sixty seconds carry at most the part.** | A fifth of what a minute allows may go at once, and the rest flows in evenly: at 70 percent, 336 of the Futures limit at once and 22.4 more in each second. So there is soon room again after a burst, and no minute is spent in its first second. Binance does not document whether its minute is one of the clock or the last sixty seconds, and this holds for both. |
 | **A call that finds no room waits for its turn,** for 10 seconds at most. | Then it ends as `RateLimited`, and was not sent. It ends at once when the limiter already knows that its turn cannot come in time. A caller that cancels meanwhile gets the error of a cancelled call. |
 | **A call is signed when it is sent.** | Not when it began to wait: Binance takes a signed call for five seconds after the time that it carries. The time limit of 15 seconds starts there as well. |
-| **Calls that wait take turns, user by user.** | One call of each user after the other, so the burst of one user leaves the call of another one call behind, and not a burst behind. A call without a credential, such as a read of the clock, is the service's own, and the service takes turns as one more user. The order is strict: a light call does not pass a heavy one whose turn it is. |
+| **Calls that wait take turns, user by user.** | One call of each user after the other, so the burst of one user leaves the call of another one call behind, and not a burst behind. A call without a credential, such as a read of the clock or of market data, is the service's own, and the service takes turns as one more user. The order is strict: a light call does not pass a heavy one whose turn it is. |
 | **When Binance signals that it has had too many, nothing is sent.** | The signal is the status 429, or 418 when Binance has blocked the address for ignoring it. The limit of the call is held for as long as Binance says, in `Retry-After`. Where it names no time, that is 1 minute, or 2 after a block, and twice as long each time the signal comes again with no other answer in between, up to 1 hour. After it the flow starts from nothing. |
 | **No call is made again in a loop.** | The gateway makes a call once, as before. While a limit is held, a caller that asks again gets `RateLimited` and Binance gets nothing, however often it asks. |
 | **What Binance has counted is what counts.** | Binance says it with every answer: see "The log". When it is more than the limiter let through, the limit has only what Binance has left of the part, until Binance counts less again. That happens when something else calls from the same address, or when a call weighs more than its documentation says. |
@@ -194,7 +205,7 @@ A call that gives no answer is not an error. Its result says how it ended, so th
 
 | Outcome | When | What it is for |
 |---|---|---|
-| `Succeeded` | Binance answered with what was asked for. | The time, or the balances. |
+| `Succeeded` | Binance answered with what was asked for. | The time, the balances, or the market data. |
 | `AuthenticationFailed` | Binance answered as it answers a wrong credential: 401, or one of its errors `-1002`, `-1022`, `-2008`, `-2014`, `-2015`. | The credential is checked again, with `IKeyValidation.RevalidateExchangeKeyAsync` (FR-KEY-3). The outcome does not say that the credential is wrong: the check decides that. |
 | `TimedOut` | The call ended without an answer, and its caller did not cancel it. | The call may be made again. |
 | `RateLimited` | The limit on requests: the limiter held the call back for longer than a call waits, and it was not sent, or Binance answered with its signal of too many, 429 or 418. | The call is made again later, and not at once: until the limiter has room again, the same call ends the same. It is no failure of Binance, and says nothing about a credential. |
@@ -202,8 +213,9 @@ A call that gives no answer is not an error. Its result says how it ended, so th
 
 - **Only Binance's answer to a wrong credential is `AuthenticationFailed`.** A status that could also mean something else, such as 403, is `Failed`: a block of the service's address must not have every stored key checked, or marked.
 - **`Failed` does not say which failure it was.** A clock that is off is told apart by what acts on it: the watch on the clock hears of Binance's error `-1021`, and pauses new entries. See "The clock".
-- **A result holds what was read when the call succeeded, and never otherwise.** A `ServerTime` is there with `Succeeded` alone, and so are balances.
+- **A result holds what was read when the call succeeded, and never otherwise.** A `ServerTime` is there with `Succeeded` alone, and so are balances, candles, and every figure of the market data.
 - **A success that is not what was asked for is `Failed`:** the page of something in between, an answer of another kind, a clock without a time, an amount that is not a number.
+- **How a read of market data ended is shared as what it read is.** Whoever waited for the read gets its outcome, and a failure counts for 5 seconds: see "Market data".
 
 The check of a key says the same with a `KeyVerdict`: `Succeeded` is `Accepted`, `AuthenticationFailed` is `Refused`, and anything else is `Unreachable`.
 
@@ -223,14 +235,106 @@ The check of a key says the same with a `KeyVerdict`: `Succeeded` is `Accepted`,
 - **A list is whole or it is none.** A row without an asset, an asset that is there twice, and an amount that does not read make the answer `Failed`, with no balance. A part of a list would make the rest look empty.
 - It reads the whole account. Which part of it an agent may use is for what sizes a position (FR-BIN-S3, FR-BIN-F6).
 
+## Market data
+
+Market data is candles, prices, and the rules of the symbols, and on Futures also the mark price, the funding rate, and the open interest. It is fetched once per symbol and timeframe and shared by all agents that need it (FR-BIN-3): every read costs of the one budget that all users spend, so a read for each agent would be what uses it up (risk R2). `Adapters/Binance/BinanceMarketData.cs` reads it, and `MarketDataTests`, `MarketDataSharingTests`, and `CandleCacheTests` hold it to the rules below, on a clock that the tests move.
+
+```csharp
+public interface IExchangeMarketData
+{
+    Task<ExchangeCandles> GetCandlesAsync(
+        Market market, TradingMode mode, string symbol, CandleInterval interval, CancellationToken cancellationToken);
+
+    Task<ExchangePrice> GetPriceAsync(Market market, TradingMode mode, string symbol, CancellationToken cancellationToken);
+
+    Task<ExchangeSymbols> GetSymbolsAsync(Market market, TradingMode mode, CancellationToken cancellationToken);
+
+    Task<ExchangeMarkPrice> GetMarkPriceAsync(TradingMode mode, string symbol, CancellationToken cancellationToken);
+
+    Task<ExchangeOpenInterest> GetOpenInterestAsync(TradingMode mode, string symbol, CancellationToken cancellationToken);
+}
+
+public sealed record ExchangeCandles(ExchangeCallOutcome Outcome, IReadOnlyList<ExchangeCandle> Candles, DateTimeOffset? ReadAt);
+
+public sealed record ExchangeCandle(
+    DateTimeOffset OpenedAt, DateTimeOffset ClosedAt, decimal Open, decimal High, decimal Low, decimal Close, decimal Volume);
+```
+
+### Read once, and shared
+
+| Rule | Detail |
+|---|---|
+| **Whoever asks first causes the read.** | Whoever asks while that read is under way waits for the same read, and whoever asks while what was read still counts gets it with no call. So two agents on the same symbol and timeframe cause one fetch, and not two. Everyone gets the same answer, as it was read: `ReadAt` says when the read was sent. |
+| **Nothing is read that nobody asked for.** | There is no job that reads ahead. The gateway may use no other component, so it does not know which agents run, and whatever starts a cycle asks. |
+| **A read is the service's own call.** | It needs no credential, and takes the turn of the service at the limiter, in one line with the reads of the clock: see "The limiter". It is in the log of outbound calls once, however many share it. |
+| **Each market has data of its own in each environment.** | A read goes to the address of its market in its environment, as every call does. An agent in the test environment decides on the candles, the prices, and the rules of the environment that its orders go to. |
+| **Only the symbols of `Binance:Symbols` are served.** | Any other symbol is no call: it ends with an error, and nothing is sent. So what is held has a bound, and no text of a caller reaches Binance. |
+| **A read belongs to nobody who waits for it.** | An asker that cancels stops waiting, with the error of a cancelled call, and the others get the answer. The read ends when the application stops. |
+| **A read that failed is shared too, and is not made again for 5 seconds.** | Whoever waited gets how it ended, and so does whoever asks in those seconds, with no call. So agents that ask one after the other while Binance does not answer do not each make the call. It is no breaker: after the seconds the next ask reads again. |
+
+### For how long it counts
+
+| What | One read is for | It counts for |
+|---|---|---|
+| Candles | A symbol and a length of a candle, on a market in an environment | Until the candle that is in progress closes, and 1 minute at most |
+| The price | A symbol, on a market in an environment | 1 second |
+| The mark price, with the funding rate and the time of the next funding | A symbol of Futures, in an environment | 1 second |
+| The open interest | A symbol of Futures, in an environment | 1 second |
+| The symbols, with their rules | A market in an environment | 1 hour |
+| A read that failed | The same | 5 seconds |
+
+- **These are fixed, as the time limit of a call is,** and are not settings: `CandlesCount`, `MomentCounts`, `SymbolsCount`, and `FailureCounts` of `BinanceMarketData`.
+- **Time is counted in time that no change of the time of day moves.** Only the close of a candle is a time of day, which is looked at with every ask.
+- **What no longer counts is given to nobody, and is let go of when its time is up,** by a timer, without waiting for an ask.
+
+### Candles
+
+Candles are cached only for as long as cycles need them (NFR-DAT-6). A cycle takes its candles as it starts, and the cycles that a close starts do so within half a minute (NFR-PRF-3). So candles are held for twice that, and never past the close of the candle that is in progress, after which a cycle needs newer ones.
+
+| Rule | Detail |
+|---|---|
+| **A length of a candle is a `CandleInterval`.** | `FifteenMinutes`, `OneHour`, `FourHours`, `OneDay`, and `OneWeek`: the four timeframes of an agent, and the week, which is the context of the longer ones (SRS 4.6). Binance's days begin at midnight in UTC, and its weeks on a Monday. |
+| **Every read asks for the same candles:** the newest 499 rows. | So asks for one symbol and timeframe share one read, however many candles each needs. It gives up to `ExchangeCandles.Most` candles, which is 498, oldest first, and an asker takes the newest that it needs. There is no range of the past to ask for. |
+| **Only closed candles are given** (FR-CYC-1). | Which candle is closed is Binance's word, and not the clock's: a row is closed when another follows it in the answer. The newest row is the candle in progress, and is never given. |
+| **A candle ends when the next one begins.** | `ClosedAt` is a millisecond after the last one that Binance gives the candle, which is the close that a cycle starts at. No length is worked out, so a week is Binance's week. |
+| **The newest candle says through when the candles reach.** | Just after a close Binance may not have begun the next candle. The newest row is then the candle that has closed by the clock of the service, and it is not given: the candles come one short. That is no failure. What came short is held for nobody, so a cycle that finds `Candles[^1].ClosedAt` before its close asks again, and that is a read again. |
+| **Candles are whole or they are none.** | A row that does not read, and rows that are not in the order of their time, make the answer `Failed`. Candles that Binance does not have, during a halt, are a gap between two rows, and no failure. |
+
+### Symbols
+
+`GetSymbolsAsync` gives the symbols of the configuration file that a market has, in the order of the file, each with the rules that an order in it must keep.
+
+```csharp
+public sealed record ExchangeSymbol(
+    string Symbol, string BaseAsset, string QuoteAsset, bool Trading,
+    decimal PriceStep, decimal QuantityStep, decimal MinQuantity, decimal MaxQuantity, decimal MinValue);
+```
+
+| | Spot | Futures |
+|---|---|---|
+| Read from | `symbols[]` | `symbols[]`, where `contractType` is `PERPETUAL` |
+| `Trading` | `status` is `TRADING` | The same |
+| `PriceStep` | `tickSize` of `PRICE_FILTER` | The same |
+| `QuantityStep`, `MinQuantity`, `MaxQuantity` | `stepSize`, `minQty`, `maxQty` of `LOT_SIZE` | The same |
+| `MinValue` | `minNotional` of `NOTIONAL`, or of `MIN_NOTIONAL` | `notional` of `MIN_NOTIONAL` |
+
+- **A symbol that is not among them is one that the market does not have,** which is what filters the symbols that an agent can be given (FR-AGT-6). The steps and the least value are what an order is held to before it is placed (FR-RSK-4).
+- **One call reads every symbol of a market.** Futures has no call for one symbol, and Spot answers a list with a symbol that it lacks with an error for the whole list. The answer of Spot is close to 7 megabytes, once an hour: it is asked without the permission sets of each symbol, with which it is more than twice that.
+- **A list is whole or it is none.** A symbol of the file without one of its rules, or that is there twice, makes the answer `Failed`: a list without it would say that the market lacks it.
+- The rules of a market order, `MARKET_LOT_SIZE`, are not read. They come with the orders.
+
+### Nothing is stored
+
+The database is not a market-data warehouse (NFR-DAT-6). The gateway keeps what it read in memory, for this process, as the limiter counts and the watch on the clock watches, and writes none of it anywhere. There is no table for it: `SingleStoreTests` holds the database to the tables of the model, by name, and `CandleCacheTests` reads everything, over the close of a candle, and finds every row of every table as it was. What a cycle decided on is for the cycle to record, as a summary (FR-CYC-10).
+
 ## No funds are moved
 
 Ecnanib never withdraws, deposits, or transfers funds, between the Spot and the Futures wallet of a user included (FR-BIN-9). A key that could withdraw is not even held: see "Binance permissions" in [credentials.md](credentials.md).
 
 | Rule | Detail |
 |---|---|
-| **The gateway has no such operation.** | `IExchangeAdapter` has the three above, and each reads. |
-| **It can send Binance nothing but the calls of the list.** | See "The calls". `NoFundMovementTests` asks the gateway for everything it does, in each market and each environment, and holds what was sent to that list. It fails for an operation that it does not ask, so an operation that is added is held to the list too. |
+| **The gateway has no such operation.** | `IExchangeAdapter` has the three above, and each reads. `IExchangeMarketData` has five, and each reads, with a call of Binance's public API, which takes no credential and so can move nothing. |
+| **It can send Binance nothing but the calls of the list.** | See "The calls". `NoFundMovementTests` asks the gateway for everything it does, in each market and each environment, and holds what was sent to that list. It fails for an operation of either interface that it does not ask, so an operation that is added is held to the list too. |
 | **Binance keeps the calls that move funds apart.** | Withdrawals, the addresses of deposits, and transfers between wallets are in its wallet API, under `/sapi`. The gateway makes one call there, which reads what a key may do. |
 | The orders will not move funds either. | They come in `Ecnanib.ExchangeGateway.Trading`, which only the Decision Engine may use: see "Placing orders" in [architecture.md](architecture.md). The list of calls is where they are added, and the test is where they are held to it. |
 
@@ -243,7 +347,9 @@ Outbound call GET fapi.binance.com/fapi/v3/balance Succeeded with status 200 in 
 ```
 
 - **`Usage` holds what Binance has counted against the service.** Its Spot and its Futures API report it in headers that begin with `X-MBX-USED-WEIGHT` and `X-MBX-ORDER-COUNT`, one for each interval. Its wallet API reports it in headers that begin with `X-SAPI-USED`. The gateway registers all three with `OutboundCallLogOptions`.
-- The address is logged without its query, which holds the signature, and no header is logged.
+- The address is logged without its query, which holds the signature, and no header is logged. So a read of market data is in the log by its path, and not by its symbol.
+- **What the price of Futures says is logged, and the limiter does not go by it.** Binance's own clients say of `/fapi/v2/ticker/price` that what its answer has counted is not accurate, and it says 1 whatever was counted before. Every other answer the limiter goes by: see "The limiter".
+- **A read of market data is one event, however many share it.** Whoever gets what was read without a call is in no log.
 
 The gateway adds an event of its own for what that log cannot see, as a warning, under `Ecnanib.ExchangeGateway.Adapters.Binance.BinanceCall`:
 
@@ -299,6 +405,11 @@ The variables are `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_KEY` and `ECNANIB_LIVE_BIN
 | The check of the credential. | `Accepted`, and on the real exchange with whether it can withdraw and whether it is restricted to addresses. |
 | The balances of each market, with a credential that Binance does not know. | `AuthenticationFailed` |
 | The check of such a credential. | `Refused` |
+| The candles of `BTCUSDT` on each market, of each length. | `Succeeded`, with candles of that length in the order of their time, the newest closed within its length of now, and for 2 of request weight each. |
+| The price of `BTCUSDT` and the symbols of each market. | `Succeeded`, with a price, and with `BTCUSDT` among the symbols, with its rules. |
+| The mark price and the open interest of `BTCUSDT` on Futures. | `Succeeded`, with a funding rate, and a next funding that is ahead. |
+
+The market data needs no credential. It is asked under the same condition all the same, so that no run reaches Binance that was not meant to.
 
 The tests read the variables. The application reads none (NFR-CFG-2).
 
@@ -311,14 +422,25 @@ Run it when a call is added or changed, and when Binance changes its API. These 
 - What Binance answers a wrong credential with. Its documentation lists `-1002`, `-1022`, `-2014`, and `-2015`, and describes no status 401. The error `-2008`, which its wallet API answers an unknown key with, is in no list of its errors.
 - That the wallet API reports its weight as `X-SAPI-USED-IP-WEIGHT-1M` with an answer that succeeded.
 - That Spot and Futures report theirs as `X-MBX-USED-WEIGHT-1M`, in both environments. Binance's documentation gives the name as a pattern, with the interval at its end.
-- What Binance allows an address in a minute, in its test environment above all, and that it sends `Retry-After` with its signal on Futures. Neither is asked by a run: the limits are what `exchangeInfo` answers, which the gateway does not call yet.
+- What Binance allows an address in a minute, in its test environment above all, and that it sends `Retry-After` with its signal on Futures. Neither is asked by a run: the limits are in what `exchangeInfo` answers, which the gateway reads for the symbols and not for the limits yet.
+- That Binance begins the next candle as one closes, also when nothing trades. Its documentation does not say when. Where it begins a candle late, the candle before it is given late, and never early: see "Candles".
+
+The calls of the market data were asked of Binance itself on 16 November 2026, on both markets, on the real exchange and in the test environment. Each ended as the table says. The run and what Binance answered beside it also showed what its documentation leaves open:
+
+- The test environment serves every call of the market data, and `BTCUSDT` is a symbol of both its markets.
+- The newest row of an answer of candles is the candle in progress.
+- 499 rows of candles cost 2 of request weight on Futures, as on Spot.
+- The whole list of the symbols of Spot is under 7 megabytes without the permission sets, and arrived in less than a second. The client of the gateway does not ask for it compressed.
+- `/fapi/v2/ticker/price` answers that 1 was counted whatever was counted before it, which is why the limiter does not go by it: see "The log".
 
 ## Not built yet
 
 - What hands a stored credential to a call, and has it checked again when the call ends as `AuthenticationFailed` (FR-KEY-9, FR-KEY-3). It comes with what calls the gateway for an agent.
 - The operator status screen, which shows what `IExchangeLimits` and `IExchangeClock` say (FR-OPS-2).
 - The limit on the orders of an account, which Binance counts for each account and not for the address. It comes with the orders.
-- Market data: candles, prices, and the rules of a symbol (FR-BIN-3). It brings the first call that takes a parameter of its caller, and `exchangeInfo`, from which the limits of "The limiter" can then be read.
+- What asks for market data: the cycles, with the data package and its indicators (FR-CYC-2), and the list of symbols that an agent can be given (FR-AGT-6). An agent's timeframe comes with them, and is one of four: `CandleInterval` has the week as well, for context alone.
+- Prices that change on a screen within two seconds (FR-NTF-2). A price is read when it is asked for, and counts for a second: a screen that asked every second for every symbol would spend much of the budget.
+- Reading the limits of "The limiter" from `exchangeInfo`, which the gateway now calls for the symbols.
 - The orders (FR-BIN-6), in `Ecnanib.ExchangeGateway.Trading`, and with them the first call that is not a `GET`. What places an entry asks `IExchangeClock.EntriesPaused` first, and places none while it says so (FR-BIN-5): `ClockWatchTests` fails once the orders are there and nothing asks.
 - The feed of account events, and reconciliation (FR-BIN-7, FR-BIN-8).
-- Breakers for repeated failures of Binance (NFR-REL-4).
+- Breakers for repeated failures of Binance (NFR-REL-4). That a read of market data which failed is not made again for 5 seconds is none.

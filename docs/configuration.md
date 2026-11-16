@@ -50,6 +50,8 @@ Each entry under `AiProviders` is one AI provider, named by its code. `BaseUrl` 
 
 Each of `Binance:Spot` and `Binance:Futures` has a `BaseUrl` under `Live` and under `Demo`: the address of Binance's API for that market, on the real exchange and in Binance's test environment. An address is the host alone, such as `https://api.binance.com`. The gateway adds the path of each call, with the `/api` or `/fapi` that it begins with, so an address that already ends in one of them is wrong: Binance's page on its demo mode writes the address of Spot that way. See [exchange.md](exchange.md).
 
+`Binance:Symbols` lists the symbols that an agent may trade, each in capital letters and digits, such as `BTCUSDT`, and at least one. They are also the only symbols that market data is read for: see "Market data" in [exchange.md](exchange.md).
+
 `Binance:LimitSharePercent`, from 1 to 100, is the part of Binance's limits on requests that the service allows itself. Binance counts them against the address that the calls come from, so the part is of what all users together may ask in a minute. The rest is left for whatever else calls Binance from the same address. See "The limiter" in [exchange.md](exchange.md).
 
 `Binance:ClockCheckSeconds`, from 30 to 3600, is the time between two readings of Binance's clocks, which the clock of the service is held against. `Binance:ClockToleranceMilliseconds`, from 1 to 999, is how far the clock of the service may be from Binance's, ahead of it or behind it, before new entries pause. Binance refuses a signed call whose time is a second or more ahead of its own, so the tolerance is below that. See "The clock" in [exchange.md](exchange.md).

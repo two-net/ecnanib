@@ -94,6 +94,8 @@ internal sealed class AiProviderConfiguration : IEntityTypeConfiguration<AiProvi
 
 Operational logs are never written to the database (NFR-DAT-7). The audit trail, which is not a log, is: see "The audit trail" in [accounts.md](accounts.md).
 
+Market data is never written to the database either: it is not a market-data warehouse (NFR-DAT-6). Candles, prices, and the rules of the symbols are read from Binance when they are asked for and held in memory for a short time, and no table is for them. See "Market data" in [exchange.md](exchange.md).
+
 ## Using the database
 
 A component takes the context factory and creates a context for each piece of work:

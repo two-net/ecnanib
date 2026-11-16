@@ -13,7 +13,9 @@ namespace Ecnanib.ExchangeGateway;
 /// (FR-BIN-9). A credential is taken with each call that needs one and is kept nowhere: the
 /// gateway never fetches a stored key. Every call passes the one limiter of the gateway, which
 /// keeps the service under its part of the exchange's limit on requests, and a call that needs a
-/// credential says whose it is, so that users take turns there (FR-BIN-4).
+/// credential says whose it is, so that users take turns there (FR-BIN-4). A call here is made
+/// once, for whoever makes it. Market data, which is read once for everyone, is behind
+/// <see cref="IExchangeMarketData"/>.
 /// </remarks>
 public interface IExchangeAdapter
 {
