@@ -174,6 +174,8 @@ The answer of Binance to api/v3/time on Spot Live is not what the call asks for:
 - `Reason` is `NotJson` or `NotExpected`, for an answer that came with a success status and is not what the call asks for.
 - `Path`, `Market`, and `Environment` say which call it was. See "The log" in [exchange.md](exchange.md).
 
+The gateway also logs each reading of Binance's clocks, with how far the clock of the service is from them, and once when new entries pause for it and when they go on, under `Ecnanib.ExchangeGateway.Adapters.Binance.BinanceClock`. See "The log" in [exchange.md](exchange.md).
+
 ## Unhandled errors
 
 An error that nothing handles is logged once, at the `Error` level, with its stack trace, the correlation properties of where it happened, and a `ReferenceId`. The user sees a plain message and that id, and nothing of the error (NFR-LOG-6).

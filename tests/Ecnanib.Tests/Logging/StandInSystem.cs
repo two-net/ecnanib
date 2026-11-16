@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,14 +47,23 @@ internal sealed class StandInSystem : HttpMessageHandler
     /// <param name="clientName">The name the adapter asks the factory for.</param>
     /// <param name="settings">The configuration file, when it is not the usual one.</param>
     /// <param name="services">Further services of the test's own, such as a clock.</param>
-    public LoggedApplication Behind(string clientName, SettingsJson? settings = null, Action<IServiceCollection>? services = null) =>
+    /// <param name="database">The database, when it is not the shared one of the test server.</param>
+    /// <param name="watchesBinanceClock">Whether the application reads Binance's clocks on its schedule: see <see cref="LoggedApplication"/>.</param>
+    public LoggedApplication Behind(
+        string clientName,
+        SettingsJson? settings = null,
+        Action<IServiceCollection>? services = null,
+        TestDatabase? database = null,
+        bool watchesBinanceClock = false) =>
         new(
             settings ?? LoggedApplication.Settings(),
             host => host.ConfigureServices(registered =>
             {
                 registered.AddHttpClient(clientName).ConfigurePrimaryHttpMessageHandler(() => this);
                 services?.Invoke(registered);
-            }));
+            }),
+            database,
+            watchesBinanceClock);
 
     /// <summary>An answer with a body of JSON.</summary>
     public static HttpResponseMessage Json(HttpStatusCode status, string body) =>

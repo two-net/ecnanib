@@ -54,6 +54,7 @@ The jobs that the application has so far:
 |---|---|---|---|
 | `key-validation` | Credentials | Every hour, on the hour | Asks the provider about each stored key that was last checked a day ago or longer (FR-KEY-3). See "Validating a key" in [credentials.md](credentials.md). |
 | `catalog-sync` | Catalog | Every `CatalogSync:IntervalHours`, and when the work starts with an empty catalog | Syncs the catalog of every provider that the configuration file holds a catalog key for (FR-CAT-2). See [catalog.md](catalog.md). |
+| `clock-watch` | Exchange Gateway | Every `Binance:ClockCheckSeconds`, and whenever the work starts | Reads Binance's clocks, which the clock of the service is held against (FR-BIN-5). What it reads is kept in memory, so a start has no reading. See "The clock" in [exchange.md](exchange.md). |
 
 | Rule | Why |
 |---|---|
@@ -78,7 +79,7 @@ The run is told when it was due, in `BackgroundJobRun.ScheduledFor`. For a job o
 
 ### A job that is due when the work starts
 
-A job on an interval can have work when the background work starts, although its interval has not passed: the catalog is synced at startup when it is empty (FR-CAT-2). Such a job implements `IDueAtStart` beside `IBackgroundJob`:
+A job on an interval can have work when the background work starts, although its interval has not passed: the catalog is synced at startup when it is empty (FR-CAT-2), and Binance's clocks are read at every start (FR-BIN-5). Such a job implements `IDueAtStart` beside `IBackgroundJob`:
 
 ```csharp
 public Task<bool> IsDueAtStartAsync(CancellationToken cancellationToken) => sync.IsEmptyAsync(cancellationToken);
@@ -181,4 +182,4 @@ using var application = ApplicationWithJobs.On(database, clock, job);
 
 The scheduler takes the time from the `TimeProvider` service. A test replaces it with `TestClock` and sets the time, so a job that is due in a day runs within a second of the test saying that a day has passed.
 
-Every application of a test has the application's own jobs too. `key-validation` is on boundaries, so it does not run when an application starts, and with no stored key that is due it asks nobody. `catalog-sync` is on an interval, so it runs once when an application first starts on a database. The configuration file of the tests holds no catalog key, so that run asks nobody and writes nothing but the job's own row. A test that compares what the tables hold before and after a request leaves `background_jobs` out, as `AccountsApplication.EverythingStored` does. A test whose clock jumps over more than one hour finds its warning that the hours between were skipped, so a test that counts the scheduler's warnings names its job. To see what a run of a job does at a time of the test's choosing, a test runs the job itself: `AccountsApplication.CheckKeysAsync` does that for `key-validation`, and `CatalogApplication.RunJobAsync` for `catalog-sync`. `AskedJob` is a job that is asked whether it is due when the work starts, and answers as the test says.
+Every application of a test has the application's own jobs too, but for one. `clock-watch` is due whenever the work starts, and calls Binance without being asked: in a test of something else that would be a call to a host that is down, or one more call to a Binance of the test's, at a moment that the test does not choose. So `EcnanibApplicationFactory` leaves that job out, unless the test says that its application watches Binance's clock, as `ClockWatchTests` does. `key-validation` is on boundaries, so it does not run when an application starts, and with no stored key that is due it asks nobody. `catalog-sync` is on an interval, so it runs once when an application first starts on a database. The configuration file of the tests holds no catalog key, so that run asks nobody and writes nothing but the job's own row. A test that compares what the tables hold before and after a request leaves `background_jobs` out, as `AccountsApplication.EverythingStored` does. A test whose clock jumps over more than one hour finds its warning that the hours between were skipped, so a test that counts the scheduler's warnings names its job. To see what a run of a job does at a time of the test's choosing, a test runs the job itself: `AccountsApplication.CheckKeysAsync` does that for `key-validation`, and `CatalogApplication.RunJobAsync` for `catalog-sync`. `AskedJob` is a job that is asked whether it is due when the work starts, and answers as the test says.

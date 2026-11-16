@@ -43,6 +43,11 @@ public class TrackedFileTests
         Assert.Equal(new Uri("https://demo-fapi.binance.com"), settings.Binance.BaseUrl(Market.Futures, TradingMode.Demo));
         Assert.Equal(70, settings.Binance.LimitSharePercent);
         Assert.Equal(5, settings.Binance.ReconcileMinutes);
+
+        // The clocks of Binance are read every minute, and the clock of the service may be half
+        // a second from them, which is half of what Binance takes a signed call with (FR-BIN-5).
+        Assert.Equal(60, settings.Binance.ClockCheckSeconds);
+        Assert.Equal(500, settings.Binance.ClockToleranceMilliseconds);
         Assert.Equal(
             new AggressiveSettings(
                 RiskPerTradePercent: new Bounded<decimal>(0.5m, 2m, 5m),

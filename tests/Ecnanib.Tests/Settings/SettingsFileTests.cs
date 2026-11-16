@@ -67,6 +67,8 @@ public class SettingsFileTests
         Assert.Equal([IPAddress.Parse("203.0.113.7")], settings.Binance.OutboundIps);
         Assert.Equal(60, settings.Binance.LimitSharePercent);
         Assert.Equal(4, settings.Binance.ReconcileMinutes);
+        Assert.Equal(45, settings.Binance.ClockCheckSeconds);
+        Assert.Equal(400, settings.Binance.ClockToleranceMilliseconds);
 
         Assert.Equal(
             new DefaultRolesSettings(
@@ -127,6 +129,10 @@ public class SettingsFileTests
         { "Security:SessionIdleMinutes", "0", "Security:SessionIdleMinutes" },
         { "AiProviders:Claude:TimeoutSeconds", "601", "AiProviders:Claude:TimeoutSeconds" },
         { "Binance:LimitSharePercent", "101", "Binance:LimitSharePercent" },
+        { "Binance:ClockCheckSeconds", "29", "Binance:ClockCheckSeconds" },
+        { "Binance:ClockCheckSeconds", "3601", "Binance:ClockCheckSeconds" },
+        { "Binance:ClockToleranceMilliseconds", "0", "Binance:ClockToleranceMilliseconds" },
+        { "Binance:ClockToleranceMilliseconds", "1000", "Binance:ClockToleranceMilliseconds" },
         { "CatalogSync:IntervalHours", "0", "CatalogSync:IntervalHours" },
         { "CatalogSync:IntervalHours", "8761", "CatalogSync:IntervalHours" },
         { "CatalogSync:MissedSyncsBeforeUnavailable", "0", "CatalogSync:MissedSyncsBeforeUnavailable" },

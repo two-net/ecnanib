@@ -22,10 +22,21 @@ internal sealed class LoggedApplication : IDisposable
 {
     private readonly EcnanibApplicationFactory _application;
 
-    public LoggedApplication(SettingsJson settings, Action<IWebHostBuilder>? configure = null, TestDatabase? database = null)
+    /// <param name="settings">The configuration file of the test.</param>
+    /// <param name="configure">What the test adds to the host, such as a service of its own.</param>
+    /// <param name="database">The database, when it is not the shared one of the test server.</param>
+    /// <param name="watchesBinanceClock">
+    /// Whether the application reads Binance's clocks on its schedule, which only a test of that
+    /// watch wants: see <see cref="EcnanibApplicationFactory"/>.
+    /// </param>
+    public LoggedApplication(
+        SettingsJson settings,
+        Action<IWebHostBuilder>? configure = null,
+        TestDatabase? database = null,
+        bool watchesBinanceClock = false)
     {
         ContentRoot = new SettingsDirectory(settings.OnDatabase(database ?? PostgresServer.SharedDatabase));
-        _application = new EcnanibApplicationFactory(ContentRoot, configure);
+        _application = new EcnanibApplicationFactory(ContentRoot, configure, watchesBinanceClock);
     }
 
     /// <summary>A valid file that logs from the information level up, to the console and to a file.</summary>

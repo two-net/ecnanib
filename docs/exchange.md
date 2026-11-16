@@ -2,7 +2,7 @@
 
 Every call to Binance goes through the Exchange Gateway: one adapter behind a common interface (SRS 3.1, NFR-ARC-3). Binance is the only exchange. The gateway reaches its Spot market and its USDⓈ-margined perpetual Futures market, each on the real exchange and in Binance's test environment, with Binance's official public APIs, at the four addresses of the configuration file (FR-BIN-1, FR-BIN-2).
 
-A call that needs a credential is signed with the user's own, for the environment that is asked. The gateway has no operation that withdraws, deposits, or transfers funds (FR-BIN-9). Every call passes one limiter, for all users, because Binance counts its limits on requests against the address of the service (FR-BIN-4). Every call is logged with its duration, its outcome, and the request weight that Binance reports (NFR-LOG-5).
+A call that needs a credential is signed with the user's own, for the environment that is asked. The gateway has no operation that withdraws, deposits, or transfers funds (FR-BIN-9). Every call passes one limiter, for all users, because Binance counts its limits on requests against the address of the service (FR-BIN-4). The clock of the service is held against Binance's, and new entries pause while it is off (FR-BIN-5). Every call is logged with its duration, its outcome, and the request weight that Binance reports (NFR-LOG-5).
 
 The code is in `src/Ecnanib/ExchangeGateway`. The rules below are enforced by tests in `tests/Ecnanib.Tests/ExchangeGateway` and `tests/Ecnanib.Tests/Architecture`.
 
@@ -81,7 +81,7 @@ A user's Binance credential is an API key and its secret key, one pair for each 
 
 | Rule | Detail |
 |---|---|
-| **A call is signed.** | The query is hashed with the secret key (HMAC-SHA256), and the hash is sent as its last parameter, `signature`. Before it come `recvWindow=5000`, which is Binance's own default for how long after its timestamp a call is taken, and `timestamp`, in milliseconds, by the application's clock. What is signed is the query exactly as it is sent. |
+| **A call is signed.** | The query is hashed with the secret key (HMAC-SHA256), and the hash is sent as its last parameter, `signature`. Before it come `recvWindow=5000`, which is Binance's own default for how long after its timestamp a call is taken, and `timestamp`, in milliseconds, by the application's clock, which is watched for that: see "The clock". What is signed is the query exactly as it is sent. |
 | **The secret key is never sent.** | It signs, and the bytes it was read into are cleared. The API key travels in the header `X-MBX-APIKEY`, and never in an address, which is logged. |
 | **The environment says which address,** and the credential that was given for it signs. | A credential of the test environment reaches no address of the real exchange, and the other way around. |
 | **The gateway keeps no key, and fetches none.** | It holds a key nowhere beyond the one request, and it may not use Credentials: the gateways are leaves of the architecture rules. What decrypts a stored key hands it over for the one call (FR-KEY-9). |
@@ -138,6 +138,56 @@ The limiter says where each limit stands, in the order of the table above, each 
 | `Waiting` | The calls that wait for their turn. |
 | `HeldUntil` | Until when nothing is sent, after a signal of Binance. |
 
+## The clock
+
+Binance takes a signed call only when the time that the call carries is near its own: less than a second after it, and no longer before it than `recvWindow` says, which is five seconds. With a clock that is off, Binance refuses the calls of the service, those that protect a position among them. So the gateway holds the clock of the service against Binance's, and new entries pause while it is further from them than the configuration file allows (FR-BIN-5). `Adapters/Binance/BinanceClock.cs` is that watch, and `ClockWatchTests` holds it to the rules below, on a clock that the tests move.
+
+| Setting | In the tracked file | |
+|---|---|---|
+| `Binance:ClockCheckSeconds` | 60 | The time between two readings of Binance's clocks, from 30 to 3600. |
+| `Binance:ClockToleranceMilliseconds` | 500 | How far the clock of the service may be from Binance's, ahead of it or behind it, from 1 to 999. |
+
+| Rule | Detail |
+|---|---|
+| **Each market has a clock in each environment, and each is watched on its own.** | That makes four. One that is off, or that cannot be read, pauses new entries on its market in its environment, and leaves the other three as they are. |
+| **The clocks are read on a schedule.** | The job `clock-watch` reads them every `Binance:ClockCheckSeconds`, and as the background work starts: what was read is kept in memory, so an application that starts has no reading. It reads all four at once, with the two calls of a clock in "The calls". They are the service's own, and each costs 1 of request weight. See [background-work.md](background-work.md). |
+| **What the clock differs by is taken at the middle of the call.** | Binance reads its clock somewhere between the call and its answer. The drift is the time of the service half way between the two, less the time that Binance answered with: more than nothing is ahead of Binance, and less is behind it. The wait for a turn at the limiter is no part of it. A reading is exact to half of how long the answer took, which is reported with it, and that is longer when a connection had to be opened for the call. |
+| **New entries pause while the clock is further from Binance's than the tolerance,** and go on when a reading is back within it. | In either direction. The tolerance is below the second at which Binance begins to refuse, so that entries pause before calls fail. Exactly the tolerance is within it. |
+| **A clock that was not read pauses them too.** | A reading counts for three times `Binance:ClockCheckSeconds`. A read that fails once or twice pauses nothing. After that the clock is unknown, as it is from the start of the application to its first reading: a clock that cannot be read is not one that is right (NFR-REL-2). How old a reading is, is counted in time that no change of the time of day moves. |
+| **Binance's own word counts for more than a reading.** | Its error `-1021` says that the time of a call was outside of what it takes. `BinanceCall` tells the watch, and new entries pause on the market and in the environment of that call until its clock is read again. The call ends as `Failed`, as before: see "Outcomes". |
+| The watch pauses nothing by itself. | What places an entry asks `IExchangeClock.EntriesPaused` first, and nothing places one yet: see "Not built yet". What is open stays as it is, with its protective orders resting on Binance. |
+| It watches in memory, for one process. | As the limiter counts. An instance that stands by reads no clock, so it has new entries paused, and it runs no agent either. |
+
+### How the clock stands
+
+```csharp
+public interface IExchangeClock
+{
+    IReadOnlyList<ExchangeClockDrift> Drift();
+
+    bool EntriesPaused(Market market, TradingMode mode);
+}
+
+public sealed record ExchangeClockDrift(
+    Market Market, TradingMode Environment, ExchangeClockState State,
+    TimeSpan? Drift, TimeSpan? RoundTrip, DateTimeOffset? ReadAt, TimeSpan Tolerance);
+```
+
+The watch says how the clock of the service stands against each of Binance's: Spot and then Futures, each on the real exchange and then in the test environment. It is what the operator status screen shows of the clock (FR-OPS-2), which is not built.
+
+| `State` | When | New entries |
+|---|---|---|
+| `Within` | The latest reading is within the tolerance. | Go on |
+| `Exceeded` | The latest reading is further from Binance's clock than the tolerance. | Paused |
+| `Unknown` | The clock was not read yet, or not for longer than a reading counts. | Paused |
+| `Refused` | Binance refused a call for its time, and the clock was not read since. | Paused |
+
+| | |
+|---|---|
+| `Drift`, `RoundTrip`, `ReadAt` | What the latest reading found, how long its answer took, and when it was taken, by the clock of the service. They are of the latest reading however old it is, and empty before the first. |
+| `Tolerance` | `Binance:ClockToleranceMilliseconds`. |
+| `EntriesPaused` | Whether new entries are paused there, which they are in every state but `Within`. The method says the same for one market in one environment. |
+
 ## Outcomes
 
 A call that gives no answer is not an error. Its result says how it ended, so that a caller, which may name no type of the network, can tell what to do next.
@@ -151,7 +201,7 @@ A call that gives no answer is not an error. Its result says how it ended, so th
 | `Failed` | Anything else: no connection, a clock that is off, a block of the service's address by the firewall in front of Binance, a fault of the exchange, or an answer that is not what Binance sends. | Counted where repeated failures are (NFR-REL-4). |
 
 - **Only Binance's answer to a wrong credential is `AuthenticationFailed`.** A status that could also mean something else, such as 403, is `Failed`: a block of the service's address must not have every stored key checked, or marked.
-- **`Failed` does not say which failure it was.** A clock that is off is told apart when something acts on it: the watch on the clock. See "Not built yet".
+- **`Failed` does not say which failure it was.** A clock that is off is told apart by what acts on it: the watch on the clock hears of Binance's error `-1021`, and pauses new entries. See "The clock".
 - **A result holds what was read when the call succeeded, and never otherwise.** A `ServerTime` is there with `Succeeded` alone, and so are balances.
 - **A success that is not what was asked for is `Failed`:** the page of something in between, an answer of another kind, a clock without a time, an amount that is not a number.
 
@@ -217,6 +267,20 @@ Binance has counted 4350 of request weight on Spot Live, which is more than the 
 - **`Signal`** is `Throttled` for the status 429 and `Banned` for 418, and `HoldSeconds` is for how long nothing is sent. `Limit` is the name of the limit, as in "The limiter".
 - **That Binance has counted more is said once,** when it begins, and not with every answer while it lasts.
 
+The watch on the clock says what it reads, under `Ecnanib.ExchangeGateway.Adapters.Binance.BinanceClock`:
+
+```
+The clock of the service differs from Binance's on Spot Live by -42 ms, read in 87.3 ms
+The clock of the service is 612 ms from Binance's on Futures Live, which is more than the 500 ms that it may be. New entries are paused there
+The clock of Binance on Spot Demo could not be read, and there is no reading of it that still counts. New entries are paused there until it is read
+Binance refused a call on Futures Demo for the time that it carries. New entries are paused there until its clock is read again
+The clock of the service is within 500 ms of Binance's on Futures Live again. New entries go on there
+```
+
+- **Every reading is in the log,** at the information level, with `Market` and `Environment`. `DriftMs` is how far the clock of the service is ahead of Binance's, in whole milliseconds, and below zero when it is behind. `RoundTripMs` is how long the answer took.
+- **A pause is a warning, said once,** when it begins, and not with every reading while it lasts: the clock is further off than `ToleranceMs`, it could not be read for as long as a reading counts, or Binance refused a call for its time. Why a clock could not be read is with the call, in the log of outbound calls or in the events above.
+- **That it is over is said once too,** at the information level, with the first reading that is within the tolerance again.
+
 ## Checking against Binance itself
 
 The tests answer in Binance's place, with what its documentation says it sends. `LiveBinanceTests` asks Binance itself. It is skipped unless a credential is given for an environment, in the environment of the run, so the suite never reaches Binance by itself and no key is stored:
@@ -252,10 +316,9 @@ Run it when a call is added or changed, and when Binance changes its API. These 
 ## Not built yet
 
 - What hands a stored credential to a call, and has it checked again when the call ends as `AuthenticationFailed` (FR-KEY-9, FR-KEY-3). It comes with what calls the gateway for an agent.
-- The operator status screen, which shows what `IExchangeLimits` says (FR-OPS-2).
+- The operator status screen, which shows what `IExchangeLimits` and `IExchangeClock` say (FR-OPS-2).
 - The limit on the orders of an account, which Binance counts for each account and not for the address. It comes with the orders.
-- The watch on the clock (FR-BIN-5). `GetServerTimeAsync` is what it reads. It also tells a clock that is off apart from the other failures.
 - Market data: candles, prices, and the rules of a symbol (FR-BIN-3). It brings the first call that takes a parameter of its caller, and `exchangeInfo`, from which the limits of "The limiter" can then be read.
-- The orders (FR-BIN-6), in `Ecnanib.ExchangeGateway.Trading`, and with them the first call that is not a `GET`.
+- The orders (FR-BIN-6), in `Ecnanib.ExchangeGateway.Trading`, and with them the first call that is not a `GET`. What places an entry asks `IExchangeClock.EntriesPaused` first, and places none while it says so (FR-BIN-5): `ClockWatchTests` fails once the orders are there and nothing asks.
 - The feed of account events, and reconciliation (FR-BIN-7, FR-BIN-8).
 - Breakers for repeated failures of Binance (NFR-REL-4).

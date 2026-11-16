@@ -74,7 +74,9 @@ internal sealed class SettingsJson
             "Symbols": [ "BTCUSDT", "SOLUSDT" ],
             "OutboundIps": [ "203.0.113.7" ],
             "LimitSharePercent": 60,
-            "ReconcileMinutes": 4
+            "ReconcileMinutes": 4,
+            "ClockCheckSeconds": 45,
+            "ClockToleranceMilliseconds": 400
           },
           "Trading": {
             "DefaultRoles": { "MarketAnalyst": "Claude", "SentimentAnalyst": "Grok", "Strategist": "GPT", "RiskManager": "Gemini" },

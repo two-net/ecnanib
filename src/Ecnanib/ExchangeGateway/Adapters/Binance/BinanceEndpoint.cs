@@ -44,6 +44,14 @@ internal sealed class BinanceEndpoint
     public static readonly IReadOnlyList<BinanceEndpoint> All =
         [SpotTime, FuturesTime, KeyPermissions, SpotAccount, FuturesAccountSettings, FuturesBalances];
 
+    /// <summary>The clock of a market.</summary>
+    public static BinanceEndpoint TimeOf(Market market) => market switch
+    {
+        Market.Spot => SpotTime,
+        Market.Futures => FuturesTime,
+        _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
+    };
+
     private BinanceEndpoint(Market market, string path, BinanceLimit limit, int weight, string query = "")
     {
         Market = market;

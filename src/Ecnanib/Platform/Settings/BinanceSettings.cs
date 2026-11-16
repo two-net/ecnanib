@@ -10,14 +10,36 @@ namespace Ecnanib.Platform.Settings;
 /// <param name="OutboundIps">The fixed addresses the service calls Binance from, shown to users for IP-restricted keys.</param>
 /// <param name="LimitSharePercent">The share of Binance's request limit the service allows itself (FR-BIN-4).</param>
 /// <param name="ReconcileMinutes">The time between reconciliations with the exchange.</param>
+/// <param name="ClockCheckSeconds">
+/// The time between two readings of Binance's clocks, which the clock of the service is held
+/// against (FR-BIN-5): from half a minute to an hour.
+/// </param>
+/// <param name="ClockToleranceMilliseconds">
+/// How far the clock of the service may be from Binance's, ahead of it or behind it, before new
+/// entries pause (FR-BIN-5): from 1 to 999.
+/// </param>
 public sealed record BinanceSettings(
     BinanceMarketSettings Spot,
     BinanceMarketSettings Futures,
     IReadOnlyList<string> Symbols,
     IReadOnlyList<IPAddress> OutboundIps,
     int LimitSharePercent,
-    int ReconcileMinutes)
+    int ReconcileMinutes,
+    int ClockCheckSeconds,
+    int ClockToleranceMilliseconds)
 {
+    // A reading of a clock can take 25 seconds: the longest that a call waits for its turn at
+    // the limiter, and the longest that Binance may take to answer. A reading is over before
+    // the next one is due.
+    private const int LeastClockCheckSeconds = 30;
+
+    // An hour. A clock that is read less often than that is not watched.
+    private const int MostClockCheckSeconds = 3600;
+
+    // Binance refuses a signed call that says it was made a second or more after Binance's own
+    // time. The tolerance is less than that, so that entries pause before calls are refused.
+    private const int MostClockToleranceMilliseconds = 999;
+
     /// <summary>The endpoint for a market in a trading mode (FR-BIN-2).</summary>
     public Uri BaseUrl(Market market, TradingMode mode)
     {
@@ -54,7 +76,20 @@ public sealed record BinanceSettings(
         var limitSharePercent = file.WholeNumber("Binance:LimitSharePercent", minimum: 1, maximum: 100);
         var reconcileMinutes = file.WholeNumber("Binance:ReconcileMinutes");
 
-        return new BinanceSettings(spot, futures, symbols, outboundIps, limitSharePercent, reconcileMinutes);
+        var clockCheckSeconds = file.WholeNumber(
+            "Binance:ClockCheckSeconds", minimum: LeastClockCheckSeconds, maximum: MostClockCheckSeconds);
+        var clockToleranceMilliseconds = file.WholeNumber(
+            "Binance:ClockToleranceMilliseconds", minimum: 1, maximum: MostClockToleranceMilliseconds);
+
+        return new BinanceSettings(
+            spot,
+            futures,
+            symbols,
+            outboundIps,
+            limitSharePercent,
+            reconcileMinutes,
+            clockCheckSeconds,
+            clockToleranceMilliseconds);
     }
 
     private static string Symbol(SettingsReader file, string key)

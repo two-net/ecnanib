@@ -1,3 +1,4 @@
+using Ecnanib.Platform.BackgroundWork;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,9 +13,14 @@ namespace Ecnanib.Tests.Settings;
 /// </summary>
 public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
 {
+    // The job of the Exchange Gateway that reads Binance's clocks. It is not a public type, so
+    // it is named as the log names it.
+    private const string ClockWatch = "Ecnanib.ExchangeGateway.Adapters.Binance.BinanceClockJob";
+
     private SettingsDirectory? _ownDirectory;
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
+    private readonly bool _watchesBinanceClock;
 
     /// <summary>
     /// Where a test's client sends its requests. Over TLS, as a browser does: the application
@@ -31,10 +37,18 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>Runs the application in a content root the test prepared.</summary>
-    internal EcnanibApplicationFactory(SettingsDirectory contentRoot, Action<IWebHostBuilder>? configure = null)
+    /// <param name="contentRoot">The folder that holds the test's configuration file.</param>
+    /// <param name="configure">What the test adds to the host, such as a service of its own.</param>
+    /// <param name="watchesBinanceClock">
+    /// Whether the application reads Binance's clocks on its schedule, as it does outside the
+    /// tests. Only a test of that watch says so, and gives the application a Binance to read.
+    /// </param>
+    internal EcnanibApplicationFactory(
+        SettingsDirectory contentRoot, Action<IWebHostBuilder>? configure = null, bool watchesBinanceClock = false)
     {
         _contentRoot = contentRoot.Path;
         _configure = configure;
+        _watchesBinanceClock = watchesBinanceClock;
         ClientOptions.BaseAddress = Address;
     }
 
@@ -42,11 +56,24 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     {
         builder.UseContentRoot(_contentRoot);
 
-        // No test reaches another system over the network: a client of the host's factory gets
-        // no answer, as from a host that is down. A test that needs an answer puts a handler of
-        // its own behind the client by its name, which comes after this.
-        builder.ConfigureServices(services => services.ConfigureHttpClientDefaults(
-            http => http.ConfigurePrimaryHttpMessageHandler(() => new NoNetwork())));
+        builder.ConfigureServices(services =>
+        {
+            // No test reaches another system over the network: a client of the host's factory
+            // gets no answer, as from a host that is down. A test that needs an answer puts a
+            // handler of its own behind the client by its name, which comes after this.
+            services.ConfigureHttpClientDefaults(http => http.ConfigurePrimaryHttpMessageHandler(() => new NoNetwork()));
+
+            // The job that reads Binance's clocks is due as the background work starts, and calls
+            // Binance without being asked. In a test of something else that is a call to a host
+            // that is down, or one more call to a Binance of the test's, at a moment that the
+            // test does not choose. So the application of a test is without that one job, unless
+            // the test is about it. A job that was renamed is not found, and this says so.
+            if (!_watchesBinanceClock)
+            {
+                services.Remove(services.Single(job =>
+                    job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == ClockWatch));
+            }
+        });
 
         _configure?.Invoke(builder);
     }

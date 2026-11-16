@@ -1,4 +1,5 @@
 using Ecnanib.ExchangeGateway.Adapters.Binance;
+using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Logging;
 
 namespace Ecnanib.ExchangeGateway;
@@ -26,6 +27,14 @@ public static class ExchangeGatewayModule
         // object, which also says what is used.
         services.AddSingleton<BinanceLimiter>();
         services.AddSingleton<IExchangeLimits>(provider => provider.GetRequiredService<BinanceLimiter>());
+
+        // The watch on the clock: Binance takes a signed call only when the time that it carries
+        // is near Binance's own, so new entries pause while the clock of the service is not
+        // (FR-BIN-5). It is one object as well, which says how the clock stands, and a job on
+        // the platform's schedule reads Binance's clocks for it.
+        services.AddSingleton<BinanceClock>();
+        services.AddSingleton<IExchangeClock>(provider => provider.GetRequiredService<BinanceClock>());
+        services.AddBackgroundJob<BinanceClockJob>();
 
         // Binance reports the request weight and the order count it has counted against the
         // service in these response headers, one per interval, such as X-MBX-USED-WEIGHT-1M.

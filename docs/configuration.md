@@ -52,6 +52,8 @@ Each of `Binance:Spot` and `Binance:Futures` has a `BaseUrl` under `Live` and un
 
 `Binance:LimitSharePercent`, from 1 to 100, is the part of Binance's limits on requests that the service allows itself. Binance counts them against the address that the calls come from, so the part is of what all users together may ask in a minute. The rest is left for whatever else calls Binance from the same address. See "The limiter" in [exchange.md](exchange.md).
 
+`Binance:ClockCheckSeconds`, from 30 to 3600, is the time between two readings of Binance's clocks, which the clock of the service is held against. `Binance:ClockToleranceMilliseconds`, from 1 to 999, is how far the clock of the service may be from Binance's, ahead of it or behind it, before new entries pause. Binance refuses a signed call whose time is a second or more ahead of its own, so the tolerance is below that. See "The clock" in [exchange.md](exchange.md).
+
 `Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
 
 ### Permissions

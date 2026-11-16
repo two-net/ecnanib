@@ -30,14 +30,7 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
 
     public async Task<ExchangeTime> GetServerTimeAsync(Market market, TradingMode mode, CancellationToken cancellationToken)
     {
-        var endpoint = market switch
-        {
-            Market.Spot => BinanceEndpoint.SpotTime,
-            Market.Futures => BinanceEndpoint.FuturesTime,
-            _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
-        };
-
-        var answer = await call.AskAsync(endpoint, mode, ServerTime, cancellationToken);
+        var answer = await call.AskAsync(BinanceEndpoint.TimeOf(market), mode, ServerTime, cancellationToken);
 
         return new ExchangeTime(answer.Outcome, answer.Value);
     }
@@ -137,8 +130,11 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
         _ => KeyVerdict.Unreachable,
     };
 
-    /// <summary>The time that an answer of a clock gives, or null when it gives none.</summary>
-    private static DateTimeOffset? ServerTime(JsonElement answer) =>
+    /// <summary>
+    /// The time that an answer of a clock gives, or null when it gives none. The watch on the
+    /// clock reads the same answer: see <see cref="BinanceClockJob"/>.
+    /// </summary>
+    internal static DateTimeOffset? ServerTime(JsonElement answer) =>
         answer.ValueKind == JsonValueKind.Object
             && answer.TryGetProperty("serverTime", out var time)
             && time.ValueKind == JsonValueKind.Number

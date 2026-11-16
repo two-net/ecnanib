@@ -648,7 +648,9 @@ The outline below shows what the single configuration file contains. Key names a
     "Symbols": [],
     "OutboundIps": [],
     "LimitSharePercent": 70,
-    "ReconcileMinutes": 5
+    "ReconcileMinutes": 5,
+    "ClockCheckSeconds": 60,
+    "ClockToleranceMilliseconds": 500
   },
   "Trading": {
     "DefaultRoles": {

@@ -36,11 +36,17 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// <para>
 /// The call is made once. Whether it is made again is the caller's to decide.
 /// </para>
+/// <para>
+/// A call that Binance refuses for the time that it carries tells <see cref="BinanceClock"/>,
+/// the watch on the clock, which pauses new entries there (FR-BIN-5). It ends as any other
+/// failure does.
+/// </para>
 /// </remarks>
 internal sealed class BinanceCall(
     IHttpClientFactory clients,
     BinanceSettings settings,
     BinanceLimiter limiter,
+    BinanceClock watch,
     TimeProvider clock,
     ILogger<BinanceCall> logger)
 {
@@ -60,6 +66,10 @@ internal sealed class BinanceCall(
     // key that may not do this from here, which is also what a key restricted to other addresses
     // gets.
     private static readonly int[] Refusals = [-1002, -1022, -2008, -2014, -2015];
+
+    // The error that Binance answers a signed call with whose time is outside of what it allows:
+    // a second or more after its own, or longer before it than the call says it may be taken.
+    private const int TimeRefused = -1021;
 
     /// <summary>Makes a call that needs no credential, and says how it ended.</summary>
     /// <param name="endpoint">The call.</param>
@@ -158,7 +168,15 @@ internal sealed class BinanceCall(
             }
 
             var client = clients.CreateClient(ExchangeGatewayModule.HttpClientName);
+
+            // When the call was sent, by the application's clock, and how long the answer took,
+            // which is there in full when the client returns. The wait for a turn before it and
+            // the reading of the answer after it are not part of that: the watch on the clock
+            // goes by the middle of it.
+            var sentAt = clock.GetUtcNow();
+            var sent = clock.GetTimestamp();
             using var response = await client.SendAsync(request, either.Token);
+            var took = clock.GetElapsedTime(sent);
 
             // The limiter hears of every answer: of the signal, which stops the calls, and
             // otherwise of what Binance has counted against the service.
@@ -178,7 +196,7 @@ internal sealed class BinanceCall(
             {
                 if (body is { } answer && read(answer) is { } value)
                 {
-                    return new BinanceAnswer<T>(ExchangeCallOutcome.Succeeded, value);
+                    return new BinanceAnswer<T>(ExchangeCallOutcome.Succeeded, value, sentAt, took);
                 }
 
                 // The status says that the call went well, so the log of outbound calls does too.
@@ -206,6 +224,13 @@ internal sealed class BinanceCall(
                     endpoint.Market.ToString(),
                     mode.ToString(),
                     number);
+            }
+
+            // Binance's own word that the clock of the service is not near its own. The watch on
+            // the clock hears of it, and pauses new entries there until the clock is read again.
+            if (code == TimeRefused)
+            {
+                watch.Refused(endpoint.Market, mode);
             }
 
             if (throttled)
@@ -318,4 +343,7 @@ internal sealed class BinanceCall(
 /// <summary>What one call to Binance gave.</summary>
 /// <param name="Outcome">How the call ended.</param>
 /// <param name="Value">What the answer says. It is there when the call succeeded, and never otherwise.</param>
-internal readonly record struct BinanceAnswer<T>(ExchangeCallOutcome Outcome, T? Value);
+/// <param name="SentAt">When the call was sent, by the application's clock. It is there when the call succeeded.</param>
+/// <param name="Took">How long the answer took from then, without the wait for a turn at the limiter. It is there when the call succeeded.</param>
+internal readonly record struct BinanceAnswer<T>(
+    ExchangeCallOutcome Outcome, T? Value, DateTimeOffset SentAt = default, TimeSpan Took = default);

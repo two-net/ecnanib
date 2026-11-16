@@ -5,6 +5,7 @@ using Ecnanib.ExchangeGateway;
 using Ecnanib.Shared;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Logging;
+using Ecnanib.Tests.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.ExchangeGateway;
@@ -146,7 +147,18 @@ internal static class BinanceCalls
     /// The part of Binance's limit on requests that the service allows itself, in percent, when
     /// it is not that of the usual file, which is far more than a test uses.
     /// </param>
-    public static LoggedApplication Behind(StandInSystem binance, bool debug = false, TimeProvider? clock = null, int? share = null)
+    /// <param name="database">The database, when it is not the shared one of the test server.</param>
+    /// <param name="watchesClock">
+    /// Whether the application reads Binance's clocks on its schedule. It does in a test of the
+    /// watch on the clock, on a database of the test's own, where its application runs the jobs.
+    /// </param>
+    public static LoggedApplication Behind(
+        StandInSystem binance,
+        bool debug = false,
+        TimeProvider? clock = null,
+        int? share = null,
+        TestDatabase? database = null,
+        bool watchesClock = false)
     {
         var settings = LoggedApplication.Settings();
         if (debug)
@@ -162,7 +174,9 @@ internal static class BinanceCalls
         return binance.Behind(
             ExchangeGatewayModule.HttpClientName,
             settings,
-            services => services.AddSingleton<TimeProvider>(clock ?? new TestClock(Now)));
+            services => services.AddSingleton<TimeProvider>(clock ?? new TestClock(Now)),
+            database,
+            watchesClock);
     }
 
     /// <summary>
