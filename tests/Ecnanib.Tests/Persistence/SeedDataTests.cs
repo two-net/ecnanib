@@ -72,23 +72,32 @@ public class SeedDataTests
 
         var templates = context.Set<PromptTemplate>().AsNoTracking().ToList();
 
+        // The templates in use, whatever versions came before them: an edit adds a version,
+        // and the earlier one stays stored (FR-PRM-6). PromptTemplateVersionTests has the rule
+        // of the versions.
+        var inUse = templates.Where(template => template.IsActive).ToList();
+
         AssertSubjects(PromptTemplateKind.Role, Enum.GetNames<Role>());
         AssertSubjects(PromptTemplateKind.Market, Enum.GetNames<Market>());
         AssertSubjects(PromptTemplateKind.Timeframe, ["15m", "1H", "4H", "1D"]);
         AssertSubjects(PromptTemplateKind.Profile, ["Aggressive"]);
 
-        Assert.Equal(11, templates.Count);
+        Assert.Equal(11, inUse.Count);
         Assert.All(templates, template =>
         {
-            Assert.Equal(1, template.Version);
-            Assert.True(template.IsActive);
+            Assert.True(template.Version >= 1);
             Assert.False(string.IsNullOrWhiteSpace(template.Text));
         });
+
+        // A version that is out of use is an earlier one of a template that is in use.
+        Assert.All(templates.Where(template => !template.IsActive), earlier =>
+            Assert.Contains(inUse, latest =>
+                latest.Kind == earlier.Kind && latest.Subject == earlier.Subject && latest.Version > earlier.Version));
 
         void AssertSubjects(PromptTemplateKind kind, string[] subjects) =>
             Assert.Equal(
                 subjects.Order(StringComparer.Ordinal),
-                templates.Where(template => template.Kind == kind).Select(template => template.Subject).Order(StringComparer.Ordinal));
+                inUse.Where(template => template.Kind == kind).Select(template => template.Subject).Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -97,15 +106,23 @@ public class SeedDataTests
         var database = PostgresServer.CreateDatabase();
         database.Migrate();
 
-        var rejected = Assert.Throws<Npgsql.PostgresException>(() => database.Execute(
-            "INSERT INTO prompt_templates (id, kind, subject, version, text, is_active) VALUES (100, 'Market', 'Spot', 2, 'Newer', true)"));
+        // The next version of a template, whichever version the seed has it in, stored in use
+        // beside the one that is.
+        const string Newer =
+            """
+            INSERT INTO prompt_templates (id, kind, subject, version, text, is_active)
+            SELECT (SELECT max(id) + 1 FROM prompt_templates), 'Market', 'Spot', max(version) + 1, 'Newer', true
+            FROM prompt_templates WHERE kind = 'Market' AND subject = 'Spot'
+            """;
+
+        var rejected = Assert.Throws<Npgsql.PostgresException>(() => database.Execute(Newer));
         Assert.Equal(Npgsql.PostgresErrorCodes.UniqueViolation, rejected.SqlState);
+        Assert.Equal("ix_prompt_templates_kind_subject", rejected.ConstraintName);
 
         // With the earlier version taken out of use, the newer one is accepted: that is how a
         // new version arrives.
         database.Execute("UPDATE prompt_templates SET is_active = false WHERE kind = 'Market' AND subject = 'Spot'");
-        database.Execute(
-            "INSERT INTO prompt_templates (id, kind, subject, version, text, is_active) VALUES (100, 'Market', 'Spot', 2, 'Newer', true)");
+        database.Execute(Newer);
     }
 
     /// <summary>The settings in the tracked configuration file, which the test project copies into its output.</summary>

@@ -1,0 +1,23 @@
+@using Ecnanib.DecisionEngine
+
+@*
+    One prompt template as its user reads it: what it is for, its version, and its text
+    (FR-PRM-7). The text is written as text, with the line breaks it has: its look is in app.css.
+    Nothing here changes it.
+*@
+
+<h3>@Name</h3>
+
+<p class="field-hint">@AgentPages.VersionOf(Template)</p>
+
+<p class="prompt-text">@Template.Text</p>
+
+@code {
+    /// <summary>What the template is for, as users read it: a role, a market, a timeframe, or the profile.</summary>
+    [Parameter, EditorRequired]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The template, in the version that is in use.</summary>
+    [Parameter, EditorRequired]
+    public PromptTemplate Template { get; set; } = null!;
+}

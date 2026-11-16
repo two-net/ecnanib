@@ -213,6 +213,9 @@ internal static class AgentBrowser
     /// <summary>The page of the state of an agent, with the forms that start, pause, and resume it.</summary>
     public static string AgentStatePage(Guid agentId) => $"/agents/{agentId}/state";
 
+    /// <summary>The page of the prompts that an agent uses.</summary>
+    public static string AgentPromptsPage(Guid agentId) => $"/agents/{agentId}/prompts";
+
     /// <summary>The page that stops it.</summary>
     public static string StopAgentPage(Guid agentId) => $"/agents/{agentId}/stop";
 
@@ -584,7 +587,8 @@ internal static class StoredAgentRows
         string symbol = "BTCUSDT",
         TradingMode mode = TradingMode.Demo,
         AgentStateCause cause = AgentStateCause.Created,
-        bool team = true)
+        bool team = true,
+        Timeframe timeframe = Timeframe.OneHour)
     {
         var id = Guid.CreateVersion7();
 
@@ -598,7 +602,7 @@ internal static class StoredAgentRows
             market,
             symbol,
             quoteAsset: "USDT",
-            Timeframe.OneHour,
+            timeframe,
             allocatedCapital: 1000m,
             riskPerTradePercent: 1.5m,
             minRewardToRisk: 1.75m,

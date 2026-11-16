@@ -70,6 +70,9 @@
     {
         @* The state is changed on a page of its own: this form changes settings, and no state. *@
         <p>State: <strong>@AgentPages.Describe(_agent.State)</strong>. @AgentPages.Explain(_agent.State) <a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+
+        @* What the roles of the agent are told is read on a page of its own, and edited nowhere (FR-PRM-7). *@
+        <p><a href="@WebUiModule.AgentPromptsPath(_agent.Id)">@AgentPages.PromptsLink</a></p>
     }
 
     @if (_showForm)

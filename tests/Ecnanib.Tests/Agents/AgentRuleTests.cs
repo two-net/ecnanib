@@ -159,7 +159,10 @@ public class AgentRuleTests
         Assert.Equal(Enum.GetNames<Market>().Order(StringComparer.Ordinal), SeededSubjectsOf(PromptTemplateKind.Market));
     }
 
-    /// <summary>The subjects that the seeded prompt templates of a kind are for, in order.</summary>
+    /// <summary>
+    /// The subjects that the seeded prompt templates of a kind are for, in order: of the
+    /// templates in use, since a template that was edited is seeded in every version it had.
+    /// </summary>
     private static IReadOnlyList<string> SeededSubjectsOf(PromptTemplateKind kind)
     {
         using var context = ModelOnly.Context();
@@ -172,6 +175,7 @@ public class AgentRuleTests
         [
             .. model.FindEntityType(typeof(PromptTemplate))!.GetSeedData()
                 .Where(row => (PromptTemplateKind)row[nameof(PromptTemplate.Kind)]! == kind)
+                .Where(row => (bool)row[nameof(PromptTemplate.IsActive)]!)
                 .Select(row => (string)row[nameof(PromptTemplate.Subject)]!)
                 .Order(StringComparer.Ordinal),
         ];

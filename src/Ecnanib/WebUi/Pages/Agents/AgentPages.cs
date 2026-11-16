@@ -3,6 +3,7 @@ using Ecnanib.Accounts;
 using Ecnanib.Agents;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
+using Ecnanib.DecisionEngine;
 using Ecnanib.Platform.Settings;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
@@ -14,8 +15,9 @@ namespace Ecnanib.WebUi.Pages.Agents;
 /// What the pages of a user's agents have in common: the names of their forms, how a setting is
 /// written, what they say about a setting that cannot be stored, and what they say about the
 /// state of an agent and the controls that change it (FR-AGT-1, FR-AGT-2, FR-AGT-10), and what
-/// they say about its mode and about switching it (FR-AGT-7, FR-UI-3). Every setting and every
-/// state is explained in plain language (NFR-USA-2).
+/// they say about its mode and about switching it (FR-AGT-7, FR-UI-3), and what they say about
+/// the prompts that it uses (FR-PRM-7). Every setting and every state is explained in plain
+/// language (NFR-USA-2).
 /// </summary>
 public static class AgentPages
 {
@@ -316,6 +318,46 @@ public static class AgentPages
         Role.RiskManager => ("Risk Manager", "Reviews the plan independently, and approves, reduces, or vetoes it."),
         _ => throw new ArgumentOutOfRangeException(nameof(role), role, "The role has no description."),
     };
+
+    /// <summary>The link to the page of the prompts of an agent, wherever it is.</summary>
+    public const string PromptsLink = "Prompts of the agent";
+
+    /// <summary>
+    /// What the page of the prompts of an agent says first: what a prompt is, whose it is, and
+    /// that it is read and not edited (FR-PRM-7).
+    /// </summary>
+    public const string PromptsExplained =
+        "A prompt is the text that tells an AI model what to do. These are the prompts that this agent uses now. " +
+        "The service supplies them, they are the same for every user, and they cannot be edited.";
+
+    /// <summary>What the page says about the version that each prompt shows (FR-PRM-6).</summary>
+    public const string PromptVersionsExplained =
+        "Each prompt has a version. A version is never changed: when the service edits a prompt, the edit is the " +
+        "next version, and the agent uses the latest one.";
+
+    /// <summary>What the page says above the prompts of the roles.</summary>
+    public const string RolePromptsExplained = "What each role is told to do, and what it answers with.";
+
+    /// <summary>What the page says above the prompt of the agent's market (FR-AGT-4).</summary>
+    public const string MarketPromptExplained =
+        "What every role is told about the market that this agent trades on, and which actions it allows.";
+
+    /// <summary>What the page says above the prompt of the agent's timeframe (FR-AGT-3).</summary>
+    public const string TimeframePromptExplained =
+        "What every role is told about the timeframe that this agent works on: the style of trading, the candles it " +
+        "is given, and how long a position is expected to be held.";
+
+    /// <summary>What the page says above the prompt of the profile (FR-PRM-5).</summary>
+    public const string ProfilePromptExplained =
+        "What every role is told about how to trade. The product has one profile, and every agent trades it.";
+
+    /// <summary>The version of a prompt template, as a page says it: <c>Version 1</c>.</summary>
+    public static string VersionOf(PromptTemplate template)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+
+        return $"Version {template.Version.ToString(CultureInfo.InvariantCulture)}";
+    }
 
     /// <summary>A role as the ids of its fields name it: <c>market-analyst</c>.</summary>
     public static string IdOf(Role role) => role switch

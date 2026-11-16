@@ -143,6 +143,7 @@ This needs neither a configuration file nor a database. Read the generated file,
 - `ModelTests` fails when the model has changed and no migration has been generated. The application refuses to start in the same state, which `MigrationFailureTests` covers.
 - A migration that has been applied anywhere is never edited. A further change is a further migration.
 - A migration that drops or rewrites data needs a backup first (NFR-DAT-11). Marking such migrations is a separate feature.
+- One thing in the database is not of the model: the trigger that keeps the versions of the prompt templates as they are, with its function. The tool generated its migration empty, and the statements were written by hand. `ModelTests` cannot tell whether it is there: `PromptTemplateVersionTests` does. See [prompts.md](prompts.md).
 
 ## Seed data
 
@@ -152,11 +153,11 @@ Roles, providers, and prompt templates are seeded through migrations (NFR-DAT-10
 |---|---|---|
 | `roles` | The members of the `Role` enum. | `Platform/Persistence/RoleRow.cs` |
 | `ai_providers` | Claude, Gemini, GPT, and Grok, under the codes that name them in the tracked configuration file. | `AiProviderGateway/AiProvider.cs` |
-| `prompt_templates` | One template in use for each role, market, timeframe, and profile. | `DecisionEngine/PromptTemplate.cs` |
+| `prompt_templates` | Every version of the template of each role, market, timeframe, and profile, with one of them in use. | `DecisionEngine/PromptTemplate.cs` |
 
 Models are never seeded: the catalog is filled only by syncing (FR-CAT-1). The default role mapping is configuration, not data (FR-TEAM-3).
 
-A prompt template has a kind (role, market, timeframe, or profile), a subject (which one of that kind, such as `MarketAnalyst` or `15m`), and a version. Version 1 of each carries the outline from the specification. To change a template, add a row with the next version and take the earlier one out of use in the same change: each kind and subject has at most one version in use.
+A prompt template has a kind (role, market, timeframe, or profile), a subject (which one of that kind, such as `MarketAnalyst` or `15m`), and a version. Version 1 of each carries the outline from the specification. **A version is never changed** (FR-PRM-6): to change a template, add a row with the next version, which takes the earlier one out of use. A trigger on the table refuses everything else that is asked of a stored row, so a migration that edits or deletes a seeded template fails where it is applied. See [prompts.md](prompts.md).
 
 A seeded row is found by its key. Changing a key, such as renaming a member of `Role`, therefore generates a delete and an insert. Edit that one migration by hand so that it updates the row in place, or the rows pointing at it stand in the way.
 

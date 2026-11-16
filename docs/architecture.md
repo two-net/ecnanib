@@ -175,6 +175,12 @@ Agents places no order. A user who stops an agent that has an open position choo
 
 Agents says whether an agent of a user is active, for Accounts to ask before it deletes an account, and hands over the agents, the models of their roles, and the changes of their states for the export of a user's data. What a user does to an agent is recorded in the audit trail: a change to a risk setting, a start, a pause, a resume, a stop, a manual close, and a switch of its mode. Not built yet: the cycles and what keeps positions, what halts an agent, and recommending a team by measured strength. See [agents.md](agents.md).
 
+## Prompts
+
+The Decision Engine keeps the prompt templates: the instructions of each role, and a module each for a market, a timeframe, and the trading profile. They are managed by the system and delivered as seed data, through migrations (FR-PRM-7, NFR-DAT-10). A template is versioned, and a version is never changed: an edit is a new version, which takes the earlier one out of use. The database holds to that with a trigger, which refuses a change to a stored version whatever asks for it, a later migration among them (FR-PRM-6).
+
+`IPromptTemplates` answers with the templates in use for the market and the timeframe of an agent, and only reads. A user reads the prompts that an agent of theirs uses on a page of the agent, and cannot edit them (FR-PRM-7). Not built yet: composing a prompt, calling a model, and the role outputs, each of which records the template versions it used. A test waits for the table that stores them. See [prompts.md](prompts.md).
+
 ## Ownership
 
 The only account type is the individual user, and every resource belongs to exactly one (FR-ACC-5). A row that belongs to a user carries its owner. Whatever serves a request asks for the rows of the user who is signed in, so a row of another user is not found (NFR-SEC-3, NFR-DAT-9). The vocabulary for it, `IUserOwned` and `OwnedBy`, is in `Platform`, so that a component which may not use Accounts can still say whose its rows are.

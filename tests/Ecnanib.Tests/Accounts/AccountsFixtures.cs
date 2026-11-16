@@ -6,6 +6,7 @@ using Ecnanib.Accounts;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
+using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Notifications;
 using Ecnanib.Platform.BackgroundWork;
@@ -141,6 +142,9 @@ internal sealed class AccountsApplication : IDisposable
 
     /// <summary>What syncs the catalog outside the schedule.</summary>
     public ICatalogSync Catalog => _application.Services.GetRequiredService<ICatalogSync>();
+
+    /// <summary>What reads the prompt templates that are in use.</summary>
+    public IPromptTemplates PromptTemplates => _application.Services.GetRequiredService<IPromptTemplates>();
 
     /// <summary>
     /// Runs the job that checks the stored keys, now, as the scheduler does on the hour. A test

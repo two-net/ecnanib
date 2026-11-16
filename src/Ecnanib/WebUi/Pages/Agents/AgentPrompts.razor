@@ -1,0 +1,99 @@
+@page "/agents/{Id:guid}/prompts"
+@attribute [Authorize]
+@using Ecnanib.Agents
+@using Ecnanib.DecisionEngine
+@using Ecnanib.Shared
+@inject IStoredAgents Agents
+@inject IPromptTemplates Templates
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page shows the prompt
+    templates that an agent of the user uses now: the instructions of each of the four roles,
+    and the parts for its market, for its timeframe, and for the trading profile, each with its
+    version (FR-PRM-7). Which they are follows from the settings of the agent, and from nothing
+    that is asked for here. The templates are the same for every user, and are the system's: the
+    page has no form, and nothing that is posted at it is taken. A template is written as text,
+    like everything else on a page. The badge of the mode is under the heading (FR-UI-3).
+*@
+
+@if (_agent is not null && _templates is not null)
+{
+    <PageTitle>Prompts of the agent @_agent.Name</PageTitle>
+
+    <h1>Prompts of the agent @_agent.Name</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
+    <p>@AgentPages.PromptsExplained</p>
+
+    <p>@AgentPages.PromptVersionsExplained</p>
+
+    <h2>Roles</h2>
+
+    <p>@AgentPages.RolePromptsExplained</p>
+
+    @foreach (var role in AgentRoleRules.All)
+    {
+        <PromptText Name="@AgentPages.Describe(role).Name" Template="@_templates.Roles[role]" />
+    }
+
+    <h2>Market</h2>
+
+    <p>@AgentPages.MarketPromptExplained</p>
+
+    <PromptText Name="@_agent.Market.ToString()" Template="@_templates.Market" />
+
+    <h2>Timeframe</h2>
+
+    <p>@AgentPages.TimeframePromptExplained</p>
+
+    <PromptText Name="@_agent.Timeframe.Code()" Template="@_templates.Timeframe" />
+
+    <h2>Profile</h2>
+
+    <p>@AgentPages.ProfilePromptExplained</p>
+
+    <PromptText Name="@_templates.Profile.Subject" Template="@_templates.Profile" />
+
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+
+    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+}
+
+@code {
+    private AgentView? _agent;
+    private TemplatesInUse? _templates;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist: a user reads the prompts of
+        // their own agents.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // By the market and the timeframe that the agent has now. The templates themselves are
+        // the service's, and are asked for by no owner.
+        _templates = await Templates.InUseAsync(_agent.Market, _agent.Timeframe, request.RequestAborted);
+    }
+}

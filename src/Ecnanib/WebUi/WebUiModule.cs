@@ -66,6 +66,12 @@ public static class WebUiModule
     /// </summary>
     public static string AgentStatePath(Guid agentId) => $"{AgentPath(agentId)}/state";
 
+    /// <summary>
+    /// The path of the page of the prompts of an agent: the templates that it uses now, which
+    /// its user reads and cannot edit (FR-PRM-7).
+    /// </summary>
+    public static string AgentPromptsPath(Guid agentId) => $"{AgentPath(agentId)}/prompts";
+
     /// <summary>The path of the page a user stops an agent on, and chooses what happens to its open position (FR-AGT-11).</summary>
     public static string StopAgentPath(Guid agentId) => $"{AgentPath(agentId)}/stop";
 
