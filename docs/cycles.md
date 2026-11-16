@@ -2,9 +2,11 @@
 
 A cycle is one run of an agent's team, triggered when a candle closes. A cycle starts when a candle of the agent's timeframe closes, on UTC boundaries, and only closed candles are used (FR-CYC-1). Only an agent in the Running state gets cycles (SRS 3.3). When many agents share a candle boundary, their cycles are queued with concurrency limits per provider and per user key, shortest timeframe first (FR-CYC-11). Cycles missed while the service was down are skipped, not replayed: after a restart the system reconciles first, then waits for the next candle close (FR-CYC-8).
 
-What is built is what starts a cycle and lets it wait for its turn. What a cycle does once it has started is not built: the data package, the calls of the team, the Risk Guard, and the orders (SRS 3.2, steps 2 to 8). A cycle that starts ends at once, with no decision and no order. See "Not built yet".
+A cycle that starts builds its data package: the most recent closed candles of the agent's timeframe, the higher-timeframe context, indicators that the system computes and no model does, the position, the orders, and the equity of the agent, its limits, and on Futures the mark price, the funding, and the open interest (FR-CYC-2).
 
-The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`.
+What is built is what starts a cycle and lets it wait for its turn, and the data package that the cycle then builds. What a cycle does after that is not built: the calls of the team, the Risk Guard, and the orders (SRS 3.2, steps 3 to 8). A cycle that starts builds its package and ends, with no decision and no order. See "Not built yet".
+
+The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests` and `IndicatorTests`.
 
 How a job is scheduled, and what becomes of a boundary that passed, is in [background-work.md](background-work.md). The states of an agent are in [agents.md](agents.md). The candles are in "Market data" in [exchange.md](exchange.md), and the settings in [configuration.md](configuration.md).
 
@@ -148,8 +150,151 @@ public sealed record CycleStart(
 
 - **The token is canceled** when the application stops, when it stops being the instance that runs the background work, and half a minute before the next close. The cycle then ends soon, by letting `OperationCanceledException` out, and leaves no entry without its protection (NFR-REL-5).
 - An error that leaves `RunAsync` ends the cycle with no decision.
-- **The registered implementation does nothing.** `NoDecisionYet` ends at once. What is built behind `IDecisionCycle` takes the cycle from there, and changes nothing of when a cycle starts.
+- **The registered implementation builds the data package of the cycle, and ends.** `NoDecisionYet` asks `IDataPackages` for it, and nobody reads it yet: see "The data package". What is built behind `IDecisionCycle` takes the cycle from there, and changes nothing of when a cycle starts.
 - The interfaces are public so that a test can put a stand-in behind them: the tests see no internal type.
+
+## The data package
+
+The data package is what the team of an agent decides on, and the first thing that a cycle builds (SRS 3.2, step 2). `IDataPackages` builds it from what the cycle was handed:
+
+```csharp
+public interface IDataPackages
+{
+    Task<DataPackage> BuildAsync(CycleStart cycle, CancellationToken cancellationToken);
+}
+
+public sealed record DataPackage(
+    DateTimeOffset ClosedAt, AgentContext Agent, IReadOnlyList<OpenOrder> Orders,
+    CandleSeries Candles, IReadOnlyList<CandleSeries> Context, FuturesData? Futures, string Text);
+
+public sealed record CandleSeries(
+    CandleInterval Interval, IReadOnlyList<ExchangeCandle> Candles, int ComputedFrom, IndicatorValues Indicators);
+
+public sealed record FuturesData(decimal MarkPrice, decimal FundingRate, DateTimeOffset NextFundingAt, decimal OpenInterest);
+```
+
+**What a package contains** (FR-CYC-2):
+
+| Part | In the package | Where it comes from |
+|---|---|---|
+| The most recent closed candles of the agent's timeframe | `Candles` | `CycleStart.Candles`, which what starts the cycles read through the close. They are not read again. The package holds the newest `Trading:DataPackage:Candles` of them: 200 in the tracked file. |
+| The higher-timeframe context (SRS 4.6) | `Context`, shortest first | A read of the candles of each higher timeframe, through `IExchangeMarketData`, on the market and in the environment of the agent. The package holds the newest `Trading:DataPackage:ContextCandles` of each: 50 in the tracked file. |
+| Indicators computed by the system, not by models | `Indicators` of each series | `Indicators`, from the candles of the series. See "The indicators". |
+| The current position, orders, and equity | `Agent.Position`, `Orders`, `Agent.Equity` | Whatever keeps positions and orders, through `IAgentHoldings`. See "What an agent holds". |
+| The agent's limits | `Agent.Limits` | The risk settings of the agent, as they were stored when the turn of the cycle came. A prompt states them with the two limits that the specification fixes: see "Composing a prompt" in [prompts.md](prompts.md). |
+| On Futures: the mark price, the funding rate with the time of the next funding, and the open interest (FR-BIN-F4) | `Futures` | A read of each through `IExchangeMarketData`, in the environment of the agent. An agent on Spot has none of them, and asks for none. |
+
+**The context of a timeframe** is the higher timeframes that its module of the prompt names (SRS 4.6):
+
+| Timeframe of the agent | Context |
+|---|---|
+| 15m | 1H and 4H |
+| 1H | 4H and 1D |
+| 4H | 1D and 1W |
+| 1D | 1W |
+
+`TimeframeContext.Of` says which they are, as lengths of a candle that the gateway reads. `AgentRuleTests` holds it to the module of each timeframe that is in use, so what a role is told and what it is handed are the same.
+
+| Rule | Detail |
+|---|---|
+| **A package holds closed candles only, and nothing that closed after its close** (FR-CYC-1). | `ClosedAt` is the close of the cycle. The gateway never gives the candle in progress. The turn of a cycle may come minutes after its close: a candle that the exchange closed meanwhile is left out, and no indicator counts it. |
+| **Everything is asked for at once.** | The candles of the higher timeframes, what Futures adds, and what the agent holds. A package takes as long as the slowest of its reads. |
+| **The reads are shared** (FR-BIN-3). | The gateway reads the candles of a symbol and a length once for everyone who asks while they count, and the mark price and the open interest in the same way: see "Market data" in [exchange.md](exchange.md). So the cycles of the agents that share a symbol cause one read of each part, however many they are. At a close that is at most two reads of candles for each symbol and timeframe, and two more reads for each symbol on Futures. |
+| **A candle of a higher timeframe that closes with the cycle's close may come one short.** | At 10:00 the candle of 15 minutes and the candle of the hour close together. When Binance has not begun the next hour as the cycle asks, the hour that just closed is still in progress to it, and is not given. It is not waited for: the candles of the agent's own timeframe cover the same time, and the package says through when each series reaches. |
+| **A higher timeframe that has no closed candle yet is an empty series.** | A symbol that is new to the exchange has no closed week. That is no failure: the series has no candle and no indicator, and the text says so. |
+| **A read that does not succeed gives no package.** | `BuildAsync` throws `DataPackageException`, which says which part the exchange did not give and how the read ended, and nothing of the agent. It leaves the cycle as an error, so the cycle ends as failed, with no decision. Nothing is asked again for that close: the gateway shares a read that failed for some seconds, and the next close starts the next cycle. An open position stays as it is, with its protective orders. |
+| **A package is built from candles through its close, and from no others.** | A cycle is handed them: see "The candle of the close". `BuildAsync` refuses candles that come one short, or none, with an error. |
+| **A package says nothing of whose agent it is** (FR-PRM-9). | It has no id and no name. `Agent` is the context of the agent as a prompt states it, made by `AgentContext.Of` from the settings of the agent. |
+| **Nothing of a package is stored.** | It is built for one cycle, and lives as long as the cycle. The database is not a market-data warehouse (NFR-DAT-6). The summary of it that the record of a cycle keeps is not built (FR-CYC-10). |
+
+### The indicators
+
+**Indicators are computed by the system, and not by models** (FR-CYC-2). A model is handed the numbers, and works none of them out. `Indicators` computes them, for the candles of the agent's own timeframe and for those of each higher timeframe:
+
+| Indicator | What it is | Candles it takes |
+|---|---|---|
+| `Sma20`, `Sma50`, `Sma200` | The simple moving average of the close: the mean of the latest 20, 50, and 200 closes. | 20, 50, 200 |
+| `Ema20`, `Ema50` | The exponential moving average of the close, with a period of 20 and of 50. It starts as the simple average of the first closes of the period, and moves towards each later close by `2 / (period + 1)` of what it differs by. | 20, 50 |
+| `Rsi14` | The relative strength index of Wilder, with a period of 14, from 0 to 100. The average gain and the average loss of the close start as the means of the first 14 changes, and each later change counts for one part in 14. The index is the share of the gain in both: `100 - 100 / (1 + gain / loss)`. | 15 |
+| `Atr14` | The average true range of Wilder, with a period of 14, in the asset that the symbol is priced in. The true range of a candle is the greatest of its high less its low, and how far its high and its low are from the close before it. The average starts as the mean of the first 14, and each later one counts for one part in 14. | 14 |
+| `VolumeAverage20` | The mean volume of the latest 20 candles, in the asset that is traded. The text has the volume of the latest candle beside it. | 20 |
+
+| Rule | Detail |
+|---|---|
+| **Each is of the latest close of its series.** | For the agent's own timeframe that is the close of the cycle. |
+| **Each is computed from every closed candle that the exchange gave, and not only from those that the package holds.** | One read gives up to 498 candles. An exponential average and the two of Wilder go by all that came before, so more candles make them more exact, and an average of 200 candles is there with a package of 120. `CandleSeries.ComputedFrom` says how many candles it was. A smaller `Trading:DataPackage:Candles` makes a prompt shorter, and no indicator less exact. |
+| **An indicator that has too few candles is null.** | A symbol that is new to the exchange has no average of 200 candles. It is never a number that stands for one. The text writes `not available`. |
+| **The periods are fixed, and are no settings.** | They are constants of `Indicators`, in one place: 20, 50, and 200 for the averages, 14 for the two of Wilder, and 20 for the volume. |
+| **Everything is a decimal,** as the candles are. | No digit of a price is lost on the way. |
+| The relative strength is 100 with no loss, 0 with no gain, and 50 when the close did not move. | A loss that has all but faded away divides nothing: the index is worked out as the share of the gain. |
+| The true range of the first candle is its high less its low. | It has no close before it. |
+
+**`IndicatorTests` holds each to known values.** A short series is worked out in the comment beside it. A long one is the series of a worked example that is widely used to explain the indicator, with prices to two decimal places, and its values were worked out from the definition, apart from the code, in exact decimals. Tables that are published for the same examples differ from them by a few hundredths here and there: they were made from prices with more decimal places than they show.
+
+### What an agent holds
+
+Positions and orders are not built, and no result of an agent is stored. What a package says of them comes through `IAgentHoldings`, which the Decision Engine declares, for whatever keeps positions and orders to implement and register:
+
+```csharp
+public interface IAgentHoldings
+{
+    Task<AgentHoldings> OfAsync(Agent agent, CancellationToken cancellationToken);
+}
+
+public sealed record AgentHoldings(decimal Equity, PositionContext? Position, IReadOnlyList<OpenOrder> Orders);
+
+public sealed record OpenOrder(OpenOrderKind Kind, OrderSide Side, decimal Quantity, decimal Price);
+```
+
+| Rule | Detail |
+|---|---|
+| **Nothing implements it yet, and an agent holds nothing.** | No position and no orders, and its equity is the capital that its user allocated to it: it has made no profit and no loss. `AgentHoldings.NothingYet` is that. `DataPackageTests` has a test that fails as soon as a table of positions or of orders is in the model and nothing answers. |
+| The equity is the allocated capital plus the net profit or loss to date. | In the asset that the symbol is priced in. What keeps the results of an agent says it. |
+| An agent has one position at most. | `PositionContext` is the position as a prompt states it, with the prices of its stop-loss and its take-profit. |
+| **An order is one that rests on the exchange.** | An entry that has not filled, a stop-loss, or a take-profit: `OpenOrderKind`. `Price` is the price of a limit entry, or the price that a protective order is triggered at. |
+| It is asked for one agent, as its package is built, and only reads. | What it answers has no id and no name, as a prompt has none. The implementation that was registered last answers, as a service is found. |
+
+### What a role reads
+
+`DataPackage.Text` is the package as a role reads it, under the heading `# Data package` of a prompt. `DataPackage.PartsWith(lessons)` is the parts of a prompt from a package: the context of the agent, the text, and the lessons that were recalled for the call. See "Composing a prompt" in [prompts.md](prompts.md).
+
+For an agent on Futures that works on 1D, with a package of two candles of each timeframe:
+
+```
+Closed 1D candles: 2, oldest first, through 2026-11-16T00:00Z
+Each line: close time (UTC), open, high, low, close, volume
+2026-11-15T00:00Z, 60250.25, 61000, 60100, 60900, 980
+2026-11-16T00:00Z, 60900, 61420, 60880.25, 61310, 1842.337
+Indicators at that close, computed by the system from 498 closed 1D candles:
+- Moving averages of the close: SMA20 61122.48, SMA50 60310.9, SMA200 59876.12, EMA20 61190.33, EMA50 60402.71
+- Relative strength: RSI14 58.2
+- Average true range: ATR14 512.75
+- Volume: 1842.337 in the latest candle, average of 20 candles 1930.11
+
+Context, closed 1W candles: 2, oldest first, through 2026-11-16T00:00Z
+2026-11-09T00:00Z, 57200, 59900, 56800.5, 58000, 8800
+2026-11-16T00:00Z, 58000, 61420, 57500.75, 61310, 9500.125
+Indicators at that close, computed by the system from 61 closed 1W candles:
+- Moving averages of the close: SMA20 52110.4, SMA50 47020.15, SMA200 not available, EMA20 53340.92, EMA50 48811.07
+- Relative strength: RSI14 63.41
+- Average true range: ATR14 4120.6
+- Volume: 9500.125 in the latest candle, average of 20 candles 8930.25
+
+Open orders:
+- stop-loss: sell 0.015 at 59500
+- take-profit: sell 0.015 at 64000
+
+Futures: mark price 61888.1, funding rate 0.01%, next funding 2026-11-16T08:00Z, open interest 82450.5 BTC
+```
+
+| Rule | Detail |
+|---|---|
+| **The same package gives the same text.** | A line ends with a line feed on every system. A number is written the same in every country, with every digit that it has and no zero after the last: `1.50` is `1.5`. A time is in UTC, to the minute. |
+| A number that was worked out is rounded. | An average and the average true range to eight significant digits, and the relative strength to two decimal places. The package itself has them unrounded. |
+| **The equity, the position, and the limits are not in the text.** | The same prompt states them under `# Agent context`, from `DataPackage.Agent`. The open orders are in the text: the context of the agent has no place for them. |
+| An agent that has no open orders reads `Open orders: none`. | An agent on Spot reads no line of Futures. |
+| No line reads as a heading of a prompt. | None begins with `#`. |
+| **Every package is composed into a prompt.** | `DataPackageTests` builds the package of each market and timeframe and composes the prompt of every role from it: `PromptScreen` finds no secret, no address, and no identifier in it (FR-PRM-9). |
 
 ## How long a cycle takes
 
@@ -157,6 +302,7 @@ With providers responding normally, 95% of cycles finish within 90 seconds of ca
 
 - **A run begins within about a second of the close,** which is the beat of the scheduler, and the cycles start when their candles are in.
 - **The queue takes no time worth counting.** `CycleCapacityTests` passes the cycles of 500 agents that share a boundary through it, with the limits of the tracked file, in seconds.
+- **A data package takes its reads of the exchange, and nothing else worth counting.** They are made at the same time and shared by the cycles of a symbol, and each says how long it took: see "The log".
 - **Where a limit binds, cycles wait for a round, and the target follows by arithmetic.** With cycles of 45 seconds, a second round ends within 90 seconds, and a third does not.
 - **Every cycle says when it started and when it ended,** in milliseconds since its close, and how long it ran.
 - **Every close says how many of its cycles ended within 90 seconds,** once, in its summary. The summary is a warning when more than one in twenty did not: those that ended later, that were stopped before the next close, and that could not start in time.
@@ -167,8 +313,12 @@ With providers responding normally, 95% of cycles finish within 90 seconds of ca
 |---|---|---|
 | `Trading:Cycles:MaxPerProvider` | 250 | The most cycles that use one AI provider at once, of all users together. 1 or more. |
 | `Trading:Cycles:MaxPerKey` | 4 | The most cycles that use the key of one user for one AI provider at once. 1 or more. |
+| `Trading:DataPackage:Candles` | 200 | The most recent closed candles of the agent's timeframe that a data package holds (FR-CYC-2). From 1 to 498. |
+| `Trading:DataPackage:ContextCandles` | 50 | The most recent closed candles of each higher timeframe that a data package holds. From 1 to 498. |
 
-The quarter hour, the 5 minutes, the half minutes, and the 5 seconds are fixed, as the time limit of a call to the exchange is.
+The quarter hour, the 5 minutes, the half minutes, and the 5 seconds are fixed, as the time limit of a call to the exchange is. So are the periods of the indicators.
+
+498 is what one read of the exchange gives: `ExchangeCandles.Most`. There is no range of the past to ask for, so a package cannot hold more. A package holds all that the exchange has when those are fewer than the setting.
 
 ## The log
 
@@ -193,13 +343,19 @@ The cycles of the close at {ClosedAt} could not start within {StartsWithinMinute
 The cycles of the close at {ClosedAt} are over after {DurationMs} ms: {Ended} ended within {TargetSeconds} seconds of the close and {EndedLate} later, {Failed} failed, {OutOfTime} were stopped before the next close, {TooLate} could not start in time, {WithoutCandle} had no candle, {NotReconciled} were not reconciled, {NotRunning} no longer ran, and {Stopped} were stopped with the application
 ```
 
+What builds a data package logs under the area `Ecnanib.DecisionEngine.DataPackages`, inside a cycle, so its event carries `UserId`, `AgentId`, and `CycleId` as well:
+
+```
+The data package of agent {AgentId} for the close at {ClosedAt} was built in {DurationMs} ms: {CandleCount} candles of {Timeframe}, {ContextCandleCount} of {ContextTimeframes}, and {OrderCount} open orders
+```
+
 | Level | Event |
 |---|---|
-| `Information` | The cycles that are due, the start and the end of a cycle, an agent that gets no cycle, a cycle that was stopped with the application, and the summary of a close. |
+| `Information` | The cycles that are due, the start and the end of a cycle, a data package that was built, an agent that gets no cycle, a cycle that was stopped with the application, and the summary of a close. |
 | `Warning` | A candle that the exchange did not give in time, cycles that could not start in time, cycles that were stopped before the next close, and the summary of a close of which more than one in twenty cycles did not end within 90 seconds. |
-| `Error` | A cycle that failed, a cycle that could not start, and candles that could not be asked for, each with the error. |
+| `Error` | A cycle that failed, a cycle that could not start, and candles that could not be asked for, each with the error. A cycle whose data package could not be built is one that failed: its error says which part of the market data the exchange did not give, and how the read ended. |
 
-An event names a user and an agent by their ids, and never holds the name of an agent. What the scheduler logs about the job is in [background-work.md](background-work.md): a run that began, ended, failed, or was stopped, and a boundary that was skipped.
+An event names a user and an agent by their ids, and never holds the name of an agent, a price, or a setting. What the scheduler logs about the job is in [background-work.md](background-work.md): a run that began, ended, failed, or was stopped, and a boundary that was skipped.
 
 ## Testing
 
@@ -216,10 +372,24 @@ A test starts the cycles of a close in one of two ways. It runs the job itself, 
 
 A limit is held to through what the stand-in counted while the cycles were held, and an order through the whole sequence of the starts, with one cycle at a time. Neither waits for something not to happen.
 
+**The tests of the cycles do not build data packages:** `StandInCycles` is the inside of their cycles, so what they count is what the job asks the exchange for. The data package has stand-ins of its own:
+
+| Stand-in | In place of | What it does |
+|---|---|---|
+| `StandInMarket` | `IExchangeMarketData` | Has all the market data that a package is built from: candles of every length through the latest close by the clock of the test, the week included, the mark price with its funding, and the open interest. A test gives it another answer for candles, and says how a read of Futures ends. It keeps what it was asked. |
+| `StandInHoldings` | `IAgentHoldings` | Says of every agent what the test gave it: an equity, a position, and orders. Without it an agent holds nothing, as in the application. |
+
+`PackagesApplication` is the application with both, and builds the package of a cycle of an agent that needs no row. `CyclesApplication` runs the job with the application's own inside of a cycle, on `StandInMarket`, when a test says that its cycles build packages: `CycleDataPackageTests` does, and runs the job behind the gateway itself once, with a stand-in for Binance.
+
 ## Not built yet
 
-- What a cycle does once it has started: the data package and its indicators (FR-CYC-2), the calls of the team (FR-TEAM-6), the Risk Guard (FR-RSK-3), and the orders (FR-BIN-6). `NoDecisionYet` stands for all of it.
-- The candles of the higher timeframes, which are the context of a cycle (SRS 4.6). A cycle is handed the candles of its own timeframe through its close. What builds the data package asks for the others.
+- What a cycle does once it has built its data package: the calls of the team (FR-TEAM-6), the Risk Guard (FR-RSK-3), and the orders (FR-BIN-6). `NoDecisionYet` builds the package, and stands for the rest. Nobody reads a package yet.
+- What keeps positions and orders, and the results of an agent, which answers `IAgentHoldings`. Until then a package says that an agent holds nothing, and that its equity is its allocated capital.
+- Asking again for market data that a read did not give. A cycle whose package cannot be built makes no decision, and the next close starts the next one.
+- Waiting for a candle of a higher timeframe that came one short. The candles of the agent's own timeframe cover the same time.
+- The price that a symbol last traded at. A package has the close of the latest candle, and on Futures the mark price. What holds an entry to its distance from the current price asks for the price (FR-RSK-4).
+- What the Sentiment Analyst reads, which its model searches for itself (FR-CYC-3), and the reports of the analysts and the plan, which a later role is given with the package (FR-TEAM-6).
+- The summary of the data package that the record of a cycle keeps (FR-CYC-10). A package leaves one event in the log.
 - Reconciliation, which answers `IReconciliation` (FR-BIN-7), and the order of a start: migrate, reconcile, then schedule (NFR-REL-3).
 - The stale limit: a decision that completes later than the limit of its timeframe opens no position (FR-CYC-9). `Trading:StaleSeconds` has the limits, and nothing reads them yet.
 - Storing a cycle, with its outcome (FR-CYC-10). A cycle leaves its events in the log and nothing in the database, also when it was skipped.

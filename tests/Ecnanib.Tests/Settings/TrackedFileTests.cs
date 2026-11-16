@@ -63,6 +63,10 @@ public class TrackedFileTests
         // The cycles of 500 agents that share a boundary start in two rounds at most, and a
         // user's key is called for four of their agents at once (FR-CYC-11, NFR-PRF-2).
         Assert.Equal(new CycleSettings(MaxPerProvider: 250, MaxPerKey: 4), settings.Trading.Cycles);
+
+        // The data package holds the most recent 200 closed candles of the agent's timeframe
+        // (FR-CYC-2), and 50 of each higher timeframe for context.
+        Assert.Equal(new DataPackageSettings(Candles: 200, ContextCandles: 50), settings.Trading.DataPackage);
         Assert.Equal(new ExperienceSettings(5, 20, 20, new ExperienceBoardSettings(MinUsers: 5, MinTrades: 50)), settings.Experience);
         Assert.Equal(new RetentionSettings(90, 365, 90, 730), settings.Retention);
         Assert.Equal(

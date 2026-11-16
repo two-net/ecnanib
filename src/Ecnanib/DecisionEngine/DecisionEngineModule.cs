@@ -10,14 +10,22 @@ public static class DecisionEngineModule
 {
     /// <summary>
     /// Registers the component: what starts a cycle for each running agent when a candle closes
-    /// (FR-CYC-1), what reads the prompt templates that are in use (FR-PRM-7), and what composes
-    /// the prompt of a role call from them (FR-PRM-1).
+    /// (FR-CYC-1), what builds the data package of a cycle (FR-CYC-2), what reads the prompt
+    /// templates that are in use (FR-PRM-7), and what composes the prompt of a role call from
+    /// them (FR-PRM-1).
     /// </summary>
     public static IServiceCollection AddDecisionEngine(this IServiceCollection services)
     {
-        // What a cycle does once it has started, which is not built: it does nothing. What
-        // reconciles an agent with the exchange registers an IReconciliation, when it is built.
+        // What a cycle does once it has started: it builds its data package, and makes no
+        // decision, for the calls of the team are not built. What reconciles an agent with the
+        // exchange registers an IReconciliation, when it is built.
         services.AddSingleton<IDecisionCycle, NoDecisionYet>();
+
+        // The data package of a cycle: candles, the context of the higher timeframes, the
+        // indicators, which the system computes, and what the agent holds. What keeps positions
+        // and orders registers an IAgentHoldings, when it is built: until then an agent holds
+        // nothing, and its equity is its allocated capital.
+        services.AddSingleton<IDataPackages, DataPackages>();
 
         // The candles that a cycle starts with, asked for until they reach its close (FR-CYC-1).
         services.AddSingleton<ClosedCandles>();

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
@@ -14,9 +13,6 @@ internal sealed class PromptComposition(IPromptTemplates templates, PromptScreen
 {
     /// <summary>What a part says when the call was given nothing for it.</summary>
     private const string Nothing = "None.";
-
-    // Every digit that a decimal has, and no zero after the last of them: 1.50 is written 1.5.
-    private const string AsWritten = "0.############################";
 
     public async Task<ComposedPrompt> ComposeAsync(Role role, PromptParts parts, CancellationToken cancellationToken)
     {
@@ -130,5 +126,5 @@ internal sealed class PromptComposition(IPromptTemplates templates, PromptScreen
     private static string Price(decimal? price) => price is { } resting ? Number(resting) : "none";
 
     /// <summary>A number as a prompt writes it: the same in every country.</summary>
-    private static string Number(decimal value) => value.ToString(AsWritten, CultureInfo.InvariantCulture);
+    private static string Number(decimal value) => Written.Number(value);
 }

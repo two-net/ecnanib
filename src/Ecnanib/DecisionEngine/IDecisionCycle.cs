@@ -11,8 +11,8 @@ namespace Ecnanib.DecisionEngine;
 /// </summary>
 /// <remarks>
 /// <para>
-/// None of it is built yet: a cycle starts, and makes no decision. What is built behind this
-/// takes the cycle from here, and changes nothing of when a cycle starts.
+/// Only the data package is built yet: a cycle starts, builds it, and makes no decision. What is
+/// built behind this takes the cycle from there, and changes nothing of when a cycle starts.
 /// </para>
 /// <para>
 /// A cycle is run for an agent that ran when its turn came. An agent is paused or stopped by its
@@ -61,10 +61,18 @@ public sealed record CycleStart(
     ExchangeCandles Candles);
 
 /// <summary>
-/// The inside of a cycle while none is built: it does nothing, so a cycle that starts ends at
-/// once, with no decision and no order.
+/// The inside of a cycle while the calls of the team are not built: it builds the data package
+/// of the cycle (FR-CYC-2), which is as far as a cycle goes yet, and ends with no decision and no
+/// order.
 /// </summary>
-internal sealed class NoDecisionYet : IDecisionCycle
+/// <remarks>
+/// A package that cannot be built leaves this as an error, as every failure of a cycle does: the
+/// cycle ends with no decision, and the others go on.
+/// </remarks>
+internal sealed class NoDecisionYet(IDataPackages packages) : IDecisionCycle
 {
-    public Task RunAsync(CycleStart cycle, CancellationToken cancellationToken) => Task.CompletedTask;
+    // Nobody reads the package yet. What calls the team hands it to each role, as the parts of
+    // its prompt.
+    public async Task RunAsync(CycleStart cycle, CancellationToken cancellationToken) =>
+        _ = await packages.BuildAsync(cycle, cancellationToken);
 }

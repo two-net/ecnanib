@@ -153,6 +153,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What composes the prompt of a role call.</summary>
     public IPromptComposition PromptComposition => _application.Services.GetRequiredService<IPromptComposition>();
 
+    /// <summary>What builds the data package of a cycle.</summary>
+    public IDataPackages DataPackages => _application.Services.GetRequiredService<IDataPackages>();
+
     /// <summary>
     /// Runs the job that checks the stored keys, now, as the scheduler does on the hour. A test
     /// runs it itself to see what a run does at a time of its choosing.

@@ -22,13 +22,25 @@ public partial class PromptPrivacyTests
 
     private static readonly DateTimeOffset Morning = new(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
 
-    /// <summary>A data package as a cycle writes one: candles, indicators, and what Futures adds.</summary>
+    /// <summary>
+    /// A data package as a cycle writes one: candles, indicators, open orders, and what Futures
+    /// adds. <see cref="DataPackageTests"/> composes the packages that the application builds.
+    /// </summary>
     private const string Data =
-        "Closed 4H candles, oldest first (open, high, low, close, volume):\n" +
-        "61000.5, 61420, 60880.25, 61310, 1842.337\n" +
-        "61310, 61975.5, 61200, 61890.75, 2210.004\n" +
-        "Indicators: SMA20 61122.48, SMA50 60310.9, RSI14 58.2, ATR14 512.75, volume average 1930.11\n" +
-        "Mark price 61888.1, funding rate 0.0100%, next funding 2026-11-12T16:00:00Z, open interest 82450.5 BTC";
+        "Closed 4H candles: 2, oldest first, through 2026-11-12T08:00Z\n" +
+        "Each line: close time (UTC), open, high, low, close, volume\n" +
+        "2026-11-12T04:00Z, 61000.5, 61420, 60880.25, 61310, 1842.337\n" +
+        "2026-11-12T08:00Z, 61310, 61975.5, 61200, 61890.75, 2210.004\n" +
+        "Indicators at that close, computed by the system from 498 closed 4H candles:\n" +
+        "- Moving averages of the close: SMA20 61122.48, SMA50 60310.9, SMA200 59876.12, EMA20 61190.33, EMA50 60402.71\n" +
+        "- Relative strength: RSI14 58.2\n" +
+        "- Average true range: ATR14 512.75\n" +
+        "- Volume: 2210.004 in the latest candle, average of 20 candles 1930.11\n" +
+        "\n" +
+        "Open orders:\n" +
+        "- stop-loss: sell 0.015 at 59500\n" +
+        "\n" +
+        "Futures: mark price 61888.1, funding rate 0.01%, next funding 2026-11-12T16:00Z, open interest 82450.5 BTC";
 
     /// <summary>Lessons as a model writes them after a closed position (FR-EXP-6).</summary>
     private static readonly string[] Lessons =

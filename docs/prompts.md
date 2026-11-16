@@ -6,7 +6,7 @@ The instructions of every role tell its model to treat news, social posts, and w
 
 The modules are selected from the settings of the agent: one for each of its two possible markets, one for each of its four possible timeframes, and the one of the Aggressive profile (FR-PRM-2 to FR-PRM-5). Whatever asks for a prompt hands over no template, so a module that does not go with the agent cannot be chosen (FR-PRM-4).
 
-What is built is the templates, with the full wording of the modules and the instructions about untrusted content, and what composes a prompt from them: their table, their seed, the rule of their versions, what reads the ones in use, what composes the prompt of a role call and keeps secrets and personal data out of it, and the page that shows a user the prompts of an agent. A cycle starts when a candle closes, as [cycles.md](cycles.md) describes, and does nothing yet: nothing calls a model, and no role output is stored. See "Not built yet".
+What is built is the templates, with the full wording of the modules and the instructions about untrusted content, and what composes a prompt from them: their table, their seed, the rule of their versions, what reads the ones in use, what composes the prompt of a role call and keeps secrets and personal data out of it, and the page that shows a user the prompts of an agent. A cycle starts when a candle closes and builds its data package, as [cycles.md](cycles.md) describes, and does nothing more yet: nothing calls a model, and no role output is stored. See "Not built yet".
 
 The code is in `src/Ecnanib/DecisionEngine`, and the page in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, and by `SeedDataTests` in `tests/Ecnanib.Tests/Persistence`.
 
@@ -166,7 +166,7 @@ public sealed record ComposedPrompt(string Text, IReadOnlyList<PromptTemplate> T
 | The timeframe module | `# Timeframe` | The template of the timeframe of the context. |
 | The Aggressive profile module | `# Profile` | The template of the profile. |
 | The context of the agent | `# Agent context` | `PromptParts.Agent`: the symbol, the equity, the position, and the limits. |
-| The data package | `# Data package` | `PromptParts.DataPackage`, as the text that whatever builds the package writes (FR-CYC-2). |
+| The data package | `# Data package` | `PromptParts.DataPackage`, as the text that whatever builds the package writes (FR-CYC-2): `DataPackage.Text`. See "What a role reads" in [cycles.md](cycles.md). |
 | Recalled lessons | `# Recalled lessons` | `PromptParts.Lessons`, numbered in the order they were recalled in (FR-EXP-7). |
 
 | Rule | Detail |
@@ -184,7 +184,7 @@ public sealed record ComposedPrompt(string Text, IReadOnlyList<PromptTemplate> T
 | **A prompt that would hold a secret, an email address, or an account identifier is not composed** (FR-PRM-9). | Every part passes `PromptScreen` before it is placed, and `ComposeAsync` throws `PromptRefusedException` for a part that holds one, however the part came to hold it. See "What a prompt never holds". |
 
 - **Whatever runs a cycle decides what a call of a role is given** (FR-TEAM-6): which text of the data package, and which lessons. The composition places them as they are, and adds nothing to them. It places neither when one of them holds what a prompt never holds. The lessons are for the Strategist and the Risk Manager (FR-EXP-7): what recalls them hands the two analysts none.
-- **The equity and the position are handed over.** Nothing keeps the results or the position of an agent yet, so the context takes both from whoever asks.
+- **The equity and the position are handed over.** The data package of a cycle has both, from whatever keeps positions and orders, and `DataPackage.PartsWith(lessons)` is the parts of a prompt from a package: its context of the agent, its text, and the lessons of the call. Nothing keeps the results or the position of an agent yet, so a package says that the agent holds nothing, and that its equity is its allocated capital: see "What an agent holds" in [cycles.md](cycles.md).
 - It composes, and nothing more: it calls no model, stores nothing, and asks for no owner. Whose agent a prompt is for is settled by whoever asks.
 
 A prompt, from its fifth part on, for an agent on Futures that has no position:
@@ -251,7 +251,7 @@ A position is one line: `Position: short, quantity 0.015, entry price 61000, sto
 | The templates | The first four parts | The service's own text, the same for every user. |
 | The market, the timeframe, the symbol, the asset it is priced in, and the limits | The context of the agent | Agent settings |
 | The equity and the open position | The context of the agent | Position state |
-| The data package | Its own part | Market data |
+| The data package | Its own part | Market data, with the indicators that the system computes from it. The open orders of the agent are in it as well, which are position state. |
 | The lessons | Its own part | Lessons |
 
 - **[`PromptRules.cs`](../tests/Ecnanib.Tests/DecisionEngine/PromptRules.cs) is the source of truth for what is sent.** `PromptRules.Sent` lists every value that a caller hands to `IPromptComposition`, down to the numbers, each with its kind. A value that is added to `PromptParts` or to `AgentContext` is in no list, and fails `PromptRulesTests` until someone lists it, and so decides that a provider is sent it. The four kinds are the four of the requirement.
@@ -297,8 +297,8 @@ Whether users may edit prompts, or add instructions of their own for an agent, i
 ## Not built yet
 
 - The full wording of the instructions of the roles, which arrives as later versions of their templates, with the schema of what each role answers (FR-TEAM-6). The roles are in version 2, which is the outline of the specification with the instructions about untrusted content.
-- What hands a prompt its parts: the data package of a cycle (FR-CYC-2), the lessons that are recalled for the Strategist and the Risk Manager (FR-EXP-7), and the equity and the position of an agent. With the role pipeline come the reports of the analysts, which the Strategist is given, and the plan, which the Risk Manager is given (FR-TEAM-6).
-- Calling a model with a composed prompt (FR-TEAM-6). Nothing asks `IPromptComposition` but its tests: a cycle that starts is handed its agent, its roles, and its candles, and what it does with them is not built.
+- What hands a prompt its lessons, which are recalled for the Strategist and the Risk Manager (FR-EXP-7), and what keeps the equity and the position of an agent. The data package of a cycle is built (FR-CYC-2), and says both of an agent that holds nothing: see "The data package" in [cycles.md](cycles.md). With the role pipeline come the reports of the analysts, which the Strategist is given, and the plan, which the Risk Manager is given (FR-TEAM-6).
+- Calling a model with a composed prompt (FR-TEAM-6). Nothing asks `IPromptComposition` but its tests: a cycle that starts builds its data package, and asks for no prompt.
 - Holding a plan to the actions that the module of its market allows (FR-CYC-4). The module tells a role which they are.
 - Rejecting a result that is outside its schema, or that has a value outside the allowed ranges (NFR-SEC-7). The instructions ask for the schema alone, and what validates the answer of a role comes with the role pipeline (FR-TEAM-6).
 - Keeping addresses and ids out of the text that a model wrote, before it is handed over as part of a data package or as a lesson. A prompt that would hold one is refused, and the cycle that asked for it makes no decision.

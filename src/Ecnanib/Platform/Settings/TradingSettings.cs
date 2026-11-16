@@ -3,21 +3,23 @@ using Ecnanib.Shared;
 namespace Ecnanib.Platform.Settings;
 
 /// <summary>
-/// The <c>Trading</c> section: the default team, the Aggressive profile, the stale limits, and
-/// how many cycles run at once.
+/// The <c>Trading</c> section: the default team, the Aggressive profile, the stale limits, how
+/// many cycles run at once, and how many candles the data package of a cycle holds.
 /// </summary>
 public sealed record TradingSettings(
     DefaultRolesSettings DefaultRoles,
     AggressiveSettings Aggressive,
     StaleSecondsSettings StaleSeconds,
-    CycleSettings Cycles)
+    CycleSettings Cycles,
+    DataPackageSettings DataPackage)
 {
     internal static TradingSettings Read(SettingsReader file, AiProvidersSettings aiProviders) =>
         new(
             DefaultRolesSettings.Read(file, aiProviders),
             AggressiveSettings.Read(file),
             StaleSecondsSettings.Read(file),
-            CycleSettings.Read(file));
+            CycleSettings.Read(file),
+            DataPackageSettings.Read(file));
 }
 
 /// <summary>The provider that fills each of the four roles on a new agent (FR-TEAM-3).</summary>
@@ -138,4 +140,25 @@ public sealed record CycleSettings(int MaxPerProvider, int MaxPerKey)
         new(
             file.WholeNumber("Trading:Cycles:MaxPerProvider"),
             file.WholeNumber("Trading:Cycles:MaxPerKey"));
+}
+
+/// <summary>
+/// How many candles the data package of a cycle holds (FR-CYC-2). The indicators of the package
+/// are computed from every closed candle that the exchange gave, whatever these say, so fewer
+/// candles make a prompt shorter and no indicator less exact. See docs/cycles.md.
+/// </summary>
+/// <param name="Candles">The most recent closed candles of the agent's own timeframe.</param>
+/// <param name="ContextCandles">The most recent closed candles of each higher timeframe, which are the context of the agent's own (SRS 4.6).</param>
+public sealed record DataPackageSettings(int Candles, int ContextCandles)
+{
+    /// <summary>
+    /// The most candles that a package holds of one timeframe: what one read of the exchange
+    /// gives. There is no range of the past to ask for, so a package cannot hold more.
+    /// </summary>
+    public const int MostCandles = 498;
+
+    internal static DataPackageSettings Read(SettingsReader file) =>
+        new(
+            file.WholeNumber("Trading:DataPackage:Candles", maximum: MostCandles),
+            file.WholeNumber("Trading:DataPackage:ContextCandles", maximum: MostCandles));
 }

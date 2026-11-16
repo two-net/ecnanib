@@ -137,8 +137,9 @@ internal static class PromptRules
         ["ComposeAsync(parts).Agent.Symbol"] = "A symbol of Binance that the configuration file lists, such as BTCUSDT.",
         ["ComposeAsync(parts).Agent.QuoteAsset"] = "The asset that the symbol is priced in, as Binance names it, such as USDT.",
         ["ComposeAsync(parts).DataPackage"] =
-            "The data package of a cycle, which the service writes from market data and from what the roles answered " +
-            "before. It names no user and no agent.",
+            "The data package of a cycle, which the service writes from market data, with the indicators that it " +
+            "computes and the open orders of the agent, and from what the roles answered before. It names no user " +
+            "and no agent.",
         ["ComposeAsync(parts).Lessons[]"] =
             "A lesson that a model wrote about a closed trade: the setup, what was expected, what happened, and a " +
             "takeaway. It names no user and no agent.",

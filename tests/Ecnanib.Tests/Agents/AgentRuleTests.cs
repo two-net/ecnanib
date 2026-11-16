@@ -161,6 +161,25 @@ public class AgentRuleTests
         Assert.Equal(
             Timeframes.All.Select(timeframe => timeframe.Code()).Order(StringComparer.Ordinal),
             SeededSubjectsOf(PromptTemplateKind.Timeframe));
+
+        // The data window: the candles of the higher timeframes that are the context of each
+        // (SRS 4.6), which the data package of a cycle holds. They are the ones that the module
+        // of the timeframe names, so what a role is told and what it is handed are the same.
+        string[] candleCodes = [.. Enum.GetValues<CandleInterval>().Select(TimeframeContext.Code)];
+
+        Assert.Equal(["15m", "1H", "4H", "1D", "1W"], candleCodes);
+        Assert.All(Timeframes.All, timeframe =>
+        {
+            Assert.Equal(timeframe.Code(), TimeframeContext.Code(CandleIntervals.Of(timeframe)));
+
+            var context = SeededTextOf(PromptTemplateKind.Timeframe, timeframe.Code())
+                .Split('\n')
+                .Single(paragraph => paragraph.StartsWith("Context: ", StringComparison.Ordinal));
+
+            Assert.Equal(
+                candleCodes.Where(code => code != timeframe.Code() && context.Contains(code, StringComparison.Ordinal)),
+                TimeframeContext.Of(timeframe).Select(TimeframeContext.Code));
+        });
     }
 
     [Fact]
@@ -177,7 +196,14 @@ public class AgentRuleTests
     /// The subjects that the seeded prompt templates of a kind are for, in order: of the
     /// templates in use, since a template that was edited is seeded in every version it had.
     /// </summary>
-    private static IReadOnlyList<string> SeededSubjectsOf(PromptTemplateKind kind)
+    private static IReadOnlyList<string> SeededSubjectsOf(PromptTemplateKind kind) =>
+        [.. SeededInUse(kind).Select(row => (string)row[nameof(PromptTemplate.Subject)]!).Order(StringComparer.Ordinal)];
+
+    /// <summary>The text of the seeded prompt template of a kind and subject that is in use.</summary>
+    private static string SeededTextOf(PromptTemplateKind kind, string subject) =>
+        (string)SeededInUse(kind).Single(row => (string)row[nameof(PromptTemplate.Subject)]! == subject)[nameof(PromptTemplate.Text)]!;
+
+    private static IReadOnlyList<IDictionary<string, object?>> SeededInUse(PromptTemplateKind kind)
     {
         using var context = ModelOnly.Context();
 
@@ -189,9 +215,7 @@ public class AgentRuleTests
         [
             .. model.FindEntityType(typeof(PromptTemplate))!.GetSeedData()
                 .Where(row => (PromptTemplateKind)row[nameof(PromptTemplate.Kind)]! == kind)
-                .Where(row => (bool)row[nameof(PromptTemplate.IsActive)]!)
-                .Select(row => (string)row[nameof(PromptTemplate.Subject)]!)
-                .Order(StringComparer.Ordinal),
+                .Where(row => (bool)row[nameof(PromptTemplate.IsActive)]!),
         ];
     }
 }

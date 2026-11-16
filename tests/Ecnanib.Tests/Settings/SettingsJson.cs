@@ -90,7 +90,8 @@ internal sealed class SettingsJson
               "MaxEntryDistancePercent": [ 0.2, 0.8, 2 ]
             },
             "StaleSeconds": { "15m": 100, "1H": 200, "4H": 400, "1D": 800 },
-            "Cycles": { "MaxPerProvider": 40, "MaxPerKey": 3 }
+            "Cycles": { "MaxPerProvider": 40, "MaxPerKey": 3 },
+            "DataPackage": { "Candles": 120, "ContextCandles": 30 }
           },
           "Experience": {
             "LessonsPerPrompt": 4,

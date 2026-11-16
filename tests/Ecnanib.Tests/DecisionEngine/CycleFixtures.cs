@@ -66,16 +66,24 @@ internal sealed class CyclesApplication : IDisposable
     /// </param>
     /// <param name="reconciliation">What reconciles, when the test has something that does. Nothing does yet.</param>
     /// <param name="database">A database that an earlier application of the test has used.</param>
+    /// <param name="buildsPackages">
+    /// Whether a cycle that starts does what the application has it do, which is to build its
+    /// data package, on an exchange of the test's that has all the market data:
+    /// <see cref="Market"/>. Unless a test says so, the inside of a cycle is <see cref="Cycles"/>,
+    /// and the exchange is <see cref="Candles"/>, which is asked for the candles of a close alone.
+    /// </param>
     public CyclesApplication(
         DateTimeOffset now,
         int? maxPerProvider = null,
         int? maxPerKey = null,
         bool storedAgents = false,
         StandInReconciliation? reconciliation = null,
-        TestDatabase? database = null)
+        TestDatabase? database = null,
+        bool buildsPackages = false)
     {
         Clock = new TestClock(now);
         Candles = new StandInCandles(Clock);
+        Market = buildsPackages ? new StandInMarket(Clock) : null;
         Agents = storedAgents ? null : new StandInRunningAgents();
 
         Application = new AccountsApplication(
@@ -89,8 +97,16 @@ internal sealed class CyclesApplication : IDisposable
             },
             host: builder => builder.ConfigureServices(services =>
             {
-                services.AddSingleton<IExchangeMarketData>(Candles);
-                services.AddSingleton<IDecisionCycle>(Cycles);
+                if (Market is null)
+                {
+                    services.AddSingleton<IExchangeMarketData>(Candles);
+                    services.AddSingleton<IDecisionCycle>(Cycles);
+                }
+                else
+                {
+                    // The inside of a cycle is the application's own, which builds a data package.
+                    services.AddSingleton<IExchangeMarketData>(Market);
+                }
 
                 if (Agents is not null)
                 {
@@ -119,6 +135,12 @@ internal sealed class CyclesApplication : IDisposable
 
     /// <summary>What stands for the market data of the exchange.</summary>
     public StandInCandles Candles { get; }
+
+    /// <summary>
+    /// What stands for the market data of the exchange where the cycles build their data
+    /// packages, in place of <see cref="Candles"/>: it has what a package is built from.
+    /// </summary>
+    public StandInMarket? Market { get; }
 
     /// <summary>The agents that run, where they are not those of the database.</summary>
     public StandInRunningAgents? Agents { get; }

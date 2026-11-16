@@ -89,6 +89,7 @@ public class SettingsFileTests
             settings.Trading.Aggressive);
         Assert.Equal(new StaleSecondsSettings(100, 200, 400, 800), settings.Trading.StaleSeconds);
         Assert.Equal(new CycleSettings(MaxPerProvider: 40, MaxPerKey: 3), settings.Trading.Cycles);
+        Assert.Equal(new DataPackageSettings(Candles: 120, ContextCandles: 30), settings.Trading.DataPackage);
 
         Assert.Equal(new ExperienceSettings(4, 15, 25, new ExperienceBoardSettings(6, 60)), settings.Experience);
         Assert.Equal(new RetentionSettings(30, 180, 45, 365), settings.Retention);
@@ -199,6 +200,16 @@ public class SettingsFileTests
         { "Trading:Cycles:MaxPerKey", "0", "Trading:Cycles:MaxPerKey" },
         { "Trading:Cycles:MaxPerKey", "\"3\"", "Trading:Cycles:MaxPerKey" },
 
+        // How many candles the data package of a cycle holds (FR-CYC-2): one at least, and no
+        // more than one read of the exchange gives.
+        { "Trading:DataPackage", "null", "Trading:DataPackage" },
+        { "Trading:DataPackage", "{ \"Candles\": 120 }", "Trading:DataPackage:ContextCandles" },
+        { "Trading:DataPackage:Candles", "0", "Trading:DataPackage:Candles" },
+        { "Trading:DataPackage:Candles", "499", "Trading:DataPackage:Candles" },
+        { "Trading:DataPackage:ContextCandles", "0", "Trading:DataPackage:ContextCandles" },
+        { "Trading:DataPackage:ContextCandles", "499", "Trading:DataPackage:ContextCandles" },
+        { "Trading:DataPackage:ContextCandles", "\"30\"", "Trading:DataPackage:ContextCandles" },
+
         // How often the account entry points may be tried (NFR-SEC-4).
         { "Limits:SignIn", "null", "Limits:SignIn" },
         { "Limits:SignIn:PerClient", "0", "Limits:SignIn:PerClient" },
@@ -213,6 +224,9 @@ public class SettingsFileTests
         { "Limits:MaxAgentsPerUsers", "10", "Limits:MaxAgentsPerUsers" },
         { "Trading:StaleSeconds:1W", "3600", "Trading:StaleSeconds:1W" },
         { "Trading:Cycles:MaxPerUser", "10", "Trading:Cycles:MaxPerUser" },
+
+        // The periods of the indicators are fixed: the file has no place for one.
+        { "Trading:DataPackage:RsiPeriod", "14", "Trading:DataPackage:RsiPeriod" },
 
         // The product has one trading profile, Aggressive: the file has no place for another (FR-RSK-1).
         { "Trading:Conservative", "{ \"RiskPerTradePercent\": [0.1, 0.5, 1] }", "Trading:Conservative" },

@@ -669,7 +669,8 @@ The outline below shows what the single configuration file contains. Key names a
       "MaxEntryDistancePercent": [0.1, 1, 3]
     },
     "StaleSeconds": { "15m": 120, "1H": 300, "4H": 600, "1D": 900 },
-    "Cycles": { "MaxPerProvider": 250, "MaxPerKey": 4 }
+    "Cycles": { "MaxPerProvider": 250, "MaxPerKey": 4 },
+    "DataPackage": { "Candles": 200, "ContextCandles": 50 }
   },
   "Experience": {
     "LessonsPerPrompt": 5,

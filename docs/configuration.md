@@ -60,6 +60,8 @@ Each of `Binance:Spot` and `Binance:Futures` has a `BaseUrl` under `Live` and un
 
 `Trading:Cycles` says how many of the cycles that share a candle boundary run at once (FR-CYC-11). `MaxPerProvider` is the most cycles that use one AI provider at once, of all users together, and `MaxPerKey` the most that use the key of one user for one provider at once. Each is 1 or more. A cycle uses every provider that a role of its agent's team has, so with teams of four providers `MaxPerProvider` is also how many cycles run at once. A cycle that finds no place waits in the queue. See "The queue" in [cycles.md](cycles.md).
 
+`Trading:DataPackage` says how many candles the data package of a cycle holds (FR-CYC-2). `Candles` is the most recent closed candles of the agent's own timeframe, and `ContextCandles` those of each higher timeframe that is its context. Each is from 1 to 498, which is what one read of the exchange gives. Fewer candles make a prompt shorter, and so a call of a model cheaper, and no indicator less exact: the indicators are computed from every candle that was read. Their periods are fixed, and are no settings. See "The data package" in [cycles.md](cycles.md).
+
 `Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
 
 ### Permissions
