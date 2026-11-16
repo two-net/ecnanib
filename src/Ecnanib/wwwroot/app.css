@@ -197,6 +197,75 @@ code {
         border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
     }
 
+/* The agents of a user: one table, which scrolls sideways by itself on a narrow screen, as the
+   catalog does. The last cell of a row holds what can be done with the agent, side by side. */
+.agents {
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+}
+
+    .agents table {
+        border-collapse: collapse;
+        min-width: 50rem;
+    }
+
+    /* Read out as the name of the table, and not shown: the heading above says the same. */
+    .agents caption {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .agents th, .agents td {
+        padding: 0.25rem 1rem 0.25rem 0;
+        text-align: start;
+        vertical-align: baseline;
+    }
+
+    .agents tbody th {
+        font-weight: 600;
+    }
+
+    .agents tbody tr {
+        border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    }
+
+    .agents td > form {
+        display: inline;
+        margin-inline-end: 0.75rem;
+    }
+
+        .agents td > form > button[type=submit] {
+            margin-top: 0;
+        }
+
+/* The form of an agent: a choice fills its field as an input does, the button that shows the
+   symbols of a market sits under the choice of the market, and the risk settings are one group. */
+.field > select {
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.field > button[type=submit] {
+    margin-top: 0.5rem;
+}
+
+fieldset {
+    margin: 0 0 1rem;
+    max-width: 30rem;
+}
+
+.agent-roles dt {
+    font-weight: 600;
+}
+
+.agent-roles dd {
+    margin: 0 0 0.5rem;
+}
+
 /* The bar that says who is signed in, with the sign-out button in line with its links. On a
    narrow screen what does not fit goes to the next line whole, and is not squeezed. */
 .account-bar {

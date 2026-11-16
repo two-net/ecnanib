@@ -132,7 +132,7 @@ internal sealed class AccountDeletion(
 
     /// <summary>
     /// Whether an agent of a user is not stopped, as the components that keep agents say inside
-    /// the transaction of the caller. None is registered until agents are built.
+    /// the transaction of the caller. Agents registers the one there is.
     /// </summary>
     private async Task<bool> HasAgentsNotStoppedAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken)
     {

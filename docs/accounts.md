@@ -406,7 +406,8 @@ public interface IAgentActivity
 
 - **It is asked inside the transaction that deletes the account,** with the context that holds it.
 - **An implementation locks the rows of the agents it reads** (`FOR UPDATE`). The lock on the account keeps an agent from being created, and does not keep one that exists from being started. With the rows locked, an agent that is started at the same moment is seen as not stopped, or waits and finds its account gone.
-- **Nothing implements it yet,** because agents are not built. Until then no user has an agent, and nothing stands in the way. `AccountDeletionTests` has a test that fails as soon as Agents has a table of its own and no implementation.
+- **Agents answers it.** An agent stands in the way while it is active: in any state other than Draft or Stopped. A draft was never started, and stands in the way no more than a stopped agent. See [agents.md](agents.md).
+- Nothing starts an agent yet, so no agent is active, and nothing stands in the way. `AccountDeletionTests` has a test that fails when Agents has a table of its own and no implementation.
 
 ### That nothing is left
 
@@ -428,6 +429,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `auditEvents` | Each event of the account in the audit trail: the action, what it was done to, when, and the IP address it came from. |
 | `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, when it was saved, what its last check found and when, and the identifiers of the models that the provider listed to it, or nothing where it has listed none yet. Never the key. |
 | `exchangeKeys` | Each Binance credential that is stored: its id, the environment, the last four characters of the API key, when it was saved, what its last check found and when, and what Binance said it may do: trade on Spot, trade on Futures, and work only from listed addresses. Never a key. |
+| `agents` | Each agent: its id, its name, its mode, market, symbol, and timeframe, its allocated capital and the asset it is in, its risk settings, its state with its cause and since when, and when it was created. |
 
 | Rule | Detail |
 |---|---|
@@ -452,19 +454,19 @@ public interface IExportedPart
 
 - **A part is a section of the file,** beside the ones of Accounts, under the name it gives. It is there also when the user has no such rows, as an empty list.
 - **A part asks for the rows of the user it is given,** with `OwnedBy`, and holds no secret.
-- Credentials hands over `aiKeys` and `exchangeKeys` this way. See [credentials.md](credentials.md).
+- Credentials hands over `aiKeys` and `exchangeKeys` this way, and Agents hands over `agents`. See [credentials.md](credentials.md) and [agents.md](agents.md).
 
 The log has `User {UserId} exported their data`, and nothing of the data.
 
 ## The audit trail
 
-Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). Accounts records its own: sign-ins, re-authentications, new passwords, and the changes to two-factor authentication. Credentials records the changes to a key. The other components record theirs when they are built: see "What is not recorded yet".
+Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). Accounts records its own: sign-ins, re-authentications, new passwords, and the changes to two-factor authentication. Credentials records the changes to a key, and Agents the changes to the risk settings of an agent. What is not built records its own when it is: see "What is not recorded yet".
 
 | Column | What it holds |
 |---|---|
 | `user_id` | The user who did it. For the one action that the service does itself, `KeyRejected`, the user it was done for: the owner of the key. |
 | `action` | What was done, as the name of a member of `AuditAction`. |
-| `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, and `exchange-key:<id>` for a Binance credential. |
+| `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, `exchange-key:<id>` for a Binance credential, and `agent:<id>` for an agent. |
 | `occurred_at` | When. |
 | `origin` | The IP address the request came from, as the connection knows it, or nothing when it does not, or when no request did it. |
 
@@ -503,7 +505,7 @@ Two actions are recorded though the requirement does not name them. A re-authent
 
 ### Recording an event
 
-Whatever does one of the actions of the requirement records it, in its own transaction. Agents are not built yet. Starting one will record it like this:
+Whatever does one of the actions of the requirement records it, in its own transaction. Agents records a change to a risk setting of an agent this way. Nothing starts an agent yet. Starting one will record it like this:
 
 ```csharp
 await AuditTrail.RecordAsync(
@@ -524,13 +526,14 @@ A component that may not use Accounts, such as the Decision Engine, records noth
 
 | Action of the requirement | Waits for |
 |---|---|
-| Agent start, pause, and stop | Agents |
-| Mode switches | Agents |
-| Manual closes | Agents, which takes the request. The Decision Engine places the order. |
-| Risk setting changes | Agents |
+| Agent start, pause, and stop | The controls of an agent |
+| Mode switches | The controls of an agent |
+| Manual closes | The controls of an agent. Agents takes the request, and the Decision Engine places the order. |
 | Operator actions | The first operator function |
 
-`AuditRulesTests` fails for an action that still waits once what it waits for is built: once the component has a table of its own, or, for the operator actions, once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`. It also fails for a member of `AuditAction` that no marked test shows being recorded.
+Risk setting changes are recorded, as `AgentRiskSettingsChanged`: see [agents.md](agents.md).
+
+`AuditRulesTests` fails for an action that still waits once what it waits for is built. For the controls of an agent, that is once Agents has an operation that does more than keep the settings of an agent: see "What waits for agents that can run" in [agents.md](agents.md). For the operator actions, it is once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`. It also fails for a member of `AuditAction` that no marked test shows being recorded.
 
 ## Passwords
 
@@ -592,6 +595,8 @@ var answer = await fairUse.MayCreateAgentAsync(userId, agentsOwned, cancellation
 | `EmailNotVerified` | The user has not verified their address (FR-ACC-1). |
 | `AgentLimitReached` | The user has `Limits:MaxAgentsPerUser` agents already. |
 
+Agents asks it for a new agent and for a copy of one, with the count that it reads under its lock on the account: see "Creating, changing, copying, and deleting" in [agents.md](agents.md).
+
 ## Personal data
 
 Personal data is limited to the email address, the password hash, and preferences (NFR-SEC-9).
@@ -607,6 +612,7 @@ Personal data is limited to the email address, the password hash, and preference
 - [`PersonalDataRules.cs`](../tests/Ecnanib.Tests/Persistence/PersonalDataRules.cs) is the source of truth. It lists every column of `users` and of the tables of users' rows with what it holds, unless the type of the column cannot say who someone is: an id, a flag, a number, a time, or one of a fixed set of names.
 - `PersonalDataTests` reads the model. A column that is added and not listed fails it, so what is kept about a person is decided in one visible place. The two lists of personal data are pinned there.
 - The rule reads types and not meanings. A time, such as when a session was last used, is listed nowhere. It is in the export, and goes with the account.
+- **The name of an agent is what its user typed,** to tell their agents apart, and is listed as that. Nothing asks a user for anything about themselves in it. It is shown to its user alone, is in the export, is in no log event, and goes with the account. See [agents.md](agents.md).
 - The id of an account tells nothing about the person, so it is not personal data. See [ownership.md](ownership.md).
 - The logs hold neither an address nor an origin: they name an account by its id. See [logging.md](logging.md).
 
@@ -652,11 +658,10 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
 - Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
 - The third sensitive action: switching an agent to Live. It asks `IReauthentication` first when it is built. See "Re-authentication".
-- What Agents says about the agents of a user before an account is deleted. It implements `IAgentActivity` when agents are built. See "Deleting the account".
-- The parts of the export that Agents and Experience keep: agents and lessons. Each hands its part over as an `IExportedPart` when it is built, as Credentials does for the keys. See "Exporting your data".
+- The part of the export that Experience keeps: lessons. It hands its part over as an `IExportedPart` when it is built, as Credentials does for the keys and Agents for the agents. See "Exporting your data".
 - Preferences. None is stored yet. When one is, it is personal data of an allowed kind, and it is in the export.
 - Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
-- The rest of the audit trail: the actions of Agents and of operators, each of which records its own when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
+- The rest of the audit trail: starting, pausing, and stopping an agent, switching its mode, closing a position by hand, and the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.

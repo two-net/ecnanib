@@ -261,6 +261,103 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Agents.Agent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("AllocatedCapital")
+                        .HasColumnType("numeric")
+                        .HasColumnName("allocated_capital");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<decimal>("DailyLossPercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("daily_loss_percent");
+
+                    b.Property<decimal>("DrawdownPercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("drawdown_percent");
+
+                    b.Property<int>("LeverageCap")
+                        .HasColumnType("integer")
+                        .HasColumnName("leverage_cap");
+
+                    b.Property<string>("Market")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("market");
+
+                    b.Property<decimal>("MaxEntryDistancePercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("max_entry_distance_percent");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("mode");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("QuoteAsset")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("quote_asset");
+
+                    b.Property<decimal>("RiskPerTradePercent")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk_per_trade_percent");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<string>("StateCause")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state_cause");
+
+                    b.Property<DateTimeOffset>("StateChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("state_changed_at");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("symbol");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("timeframe");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_agents");
+
+                    b.HasIndex("UserId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_agents_user_id_name");
+
+                    b.HasIndex("UserId", "Mode", "Market", "Symbol")
+                        .IsUnique()
+                        .HasDatabaseName("ix_agents_user_id_mode_market_symbol")
+                        .HasFilter("state NOT IN ('Draft', 'Stopped')");
+
+                    b.ToTable("agents", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.AiProviderGateway.AiProvider", b =>
                 {
                     b.Property<string>("Code")
@@ -802,6 +899,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_sessions_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Agents.Agent", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agents_users_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Catalog.AiModel", b =>

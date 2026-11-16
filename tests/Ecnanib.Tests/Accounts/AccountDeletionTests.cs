@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using Ecnanib.Accounts;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Logging;
@@ -50,8 +51,8 @@ public class AccountDeletionTests
 
         // Grace has a row in every table that holds rows of users: what she accepted, her
         // recovery codes, the event of turning two-factor authentication on, a session on her
-        // desk, a sign-in on her phone that waits for its code, and a key of an AI provider and
-        // of Binance.
+        // desk, a sign-in on her phone that waits for its code, a key of an AI provider and of
+        // Binance, and an agent, which is a draft.
         var (grace, gracesApp, _) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
@@ -59,11 +60,13 @@ public class AccountDeletionTests
         Assert.Equal("/", (await gracesDesk.EnterCodeAsync(gracesApp.CodeAt(clock.GetUtcNow()))).Path);
         await gracesPhone.SignInAsync(Grace);
         await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
+        await application.GiveAgentAsync(grace.Id, clock.GetUtcNow());
 
         // So has Ada, who is signed in on two browsers. Her stored keys go with her account, at
-        // once (FR-ACC-9).
+        // once (FR-ACC-9), and so do her agents, none of which is active.
         var (ada, app, _) = await application.RegisterWithTwoFactorAsync(Ada, clock);
         await application.GiveKeysAsync(ada.Id, clock.GetUtcNow());
+        await application.GiveAgentAsync(ada.Id, clock.GetUtcNow());
         using var desk = application.CreateClient();
         using var tablet = application.CreateClient();
         using var phone = application.CreateClient();
@@ -251,8 +254,8 @@ public class AccountDeletionTests
         using var application = new EcnanibApplicationFactory();
         using var model = ModelOnly.Context();
 
-        // Agents are not built yet, and nothing answers for them. As soon as the component has
-        // a table of its own, it must: Accounts cannot look at agents itself.
+        // Agents has a table of its own, so it must answer: Accounts cannot look at agents
+        // itself. What it answers is shown in AgentPageTests.
         var storesRows = model.Model.GetEntityTypes().Any(entity => IsOfAgents(entity.ClrType));
         var answers = application.Services.GetServices<IAgentActivity>().Any(activity => IsOfAgents(activity.GetType()));
 

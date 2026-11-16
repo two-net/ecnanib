@@ -59,6 +59,13 @@ public enum AuditAction
     /// NFR-LEG-2). The event carries the owner of the key, and no origin: no request did it.
     /// </summary>
     KeyRejected,
+
+    /// <summary>
+    /// A risk setting of an agent was changed: its risk per trade, its leverage cap, its daily
+    /// loss limit, its drawdown limit, or how far an entry may be from the price (FR-RSK-2). The
+    /// target names the agent by its id, and the event holds no number.
+    /// </summary>
+    AgentRiskSettingsChanged,
 }
 
 /// <summary>

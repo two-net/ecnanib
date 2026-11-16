@@ -1,0 +1,126 @@
+@attribute [Route(WebUiModule.AgentsPath)]
+@attribute [Authorize]
+@using Ecnanib.Agents
+@using Ecnanib.Shared
+@inject IStoredAgents Agents
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page lists the agents of
+    the user who is signed in, and no others (FR-AGT-1). A form of the page makes a copy of an
+    agent: the forms are on the page whenever one is posted, for the agents that are stored then.
+    What a user named an agent is written as text, like everything else on a page.
+*@
+
+<PageTitle>Your agents</PageTitle>
+
+<h1 id="agents-heading">Your agents</h1>
+
+<p>An agent trades one symbol on one Binance market, on one timeframe, with the capital and the risk settings you give it. A new agent is a draft in Demo: it trades nothing until it is started.</p>
+
+@if (_notCopied is not null)
+{
+    <p class="form-error" role="alert">@_notCopied</p>
+}
+
+@if (_list is not null)
+{
+    @if (_list.Agents.Count == 0)
+    {
+        <p>You have no agent yet.</p>
+    }
+    else
+    {
+        @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
+        <div class="agents" role="region" aria-labelledby="agents-heading" tabindex="0">
+            <table>
+                <caption>Your agents</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Mode</th>
+                        <th scope="col">Market</th>
+                        <th scope="col">Symbol</th>
+                        <th scope="col">Timeframe</th>
+                        <th scope="col">Capital</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var agent in _list.Agents)
+                    {
+                        <tr>
+                            <th scope="row"><a href="@WebUiModule.AgentPath(agent.Id)">@agent.Name</a></th>
+                            <td>@agent.Mode</td>
+                            <td>@agent.Market</td>
+                            <td><code>@agent.Symbol</code></td>
+                            <td>@agent.Timeframe.Code()</td>
+                            <td>@AgentPages.Capital(agent)</td>
+                            <td>@AgentPages.Describe(agent.State)</td>
+                            <td>
+                                @* Named after the agent, so that each control says what it is for by itself. *@
+                                <form method="post" @formname="@AgentPages.CloneForm(agent.Id)" @onsubmit="() => CloneAsync(agent)">
+                                    <AntiforgeryToken />
+
+                                    <button type="submit">Copy @agent.Name</button>
+                                </form>
+                                <a href="@WebUiModule.DeleteAgentPath(agent.Id)">Delete @agent.Name</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <p>You have @_list.Agents.Count of @_list.MaxAgents agents.</p>
+
+    @if (AgentPages.Says(_list.Creation, _list.MaxAgents) is { } notNow)
+    {
+        <p role="status">@notNow</p>
+    }
+    else
+    {
+        <p><a href="@WebUiModule.NewAgentPath">Create an agent</a></p>
+    }
+}
+
+@code {
+    private StoredAgentList? _list;
+    private string? _notCopied;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is { } request)
+        {
+            _list = await Agents.ListAsync(request);
+        }
+    }
+
+    private async Task CloneAsync(AgentView agent)
+    {
+        if (HttpContext is not { } request || _list is null)
+        {
+            return;
+        }
+
+        var result = await Agents.CloneAsync(request, agent.Id);
+
+        if (result is { Outcome: SaveAgentOutcome.Saved, AgentId: { } copyId })
+        {
+            // The page of the copy, where it is given a name of its own. A reload of it copies
+            // nothing again.
+            Navigation.NavigateTo(WebUiModule.AgentPath(copyId));
+
+            return;
+        }
+
+        // Nothing was copied. The list is shown as it is now, with why.
+        _notCopied = AgentPages.SaysOfCopy(result.Outcome, _list.MaxAgents);
+        _list = await Agents.ListAsync(request);
+    }
+}

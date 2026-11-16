@@ -9,8 +9,9 @@ namespace Ecnanib.Tests.Accounts;
 /// </summary>
 /// <param name="RecordedAs">The members that record it. Empty while it waits.</param>
 /// <param name="WaitsFor">
-/// What it waits for: the namespace of the component that will do the action, or
-/// <see cref="AuditRules.OperatorFunctions"/>. Null when it is recorded.
+/// What it waits for: the namespace of the component that will do the action,
+/// <see cref="AuditRules.AgentControls"/>, or <see cref="AuditRules.OperatorFunctions"/>. Null
+/// when it is recorded.
 /// </param>
 /// <param name="What">For an action that waits: what is to be recorded, and by whom.</param>
 internal sealed record AuditCoverage(IReadOnlyList<AuditAction> RecordedAs, string? WaitsFor, string? What)
@@ -32,8 +33,12 @@ internal sealed record AuditCoverage(IReadOnlyList<AuditAction> RecordedAs, stri
 /// </remarks>
 internal static class AuditRules
 {
-    /// <summary>The namespace of the component that keeps the agents.</summary>
-    public const string Agents = "Ecnanib.Agents";
+    /// <summary>
+    /// What the actions on an agent that can run wait for: the first operation of Agents that
+    /// does more than keep the settings of an agent. Agents stores agents, and starts none yet.
+    /// See <c>AgentsRules</c>.
+    /// </summary>
+    public const string AgentControls = "the controls of an agent";
 
     /// <summary>
     /// What the actions of operators wait for: the first function that asks whether its user is
@@ -65,20 +70,21 @@ internal static class AuditRules
             AuditAction.KeyRejected),
 
         ["agent start, pause, and stop"] = AuditCoverage.Waiting(
-            Agents,
+            AgentControls,
             "What a user does to the state of an agent: starting, pausing, resuming, which is a start, and stopping it."),
 
         ["mode switches"] = AuditCoverage.Waiting(
-            Agents,
+            AgentControls,
             "Switching an agent between Demo and Live (FR-AGT-7)."),
 
         ["manual closes"] = AuditCoverage.Waiting(
-            Agents,
+            AgentControls,
             "Closing a position by hand (FR-AGT-12). Agents takes the request and records it. The Decision Engine places the order, and may not use Accounts."),
 
-        ["risk setting changes"] = AuditCoverage.Waiting(
-            Agents,
-            "Changing the risk settings of an agent."),
+        // Of an agent, when a form that changes one of them is saved. The event names the agent
+        // by its id, and holds no number. Setting them for the first time, as an agent is
+        // created or copied, changes none.
+        ["risk setting changes"] = AuditCoverage.By(AuditAction.AgentRiskSettingsChanged),
 
         ["operator actions"] = AuditCoverage.Waiting(
             OperatorFunctions,

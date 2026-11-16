@@ -4,6 +4,7 @@ using Ecnanib.Credentials;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Microsoft.AspNetCore.Hosting;
@@ -15,8 +16,9 @@ namespace Ecnanib.Tests.Credentials;
 /// <summary>
 /// An agent that depends on a missing key moves to Attention required (FR-KEY-10). Credentials
 /// may not use Agents, so it tells whatever depends on a key through
-/// <see cref="IKeyDependents"/>, inside the transaction that deletes the key. Agents are not
-/// built yet, so a stand-in of the tests is told for them, as Agents will be.
+/// <see cref="IKeyDependents"/>, inside the transaction that deletes the key. Agents keeps the
+/// settings of agents and starts none yet, so a stand-in of the tests is told for them, as
+/// Agents will be.
 /// </summary>
 public class KeyDependentsTests
 {
@@ -124,24 +126,24 @@ public class KeyDependentsTests
     }
 
     [Fact]
-    public void Once_agents_are_stored_the_component_that_keeps_them_is_told_when_a_key_goes()
+    public void Once_an_agent_can_depend_on_a_key_the_component_that_keeps_agents_is_told_when_the_key_goes()
     {
         using var application = new EcnanibApplicationFactory();
         using var model = ModelOnly.Context();
 
-        // Agents are not built yet, and nothing is told for them. As soon as the component has
-        // a table of its own, it must be: Credentials cannot look at agents itself.
-        var storesRows = model.Model.GetEntityTypes().Any(entity => IsOfAgents(entity.ClrType));
-        var isTold = application.Services.GetServices<IKeyDependents>().Any(dependent => IsOfAgents(dependent.GetType()));
+        // Agents keeps the settings of agents, and nothing of it is told. No agent depends on a
+        // key yet: none can run, because nothing starts one, and none uses a model. As soon as
+        // Agents can do more with an agent than keep its settings, or an agent is given a
+        // model, it must be told: Credentials cannot look at agents itself.
+        var dependsOnAKey = AgentsRules.OperationsBeyondSettings().Concat(AgentsRules.ModelChoices(model.Model)).ToList();
+        var isTold = application.Services.GetServices<IKeyDependents>().Any(dependent => AgentsRules.IsOfAgents(dependent.GetType()));
 
         Assert.True(
-            isTold || !storesRows,
-            "Agents stores rows, and nothing of it is told when a key that an agent depends on is deleted. An agent that " +
-            $"depends on a missing key moves to Attention required (FR-KEY-10). Implement {nameof(IKeyDependents)} in " +
-            "Ecnanib.Agents and register it in AddAgents(). See docs/credentials.md.");
-
-        static bool IsOfAgents(Type type) =>
-            type.Namespace is { } area && (area == "Ecnanib.Agents" || area.StartsWith("Ecnanib.Agents.", StringComparison.Ordinal));
+            isTold || dependsOnAKey.Count == 0,
+            $"An agent can depend on a key now ({string.Join(", ", dependsOnAKey)}), and nothing of Agents is told when a key " +
+            "that an agent depends on is deleted. An agent that depends on a missing key moves to Attention required " +
+            $"(FR-KEY-10). Implement {nameof(IKeyDependents)} in Ecnanib.Agents and register it in AddAgents(). If what was " +
+            $"added leaves agents as they are, list it in {nameof(AgentsRules)} instead. See docs/credentials.md.");
     }
 
     /// <summary>One time that <see cref="StandInDependents"/> was told, with how.</summary>

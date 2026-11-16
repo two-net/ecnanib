@@ -1,5 +1,6 @@
 using System.Reflection;
 using Ecnanib.Accounts;
+using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.Architecture;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
@@ -97,11 +98,14 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
 
         foreach (var (action, coverage) in AuditRules.Requirement.Where(action => action.Value.WaitsFor is not null))
         {
-            var reason = coverage.WaitsFor == AuditRules.OperatorFunctions
-                ? WhyOperatorFunctionsAreBuilt()
-                : model.Model.GetEntityTypes().Any(entity => IsWithin(entity.ClrType.Namespace, coverage.WaitsFor!))
+            var reason = coverage.WaitsFor switch
+            {
+                AuditRules.OperatorFunctions => WhyOperatorFunctionsAreBuilt(),
+                AuditRules.AgentControls => WhyAgentControlsAreBuilt(),
+                _ => model.Model.GetEntityTypes().Any(entity => IsWithin(entity.ClrType.Namespace, coverage.WaitsFor!))
                     ? $"{coverage.WaitsFor} stores rows of its own"
-                    : null;
+                    : null,
+            };
 
             if (reason is not null)
             {
@@ -194,6 +198,16 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
 
         return caller is null ? null : $"{caller} asks whether its user is an operator";
     }
+
+    /// <summary>
+    /// Why the controls of an agent count as built, or null while none is: an operation of
+    /// Agents that is not listed as keeping the settings of an agent. An operation that is
+    /// added is taken for one that starts, stops, switches, or closes, until it is listed.
+    /// </summary>
+    private static string? WhyAgentControlsAreBuilt() =>
+        AgentsRules.OperationsBeyondSettings() is { Count: > 0 } beyondSettings
+            ? $"Agents does more with an agent than keep its settings ({string.Join(", ", beyondSettings)})"
+            : null;
 
     /// <summary>The page and endpoint routes that the running application serves.</summary>
     private IEnumerable<RouteEndpoint> Endpoints() =>

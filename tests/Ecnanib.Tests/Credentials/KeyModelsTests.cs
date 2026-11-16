@@ -3,6 +3,7 @@ using Ecnanib.AiProviderGateway;
 using Ecnanib.Credentials;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Catalog;
 using Ecnanib.Tests.Logging;
@@ -384,29 +385,28 @@ public class KeyModelsTests
     }
 
     [Fact]
-    public void Once_agents_are_stored_the_component_that_keeps_them_asks_which_models_can_be_selected()
+    public void Once_an_agent_is_given_a_model_the_component_that_keeps_agents_asks_which_models_can_be_selected()
     {
         using var model = ModelOnly.Context();
 
-        // Agents are not built yet, and no model is selected for one. As soon as the component
-        // has a table of its own, it must ask: neither the Catalog nor Credentials can keep an
-        // agent from being given a model that cannot be selected, or that its user's key cannot use.
-        var storesRows = model.Model.GetEntityTypes().Any(entity => IsOfAgents(entity.ClrType));
+        // Agents keeps the settings of agents, and no model is selected for one: no row of
+        // Agents points at a model. As soon as one does, Agents must ask: neither the Catalog
+        // nor Credentials can keep an agent from being given a model that cannot be selected,
+        // or that its user's key cannot use.
+        var modelChoices = AgentsRules.ModelChoices(model.Model);
         var asks = typeof(IKeyModels).Assembly.GetTypes()
-            .Where(IsOfAgents)
+            .Where(AgentsRules.IsOfAgents)
             .SelectMany(type => type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             .SelectMany(constructor => constructor.GetParameters())
             .Any(parameter => parameter.ParameterType == typeof(IKeyModels));
 
         Assert.True(
-            asks || !storesRows,
-            "Agents stores rows, and nothing of it asks which models a user can select. Only an eligible model can be " +
-            "selected for an agent (FR-CAT-6), and of those only one that the user's key can use (FR-CAT-9). Take " +
-            $"{nameof(IKeyModels)} in Ecnanib.Agents, offer what {nameof(IKeyModels.SelectableAsync)} answers, and ask " +
-            $"{nameof(IKeyModels.BlockForAsync)} when a choice is saved. See docs/credentials.md.");
-
-        static bool IsOfAgents(Type type) =>
-            type.Namespace is { } area && (area == "Ecnanib.Agents" || area.StartsWith("Ecnanib.Agents.", StringComparison.Ordinal));
+            asks || modelChoices.Count == 0,
+            $"An agent is given a model now ({string.Join(", ", modelChoices)}), and nothing of Agents asks which models a " +
+            "user can select. Only an eligible model can be selected for an agent (FR-CAT-6), and of those only one that the " +
+            $"user's key can use (FR-CAT-9). Take {nameof(IKeyModels)} in Ecnanib.Agents, offer what " +
+            $"{nameof(IKeyModels.SelectableAsync)} answers, and ask {nameof(IKeyModels.BlockForAsync)} when a choice is saved. " +
+            "See docs/credentials.md.");
     }
 
     /// <summary>A list of models with these identifiers, about which the provider says nothing more.</summary>

@@ -318,7 +318,7 @@ public sealed record ExchangeSymbol(
 | `QuantityStep`, `MinQuantity`, `MaxQuantity` | `stepSize`, `minQty`, `maxQty` of `LOT_SIZE` | The same |
 | `MinValue` | `minNotional` of `NOTIONAL`, or of `MIN_NOTIONAL` | `notional` of `MIN_NOTIONAL` |
 
-- **A symbol that is not among them is one that the market does not have,** which is what filters the symbols that an agent can be given (FR-AGT-6). The steps and the least value are what an order is held to before it is placed (FR-RSK-4).
+- **A symbol that is not among them is one that the market does not have,** which is what filters the symbols that an agent can be given (FR-AGT-6): Agents asks it for the form of an agent and when a market or a symbol is saved. See "The symbols" in [agents.md](agents.md). The steps and the least value are what an order is held to before it is placed (FR-RSK-4).
 - **One call reads every symbol of a market.** Futures has no call for one symbol, and Spot answers a list with a symbol that it lacks with an error for the whole list. The answer of Spot is close to 7 megabytes, once an hour: it is asked without the permission sets of each symbol, with which it is more than twice that.
 - **A list is whole or it is none.** A symbol of the file without one of its rules, or that is there twice, makes the answer `Failed`: a list without it would say that the market lacks it.
 - The rules of a market order, `MARKET_LOT_SIZE`, are not read. They come with the orders.
@@ -438,7 +438,7 @@ The calls of the market data were asked of Binance itself on 16 November 2026, o
 - What hands a stored credential to a call, and has it checked again when the call ends as `AuthenticationFailed` (FR-KEY-9, FR-KEY-3). It comes with what calls the gateway for an agent.
 - The operator status screen, which shows what `IExchangeLimits` and `IExchangeClock` say (FR-OPS-2).
 - The limit on the orders of an account, which Binance counts for each account and not for the address. It comes with the orders.
-- What asks for market data: the cycles, with the data package and its indicators (FR-CYC-2), and the list of symbols that an agent can be given (FR-AGT-6). An agent's timeframe comes with them, and is one of four: `CandleInterval` has the week as well, for context alone.
+- What asks for candles and prices: the cycles, with the data package and its indicators (FR-CYC-2). An agent's timeframe is one of four, `Timeframe` in `Shared`: `CandleInterval` has a member of the same name for each, and the week as well, for context alone.
 - Prices that change on a screen within two seconds (FR-NTF-2). A price is read when it is asked for, and counts for a second: a screen that asked every second for every symbol would spend much of the budget.
 - Reading the limits of "The limiter" from `exchangeInfo`, which the gateway now calls for the symbols.
 - The orders (FR-BIN-6), in `Ecnanib.ExchangeGateway.Trading`, and with them the first call that is not a `GET`. What places an entry asks `IExchangeClock.EntriesPaused` first, and places none while it says so (FR-BIN-5): `ClockWatchTests` fails once the orders are there and nothing asks.

@@ -58,13 +58,13 @@ A row that belongs to no user belongs to the service: vocabulary, the catalog, t
 
 | Rows of users | Rows of the service |
 |---|---|
-| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials` | `roles`, `ai_providers`, `ai_models`, `catalog_sync_runs`, `prompt_templates`, `background_jobs` |
+| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials`, `agents` | `roles`, `ai_providers`, `ai_models`, `catalog_sync_runs`, `prompt_templates`, `background_jobs` |
 
 `users` is the account itself. No table holds both kinds of row.
 
 ## Asking for a user's data
 
-Whatever serves a request takes the user from the session, and asks for the rows of that user. Agents are not built yet. Asking for one will look like this:
+Whatever serves a request takes the user from the session, and asks for the rows of that user. Asking for an agent looks like this:
 
 ```csharp
 if (SignedInUser.IdOf(request) is not { } userId)
@@ -91,6 +91,8 @@ if (agent is null)
 | **A row of another user is not found.** | The scoped query finds nothing, so the answer is the one for a row that does not exist: 404 from a page or the API. It is not "forbidden", which would tell that the id is someone's. Nothing looks the row up unscoped to tell the two apart. |
 | The check is where the data is asked for. | A method of a component that serves a request takes the user's id and scopes by it. So it holds for a request that no page of the application made. |
 | A new row belongs to whoever is signed in. | And a row that points at another row of the user, such as an agent at a key, finds that row through `OwnedBy` too. |
+
+**An agent is the first resource that a request names by an id.** A key is named by its provider or its environment, of which every user has one, so no path names the key of another user. The path of an agent names the agent, so a user can ask for the id of an agent of another user: its pages answer "not found", and a form that is posted at them changes nothing. `AgentPageTests` has the test with two users. See [agents.md](agents.md).
 
 `OwnedBy` cannot be called inside the projection of another query, where it does not translate to SQL. A count of a user's rows inside such a projection names the owner itself: see `TwoFactor.StateAsync`.
 
@@ -144,7 +146,6 @@ If the rows belong to the service instead, list the table in `OwnershipRules.Ser
 
 ## Not built yet
 
-- The first resource that a request names by an id: an agent. The tests of today are about the rows that Accounts and Credentials keep, none of which a request names by its id. A key is named by its provider or its environment, of which every user has one, so no path names the key of another user. See [credentials.md](credentials.md).
 - The operator functions: the global halt, the status screen, and the account controls, each recorded in the audit trail. The events of an account go with it when it is deleted, so what happens to the events of an operator who deletes their own account is to be decided with them. See "Not built yet" in [accounts.md](accounts.md).
 - What a protected endpoint under `/api` answers to a visitor. See "Not built yet" in [accounts.md](accounts.md).
 - Checking again inside an interactive page. Who the user is, and whether they are an operator, is decided when the connection of such a page is made. See "Not built yet" in [accounts.md](accounts.md).

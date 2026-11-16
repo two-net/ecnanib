@@ -12,8 +12,9 @@ namespace Ecnanib.Catalog;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing implements it until agents are built. Until then nothing depends on a model, and a
-/// model is marked without anything being told.
+/// Nothing implements it until an agent is given a model: Agents keeps the settings of agents,
+/// and gives no role a model yet. Until then nothing depends on a model, and a model is marked
+/// without anything being told.
 /// </para>
 /// <para>
 /// It is told inside the transaction that stores the sync, before the rows of the models

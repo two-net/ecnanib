@@ -168,7 +168,7 @@ public interface IKeyModels
 
 - It is answered from what the last check recorded, and asks no provider.
 - It takes the user by id, as `IKeyValidation` does, and asks for the rows of that user with `OwnedBy`. `KeyModelsTests` has the test with two users.
-- **Nothing asks it yet,** because agents are not built. `KeyModelsTests` has a test that fails as soon as Agents has a table of its own and takes no `IKeyModels`.
+- **Nothing asks it yet,** because no agent is given a model. `KeyModelsTests` has a test that fails as soon as a row of Agents points at a model and Agents takes no `IKeyModels`. See "What waits for agents that can run" in [agents.md](agents.md).
 
 ## Binance permissions
 
@@ -208,7 +208,7 @@ public interface IKeyValidation
 
 - It is answered from what the last check recorded, and asks Binance nothing.
 - `KeyPages.Says` makes the message of a block, which names the permission and says what to do: turn it on at Binance, and check the key again on `/account/keys`.
-- **Nothing asks it yet,** because agents are not built. `AgentStartBlockTests` has a test that fails as soon as Agents has a table of its own and takes no `IKeyValidation`.
+- **Nothing asks it yet,** because nothing starts an agent: Agents keeps the settings of agents, and every agent is a draft. `AgentStartBlockTests` has a test that fails as soon as Agents has an operation that does more than keep settings and takes no `IKeyValidation`. See "What waits for agents that can run" in [agents.md](agents.md).
 
 ## Deleting a key
 
@@ -245,7 +245,7 @@ public interface IKeyDependents
 - **A key that the service deletes is told like one that its user deletes:** the Binance key that turned out to be able to withdraw.
 - **It is told once that a key is invalid:** when a key that was not invalid becomes so. A key that is still refused the next day tells nothing again.
 - It is not told when a key is added or replaced, nor when an invalid key is valid again: a key is then where an agent looks for it, and its user starts the agent.
-- **Nothing implements it yet,** because agents are not built. Until then nothing depends on a key. `KeyDependentsTests` has a test that fails as soon as Agents has a table of its own and no implementation.
+- **Nothing implements it yet,** because no agent depends on a key: none can run, and none uses a model. `KeyDependentsTests` has a test that fails as soon as Agents has an operation that does more than keep settings, or a row of Agents points at a model, and Agents has no implementation. See "What waits for agents that can run" in [agents.md](agents.md).
 
 ## The data
 
@@ -270,7 +270,7 @@ Whether a key can withdraw is not stored: a key that can is not.
 
 - Handing a key to the call of an agent that needs it, decrypted only in memory and only for that call (FR-KEY-9). So far a stored key is decrypted for the call that validates it. The AI Provider Gateway makes the calls to models, and takes the key with each call: see "The key" in [ai-providers.md](ai-providers.md). What hands a stored key over comes with what calls a model for an agent. The Exchange Gateway takes a credential with each call in the same way: see "The credential" in [exchange.md](exchange.md). What hands a stored credential over comes with what calls Binance for an agent.
 - Checking a key again when a call with it fails authentication. `IKeyValidation` takes the request, and nothing asks it yet. A call to a model tells it with the outcome `AuthenticationFailed`: see "Outcomes" in [ai-providers.md](ai-providers.md). What calls a model for an agent asks `RevalidateAiKeyAsync` then. A call to Binance tells it with the same outcome: see "Outcomes" in [exchange.md](exchange.md). What calls Binance for an agent asks `RevalidateExchangeKeyAsync` then.
-- What Agents does when a key goes or turns out to be invalid, and before an agent starts. It implements `IKeyDependents` and asks `IKeyValidation.BlockForAsync` when agents are built.
+- What Agents does when a key goes or turns out to be invalid, and before an agent starts. It implements `IKeyDependents` and asks `IKeyValidation.BlockForAsync` when an agent can be started.
 - The model selector, and holding the choice of a model to what a key can use when it is saved (FR-AGT-5). `IKeyModels` answers both, and nothing asks it yet.
 - Saying on `/account/keys` which models a key can use, or that it is not known. The export of a user's data says it.
 - Telling the user that a key is invalid (FR-NTF-1). The list of keys says so. In-app notifications are not built.

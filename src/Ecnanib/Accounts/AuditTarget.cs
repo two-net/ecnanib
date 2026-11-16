@@ -27,4 +27,7 @@ public sealed class AuditTarget
 
     /// <summary>A stored key of Binance, by the id of its row: <c>exchange-key:&lt;id&gt;</c>.</summary>
     public static AuditTarget ExchangeKey(Guid credentialId) => new($"exchange-key:{credentialId}");
+
+    /// <summary>An agent, by the id of its row: <c>agent:&lt;id&gt;</c>. The id says nothing of what its user named it.</summary>
+    public static AuditTarget Agent(Guid agentId) => new($"agent:{agentId}");
 }

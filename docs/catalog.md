@@ -146,7 +146,7 @@ public interface IModelDependents
 - **An implementation commits nothing, and takes the owner of an agent from the agent's row.** With the keys of users the sync runs in the request of the user whose key listed the models, and the agents are those of every user.
 - **It minds the locks.** The transaction holds the row of the provider and the rows of its models, and two providers are synced at the same time. An implementation locks its rows in one order, and takes no lock on a model while it holds one on an account. It takes nothing of Credentials, which itself takes the Catalog.
 - A model that an agent was given while the sync was storing is not among what an implementation finds. The call that then reports that the model does not exist moves that agent: see "Not built yet".
-- **Nothing implements it yet,** because agents are not built. Until then nothing depends on a model. `ModelDependentsTests` has a test that fails as soon as Agents has a table of its own and no implementation.
+- **Nothing implements it yet,** because no agent uses a model: Agents keeps the settings of agents, and gives no role a model. `ModelDependentsTests` has a test that fails as soon as a row of Agents points at a model and Agents has no implementation. See "What waits for agents that can run" in [agents.md](agents.md).
 
 ## The catalog screen
 
@@ -238,7 +238,7 @@ The file of the tests allows the models of Claude that `claude-*` names, but for
 
 ## Not built yet
 
-- What Agents does when a model becomes unavailable (FR-CAT-8). It implements `IModelDependents` when agents and their states are built, and moves the agent to Attention required.
+- What Agents does when a model becomes unavailable (FR-CAT-8). It implements `IModelDependents` when the roles of an agent are given their models, and moves the agent to Attention required.
 - What follows a call that reports that the model does not exist (FR-CAT-8). The gateway answers such a call with the outcome `ModelNotFound`: see "Outcomes" in [ai-providers.md](ai-providers.md). What calls a model for an agent moves the agent then. The Catalog is not told, and marks nothing for it: a model is marked by the provider's list alone.
 - Telling the user that a model is unavailable (FR-NTF-1). In-app notifications are not built.
 - The model selector (FR-AGT-5). It offers what `IKeyModels` of Credentials answers, and shows which models can search live.

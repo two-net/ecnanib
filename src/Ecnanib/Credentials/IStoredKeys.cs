@@ -265,8 +265,9 @@ public enum KeyCheckOutcome
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing implements it until agents are built. Until then nothing depends on a key, and a key
-/// is deleted or marked invalid without anything being told.
+/// Nothing implements it until an agent can depend on a key: Agents keeps the settings of
+/// agents, starts none, and gives none a model yet. Until then nothing depends on a key, and a
+/// key is deleted or marked invalid without anything being told.
 /// </para>
 /// <para>
 /// It is told inside the transaction that deletes the key or marks it, before the row changes,

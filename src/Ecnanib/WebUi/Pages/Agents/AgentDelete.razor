@@ -1,0 +1,119 @@
+@page "/agents/{Id:guid}/delete"
+@attribute [Authorize]
+@using Ecnanib.Agents
+@inject IStoredAgents Agents
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. Deleting an agent takes no
+    proof of who the user is: it exposes no key and moves no money. The page asks once more
+    instead. An agent is deleted only while it is a draft, or is stopped with no open position
+    or orders, which DeleteAsync asks again. The form is on the page whenever one is posted,
+    whatever is stored by then: a form that is sent twice finds no agent the second time, and is
+    answered as the first one was.
+*@
+
+@if (_agent is not null)
+{
+    <PageTitle>Delete the agent @_agent.Name</PageTitle>
+
+    <h1>Delete the agent @_agent.Name</h1>
+
+    @if (_notDeleted is not null)
+    {
+        <p class="form-error" role="alert">@_notDeleted</p>
+    }
+
+    @if (_agent.StructureCanChange)
+    {
+        <p>This deletes the agent and its settings, at once and for good. It cannot be undone.</p>
+    }
+    else if (_notDeleted is null)
+    {
+        <p role="status">@NotNow(_agent)</p>
+    }
+}
+
+@if (_showForm)
+{
+    <form method="post" @formname="@AgentPages.DeleteForm" @onsubmit="DeleteAsync">
+        <AntiforgeryToken />
+
+        <button type="submit">Delete the agent</button>
+    </form>
+}
+
+@if (_agent is not null)
+{
+    <p><a href="@WebUiModule.AgentsPath">Keep the agent</a></p>
+}
+
+@code {
+    private const string StopFirst = "This agent is not stopped. Stop it before you delete it.";
+    private const string CloseFirst = "This agent has an open position or open orders. Close them before you delete it.";
+
+    private AgentView? _agent;
+    private string? _notDeleted;
+    private bool _showForm;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (!HttpMethods.IsGet(request.Request.Method))
+        {
+            // A form was posted, and is answered by DeleteAsync, also where no agent is.
+            _showForm = true;
+
+            return;
+        }
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        _showForm = _agent.StructureCanChange;
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        switch (await Agents.DeleteAsync(request, Id))
+        {
+            case DeleteAgentOutcome.NotStopped:
+                _notDeleted = StopFirst;
+                break;
+
+            case DeleteAgentOutcome.HoldsPosition:
+                _notDeleted = CloseFirst;
+                break;
+
+            default:
+                // The page that says which agents there are now. A reload of it deletes nothing again.
+                Navigation.NavigateTo(WebUiModule.AgentsPath);
+                break;
+        }
+    }
+
+    private static string NotNow(AgentView agent) => AgentStates.IsActive(agent.State) ? StopFirst : CloseFirst;
+}

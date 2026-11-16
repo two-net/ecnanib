@@ -55,11 +55,15 @@ Every type in an `Ecnanib` namespace must sit in a registered area, so new code 
 
 Sometimes a component must cause something to happen in a component above it. For example, when the Catalog marks a model as unavailable, the agents that use it must change state. The lower component declares an interface, and the higher component implements it and registers the implementation. The reference still points downward. This happens in process; there is no message broker.
 
-Accounts sends its email this way. It declares `IAccountMailer`, and Notifications implements it on top of the email adapter. It asks about a user's agents this way too, before it deletes an account: it declares `IAgentActivity`, for Agents to implement. And it takes the parts of the export of a user's data that other components keep this way: it declares `IExportedPart`, which Credentials implements for the keys. See [accounts.md](accounts.md).
+Accounts sends its email this way. It declares `IAccountMailer`, and Notifications implements it on top of the email adapter. It asks about a user's agents this way too, before it deletes an account: it declares `IAgentActivity`, which Agents implements. And it takes the parts of the export of a user's data that other components keep this way: it declares `IExportedPart`, which Credentials implements for the keys and Agents for the agents. See [accounts.md](accounts.md).
 
 Credentials tells whatever depends on a key this way, when the key is deleted or turns out to be invalid: it declares `IKeyDependents`, for Agents to implement. See [credentials.md](credentials.md).
 
 The Catalog tells whatever depends on a model this way, when a sync marks the model unavailable: it declares `IModelDependents`, for Agents to implement. See [catalog.md](catalog.md).
+
+Agents asks what an agent holds on the exchange this way, before the market of a stopped agent is changed: it declares `IAgentExposure`, for whatever keeps positions and orders to implement. See [agents.md](agents.md).
+
+An interface that waits for its implementation has a test that fails once the implementation is due. For the ones that wait for Agents, that is once an agent can run or uses a model, and not once Agents has a table: Agents keeps the settings of agents, and starts none yet. [`AgentsRules.cs`](../tests/Ecnanib.Tests/Agents/AgentsRules.cs) says what Agents can do, and those tests ask it.
 
 ### Changing a rule
 
@@ -129,7 +133,7 @@ A user brings their own keys: one for each AI provider, and one Binance credenti
 
 Adding or replacing a key is the second of the sensitive actions to be built, and asks Accounts for the proof first. Every change to a key is recorded in the audit trail, by the id of the key. Deleting a key tells whatever depends on it inside the same transaction, which is how an agent will move to Attention required.
 
-A key is validated with a read-only call to its provider, through the gateways: before it is stored, daily by a job, and when a call with it fails authentication (FR-KEY-3). Only a key that its provider takes is stored, and a stored key that is refused later becomes invalid, which whatever depends on it is told as well. A Binance key that can withdraw is not stored, and one that turns out to be able to is deleted (FR-KEY-4, NFR-LEG-2). What a Binance key may trade on is recorded, and Credentials says whether it lets an agent start on a market, for Agents to ask (FR-KEY-5). Which models an AI key can use is recorded each time its provider takes it, and Credentials says which models a user can select with their keys, for Agents to ask (FR-CAT-9). Not built yet: handing a key to the call of an agent that needs it. See [credentials.md](credentials.md).
+A key is validated with a read-only call to its provider, through the gateways: before it is stored, daily by a job, and when a call with it fails authentication (FR-KEY-3). Only a key that its provider takes is stored, and a stored key that is refused later becomes invalid, which whatever depends on it is told as well. A Binance key that can withdraw is not stored, and one that turns out to be able to is deleted (FR-KEY-4, NFR-LEG-2). What a Binance key may trade on is recorded, and Credentials says whether it lets an agent start on a market, for Agents to ask (FR-KEY-5). Which models an AI key can use is recorded each time its provider takes it, and Credentials says which models a user can select with their keys, for Agents to ask (FR-CAT-9). Not built yet: handing a key to the call of an agent that needs it, and what Agents asks and is told, which comes with agents that can run. See [credentials.md](credentials.md).
 
 ## AI providers
 
@@ -156,6 +160,14 @@ The Catalog keeps the models that the four providers offer. It is filled only fr
 A model is stored once, with what its provider says about it, and what the provider does not say is unknown (FR-CAT-4). A model that enough syncs in a row lack is marked unavailable, and is never deleted (FR-CAT-5). With the keys of users it must also have gone unseen for long enough, because one key may see fewer models than another. A sync that fails for one provider leaves that provider's catalog as it was and the others alone, and every sync is recorded (FR-CAT-7).
 
 Only an eligible model can be selected for an agent: one that its provider still offers and that the configuration file allows, with allow and deny patterns for each provider. The file also says which models can search live (FR-CAT-6). Whatever depends on a model is told inside the transaction that marks it unavailable, and no other model is ever put in its place (FR-CAT-8). A screen lists the catalog by provider for every signed-in user: each model with its status and what its provider says about it, with unknown shown as unknown, and each provider with when it was last synced. It links each model to the page of its experience record (FR-CAT-10). Not built yet: what Agents does when it is told, what follows a call that reports that the model does not exist, and the experience record itself. See [catalog.md](catalog.md).
+
+## Agents
+
+A user creates, changes, copies, and deletes agents, and no user has two agents of one name (FR-AGT-1). An agent has a name, a mode, a market, a symbol, a timeframe, allocated capital, and risk settings (FR-AGT-2). The settings are checked on the server: the risk settings against the hard bounds of the one profile in the configuration file, and the symbol against the symbols of the file that the chosen market has, which the Exchange Gateway says (FR-AGT-6, FR-RSK-2). Whatever creates an agent asks Accounts first, so a user whose address is not verified creates none, and no user has more than the fair-use limit allows.
+
+Agents keeps settings, and does nothing else with an agent yet: every agent is a draft in Demo. The rules that are stated in other states hold for a row in any state. The market, the symbol, and the timeframe change only while an agent is a draft, or is stopped with no open position or orders (FR-AGT-8). A user has at most one active agent for each Binance credential, market, and symbol, which the database holds to with an index (FR-AGT-9).
+
+Agents says whether an agent of a user is active, for Accounts to ask before it deletes an account, and hands over the agents for the export of a user's data. A change to a risk setting is recorded in the audit trail. Not built yet: starting and stopping an agent, the switch to Live, and the models of its team, and with them what Credentials, the Catalog, and the audit trail wait for. See [agents.md](agents.md).
 
 ## Ownership
 

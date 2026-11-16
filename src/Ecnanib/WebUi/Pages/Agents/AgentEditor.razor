@@ -1,0 +1,440 @@
+@page "/agents/new"
+@page "/agents/{Id:guid}"
+@attribute [Authorize]
+@using Ecnanib.Agents
+@using Ecnanib.Platform.Settings
+@using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Account
+@inject IStoredAgents Agents
+@inject TradingSettings Trading
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: the settings travel in a
+    form post. The page creates an agent, or changes the one that its path names, which is one
+    of the user of the session. What is entered is held to the rules by CreateAsync and
+    SaveAsync, on the server: the risk settings to the hard bounds of the configuration file,
+    and the symbol to the symbols that the chosen market has (FR-AGT-6, FR-RSK-2). The list of
+    symbols follows the market with a press of a button, which stores nothing. The form is on
+    the page whenever one is posted: a form that is not there cannot be answered.
+*@
+
+@if (_found)
+{
+    <PageTitle>@Title</PageTitle>
+
+    <h1>@Title</h1>
+
+    @if (_notNow is not null)
+    {
+        <p role="status">@_notNow</p>
+    }
+
+    @if (_notSaved is not null)
+    {
+        <p class="form-error" role="alert">@_notSaved</p>
+    }
+
+    @if (_showForm)
+    {
+        <form method="post" @formname="@AgentPages.SaveForm" @onsubmit="SaveAsync">
+            <AntiforgeryToken />
+
+            <div class="field">
+                <label for="agent-name">Name</label>
+                <input id="agent-name" name="Name" type="text" value="@NameEntry" autocomplete="off" required
+                       maxlength="@AgentRules.MaximumNameLength"
+                       aria-invalid="@Invalid(AgentField.Name)" aria-describedby="agent-name-hint" />
+                <p id="agent-name-hint" class="field-hint">What you call the agent. Each of your agents has a name of its own.</p>
+                @if (Problem(AgentField.Name) is { } nameProblem)
+                {
+                    <p class="field-error" role="alert">@nameProblem</p>
+                }
+            </div>
+
+            <p>Mode: <strong>@_mode</strong>. The agent trades in @KeyPages.Describe(_mode).</p>
+
+            @if (_structureCanChange)
+            {
+                <div class="field">
+                    <label for="agent-market">Market</label>
+                    <select id="agent-market" name="Market" required
+                            aria-invalid="@Invalid(AgentField.Market)" aria-describedby="agent-market-hint">
+                        @foreach (var market in Enum.GetValues<Market>())
+                        {
+                            <option value="@market" selected="@(market == _market)">@market</option>
+                        }
+                    </select>
+                    <p id="agent-market-hint" class="field-hint">On Spot the agent buys and sells the asset itself, and only goes long. On Futures it trades USDⓈ-margined perpetual contracts, long and short, with leverage. The market sets which actions the agent may take and which prompt its roles are given.</p>
+                    @if (Problem(AgentField.Market) is { } marketProblem)
+                    {
+                        <p class="field-error" role="alert">@marketProblem</p>
+                    }
+
+                    @* Stores nothing: the form comes back with the symbols of the market that is chosen now. *@
+                    <button type="submit" name="Show" value="@AgentPages.ShowSymbols" formnovalidate>Show the symbols of this market</button>
+                </div>
+
+                <div class="field">
+                    <label for="agent-symbol">Symbol on @_market</label>
+                    <select id="agent-symbol" name="Symbol" required
+                            aria-invalid="@Invalid(AgentField.Symbol)" aria-describedby="agent-symbol-hint">
+                        @foreach (var symbol in _offered)
+                        {
+                            <option value="@symbol.Symbol" selected="@(symbol.Symbol == SymbolEntry)">@symbol.Symbol, priced in @symbol.QuoteAsset</option>
+                        }
+                    </select>
+                    <p id="agent-symbol-hint" class="field-hint">The symbols that @_market has. An agent trades one symbol.</p>
+                    @if (!_symbolsKnown)
+                    {
+                        <p role="note">Binance gave no answer about which symbols @_market has, so none can be chosen now. Try again in a moment.</p>
+                    }
+                    @if (Problem(AgentField.Symbol) is { } symbolProblem)
+                    {
+                        <p class="field-error" role="alert">@symbolProblem</p>
+                    }
+                </div>
+
+                <div class="field">
+                    <label for="agent-timeframe">Timeframe</label>
+                    <select id="agent-timeframe" name="Timeframe" required
+                            aria-invalid="@Invalid(AgentField.Timeframe)" aria-describedby="agent-timeframe-hint">
+                        <option value="" selected="@(Timeframes.WithCode(TimeframeEntry) is null)">Choose a timeframe</option>
+                        @foreach (var timeframe in Timeframes.All)
+                        {
+                            <option value="@timeframe.Code()" selected="@(timeframe.Code() == TimeframeEntry)">@AgentPages.Describe(timeframe)</option>
+                        }
+                    </select>
+                    <p id="agent-timeframe-hint" class="field-hint">The agent decides once for each candle that closes. The timeframe sets how often its cycle runs, which candles it reads, and which prompt its roles are given.</p>
+                    @if (Problem(AgentField.Timeframe) is { } timeframeProblem)
+                    {
+                        <p class="field-error" role="alert">@timeframeProblem</p>
+                    }
+                </div>
+            }
+            else if (_agent is not null)
+            {
+                @* Shown as they are stored, and not offered for a change. The form still brings them. *@
+                <input type="hidden" name="Market" value="@_agent.Market" />
+                <input type="hidden" name="Symbol" value="@_agent.Symbol" />
+                <input type="hidden" name="Timeframe" value="@_agent.Timeframe.Code()" />
+
+                <p>Market: <strong>@_agent.Market</strong>. Symbol: <strong>@_agent.Symbol</strong>. Timeframe: <strong>@_agent.Timeframe.Code()</strong>.</p>
+
+                <p role="note">@AgentPages.StructureLocked</p>
+            }
+
+            <div class="field">
+                <label for="agent-capital">Allocated capital</label>
+                <input id="agent-capital" name="AllocatedCapital" type="text" inputmode="decimal" value="@CapitalEntry" autocomplete="off" required
+                       aria-invalid="@Invalid(AgentField.AllocatedCapital)" aria-describedby="agent-capital-hint" />
+                <p id="agent-capital-hint" class="field-hint">How much the agent may trade with, in the asset that its symbol is priced in: for BTCUSDT, an amount of USDT. The agent's equity is this capital plus its profit or loss so far.</p>
+                @if (Problem(AgentField.AllocatedCapital) is { } capitalProblem)
+                {
+                    <p class="field-error" role="alert">@capitalProblem</p>
+                }
+            </div>
+
+            <fieldset>
+                <legend>Risk settings</legend>
+
+                <p>These are hard limits: the AI roles cannot override them. They are deliberately aggressive, and make large losses more likely. A change applies from the agent's next cycle.</p>
+
+                <div class="field">
+                    <label for="agent-risk-per-trade">Risk per trade, in percent</label>
+                    <input id="agent-risk-per-trade" name="RiskPerTradePercent" type="text" inputmode="decimal" value="@RiskPerTradeEntry" autocomplete="off" required
+                           aria-invalid="@Invalid(AgentField.RiskPerTradePercent)" aria-describedby="agent-risk-per-trade-hint" />
+                    <p id="agent-risk-per-trade-hint" class="field-hint">The share of the agent's equity that one trade loses when its stop-loss is hit. @AgentPages.Within(Trading.Aggressive.RiskPerTradePercent)</p>
+                    @if (Problem(AgentField.RiskPerTradePercent) is { } riskPerTradeProblem)
+                    {
+                        <p class="field-error" role="alert">@riskPerTradeProblem</p>
+                    }
+                </div>
+
+                <div class="field">
+                    <label for="agent-leverage-cap">Leverage cap</label>
+                    <input id="agent-leverage-cap" name="LeverageCap" type="text" inputmode="numeric" value="@LeverageCapEntry" autocomplete="off" required
+                           aria-invalid="@Invalid(AgentField.LeverageCap)" aria-describedby="agent-leverage-cap-hint" />
+                    <p id="agent-leverage-cap-hint" class="field-hint">The highest leverage the agent uses. It counts on Futures only: on Spot there is no leverage. @AgentPages.Within(Trading.Aggressive.LeverageCap)</p>
+                    @if (Problem(AgentField.LeverageCap) is { } leverageCapProblem)
+                    {
+                        <p class="field-error" role="alert">@leverageCapProblem</p>
+                    }
+                </div>
+
+                <div class="field">
+                    <label for="agent-daily-loss">Daily loss limit, in percent</label>
+                    <input id="agent-daily-loss" name="DailyLossPercent" type="text" inputmode="decimal" value="@DailyLossEntry" autocomplete="off" required
+                           aria-invalid="@Invalid(AgentField.DailyLossPercent)" aria-describedby="agent-daily-loss-hint" />
+                    <p id="agent-daily-loss-hint" class="field-hint">When the agent has lost this share of its equity within one day, it is halted. @AgentPages.Within(Trading.Aggressive.DailyLossPercent)</p>
+                    @if (Problem(AgentField.DailyLossPercent) is { } dailyLossProblem)
+                    {
+                        <p class="field-error" role="alert">@dailyLossProblem</p>
+                    }
+                </div>
+
+                <div class="field">
+                    <label for="agent-drawdown">Drawdown limit, in percent</label>
+                    <input id="agent-drawdown" name="DrawdownPercent" type="text" inputmode="decimal" value="@DrawdownEntry" autocomplete="off" required
+                           aria-invalid="@Invalid(AgentField.DrawdownPercent)" aria-describedby="agent-drawdown-hint" />
+                    <p id="agent-drawdown-hint" class="field-hint">When the agent's equity has fallen this far below its highest, it is halted. @AgentPages.Within(Trading.Aggressive.DrawdownPercent)</p>
+                    @if (Problem(AgentField.DrawdownPercent) is { } drawdownProblem)
+                    {
+                        <p class="field-error" role="alert">@drawdownProblem</p>
+                    }
+                </div>
+
+                <div class="field">
+                    <label for="agent-entry-distance">Maximum entry distance, in percent</label>
+                    <input id="agent-entry-distance" name="MaxEntryDistancePercent" type="text" inputmode="decimal" value="@EntryDistanceEntry" autocomplete="off" required
+                           aria-invalid="@Invalid(AgentField.MaxEntryDistancePercent)" aria-describedby="agent-entry-distance-hint" />
+                    <p id="agent-entry-distance-hint" class="field-hint">How far the price of an entry may be from the current price. @AgentPages.Within(Trading.Aggressive.MaxEntryDistancePercent)</p>
+                    @if (Problem(AgentField.MaxEntryDistancePercent) is { } entryDistanceProblem)
+                    {
+                        <p class="field-error" role="alert">@entryDistanceProblem</p>
+                    }
+                </div>
+            </fieldset>
+
+            <button type="submit">@(_agent is null ? "Create the agent" : "Save the agent")</button>
+        </form>
+
+        <h2>Roles</h2>
+
+        <p>Every agent is run by four AI roles, which work one after the other in each cycle.</p>
+
+        <dl class="agent-roles">
+            @foreach (var role in Enum.GetValues<Role>())
+            {
+                var (name, job) = AgentPages.Describe(role);
+
+                <dt>@name</dt>
+                <dd>@job</dd>
+            }
+        </dl>
+    }
+
+    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+}
+
+@code {
+    private AgentView? _agent;
+    private bool _found;
+    private bool _showForm;
+    private bool _structureCanChange = true;
+    private bool _symbolsKnown = true;
+    private TradingMode _mode = TradingMode.Demo;
+    private Market _market = Market.Spot;
+    private IReadOnlyList<SymbolChoice> _offered = [];
+    private IReadOnlyDictionary<AgentField, AgentProblem> _problems = new Dictionary<AgentField, AgentProblem>();
+    private string? _notNow;
+    private string? _notSaved;
+
+    /// <summary>The agent that the path names. The page that creates an agent names none.</summary>
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm(Name = "Name")]
+    private string? NameEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "Market")]
+    private string? MarketEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "Symbol")]
+    private string? SymbolEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "Timeframe")]
+    private string? TimeframeEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "AllocatedCapital")]
+    private string? CapitalEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "RiskPerTradePercent")]
+    private string? RiskPerTradeEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "LeverageCap")]
+    private string? LeverageCapEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "DailyLossPercent")]
+    private string? DailyLossEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "DrawdownPercent")]
+    private string? DrawdownEntry { get; set; }
+
+    [SupplyParameterFromForm(Name = "MaxEntryDistancePercent")]
+    private string? EntryDistanceEntry { get; set; }
+
+    /// <summary>The button that shows the symbols of the chosen market, when that is what was pressed.</summary>
+    [SupplyParameterFromForm]
+    private string? Show { get; set; }
+
+    private string Title => _agent is null ? "Create an agent" : $"Settings of the agent {_agent.Name}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        if (Id is { } agentId)
+        {
+            // The agent that the path names, among those of the user of the session. An agent
+            // of another user is not found, like one that does not exist.
+            _agent = await Agents.FindAsync(request, agentId);
+
+            if (_agent is null)
+            {
+                Navigation.NotFound();
+
+                return;
+            }
+
+            _mode = _agent.Mode;
+            _structureCanChange = _agent.StructureCanChange;
+        }
+
+        _found = true;
+
+        if (!HttpMethods.IsGet(request.Request.Method))
+        {
+            // A form was posted, and is answered by SaveAsync, with what it brought.
+            _showForm = true;
+            await OfferSymbolsAsync(request);
+
+            return;
+        }
+
+        if (_agent is null)
+        {
+            // No form for a user who may create no agent: one whose address is not verified, or
+            // who has as many agents as an account can have (FR-ACC-1, FR-ACC-7).
+            var list = await Agents.ListAsync(request);
+            _notNow = AgentPages.Says(list.Creation, list.MaxAgents);
+
+            if (_notNow is not null)
+            {
+                return;
+            }
+
+            // A new agent starts from the defaults of the one profile (FR-RSK-1). Its timeframe
+            // is for its user to choose.
+            var defaults = Trading.Aggressive;
+            MarketEntry = Market.Spot.ToString();
+            RiskPerTradeEntry = AgentPages.Number(defaults.RiskPerTradePercent.Default);
+            LeverageCapEntry = AgentPages.Number(defaults.LeverageCap.Default);
+            DailyLossEntry = AgentPages.Number(defaults.DailyLossPercent.Default);
+            DrawdownEntry = AgentPages.Number(defaults.DrawdownPercent.Default);
+            EntryDistanceEntry = AgentPages.Number(defaults.MaxEntryDistancePercent.Default);
+        }
+        else
+        {
+            NameEntry = _agent.Name;
+            MarketEntry = _agent.Market.ToString();
+            SymbolEntry = _agent.Symbol;
+            TimeframeEntry = _agent.Timeframe.Code();
+            CapitalEntry = AgentPages.Number(_agent.AllocatedCapital);
+            RiskPerTradeEntry = AgentPages.Number(_agent.Risk.RiskPerTradePercent);
+            LeverageCapEntry = AgentPages.Number(_agent.Risk.LeverageCap);
+            DailyLossEntry = AgentPages.Number(_agent.Risk.DailyLossPercent);
+            DrawdownEntry = AgentPages.Number(_agent.Risk.DrawdownPercent);
+            EntryDistanceEntry = AgentPages.Number(_agent.Risk.MaxEntryDistancePercent);
+        }
+
+        _showForm = true;
+        await OfferSymbolsAsync(request);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        if (Show is not null)
+        {
+            // The other button: nothing is stored, and the form is back with the symbols of the
+            // market that is chosen now, and with everything else as it was entered.
+            return;
+        }
+
+        var entry = new AgentEntry(
+            NameEntry,
+            MarketEntry,
+            SymbolEntry,
+            TimeframeEntry,
+            CapitalEntry,
+            RiskPerTradeEntry,
+            LeverageCapEntry,
+            DailyLossEntry,
+            DrawdownEntry,
+            EntryDistanceEntry);
+
+        var result = _agent is null
+            ? await Agents.CreateAsync(request, entry)
+            : await Agents.SaveAsync(request, _agent.Id, entry);
+
+        switch (result.Outcome)
+        {
+            case SaveAgentOutcome.Saved:
+                // The page that lists the agents as they are now. A reload of it stores nothing again.
+                Navigation.NavigateTo(WebUiModule.AgentsPath);
+                break;
+
+            case SaveAgentOutcome.NotFound:
+                // The agent was deleted, on another browser, since the form was shown.
+                _found = false;
+                Navigation.NotFound();
+                break;
+
+            case SaveAgentOutcome.Invalid:
+                _problems = result.Problems;
+                break;
+
+            case SaveAgentOutcome.EmailNotVerified:
+                _notNow = AgentPages.VerifyFirst;
+                break;
+
+            case SaveAgentOutcome.AgentLimitReached:
+                _notNow = AgentPages.LimitReached((await Agents.ListAsync(request)).MaxAgents);
+                break;
+
+            case SaveAgentOutcome.SymbolsUnknown:
+                _notSaved = AgentPages.SymbolsUnknown;
+                break;
+
+            case SaveAgentOutcome.StructureLocked:
+                _notSaved = $"Nothing was saved. {AgentPages.StructureLocked}";
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The symbols that the form offers: those of the market that is chosen, in the environment
+    /// of the agent. The symbol that an agent has stays among them while it has that market, so
+    /// that its other settings can be saved while the exchange gives no answer.
+    /// </summary>
+    private async Task OfferSymbolsAsync(HttpContext request)
+    {
+        _market = AgentRules.MarketNamed(MarketEntry) ?? _agent?.Market ?? Market.Spot;
+
+        var there = (await Agents.SymbolsAsync(_mode, request.RequestAborted)).Single(symbols => symbols.Market == _market);
+
+        _symbolsKnown = there.Known;
+        _offered = there.Symbols;
+
+        if (_agent is not null && _agent.Market == _market && _offered.All(symbol => symbol.Symbol != _agent.Symbol))
+        {
+            _offered = [new SymbolChoice(_agent.Symbol, _agent.QuoteAsset), .. _offered];
+        }
+    }
+
+    private string? Problem(AgentField field) =>
+        _problems.TryGetValue(field, out var problem) ? AgentPages.Says(field, problem, Trading.Aggressive) : null;
+
+    private string? Invalid(AgentField field) => _problems.ContainsKey(field) ? "true" : null;
+}

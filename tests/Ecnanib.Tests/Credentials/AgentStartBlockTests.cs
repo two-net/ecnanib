@@ -3,6 +3,7 @@ using Ecnanib.Credentials;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.WebUi.Pages.Account;
@@ -12,7 +13,7 @@ namespace Ecnanib.Tests.Credentials;
 /// <summary>
 /// A Binance key that lacks the permission an agent's market needs (Spot trading or Futures
 /// trading) blocks that agent from starting, with a message naming the missing permission
-/// (FR-KEY-5). Agents are not built yet: Credentials says what blocks a start, from what the
+/// (FR-KEY-5). Nothing starts an agent yet: Credentials says what blocks a start, from what the
 /// last check of the key recorded, and Agents asks it before an agent starts.
 /// </summary>
 public class AgentStartBlockTests
@@ -162,27 +163,25 @@ public class AgentStartBlockTests
     }
 
     [Fact]
-    public void Once_agents_are_stored_the_component_that_keeps_them_asks_what_blocks_a_start()
+    public void Once_an_agent_can_start_the_component_that_keeps_agents_asks_what_blocks_the_start()
     {
-        using var model = ModelOnly.Context();
-
-        // Agents are not built yet, and nothing starts one. As soon as the component has a
-        // table of its own, it must ask: Credentials cannot keep an agent from starting itself.
-        var storesRows = model.Model.GetEntityTypes().Any(entity => IsOfAgents(entity.ClrType));
+        // Agents keeps the settings of agents, and nothing starts one. As soon as Agents can do
+        // more with an agent than keep its settings, it must ask: Credentials cannot keep an
+        // agent from starting itself.
+        var beyondSettings = AgentsRules.OperationsBeyondSettings();
         var asks = typeof(IKeyValidation).Assembly.GetTypes()
-            .Where(IsOfAgents)
+            .Where(AgentsRules.IsOfAgents)
             .SelectMany(type => type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             .SelectMany(constructor => constructor.GetParameters())
             .Any(parameter => parameter.ParameterType == typeof(IKeyValidation));
 
         Assert.True(
-            asks || !storesRows,
-            "Agents stores rows, and nothing of it asks whether the user's Binance key lets an agent start. A key that lacks " +
-            "the permission of the agent's market blocks the start, with a message naming the permission (FR-KEY-5). Take " +
-            $"{nameof(IKeyValidation)} in Ecnanib.Agents, ask {nameof(IKeyValidation.BlockForAsync)} before an agent starts, and " +
-            "show what KeyPages.Says makes of the answer. See docs/credentials.md.");
-
-        static bool IsOfAgents(Type type) =>
-            type.Namespace is { } area && (area == "Ecnanib.Agents" || area.StartsWith("Ecnanib.Agents.", StringComparison.Ordinal));
+            asks || beyondSettings.Count == 0,
+            $"Agents does more with an agent than keep its settings now ({string.Join(", ", beyondSettings)}), and nothing of " +
+            "it asks whether the user's Binance key lets an agent start. A key that lacks the permission of the agent's market " +
+            $"blocks the start, with a message naming the permission (FR-KEY-5). Take {nameof(IKeyValidation)} in " +
+            $"Ecnanib.Agents, ask {nameof(IKeyValidation.BlockForAsync)} before an agent starts, and show what KeyPages.Says " +
+            $"makes of the answer. If what was added starts no agent, list it in {nameof(AgentsRules)} instead. See " +
+            "docs/credentials.md.");
     }
 }

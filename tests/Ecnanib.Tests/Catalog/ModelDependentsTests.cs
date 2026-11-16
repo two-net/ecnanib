@@ -3,6 +3,7 @@ using Ecnanib.AiProviderGateway;
 using Ecnanib.Catalog;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Shared;
+using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
@@ -15,8 +16,8 @@ namespace Ecnanib.Tests.Catalog;
 /// When a model assigned to an agent becomes unavailable, the agent moves to Attention required,
 /// and the system does not substitute another model on its own (FR-CAT-8). The Catalog may not
 /// use Agents, so it tells whatever depends on a model through <see cref="IModelDependents"/>,
-/// inside the transaction that marks the model. Agents are not built yet, so a stand-in of the
-/// tests is told for them, as Agents will be.
+/// inside the transaction that marks the model. No agent is given a model yet, so a stand-in of
+/// the tests is told for them, as Agents will be.
 /// </summary>
 /// <remarks>
 /// The file of the tests lets a model miss 3 syncs: the third sync in a row that lacks a model
@@ -162,24 +163,23 @@ public class ModelDependentsTests
     }
 
     [Fact]
-    public void Once_agents_are_stored_the_component_that_keeps_them_is_told_when_a_model_becomes_unavailable()
+    public void Once_an_agent_uses_a_model_the_component_that_keeps_agents_is_told_when_the_model_becomes_unavailable()
     {
         using var application = new EcnanibApplicationFactory();
         using var model = ModelOnly.Context();
 
-        // Agents are not built yet, and nothing is told for them. As soon as the component has
-        // a table of its own, it must be: the Catalog cannot look at agents itself.
-        var storesRows = model.Model.GetEntityTypes().Any(entity => IsOfAgents(entity.ClrType));
-        var isTold = application.Services.GetServices<IModelDependents>().Any(dependent => IsOfAgents(dependent.GetType()));
+        // Agents keeps the settings of agents, and nothing of it is told. No agent uses a model
+        // yet: no row of Agents points at one. As soon as one does, Agents must be told: the
+        // Catalog cannot look at agents itself.
+        var modelChoices = AgentsRules.ModelChoices(model.Model);
+        var isTold = application.Services.GetServices<IModelDependents>().Any(dependent => AgentsRules.IsOfAgents(dependent.GetType()));
 
         Assert.True(
-            isTold || !storesRows,
-            "Agents stores rows, and nothing of it is told when a model that an agent uses becomes unavailable. Such an agent " +
-            $"moves to Attention required, and no other model is put in the place of its own (FR-CAT-8). Implement {nameof(IModelDependents)} " +
-            "in Ecnanib.Agents and register it in AddAgents(). See docs/catalog.md.");
-
-        static bool IsOfAgents(Type type) =>
-            type.Namespace is { } area && (area == "Ecnanib.Agents" || area.StartsWith("Ecnanib.Agents.", StringComparison.Ordinal));
+            isTold || modelChoices.Count == 0,
+            $"An agent uses a model now ({string.Join(", ", modelChoices)}), and nothing of Agents is told when a model that " +
+            "an agent uses becomes unavailable. Such an agent moves to Attention required, and no other model is put in the " +
+            $"place of its own (FR-CAT-8). Implement {nameof(IModelDependents)} in Ecnanib.Agents and register it in " +
+            "AddAgents(). See docs/catalog.md.");
     }
 
     private static CatalogApplication WithAKeyForClaude(

@@ -47,6 +47,18 @@ public static class WebUiModule
     /// </summary>
     public static string ModelExperiencePath(Guid modelId) => $"/experience/models/{modelId}";
 
+    /// <summary>The path of the page that lists the agents of a user (FR-AGT-1).</summary>
+    public const string AgentsPath = "/agents";
+
+    /// <summary>The path of the page a user creates an agent on.</summary>
+    public const string NewAgentPath = "/agents/new";
+
+    /// <summary>The path of the page a user changes the settings of an agent on. The agent is named by its id.</summary>
+    public static string AgentPath(Guid agentId) => $"{AgentsPath}/{agentId}";
+
+    /// <summary>The path of the page a user deletes an agent on.</summary>
+    public static string DeleteAgentPath(Guid agentId) => $"{AgentPath(agentId)}/delete";
+
     // The export as a person reads it: indented, with the names of things and not their numbers.
     private static readonly JsonSerializerOptions ExportJson = new(JsonSerializerDefaults.Web)
     {
