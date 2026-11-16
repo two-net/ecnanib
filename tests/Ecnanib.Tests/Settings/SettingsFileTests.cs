@@ -88,6 +88,7 @@ public class SettingsFileTests
                 MaxEntryDistancePercent: new Bounded<decimal>(0.2m, 0.8m, 2m)),
             settings.Trading.Aggressive);
         Assert.Equal(new StaleSecondsSettings(100, 200, 400, 800), settings.Trading.StaleSeconds);
+        Assert.Equal(new CycleSettings(MaxPerProvider: 40, MaxPerKey: 3), settings.Trading.Cycles);
 
         Assert.Equal(new ExperienceSettings(4, 15, 25, new ExperienceBoardSettings(6, 60)), settings.Experience);
         Assert.Equal(new RetentionSettings(30, 180, 45, 365), settings.Retention);
@@ -191,6 +192,13 @@ public class SettingsFileTests
         { "Binance:OutboundIps", "[\"300.1.1.1\"]", "Binance:OutboundIps:0" },
         { "Trading:StaleSeconds", "{ \"15m\": 100, \"1H\": 200, \"1D\": 800 }", "Trading:StaleSeconds:4H" },
 
+        // How many cycles run at once (FR-CYC-11): one at least, for a provider and for a key.
+        { "Trading:Cycles", "null", "Trading:Cycles" },
+        { "Trading:Cycles", "{ \"MaxPerProvider\": 40 }", "Trading:Cycles:MaxPerKey" },
+        { "Trading:Cycles:MaxPerProvider", "0", "Trading:Cycles:MaxPerProvider" },
+        { "Trading:Cycles:MaxPerKey", "0", "Trading:Cycles:MaxPerKey" },
+        { "Trading:Cycles:MaxPerKey", "\"3\"", "Trading:Cycles:MaxPerKey" },
+
         // How often the account entry points may be tried (NFR-SEC-4).
         { "Limits:SignIn", "null", "Limits:SignIn" },
         { "Limits:SignIn:PerClient", "0", "Limits:SignIn:PerClient" },
@@ -204,6 +212,7 @@ public class SettingsFileTests
         // live in the database, so the file has no place for them (NFR-CFG-6).
         { "Limits:MaxAgentsPerUsers", "10", "Limits:MaxAgentsPerUsers" },
         { "Trading:StaleSeconds:1W", "3600", "Trading:StaleSeconds:1W" },
+        { "Trading:Cycles:MaxPerUser", "10", "Trading:Cycles:MaxPerUser" },
 
         // The product has one trading profile, Aggressive: the file has no place for another (FR-RSK-1).
         { "Trading:Conservative", "{ \"RiskPerTradePercent\": [0.1, 0.5, 1] }", "Trading:Conservative" },

@@ -99,7 +99,7 @@ if (agent is null)
 ### What is not asked for by owner
 
 - **A row that is found by a secret token.** A session is found by the hash of the token in its cookie, and so are a sign-in that waits for a code, a verification link, and a reset link. No user is named, because this is how a request comes to have one: the token is the proof. See [accounts.md](accounts.md).
-- **Background work.** A job has no user who is signed in. It works across users, takes the owner from the row it works on, and writes what it writes with that owner. It never takes an owner from what came in from outside, such as the output of a model.
+- **Background work.** A job has no user who is signed in. It works across users, takes the owner from the row it works on, and writes what it writes with that owner. It never takes an owner from what came in from outside, such as the output of a model. `IRunningAgents` of Agents is asked this way: it says the agents of every user that run, for the job that starts their cycles, and no page or endpoint asks it. See [cycles.md](cycles.md).
 - **Operator functions.** See below.
 
 ## Operators

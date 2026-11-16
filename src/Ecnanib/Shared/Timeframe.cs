@@ -43,4 +43,27 @@ public static class Timeframes
     /// <summary>The timeframe that a code names, or null when it names none. A code is written as it is: <c>1H</c>, and not <c>1h</c>.</summary>
     public static Timeframe? WithCode(string? code) =>
         All.Cast<Timeframe?>().SingleOrDefault(timeframe => string.Equals(timeframe!.Value.Code(), code, StringComparison.Ordinal));
+
+    /// <summary>
+    /// How long a candle of a timeframe lasts. Each length divides a day into equal parts, and is
+    /// a multiple of the shortest, so every close of a longer timeframe is a close of the
+    /// shortest as well.
+    /// </summary>
+    public static TimeSpan Length(this Timeframe timeframe) => timeframe switch
+    {
+        Timeframe.FifteenMinutes => TimeSpan.FromMinutes(15),
+        Timeframe.OneHour => TimeSpan.FromHours(1),
+        Timeframe.FourHours => TimeSpan.FromHours(4),
+        Timeframe.OneDay => TimeSpan.FromDays(1),
+        _ => throw new ArgumentOutOfRangeException(nameof(timeframe), timeframe, "The timeframe has no length."),
+    };
+
+    /// <summary>
+    /// The timeframes of which a candle closes at a time, shortest first (FR-CYC-1). Candles
+    /// close on UTC boundaries: at every multiple of the length of the timeframe since midnight
+    /// in UTC. So a quarter hour closes a candle of 15 minutes, the hour one of an hour as well,
+    /// and midnight one of each. A time between two quarter hours closes none.
+    /// </summary>
+    public static IReadOnlyList<Timeframe> ClosingAt(DateTimeOffset time) =>
+        [.. All.Where(timeframe => time.UtcTicks % timeframe.Length().Ticks == 0)];
 }

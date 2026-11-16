@@ -6,7 +6,7 @@ A user starts, pauses, resumes, and stops an agent, and the agent follows the st
 
 A new agent is in Demo. Its user switches it to Live with a valid Live Binance key, a confirmation of the risk, and a fresh proof of who they are, and the switch is recorded in the audit trail (FR-AGT-7). Every page of an agent shows a Demo or Live badge, and every action that affects Live trading asks for confirmation (FR-UI-3). What an agent did in Demo stays labeled as Demo, and is never combined with what it does in Live (FR-BIN-11).
 
-Agents keeps the settings, the state, and the mode of agents, and the models of their roles. It runs no cycle and places no order: nothing does yet. So an agent that runs does nothing more than be in that state, and no role calls its model. What an agent holds on the exchange is asked of whatever keeps positions and orders, which is not built: see "What an agent holds".
+Agents keeps the settings, the state, and the mode of agents, and the models of their roles. It runs no cycle and places no order. The Decision Engine starts a cycle for each agent that runs when a candle of its timeframe closes, and asks Agents which agents those are: see [cycles.md](cycles.md). What a cycle does once it has started is not built, so no role calls its model yet, and nothing places an order. What an agent holds on the exchange is asked of whatever keeps positions and orders, which is not built: see "What an agent holds".
 
 The code is in `src/Ecnanib/Agents`, and the pages in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Agents`.
 
@@ -50,7 +50,7 @@ The product has one profile, Aggressive. Its defaults and hard bounds are in the
 - The leverage cap and the liquidation buffer are stored for every agent and count on Futures only: an agent on Spot keeps them for when its market is changed.
 - **Two limits are fixed, and are not an agent's** (SRS Appendix B): a position on Spot is worth at most 100 percent of the agent's equity, and an agent has one open position at a time. `FixedLimits` in `RiskGuard` has them. The file has no key for them, and the form says them and has no field for them. A form that brings them all the same stores nothing of them.
 - **A change is recorded in the audit trail** (NFR-LOG-7): see "The audit trail".
-- A change applies from the agent's next cycle (FR-AGT-8), also for an agent that runs. Nothing runs a cycle yet: what does reads the settings as they are when it starts.
+- A change applies from the agent's next cycle (FR-AGT-8), also for an agent that runs. A cycle is handed the agent as it is stored when the turn of the cycle comes: `IRunningAgents.FindAsync` reads it then.
 
 ### The team
 
@@ -102,11 +102,12 @@ Task<IReadOnlyList<MarketSymbols>> SymbolsAsync(TradingMode mode, CancellationTo
 
 ### What goes by the timeframe and the market
 
-The timeframe sets the cycle schedule, the data window, and the prompt variant (FR-AGT-3). The market sets the exchange interface, the allowed actions, and the prompt variant (FR-AGT-4). Nothing runs a cycle yet. What is built is the one stored choice, under the names that what goes by it uses, and `AgentRuleTests` holds the names together. The prompts are built as well: a module for each timeframe and each market, what composes the prompt of a role call from the modules of an agent's own market and timeframe, and the page of an agent's prompts, which shows them. See [prompts.md](prompts.md).
+The timeframe sets the cycle schedule, the data window, and the prompt variant (FR-AGT-3). The market sets the exchange interface, the allowed actions, and the prompt variant (FR-AGT-4). What is built is the one stored choice, under the names that what goes by it uses, and `AgentRuleTests` holds the names together. The cycle schedule is built as well: a cycle of an agent starts at the close of each candle of its timeframe. See [cycles.md](cycles.md). The prompts are built as well: a module for each timeframe and each market, what composes the prompt of a role call from the modules of an agent's own market and timeframe, and the page of an agent's prompts, which shows them. See [prompts.md](prompts.md).
 
 | What goes by it | How it names the choice |
 |---|---|
-| The candles that the gateway reads, which a cycle starts with | `CandleInterval` has a member of the same name as each `Timeframe`, and the week besides, for context alone. |
+| The cycle schedule | `Timeframes.Length` says how long a candle of each `Timeframe` lasts, and `Timeframes.ClosingAt` which of them close at a time. Each length is a multiple of the shortest, so one job starts the cycles of all four, at every quarter hour. |
+| The candles that the gateway reads, which a cycle starts with | `CandleInterval` has a member of the same name as each `Timeframe`, which `CandleIntervals.Of` gives, and the week besides, for context alone. |
 | The stale limit after a candle closes | `Trading:StaleSeconds` has a key for each code, and `StaleSecondsSettings` a property of each name. |
 | The prompt for the timeframe | A template is seeded under each code: `15m`, `1H`, `4H`, `1D`. `AgentContext.Of` takes the timeframe and the market of a stored agent, and the modules of its prompts follow from them (FR-PRM-4). |
 | The exchange interface | The gateway takes a `Market` with every call, and names nothing of Binance. |
@@ -127,7 +128,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, or the provider of a model of its team no longer offers the model. The other causes of the specification are not built. | No | No | Stays open with its protective orders | Yes |
 | `Stopped` | Its user stops it. | No | No | Closed or kept, as its user chose | No |
 
-- **Only a running agent runs cycles and opens positions.** `AgentStates.RunsCycles` and `AgentStates.TakesNewEntries` say so, for what runs a cycle and what places an entry to ask.
+- **Only a running agent runs cycles and opens positions.** `AgentStates.RunsCycles` and `AgentStates.TakesNewEntries` say so, for what runs a cycle and what places an entry to ask. What starts the cycles asks `IRunningAgents`, which goes by `AgentStates.RunsCycles`: when a candle closes, and again as the turn of a cycle comes. See "What other components ask of Agents".
 - **Every state is explained in plain language wherever it is shown** (NFR-USA-2): on the page of the agent's state, on the page of its settings, and under the list. The texts are `AgentPages.Explain`.
 
 | Rule | Detail |
@@ -372,6 +373,10 @@ The pages are rendered on the server for each request, and none is interactive. 
 |---|---|---|
 | Accounts, before it deletes an account | `IAgentActivity` | Whether an agent of the user is active (FR-ACC-9). A draft was never started, and stands in the way no more than a stopped agent. It locks the rows of the user's agents for the rest of the transaction, in the order of their ids. |
 | Accounts, for the export of a user's data | `IExportedPart` | The section `agents`: each agent with its settings and its state (NFR-SEC-9). The section `agentRoles`: each role that has a model, with the provider and the identifier of the model. The section `agentStateChanges`: each change of a state. |
+| The Decision Engine, when a candle closes | `IRunningAgents.OfTimeframesAsync` | The agents that run cycles and work on a timeframe of which a candle closed, of every user, in the order of their ids, each with the roles of its team that have a model (FR-CYC-1). |
+| The Decision Engine, as the turn of a cycle comes | `IRunningAgents.FindAsync` | The agent as it is stored then, with its roles, when it still runs cycles, and nothing otherwise: an agent that was paused, stopped, or deleted while its cycle waited gets none. |
+
+**`IRunningAgents` is for background work, and reads the agents of every user.** A job has no user who is signed in: each agent says whose it is, and what is done for it is done for that user. No page and no endpoint asks it. Which states run cycles is `AgentStates.RunsCycles`, and `RunningAgents` names no state of its own. It only reads. See "What is not asked for by owner" in [ownership.md](ownership.md).
 
 The rows of an account go with it: `agents.user_id`, `agent_roles.user_id`, and `agent_state_changes.user_id` point at `users` with a foreign key that deletes the rows with the account.
 
@@ -511,7 +516,8 @@ An event names a user and an agent by their ids, and never holds a name or a num
 ## Not built yet
 
 - What keeps positions and orders, which answers `IAgentExposure` and closes a position. Until it is built, no agent has a position: stopping an agent asks for no choice, and no "Close position now" is shown. With it comes cancelling an entry that has not filled when its agent stops running (FR-BIN-S2).
-- The cycles and the data package. The prompts that go by the timeframe and the market of an agent are composed, and a user reads their templates, but nothing asks for a prompt yet: see [prompts.md](prompts.md). An agent that runs is in that state, and nothing more happens. What runs a cycle asks `AgentStates.RunsCycles`.
+- What a cycle does once it has started, with the data package. A cycle of an agent that runs starts when a candle of its timeframe closes, and makes no decision: see [cycles.md](cycles.md). The prompts that go by the timeframe and the market of an agent are composed, and a user reads their templates, but nothing asks for a prompt yet: see [prompts.md](prompts.md).
+- Stopping the cycle of an agent that its user pauses or stops while the cycle runs. Whether an agent runs is asked when its cycle starts. What places an entry asks `AgentStates.TakesNewEntries` again.
 - What enforces the risk settings and the two fixed limits on a trade: the Risk Guard (FR-RSK-3). Agents keeps the settings, and holds them to the bounds when they are saved.
 - Holding a stored risk setting to bounds that the file is given later. An agent whose value is outside bounds that were narrowed since keeps it, and so does a copy of it. Its form shows the value, and is saved only once the value is within the bounds.
 - What halts an agent when a loss limit is reached, and what resumes it after a daily loss limit, on the next UTC day (FR-RSK-8). A halted agent is resumed and stopped by its user already.

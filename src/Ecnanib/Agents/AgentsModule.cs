@@ -35,6 +35,10 @@ public static class AgentsModule
         // it moves to Attention required, and no other model is put in its place (FR-CAT-8).
         services.AddSingleton<IModelDependents, AgentModelDependents>();
 
+        // What starts a cycle asks which agents run, of every user, when a candle closes, and
+        // whether an agent still runs when the turn of its cycle comes (FR-CYC-1).
+        services.AddSingleton<IRunningAgents, RunningAgents>();
+
         // What Accounts asks before it deletes an account: whether an agent of the user is
         // active (FR-ACC-9).
         services.AddSingleton<IAgentActivity, AgentActivity>();

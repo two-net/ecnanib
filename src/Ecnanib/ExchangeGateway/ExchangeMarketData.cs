@@ -1,3 +1,5 @@
+using Ecnanib.Shared;
+
 namespace Ecnanib.ExchangeGateway;
 
 /// <summary>
@@ -20,6 +22,23 @@ public enum CandleInterval
 
     /// <summary>1 week, from Monday at midnight in UTC.</summary>
     OneWeek,
+}
+
+/// <summary>The lengths of a candle that the timeframes of an agent are.</summary>
+public static class CandleIntervals
+{
+    /// <summary>
+    /// The length of the candles that an agent on a timeframe works on: the member of the same
+    /// name. A cycle asks for the candles of its timeframe with it.
+    /// </summary>
+    public static CandleInterval Of(Timeframe timeframe) => timeframe switch
+    {
+        Timeframe.FifteenMinutes => CandleInterval.FifteenMinutes,
+        Timeframe.OneHour => CandleInterval.OneHour,
+        Timeframe.FourHours => CandleInterval.FourHours,
+        Timeframe.OneDay => CandleInterval.OneDay,
+        _ => throw new ArgumentOutOfRangeException(nameof(timeframe), timeframe, "The timeframe has no candles."),
+    };
 }
 
 /// <summary>What reading the candles of a symbol gave.</summary>

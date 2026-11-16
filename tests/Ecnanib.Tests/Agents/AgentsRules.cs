@@ -60,6 +60,10 @@ internal static class AgentsRules
             "Asked by Agents, and answered by whatever keeps positions and orders. It is no operation on an agent.",
         ["IAgentExposure.HasOpenPositionAsync"] =
             "Asked by Agents, and answered by whatever keeps positions. It is no operation on an agent.",
+        ["IRunningAgents.OfTimeframesAsync"] =
+            "Reads the agents of all users that run cycles, for what starts a cycle when a candle closes. It changes no agent.",
+        ["IRunningAgents.FindAsync"] =
+            "Reads one agent when it runs cycles, for what starts its cycle when the turn of the cycle comes. It changes no agent.",
     };
 
     /// <summary>

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
 using Ecnanib.Accounts;
+using Ecnanib.Agents;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
@@ -86,12 +87,14 @@ internal sealed class AccountsApplication : IDisposable
     /// <param name="database">A database that an earlier application of the test has used.</param>
     /// <param name="settings">Further changes to the configuration file.</param>
     /// <param name="host">Further changes to the host, such as a request handler of the test's own.</param>
+    /// <param name="runsCycles">Whether the application starts the cycles of the agents that run, which only a test of the cycles wants.</param>
     public AccountsApplication(
         bool registrationOpen = true,
         TestClock? clock = null,
         TestDatabase? database = null,
         Func<SettingsJson, SettingsJson>? settings = null,
-        Action<IWebHostBuilder>? host = null)
+        Action<IWebHostBuilder>? host = null,
+        bool runsCycles = false)
     {
         Database = database ?? PostgresServer.CreateDatabase();
 
@@ -121,7 +124,8 @@ internal sealed class AccountsApplication : IDisposable
 
                 host?.Invoke(builder);
             },
-            Database);
+            Database,
+            runsCycles: runsCycles);
     }
 
     public TestDatabase Database { get; }
@@ -157,6 +161,20 @@ internal sealed class AccountsApplication : IDisposable
         _application.Services.GetServices<IBackgroundJob>()
             .Single(job => job.Name == "key-validation")
             .RunAsync(new BackgroundJobRun(scheduledFor), TestContext.Current.CancellationToken);
+
+    /// <summary>
+    /// Runs the job that starts the cycles, now, for the close of a candle, as the scheduler
+    /// does at a quarter hour. It is there in an application that runs cycles. A test runs it
+    /// itself to have a close at a time of its choosing, and to wait for the cycles of that
+    /// close to be over.
+    /// </summary>
+    public Task RunCyclesAsync(DateTimeOffset closedAt, CancellationToken? cancellationToken = null) =>
+        _application.Services.GetServices<IBackgroundJob>()
+            .Single(job => job.Name == "decision-cycles")
+            .RunAsync(new BackgroundJobRun(closedAt), cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>What says which agents run cycles, of every user.</summary>
+    public IRunningAgents RunningAgents => _application.Services.GetRequiredService<IRunningAgents>();
 
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 

@@ -33,8 +33,8 @@ public class BackgroundWorkLockTests
         // It is taken before any job starts. The application of a test has two jobs of its own.
         // One checks the stored keys on the hour, and so has nothing to do at this start. The
         // other syncs the catalog, and with no catalog key in the file its first run asks nobody.
-        // The third job of the application, which reads Binance's clocks, is left out of the
-        // application of a test that is not about it.
+        // The two other jobs of the application, which read Binance's clocks and start the
+        // cycles, are each left out of the application of a test that is not about it.
         var active = Assert.Single(SchedulerLog.Of(application), written => written.Template == SchedulerLog.Active);
         Assert.Equal(2, active["JobCount"].GetInt32());
     }

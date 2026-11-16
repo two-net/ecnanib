@@ -137,6 +137,20 @@ public class AgentRuleTests
         Assert.Equal(
             [.. Enum.GetNames<Timeframe>(), nameof(CandleInterval.OneWeek)],
             Enum.GetNames<CandleInterval>());
+        Assert.All(Timeframes.All, timeframe => Assert.Equal(timeframe.ToString(), CandleIntervals.Of(timeframe).ToString()));
+
+        // The cycle schedule: a candle of each has a length, shortest first, which divides a day
+        // into equal parts and is a multiple of the shortest. So a cycle starts on UTC boundaries
+        // (FR-CYC-1), and every close is a close of the shortest timeframe as well, which is
+        // when the job that starts the cycles runs.
+        Assert.Equal(
+            [TimeSpan.FromMinutes(15), TimeSpan.FromHours(1), TimeSpan.FromHours(4), TimeSpan.FromDays(1)],
+            Timeframes.All.Select(timeframe => timeframe.Length()));
+        Assert.All(Timeframes.All, timeframe =>
+        {
+            Assert.Equal(0, TimeSpan.TicksPerDay % timeframe.Length().Ticks);
+            Assert.Equal(0, timeframe.Length().Ticks % Timeframes.All[0].Length().Ticks);
+        });
 
         // The stale limit of each is in the configuration file, under the same name.
         Assert.Equal(

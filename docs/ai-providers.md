@@ -213,4 +213,5 @@ Run it when an adapter is added or changed, and when a provider changes its API.
 - Validating a result against its schema, and calling again after a timeout or an invalid result (FR-TEAM-6, FR-TEAM-9).
 - Live search for the Sentiment Analyst (FR-CYC-3).
 - Breakers for repeated failures of a provider or a key (NFR-REL-4).
+- Limits on how many calls a provider or a key takes at once. The gateway has none. What starts the cycles limits how many cycles use a provider, and the key of a user for it, at once (FR-CYC-11): see "The queue" in [cycles.md](cycles.md).
 - Recording the usage of each call, for the reports (FR-TEAM-8, FR-RPT-3).

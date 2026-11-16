@@ -2,17 +2,22 @@ using Ecnanib.Shared;
 
 namespace Ecnanib.Platform.Settings;
 
-/// <summary>The <c>Trading</c> section: the default team, the Aggressive profile, and the stale limits.</summary>
+/// <summary>
+/// The <c>Trading</c> section: the default team, the Aggressive profile, the stale limits, and
+/// how many cycles run at once.
+/// </summary>
 public sealed record TradingSettings(
     DefaultRolesSettings DefaultRoles,
     AggressiveSettings Aggressive,
-    StaleSecondsSettings StaleSeconds)
+    StaleSecondsSettings StaleSeconds,
+    CycleSettings Cycles)
 {
     internal static TradingSettings Read(SettingsReader file, AiProvidersSettings aiProviders) =>
         new(
             DefaultRolesSettings.Read(file, aiProviders),
             AggressiveSettings.Read(file),
-            StaleSecondsSettings.Read(file));
+            StaleSecondsSettings.Read(file),
+            CycleSettings.Read(file));
 }
 
 /// <summary>The provider that fills each of the four roles on a new agent (FR-TEAM-3).</summary>
@@ -118,4 +123,19 @@ public sealed record StaleSecondsSettings(int FifteenMinutes, int OneHour, int F
             file.WholeNumber("Trading:StaleSeconds:1H"),
             file.WholeNumber("Trading:StaleSeconds:4H"),
             file.WholeNumber("Trading:StaleSeconds:1D"));
+}
+
+/// <summary>
+/// How many of the cycles that share a candle boundary run at once (FR-CYC-11). A cycle takes a
+/// place with each AI provider that a role of its agent uses, and with the key of its user for
+/// that provider, and waits in the queue while one of them has none. See docs/cycles.md.
+/// </summary>
+/// <param name="MaxPerProvider">The most cycles that use one AI provider at once, of all users together.</param>
+/// <param name="MaxPerKey">The most cycles that use the key of one user for one AI provider at once.</param>
+public sealed record CycleSettings(int MaxPerProvider, int MaxPerKey)
+{
+    internal static CycleSettings Read(SettingsReader file) =>
+        new(
+            file.WholeNumber("Trading:Cycles:MaxPerProvider"),
+            file.WholeNumber("Trading:Cycles:MaxPerKey"));
 }

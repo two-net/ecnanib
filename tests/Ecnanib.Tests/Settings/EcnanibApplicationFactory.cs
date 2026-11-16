@@ -17,10 +17,14 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     // it is named as the log names it.
     private const string ClockWatch = "Ecnanib.ExchangeGateway.Adapters.Binance.BinanceClockJob";
 
+    // The job of the Decision Engine that starts the cycles, named in the same way.
+    private const string Cycles = "Ecnanib.DecisionEngine.DecisionCyclesJob";
+
     private SettingsDirectory? _ownDirectory;
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
     private readonly bool _watchesBinanceClock;
+    private readonly bool _runsCycles;
 
     /// <summary>
     /// Where a test's client sends its requests. Over TLS, as a browser does: the application
@@ -43,12 +47,21 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// Whether the application reads Binance's clocks on its schedule, as it does outside the
     /// tests. Only a test of that watch says so, and gives the application a Binance to read.
     /// </param>
+    /// <param name="runsCycles">
+    /// Whether the application starts the cycles of the agents that run when a candle closes, as
+    /// it does outside the tests. Only a test of the cycles says so, and gives the application
+    /// candles to start them with.
+    /// </param>
     internal EcnanibApplicationFactory(
-        SettingsDirectory contentRoot, Action<IWebHostBuilder>? configure = null, bool watchesBinanceClock = false)
+        SettingsDirectory contentRoot,
+        Action<IWebHostBuilder>? configure = null,
+        bool watchesBinanceClock = false,
+        bool runsCycles = false)
     {
         _contentRoot = contentRoot.Path;
         _configure = configure;
         _watchesBinanceClock = watchesBinanceClock;
+        _runsCycles = runsCycles;
         ClientOptions.BaseAddress = Address;
     }
 
@@ -72,6 +85,17 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
             {
                 services.Remove(services.Single(job =>
                     job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == ClockWatch));
+            }
+
+            // The job that starts the cycles is due at every quarter hour, and asks the exchange
+            // for candles when an agent runs then. Many tests have agents that run, and move a
+            // clock over a quarter hour for a reason of their own: their application would ask a
+            // market data that has no candles, at a moment that the test does not choose. So the
+            // application of a test is without this job as well, unless the test is about it.
+            if (!_runsCycles)
+            {
+                services.Remove(services.Single(job =>
+                    job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == Cycles));
             }
         });
 

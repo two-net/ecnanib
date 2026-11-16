@@ -59,6 +59,10 @@ public class TrackedFileTests
                 MaxEntryDistancePercent: new Bounded<decimal>(0.1m, 1m, 3m)),
             settings.Trading.Aggressive);
         Assert.Equal(new StaleSecondsSettings(120, 300, 600, 900), settings.Trading.StaleSeconds);
+
+        // The cycles of 500 agents that share a boundary start in two rounds at most, and a
+        // user's key is called for four of their agents at once (FR-CYC-11, NFR-PRF-2).
+        Assert.Equal(new CycleSettings(MaxPerProvider: 250, MaxPerKey: 4), settings.Trading.Cycles);
         Assert.Equal(new ExperienceSettings(5, 20, 20, new ExperienceBoardSettings(MinUsers: 5, MinTrades: 50)), settings.Experience);
         Assert.Equal(new RetentionSettings(90, 365, 90, 730), settings.Retention);
         Assert.Equal(

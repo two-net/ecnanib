@@ -29,14 +29,19 @@ internal sealed class LoggedApplication : IDisposable
     /// Whether the application reads Binance's clocks on its schedule, which only a test of that
     /// watch wants: see <see cref="EcnanibApplicationFactory"/>.
     /// </param>
+    /// <param name="runsCycles">
+    /// Whether the application starts the cycles of the agents that run when a candle closes,
+    /// which only a test of the cycles wants: see <see cref="EcnanibApplicationFactory"/>.
+    /// </param>
     public LoggedApplication(
         SettingsJson settings,
         Action<IWebHostBuilder>? configure = null,
         TestDatabase? database = null,
-        bool watchesBinanceClock = false)
+        bool watchesBinanceClock = false,
+        bool runsCycles = false)
     {
         ContentRoot = new SettingsDirectory(settings.OnDatabase(database ?? PostgresServer.SharedDatabase));
-        _application = new EcnanibApplicationFactory(ContentRoot, configure, watchesBinanceClock);
+        _application = new EcnanibApplicationFactory(ContentRoot, configure, watchesBinanceClock, runsCycles);
     }
 
     /// <summary>A valid file that logs from the information level up, to the console and to a file.</summary>

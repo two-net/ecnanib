@@ -49,12 +49,14 @@ internal sealed class StandInSystem : HttpMessageHandler
     /// <param name="services">Further services of the test's own, such as a clock.</param>
     /// <param name="database">The database, when it is not the shared one of the test server.</param>
     /// <param name="watchesBinanceClock">Whether the application reads Binance's clocks on its schedule: see <see cref="LoggedApplication"/>.</param>
+    /// <param name="runsCycles">Whether the application starts the cycles of the agents that run: see <see cref="LoggedApplication"/>.</param>
     public LoggedApplication Behind(
         string clientName,
         SettingsJson? settings = null,
         Action<IServiceCollection>? services = null,
         TestDatabase? database = null,
-        bool watchesBinanceClock = false) =>
+        bool watchesBinanceClock = false,
+        bool runsCycles = false) =>
         new(
             settings ?? LoggedApplication.Settings(),
             host => host.ConfigureServices(registered =>
@@ -63,7 +65,8 @@ internal sealed class StandInSystem : HttpMessageHandler
                 services?.Invoke(registered);
             }),
             database,
-            watchesBinanceClock);
+            watchesBinanceClock,
+            runsCycles);
 
     /// <summary>An answer with a body of JSON.</summary>
     public static HttpResponseMessage Json(HttpStatusCode status, string body) =>

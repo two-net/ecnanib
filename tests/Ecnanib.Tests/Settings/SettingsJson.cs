@@ -89,7 +89,8 @@ internal sealed class SettingsJson
               "DrawdownPercent": [ 8, 20, 40 ],
               "MaxEntryDistancePercent": [ 0.2, 0.8, 2 ]
             },
-            "StaleSeconds": { "15m": 100, "1H": 200, "4H": 400, "1D": 800 }
+            "StaleSeconds": { "15m": 100, "1H": 200, "4H": 400, "1D": 800 },
+            "Cycles": { "MaxPerProvider": 40, "MaxPerKey": 3 }
           },
           "Experience": {
             "LessonsPerPrompt": 4,
