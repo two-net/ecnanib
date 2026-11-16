@@ -16,9 +16,9 @@ namespace Ecnanib.Tests.Credentials;
 /// <summary>
 /// An agent that depends on a missing key moves to Attention required (FR-KEY-10). Credentials
 /// may not use Agents, so it tells whatever depends on a key through
-/// <see cref="IKeyDependents"/>, inside the transaction that deletes the key. Agents keeps the
-/// settings of agents and starts none yet, so a stand-in of the tests is told for them, as
-/// Agents will be.
+/// <see cref="IKeyDependents"/>, inside the transaction that deletes the key. These tests are
+/// about how Credentials tells, and a stand-in is told beside Agents to show it. What Agents does
+/// when it is told is in AgentKeyDependentsTests.
 /// </summary>
 public class KeyDependentsTests
 {
@@ -131,10 +131,11 @@ public class KeyDependentsTests
         using var application = new EcnanibApplicationFactory();
         using var model = ModelOnly.Context();
 
-        // Agents keeps the settings of agents, and nothing of it is told. No agent depends on a
-        // key yet: none can run, because nothing starts one, and none uses a model. As soon as
-        // Agents can do more with an agent than keep its settings, or an agent is given a
-        // model, it must be told: Credentials cannot look at agents itself.
+        // An agent can run, and runs with the Binance key of its user, so Agents must be told
+        // when a key goes: Credentials cannot look at agents itself. This waited for the first
+        // operation of Agents that does more than keep the settings of an agent, and holds for
+        // good now that there is one. What Agents does when it is told is shown in
+        // AgentKeyDependentsTests.
         var dependsOnAKey = AgentsRules.OperationsBeyondSettings().Concat(AgentsRules.ModelChoices(model.Model)).ToList();
         var isTold = application.Services.GetServices<IKeyDependents>().Any(dependent => AgentsRules.IsOfAgents(dependent.GetType()));
 

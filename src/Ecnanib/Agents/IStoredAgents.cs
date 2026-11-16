@@ -15,8 +15,9 @@ namespace Ecnanib.Agents;
 /// that user only. An agent of another user is not found (NFR-SEC-3).
 /// </para>
 /// <para>
-/// What starts, pauses, resumes, and stops an agent, what switches one to Live, and what gives
-/// the roles of its team their models are not built yet. So an agent is in Demo and in Draft.
+/// What starts, pauses, resumes, and stops an agent is <see cref="IAgentControls"/>: nothing here
+/// changes the state of an agent. What switches an agent to Live, and what gives the roles of
+/// its team their models, are not built yet. So an agent is in Demo.
 /// </para>
 /// </remarks>
 public interface IStoredAgents
@@ -81,11 +82,16 @@ public sealed record StoredAgentList(IReadOnlyList<AgentView> Agents, AgentCreat
 /// <param name="AllocatedCapital">The capital its user allocated to it.</param>
 /// <param name="Risk">Its risk settings.</param>
 /// <param name="State">Its state.</param>
+/// <param name="StateCause">Why it is in that state.</param>
 /// <param name="StateChangedAt">Since when it is in that state.</param>
 /// <param name="CreatedAt">When it was created.</param>
 /// <param name="StructureCanChange">
 /// Whether its market, symbol, and timeframe can be changed now, and whether it can be deleted:
 /// it is in Draft, or is Stopped with no open position or orders (FR-AGT-8).
+/// </param>
+/// <param name="HasOpenPosition">
+/// Whether it has an open position now, which its user can close at any time (FR-AGT-12), and is
+/// asked about when they stop the agent (FR-AGT-11).
 /// </param>
 public sealed record AgentView(
     Guid Id,
@@ -98,9 +104,11 @@ public sealed record AgentView(
     decimal AllocatedCapital,
     AgentRisk Risk,
     AgentState State,
+    AgentStateCause StateCause,
     DateTimeOffset StateChangedAt,
     DateTimeOffset CreatedAt,
-    bool StructureCanChange);
+    bool StructureCanChange,
+    bool HasOpenPosition);
 
 /// <summary>
 /// The risk settings of an agent that its user chooses, each within the hard bounds of the

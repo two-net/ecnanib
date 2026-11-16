@@ -12,8 +12,8 @@ namespace Ecnanib.Catalog;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing implements it until an agent is given a model: Agents keeps the settings of agents,
-/// and gives no role a model yet. Until then nothing depends on a model, and a model is marked
+/// Nothing implements it until an agent is given a model: Agents starts and stops agents, and
+/// gives no role a model yet. Until then nothing depends on a model, and a model is marked
 /// without anything being told.
 /// </para>
 /// <para>

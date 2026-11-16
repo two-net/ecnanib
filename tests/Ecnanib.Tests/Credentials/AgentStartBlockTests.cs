@@ -13,8 +13,8 @@ namespace Ecnanib.Tests.Credentials;
 /// <summary>
 /// A Binance key that lacks the permission an agent's market needs (Spot trading or Futures
 /// trading) blocks that agent from starting, with a message naming the missing permission
-/// (FR-KEY-5). Nothing starts an agent yet: Credentials says what blocks a start, from what the
-/// last check of the key recorded, and Agents asks it before an agent starts.
+/// (FR-KEY-5). Credentials says what blocks a start, from what the last check of the key
+/// recorded, and Agents asks it before an agent starts or is resumed: see AgentControlTests.
 /// </summary>
 public class AgentStartBlockTests
 {
@@ -165,9 +165,10 @@ public class AgentStartBlockTests
     [Fact]
     public void Once_an_agent_can_start_the_component_that_keeps_agents_asks_what_blocks_the_start()
     {
-        // Agents keeps the settings of agents, and nothing starts one. As soon as Agents can do
-        // more with an agent than keep its settings, it must ask: Credentials cannot keep an
-        // agent from starting itself.
+        // Agents starts agents, so it must ask: Credentials cannot keep an agent from starting
+        // itself. This waited for the first operation of Agents that does more than keep the
+        // settings of an agent, and holds for good now that there is one. That a start is
+        // refused, with the message that names the permission, is shown in AgentControlTests.
         var beyondSettings = AgentsRules.OperationsBeyondSettings();
         var asks = typeof(IKeyValidation).Assembly.GetTypes()
             .Where(AgentsRules.IsOfAgents)

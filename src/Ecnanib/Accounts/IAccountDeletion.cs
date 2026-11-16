@@ -70,8 +70,7 @@ public enum AccountDeletionOutcome
 /// <remarks>
 /// <para>
 /// Agents answers it: an agent stands in the way while it is active, in any state other than
-/// Draft or Stopped. Nothing starts an agent yet, so none is, and nothing stands in the way of
-/// a deletion.
+/// Draft or Stopped. Its user stops it first.
 /// </para>
 /// <para>
 /// It is asked inside the transaction that deletes the account, which holds a lock on the row of

@@ -8,8 +8,9 @@ namespace Ecnanib.WebUi.Pages.Agents;
 
 /// <summary>
 /// What the pages of a user's agents have in common: the names of their forms, how a setting is
-/// written, and what they say about a setting that cannot be stored (FR-AGT-1, FR-AGT-2). Every
-/// setting is explained in plain language (NFR-USA-2).
+/// written, what they say about a setting that cannot be stored, and what they say about the
+/// state of an agent and the controls that change it (FR-AGT-1, FR-AGT-2, FR-AGT-10). Every
+/// setting and every state is explained in plain language (NFR-USA-2).
 /// </summary>
 public static class AgentPages
 {
@@ -18,6 +19,29 @@ public static class AgentPages
 
     /// <summary>The name of the form that deletes an agent.</summary>
     public const string DeleteForm = "delete-agent";
+
+    /// <summary>The name of the form that stops an agent.</summary>
+    public const string StopForm = "stop-agent";
+
+    /// <summary>The name of the form that closes the open position of an agent.</summary>
+    public const string ClosePositionForm = "close-agent-position";
+
+    /// <summary>The value of the choice that closes the open position of an agent that is stopped (FR-AGT-11).</summary>
+    public const string ClosePosition = "close";
+
+    /// <summary>The value of the choice that keeps the open position of an agent that is stopped, with its protective orders (FR-AGT-11).</summary>
+    public const string KeepPosition = "keep";
+
+    /// <summary>What the control that closes the open position of an agent is called, wherever it is (FR-AGT-12).</summary>
+    public const string ClosePositionNow = "Close position now";
+
+    /// <summary>What a page says when the position of an agent could not be closed.</summary>
+    public const string NotClosed =
+        "The position could not be closed: Binance refused, or gave no answer. It is open as it was, with its stop-loss and " +
+        "take-profit orders. Try again, or close it at Binance.";
+
+    /// <summary>What a page says when an agent whose position was to be closed has none.</summary>
+    public const string NothingOpen = "This agent has no open position.";
 
     /// <summary>
     /// The value of the button that shows the symbols of the chosen market and stores nothing.
@@ -78,6 +102,111 @@ public static class AgentPages
         AgentState.AttentionRequired => "Attention required",
         AgentState.Stopped => "Stopped",
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, "The state has no description."),
+    };
+
+    /// <summary>
+    /// What a state means, in plain language, wherever the state is shown: whether the agent's
+    /// cycles run, whether it opens a position, and what becomes of an open one (SRS 3.3,
+    /// NFR-USA-2).
+    /// </summary>
+    public static string Explain(AgentState state) => state switch
+    {
+        AgentState.Draft =>
+            "The agent is not started yet. It runs no cycle and trades nothing.",
+        AgentState.Running =>
+            "The agent's team decides once for each candle that closes, may open a position, and manages the open one.",
+        AgentState.Paused =>
+            "You paused the agent. It runs no cycle and opens no position. An open position stays open with its stop-loss " +
+            "and take-profit orders.",
+        AgentState.Halted =>
+            "A loss limit was reached, and the agent's position was closed. It runs no cycle and opens no position.",
+        AgentState.AttentionRequired =>
+            "Something that the agent needs is missing or failing, and it waits for you. It runs no cycle and opens no " +
+            "position. An open position stays open with its stop-loss and take-profit orders.",
+        AgentState.Stopped =>
+            "You stopped the agent. It runs no cycle and opens no position. An open position was closed or kept, as you chose.",
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, "The state has no explanation."),
+    };
+
+    /// <summary>Why an agent came to a state, as its user reads it (FR-AGT-10).</summary>
+    public static string Says(AgentStateCause cause) => cause switch
+    {
+        AgentStateCause.Created => "You created the agent.",
+        AgentStateCause.UserStarted => "You started the agent.",
+        AgentStateCause.UserPaused => "You paused the agent.",
+        AgentStateCause.UserResumed => "You resumed the agent.",
+        AgentStateCause.UserStopped => "You stopped the agent. It had no open position.",
+        AgentStateCause.UserStoppedClosingPosition => "You stopped the agent, and chose to close its position at market.",
+        AgentStateCause.UserStoppedKeepingPosition =>
+            "You stopped the agent, and chose to keep its position with its stop-loss and take-profit orders.",
+        AgentStateCause.ExchangeKeyDeleted =>
+            "Your Binance key for the agent's mode was deleted while the agent ran. Add a key, and resume the agent.",
+        AgentStateCause.ExchangeKeyInvalid =>
+            "Binance refused your key for the agent's mode while the agent ran. Replace the key, or check it again on the " +
+            "page of your keys, and resume the agent.",
+        _ => throw new ArgumentOutOfRangeException(nameof(cause), cause, "The cause has no description."),
+    };
+
+    /// <summary>The name of the form of a control that starts, pauses, or resumes an agent.</summary>
+    public static string FormOf(AgentControl control) => control switch
+    {
+        AgentControl.Start => "start-agent",
+        AgentControl.Pause => "pause-agent",
+        AgentControl.Resume => "resume-agent",
+        AgentControl.Stop => StopForm,
+        _ => throw new ArgumentOutOfRangeException(nameof(control), control, "The control has no form."),
+    };
+
+    /// <summary>What the button of a control says.</summary>
+    public static string Describe(AgentControl control) => control switch
+    {
+        AgentControl.Start => "Start the agent",
+        AgentControl.Pause => "Pause the agent",
+        AgentControl.Resume => "Resume the agent",
+        AgentControl.Stop => "Stop the agent",
+        _ => throw new ArgumentOutOfRangeException(nameof(control), control, "The control has no description."),
+    };
+
+    /// <summary>What a control does, in plain language, beside its button.</summary>
+    public static string Explain(AgentControl control) => control switch
+    {
+        AgentControl.Start =>
+            "The agent runs: its team decides once for each candle that closes, and may open a position.",
+        AgentControl.Pause =>
+            "The agent runs no cycle and opens no position until you resume it. An open position stays open with its " +
+            "stop-loss and take-profit orders.",
+        AgentControl.Resume => "The agent runs again, from the next candle that closes.",
+        AgentControl.Stop =>
+            "The agent runs no cycle and opens no position. You choose what happens to an open position. A stopped agent " +
+            "can be started again.",
+        _ => throw new ArgumentOutOfRangeException(nameof(control), control, "The control has no explanation."),
+    };
+
+    /// <summary>What a page says when a control is not offered in the state that the agent is in.</summary>
+    public static string NotOffered(AgentControl control, AgentState state) => control switch
+    {
+        AgentControl.Start => $"This agent is {InWords(state)}. Only a draft or a stopped agent is started.",
+        AgentControl.Pause => $"This agent is {InWords(state)}. Only a running agent is paused.",
+        AgentControl.Resume => $"This agent is {InWords(state)}. An agent is resumed when it is paused, is halted, or requires attention.",
+        AgentControl.Stop => "This agent is a draft: it was never started, so there is nothing to stop.",
+        _ => throw new ArgumentOutOfRangeException(nameof(control), control, "The control has no refusal."),
+    };
+
+    /// <summary>What a page says when another active agent keeps an agent from starting (FR-AGT-9).</summary>
+    public static string AnotherAgentActive(AgentView agent)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        return $"You have another active agent for {agent.Symbol} on {agent.Market} in {agent.Mode}. One Binance key runs one " +
+            "active agent for each market and symbol. Stop the other one first.";
+    }
+
+    /// <summary>A state inside a sentence: <c>a draft</c>, <c>running</c>.</summary>
+    private static string InWords(AgentState state) => state switch
+    {
+        AgentState.Draft => "a draft",
+        AgentState.AttentionRequired => "waiting for your attention",
+        _ => Describe(state).ToLowerInvariant(),
     };
 
     /// <summary>A role of the team that runs an agent, as users read it, with its job (SRS 4.5).</summary>

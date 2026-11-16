@@ -59,8 +59,8 @@ public class AgentRuleTests
         var ada = await application.RegisterVerifiedAsync(Ada);
         var grace = await application.RegisterVerifiedAsync(Grace);
 
-        // Nothing starts an agent yet, so the test stores the rows as what starts one will.
-        // An agent runs on Spot in Demo with BTCUSDT.
+        // The index holds whatever changes a state, so the test stores the rows itself, past
+        // what starts an agent, which asks first. An agent runs on Spot in Demo with BTCUSDT.
         await application.GiveAgentAsync(ada.Id, Morning, name: "Running", state: AgentState.Running);
 
         // Its user has any number of drafts and stopped agents for the same three.

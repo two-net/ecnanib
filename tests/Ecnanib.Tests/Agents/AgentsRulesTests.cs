@@ -8,8 +8,8 @@ namespace Ecnanib.Tests.Agents;
 
 /// <summary>
 /// Holds <see cref="AgentsRules"/> to the code: what Agents can do with an agent is what the
-/// rules list, and what tells that it can do more can see it. Other components wait for that
-/// with tests of their own, which ask the rules.
+/// rules list, and what tells that it can do more can see it. Other components hold Agents to
+/// what follows from that with tests of their own, which ask the rules.
 /// </summary>
 public class AgentsRulesTests
 {
@@ -18,21 +18,44 @@ public class AgentsRulesTests
     {
         var operations = AgentsRules.Operations();
 
-        var unlisted = AgentsRules.OperationsBeyondSettings();
+        var unlisted = AgentsRules.UnlistedOperations();
         Assert.True(
             unlisted.Count == 0,
-            $"These operations of Agents are not listed in {nameof(AgentsRules)}.{nameof(AgentsRules.SettingsOperations)}: " +
-            $"{string.Join(", ", unlisted)}. Agents kept settings and nothing else, and other components wait for what it does " +
-            "next. If one of these starts, pauses, resumes, or stops an agent, switches its mode, or closes a position, the " +
-            "tests that wait for it fail now as well, each with what to build: asking what blocks a start (AgentStartBlockTests), " +
-            "being told when a key goes (KeyDependentsTests), and recording the action in the audit trail (AuditRulesTests). " +
-            "Build what they ask for, or say there what still waits, and then list the operation with what it does.");
+            $"These operations of Agents are listed neither in {nameof(AgentsRules)}.{nameof(AgentsRules.SettingsOperations)} " +
+            $"nor in {nameof(AgentsRules.ControlOperations)}: {string.Join(", ", unlisted)}. If one of them starts, pauses, " +
+            "resumes, or stops an agent, or closes a position, it is a control: it asks what blocks a start where it starts one " +
+            "(AgentStartBlockTests), and records the action in the audit trail (AuditRulesTests). If one switches the mode of " +
+            "an agent, the audit trail waits for it (AuditRulesTests). Build what applies, and then list the operation with " +
+            "what it does.");
 
-        var gone = AgentsRules.SettingsOperations.Keys.Except(operations).Order(StringComparer.Ordinal).ToList();
+        var listed = AgentsRules.SettingsOperations.Concat(AgentsRules.ControlOperations).ToList();
+
+        var gone = listed.Select(operation => operation.Key).Except(operations).Order(StringComparer.Ordinal).ToList();
         Assert.True(gone.Count == 0, $"These are listed as operations of Agents, and Agents has none of that name: {string.Join(", ", gone)}");
 
-        Assert.All(AgentsRules.SettingsOperations, operation =>
+        Assert.All(listed, operation =>
             Assert.False(string.IsNullOrWhiteSpace(operation.Value), $"{operation.Key} does not say what it does."));
+
+        // An operation is one or the other.
+        Assert.Empty(AgentsRules.SettingsOperations.Keys.Intersect(AgentsRules.ControlOperations.Keys));
+    }
+
+    [Fact]
+    public void An_agent_can_run_and_the_controls_are_the_operations_beyond_its_settings()
+    {
+        // Pinned, so that a control that is added shows in a review as what it is: one more
+        // thing that the service does with the money of a user. What other components ask of
+        // an agent that can run is asked from here on: their tests find these.
+        Assert.Equal(
+            [
+                "IAgentControls.ClosePositionAsync",
+                "IAgentControls.PauseAsync",
+                "IAgentControls.ResumeAsync",
+                "IAgentControls.StartAsync",
+                "IAgentControls.StopAsync",
+                "IAgentExposure.ClosePositionAtMarketAsync",
+            ],
+            AgentsRules.OperationsBeyondSettings());
     }
 
     [Fact]

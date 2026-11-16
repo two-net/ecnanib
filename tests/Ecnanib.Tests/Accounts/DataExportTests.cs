@@ -31,9 +31,11 @@ internal static class ExportRules
         ["ai_credentials"] = "aiKeys",
         ["exchange_credentials"] = "exchangeKeys",
 
-        // The agents with their settings. Agents hands them over, and its own tests say what
-        // the section holds: see AgentPageTests.
+        // The agents with their settings, and the changes of their states. Agents hands them
+        // over, and its own tests say what the sections hold: see AgentPageTests and
+        // AgentControlTests.
         ["agents"] = "agents",
+        ["agent_state_changes"] = "agentStateChanges",
     };
 
     /// <summary>The tables whose rows are not in the export, each with why.</summary>
@@ -77,7 +79,7 @@ public class DataExportTests
 
         Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
         Assert.Equal(
-            ["exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "aiKeys", "exchangeKeys", "agents"],
+            ["exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "aiKeys", "exchangeKeys", "agents", "agentStateChanges"],
             NamesIn(export));
         Assert.Equal(Morning.AddMinutes(5), export.GetProperty("exportedAt").GetDateTimeOffset());
 
@@ -216,8 +218,8 @@ public class DataExportTests
 
     [Fact]
     [ProvesOwnershipOf(
-        "agents", "ai_credentials", "audit_events", "exchange_credentials", "legal_acceptances", "sessions",
-        "two_factor_recovery_codes")]
+        "agent_state_changes", "agents", "ai_credentials", "audit_events", "exchange_credentials", "legal_acceptances",
+        "sessions", "two_factor_recovery_codes")]
     public async Task The_download_holds_nothing_of_another_user()
     {
         var clock = new TestClock(Morning);
@@ -260,6 +262,7 @@ public class DataExportTests
         Assert.Equal(0, export.GetProperty("aiKeys").GetArrayLength());
         Assert.Equal(0, export.GetProperty("exchangeKeys").GetArrayLength());
         Assert.Equal(0, export.GetProperty("agents").GetArrayLength());
+        Assert.Equal(0, export.GetProperty("agentStateChanges").GetArrayLength());
 
         // And nothing in it is Grace's: not her address, not her id, and not a time of hers.
         Assert.DoesNotContain("grace", text, StringComparison.OrdinalIgnoreCase);

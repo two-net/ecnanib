@@ -59,6 +59,18 @@ public static class WebUiModule
     /// <summary>The path of the page a user deletes an agent on.</summary>
     public static string DeleteAgentPath(Guid agentId) => $"{AgentPath(agentId)}/delete";
 
+    /// <summary>
+    /// The path of the page of the state of an agent: what state it is in and why, the controls
+    /// that start, pause, and resume it, and the changes of its state (FR-AGT-10).
+    /// </summary>
+    public static string AgentStatePath(Guid agentId) => $"{AgentPath(agentId)}/state";
+
+    /// <summary>The path of the page a user stops an agent on, and chooses what happens to its open position (FR-AGT-11).</summary>
+    public static string StopAgentPath(Guid agentId) => $"{AgentPath(agentId)}/stop";
+
+    /// <summary>The path of the page a user closes the open position of an agent on, at any time (FR-AGT-12).</summary>
+    public static string CloseAgentPositionPath(Guid agentId) => $"{AgentPath(agentId)}/close-position";
+
     // The export as a person reads it: indented, with the names of things and not their numbers.
     private static readonly JsonSerializerOptions ExportJson = new(JsonSerializerDefaults.Web)
     {

@@ -35,6 +35,12 @@
         <p class="form-error" role="alert">@_notSaved</p>
     }
 
+    @if (_agent is not null)
+    {
+        @* The state is changed on a page of its own: this form changes settings, and no state. *@
+        <p>State: <strong>@AgentPages.Describe(_agent.State)</strong>. @AgentPages.Explain(_agent.State) <a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+    }
+
     @if (_showForm)
     {
         <form method="post" @formname="@AgentPages.SaveForm" @onsubmit="SaveAsync">

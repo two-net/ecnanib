@@ -1,0 +1,216 @@
+@page "/agents/{Id:guid}/state"
+@attribute [Authorize]
+@using Ecnanib.Agents
+@using Ecnanib.WebUi.Pages.Account
+@inject IStoredAgents Agents
+@inject IAgentControls Controls
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page says what state an
+    agent of the user is in, what the state means, and why the agent is in it, and lists the
+    changes of its state with their causes and times (FR-AGT-10, NFR-USA-2). Its forms start,
+    pause, and resume the agent: each is offered in the states that AgentStates.After names, and
+    what a form asks for is decided again on the server, under the lock, by IAgentControls.
+    Stopping the agent and closing its position each have a page that asks once more. When a
+    form is posted, all three forms are on the page: a form that is not there cannot be
+    answered, and one that is sent twice finds the agent in another state the second time.
+*@
+
+@if (_agent is not null)
+{
+    <PageTitle>State of the agent @_agent.Name</PageTitle>
+
+    <h1>State of the agent @_agent.Name</h1>
+
+    @if (_refused is not null)
+    {
+        <p class="form-error" role="alert">@_refused</p>
+
+        @if (_keyBlocks)
+        {
+            <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
+        }
+    }
+
+    <p>Mode: <strong>@_agent.Mode</strong>. The agent trades <code>@_agent.Symbol</code> on @_agent.Market in @KeyPages.Describe(_agent.Mode).</p>
+
+    <p>State: <strong>@AgentPages.Describe(_agent.State)</strong>, since @PageTimes.At(_agent.StateChangedAt). @AgentPages.Explain(_agent.State)</p>
+
+    <p>@AgentPages.Says(_agent.StateCause)</p>
+
+    <h2>Controls</h2>
+
+    @foreach (var control in Moves)
+    {
+        @if (Shows(control))
+        {
+            <form method="post" @formname="@AgentPages.FormOf(control)" @onsubmit="() => AnswerAsync(control)">
+                <AntiforgeryToken />
+
+                <p>@AgentPages.Explain(control)</p>
+
+                <button type="submit">@AgentPages.Describe(control)</button>
+            </form>
+        }
+    }
+
+    @if (AgentStates.After(_agent.State, AgentControl.Stop) is not null)
+    {
+        <p>@AgentPages.Explain(AgentControl.Stop)</p>
+
+        <p><a href="@WebUiModule.StopAgentPath(_agent.Id)">@AgentPages.Describe(AgentControl.Stop)</a></p>
+    }
+
+    @if (_agent.HasOpenPosition)
+    {
+        <p>The agent has an open position. You can close it at any time, at the market price, in whatever state the agent is.</p>
+
+        <p><a href="@WebUiModule.CloseAgentPositionPath(_agent.Id)">@AgentPages.ClosePositionNow</a></p>
+    }
+
+    @if (_history is not null)
+    {
+        <h2 id="changes-heading">State changes</h2>
+
+        @if (_history.Total > _history.Changes.Count)
+        {
+            <p>The latest @_history.Changes.Count of @_history.Total changes, latest first.</p>
+        }
+        else
+        {
+            <p>Every change of the agent's state, latest first.</p>
+        }
+
+        @* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
+        <div class="agents agent-changes" role="region" aria-labelledby="changes-heading" tabindex="0">
+            <table>
+                <caption>State changes</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">When</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Why</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var change in _history.Changes)
+                    {
+                        <tr>
+                            <td>@PageTimes.At(change.ChangedAt)</td>
+                            <td>@AgentPages.Describe(change.State)</td>
+                            <td>@AgentPages.Says(change.Cause)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+
+    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+}
+
+@code {
+    // The controls that this page has a form for. Stopping has a page of its own.
+    private static readonly AgentControl[] Moves = [AgentControl.Start, AgentControl.Pause, AgentControl.Resume];
+
+    private AgentView? _agent;
+    private AgentStateHistory? _history;
+    private bool _posted;
+    private bool _keyBlocks;
+    private string? _refused;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist.
+        if (!await ReadAsync(request))
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // A form was posted, and is answered by AnswerAsync, whatever state the agent is in now.
+        _posted = !HttpMethods.IsGet(request.Request.Method);
+    }
+
+    private async Task AnswerAsync(AgentControl control)
+    {
+        if (HttpContext is not { } request || _agent is null)
+        {
+            return;
+        }
+
+        var result = control switch
+        {
+            AgentControl.Start => await Controls.StartAsync(request, Id),
+            AgentControl.Pause => await Controls.PauseAsync(request, Id),
+            _ => await Controls.ResumeAsync(request, Id),
+        };
+
+        switch (result.Outcome)
+        {
+            case AgentControlOutcome.Done:
+                // The page as it is now, by a request that changes nothing: a reload of it
+                // sends no form again.
+                Navigation.NavigateTo(WebUiModule.AgentStatePath(Id));
+
+                return;
+
+            case AgentControlOutcome.NotFound:
+                // The agent was deleted, on another browser, since the page was shown.
+                _agent = null;
+                Navigation.NotFound();
+
+                return;
+
+            case AgentControlOutcome.KeyBlocks when result.Block is { } block:
+                // Names the permission that the key lacks, where that is what blocks (FR-KEY-5).
+                _refused = KeyPages.Says(block, _agent.Mode);
+                _keyBlocks = true;
+                break;
+
+            case AgentControlOutcome.AnotherAgentActive:
+                _refused = AgentPages.AnotherAgentActive(_agent);
+                break;
+        }
+
+        // Nothing changed. The page is shown as the agent is now, with why.
+        _posted = false;
+
+        if (!await ReadAsync(request))
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        _refused ??= AgentPages.NotOffered(control, _agent!.State);
+    }
+
+    /// <summary>Reads the agent and the changes of its state. False when the user has no agent of that id.</summary>
+    private async Task<bool> ReadAsync(HttpContext request)
+    {
+        _agent = await Agents.FindAsync(request, Id);
+        _history = _agent is null ? null : await Controls.HistoryAsync(request, Id);
+
+        return _agent is not null;
+    }
+
+    private bool Shows(AgentControl control) =>
+        _posted || (_agent is not null && AgentStates.After(_agent.State, control) is not null);
+}

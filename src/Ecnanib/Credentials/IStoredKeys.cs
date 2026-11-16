@@ -265,9 +265,9 @@ public enum KeyCheckOutcome
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing implements it until an agent can depend on a key: Agents keeps the settings of
-/// agents, starts none, and gives none a model yet. Until then nothing depends on a key, and a
-/// key is deleted or marked invalid without anything being told.
+/// Agents implements it: an agent that runs with a Binance credential moves to Attention
+/// required when the credential goes. No agent is given a model yet, so none depends on a key
+/// of an AI provider, and Agents does nothing when it is told about one.
 /// </para>
 /// <para>
 /// It is told inside the transaction that deletes the key or marks it, before the row changes,

@@ -7,24 +7,26 @@ using Microsoft.EntityFrameworkCore.Metadata;
 namespace Ecnanib.Tests.Agents;
 
 /// <summary>
-/// What of Agents is built, in one place. Other components wait for Agents: Credentials for what
-/// asks whether a key lets an agent start and for what is told when a key goes, the Catalog for
-/// what is told when a model goes, and the audit trail for what starts, stops, and switches an
-/// agent. Their tests ask here whether what they wait for is there. This file is the source of
-/// truth: <c>docs/agents.md</c> explains it, and <see cref="AgentsRulesTests"/> holds it to the code.
+/// What of Agents is built, in one place. Other components hold Agents to what it does:
+/// Credentials to asking whether a key lets an agent start and to being told when a key goes,
+/// and the audit trail to recording what starts, stops, and closes. The Catalog still waits, for
+/// what is told when a model goes. Their tests ask here what Agents can do. This file is the
+/// source of truth: <c>docs/agents.md</c> explains it, and <see cref="AgentsRulesTests"/> holds
+/// it to the code.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Agents keeps the agents of users and their settings, and does nothing else with an agent yet:
-/// it starts none, switches none to Live, and gives no role a model. So an agent is a draft in
-/// Demo, depends on no key, and uses no model.
+/// Agents keeps the agents of users and their settings, and starts, pauses, resumes, and stops
+/// them, and closes their positions by hand. It switches none to Live, and gives no role a
+/// model. So an agent is in Demo, runs with the Binance credential of its user, and uses no
+/// model.
 /// </para>
 /// <para>
-/// Two things tell that this has changed. An operation that is added to a public interface of
-/// Agents is not listed in <see cref="SettingsOperations"/>: until someone lists it, the tests
-/// that wait for an agent that can run fail, each with what it waits for. And a foreign key from
-/// a table of Agents to the catalog's models is a model that an agent uses: the tests that wait
-/// for a model choice fail from then on.
+/// Every operation of a public interface of Agents is listed here, as one that keeps settings
+/// or as a control: one that is added fails <see cref="AgentsRulesTests"/> until someone lists
+/// it, and so decides what it is. And a foreign key from a table of Agents to the catalog's
+/// models is a model that an agent uses: the tests that wait for a model choice fail from then
+/// on.
 /// </para>
 /// </remarks>
 internal static class AgentsRules
@@ -33,11 +35,10 @@ internal static class AgentsRules
     public const string Namespace = "Ecnanib.Agents";
 
     /// <summary>
-    /// The operations of Agents, each with what it does: every method of a public interface of
-    /// the component. None of them starts, pauses, resumes, or stops an agent, switches its mode,
-    /// or closes a position. To list one that is added later is to decide, here where it shows,
-    /// that it does none of those either, or that everything which waits for it is built: see
-    /// what fails when it is not listed.
+    /// The operations of Agents that keep the settings of agents, or only read or answer, each
+    /// with what it does. None of them starts, pauses, resumes, or stops an agent, switches its
+    /// mode, or closes a position. To list one that is added later is to decide, here where it
+    /// shows, that it does none of those either.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> SettingsOperations = new Dictionary<string, string>
     {
@@ -48,8 +49,35 @@ internal static class AgentsRules
         ["IStoredAgents.SaveAsync"] = "Changes the settings of an agent, and neither its state nor its mode.",
         ["IStoredAgents.CloneAsync"] = "Creates a copy of an agent, which is a draft in Demo.",
         ["IStoredAgents.DeleteAsync"] = "Deletes an agent that is a draft, or is stopped with nothing open.",
+        ["IAgentControls.HistoryAsync"] = "Reads the changes of the state of one agent.",
         ["IAgentExposure.HasOpenPositionOrOrdersAsync"] =
             "Asked by Agents, and answered by whatever keeps positions and orders. It is no operation on an agent.",
+        ["IAgentExposure.HasOpenPositionAsync"] =
+            "Asked by Agents, and answered by whatever keeps positions. It is no operation on an agent.",
+    };
+
+    /// <summary>
+    /// The controls of Agents, each with what it does: the operations that do more with an agent
+    /// than keep its settings. With them an agent can run, so everything that waited for that is
+    /// built, and the tests that waited hold Agents to it: asking what blocks a start
+    /// (<c>AgentStartBlockTests</c>), being told when a key goes (<c>KeyDependentsTests</c>), and
+    /// recording the action in the audit trail (<c>AuditRulesTests</c>). To list a control that
+    /// is added later is to decide that it does all of that which applies to it. None of them
+    /// switches the mode of an agent.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> ControlOperations = new Dictionary<string, string>
+    {
+        ["IAgentControls.StartAsync"] =
+            "Starts an agent. It asks what blocks the start as far as the key goes, and records the start in the audit trail.",
+        ["IAgentControls.PauseAsync"] = "Pauses an agent that runs, and records the pause in the audit trail.",
+        ["IAgentControls.ResumeAsync"] =
+            "Resumes an agent, which is a start: it asks what blocks it as far as the key goes, and records it in the audit trail.",
+        ["IAgentControls.StopAsync"] =
+            "Stops an agent, with what its user chose for its open position, and records the stop in the audit trail.",
+        ["IAgentControls.ClosePositionAsync"] =
+            "Closes the position of an agent by hand: it records the request in the audit trail, and asks whatever keeps positions.",
+        ["IAgentExposure.ClosePositionAtMarketAsync"] =
+            "Asked by Agents of whatever keeps positions, after Agents recorded the request of the user. Agents places no order.",
     };
 
     /// <summary>The operations of the application's Agents component: each as <c>Interface.Method</c>, in order.</summary>
@@ -66,11 +94,16 @@ internal static class AgentsRules
     ];
 
     /// <summary>
-    /// The operations of Agents that are not listed as keeping settings. While there is none, no
-    /// agent can run: nothing starts one.
+    /// The operations of Agents that are not listed as keeping settings: the controls, and
+    /// whatever was added and is not listed yet. While there was none, no agent could run. There
+    /// are some now, so what other components asked of an agent that can run is asked for good.
     /// </summary>
     public static IReadOnlyList<string> OperationsBeyondSettings() =>
         [.. Operations().Where(operation => !SettingsOperations.ContainsKey(operation))];
+
+    /// <summary>The operations of Agents that are listed neither as keeping settings nor as a control.</summary>
+    public static IReadOnlyList<string> UnlistedOperations() =>
+        [.. OperationsBeyondSettings().Where(operation => !ControlOperations.ContainsKey(operation))];
 
     /// <summary>
     /// The models that the agents of the application's model use: each foreign key from a table

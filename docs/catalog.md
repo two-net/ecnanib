@@ -146,7 +146,7 @@ public interface IModelDependents
 - **An implementation commits nothing, and takes the owner of an agent from the agent's row.** With the keys of users the sync runs in the request of the user whose key listed the models, and the agents are those of every user.
 - **It minds the locks.** The transaction holds the row of the provider and the rows of its models, and two providers are synced at the same time. An implementation locks its rows in one order, and takes no lock on a model while it holds one on an account. It takes nothing of Credentials, which itself takes the Catalog.
 - A model that an agent was given while the sync was storing is not among what an implementation finds. The call that then reports that the model does not exist moves that agent: see "Not built yet".
-- **Nothing implements it yet,** because no agent uses a model: Agents keeps the settings of agents, and gives no role a model. `ModelDependentsTests` has a test that fails as soon as a row of Agents points at a model and Agents has no implementation. See "What waits for agents that can run" in [agents.md](agents.md).
+- **Nothing implements it yet,** because no agent uses a model: Agents keeps the settings of agents, and gives no role a model. `ModelDependentsTests` has a test that fails as soon as a row of Agents points at a model and Agents has no implementation. See "What other components hold Agents to" in [agents.md](agents.md).
 
 ## The catalog screen
 

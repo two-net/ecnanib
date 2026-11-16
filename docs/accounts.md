@@ -407,7 +407,7 @@ public interface IAgentActivity
 - **It is asked inside the transaction that deletes the account,** with the context that holds it.
 - **An implementation locks the rows of the agents it reads** (`FOR UPDATE`). The lock on the account keeps an agent from being created, and does not keep one that exists from being started. With the rows locked, an agent that is started at the same moment is seen as not stopped, or waits and finds its account gone.
 - **Agents answers it.** An agent stands in the way while it is active: in any state other than Draft or Stopped. A draft was never started, and stands in the way no more than a stopped agent. See [agents.md](agents.md).
-- Nothing starts an agent yet, so no agent is active, and nothing stands in the way. `AccountDeletionTests` has a test that fails when Agents has a table of its own and no implementation.
+- A user stops every agent on its page before the account is deleted. `AccountDeletionTests` has a test that fails when Agents has a table of its own and no implementation.
 
 ### That nothing is left
 
@@ -430,6 +430,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, when it was saved, what its last check found and when, and the identifiers of the models that the provider listed to it, or nothing where it has listed none yet. Never the key. |
 | `exchangeKeys` | Each Binance credential that is stored: its id, the environment, the last four characters of the API key, when it was saved, what its last check found and when, and what Binance said it may do: trade on Spot, trade on Futures, and work only from listed addresses. Never a key. |
 | `agents` | Each agent: its id, its name, its mode, market, symbol, and timeframe, its allocated capital and the asset it is in, its risk settings, its state with its cause and since when, and when it was created. |
+| `agentStateChanges` | Each change of the state of an agent that the user has: the id of the agent, the state it came to, why, and when. |
 
 | Rule | Detail |
 |---|---|
@@ -454,7 +455,7 @@ public interface IExportedPart
 
 - **A part is a section of the file,** beside the ones of Accounts, under the name it gives. It is there also when the user has no such rows, as an empty list.
 - **A part asks for the rows of the user it is given,** with `OwnedBy`, and holds no secret.
-- Credentials hands over `aiKeys` and `exchangeKeys` this way, and Agents hands over `agents`. See [credentials.md](credentials.md) and [agents.md](agents.md).
+- Credentials hands over `aiKeys` and `exchangeKeys` this way, and Agents hands over `agents` and `agentStateChanges`. See [credentials.md](credentials.md) and [agents.md](agents.md).
 
 The log has `User {UserId} exported their data`, and nothing of the data.
 
@@ -483,6 +484,9 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 | `KeyReplaced` | A key was stored in place of the one that was stored. The id of the key stays the same. |
 | `KeyDeleted` | A stored key was deleted, by its user. |
 | `KeyRejected` | A stored Binance key was deleted by the service: when it was checked again, Binance reported that it can withdraw (FR-KEY-4). See "Binance permissions" in [credentials.md](credentials.md). |
+| `AgentRiskSettingsChanged` | A risk setting of an agent was changed. |
+| `AgentStarted`, `AgentPaused`, `AgentResumed`, `AgentStopped` | The user started, paused, resumed, or stopped an agent. |
+| `AgentPositionCloseRequested` | The user asked for the position of an agent to be closed at market, by hand. It is recorded when it is asked for, before the order. See "The audit trail" in [agents.md](agents.md). |
 
 - **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not. `RecordAsync` refuses a context that holds no transaction.
 - **A sign-in is recorded where the session is stored,** in `Sessions.AddAsync`, which is the one place. So no session starts without its event. A password that only leads to the page that asks for a code records nothing: nobody is signed in.
@@ -505,7 +509,7 @@ Two actions are recorded though the requirement does not name them. A re-authent
 
 ### Recording an event
 
-Whatever does one of the actions of the requirement records it, in its own transaction. Agents records a change to a risk setting of an agent this way. Nothing starts an agent yet. Starting one will record it like this:
+Whatever does one of the actions of the requirement records it, in its own transaction. Agents records what a user does to an agent this way. Starting one is recorded like this:
 
 ```csharp
 await AuditTrail.RecordAsync(
@@ -526,14 +530,12 @@ A component that may not use Accounts, such as the Decision Engine, records noth
 
 | Action of the requirement | Waits for |
 |---|---|
-| Agent start, pause, and stop | The controls of an agent |
-| Mode switches | The controls of an agent |
-| Manual closes | The controls of an agent. Agents takes the request, and the Decision Engine places the order. |
+| Mode switches | The switch of an agent to Live |
 | Operator actions | The first operator function |
 
-Risk setting changes are recorded, as `AgentRiskSettingsChanged`: see [agents.md](agents.md).
+What a user does to an agent is recorded: risk setting changes, starts, pauses, resumes, and stops, and manual closes. Agents takes the request for a manual close and records it, and whatever keeps positions places the order. See "The audit trail" in [agents.md](agents.md).
 
-`AuditRulesTests` fails for an action that still waits once what it waits for is built. For the controls of an agent, that is once Agents has an operation that does more than keep the settings of an agent: see "What waits for agents that can run" in [agents.md](agents.md). For the operator actions, it is once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`. It also fails for a member of `AuditAction` that no marked test shows being recorded.
+`AuditRulesTests` fails for an action that still waits once what it waits for is built. For the mode switches, that is once a type of Agents takes `IReauthentication`: switching an agent to Live takes a fresh proof of who the user is (FR-AGT-7), and nothing else of Agents does. For the operator actions, it is once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`. It also fails for a member of `AuditAction` that no marked test shows being recorded.
 
 ## Passwords
 
@@ -661,7 +663,7 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - The part of the export that Experience keeps: lessons. It hands its part over as an `IExportedPart` when it is built, as Credentials does for the keys and Agents for the agents. See "Exporting your data".
 - Preferences. None is stored yet. When one is, it is personal data of an allowed kind, and it is in the export.
 - Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
-- The rest of the audit trail: starting, pausing, and stopping an agent, switching its mode, closing a position by hand, and the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
+- The rest of the audit trail: switching the mode of an agent, and the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.

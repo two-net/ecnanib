@@ -66,6 +66,31 @@ public enum AuditAction
     /// target names the agent by its id, and the event holds no number.
     /// </summary>
     AgentRiskSettingsChanged,
+
+    /// <summary>
+    /// The user started an agent: one that was a draft, or was stopped (FR-AGT-1). The target
+    /// names the agent by its id.
+    /// </summary>
+    AgentStarted,
+
+    /// <summary>The user paused an agent that was running.</summary>
+    AgentPaused,
+
+    /// <summary>
+    /// The user resumed an agent that was paused, was halted, or required attention. It runs
+    /// again, as after a start.
+    /// </summary>
+    AgentResumed,
+
+    /// <summary>The user stopped an agent.</summary>
+    AgentStopped,
+
+    /// <summary>
+    /// The user asked for the position of an agent to be closed at market, by hand: with "Close
+    /// position now", or as they stopped the agent (FR-AGT-11, FR-AGT-12). It is recorded when
+    /// it is asked for, before the order: what places the order records nothing here.
+    /// </summary>
+    AgentPositionCloseRequested,
 }
 
 /// <summary>

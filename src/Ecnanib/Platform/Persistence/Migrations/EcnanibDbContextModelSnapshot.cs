@@ -358,6 +358,46 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("agents", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Agents.AgentStateChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Cause")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("cause");
+
+                    b.Property<DateTimeOffset>("ChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_agent_state_changes");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_agent_state_changes_user_id");
+
+                    b.HasIndex("AgentId", "ChangedAt")
+                        .HasDatabaseName("ix_agent_state_changes_agent_id_changed_at");
+
+                    b.ToTable("agent_state_changes", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.AiProviderGateway.AiProvider", b =>
                 {
                     b.Property<string>("Code")
@@ -909,6 +949,23 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_agents_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Agents.AgentStateChange", b =>
+                {
+                    b.HasOne("Ecnanib.Agents.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_state_changes_agents_agent_id");
+
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_state_changes_users_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Catalog.AiModel", b =>

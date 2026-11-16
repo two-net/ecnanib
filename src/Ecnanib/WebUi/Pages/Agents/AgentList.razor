@@ -9,14 +9,17 @@
     Rendered on the server for each request, and never interactive. The page lists the agents of
     the user who is signed in, and no others (FR-AGT-1). A form of the page makes a copy of an
     agent: the forms are on the page whenever one is posted, for the agents that are stored then.
-    What a user named an agent is written as text, like everything else on a page.
+    Each agent leads to the page of its state, where it is started, paused, resumed, and stopped,
+    and an agent that has an open position leads to the page that closes it (FR-AGT-12). The
+    states are explained under the table (NFR-USA-2). What a user named an agent is written as
+    text, like everything else on a page.
 *@
 
 <PageTitle>Your agents</PageTitle>
 
 <h1 id="agents-heading">Your agents</h1>
 
-<p>An agent trades one symbol on one Binance market, on one timeframe, with the capital and the risk settings you give it. A new agent is a draft in Demo: it trades nothing until it is started.</p>
+<p>An agent trades one symbol on one Binance market, on one timeframe, with the capital and the risk settings you give it. A new agent is a draft in Demo: it trades nothing until it is started. You start, pause, resume, and stop an agent on the page of its state.</p>
 
 @if (_notCopied is not null)
 {
@@ -60,6 +63,11 @@
                             <td>@AgentPages.Describe(agent.State)</td>
                             <td>
                                 @* Named after the agent, so that each control says what it is for by itself. *@
+                                <a href="@WebUiModule.AgentStatePath(agent.Id)">State of @agent.Name</a>
+                                @if (agent.HasOpenPosition)
+                                {
+                                    <a href="@WebUiModule.CloseAgentPositionPath(agent.Id)">@AgentPages.ClosePositionNow for @agent.Name</a>
+                                }
                                 <form method="post" @formname="@AgentPages.CloneForm(agent.Id)" @onsubmit="() => CloneAsync(agent)">
                                     <AntiforgeryToken />
 
@@ -72,6 +80,16 @@
                 </tbody>
             </table>
         </div>
+
+        <h2>What the states mean</h2>
+
+        <dl class="agent-states">
+            @foreach (var state in Enum.GetValues<AgentState>())
+            {
+                <dt>@AgentPages.Describe(state)</dt>
+                <dd>@AgentPages.Explain(state)</dd>
+            }
+        </dl>
     }
 
     <p>You have @_list.Agents.Count of @_list.MaxAgents agents.</p>

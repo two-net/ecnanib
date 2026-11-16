@@ -1,0 +1,170 @@
+@page "/agents/{Id:guid}/stop"
+@attribute [Authorize]
+@using Ecnanib.Agents
+@inject IStoredAgents Agents
+@inject IAgentControls Controls
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page stops an agent of
+    the user. When the agent has an open position, its user chooses here whether the position is
+    closed at market or kept with its protective orders: neither is chosen for them, and StopAsync
+    stops no agent that has a position without the choice (FR-AGT-11). The form is on the page
+    whenever one is posted, whatever state the agent is in by then: a form that is sent twice
+    finds the agent stopped the second time, and is answered as the first one was.
+*@
+
+@if (_agent is not null)
+{
+    <PageTitle>Stop the agent @_agent.Name</PageTitle>
+
+    <h1>Stop the agent @_agent.Name</h1>
+
+    @if (_said is not null)
+    {
+        <p class="form-error" role="alert">@_said</p>
+    }
+
+    @if (_notClosed)
+    {
+        <p><a href="@WebUiModule.CloseAgentPositionPath(_agent.Id)">@AgentPages.ClosePositionNow</a></p>
+    }
+    else if (_showForm)
+    {
+        <p>@AgentPages.Explain(AgentControl.Stop)</p>
+
+        <form method="post" @formname="@AgentPages.StopForm" @onsubmit="StopAsync">
+            <AntiforgeryToken />
+
+            @if (_agent.HasOpenPosition)
+            {
+                <fieldset>
+                    <legend>The agent has an open position. What happens to it?</legend>
+
+                    <div class="choice">
+                        <input id="stop-close" type="radio" name="Position" value="@AgentPages.ClosePosition" required
+                               checked="@(PositionEntry == AgentPages.ClosePosition)" aria-describedby="stop-close-hint" />
+                        <label for="stop-close">Close the position at market</label>
+                        <p id="stop-close-hint" class="field-hint">The position is closed now, at the market price, and its stop-loss and take-profit orders are taken off Binance. A profit or a loss is final.</p>
+                    </div>
+
+                    <div class="choice">
+                        <input id="stop-keep" type="radio" name="Position" value="@AgentPages.KeepPosition" required
+                               checked="@(PositionEntry == AgentPages.KeepPosition)" aria-describedby="stop-keep-hint" />
+                        <label for="stop-keep">Keep the position with its protective orders</label>
+                        <p id="stop-keep-hint" class="field-hint">The position stays open at Binance with its stop-loss and take-profit orders, which close it when the price reaches one of them. The agent no longer manages it. You can close it at any time with "@AgentPages.ClosePositionNow".</p>
+                    </div>
+                </fieldset>
+            }
+            else
+            {
+                <p>The agent has no open position.</p>
+            }
+
+            <button type="submit">@AgentPages.Describe(AgentControl.Stop)</button>
+        </form>
+    }
+    else if (_said is null)
+    {
+        <p role="status">@NotNow(_agent)</p>
+    }
+
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm && !_notClosed ? "Keep the agent as it is" : "State of the agent")</a></p>
+}
+
+@code {
+    private const string ChooseFirst = "This agent has an open position. Choose what happens to it.";
+
+    private AgentView? _agent;
+    private string? _said;
+    private bool _showForm;
+    private bool _notClosed;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    /// <summary>What was chosen for the open position: <c>close</c> or <c>keep</c>.</summary>
+    [SupplyParameterFromForm(Name = "Position")]
+    private string? PositionEntry { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // A form that was posted is answered by StopAsync, whatever state the agent is in now.
+        _showForm = !HttpMethods.IsGet(request.Request.Method)
+            || AgentStates.After(_agent.State, AgentControl.Stop) is not null;
+    }
+
+    private async Task StopAsync()
+    {
+        if (HttpContext is not { } request || _agent is null)
+        {
+            return;
+        }
+
+        PositionAtStop? choice = PositionEntry switch
+        {
+            AgentPages.ClosePosition => PositionAtStop.Close,
+            AgentPages.KeepPosition => PositionAtStop.Keep,
+            _ => null,
+        };
+
+        var result = await Controls.StopAsync(request, Id, choice);
+
+        switch (result.Outcome)
+        {
+            case StopAgentOutcome.Stopped when result.Close == PositionCloseOutcome.Failed:
+                // The agent is stopped, and its position is not closed. It is said here, with
+                // the control that closes it: the page of the state would not say it.
+                _said = $"The agent is stopped. {AgentPages.NotClosed}";
+                _notClosed = true;
+                _agent = await Agents.FindAsync(request, Id) ?? _agent;
+                break;
+
+            case StopAgentOutcome.Stopped:
+                // The page that says what state the agent is in now. A reload of it stops nothing again.
+                Navigation.NavigateTo(WebUiModule.AgentStatePath(Id));
+                break;
+
+            case StopAgentOutcome.ChoiceNeeded:
+                // The agent has a position, whatever the page showed when it was opened: the
+                // form comes back with the choice.
+                _said = ChooseFirst;
+                _agent = await Agents.FindAsync(request, Id) ?? _agent;
+                break;
+
+            case StopAgentOutcome.NotOffered:
+                _said = AgentPages.NotOffered(AgentControl.Stop, _agent.State);
+                _showForm = false;
+                break;
+
+            default:
+                // The agent was deleted, on another browser, since the page was shown.
+                _agent = null;
+                Navigation.NotFound();
+                break;
+        }
+    }
+
+    private static string NotNow(AgentView agent) => agent.State == AgentState.Stopped
+        ? "This agent is stopped."
+        : AgentPages.NotOffered(AgentControl.Stop, agent.State);
+}

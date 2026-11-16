@@ -168,7 +168,9 @@ internal sealed class StoredAgents(
         var agent = NewAgent(userId, settings.Name, mode, settings.Market, settings.Symbol, quoteAsset, settings.Timeframe,
             settings.AllocatedCapital, settings.Risk, now);
 
+        // With its first change: an agent has a history from when it is created (FR-AGT-10).
         context.Set<Agent>().Add(agent);
+        context.Set<AgentStateChange>().Add(AgentStateChanges.First(agent));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -366,6 +368,7 @@ internal sealed class StoredAgents(
             source.QuoteAsset, source.Timeframe, source.AllocatedCapital, RiskOf(source), now);
 
         context.Set<Agent>().Add(copy);
+        context.Set<AgentStateChange>().Add(AgentStateChanges.First(copy));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -473,7 +476,7 @@ internal sealed class StoredAgents(
     /// does. The deletion of the account takes the stronger lock of a deletion.
     /// </summary>
     /// <returns>Whether the account exists.</returns>
-    private static async Task<bool> LockAccountAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken)
+    internal static async Task<bool> LockAccountAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken)
     {
         var locked = await context.Database
             .SqlQuery<Guid>(
@@ -541,9 +544,18 @@ internal sealed class StoredAgents(
             agent.AllocatedCapital,
             RiskOf(agent),
             agent.State,
+            agent.StateCause,
             agent.StateChangedAt,
             agent.CreatedAt,
-            await StructureCanChangeAsync(context, agent, cancellationToken));
+            await StructureCanChangeAsync(context, agent, cancellationToken),
+            await HoldsPositionAsync(context, agent, cancellationToken));
+
+    /// <summary>
+    /// Whether an agent has an open position, which its user can close at any time (FR-AGT-12).
+    /// It is not asked of a draft: an agent that was never started never held anything.
+    /// </summary>
+    private async Task<bool> HoldsPositionAsync(EcnanibDbContext context, Agent agent, CancellationToken cancellationToken) =>
+        agent.State != AgentState.Draft && await exposures.HoldPositionAsync(context, agent.Id, cancellationToken);
 
     /// <summary>
     /// Whether the market, symbol, and timeframe of an agent can be changed, and the agent
@@ -552,20 +564,8 @@ internal sealed class StoredAgents(
     /// </summary>
     private async Task<bool> StructureCanChangeAsync(EcnanibDbContext context, Agent agent, CancellationToken cancellationToken)
     {
-        var holds = false;
-
-        if (agent.State == AgentState.Stopped)
-        {
-            foreach (var exposure in exposures)
-            {
-                if (await exposure.HasOpenPositionOrOrdersAsync(context, agent.Id, cancellationToken))
-                {
-                    holds = true;
-
-                    break;
-                }
-            }
-        }
+        var holds = agent.State == AgentState.Stopped
+            && await exposures.HoldPositionOrOrdersAsync(context, agent.Id, cancellationToken);
 
         return AgentStates.StructureCanChange(agent.State, holds);
     }
@@ -662,5 +662,31 @@ internal sealed class AgentsExport : IExportedPart
                 agent.StateChangedAt,
                 agent.CreatedAt)),
         ];
+    }
+}
+
+/// <summary>A change of the state of an agent in the export of a user's data (NFR-SEC-9).</summary>
+/// <param name="AgentId">The agent whose state changed, by the id that the section of the agents has.</param>
+/// <param name="State">The state the agent came to.</param>
+/// <param name="Cause">Why it did.</param>
+/// <param name="ChangedAt">When it did.</param>
+public sealed record ExportedAgentStateChange(Guid AgentId, AgentState State, AgentStateCause Cause, DateTimeOffset ChangedAt);
+
+/// <summary>The changes of the states of a user's agents, for the export of their data (NFR-SEC-9, FR-AGT-10).</summary>
+internal sealed class AgentStateChangesExport : IExportedPart
+{
+    public string Section => "agentStateChanges";
+
+    public async Task<IReadOnlyList<object>> ReadAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken)
+    {
+        // Every change, in the order they happened in. A deleted agent has none: its changes went with it.
+        var changes = await context.Set<AgentStateChange>()
+            .AsNoTracking()
+            .OwnedBy(userId)
+            .OrderBy(change => change.ChangedAt)
+            .ThenBy(change => change.Id)
+            .ToListAsync(cancellationToken);
+
+        return [.. changes.Select(change => new ExportedAgentStateChange(change.AgentId, change.State, change.Cause, change.ChangedAt))];
     }
 }

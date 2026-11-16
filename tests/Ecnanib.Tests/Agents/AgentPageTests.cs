@@ -6,6 +6,7 @@ using Ecnanib.Agents;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.WebUi.Pages.Agents;
 
@@ -119,6 +120,12 @@ public class AgentPageTests
                 Morning.AddMinutes(5),
                 Morning.AddMinutes(5)),
             agent);
+
+        // Its creation is the first change of its state, with the same cause and time (FR-AGT-10).
+        var first = Assert.Single(StoredAgentStateChange.All(application.Database));
+        Assert.Equal(
+            (agent.Id, user.Id, "Draft", "Created", Morning.AddMinutes(5)),
+            (first.AgentId, first.UserId, first.State, first.Cause, first.ChangedAt));
 
         // The log names the user and the agent by their ids, and never by what the user typed.
         var created = Assert.Single(application.Events(), written => written.Template == CreatedTemplate);
@@ -462,7 +469,8 @@ public class AgentPageTests
         var user = await application.RegisterVerifiedAsync(Ada);
         await client.SignInAsync(Ada);
 
-        // Nothing starts an agent yet, so the test stores one that is active.
+        // The test stores an agent that is active: what holds here holds in every such state,
+        // also in the ones that nothing leads to yet.
         var id = await application.GiveAgentAsync(user.Id, Morning, name: "Active", state: state);
         var stored = Row(application, id);
 
@@ -563,6 +571,12 @@ public class AgentPageTests
             swing with { Id = copy.Id, Name = "Copy of Swing", StateChangedAt = Morning.AddMinutes(10), CreatedAt = Morning.AddMinutes(10) },
             copy);
         Assert.NotEqual(swing.Id, copy.Id);
+
+        // And a history of its own, which starts now: none of the changes of the agent it was
+        // made from is its own.
+        Assert.Equal(
+            [("Draft", "Created", Morning.AddMinutes(10))],
+            StoredAgentStateChange.Of(application.Database, copy.Id).Select(change => (change.State, change.Cause, change.ChangedAt)));
 
         // A second copy of the same agent has a name of its own as well.
         await client.CloneAgentAsync(swing.Id);
@@ -714,6 +728,11 @@ public class AgentPageTests
         Assert.Equal(["Scalp"], StoredAgent.All(application.Database).Select(agent => agent.Name));
         Assert.DoesNotContain(swing.Id.ToString(), application.EverythingStored());
 
+        // The changes of its state went with it, and those of the other agent are there.
+        Assert.Equal(
+            [StoredAgent.Named(application.Database, "Scalp").Id],
+            StoredAgentStateChange.All(application.Database).Select(change => change.AgentId));
+
         // A form that is sent twice is answered as the first one was, and deletes nothing more.
         var (again, _) = await client.PostAsync(
             AgentBrowser.DeleteAgentPage(swing.Id), AgentBrowser.DeleteForm, Browser.AntiforgeryTokenIn(list));
@@ -848,6 +867,9 @@ public class AgentPageTests
     [InlineData("/agents/new")]
     [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37")]
     [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/delete")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/state")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/stop")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/close-position")]
     public async Task A_visitor_who_opens_its_pages_is_sent_to_sign_in(string page)
     {
         using var application = AgentsApplication.With(new StandInMarketData());
@@ -862,10 +884,14 @@ public class AgentPageTests
     [Fact]
     public async Task A_visitor_who_posts_its_forms_is_sent_to_sign_in_and_changes_nothing()
     {
-        using var application = AgentsApplication.With(new StandInMarketData());
+        var exposure = new StandInExposure();
+        using var application = AgentsApplication.With(new StandInMarketData(), exposure: exposure);
         var user = await application.RegisterVerifiedAsync(Ada);
+        await application.GiveKeysAsync(user.Id, Morning);
         var agent = await application.GiveAgentAsync(user.Id, Morning);
-        var stored = application.RowsOf(user.Id)["agents"];
+        var running = await application.GiveAgentAsync(user.Id, Morning, name: "Running", state: AgentState.Running, symbol: "SOLUSDT");
+        exposure.Holds(running);
+        var stored = application.RowsOf(user.Id);
 
         using var client = application.CreateClient();
         var token = Browser.AntiforgeryTokenIn(await client.PageAsync(SessionAuthentication.SignInPath));
@@ -876,6 +902,11 @@ public class AgentPageTests
             (AgentBrowser.AgentPage(agent), AgentBrowser.SaveForm, AgentBrowser.Entry(name: "Renamed")),
             (AgentsPage, AgentBrowser.CloneForm(agent), []),
             (AgentBrowser.DeleteAgentPage(agent), AgentBrowser.DeleteForm, []),
+            (AgentBrowser.AgentStatePage(agent), AgentBrowser.StartForm, []),
+            (AgentBrowser.AgentStatePage(running), AgentBrowser.PauseForm, []),
+            (AgentBrowser.AgentStatePage(running), AgentBrowser.ResumeForm, []),
+            (AgentBrowser.StopAgentPage(running), AgentBrowser.StopForm, [("Position", AgentPages.ClosePosition)]),
+            (AgentBrowser.ClosePositionPage(running), AgentBrowser.ClosePositionForm, []),
         ];
 
         foreach (var (path, form, fields) in forms)
@@ -883,20 +914,27 @@ public class AgentPageTests
             Assert.Equal(SessionAuthentication.SignInPath, (await client.PostAsync(path, form, token, fields)).Path);
         }
 
-        Assert.Equal(stored, application.RowsOf(user.Id)["agents"]);
-        Assert.Single(StoredAgent.All(application.Database));
+        // Nothing was created, changed, started, stopped, or closed.
+        Assert.Equal(stored["agents"], application.RowsOf(user.Id)["agents"]);
+        Assert.Equal(stored["agent_state_changes"], application.RowsOf(user.Id)["agent_state_changes"]);
+        Assert.Equal(2, StoredAgent.All(application.Database).Count);
+        Assert.Empty(exposure.Closes);
     }
 
     [Fact]
     public async Task A_post_without_the_token_against_request_forgery_changes_nothing()
     {
-        using var application = AgentsApplication.With(new StandInMarketData());
+        var exposure = new StandInExposure();
+        using var application = AgentsApplication.With(new StandInMarketData(), exposure: exposure);
         using var client = application.CreateClient();
         var user = await application.RegisterVerifiedAsync(Ada);
+        await application.GiveKeysAsync(user.Id, Morning);
         await client.SignInAsync(Ada);
         await client.CreateAgentAsync(AgentBrowser.Entry());
         var agent = Assert.Single(StoredAgent.All(application.Database));
-        var stored = application.RowsOf(user.Id)["agents"];
+        var running = await application.GiveAgentAsync(user.Id, Morning, name: "Running", state: AgentState.Running, symbol: "SOLUSDT");
+        exposure.Holds(running);
+        var stored = application.RowsOf(user.Id);
 
         // As another site would send them, with the cookies of the user and without the token
         // of a page: each is refused, whatever it asks for.
@@ -906,6 +944,11 @@ public class AgentPageTests
             (AgentBrowser.AgentPage(agent.Id), AgentBrowser.SaveForm, AgentBrowser.Entry(name: "Renamed", riskPerTrade: "4")),
             (AgentsPage, AgentBrowser.CloneForm(agent.Id), []),
             (AgentBrowser.DeleteAgentPage(agent.Id), AgentBrowser.DeleteForm, []),
+            (AgentBrowser.AgentStatePage(agent.Id), AgentBrowser.StartForm, []),
+            (AgentBrowser.AgentStatePage(running), AgentBrowser.PauseForm, []),
+            (AgentBrowser.AgentStatePage(running), AgentBrowser.ResumeForm, []),
+            (AgentBrowser.StopAgentPage(running), AgentBrowser.StopForm, [("Position", AgentPages.ClosePosition)]),
+            (AgentBrowser.ClosePositionPage(running), AgentBrowser.ClosePositionForm, []),
         ];
 
         foreach (var (path, form, fields) in forms)
@@ -915,7 +958,10 @@ public class AgentPageTests
             Assert.Equal(HttpStatusCode.BadRequest, answer.StatusCode);
         }
 
-        Assert.Equal(stored, application.RowsOf(user.Id)["agents"]);
+        // No agent was started or stopped by another site, and no position closed.
+        Assert.Equal(stored["agents"], application.RowsOf(user.Id)["agents"]);
+        Assert.Equal(stored["agent_state_changes"], application.RowsOf(user.Id)["agent_state_changes"]);
+        Assert.Empty(exposure.Closes);
         Assert.DoesNotContain(StoredAuditEvent.All(application.Database), recorded => recorded.Action.StartsWith("Agent", StringComparison.Ordinal));
     }
 
@@ -925,6 +971,12 @@ public class AgentPageTests
     [InlineData("/agents/swing")]
     [InlineData("/agents/swing/delete")]
     [InlineData("/agents/1")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/state")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/stop")]
+    [InlineData("/agents/0192f3a0-7b1c-7c44-9f0e-2a6d5b8c1e37/close-position")]
+    [InlineData("/agents/swing/state")]
+    [InlineData("/agents/swing/stop")]
+    [InlineData("/agents/swing/close-position")]
     public async Task A_path_that_names_no_agent_of_the_user_is_not_found(string page)
     {
         using var application = AgentsApplication.With(new StandInMarketData());
@@ -939,6 +991,8 @@ public class AgentPageTests
         Assert.Equal(HttpStatusCode.NotFound, answer.StatusCode);
         Assert.DoesNotContain("name=\"Name\"", shown);
         Assert.DoesNotContain("Delete the agent", shown);
+        Assert.DoesNotContain("the agent</button>", shown);
+        Assert.DoesNotContain(AgentPages.ClosePositionNow, shown);
     }
 
     [Fact]
@@ -1021,12 +1075,16 @@ public class AgentPageTests
         var agent = Assert.Single(StoredAgent.All(application.Database));
         Assert.Equal(name, agent.Name);
 
-        // The list, the page of the agent, and the page that deletes it, as the browser gets them.
+        // The list, the page of the agent, the page that deletes it, and the pages of its state,
+        // as the browser gets them.
         string[] pages =
         [
             await client.PageAsync(AgentsPage),
             await client.PageAsync(AgentBrowser.AgentPage(agent.Id)),
             await client.PageAsync(AgentBrowser.DeleteAgentPage(agent.Id)),
+            await client.PageAsync(AgentBrowser.AgentStatePage(agent.Id)),
+            await client.PageAsync(AgentBrowser.StopAgentPage(agent.Id)),
+            await client.PageAsync(AgentBrowser.ClosePositionPage(agent.Id)),
         ];
 
         Assert.All(pages, page =>
@@ -1117,9 +1175,9 @@ public class AgentPageTests
 
         Assert.DoesNotContain(standsInTheWay, await client.PageAsync("/account/delete"));
 
-        // An agent in any other state is active. Nothing starts an agent yet, so the test
-        // stores one. The page says what stands in the way, and a form that is posted all the
-        // same deletes nothing (FR-ACC-9).
+        // An agent in any other state is active: the test stores one that is paused. The page
+        // says what stands in the way, and a form that is posted all the same deletes nothing
+        // (FR-ACC-9).
         var paused = await application.GiveAgentAsync(user.Id, Morning, name: "Paused", state: AgentState.Paused, market: Market.Futures);
         var page = await client.PageAsync("/account/delete");
 

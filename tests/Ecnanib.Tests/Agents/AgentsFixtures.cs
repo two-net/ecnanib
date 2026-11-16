@@ -85,6 +85,42 @@ internal sealed record StoredAgent(
         All(database).Single(agent => agent.Name == name);
 }
 
+/// <summary>A row of the <c>agent_state_changes</c> table, read by a test directly.</summary>
+internal sealed record StoredAgentStateChange(Guid Id, Guid AgentId, Guid UserId, string State, string Cause, DateTimeOffset ChangedAt)
+{
+    /// <summary>Every change, in the order they were recorded in.</summary>
+    public static IReadOnlyList<StoredAgentStateChange> All(TestDatabase database)
+    {
+        using var connection = database.Open();
+        using var command = new NpgsqlCommand(
+            "SELECT id, agent_id, user_id, state, cause, changed_at FROM agent_state_changes ORDER BY changed_at, id",
+            connection);
+        using var reader = command.ExecuteReader();
+
+        var changes = new List<StoredAgentStateChange>();
+        while (reader.Read())
+        {
+            changes.Add(new StoredAgentStateChange(
+                reader.GetGuid(0),
+                reader.GetGuid(1),
+                reader.GetGuid(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetFieldValue<DateTimeOffset>(5)));
+        }
+
+        return changes;
+    }
+
+    /// <summary>The changes of the state of one agent, in the order they were recorded in.</summary>
+    public static IReadOnlyList<StoredAgentStateChange> Of(TestDatabase database, Guid agentId) =>
+        [.. All(database).Where(change => change.AgentId == agentId)];
+
+    /// <summary>The changes of one agent as a test names them: each as <c>State: Cause</c>, in order.</summary>
+    public static IReadOnlyList<string> Told(TestDatabase database, Guid agentId) =>
+        [.. Of(database, agentId).Select(change => $"{change.State}: {change.Cause}")];
+}
+
 /// <summary>What a browser does with the pages of a user's agents.</summary>
 internal static class AgentBrowser
 {
@@ -108,6 +144,30 @@ internal static class AgentBrowser
 
     /// <summary>The form of the list that copies an agent.</summary>
     public static string CloneForm(Guid agentId) => $"clone-agent-{agentId}";
+
+    /// <summary>The form that starts an agent.</summary>
+    public const string StartForm = "start-agent";
+
+    /// <summary>The form that pauses one.</summary>
+    public const string PauseForm = "pause-agent";
+
+    /// <summary>The form that resumes one.</summary>
+    public const string ResumeForm = "resume-agent";
+
+    /// <summary>The form that stops one.</summary>
+    public const string StopForm = "stop-agent";
+
+    /// <summary>The form that closes the open position of one.</summary>
+    public const string ClosePositionForm = "close-agent-position";
+
+    /// <summary>The page of the state of an agent, with the forms that start, pause, and resume it.</summary>
+    public static string AgentStatePage(Guid agentId) => $"/agents/{agentId}/state";
+
+    /// <summary>The page that stops it.</summary>
+    public static string StopAgentPage(Guid agentId) => $"/agents/{agentId}/stop";
+
+    /// <summary>The page that closes its open position.</summary>
+    public static string ClosePositionPage(Guid agentId) => $"/agents/{agentId}/close-position";
 
     /// <summary>
     /// What the form brings for an agent whose settings are all in order: within the bounds of
@@ -157,6 +217,31 @@ internal static class AgentBrowser
     /// <summary>Presses the button of the page that deletes an agent.</summary>
     public static Task<(string Path, string Page)> DeleteAgentAsync(this HttpClient client, Guid agentId) =>
         client.SubmitAsync(DeleteAgentPage(agentId), DeleteForm);
+
+    /// <summary>Presses the button of the page of an agent's state that starts it, and follows where the answer leads.</summary>
+    public static Task<(string Path, string Page)> StartAgentAsync(this HttpClient client, Guid agentId) =>
+        client.SubmitAsync(AgentStatePage(agentId), StartForm);
+
+    /// <summary>Presses the button that pauses it, in the same way.</summary>
+    public static Task<(string Path, string Page)> PauseAgentAsync(this HttpClient client, Guid agentId) =>
+        client.SubmitAsync(AgentStatePage(agentId), PauseForm);
+
+    /// <summary>Presses the button that resumes it, in the same way.</summary>
+    public static Task<(string Path, string Page)> ResumeAgentAsync(this HttpClient client, Guid agentId) =>
+        client.SubmitAsync(AgentStatePage(agentId), ResumeForm);
+
+    /// <summary>
+    /// Presses the button of the page that stops an agent, with what was chosen for its open
+    /// position when something was: <c>close</c> or <c>keep</c>.
+    /// </summary>
+    public static Task<(string Path, string Page)> StopAgentAsync(this HttpClient client, Guid agentId, string? position = null) =>
+        position is null
+            ? client.SubmitAsync(StopAgentPage(agentId), StopForm)
+            : client.SubmitAsync(StopAgentPage(agentId), StopForm, ("Position", position));
+
+    /// <summary>Presses the button of the page that closes the open position of an agent.</summary>
+    public static Task<(string Path, string Page)> ClosePositionAsync(this HttpClient client, Guid agentId) =>
+        client.SubmitAsync(ClosePositionPage(agentId), ClosePositionForm);
 
     /// <summary>A page as a person reads it: with the characters that the markup writes as numbers.</summary>
     public static string Read(string page) => WebUtility.HtmlDecode(page);
@@ -225,17 +310,59 @@ internal sealed class StandInMarketData : IExchangeMarketData
 
 /// <summary>
 /// Stands for what keeps positions and orders, which is not built yet: it says that the agents a
-/// test names hold an open position or open orders.
+/// test names hold an open position or open orders, keeps the times it was asked to close a
+/// position, and answers as the test says. Unless a test says otherwise, a position that it is
+/// asked to close is closed, and gone from then on.
 /// </summary>
 internal sealed class StandInExposure : IAgentExposure
 {
-    private readonly ConcurrentDictionary<Guid, bool> _holding = new();
+    private readonly ConcurrentDictionary<Guid, bool> _positions = new();
+    private readonly ConcurrentDictionary<Guid, bool> _orders = new();
+    private readonly ConcurrentQueue<Guid> _closes = new();
+
+    /// <summary>How closing the position of an agent ends: by default it is closed when there is one.</summary>
+    public Func<Guid, PositionCloseOutcome>? CloseAnswer { get; set; }
+
+    /// <summary>What a test does at the moment a close is asked for, before it is answered: to see what is stored by then.</summary>
+    public Action<Guid>? OnClose { get; set; }
+
+    /// <summary>The agents whose position it was asked to close, in order.</summary>
+    public IReadOnlyList<Guid> Closes => [.. _closes];
 
     /// <summary>Says from now on that an agent has an open position.</summary>
-    public void Holds(Guid agentId) => _holding[agentId] = true;
+    public void Holds(Guid agentId) => _positions[agentId] = true;
+
+    /// <summary>Says from now on that an agent has open orders, and no position.</summary>
+    public void HoldsOrders(Guid agentId) => _orders[agentId] = true;
+
+    /// <summary>Says from now on that an agent holds nothing: its position was closed at the exchange.</summary>
+    public void HoldsNothing(Guid agentId)
+    {
+        _positions.TryRemove(agentId, out _);
+        _orders.TryRemove(agentId, out _);
+    }
 
     public Task<bool> HasOpenPositionOrOrdersAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken) =>
-        Task.FromResult(_holding.ContainsKey(agentId));
+        Task.FromResult(_positions.ContainsKey(agentId) || _orders.ContainsKey(agentId));
+
+    public Task<bool> HasOpenPositionAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken) =>
+        Task.FromResult(_positions.ContainsKey(agentId));
+
+    public Task<PositionCloseOutcome> ClosePositionAtMarketAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        _closes.Enqueue(agentId);
+        OnClose?.Invoke(agentId);
+
+        var outcome = CloseAnswer?.Invoke(agentId)
+            ?? (_positions.ContainsKey(agentId) ? PositionCloseOutcome.Closed : PositionCloseOutcome.NothingOpen);
+
+        if (outcome == PositionCloseOutcome.Closed)
+        {
+            _positions.TryRemove(agentId, out _);
+        }
+
+        return Task.FromResult(outcome);
+    }
 }
 
 /// <summary>The application as the tests of agents run it.</summary>
@@ -275,8 +402,9 @@ internal static class StoredAgentRows
 {
     /// <summary>
     /// Gives a user an agent, stored as the application stores one, in the state that the test
-    /// names. Nothing starts or stops an agent yet, so an agent that is not a draft is one that
-    /// a test stored. Nobody is signed in for it, and nothing is recorded.
+    /// names, with the one change that says so. It is for a test that needs an agent in a state
+    /// without the steps that lead there, or in a state that nothing leads to yet. Nobody is
+    /// signed in for it, and nothing is recorded in the audit trail.
     /// </summary>
     /// <returns>The id of the agent.</returns>
     public static async Task<Guid> GiveAgentAsync(
@@ -287,7 +415,8 @@ internal static class StoredAgentRows
         AgentState state = AgentState.Draft,
         Market market = Market.Spot,
         string symbol = "BTCUSDT",
-        TradingMode mode = TradingMode.Demo)
+        TradingMode mode = TradingMode.Demo,
+        AgentStateCause cause = AgentStateCause.Created)
     {
         var id = Guid.CreateVersion7();
 
@@ -309,9 +438,10 @@ internal static class StoredAgentRows
             drawdownPercent: 20m,
             maxEntryDistancePercent: 0.8m,
             state,
-            AgentStateCause.Created,
+            cause,
             stateChangedAt: at,
             createdAt: at));
+        context.Add(new AgentStateChange(Guid.CreateVersion7(), id, userId, state, cause, at));
 
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 

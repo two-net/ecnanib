@@ -5,9 +5,10 @@ namespace Ecnanib.Agents;
 /// stored data and needs a migration. See docs/agents.md.
 /// </summary>
 /// <remarks>
-/// An agent is created in <see cref="Draft"/>. What moves an agent to another state is not built
-/// yet: the states are here because the rules for an agent's settings are stated in them
-/// (FR-AGT-8, FR-AGT-9).
+/// An agent is created in <see cref="Draft"/>. Its user starts, pauses, resumes, and stops it
+/// (FR-AGT-1), and the service moves it to <see cref="AttentionRequired"/> when the key it runs
+/// with goes. Which control leads where is in <see cref="AgentStates.After"/>. Nothing moves an
+/// agent to <see cref="Halted"/> yet: what watches the loss limits does, when it is built.
 /// </remarks>
 public enum AgentState
 {
@@ -31,16 +32,57 @@ public enum AgentState
 }
 
 /// <summary>
-/// Why an agent is in its state. A member is stored by its name. What changes the state of an
-/// agent adds the members of its causes when it is built (FR-AGT-10).
+/// Why an agent is in its state (FR-AGT-10). A member is stored by its name, so renaming one
+/// changes stored data and needs a migration. What changes the state of an agent adds the
+/// members of its causes when it is built.
 /// </summary>
 public enum AgentStateCause
 {
     /// <summary>The user created the agent, as a new one or as a copy of another.</summary>
     Created,
+
+    /// <summary>The user started the agent, which was a draft or was stopped.</summary>
+    UserStarted,
+
+    /// <summary>The user paused the agent.</summary>
+    UserPaused,
+
+    /// <summary>The user resumed the agent, which was paused, was halted, or required attention.</summary>
+    UserResumed,
+
+    /// <summary>The user stopped the agent, which had no open position.</summary>
+    UserStopped,
+
+    /// <summary>The user stopped the agent, and chose to close its open position at market (FR-AGT-11).</summary>
+    UserStoppedClosingPosition,
+
+    /// <summary>The user stopped the agent, and chose to keep its open position with its protective orders (FR-AGT-11).</summary>
+    UserStoppedKeepingPosition,
+
+    /// <summary>The Binance credential of the agent's environment was deleted while the agent ran (FR-KEY-10).</summary>
+    ExchangeKeyDeleted,
+
+    /// <summary>Binance refused the credential of the agent's environment while the agent ran (FR-KEY-10).</summary>
+    ExchangeKeyInvalid,
 }
 
-/// <summary>What the state of an agent means for the rules about its settings.</summary>
+/// <summary>What a user does to the state of an agent (FR-AGT-1).</summary>
+public enum AgentControl
+{
+    /// <summary>Starts an agent that is a draft, or is stopped.</summary>
+    Start,
+
+    /// <summary>Pauses an agent that runs.</summary>
+    Pause,
+
+    /// <summary>Resumes an agent that is paused, is halted, or requires attention.</summary>
+    Resume,
+
+    /// <summary>Stops an agent that was started.</summary>
+    Stop,
+}
+
+/// <summary>What the state of an agent means: for its cycles, for its settings, and for what its user can do to it (SRS 3.3).</summary>
 public static class AgentStates
 {
     /// <summary>
@@ -51,6 +93,26 @@ public static class AgentStates
     public static bool IsActive(AgentState state) => state is not (AgentState.Draft or AgentState.Stopped);
 
     /// <summary>
+    /// Whether the cycles of an agent in a state run: only while it is Running. What runs a
+    /// cycle asks this when the candle closes.
+    /// </summary>
+    public static bool RunsCycles(AgentState state) => state == AgentState.Running;
+
+    /// <summary>
+    /// Whether an agent in a state may open a new position: only while it is Running. In every
+    /// other state an open position is left as the state says, and none is opened.
+    /// </summary>
+    public static bool TakesNewEntries(AgentState state) => state == AgentState.Running;
+
+    /// <summary>
+    /// Whether an agent in a state needs the Binance credential of its environment now: while
+    /// it is Running. Such an agent moves to Attention required when the credential is deleted
+    /// or refused (FR-KEY-10). An agent that does not run is asked about its credential when it
+    /// is started or resumed, and stays as its user left it until then.
+    /// </summary>
+    public static bool NeedsItsKey(AgentState state) => state == AgentState.Running;
+
+    /// <summary>
     /// Whether the mode, market, symbol, and timeframe of an agent can be changed, and whether
     /// the agent can be deleted: while it is in Draft, or is Stopped with no open position or
     /// orders (FR-AGT-8).
@@ -59,4 +121,34 @@ public static class AgentStates
     /// <param name="holdsPositionOrOrders">Whether the agent has an open position or open orders on the exchange.</param>
     public static bool StructureCanChange(AgentState state, bool holdsPositionOrOrders) =>
         state == AgentState.Draft || (state == AgentState.Stopped && !holdsPositionOrOrders);
+
+    /// <summary>
+    /// The state that a control leads to from a state, or null when the control is not offered
+    /// in it. This is every move that a user makes (SRS 3.3):
+    /// a draft and a stopped agent are started; a running one is paused; a paused one, a halted
+    /// one, and one that requires attention are resumed; and every agent that was started and is
+    /// not stopped is stopped.
+    /// </summary>
+    public static AgentState? After(AgentState state, AgentControl control) => (control, state) switch
+    {
+        (AgentControl.Start, AgentState.Draft or AgentState.Stopped) => AgentState.Running,
+        (AgentControl.Pause, AgentState.Running) => AgentState.Paused,
+        (AgentControl.Resume, AgentState.Paused or AgentState.Halted or AgentState.AttentionRequired) => AgentState.Running,
+        (AgentControl.Stop, AgentState.Running or AgentState.Paused or AgentState.Halted or AgentState.AttentionRequired) =>
+            AgentState.Stopped,
+        _ => null,
+    };
+
+    /// <summary>The state that a control leaves an agent in, wherever it is offered.</summary>
+    public static AgentState LeadsTo(AgentControl control) => control switch
+    {
+        AgentControl.Start or AgentControl.Resume => AgentState.Running,
+        AgentControl.Pause => AgentState.Paused,
+        AgentControl.Stop => AgentState.Stopped,
+        _ => throw new ArgumentOutOfRangeException(nameof(control), control, "The control leads to no state."),
+    };
+
+    /// <summary>The controls that are offered for an agent in a state, in the order of <see cref="AgentControl"/>.</summary>
+    public static IReadOnlyList<AgentControl> Offered(AgentState state) =>
+        [.. Enum.GetValues<AgentControl>().Where(control => After(state, control) is not null)];
 }

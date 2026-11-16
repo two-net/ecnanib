@@ -242,6 +242,17 @@ code {
             margin-top: 0;
         }
 
+    /* What leads to another page of the agent, beside the buttons and apart from one another. */
+    .agents td > a {
+        display: inline-block;
+        margin-inline-end: 0.75rem;
+    }
+
+    /* The changes of the state of one agent: three columns, which need less room than the list. */
+    .agent-changes table {
+        min-width: 36rem;
+    }
+
 /* The form of an agent: a choice fills its field as an input does, the button that shows the
    symbols of a market sits under the choice of the market, and the risk settings are one group. */
 .field > select {
@@ -258,13 +269,23 @@ fieldset {
     max-width: 30rem;
 }
 
-.agent-roles dt {
+.agent-roles dt, .agent-states dt {
     font-weight: 600;
 }
 
-.agent-roles dd {
+.agent-roles dd, .agent-states dd {
     margin: 0 0 0.5rem;
 }
+
+/* What happens to an open position when its agent is stopped: one choice under another, each
+   with what it means below it. */
+.choice {
+    margin-bottom: 0.75rem;
+}
+
+    .choice > label {
+        display: inline;
+    }
 
 /* The bar that says who is signed in, with the sign-out button in line with its links. On a
    narrow screen what does not fit goes to the next line whole, and is not squeezed. */
