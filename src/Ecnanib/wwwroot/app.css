@@ -253,6 +253,26 @@ code {
         min-width: 36rem;
     }
 
+    /* The rules of one check of the Risk Guard: a name, an outcome, and why, which is a sentence. */
+    .risk-check-rules table {
+        min-width: 40rem;
+    }
+
+/* The outcome of a rule of the Risk Guard, and the verdict of a check (FR-RSK-9). Each is said as
+   words, so neither relies on a colour: what stands in the way of a plan is heavier, and a rule
+   that was not asked is lighter. */
+.rule-outcome {
+    white-space: nowrap;
+}
+
+.rule-failed, .rule-unknown {
+    font-weight: 600;
+}
+
+.rule-notapplied {
+    opacity: 0.75;
+}
+
 /* The form of an agent: a choice fills its field as an input does, the button that shows the
    symbols of a market sits under the choice of the market, and the risk settings are one group. */
 .field > select {

@@ -191,9 +191,13 @@ public class CycleDataPackageTests
 
         // One read of each part for all three (FR-BIN-3): the candles of the close, those of the
         // two higher timeframes, the mark price with its funding, and the open interest, each on
-        // the Futures market of the test environment.
+        // the Futures market of the test environment. And one read each of the rules of the
+        // symbols and of the price, for the Risk Guard, which checks the plan of each (FR-RSK-4).
         Assert.Equal(
-            ["/fapi/v1/klines 15m", "/fapi/v1/klines 1h", "/fapi/v1/klines 4h", "/fapi/v1/openInterest", "/fapi/v1/premiumIndex"],
+            [
+                "/fapi/v1/exchangeInfo", "/fapi/v1/klines 15m", "/fapi/v1/klines 1h", "/fapi/v1/klines 4h", "/fapi/v1/openInterest",
+                "/fapi/v1/premiumIndex", "/fapi/v2/ticker/price",
+            ],
             binance.Calls
                 .Select(call => call.Address.AbsolutePath
                     + string.Concat(call.Query.Where(parameter => parameter.Name == "interval").Select(parameter => $" {parameter.Value}")))

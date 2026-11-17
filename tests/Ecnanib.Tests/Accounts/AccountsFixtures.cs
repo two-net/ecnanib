@@ -162,8 +162,11 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What hands a stored key to the call of a model.</summary>
     public IKeyHandOver KeyHandOver => _application.Services.GetRequiredService<IKeyHandOver>();
 
-    /// <summary>What records a cycle with the calls of its roles.</summary>
+    /// <summary>What records a cycle with the calls of its roles and the checks of the Risk Guard.</summary>
     public ICycleRecords CycleRecords => _application.Services.GetRequiredService<ICycleRecords>();
+
+    /// <summary>What reads the checks of the Risk Guard that were stored for an agent.</summary>
+    public IRiskCheckRecords RiskCheckRecords => _application.Services.GetRequiredService<IRiskCheckRecords>();
 
     /// <summary>What validates the answer of a role.</summary>
     public IRoleResults RoleResults => _application.Services.GetRequiredService<IRoleResults>();

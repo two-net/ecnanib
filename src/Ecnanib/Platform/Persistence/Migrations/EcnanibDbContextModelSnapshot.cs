@@ -1087,6 +1087,84 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Ecnanib.DecisionEngine.RiskCheck", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("action");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_at");
+
+                    b.Property<Guid>("CycleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cycle_id");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Verdict")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("verdict");
+
+                    b.HasKey("Id")
+                        .HasName("pk_risk_checks");
+
+                    b.HasAlternateKey("Id", "UserId")
+                        .HasName("ak_risk_checks_id_user_id");
+
+                    b.HasIndex("CycleId", "UserId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ix_risk_checks_cycle_id_user_id_sequence");
+
+                    b.ToTable("risk_checks", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.DecisionEngine.RiskCheckRule", b =>
+                {
+                    b.Property<Guid>("CheckId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("check_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Rule")
+                        .HasColumnType("text")
+                        .HasColumnName("rule");
+
+                    b.Property<decimal?>("Measured")
+                        .HasColumnType("numeric")
+                        .HasColumnName("measured");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("outcome");
+
+                    b.Property<decimal?>("Threshold")
+                        .HasColumnType("numeric")
+                        .HasColumnName("threshold");
+
+                    b.HasKey("CheckId", "UserId", "Rule")
+                        .HasName("pk_risk_check_rules");
+
+                    b.ToTable("risk_check_rules", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.DecisionEngine.RoleOutput", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1423,6 +1501,28 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_decision_cycles_agents_agent_id_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.DecisionEngine.RiskCheck", b =>
+                {
+                    b.HasOne("Ecnanib.DecisionEngine.DecisionCycle", null)
+                        .WithMany()
+                        .HasForeignKey("CycleId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_risk_checks_decision_cycles_cycle_id_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.DecisionEngine.RiskCheckRule", b =>
+                {
+                    b.HasOne("Ecnanib.DecisionEngine.RiskCheck", null)
+                        .WithMany()
+                        .HasForeignKey("CheckId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_risk_check_rules_risk_checks_check_id_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.DecisionEngine.RoleOutput", b =>

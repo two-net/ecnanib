@@ -72,6 +72,12 @@ public static class WebUiModule
     /// </summary>
     public static string AgentPromptsPath(Guid agentId) => $"{AgentPath(agentId)}/prompts";
 
+    /// <summary>
+    /// The path of the page of the risk checks of an agent: what the Risk Guard made of its
+    /// plans, with the outcome of every rule (FR-RSK-9).
+    /// </summary>
+    public static string AgentRiskChecksPath(Guid agentId) => $"{AgentPath(agentId)}/risk-checks";
+
     /// <summary>The path of the page a user stops an agent on, and chooses what happens to its open position (FR-AGT-11).</summary>
     public static string StopAgentPath(Guid agentId) => $"{AgentPath(agentId)}/stop";
 

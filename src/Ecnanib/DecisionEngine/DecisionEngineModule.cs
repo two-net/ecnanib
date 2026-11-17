@@ -21,10 +21,19 @@ public static class DecisionEngineModule
         // What a cycle does once it has started: it builds its data package, runs the four roles
         // of the team, validates what each answered, and records every call (FR-TEAM-6 to
         // FR-TEAM-9). A decision that completes later than the stale limit of the agent's
-        // timeframe opens no position (FR-CYC-9). It ends with the decision of the team: the
-        // Risk Guard and the orders are not built. What reconciles an agent with the exchange
-        // registers an IReconciliation, when it is built.
+        // timeframe opens no position (FR-CYC-9). What goes on of its plan is checked by the
+        // Risk Guard (FR-RSK-3), and nothing is placed: the orders are not built. What
+        // reconciles an agent with the exchange registers an IReconciliation, when it is built.
         services.AddSingleton<IDecisionCycle, TeamCycle>();
+
+        // What has the Risk Guard check what goes on of a plan: it gathers the facts that the
+        // fixed rules are asked of, and keeps the outcome of every rule for the record of the
+        // cycle (FR-RSK-4, FR-RSK-9). It calls no model. What keeps the global halt registers
+        // an IGlobalHalt, when it is built: until then no halt is on.
+        services.AddSingleton<PlanChecks>();
+
+        // The checks of the Risk Guard that were stored for an agent, as its user reads them.
+        services.AddSingleton<IRiskCheckRecords, RiskCheckRecords>();
 
         // One role of a team in a cycle: its prompt, the call of its model with the key of the
         // agent's user, the validation of its answer, and the one call more (FR-TEAM-9).
@@ -67,7 +76,8 @@ public static class DecisionEngineModule
         // tightens (FR-CYC-4 to FR-CYC-7). Only it makes a result.
         services.AddSingleton<IRoleResults, RoleResults>();
 
-        // What records a cycle with the calls of its roles, once, when it ends (FR-TEAM-8).
+        // What records a cycle with the calls of its roles and the checks of the Risk Guard,
+        // once, when it ends (FR-TEAM-8, FR-RSK-9).
         services.AddSingleton<ICycleRecords, CycleRecords>();
 
         return services;

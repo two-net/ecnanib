@@ -1,5 +1,9 @@
 using System.Reflection;
 using Ecnanib.Accounts;
+using Ecnanib.Tests.Architecture;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.Accounts;
 
@@ -123,6 +127,43 @@ internal static class AuditRules
                select $"{type.Name}.{member.Name}: takes {parameter.ParameterType.Name} {parameter.Name}",
         ];
     }
+
+    /// <summary>
+    /// Why the operator functions count as built, or null while none is: an endpoint that
+    /// requires the operator policy, or a call of <see cref="OperatorAccess.IsOperator"/> from
+    /// outside Accounts. What waits for the operator functions asks this: the audit trail, and
+    /// the global halt of the Risk Guard.
+    /// </summary>
+    /// <param name="services">The services of a running application, which knows its endpoints.</param>
+    public static string? WhyOperatorFunctionsAreBuilt(IServiceProvider services)
+    {
+        var guarded = Endpoints(services)
+            .Where(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(data => data.Policy == OperatorAccess.Policy))
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .FirstOrDefault();
+
+        if (guarded is not null)
+        {
+            return $"{guarded} requires the operator policy";
+        }
+
+        var caller = CallersOfIsOperator().FirstOrDefault(caller => !IsWithin(caller, "Ecnanib.Accounts"));
+
+        return caller is null ? null : $"{caller} asks whether its user is an operator";
+    }
+
+    /// <summary>The page and endpoint routes that a running application serves.</summary>
+    public static IEnumerable<RouteEndpoint> Endpoints(IServiceProvider services) =>
+        services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>();
+
+    /// <summary>The types of the application that call <see cref="OperatorAccess.IsOperator"/>.</summary>
+    public static IReadOnlyList<string> CallersOfIsOperator() =>
+        DependencyChecker.FindCallersOf(
+            typeof(Program).Assembly, $"{typeof(OperatorAccess).FullName}::{nameof(OperatorAccess.IsOperator)}");
+
+    /// <summary>True when a type or a namespace is in a namespace, or nested in it.</summary>
+    public static bool IsWithin(string? name, string @namespace) =>
+        name is not null && (name == @namespace || name.StartsWith(@namespace + ".", StringComparison.Ordinal));
 }
 
 /// <summary>

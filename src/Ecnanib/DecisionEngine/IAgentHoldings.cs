@@ -30,24 +30,43 @@ public interface IAgentHoldings
 /// <summary>What an agent holds.</summary>
 /// <param name="Equity">
 /// The capital its user allocated to it, plus its net profit or loss to date, in the asset that
-/// its symbol is priced in.
+/// its symbol is priced in. It includes unrealized profit and loss.
 /// </param>
 /// <param name="Position">Its open position, or null when it has none. An agent has one at most.</param>
 /// <param name="Orders">
 /// Its orders that rest on the exchange: an entry that has not filled, and the stop-loss and the
 /// take-profit of its position. Empty when it has none.
 /// </param>
-public sealed record AgentHoldings(decimal Equity, PositionContext? Position, IReadOnlyList<OpenOrder> Orders)
+/// <param name="EquityAtDayStart">
+/// Its equity as the UTC day began, which its loss of the day is counted from: the Risk Guard
+/// holds a plan that opens a position to the daily loss limit (FR-RSK-4).
+/// </param>
+/// <param name="PeakEquity">
+/// The highest that its equity has been, which its drawdown is counted from: the Risk Guard
+/// holds a plan that opens a position to the drawdown limit (FR-RSK-4).
+/// </param>
+public sealed record AgentHoldings(
+    decimal Equity,
+    PositionContext? Position,
+    IReadOnlyList<OpenOrder> Orders,
+    decimal EquityAtDayStart,
+    decimal PeakEquity)
 {
     /// <summary>
     /// What an agent holds while nothing keeps positions and orders: nothing, with the capital
-    /// that its user allocated to it as its equity, for it has made no profit and no loss.
+    /// that its user allocated to it as its equity, for it has made no profit and no loss. So
+    /// it has lost nothing in the day, and is at its peak.
     /// </summary>
     public static AgentHoldings NothingYet(Agent agent)
     {
         ArgumentNullException.ThrowIfNull(agent);
 
-        return new AgentHoldings(agent.AllocatedCapital, Position: null, Orders: []);
+        return new AgentHoldings(
+            agent.AllocatedCapital,
+            Position: null,
+            Orders: [],
+            EquityAtDayStart: agent.AllocatedCapital,
+            PeakEquity: agent.AllocatedCapital);
     }
 }
 

@@ -278,13 +278,14 @@ internal sealed record RoleRun<T>(RoleCall Call, AiCallResult? Answer, RoleResul
 
 /// <summary>
 /// What one cycle keeps of the calls of its roles, until it is recorded: each call, in the order
-/// the calls ended in, and the checks of keys that the cycle started. Two roles are called at
-/// the same time, so it is written to under a lock.
+/// the calls ended in, the checks of the Risk Guard, and the checks of keys that the cycle
+/// started. Two roles are called at the same time, so it is written to under a lock.
 /// </summary>
 internal sealed class CycleCalls
 {
     private readonly Lock _gate = new();
     private readonly List<RoleOutput> _outputs = [];
+    private readonly List<RiskCheckRecord> _guarded = [];
     private readonly HashSet<AiProviderCode> _checked = [];
     private readonly List<Task> _checks = [];
 
@@ -300,12 +301,33 @@ internal sealed class CycleCalls
         }
     }
 
+    /// <summary>What the Risk Guard made of what went on of the plan, in the order of the checks (FR-RSK-9).</summary>
+    public IReadOnlyList<RiskCheckRecord> Guarded
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _guarded];
+            }
+        }
+    }
+
     /// <summary>Keeps a call.</summary>
     public void Add(RoleOutput output)
     {
         lock (_gate)
         {
             _outputs.Add(output);
+        }
+    }
+
+    /// <summary>Keeps a check of the Risk Guard.</summary>
+    public void Add(RiskCheckRecord check)
+    {
+        lock (_gate)
+        {
+            _guarded.Add(check);
         }
     }
 

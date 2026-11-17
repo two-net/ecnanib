@@ -176,39 +176,19 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
     }
 
     /// <summary>
-    /// Why the operator functions count as built, or null while none is: an endpoint that
-    /// requires the operator policy, or a call of <see cref="OperatorAccess.IsOperator"/> from
-    /// outside Accounts.
+    /// Why the operator functions count as built, or null while none is. <see cref="AuditRules"/>
+    /// says how that is told, for whatever else waits for them.
     /// </summary>
-    private string? WhyOperatorFunctionsAreBuilt()
-    {
-        var guarded = Endpoints()
-            .Where(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(data => data.Policy == OperatorAccess.Policy))
-            .Select(endpoint => endpoint.RoutePattern.RawText)
-            .FirstOrDefault();
-
-        if (guarded is not null)
-        {
-            return $"{guarded} requires the operator policy";
-        }
-
-        var caller = CallersOfIsOperator().FirstOrDefault(caller => !IsWithin(caller, "Ecnanib.Accounts"));
-
-        return caller is null ? null : $"{caller} asks whether its user is an operator";
-    }
+    private string? WhyOperatorFunctionsAreBuilt() => AuditRules.WhyOperatorFunctionsAreBuilt(application.Services);
 
     /// <summary>The page and endpoint routes that the running application serves.</summary>
-    private IEnumerable<RouteEndpoint> Endpoints() =>
-        application.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>();
+    private IEnumerable<RouteEndpoint> Endpoints() => AuditRules.Endpoints(application.Services);
 
     /// <summary>The types of the application that call <see cref="OperatorAccess.IsOperator"/>.</summary>
-    private static IReadOnlyList<string> CallersOfIsOperator() =>
-        DependencyChecker.FindCallersOf(
-            typeof(Program).Assembly, $"{typeof(OperatorAccess).FullName}::{nameof(OperatorAccess.IsOperator)}");
+    private static IReadOnlyList<string> CallersOfIsOperator() => AuditRules.CallersOfIsOperator();
 
     /// <summary>True when a type or a namespace is in a namespace, or nested in it.</summary>
-    private static bool IsWithin(string? name, string @namespace) =>
-        name is not null && (name == @namespace || name.StartsWith(@namespace + ".", StringComparison.Ordinal));
+    private static bool IsWithin(string? name, string @namespace) => AuditRules.IsWithin(name, @namespace);
 
     /// <summary>A type with members that take text, and with members that the rule leaves alone.</summary>
     private sealed class Planted

@@ -5,6 +5,11 @@ namespace Ecnanib.DecisionEngine;
 /// stored by its name, so renaming one changes stored data and needs a migration. See
 /// "The outcome of a cycle" in docs/team.md.
 /// </summary>
+/// <remarks>
+/// It is the decision of the team, and stays that: a plan "goes on" to the Risk Guard, which
+/// checks it against the fixed rules before any order (FR-RSK-3). What the Risk Guard made of it
+/// is in the checks of the cycle, beside this: see <see cref="RiskCheck"/>.
+/// </remarks>
 public enum CycleOutcome
 {
     /// <summary>The plan is to hold: nothing goes on.</summary>

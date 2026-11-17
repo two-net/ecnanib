@@ -266,7 +266,7 @@ public class DataPackageTests
             new(OpenOrderKind.StopLoss, OrderSide.Sell, 0.015m, 59500m),
             new(OpenOrderKind.TakeProfit, OrderSide.Sell, 0.015m, 64000m),
         ];
-        var holdings = new StandInHoldings(new AgentHoldings(Equity: 1040.5m, position, orders));
+        var holdings = new StandInHoldings(new AgentHoldings(Equity: 1040.5m, position, orders, EquityAtDayStart: 1040.5m, PeakEquity: 1040.5m));
 
         using var application = new PackagesApplication(Monday, holdings);
         var agent = PackageAgents.On(Market.Futures, Timeframe.FourHours);
@@ -439,7 +439,9 @@ public class DataPackageTests
                 new OpenOrder(OpenOrderKind.Entry, OrderSide.Buy, 0.01m, 60250.5m),
                 new OpenOrder(OpenOrderKind.StopLoss, OrderSide.Sell, 0.015m, 59500m),
                 new OpenOrder(OpenOrderKind.TakeProfit, OrderSide.Sell, 0.015m, 64000m),
-            ]));
+            ],
+            EquityAtDayStart: 1040.5m,
+            PeakEquity: 1040.5m));
 
         using var application = new PackagesApplication(Monday, holdings, candles: 2, contextCandles: 2);
         var packages = application.Application.DataPackages;
@@ -522,7 +524,9 @@ public class DataPackageTests
         var holdings = new StandInHoldings(new AgentHoldings(
             Equity: 1040.5m,
             new PositionContext(PositionSide.Long, 61000m, 0.015m, 59500m, 64000m),
-            [new OpenOrder(OpenOrderKind.StopLoss, OrderSide.Sell, 0.015m, 59500m)]));
+            [new OpenOrder(OpenOrderKind.StopLoss, OrderSide.Sell, 0.015m, 59500m)],
+            EquityAtDayStart: 1040.5m,
+            PeakEquity: 1040.5m));
 
         using var application = new PackagesApplication(Monday, holdings);
 

@@ -6,9 +6,11 @@ using Ecnanib.AiProviderGateway;
 using Ecnanib.Credentials;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.Logging;
+using Ecnanib.Tests.RiskGuard;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -123,7 +125,7 @@ internal static class PlanAgents
 
     /// <summary>What an agent with a position holds, for a cycle that builds its data package.</summary>
     public static StandInHoldings Holding(PositionContext position) =>
-        new(new AgentHoldings(Equity: 1000m, position, Orders: []));
+        new(new AgentHoldings(Equity: 1000m, position, Orders: [], EquityAtDayStart: 1000m, PeakEquity: 1000m));
 
     /// <summary>The same for the plan of an answer, or null where its action needs no position: the agent then holds nothing.</summary>
     public static StandInHoldings? HoldingFor(string answered) => NeedsPosition(answered) ? Holding(Long) : null;
@@ -189,8 +191,10 @@ internal static class StoredCycleRows
     /// Gives an agent of a user the record of a cycle, stored as the application stores one: a
     /// cycle for a close, which ended as the test says, with one call of each role of the
     /// agent's team, each with a valid answer and the templates that are in use for the agent.
-    /// It is for a test that is about something else, and needs a row in every table that holds
-    /// rows of users. The agent has a team, as <c>GiveAgentAsync</c> gives it one.
+    /// The plan of the cycle went on to the Risk Guard, which accepted it: the cycle has one
+    /// check, with the outcome of every rule. It is for a test that is about something else,
+    /// and needs a row in every table that holds rows of users. The agent has a team, as
+    /// <c>GiveAgentAsync</c> gives it one.
     /// </summary>
     /// <returns>The id of the cycle.</returns>
     public static async Task<Guid> GiveCycleAsync(
@@ -242,7 +246,8 @@ internal static class StoredCycleRows
             }),
         ];
 
-        await application.CycleRecords.StoreAsync(cycle, outputs, TestContext.Current.CancellationToken);
+        await application.CycleRecords.StoreAsync(
+            cycle, outputs, [GuardedCycles.Check(cycleId, userId, closedAt.AddSeconds(39))], TestContext.Current.CancellationToken);
 
         return cycleId;
     }
@@ -502,8 +507,15 @@ internal sealed class StandInKeys : IKeyHandOver
 }
 
 /// <summary>The record of a cycle, as <see cref="StandInCycleRecords"/> was handed it.</summary>
-internal sealed record RecordedCycle(DecisionCycle Cycle, IReadOnlyList<RoleOutput> Outputs)
+internal sealed record RecordedCycle(DecisionCycle Cycle, IReadOnlyList<RoleOutput> Outputs, IReadOnlyList<RiskCheckRecord> Checks)
 {
+    /// <summary>The one check of the Risk Guard of the cycle.</summary>
+    public RiskCheckRecord Check => Assert.Single(Checks);
+
+    /// <summary>What a check of the cycle made of a rule.</summary>
+    public RuleOutcome OutcomeOf(GuardRule rule, int sequence = 1) =>
+        Assert.Single(Checks, check => check.Check.Sequence == sequence).Rules.Single(stored => stored.Rule == rule).Outcome;
+
     /// <summary>The calls of a role, in the order they were made.</summary>
     public IReadOnlyList<RoleOutput> Of(Role role) => [.. Outputs.Where(output => output.Role == role).OrderBy(output => output.Attempt)];
 
@@ -529,14 +541,18 @@ internal sealed class StandInCycleRecords : ICycleRecords
     /// <summary>The one record of the cycles of an agent.</summary>
     public RecordedCycle Of(Guid agentId) => Assert.Single(Stored, stored => stored.Cycle.AgentId == agentId);
 
-    public Task StoreAsync(DecisionCycle cycle, IReadOnlyList<RoleOutput> outputs, CancellationToken cancellationToken)
+    public Task StoreAsync(
+        DecisionCycle cycle,
+        IReadOnlyList<RoleOutput> outputs,
+        IReadOnlyList<RiskCheckRecord> checks,
+        CancellationToken cancellationToken)
     {
         if (Fails is { } error)
         {
             throw error;
         }
 
-        _stored.Enqueue(new RecordedCycle(cycle, outputs));
+        _stored.Enqueue(new RecordedCycle(cycle, outputs, checks));
 
         return Task.CompletedTask;
     }
@@ -544,11 +560,15 @@ internal sealed class StandInCycleRecords : ICycleRecords
 
 /// <summary>
 /// Stands for what checks a stored key again, for users that need no rows: it keeps whose key
-/// it was asked to check, and answers that the provider refused it.
+/// it was asked to check, and answers that the provider refused it. It says of every user that
+/// their Binance key lets an agent trade, unless the test says what stands in the way.
 /// </summary>
 internal sealed class StandInKeyChecks : IKeyValidation
 {
     private readonly ConcurrentQueue<(Guid UserId, string Provider)> _checked = new();
+
+    /// <summary>What about the Binance key of every user keeps an agent from trading, when something does (FR-KEY-5).</summary>
+    public StartBlock? Block { get; set; }
 
     /// <summary>Whose key of which provider it was asked to check again, in order.</summary>
     public IReadOnlyList<(Guid UserId, string Provider)> Checked => [.. _checked];
@@ -564,7 +584,7 @@ internal sealed class StandInKeyChecks : IKeyValidation
         throw new NotSupportedException("What runs a team calls no exchange.");
 
     public Task<StartBlock?> BlockForAsync(Guid userId, TradingMode environment, Market market, CancellationToken cancellationToken) =>
-        Task.FromResult<StartBlock?>(null);
+        Task.FromResult(Block);
 }
 
 /// <summary>The stand-ins behind a cycle that runs the team of an agent that needs no rows.</summary>

@@ -140,8 +140,47 @@ internal sealed class StandInMarket(TimeProvider clock) : IExchangeMarketData
     /// <summary>The open interest that the exchange says.</summary>
     public const decimal OpenInterest = 82450.5m;
 
+    /// <summary>The price that every symbol last traded at, unless the test says otherwise.</summary>
+    public const decimal LastPrice = 60000m;
+
     private readonly ConcurrentQueue<AskedCandles> _askedCandles = new();
     private readonly ConcurrentQueue<AskedOfFutures> _askedOfFutures = new();
+    private int _askedPrices;
+    private int _askedSymbols;
+
+    /// <summary>The price that a symbol last traded at, which the Risk Guard holds an entry to (FR-RSK-4).</summary>
+    public decimal Price { get; set; } = LastPrice;
+
+    /// <summary>How reading the price ends, when it does not succeed.</summary>
+    public ExchangeCallOutcome PriceOutcome { get; set; } = ExchangeCallOutcome.Succeeded;
+
+    /// <summary>
+    /// What happens as the price is read: a test moves its clock here, so that a decision is in
+    /// time when its team decides, and stale when the Risk Guard checks it.
+    /// </summary>
+    public Action? AsThePriceIsRead { get; set; }
+
+    /// <summary>
+    /// The symbols that a market has, with their rules, when they are not the two of the file of
+    /// the tests, each of which the exchange takes orders in.
+    /// </summary>
+    public Func<Market, IReadOnlyList<ExchangeSymbol>>? Symbols { get; set; }
+
+    /// <summary>How reading the symbols ends, when it does not succeed.</summary>
+    public ExchangeCallOutcome SymbolsOutcome { get; set; } = ExchangeCallOutcome.Succeeded;
+
+    /// <summary>How often the price was asked for, which only what checks a plan does.</summary>
+    public int AskedPrices => Volatile.Read(ref _askedPrices);
+
+    /// <summary>How often the symbols were asked for, which only what checks a plan does.</summary>
+    public int AskedSymbols => Volatile.Read(ref _askedSymbols);
+
+    /// <summary>
+    /// A symbol as the exchange lists it, with rules that the plans of the tests keep: a price
+    /// step of 0.1, a quantity step of 0.001, and a least value of 5.
+    /// </summary>
+    public static ExchangeSymbol Listed(string symbol, bool trading = true, decimal priceStep = 0.1m) =>
+        new(symbol, symbol[..^4], "USDT", trading, priceStep, QuantityStep: 0.001m, MinQuantity: 0.001m, MaxQuantity: 1000m, MinValue: 5m);
 
     /// <summary>What the exchange answers an ask for candles with, when it is not the candles through the latest close: null is those.</summary>
     public Func<AskedCandles, ExchangeCandles?>? Candles { get; set; }
@@ -218,11 +257,26 @@ internal sealed class StandInMarket(TimeProvider clock) : IExchangeMarketData
             : new ExchangeOpenInterest(OpenInterestOutcome, null, null));
     }
 
-    public Task<ExchangePrice> GetPriceAsync(Market market, TradingMode mode, string symbol, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("What builds a data package asks for no price.");
+    // What builds a data package asks for neither of these two: what has the Risk Guard check a
+    // plan does (FR-RSK-4). They are counted apart from what a package asks.
+    public Task<ExchangePrice> GetPriceAsync(Market market, TradingMode mode, string symbol, CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _askedPrices);
+        AsThePriceIsRead?.Invoke();
 
-    public Task<ExchangeSymbols> GetSymbolsAsync(Market market, TradingMode mode, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("What builds a data package asks for no symbols.");
+        return Task.FromResult(PriceOutcome == ExchangeCallOutcome.Succeeded
+            ? new ExchangePrice(PriceOutcome, Price, clock.GetUtcNow())
+            : new ExchangePrice(PriceOutcome, null, null));
+    }
+
+    public Task<ExchangeSymbols> GetSymbolsAsync(Market market, TradingMode mode, CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _askedSymbols);
+
+        return Task.FromResult(SymbolsOutcome == ExchangeCallOutcome.Succeeded
+            ? new ExchangeSymbols(SymbolsOutcome, Symbols?.Invoke(market) ?? [Listed("BTCUSDT"), Listed("SOLUSDT")], clock.GetUtcNow())
+            : new ExchangeSymbols(SymbolsOutcome, [], null));
+    }
 
     /// <summary>A candle that began at a moment, with prices and a volume that go by when it began.</summary>
     private static ExchangeCandle CandleOf(DateTimeOffset opened, TimeSpan length)
@@ -254,6 +308,12 @@ internal sealed class StandInHoldings(AgentHoldings holds) : IAgentHoldings
 {
     private readonly ConcurrentQueue<Guid> _asked = new();
 
+    /// <summary>
+    /// What every agent holds. A test changes it while a cycle runs, for a position that opens
+    /// or closes between the calls of the team and the check of the Risk Guard.
+    /// </summary>
+    public AgentHoldings Holds { get; set; } = holds;
+
     /// <summary>The agents that it was asked about, in order.</summary>
     public IReadOnlyList<Guid> Asked => [.. _asked];
 
@@ -261,6 +321,6 @@ internal sealed class StandInHoldings(AgentHoldings holds) : IAgentHoldings
     {
         _asked.Enqueue(agent.Id);
 
-        return Task.FromResult(holds);
+        return Task.FromResult(Holds);
     }
 }

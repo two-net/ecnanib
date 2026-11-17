@@ -6,8 +6,9 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// What a cycle does once it has started: it builds its data package, runs the four roles of the
-/// agent's team in the order of the specification, validates what each answered, and records
-/// every call (SRS 3.2, steps 2 to 5; FR-TEAM-6 to FR-TEAM-9). See docs/team.md.
+/// agent's team in the order of the specification, validates what each answered, has the Risk
+/// Guard check what goes on, and records every call and every check (SRS 3.2, steps 2 to 6;
+/// FR-TEAM-6 to FR-TEAM-9, FR-RSK-3). See docs/team.md and docs/risk-guard.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -29,20 +30,29 @@ namespace Ecnanib.DecisionEngine;
 /// closes a position or adjusts protection goes on all the same. See <see cref="StaleLimit"/>.
 /// </para>
 /// <para>
-/// <b>It ends with the decision of the team, and places nothing.</b> The Risk Guard, which
-/// checks every plan, and the orders are not built (FR-RSK-3). The only path from what a model
-/// answered to an order is schema validation, which is here, then the Risk Guard, then the
-/// Exchange Gateway (NFR-SEC-6): this uses nothing of the exchange.
+/// <b>What goes on of the plan is checked by the Risk Guard, after the Risk Manager and before
+/// any order</b> (FR-RSK-3): <see cref="PlanChecks"/> gathers the facts and asks the fixed
+/// rules, whatever the team decided and whoever the agent belongs to. Nothing here can leave the
+/// check out: a plan that goes on is handed to it, and a plan that does not goes nowhere. The
+/// outcome of a cycle stays the decision of its team, and what the Risk Guard made of it is in
+/// the record beside it.
 /// </para>
 /// <para>
-/// <b>A cycle is recorded once, when it ends, however it ends</b> (FR-TEAM-8). One object runs
-/// the cycles of every agent, at the same time, so everything of a cycle is local to its run.
+/// <b>It places nothing.</b> The orders are not built. The only path from what a model answered
+/// to an order is schema validation, which is here, then the Risk Guard, then the Exchange
+/// Gateway (NFR-SEC-6): this uses nothing of the exchange.
+/// </para>
+/// <para>
+/// <b>A cycle is recorded once, when it ends, however it ends</b> (FR-TEAM-8, FR-RSK-9). One
+/// object runs the cycles of every agent, at the same time, so everything of a cycle is local
+/// to its run.
 /// </para>
 /// </remarks>
 internal sealed class TeamCycle(
     IDataPackages packages,
     IRoleResults results,
     RoleRuns roles,
+    PlanChecks checks,
     ICycleRecords records,
     TradingSettings settings,
     TimeProvider clock,
@@ -171,14 +181,20 @@ internal sealed class TeamCycle(
             }
         }
 
-        // Steps 6 and 7 are not built: the Risk Guard, which checks what goes on, and the
-        // orders. The decision of the team is recorded, and nothing is placed.
         logger.LogInformation(
             "The team of agent {AgentId} decided for the close at {ClosedAt}: {CycleOutcome}, for a plan to {PlanAction}",
             cycle.Agent.Id,
             cycle.ClosedAt,
             decision.Outcome,
             plan.Action);
+
+        // Step 6: the Risk Guard checks what goes on, after the Risk Manager and before any
+        // order (FR-RSK-3). Every plan that goes on is handed to it, and what it accepted is
+        // what an order is made from. Step 7 is not built: nothing is placed.
+        if (decision.GoesOn is { } goesOn)
+        {
+            await checks.CheckAsync(cycle, goesOn, kept, cancellationToken);
+        }
 
         return decision.Outcome;
     }
@@ -241,8 +257,9 @@ internal sealed class TeamCycle(
     }
 
     /// <summary>
-    /// Records the cycle with the calls of its roles. The cycle may have been stopped, so the
-    /// write has a time limit of its own, and not the token of the cycle.
+    /// Records the cycle with the calls of its roles and the checks of the Risk Guard. The cycle
+    /// may have been stopped, so the write has a time limit of its own, and not the token of the
+    /// cycle.
     /// </summary>
     private async Task RecordAsync(CycleStart cycle, CycleCalls kept, DateTimeOffset startedAt, CycleOutcome outcome)
     {
@@ -253,7 +270,7 @@ internal sealed class TeamCycle(
 
         try
         {
-            await records.StoreAsync(record, kept.Outputs, limit.Token);
+            await records.StoreAsync(record, kept.Outputs, kept.Guarded, limit.Token);
         }
         catch (Exception error) when (outcome is CycleOutcome.Failed or CycleOutcome.Stopped)
         {

@@ -4,11 +4,13 @@ using Ecnanib.Agents;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
+using Ecnanib.Tests.RiskGuard;
 using Ecnanib.Tests.Settings;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -86,6 +88,10 @@ internal sealed class CyclesApplication : IDisposable
     /// nothing, as in the application.
     /// </param>
     /// <param name="settings">Other settings of the file of the tests, such as a stale limit.</param>
+    /// <param name="halt">
+    /// What keeps the global halt, for a test of a plan that is checked while one is on. Nothing
+    /// keeps one yet, so unless a test says so no halt is on, as in the application.
+    /// </param>
     public CyclesApplication(
         DateTimeOffset now,
         int? maxPerProvider = null,
@@ -96,7 +102,8 @@ internal sealed class CyclesApplication : IDisposable
         bool buildsPackages = false,
         StandInSystem? providers = null,
         StandInHoldings? holdings = null,
-        Func<SettingsJson, SettingsJson>? settings = null)
+        Func<SettingsJson, SettingsJson>? settings = null,
+        StandInHalt? halt = null)
     {
         buildsPackages |= providers is not null;
         storedAgents |= providers is not null;
@@ -152,6 +159,11 @@ internal sealed class CyclesApplication : IDisposable
                 if (holdings is not null)
                 {
                     services.AddSingleton<IAgentHoldings>(holdings);
+                }
+
+                if (halt is not null)
+                {
+                    services.AddSingleton<IGlobalHalt>(halt);
                 }
             }),
             runsCycles: true);

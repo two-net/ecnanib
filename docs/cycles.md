@@ -8,7 +8,7 @@ The Sentiment Analyst gathers news and social context using the live-search capa
 
 A plan does only what a plan may do: the actions of its market, for an agent that holds at most one position, with protection that only tightens, and with a stop-loss and a take-profit where it opens a position (FR-CYC-4 to FR-CYC-7). A decision that completes later than the stale limit for its timeframe cannot open a position (FR-CYC-9). Both are in [team.md](team.md): "What a plan may do" and "The stale limit".
 
-What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, what the call of the Sentiment Analyst and its report go by, which is in "Live search", and the calls of the team, which are in [team.md](team.md): the four roles in their order, the validation of what each answers, what a plan may do, the stale limit, and the record of the cycle (SRS 3.2, steps 3 to 5). What comes after the team is not built: the Risk Guard and the orders (steps 6 and 7). A cycle that starts builds its package, runs its team, and ends with the decision of the team, and with no order. See "Not built yet".
+What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, what the call of the Sentiment Analyst and its report go by, which is in "Live search", and the calls of the team, which are in [team.md](team.md): the four roles in their order, the validation of what each answers, what a plan may do, the stale limit, and the record of the cycle (SRS 3.2, steps 3 to 5). What goes on of the plan of the team is checked by the Risk Guard, which is in [risk-guard.md](risk-guard.md) (step 6). The orders are not built (step 7): a cycle that starts builds its package, runs its team, has what goes on of its plan checked, and ends with no order. See "Not built yet".
 
 The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests`, `IndicatorTests`, and `SentimentLiveSearchTests`. Those of the team are in the classes whose names begin with `Team`.
 
@@ -246,7 +246,8 @@ public interface IAgentHoldings
     Task<AgentHoldings> OfAsync(Agent agent, CancellationToken cancellationToken);
 }
 
-public sealed record AgentHoldings(decimal Equity, PositionContext? Position, IReadOnlyList<OpenOrder> Orders);
+public sealed record AgentHoldings(
+    decimal Equity, PositionContext? Position, IReadOnlyList<OpenOrder> Orders, decimal EquityAtDayStart, decimal PeakEquity);
 
 public sealed record OpenOrder(OpenOrderKind Kind, OrderSide Side, decimal Quantity, decimal Price);
 ```
@@ -254,10 +255,11 @@ public sealed record OpenOrder(OpenOrderKind Kind, OrderSide Side, decimal Quant
 | Rule | Detail |
 |---|---|
 | **Nothing implements it yet, and an agent holds nothing.** | No position and no orders, and its equity is the capital that its user allocated to it: it has made no profit and no loss. `AgentHoldings.NothingYet` is that. `DataPackageTests` has a test that fails as soon as a table of positions or of orders is in the model and nothing answers. |
-| The equity is the allocated capital plus the net profit or loss to date. | In the asset that the symbol is priced in. What keeps the results of an agent says it. |
+| The equity is the allocated capital plus the net profit or loss to date. | In the asset that the symbol is priced in, with unrealized profit and loss. What keeps the results of an agent says it. |
+| **The equity as the UTC day began, and the peak equity, are what the loss limits are counted from.** | No prompt states them: the Risk Guard holds a plan that opens a position to the daily loss limit and to the drawdown limit (FR-RSK-4). Until something keeps results, both are the allocated capital: the agent has lost nothing. See "The loss limits" in [risk-guard.md](risk-guard.md). |
 | An agent has one position at most. | `PositionContext` is the position as a prompt states it, with the prices of its stop-loss and its take-profit. The plan of the Strategist is held to it: a plan opens a position only for an agent that has none, and moves a stop-loss only to where it reduces risk (FR-CYC-5, FR-CYC-6). See "What a plan may do" in [team.md](team.md). |
 | **An order is one that rests on the exchange.** | An entry that has not filled, a stop-loss, or a take-profit: `OpenOrderKind`. `Price` is the price of a limit entry, or the price that a protective order is triggered at. |
-| It is asked for one agent, as its package is built, and only reads. | What it answers has no id and no name, as a prompt has none. The implementation that was registered last answers, as a service is found. |
+| It is asked for one agent, as its package is built, and again as the Risk Guard checks its plan, and only reads. | What it answers has no id and no name, as a prompt has none. The implementation that was registered last answers, as a service is found. |
 
 ### What a role reads
 
@@ -460,11 +462,11 @@ A limit is held to through what the stand-in counted while the cycles were held,
 
 ## Not built yet
 
-- What a cycle does once its team has decided: the Risk Guard (FR-RSK-3) and the orders (FR-BIN-6). `TeamCycle` builds the package, runs the team, and ends with its decision: see "Not built yet" in [team.md](team.md).
+- The orders (FR-BIN-6), and the size of an order (FR-RSK-5). `TeamCycle` builds the package, runs the team, and has the Risk Guard check what goes on of its plan: see "Not built yet" in [team.md](team.md) and in [risk-guard.md](risk-guard.md).
 - What keeps positions and orders, and the results of an agent, which answers `IAgentHoldings`. Until then a package says that an agent holds nothing, and that its equity is its allocated capital.
 - Asking again for market data that a read did not give. A cycle whose package cannot be built makes no decision, and the next close starts the next one.
 - Waiting for a candle of a higher timeframe that came one short. The candles of the agent's own timeframe cover the same time.
-- The price that a symbol last traded at. A package has the close of the latest candle, and on Futures the mark price. What holds an entry to its distance from the current price asks for the price (FR-RSK-4).
+- The price that a symbol last traded at, in a package. A package has the close of the latest candle, and on Futures the mark price. What has the Risk Guard check a plan asks for the price then, and holds an entry to its distance from it (FR-RSK-4): see "The facts" in [risk-guard.md](risk-guard.md).
 - Taking out of a report what a prompt never holds, so that the rest of it can be read. A report that holds it is rejected whole.
 - The summary of the data package that the record of a cycle keeps (FR-CYC-10). A package leaves one event in the log.
 - Reconciliation, which answers `IReconciliation` (FR-BIN-7), and the order of a start: migrate, reconcile, then schedule (NFR-REL-3).

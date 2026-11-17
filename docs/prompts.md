@@ -103,7 +103,7 @@ News and social content can hold text that was written to manipulate a model (ri
 - **A later version of a role keeps them.** `PromptUntrustedContentTests` holds the instructions of every role, in the version in use, to the three paragraphs. Their wording is `UntrustedContent` in `PromptTemplateConfiguration.Versions`: it is part of the versions that carry it, and is never changed. Another wording is another constant, for the next version of each role.
 - **The second paragraph names the parts of a prompt as the composition heads them:** see "Composing a prompt". A test holds the names to the headings, so that a part that is headed otherwise is not named in vain.
 - **Content that tries to instruct is placed as it is,** in the data package or in a lesson, which the instructions name as data. Nothing is taken out of it: what a model makes of it is held by the instructions, by the schema that its answer is checked against, and by the Risk Guard, which no answer of a model passes by (NFR-SEC-6, FR-RSK-3).
-- The instructions are one of the three treatments of the risk. The second is checking a result against its schema and its ranges, which rejects one that is outside either: see "Validating a result" in [team.md](team.md). The third is the Risk Guard, which is not built.
+- The instructions are one of the three treatments of the risk. The second is checking a result against its schema and its ranges, which rejects one that is outside either: see "Validating a result" in [team.md](team.md). The third is the Risk Guard, which checks what goes on of a plan against fixed rules, whatever a model answered: see [risk-guard.md](risk-guard.md).
 
 ## Live data
 

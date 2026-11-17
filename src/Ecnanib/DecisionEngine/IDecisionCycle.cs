@@ -11,9 +11,10 @@ namespace Ecnanib.DecisionEngine;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The data package and the calls of the team are built: <c>TeamCycle</c> builds the package,
-/// runs the four roles, and ends with the decision of the team. The Risk Guard and the orders
-/// are not built, so a cycle places nothing. See docs/team.md.
+/// The data package, the calls of the team, and the checks of the Risk Guard are built:
+/// <c>TeamCycle</c> builds the package, runs the four roles, and has the Risk Guard check what
+/// goes on of the plan. The orders are not built, so a cycle places nothing. See docs/team.md
+/// and docs/risk-guard.md.
 /// </para>
 /// <para>
 /// A cycle is run for an agent that ran when its turn came. An agent is paused or stopped by its

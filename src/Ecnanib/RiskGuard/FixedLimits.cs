@@ -10,6 +10,9 @@ public static class FixedLimits
     /// <summary>The most that a position on Spot is worth, as a share of the agent's equity in percent (FR-RSK-5).</summary>
     public const int SpotPositionPercentOfEquity = 100;
 
-    /// <summary>How many positions an agent has open at one time.</summary>
+    /// <summary>
+    /// How many positions an agent has open at one time. A plan that opens a position is held to
+    /// it when it is checked: <see cref="GuardRule.HeldPosition"/>.
+    /// </summary>
     public const int OpenPositionsPerAgent = 1;
 }

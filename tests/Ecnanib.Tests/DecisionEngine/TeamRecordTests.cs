@@ -311,7 +311,7 @@ public class TeamRecordTests
         var cycle = new DecisionCycle(Guid.CreateVersion7(), agent, ada.Id, TradingMode.Demo, Close.AddHours(1), Close.AddHours(1), Close.AddHours(1), CycleOutcome.Hold);
         RoleOutput[] twice = [Copy(given, cycle.Id, ada.Id, attempt: 1), Copy(given, cycle.Id, ada.Id, attempt: 1)];
 
-        await Assert.ThrowsAsync<DbUpdateException>(() => application.CycleRecords.StoreAsync(cycle, twice, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<DbUpdateException>(() => application.CycleRecords.StoreAsync(cycle, twice, [], TestContext.Current.CancellationToken));
 
         Assert.Equal([stored.ToString()], application.Database.Column("SELECT id::text FROM decision_cycles"));
         Assert.Equal(4, application.Database.Scalar<long>("SELECT count(*) FROM role_outputs"));
@@ -319,7 +319,7 @@ public class TeamRecordTests
         // A call that was made once more is a row of its own.
         RoleOutput[] again = [Copy(given, cycle.Id, ada.Id, attempt: 1), Copy(given, cycle.Id, ada.Id, attempt: 2)];
 
-        await application.CycleRecords.StoreAsync(cycle, again, TestContext.Current.CancellationToken);
+        await application.CycleRecords.StoreAsync(cycle, again, [], TestContext.Current.CancellationToken);
 
         Assert.Equal(6, application.Database.Scalar<long>("SELECT count(*) FROM role_outputs"));
     }
@@ -359,12 +359,12 @@ public class TeamRecordTests
         var given = await context.Set<RoleOutput>().AsNoTracking().FirstAsync(output => output.CycleId == gracesCycle, TestContext.Current.CancellationToken);
         var asAda = new DecisionCycle(Guid.CreateVersion7(), graces, ada.Id, TradingMode.Demo, Close.AddHours(1), Close.AddHours(1), Close.AddHours(1), CycleOutcome.Hold);
 
-        await Assert.ThrowsAsync<DbUpdateException>(() => application.CycleRecords.StoreAsync(asAda, [], TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<DbUpdateException>(() => application.CycleRecords.StoreAsync(asAda, [], [], TestContext.Current.CancellationToken));
 
         var gracesNext = new DecisionCycle(Guid.CreateVersion7(), graces, grace.Id, TradingMode.Demo, Close.AddHours(1), Close.AddHours(1), Close.AddHours(1), CycleOutcome.Hold);
 
         await Assert.ThrowsAsync<DbUpdateException>(() => application.CycleRecords.StoreAsync(
-            gracesNext, [Copy(given, gracesNext.Id, ada.Id, attempt: 1)], TestContext.Current.CancellationToken));
+            gracesNext, [Copy(given, gracesNext.Id, ada.Id, attempt: 1)], [], TestContext.Current.CancellationToken));
 
         Assert.Equal(before, application.RowsOf(grace.Id));
         Assert.Single(application.RowsOf(ada.Id)["decision_cycles"]);

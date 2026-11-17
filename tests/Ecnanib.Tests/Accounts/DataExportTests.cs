@@ -56,6 +56,12 @@ internal static class ExportRules
         ["role_outputs"] =
             "What the models of a user's agents answered, call by call. They hold no personal data, and are exported with " +
             "the decisions that they belong to (FR-RPT-4), which is not built.",
+        ["risk_checks"] =
+            "What the Risk Guard made of the plans of a user's agents, check by check. A user reads them on the page of the " +
+            "risk checks of the agent, and exports them with the decisions that they belong to (FR-RPT-4), which is not built.",
+        ["risk_check_rules"] =
+            "The outcome of each rule of a check of the Risk Guard: the names of a rule and of an outcome, and two numbers. " +
+            "They are exported with their checks (FR-RPT-4), which is not built.",
     };
 }
 
