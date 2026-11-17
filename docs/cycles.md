@@ -6,9 +6,9 @@ A cycle that starts builds its data package: the most recent closed candles of t
 
 The Sentiment Analyst gathers news and social context using the live-search capability of its model where the provider offers one. If the selected model has none, the role still runs, its report is marked "no live data", and the Strategist is told to give it no weight (FR-CYC-3).
 
-What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, and what the call of the Sentiment Analyst and its report go by: see "Live search". What a cycle does after its package is not built: the calls of the team, the Risk Guard, and the orders (SRS 3.2, steps 3 to 8). A cycle that starts builds its package and ends, with no decision and no order. See "Not built yet".
+What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, what the call of the Sentiment Analyst and its report go by, which is in "Live search", and the calls of the team, which are in [team.md](team.md): the four roles in their order, the validation of what each answers, and the record of the cycle (SRS 3.2, steps 3 to 5). What comes after the team is not built: the Risk Guard and the orders (steps 6 and 7). A cycle that starts builds its package, runs its team, and ends with the decision of the team, and with no order. See "Not built yet".
 
-The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests`, `IndicatorTests`, and `SentimentLiveSearchTests`.
+The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests`, `IndicatorTests`, and `SentimentLiveSearchTests`. Those of the team are in the classes whose names begin with `Team`.
 
 How a job is scheduled, and what becomes of a boundary that passed, is in [background-work.md](background-work.md). The states of an agent are in [agents.md](agents.md). The candles are in "Market data" in [exchange.md](exchange.md), and the settings in [configuration.md](configuration.md).
 
@@ -152,7 +152,8 @@ public sealed record CycleStart(
 
 - **The token is canceled** when the application stops, when it stops being the instance that runs the background work, and half a minute before the next close. The cycle then ends soon, by letting `OperationCanceledException` out, and leaves no entry without its protection (NFR-REL-5).
 - An error that leaves `RunAsync` ends the cycle with no decision.
-- **The registered implementation builds the data package of the cycle, and ends.** `NoDecisionYet` asks `IDataPackages` for it, and nobody reads it yet: see "The data package". What is built behind `IDecisionCycle` takes the cycle from there, and changes nothing of when a cycle starts.
+- **The registered implementation builds the data package of the cycle, and runs the team of the agent.** `TeamCycle` asks `IDataPackages` for the package, hands each role its part of it, and ends with the decision of the team: see [team.md](team.md). A cycle whose role gave no valid result ends without an error: it returns, and is counted as ended. It changes nothing of when a cycle starts.
+- **A cycle that started is recorded when it ends,** however it ends: see "The record of a cycle" in [team.md](team.md).
 - The interfaces are public so that a test can put a stand-in behind them: the tests see no internal type.
 
 ## The data package
@@ -207,7 +208,7 @@ public sealed record FuturesData(decimal MarkPrice, decimal FundingRate, DateTim
 | **A read that does not succeed gives no package.** | `BuildAsync` throws `DataPackageException`, which says which part the exchange did not give and how the read ended, and nothing of the agent. It leaves the cycle as an error, so the cycle ends as failed, with no decision. Nothing is asked again for that close: the gateway shares a read that failed for some seconds, and the next close starts the next cycle. An open position stays as it is, with its protective orders. |
 | **A package is built from candles through its close, and from no others.** | A cycle is handed them: see "The candle of the close". `BuildAsync` refuses candles that come one short, or none, with an error. |
 | **A package says nothing of whose agent it is** (FR-PRM-9). | It has no id and no name. `Agent` is the context of the agent as a prompt states it, made by `AgentContext.Of` from the settings of the agent. |
-| **Nothing of a package is stored.** | It is built for one cycle, and lives as long as the cycle. The database is not a market-data warehouse (NFR-DAT-6). The summary of it that the record of a cycle keeps is not built (FR-CYC-10). |
+| **Nothing of a package is stored.** | It is built for one cycle, and lives as long as the cycle. The database is not a market-data warehouse (NFR-DAT-6). The record of a cycle keeps nothing of it: the summary that it will keep is not built (FR-CYC-10). |
 
 ### The indicators
 
@@ -302,7 +303,7 @@ Futures: mark price 61888.1, funding rate 0.01%, next funding 2026-11-16T08:00Z,
 
 The Sentiment Analyst reads news and social context for the symbol and the wider market (SRS 4.5). The service supplies neither: the model of the role searches for them itself, with the live search of its own provider, on the key of the agent's user (FR-CYC-3). How a provider is asked for its search is in "Live search" in [ai-providers.md](ai-providers.md).
 
-No cycle calls a model yet. What is built is what such a call goes by, behind two public types, for what runs the roles of a cycle to use:
+What the call of the Sentiment Analyst goes by is behind two public types, which what runs the roles of a cycle uses: see "A role call" in [team.md](team.md).
 
 ```csharp
 public interface IRoleCalls
@@ -316,11 +317,14 @@ public sealed record SentimentReport
 {
     public const string NoLiveData = "no live data";
 
-    public string ResultJson { get; }
+    public const string NotAvailable = "unavailable";
+
+    public string? ResultJson { get; }
     public bool LiveData { get; }
     public string Text { get; }
 
     public static SentimentReport Of(RoleCall call, AiCallResult result);
+    public static SentimentReport Unavailable { get; }
 }
 ```
 
@@ -328,10 +332,10 @@ public sealed record SentimentReport
 
 | Rule | Detail |
 |---|---|
-| **Only the Sentiment Analyst searches live.** | The request of every other role asks for no search, whatever its model can do. What the web says reaches the team through one role, whose report every later role reads as untrusted content (FR-PRM-8). And only one call of a cycle can add charges for searching. |
+| **Only the Sentiment Analyst searches live.** | The request of every other role asks for no search, whatever its model can do. What the web says reaches the team through one role, whose report the Strategist reads as untrusted content (FR-PRM-8). The Risk Manager is not given the report: see "What a role is given" in [team.md](team.md). And only one call of a cycle can add charges for searching. |
 | **Which models have live search comes from the capability flags in the configuration file.** | `IModelCapabilities.SearchesLive` of the Catalog says it, from the `LiveSearch` patterns of the model's provider. It is what the selector showed the user who chose the model. Nothing is stored, and no provider is asked: see "Which models can be selected" in [catalog.md](catalog.md). |
 | **A Sentiment Analyst whose model has none still runs.** | It is called with the same prompt and the same schema, without a search. Nothing skips the role. |
-| It makes no call. | What runs the roles hands the request to the gateway with the key of the agent's user, and decides whether a call is made again (FR-TEAM-9). |
+| It makes no call. | What runs the roles hands the request to the gateway with the key of the agent's user, and decides whether a call is made again (FR-TEAM-9): `RoleRuns`. |
 
 **The mark.** `SentimentReport.Of` makes the report of a call of the Sentiment Analyst that succeeded, and marks it.
 
@@ -340,7 +344,8 @@ public sealed record SentimentReport
 | **A report rests on live data when its call offered a live search and the provider ran at least one.** | `AiCallResult.LiveSearches` says how many ran. |
 | **Every other report is marked "no live data".** | That of a model that has no live search. And that of a model that could search and did not, or whose provider did not say: a report that nothing shows to rest on a search counts as resting on none. |
 | **The mark is the service's, and not the model's.** | The structured result of the role says whether live data was available (SRS 4.5). The mark does not go by it. So content that a search found cannot make a report count for more than it does. |
-| **Only `Of` makes a report.** | `SentimentReport` has no public constructor, and its `LiveData` cannot be set. It throws for a call of another role, and for a call that did not succeed: what becomes of a cycle whose Sentiment Analyst gave no result is not built (FR-TEAM-9). |
+| **Only `Of` makes a report.** | `SentimentReport` has no public constructor, and its `LiveData` cannot be set. It throws for a call of another role, and for a call that did not succeed. |
+| **A Sentiment Analyst that gave no valid result has no report.** | `SentimentReport.Unavailable` stands in its place: the cycle continues with sentiment marked unavailable (FR-TEAM-9). It is the line of the mark, `Sentiment report: unavailable`, with no report under it, and it rests on no live data. See "When a role gives no valid result" in [team.md](team.md). |
 
 **What the Strategist reads.** `DataPackage.PartsWith(lessons, sentiment)` is the parts of a prompt with the report under the text of the package, as `SentimentReport.Text` writes it:
 
@@ -351,21 +356,21 @@ Sentiment report: no live data
 
 | Rule | Detail |
 |---|---|
-| **The mark is a line of its own, above the report.** | `Sentiment report: no live data`, or `Sentiment report: live data`. |
+| **The mark is a line of its own, above the report.** | `Sentiment report: no live data`, or `Sentiment report: live data`. Where there is no report, it is `Sentiment report: unavailable`, alone. |
 | **The report is one line of JSON, whatever the model wrote.** | A line break inside a text of the report is written as `\n`, as JSON writes it. So no line of a report begins as a heading of a prompt does, or as the line of the mark does, and a report cannot pose as either. Nothing of it is lost: letters beyond ASCII and signs such as `<` stay as they are. |
-| **The Strategist is told to give a report without live data no weight.** | In its instructions, and not in the data package: a role follows no instruction that it finds in the data package (FR-PRM-8). The mark is a fact there, and the instructions say what to do with it. See "Live data" in [prompts.md](prompts.md). |
+| **The Strategist is told to give a report without live data no weight.** | In its instructions, and not in the data package: a role follows no instruction that it finds in the data package (FR-PRM-8). The mark is a fact there, and the instructions say what to do with it, and what a report that is unavailable means. See "Live data" in [prompts.md](prompts.md). |
 
 **Whether the Sentiment Analyst relies on each provider's own live search, or the service supplies a news feed, is an open question of the specification (Q10).** Until it is decided, it relies on the search of its provider, as the requirement says.
 
-What runs the roles of a cycle inherits three things with this:
+What runs the roles of a cycle has three things to mind with this:
 
-- **A report can hold what a prompt never holds.** A link that a search found may hold a UUID or an address. `PromptScreen` refuses the prompt of the Strategist then, and the cycle makes no decision: see "What a prompt never holds" in [prompts.md](prompts.md).
-- **A call that searches takes longer,** and the Sentiment Analyst is one of the two calls that a cycle starts with. Its share of the 90 seconds of "How long a cycle takes" is the time limit of its provider at most.
-- **A `LiveSearch` pattern that names a model which does not take the search fails every call of that model as a Sentiment Analyst.** The provider refuses the request. The tracked file names `grok-4*` for Grok, and no model of another provider.
+- **A report can hold what a prompt never holds.** A link that a search found may hold a UUID or an address. Such a report is rejected when it is validated, so the Sentiment Analyst is called once more, and the cycle then continues with sentiment marked unavailable: see "Validating a result" in [team.md](team.md). The instructions of the role ask for sources in words, with no link.
+- **A call that searches takes longer,** and the Sentiment Analyst is one of the two calls that a cycle starts with. Its share of the 90 seconds of "How long a cycle takes" is the time limit of its provider at most, and twice that when it is called once more.
+- **A `LiveSearch` pattern that names a model which does not take the search fails every call of that model as a Sentiment Analyst.** The provider refuses the request, which is a call that failed, and is not made again. The cycle continues with sentiment marked unavailable. The tracked file names `grok-4*` for Grok, and no model of another provider.
 
 ## How long a cycle takes
 
-With providers responding normally, 95% of cycles finish within 90 seconds of candle close (NFR-PRF-2). That cannot be shown before a cycle calls a model. What starts the cycles has its share of it, and measures the rest:
+With providers responding normally, 95% of cycles finish within 90 seconds of candle close (NFR-PRF-2). A cycle is three calls of the team one after the other, the first of them two at once, so it takes what the providers of its team take: no test shows that with the providers themselves. What starts the cycles has its share of it, and measures the rest:
 
 - **A run begins within about a second of the close,** which is the beat of the scheduler, and the cycles start when their candles are in.
 - **The queue takes no time worth counting.** `CycleCapacityTests` passes the cycles of 500 agents that share a boundary through it, with the limits of the tracked file, in seconds.
@@ -416,6 +421,8 @@ What builds a data package logs under the area `Ecnanib.DecisionEngine.DataPacka
 The data package of agent {AgentId} for the close at {ClosedAt} was built in {DurationMs} ms: {CandleCount} candles of {Timeframe}, {ContextCandleCount} of {ContextTimeframes}, and {OrderCount} open orders
 ```
 
+What runs the team of a cycle logs under `Ecnanib.DecisionEngine.TeamCycle` and `Ecnanib.DecisionEngine.RoleRuns`, inside the cycle as well: see "The log" in [team.md](team.md).
+
 | Level | Event |
 |---|---|
 | `Information` | The cycles that are due, the start and the end of a cycle, a data package that was built, an agent that gets no cycle, a cycle that was stopped with the application, and the summary of a close. |
@@ -446,23 +453,20 @@ A limit is held to through what the stand-in counted while the cycles were held,
 | `StandInMarket` | `IExchangeMarketData` | Has all the market data that a package is built from: candles of every length through the latest close by the clock of the test, the week included, the mark price with its funding, and the open interest. A test gives it another answer for candles, and says how a read of Futures ends. It keeps what it was asked. |
 | `StandInHoldings` | `IAgentHoldings` | Says of every agent what the test gave it: an equity, a position, and orders. Without it an agent holds nothing, as in the application. |
 
-`PackagesApplication` is the application with both, and builds the package of a cycle of an agent that needs no row. `CyclesApplication` runs the job with the application's own inside of a cycle, on `StandInMarket`, when a test says that its cycles build packages: `CycleDataPackageTests` does, and runs the job behind the gateway itself once, with a stand-in for Binance.
+`PackagesApplication` is the application with both, and builds the package of a cycle of an agent that needs no row. `CyclesApplication` runs the job with the application's own inside of a cycle, on `StandInMarket`, when a test says that its cycles build packages: `CycleDataPackageTests` does, and runs the job behind the gateway itself once, with a stand-in for Binance. Such a cycle runs the team of its agent as well, behind stand-ins for the models, the keys, and the records: see "Testing" in [team.md](team.md).
 
 ## Not built yet
 
-- What a cycle does once it has built its data package: the calls of the team (FR-TEAM-6), the Risk Guard (FR-RSK-3), and the orders (FR-BIN-6). `NoDecisionYet` builds the package, and stands for the rest. Nobody reads a package yet.
+- What a cycle does once its team has decided: the Risk Guard (FR-RSK-3) and the orders (FR-BIN-6). `TeamCycle` builds the package, runs the team, and ends with its decision: see "Not built yet" in [team.md](team.md).
 - What keeps positions and orders, and the results of an agent, which answers `IAgentHoldings`. Until then a package says that an agent holds nothing, and that its equity is its allocated capital.
 - Asking again for market data that a read did not give. A cycle whose package cannot be built makes no decision, and the next close starts the next one.
 - Waiting for a candle of a higher timeframe that came one short. The candles of the agent's own timeframe cover the same time.
 - The price that a symbol last traded at. A package has the close of the latest candle, and on Futures the mark price. What holds an entry to its distance from the current price asks for the price (FR-RSK-4).
-- Calling the Sentiment Analyst, whose model searches for what it reads (FR-CYC-3). What its call asks for, how its report is marked, and where the Strategist reads it are built: see "Live search". Nothing makes the call yet.
-- The report of the Market Analyst and the plan, which a later role is given with the package (FR-TEAM-6), and what the Risk Manager reads of the report of the Sentiment Analyst.
-- What becomes of a cycle whose Sentiment Analyst gave no result: it is called once more, and the cycle then continues with sentiment marked unavailable (FR-TEAM-9).
-- Taking out of a report what a prompt never holds, before the report is placed in a prompt. A prompt that would hold it is refused.
+- Taking out of a report what a prompt never holds, so that the rest of it can be read. A report that holds it is rejected whole.
 - The summary of the data package that the record of a cycle keeps (FR-CYC-10). A package leaves one event in the log.
 - Reconciliation, which answers `IReconciliation` (FR-BIN-7), and the order of a start: migrate, reconcile, then schedule (NFR-REL-3).
 - The stale limit: a decision that completes later than the limit of its timeframe opens no position (FR-CYC-9). `Trading:StaleSeconds` has the limits, and nothing reads them yet.
-- Storing a cycle, with its outcome (FR-CYC-10). A cycle leaves its events in the log and nothing in the database, also when it was skipped.
+- Recording a cycle that never started: one that was skipped, or whose agent no longer ran (FR-CYC-10). It leaves its events in the log. A cycle that started is recorded, with the calls of its roles.
 - A test cycle that a user runs for an agent (FR-CYC-12). The queue is of one run of the job, so a cycle that starts outside a run takes none of its places.
 - Limits on calls. The places are of cycles: a cycle is two calls with one key while the two analysts work.
 - Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A provider that is slow holds back the cycles that need it, and nothing pauses its calls.

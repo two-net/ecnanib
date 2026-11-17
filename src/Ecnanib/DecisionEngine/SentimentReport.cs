@@ -25,7 +25,9 @@ namespace Ecnanib.DecisionEngine;
 /// </para>
 /// <para>
 /// A report is made only by <see cref="Of"/>, from a call and its result, so nothing else can
-/// say that a report rests on live data.
+/// say that a report rests on live data. <see cref="Unavailable"/> is the one that stands for a
+/// Sentiment Analyst that gave no valid result: the cycle continues with sentiment marked
+/// unavailable (FR-TEAM-9).
 /// </para>
 /// </remarks>
 public sealed record SentimentReport
@@ -36,6 +38,9 @@ public sealed record SentimentReport
     /// <summary>How a report is marked that rests on what a live search found.</summary>
     public const string WithLiveData = "live data";
 
+    /// <summary>How the line of the mark reads when the Sentiment Analyst gave no report (FR-TEAM-9).</summary>
+    public const string NotAvailable = "unavailable";
+
     /// <summary>What the line of the mark begins with, in the data package of a later role.</summary>
     public const string Heading = "Sentiment report: ";
 
@@ -43,27 +48,38 @@ public sealed record SentimentReport
     // is written as two characters, so the report is one line whatever a model wrote.
     private static readonly JsonSerializerOptions OneLine = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    private SentimentReport(string resultJson, bool liveData)
+    private SentimentReport(string? resultJson, bool liveData)
     {
         ResultJson = resultJson;
         LiveData = liveData;
     }
 
-    /// <summary>What the Sentiment Analyst answered: one JSON object, on one line.</summary>
-    public string ResultJson { get; }
+    /// <summary>
+    /// What stands in the place of a report when the Sentiment Analyst gave no valid result,
+    /// also when it was called once more: the cycle continues with sentiment marked unavailable
+    /// (FR-TEAM-9). It has the line of the mark, and no report under it.
+    /// </summary>
+    public static SentimentReport Unavailable { get; } = new(resultJson: null, liveData: false);
+
+    /// <summary>What the Sentiment Analyst answered: one JSON object, on one line. Null when it gave no report.</summary>
+    public string? ResultJson { get; }
 
     /// <summary>Whether the report rests on live data: its call offered a live search, and the provider ran one.</summary>
     public bool LiveData { get; }
 
-    /// <summary>The mark of the report: <see cref="WithLiveData"/> or <see cref="NoLiveData"/>.</summary>
-    public string Mark => LiveData ? WithLiveData : NoLiveData;
+    /// <summary>Whether there is a report: the Sentiment Analyst gave a valid result.</summary>
+    public bool IsAvailable => ResultJson is not null;
+
+    /// <summary>The mark of the report: <see cref="WithLiveData"/>, <see cref="NoLiveData"/>, or <see cref="NotAvailable"/>.</summary>
+    public string Mark => !IsAvailable ? NotAvailable : LiveData ? WithLiveData : NoLiveData;
 
     /// <summary>
     /// The report as a later role reads it in its data package: the line of the mark, and under
     /// it the report on one line. No line of it begins as a heading of a prompt does, whatever
-    /// the model wrote, so a report cannot pose as a part of the prompt.
+    /// the model wrote, so a report cannot pose as a part of the prompt. Where there is no
+    /// report, it is the line of the mark alone.
     /// </summary>
-    public string Text => $"{Heading}{Mark}\n{ResultJson}";
+    public string Text => ResultJson is null ? $"{Heading}{Mark}" : $"{Heading}{Mark}\n{ResultJson}";
 
     /// <summary>The report of a call of the Sentiment Analyst that succeeded.</summary>
     /// <param name="call">The call, which says whether the model was offered a live search.</param>

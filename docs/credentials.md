@@ -53,7 +53,7 @@ A path that names no provider or no environment is answered with "not found". Wh
 
 ## Write-only
 
-A key comes in with a form, is shown to its provider, is encrypted, and is stored. No page and no export reads it back. One place decrypts a stored key: `KeyValidator`, for the call that asks the provider about it again (FR-KEY-8, FR-KEY-9). A key of an AI provider that the provider took is handed on once more, to the Catalog, which asks the provider for the list of its models with it: see "The catalog".
+A key comes in with a form, is shown to its provider, is encrypted, and is stored. No page and no export reads it back. Two places decrypt a stored key, each for one call: `KeyValidator`, for the call that asks the provider about it again, and `KeyHandOver`, for the call of a model of an agent of its user (FR-KEY-8, FR-KEY-9). See "Handing a key to a call". A key of an AI provider that the provider took is handed on once more, to the Catalog, which asks the provider for the list of its models with it: see "The catalog".
 
 | Where | How a key stays out of it |
 |---|---|
@@ -66,7 +66,36 @@ A key comes in with a form, is shown to its provider, is encrypted, and is store
 | The audit trail | An event names the key by the id of its row, and nothing that makes an event takes text. See "The audit trail" in [accounts.md](accounts.md). |
 | The export | The sections `aiKeys` and `exchangeKeys` say which keys are stored: the id, the provider or the environment, the last four characters, when it was saved, and what the last check found. For an AI key that includes the identifiers of the models that its provider listed to it. See "Exporting your data" in [accounts.md](accounts.md). |
 | An error | No exception of this component carries what was entered, and an unhandled error shows the user a reference id and nothing else. See "Unhandled errors" in [logging.md](logging.md). |
-| A prompt | Nothing that composes a prompt can read a key. What decrypts one is internal to this component, and hands the key to the gateway and, for the list of the provider's models, to the Catalog, and to nothing else. |
+| A prompt | Nothing that composes a prompt reads a key. What decrypts one is internal to this component. It hands the key to the gateway, for the check, to the Catalog, for the list of the provider's models, and to what makes the call of a model for an agent, which hands it to the gateway with that call and keeps it nowhere: see "Handing a key to a call". |
+
+## Handing a key to a call
+
+A stored key is handed to the call of an agent that needs it, decrypted only in memory and only for that call (FR-KEY-9).
+
+```csharp
+public interface IKeyHandOver
+{
+    Task<HandedKey> AiKeyAsync(Guid userId, AiProviderCode provider, CancellationToken cancellationToken);
+}
+```
+
+| Outcome | When |
+|---|---|
+| `Handed` | The key of the user for the provider, as text. |
+| `NoKey` | The user has stored no key for the provider. |
+| `Invalid` | The provider refused the key when it was last asked about it. No call is made with such a key. |
+| `Unreadable` | The stored value does not decrypt: it names a master key that the configuration file does not list, or it was copied from another row. The log has an `Error`. |
+
+| Rule | Detail |
+|---|---|
+| **Only what calls a model for an agent asks.** | `RoleRuns` of the Decision Engine, as it makes each call of a role: see "A role call" in [team.md](team.md). `TeamRulesTests` finds every type of the application that asks, and fails for another. No page and no endpoint asks. |
+| **A key is handed over for one call.** | It is asked for as the call is made, handed to the gateway with that call, and kept nowhere: not in a field, not in a row, and not in a log event. The next call asks again. |
+| **A user's own key is the only key** (FR-KEY-1). | The user is named by id, which is that of the agent's row. A user who has no key for a provider is handed none, and never the key of another user or of the service. |
+| **A key that was never checked is handed over,** and one that was refused is not. | A key is checked before it is stored, so `Unchecked` is a key from before keys were checked. The agents that run with a key that is marked invalid move to Attention required when it is marked (FR-KEY-10), and a cycle that was under way then makes no further call with it. |
+| **What is handed over writes no key.** | `HandedKey` is a class of its own, and no record: its text is its outcome. |
+| It only reads. | `KeyHandOver` reads the row of the key, and decrypts the value with `StoredKeyText`, as the check of a key does. It records nothing: a call of a model is no action of a user. |
+
+`KeyHandOverTests` holds it to this, and `TeamRecordTests` holds the calls of a cycle to the stored keys of their own users, in no row and no log event.
 
 ## Validating a key
 
@@ -98,7 +127,7 @@ A key is validated by asking its provider about it, with a call that only reads 
 |---|---|
 | When it is saved. | In the request that brings it, before it is stored: see "Storing a key". |
 | Daily. | The job `key-validation` runs every hour, on the hour, and checks every key whose provider last answered a check a day ago or longer, and every key that was never checked. So each key is checked about a day after its last check, and not all keys at one time of day. See [background-work.md](background-work.md). |
-| When a call with it fails authentication. | Whatever made the call asks `IKeyValidation.RevalidateAiKeyAsync` or `RevalidateExchangeKeyAsync`, which checks the key at once. A call to a model that ends as `AuthenticationFailed` is such a call, and so is a call to Binance that ends as `AuthenticationFailed`. Nothing calls them yet: see "Not built yet". |
+| When a call with it fails authentication. | Whatever made the call asks `IKeyValidation.RevalidateAiKeyAsync` or `RevalidateExchangeKeyAsync`, which checks the key at once. A call to a model that ends as `AuthenticationFailed` is such a call, and what runs the team of an agent asks then: see "A role call" in [team.md](team.md). So is a call to Binance that ends as `AuthenticationFailed`, which nothing makes for an agent yet: see "Not built yet". |
 | When its user asks. | The button "Check again" on `/account/keys`, for a user who changed something about the key at the provider. Binance shows a secret key only once, so a user who turns a permission on cannot enter the key again. It takes no proof: it shows nothing of the key and stores none. |
 
 All but the first come to `KeyValidator`, which reads the stored key, asks the provider, and records what it said.
@@ -113,7 +142,7 @@ All but the first come to `KeyValidator`, which reads the stored key, asks the p
 
 | Rule | Detail |
 |---|---|
-| **A stored key is decrypted in one place, for the check** (FR-KEY-9). | `KeyValidator` reads the key, hands it to the gateway, and clears the bytes it was decrypted into. A key that the provider took is handed to the Catalog as well, for the list of the provider's models: see "The catalog". |
+| **A stored key is decrypted for the check, and for nothing else here** (FR-KEY-9). | `KeyValidator` reads the key, hands it to the gateway, and clears the bytes it was decrypted into. `StoredKeyText` is what reads a key, for the check and for the call of a model. A key that the provider took is handed to the Catalog as well, for the list of the provider's models: see "The catalog". |
 | **A key that is replaced meanwhile keeps what was found about itself.** | The provider is asked with no transaction open. What it said is written only where the row still holds the encrypted value that was read. A key that took its place was checked when it was stored, and is not given the old key's result. |
 | **Every change to a user's keys takes one lock first.** | A write that tells what depends on the key locks the row of the account, then tells, then changes the row of the key: the order in which a user's own deletion does it. |
 | A key is asked about once a minute at most. | A provider that gives no answer leaves no time in the row, so the attempts are counted in memory. A button that is pressed again, or a call that fails again and again, does not have the provider asked each time. |
@@ -271,8 +300,8 @@ Whether a key can withdraw is not stored: a key that can is not.
 
 ## Not built yet
 
-- Handing a key to the call of an agent that needs it, decrypted only in memory and only for that call (FR-KEY-9). So far a stored key is decrypted for the call that validates it. The AI Provider Gateway makes the calls to models, and takes the key with each call: see "The key" in [ai-providers.md](ai-providers.md). What hands a stored key over comes with what calls a model for an agent. The Exchange Gateway takes a credential with each call in the same way: see "The credential" in [exchange.md](exchange.md). What hands a stored credential over comes with what calls Binance for an agent.
-- Checking a key again when a call with it fails authentication. `IKeyValidation` takes the request, and nothing asks it yet. A call to a model tells it with the outcome `AuthenticationFailed`: see "Outcomes" in [ai-providers.md](ai-providers.md). What calls a model for an agent asks `RevalidateAiKeyAsync` then. A call to Binance tells it with the same outcome: see "Outcomes" in [exchange.md](exchange.md). What calls Binance for an agent asks `RevalidateExchangeKeyAsync` then.
+- Handing a Binance credential to the call of an agent that needs it, decrypted only in memory and only for that call (FR-KEY-9). The Exchange Gateway takes a credential with each call: see "The credential" in [exchange.md](exchange.md). What hands a stored credential over comes with what calls Binance for an agent. The key of an AI provider is handed over: see "Handing a key to a call".
+- Checking a Binance credential again when a call with it fails authentication. `IKeyValidation.RevalidateExchangeKeyAsync` takes the request, and nothing asks it yet: a call to Binance tells it with the outcome `AuthenticationFailed`, see "Outcomes" in [exchange.md](exchange.md), and what calls Binance for an agent asks then. The key of an AI provider is checked again when a call of a model fails authentication.
 - Telling Agents when the list of the models that a key can use changes: when a key is replaced, and when a check records a list that lacks a model that an agent runs with. `IKeyDependents` is told when a key is deleted or becomes invalid, and not then. See "Not built yet" in [agents.md](agents.md).
 - Saying on `/account/keys` which models a key can use, or that it is not known. The export of a user's data says it.
 - Telling the user that a key is invalid (FR-NTF-1). The list of keys says so. In-app notifications are not built.

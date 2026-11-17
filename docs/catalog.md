@@ -159,7 +159,7 @@ public interface IModelDependents
 - **Nothing is put in the place of a model.** The Catalog names the models that go, and offers no other. A model that is unavailable is not among the models that can be selected, and the gateway calls the model that it is given: see "The call" in [ai-providers.md](ai-providers.md).
 - **An implementation commits nothing, and takes the owner of an agent from the agent's row.** With the keys of users the sync runs in the request of the user whose key listed the models, and the agents are those of every user.
 - **It minds the locks.** The transaction holds the row of the provider and the rows of its models, and two providers are synced at the same time. An implementation locks its rows in one order, and takes no lock on a model while it holds one on an account. It takes nothing of Credentials, which itself takes the Catalog.
-- A model that an agent was given while the sync was storing is not among what an implementation finds. The call that then reports that the model does not exist moves that agent: see "Not built yet".
+- A model that an agent was given while the sync was storing is not among what an implementation finds. The call that then reports that the model does not exist is what tells of it, and nothing moves the agent for that yet: see "Not built yet".
 - **Agents implements it,** as `AgentModelDependents`: the agents that run with a model that goes move to Attention required, with the cause `ModelUnavailable`, and their roles keep the models that their users gave them. It locks the accounts concerned in the order of their ids, and takes no lock on a model. `ModelDependentsTests` holds Agents to being told, for every row of Agents that points at a model, and `AgentModelDependentsTests` shows what it does. See "When a model goes" in [agents.md](agents.md).
 
 ## The catalog screen
@@ -252,7 +252,7 @@ The file of the tests allows the models of Claude that `claude-*` names, but for
 
 ## Not built yet
 
-- What follows a call that reports that the model does not exist (FR-CAT-8). The gateway answers such a call with the outcome `ModelNotFound`: see "Outcomes" in [ai-providers.md](ai-providers.md). What calls a model for an agent moves the agent then. The Catalog is not told, and marks nothing for it: a model is marked by the provider's list alone.
+- What follows a call that reports that the model does not exist (FR-CAT-8). The gateway answers such a call with the outcome `ModelNotFound`: see "Outcomes" in [ai-providers.md](ai-providers.md). What runs the team of an agent records the call, and the cycle ends as its role says: see "When a role gives no valid result" in [team.md](team.md). Moving the agent to Attention required then is not built: it takes an operation of Agents that a cycle can ask. Until then such an agent is called again at each close, until a sync marks the model. The Catalog is not told, and marks nothing for it: a model is marked by the provider's list alone.
 - Telling the user that a model is unavailable (FR-NTF-1). In-app notifications are not built.
 - Telling an agent that its model is no longer eligible, after the patterns of the file were changed. The model cannot be selected anew, and an agent that has it keeps it: it is not started or resumed with it, and one that runs with it runs on.
 - The experience record of a model (FR-EXP-2). The catalog screen links each model to its page, which says that nothing is recorded yet. The track record takes its place there, with the statements that an experience screen makes (FR-EXP-11).

@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
-using System.Text;
 using Ecnanib.Accounts;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.Catalog;
@@ -19,9 +17,10 @@ namespace Ecnanib.Credentials;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the one place that decrypts a stored key. The key is read for the one call that asks
-/// about it, and the bytes are cleared when the call is made (FR-KEY-9). It is in no log event
-/// and in no error: an event names the user, and the provider or the environment.
+/// It decrypts a stored key, as <see cref="KeyHandOver"/> does for the call of a model, and
+/// nothing else does. The key is read for the one call that asks about it, and the bytes are
+/// cleared when the call is made (FR-KEY-9). It is in no log event and in no error: an event
+/// names the user, and the provider or the environment.
 /// </para>
 /// <para>
 /// A key of an AI provider that the provider took is handed on once more, to the catalog, which
@@ -403,31 +402,10 @@ internal sealed class KeyValidator(
 
     /// <summary>
     /// A stored key as text, for the one call that asks about it, or null when the value does
-    /// not decrypt. The bytes are cleared here (FR-KEY-9).
+    /// not decrypt. The bytes are cleared where it is read (FR-KEY-9).
     /// </summary>
-    private string? Read(StoredValue stored, string boundTo)
-    {
-        byte[] key;
-        try
-        {
-            key = secrets.Decrypt(new EncryptedSecret(stored.MasterKeyId, stored.EncryptedValue), boundTo);
-        }
-        catch (CryptographicException)
-        {
-            // It names a master key that the file does not list, or was changed. The start of
-            // the application has said so, for every such value.
-            return null;
-        }
-
-        try
-        {
-            return Encoding.UTF8.GetString(key);
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(key);
-        }
-    }
+    private string? Read(StoredValue stored, string boundTo) =>
+        StoredKeyText.Read(secrets, stored.EncryptedValue, stored.MasterKeyId, boundTo);
 
     /// <summary>What a check reads of a row: which one it is, and the encrypted key.</summary>
     private sealed record StoredValue(Guid Id, byte[] EncryptedValue, string MasterKeyId);

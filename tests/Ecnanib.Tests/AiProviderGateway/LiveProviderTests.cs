@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Ecnanib.AiProviderGateway;
+using Ecnanib.DecisionEngine;
 using Ecnanib.Shared;
+using Ecnanib.Tests.DecisionEngine;
 using Ecnanib.Tests.Logging;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,8 +20,9 @@ namespace Ecnanib.Tests.AiProviderGateway;
 /// They are skipped unless whoever runs them gives a key and a model for a provider, in the
 /// environment of the run: <c>ECNANIB_LIVE_CLAUDE_KEY</c> and <c>ECNANIB_LIVE_CLAUDE_MODEL</c>,
 /// and the same with <c>GEMINI</c>, <c>GPT</c>, and <c>GROK</c>. So the suite never reaches a
-/// provider by itself, and no key is stored. A run costs what three small calls to a model cost,
-/// on the key that was given. The lists of models cost nothing. See docs/ai-providers.md.
+/// provider by itself, and no key is stored. A run costs what seven small calls to a model cost,
+/// on the key that was given: three, and one with the schema of each of the four roles. The
+/// lists of models cost nothing. See docs/ai-providers.md.
 /// </para>
 /// <para>
 /// A call with live search is made only when the run also names a model that can search, as
@@ -66,6 +69,55 @@ public class LiveProviderTests
         Assert.True(result.Usage.Value.InputTokens > 0, "The provider counted no input tokens.");
         Assert.True(result.Usage.Value.OutputTokens > 0, "The provider counted no output tokens.");
         Assert.InRange(result.Latency, TimeSpan.FromMilliseconds(1), TimeSpan.FromMinutes(1));
+    }
+
+    /// <summary>Every provider with every role: a provider is sent the schema of whichever role its model is given.</summary>
+    public static TheoryData<string, Role> ProvidersAndRoles => new MatrixTheoryData<string, Role>(ModelCalls.Providers, Enum.GetValues<Role>());
+
+    [Theory]
+    [MemberData(nameof(ProvidersAndRoles))]
+    public async Task A_provider_takes_the_schema_of_each_role_and_answers_with_a_result_that_is_valid(string code, Role role)
+    {
+        var (key, model) = GivenFor(code);
+        using var application = OnTheNetwork();
+        var gateway = application.Services.GetRequiredService<IAiProviderGateway>();
+        var results = application.Services.GetRequiredService<IRoleResults>();
+
+        // What each role is asked for has a plain answer, so that what is shown is the schema:
+        // a list of objects, values of a fixed set, and fields that are null.
+        var prompt = role switch
+        {
+            Role.MarketAnalyst =>
+                "Bitcoin closed higher on each of the last five days, on rising volume, between 58000 and 62000. " +
+                "Report your bias, one support level and one resistance level, the volatility, and a rationale of one sentence.",
+            Role.SentimentAnalyst =>
+                "You are given no news, and you cannot search. Report a neutral bias, no notable events, a confidence of 0.1, " +
+                "that live data was not available, and a rationale of one sentence.",
+            Role.Strategist =>
+                "The agent has no open position, and the market is quiet. Plan to hold: the action is hold, " +
+                "and every other field but the rationale is null. Give a rationale of one sentence.",
+            _ =>
+                "A plan opens a long position with a risk fraction of 0.01, a stop-loss below a clear support, and a take-profit " +
+                "at twice that distance. Approve it: the risk fraction of your review is null. Give your reasons in one sentence.",
+        };
+
+        var result = await gateway.CompleteAsync(
+            new AiProviderCode(code), new AiCallRequest(model, prompt, results.SchemaOf(role)), key, TestContext.Current.CancellationToken);
+
+        // The provider took the schema: one that it refuses is answered with an error, which is Failed.
+        Assert.Equal(AiCallOutcome.Succeeded, result.Outcome);
+
+        // And what it answered is inside the schema and the ranges of the role.
+        var plan = results.ReadPlan(TeamAnswers.Plan(), TeamAnswers.Limits).Value!;
+        var rejection = role switch
+        {
+            Role.MarketAnalyst => results.ReadMarketReport(result.ResultJson!).Rejection,
+            Role.SentimentAnalyst => results.ReadSentiment(result.ResultJson!).Rejection,
+            Role.Strategist => results.ReadPlan(result.ResultJson!, TeamAnswers.Limits).Rejection,
+            _ => results.ReadReview(result.ResultJson!, plan).Rejection,
+        };
+
+        Assert.True(rejection is null, $"The answer of {code} for the {role} was rejected: {rejection}.");
     }
 
     [Theory]

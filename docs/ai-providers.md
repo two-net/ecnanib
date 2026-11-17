@@ -220,11 +220,12 @@ ECNANIB_LIVE_CLAUDE_KEY=... ECNANIB_LIVE_CLAUDE_MODEL=... \
   dotnet test --solution Ecnanib.slnx --filter-class "*LiveProviderTests"
 ```
 
-The variables are `ECNANIB_LIVE_<PROVIDER>_KEY` and `ECNANIB_LIVE_<PROVIDER>_MODEL`, with `CLAUDE`, `GEMINI`, `GPT`, or `GROK`. Give them for one provider or for several. For each provider that has both, three calls to a model are made, and its models are listed twice, at the addresses of the tracked configuration file. With `ECNANIB_LIVE_<PROVIDER>_SEARCH_MODEL` as well, which names a model that can search live, a fourth call is made with live search. It costs the searches that the model runs beside its tokens.
+The variables are `ECNANIB_LIVE_<PROVIDER>_KEY` and `ECNANIB_LIVE_<PROVIDER>_MODEL`, with `CLAUDE`, `GEMINI`, `GPT`, or `GROK`. Give them for one provider or for several. For each provider that has both, seven calls to a model are made, and its models are listed twice, at the addresses of the tracked configuration file. With `ECNANIB_LIVE_<PROVIDER>_SEARCH_MODEL` as well, which names a model that can search live, a fourth call is made with live search. It costs the searches that the model runs beside its tokens.
 
 | Call | What it must end as |
 |---|---|
 | A small prompt with a schema, to the model that was given. | `Succeeded`, with a result of the schema and a usage. |
+| A small prompt with the schema of each of the four roles, to the model that was given. | `Succeeded`, with a result that the validation of the role takes. It shows that the provider takes the schemas as they are sent: a list of objects, values of a fixed set, and fields that are null. See "The schemas" in [team.md](team.md). |
 | A prompt that asks for news of the last day, with the schema and with live search, to the model that was given as one that searches. | `Succeeded`, with a result of the schema, and at least one search in `LiveSearches`. |
 | The same with a key that is none. It costs nothing. | `AuthenticationFailed` |
 | The same to a model that does not exist. | `ModelNotFound` |
@@ -251,10 +252,9 @@ Run it when an adapter is added or changed, and when a provider changes its API.
 
 ## Not built yet
 
-- What hands a stored key to a call, and has the key checked again when the call ends as `AuthenticationFailed` (FR-KEY-9, FR-KEY-3). It comes with what calls the gateway for an agent.
-- Validating a result against its schema, and calling again after a timeout or an invalid result (FR-TEAM-6, FR-TEAM-9).
+- What follows a call that ends as `ModelNotFound` (FR-CAT-8). What runs the team of an agent records the call, and its role gave no result: see "When a role gives no valid result" in [team.md](team.md).
 - Taking up a turn that a provider paused while its model searched. It is an invalid result.
 - A setting for how much a call may search, and a limit for GPT and Gemini. The time limit of the call ends a search that goes on.
 - Breakers for repeated failures of a provider or a key (NFR-REL-4).
 - Limits on how many calls a provider or a key takes at once. The gateway has none. What starts the cycles limits how many cycles use a provider, and the key of a user for it, at once (FR-CYC-11): see "The queue" in [cycles.md](cycles.md).
-- Recording the usage of each call, and the searches that it ran, for the reports (FR-TEAM-8, FR-RPT-3).
+- Showing the usage of the calls (FR-RPT-3, FR-KEY-11). Each call of a role is recorded with its usage and the searches that it ran (FR-TEAM-8): see "The record of a cycle" in [team.md](team.md).

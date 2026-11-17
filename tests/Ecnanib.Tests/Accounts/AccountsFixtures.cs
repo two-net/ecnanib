@@ -159,6 +159,15 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What says what the model of a role is called with.</summary>
     public IRoleCalls RoleCalls => _application.Services.GetRequiredService<IRoleCalls>();
 
+    /// <summary>What hands a stored key to the call of a model.</summary>
+    public IKeyHandOver KeyHandOver => _application.Services.GetRequiredService<IKeyHandOver>();
+
+    /// <summary>What records a cycle with the calls of its roles.</summary>
+    public ICycleRecords CycleRecords => _application.Services.GetRequiredService<ICycleRecords>();
+
+    /// <summary>What validates the answer of a role.</summary>
+    public IRoleResults RoleResults => _application.Services.GetRequiredService<IRoleResults>();
+
     /// <summary>The gateway that a call to a model goes through.</summary>
     public IAiProviderGateway AiProviders => _application.Services.GetRequiredService<IAiProviderGateway>();
 

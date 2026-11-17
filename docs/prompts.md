@@ -6,7 +6,7 @@ The instructions of every role tell its model to treat news, social posts, and w
 
 The modules are selected from the settings of the agent: one for each of its two possible markets, one for each of its four possible timeframes, and the one of the Aggressive profile (FR-PRM-2 to FR-PRM-5). Whatever asks for a prompt hands over no template, so a module that does not go with the agent cannot be chosen (FR-PRM-4).
 
-What is built is the templates, with the full wording of the modules, the instructions about untrusted content, and what two roles are told about live data (FR-CYC-3), and what composes a prompt from them: their table, their seed, the rule of their versions, what reads the ones in use, what composes the prompt of a role call and keeps secrets and personal data out of it, and the page that shows a user the prompts of an agent. A cycle starts when a candle closes and builds its data package, as [cycles.md](cycles.md) describes, and does nothing more yet: nothing calls a model, and no role output is stored. See "Not built yet".
+What is built is the templates, with the full wording of the modules and of the roles, the instructions about untrusted content, and what two roles are told about live data (FR-CYC-3), and what composes a prompt from them: their table, their seed, the rule of their versions, what reads the ones in use, what composes the prompt of a role call and keeps secrets and personal data out of it, and the page that shows a user the prompts of an agent. A cycle starts when a candle closes and builds its data package, as [cycles.md](cycles.md) describes, and then runs the team of its agent, as [team.md](team.md) describes: each role is called with a prompt that was composed for it, and each call is recorded with the template versions that it used. See "Not built yet".
 
 The code is in `src/Ecnanib/DecisionEngine`, and the page in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, and by `SeedDataTests` in `tests/Ecnanib.Tests/Persistence`.
 
@@ -35,8 +35,9 @@ A template is a row of `prompt_templates`, and a row is one version of it.
 - **Each kind and subject has one version in use.** A unique index over the rows that are in use holds the database to at most one, and `SeedDataTests` holds the seed to one for every role, market, timeframe, and profile. Another unique index holds a kind and subject to one row for each version.
 - **Version 1 of each has the outline that the specification gives for it:** the job and the structured result of the role (SRS 4.5), the modules of the timeframes and the markets (SRS 4.6), and the Aggressive profile (FR-PRM-5).
 - **Version 2 of each module has its full wording:** see "The modules".
-- **Version 2 of each role is its outline with the instructions about untrusted content** (FR-PRM-8): see "Untrusted content". The full wording of the roles follows as later versions of theirs.
-- **Version 3 of the Sentiment Analyst and of the Strategist says what each does about live data** (FR-CYC-3): see "Live data". The Market Analyst and the Risk Manager are in version 2.
+- **Version 2 of each role is its outline with the instructions about untrusted content** (FR-PRM-8): see "Untrusted content".
+- **Version 3 of the Sentiment Analyst and of the Strategist says what each does about live data** (FR-CYC-3): see "Live data".
+- **The latest version of each role has its full wording** (FR-TEAM-6): see "The roles". It is version 3 of the Market Analyst and of the Risk Manager, and version 4 of the Sentiment Analyst and of the Strategist.
 - **The rows belong to the service.** The templates are the same for every user, so the table is listed in `OwnershipRules.cs`, and a row names no user.
 
 ## The modules
@@ -66,9 +67,29 @@ A module is what every role of an agent is told about its market, about its time
 - **A paragraph ends with `\n`,** written as that in the source file, which is the same in every checkout.
 - The module of a market tells a role which actions it has. What holds a plan to them is not built: see "Not built yet".
 
+## The roles
+
+The instructions of a role are its outline, as the specification gives it, and after it what the role is given and what it answers (FR-TEAM-6). `RoleSchemaTests` holds what a role is told to answer to the schema that its answer is validated against: see "The schemas" in [team.md](team.md).
+
+| Paragraph | In the instructions of | What it says |
+|---|---|---|
+| The outline | Every role | The job of the role, and its structured result (SRS 4.5). It is the first paragraph, as it was in version 1. |
+| `Live data:` | The Sentiment Analyst and the Strategist | See "Live data". It is as it was in version 3. |
+| `Sentiment unavailable:` | The Strategist | When the report is marked "unavailable", the Sentiment Analyst gave no report in this cycle: plan from the market report and the data package alone, and do not guess what the sentiment is. See "When a role gives no valid result" in [team.md](team.md). |
+| `Input:` | Every role | What the data package and the context of the agent hold for the role: see "What a role is given" in [team.md](team.md). The Sentiment Analyst is told that it is given no candles, and the Risk Manager that it is given neither report. |
+| `Review:` | The Risk Manager | When to approve, to reduce, and to veto, and that it cannot change the direction, the entry, the stop-loss, or the take-profit of a plan, or raise its risk (FR-TEAM-7). |
+| `Result:` | Every role | Each field of the schema of the role, by its name between quotes, with what it means, the values that it may have, and its range: see "The ranges" in [team.md](team.md). |
+| The three about untrusted content | Every role | See "Untrusted content". They are the last three, as they were in version 2. |
+
+- **A field is named as the schema names it,** such as `"riskFraction"`, and no field is named that the schema lacks. A value of a fixed set is written as the schema lists it, such as `open_long`.
+- **The Sentiment Analyst is asked for sources in words:** no link, no address, and no identifier. A result that holds one is rejected, because the Strategist reads the report in its prompt: see "What a prompt never holds".
+- **The Strategist is told what the risk fraction is:** the share of the equity that is lost if the stop-loss is hit, as a fraction, at most the risk per trade of the stated limits, which states it in percent. And that it names no quantity and no leverage: the system computes both (FR-RSK-5).
+- **No paragraph but "Live data" says "no weight".** `SentimentLiveSearchTests` finds what the Strategist is told about a report without live data by those words.
+- What the instructions say is held by the validation, and not by the instructions alone: an answer that does not follow them is rejected.
+
 ## Untrusted content
 
-News and social content can hold text that was written to manipulate a model (risk R6). The Sentiment Analyst reads such content itself, with the live search of its model (FR-CYC-3), and what it reports reaches the Strategist and the Risk Manager. So **the instructions of every role say what to do about it** (FR-PRM-8), in three paragraphs that are the same for the four roles:
+News and social content can hold text that was written to manipulate a model (risk R6). The Sentiment Analyst reads such content itself, with the live search of its model (FR-CYC-3), and what it reports reaches the Strategist in its prompt, and the Risk Manager only in the words of the Strategist's plan. So **the instructions of every role say what to do about it** (FR-PRM-8), in three paragraphs that are the same for the four roles:
 
 | Paragraph | What it says |
 |---|---|
@@ -80,11 +101,11 @@ News and social content can hold text that was written to manipulate a model (ri
 - **A later version of a role keeps them.** `PromptUntrustedContentTests` holds the instructions of every role, in the version in use, to the three paragraphs. Their wording is `UntrustedContent` in `PromptTemplateConfiguration.Versions`: it is part of the versions that carry it, and is never changed. Another wording is another constant, for the next version of each role.
 - **The second paragraph names the parts of a prompt as the composition heads them:** see "Composing a prompt". A test holds the names to the headings, so that a part that is headed otherwise is not named in vain.
 - **Content that tries to instruct is placed as it is,** in the data package or in a lesson, which the instructions name as data. Nothing is taken out of it: what a model makes of it is held by the instructions, by the schema that its answer is checked against, and by the Risk Guard, which no answer of a model passes by (NFR-SEC-6, FR-RSK-3).
-- The instructions are one of the three treatments of the risk. Checking a result against its schema and its ranges is not built: see "Not built yet".
+- The instructions are one of the three treatments of the risk. The second is checking a result against its schema and its ranges, which rejects one that is outside either: see "Validating a result" in [team.md](team.md). The third is the Risk Guard, which is not built.
 
 ## Live data
 
-The Sentiment Analyst gathers news and social context with the live search of its model, where the model has one. Where it has none, the role still runs, its report is marked "no live data", and the Strategist is told to give it no weight (FR-CYC-3). **The instructions of the two roles say their part of that,** in one paragraph each, which begins `Live data:` and stands between the outline of the role and the instructions about untrusted content:
+The Sentiment Analyst gathers news and social context with the live search of its model, where the model has one. Where it has none, the role still runs, its report is marked "no live data", and the Strategist is told to give it no weight (FR-CYC-3). **The instructions of the two roles say their part of that,** in one paragraph each, which begins `Live data:` and stands after the outline of the role and the instructions about untrusted content:
 
 | Role | What the paragraph says |
 |---|---|
@@ -104,7 +125,7 @@ The Sentiment Analyst gathers news and social context with the live search of it
 |---|---|
 | A change to its `text`, `version`, `subject`, `kind`, or `id` | Refused. |
 | A change to `is_active` alone | Done. It is how the next version takes the place of this one. |
-| Deleting it, or emptying the table | Refused. An agent may have used the version. |
+| Deleting it, or emptying the table | Refused. An agent may have used the version. The calls of the roles point at the versions that they used, so the table is emptied only together with `role_outputs`, which the trigger refuses. Emptying it alone is refused by the foreign keys, before the trigger is asked. |
 | Adding a row | Done. It is how a version arrives. |
 
 - **A refusal says what to do instead:** `A version of a prompt template is never changed or deleted. To edit a template, add its next version (FR-PRM-6).` Its SQLSTATE is `23001`, `restrict_violation`.
@@ -198,7 +219,7 @@ public sealed record ComposedPrompt(string Text, IReadOnlyList<PromptTemplate> T
 | **The context has no name and no id** (FR-PRM-9). | `AgentContext` has no field for the name that a user gave the agent, and none for an id of the agent, the user, or the account. `PromptRulesTests` holds everything that a caller hands over to that: see "What a provider is sent". |
 | **A prompt that would hold a secret, an email address, or an account identifier is not composed** (FR-PRM-9). | Every part passes `PromptScreen` before it is placed, and `ComposeAsync` throws `PromptRefusedException` for a part that holds one, however the part came to hold it. See "What a prompt never holds". |
 
-- **Whatever runs a cycle decides what a call of a role is given** (FR-TEAM-6): which text of the data package, and which lessons. The composition places them as they are, and adds nothing to them. It places neither when one of them holds what a prompt never holds. The lessons are for the Strategist and the Risk Manager (FR-EXP-7): what recalls them hands the two analysts none.
+- **Whatever runs a cycle decides what a call of a role is given** (FR-TEAM-6): which text of the data package, and which lessons. `DataPackage.ForMarketAnalyst`, `ForSentimentAnalyst`, `ForStrategist`, and `ForRiskManager` are the parts of the prompt of each role: see "What a role is given" in [team.md](team.md). The composition places them as they are, and adds nothing to them. It places neither when one of them holds what a prompt never holds. The lessons are for the Strategist and the Risk Manager (FR-EXP-7): the two analysts are handed none.
 - **The equity and the position are handed over.** The data package of a cycle has both, from whatever keeps positions and orders, and `DataPackage.PartsWith(lessons)` is the parts of a prompt from a package: its context of the agent, its text, and the lessons of the call. `DataPackage.PartsWith(lessons, sentiment)` is the same with the report of the Sentiment Analyst under the text, marked with whether it rests on live data, for the Strategist: see "Live search" in [cycles.md](cycles.md). Nothing keeps the results or the position of an agent yet, so a package says that the agent holds nothing, and that its equity is its allocated capital: see "What an agent holds" in [cycles.md](cycles.md).
 - It composes, and nothing more: it calls no model, stores nothing, and asks for no owner. Whose agent a prompt is for is settled by whoever asks.
 
@@ -249,11 +270,12 @@ A position is one line: `Position: short, quantity 0.015, entry price 61000, sto
 | `Identifier` | A UUID, which is what every id of an account, an agent, and a key is. |
 
 - **`PromptRefusedException` says which part and what kind of thing, and never what was found.** Its message is logged. `Part` is the heading of the part, such as `Data package`, and `Holds` is the kind.
-- **No prompt is composed then, and so no model is called with one.** Nothing runs a cycle yet. What does ends the cycle with no decision, and leaves an open position as it is, with its protective orders.
+- **No prompt is composed then, and so no model is called with one.** The error leaves the cycle, which ends as failed, with no decision, and leaves an open position as it is, with its protective orders.
+- **What a model answered is screened before it reaches a prompt.** A report or a plan that holds a secret, an email address, or an identifier is rejected when it is validated, where its role can be called once more: see "Validating a result" in [team.md](team.md). So a prompt of a later role is not refused for what an earlier role answered.
 - **Ordinary prose about a market is never a finding.** The screen goes by the shape of a value, and by no word that stands beside one. The mask of the log also replaces what follows `Basic` or `key=`, which costs nothing in a log and would refuse "the basic structure held". A handle such as `@name`, the hash of a transaction, the address of a wallet, and a link pass. `PromptPrivacyTests` holds both: each kind is refused in every place it can be handed over, and what is none of them is composed.
 - **The patterns do not backtrack.** Part of what is screened was written by a model that read the web, and no text can make a match take longer than its length allows.
 - **What has no shape, the screen cannot find:** a name, an address of the network, or a key in a format that it does not know. That is kept out by what a caller can hand over at all.
-- What hands over text that a model wrote, a report or a lesson, keeps addresses and ids out of it, or the prompt that it is placed in is refused. It is not built: see "Not built yet".
+- What hands over a lesson that a model wrote keeps addresses and ids out of it, or the prompt that it is placed in is refused. It is not built: see "Not built yet".
 
 `PromptPrivacyTests` gives a user an address, a key for each AI provider, a Binance credential, and two agents whose names say who their user is. It composes the prompts of both agents for every role, from `AgentContext.Of` and a data package and lessons as a cycle writes them, and holds each to none of: the address, the password and its hash, the names of the agents, the ids of the account, the agents, and the keys, and the keys themselves in every form their bytes could be written in. It looks for the shape of an address and of an id with patterns of its own.
 
@@ -271,7 +293,7 @@ A position is one line: `Position: short, quantity 0.015, entry price 61000, sto
 
 - **[`PromptRules.cs`](../tests/Ecnanib.Tests/DecisionEngine/PromptRules.cs) is the source of truth for what is sent.** `PromptRules.Sent` lists every value that a caller hands to `IPromptComposition`, down to the numbers, each with its kind. A value that is added to `PromptParts` or to `AgentContext` is in no list, and fails `PromptRulesTests` until someone lists it, and so decides that a provider is sent it. The four kinds are the four of the requirement.
 - **No value is an identifier, and every text says what it holds.** `PromptRules.FreeText` lists the four values that are text, the symbol, the asset, the data package, and a lesson, each with why it says nothing of the user. The rest are numbers and members of fixed sets, which cannot.
-- **Only the Decision Engine calls a model.** `PromptRulesTests` finds every type of the application that calls `IAiProviderGateway.CompleteAsync`, or puts an `AiCallRequest` together, and fails for one of another component. `RoleCalls` of the Decision Engine puts the request of a role together, from a prompt that was composed. Nothing calls a model yet.
+- **Only the Decision Engine calls a model.** `PromptRulesTests` finds every type of the application that calls `IAiProviderGateway.CompleteAsync`, or puts an `AiCallRequest` together, and fails for one of another component. `RoleCalls` of the Decision Engine puts the request of a role together, from a prompt that was composed, and `RoleRuns` makes the call: see "A role call" in [team.md](team.md).
 - GPT and Grok are told not to keep a prompt or an answer: see `store: false` in [ai-providers.md](ai-providers.md).
 - The model of the Sentiment Analyst searches live, where its provider offers that (FR-CYC-3). What it searches for is its own doing, from the prompt that it was sent, and goes to its own provider, under the user's key. The service sends a search nothing.
 
@@ -302,23 +324,20 @@ Whether users may edit prompts, or add instructions of their own for an agent, i
 
 ## What a role output records
 
-**Each role output records the template versions it used** (FR-PRM-6, FR-TEAM-8). Role outputs are not built: the role pipeline stores them. What is built is what the pipeline needs for it, and a test that waits.
+**Each role output records the template versions it used** (FR-PRM-6, FR-TEAM-8). A call of a role is a row of `role_outputs`: see "The record of a cycle" in [team.md](team.md).
 
 - A version is a row that is never changed and never deleted, so a role output that points at the row says for good what the model was told.
-- `TemplatesInUse.For(role)` hands out the four templates of a call, each with its id, and `ComposedPrompt.Templates` is those that a prompt was composed from.
-- **`PromptRulesTests` fails as soon as a table of role outputs is in the model and its rows name no template.** A table is one of role outputs by its name: it has the word `role` in it, and the word `output` or `call`. It names a template when it has a foreign key to `prompt_templates`, or when a table that hangs on it has one.
-- Declare the foreign key with `OnDelete(DeleteBehavior.Restrict)`, as every key to a seeded table is: see [persistence.md](persistence.md).
+- **A row points at the four templates of its call:** `role_template_id`, `market_template_id`, `timeframe_template_id`, and `profile_template_id`. They are `ComposedPrompt.Templates`, which is `TemplatesInUse.For(role)`, in the order a prompt is composed in.
+- The keys are declared with `OnDelete(DeleteBehavior.Restrict)`, as every key to a seeded table is: see [persistence.md](persistence.md).
+- **`PromptRulesTests` holds every table of role outputs to it.** A table is one of role outputs by its name: it has the word `role` in it, and the word `output` or `call`. It names a template when it has a foreign key to `prompt_templates`, or when a table that hangs on it has one. A table that is added later and names none fails the test.
+- A call that is made once more is made with the same prompt, and its row points at the same four.
 
 ## Not built yet
 
-- The full wording of the instructions of the roles, which arrives as later versions of their templates, with the schema of what each role answers (FR-TEAM-6). The roles are the outline of the specification with the instructions about untrusted content, and for the Sentiment Analyst and the Strategist with what each does about live data.
-- What hands a prompt its lessons, which are recalled for the Strategist and the Risk Manager (FR-EXP-7), and what keeps the equity and the position of an agent. The data package of a cycle is built (FR-CYC-2), and says both of an agent that holds nothing: see "The data package" in [cycles.md](cycles.md). With the role pipeline come the report of the Market Analyst, which the Strategist is given, and the plan, which the Risk Manager is given (FR-TEAM-6). The report of the Sentiment Analyst has its place and its mark already.
-- Calling a model with a composed prompt (FR-TEAM-6). Nothing asks `IPromptComposition` but its tests: a cycle that starts builds its data package, and asks for no prompt. What the model of a role is called with is built, as `IRoleCalls`, and nothing makes the call.
-- Holding a plan to the actions that the module of its market allows (FR-CYC-4). The module tells a role which they are.
-- Rejecting a result that is outside its schema, or that has a value outside the allowed ranges (NFR-SEC-7). The instructions ask for the schema alone, and what validates the answer of a role comes with the role pipeline (FR-TEAM-6).
-- Keeping addresses and ids out of the text that a model wrote, before it is handed over as part of a data package or as a lesson. A prompt that would hold one is refused, and the cycle that asked for it makes no decision.
-- Keeping a lesson, or the report of the Market Analyst, from posing as a part of the prompt, with a line that reads as a heading. The instructions say which parts are data, and what embeds a report in a data package decides how it is written. The report of the Sentiment Analyst is written as one line, and cannot.
+- What hands a prompt its lessons, which are recalled for the Strategist and the Risk Manager (FR-EXP-7), and what keeps the equity and the position of an agent. The data package of a cycle is built (FR-CYC-2), and says both of an agent that holds nothing: see "The data package" in [cycles.md](cycles.md).
+- Holding a plan to the actions that the module of its market allows (FR-CYC-4). The module tells a role which they are, and the schema of a plan has those of both markets.
+- Keeping addresses and ids out of a lesson that a model wrote, before it is handed over. A prompt that would hold one is refused, and the cycle that asked for it makes no decision.
+- Keeping a lesson from posing as a part of the prompt, with a line that reads as a heading. The instructions say which parts are data. A report and a plan are each written as one line, and cannot.
 - Saying in the Privacy Policy what goes to AI providers (NFR-SEC-8). Its text is a draft: see "Legal documents" in [accounts.md](accounts.md). The pages of the keys and the page of an agent's prompts say it.
-- The role outputs, and with them the record of the template versions that each used (FR-TEAM-8). See "What a role output records".
 - Showing the earlier versions of a template. The page shows what an agent uses now. What a past call was told is shown with the decision record, which points at the versions it used (FR-CYC-10).
 - Prompts that a user edits, or instructions that a user adds for an agent (Q5).

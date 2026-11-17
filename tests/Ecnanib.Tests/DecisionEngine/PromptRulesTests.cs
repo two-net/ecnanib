@@ -37,9 +37,11 @@ public class PromptRulesTests
     {
         using var model = ModelOnly.Context();
 
-        // Role outputs are not built, so no table holds them and nothing is found. As soon as
-        // one does, its rows must say which versions of the templates the call used: a version
-        // is never changed, so the row then says for good what the model was told.
+        // The rule finds the table that holds what a role answered, so it would find another.
+        Assert.Equal(["role_outputs"], PromptRules.TablesOfRoleOutputs(model.Model));
+
+        // Its rows say which versions of the templates the call used: a version is never
+        // changed, so a row says for good what the model was told.
         var without = PromptRules.RoleOutputTablesWithoutTemplates(model.Model, typeof(PromptTemplate));
 
         Assert.True(

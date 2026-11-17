@@ -140,6 +140,11 @@ internal sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
             .IsUnique()
             .HasFilter("state NOT IN ('Draft', 'Stopped')");
 
+        // An agent is found by its id together with its owner as well. A row of a component
+        // that may not use Accounts hangs on its agent by both, and so carries its owner along:
+        // the database then holds the two owners to being the same. See docs/ownership.md.
+        builder.HasAlternateKey(agent => new { agent.Id, agent.UserId });
+
         // The agents belong to the account and go with it when it is deleted (FR-ACC-9).
         builder.HasOne<User>()
             .WithMany()

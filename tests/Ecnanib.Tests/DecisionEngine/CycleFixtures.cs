@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Ecnanib.Agents;
+using Ecnanib.AiProviderGateway;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Shared;
@@ -46,7 +47,7 @@ internal static class CyclesLog
 /// <summary>
 /// The application as the tests of the cycles run it: with the job that starts the cycles, on a
 /// clock that the test sets, with candles that the test's exchange gives, and with a stand-in for
-/// what a cycle does once it has started, which is not built.
+/// what a cycle does once it has started, unless the test says that its cycles run their teams.
 /// </summary>
 /// <remarks>
 /// A test starts the cycles of a close in one of two ways. It runs the job itself, with
@@ -68,9 +69,16 @@ internal sealed class CyclesApplication : IDisposable
     /// <param name="database">A database that an earlier application of the test has used.</param>
     /// <param name="buildsPackages">
     /// Whether a cycle that starts does what the application has it do, which is to build its
-    /// data package, on an exchange of the test's that has all the market data:
-    /// <see cref="Market"/>. Unless a test says so, the inside of a cycle is <see cref="Cycles"/>,
-    /// and the exchange is <see cref="Candles"/>, which is asked for the candles of a close alone.
+    /// data package and to run the team of its agent, on an exchange of the test's that has all
+    /// the market data: <see cref="Market"/>. Unless a test says so, the inside of a cycle is
+    /// <see cref="Cycles"/>, and the exchange is <see cref="Candles"/>, which is asked for the
+    /// candles of a close alone.
+    /// </param>
+    /// <param name="providers">
+    /// What answers in the place of the AI providers, for cycles that call their models through
+    /// the gateway itself, with the stored keys of their users, and that are recorded in the
+    /// database: the agents are then those of the database. Unless a test says so, the models,
+    /// the keys, and the records of a cycle that runs its team are those of <see cref="Team"/>.
     /// </param>
     public CyclesApplication(
         DateTimeOffset now,
@@ -79,12 +87,17 @@ internal sealed class CyclesApplication : IDisposable
         bool storedAgents = false,
         StandInReconciliation? reconciliation = null,
         TestDatabase? database = null,
-        bool buildsPackages = false)
+        bool buildsPackages = false,
+        StandInSystem? providers = null)
     {
+        buildsPackages |= providers is not null;
+        storedAgents |= providers is not null;
+
         Clock = new TestClock(now);
         Candles = new StandInCandles(Clock);
         Market = buildsPackages ? new StandInMarket(Clock) : null;
         Agents = storedAgents ? null : new StandInRunningAgents();
+        Team = buildsPackages && providers is null ? new StandInTeam() : null;
 
         Application = new AccountsApplication(
             clock: Clock,
@@ -104,8 +117,17 @@ internal sealed class CyclesApplication : IDisposable
                 }
                 else
                 {
-                    // The inside of a cycle is the application's own, which builds a data package.
+                    // The inside of a cycle is the application's own, which builds a data package
+                    // and runs the team.
                     services.AddSingleton<IExchangeMarketData>(Market);
+
+                    if (providers is not null)
+                    {
+                        // The gateway itself, with the test in the place of the providers.
+                        services.AddHttpClient(AiProviderGatewayModule.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => providers);
+                    }
+
+                    Team?.Behind(services);
                 }
 
                 if (Agents is not null)
@@ -144,6 +166,18 @@ internal sealed class CyclesApplication : IDisposable
 
     /// <summary>The agents that run, where they are not those of the database.</summary>
     public StandInRunningAgents? Agents { get; }
+
+    /// <summary>
+    /// What stands for the models, the keys, and the records of the cycles, where the cycles run
+    /// the teams of their agents and the agents need no rows.
+    /// </summary>
+    public StandInTeam? Team { get; }
+
+    /// <summary>What stands for the AI providers, where the cycles run the teams of their agents.</summary>
+    public StandInModels Models => Team!.Models;
+
+    /// <summary>The records of the cycles, where the cycles run the teams of their agents.</summary>
+    public StandInCycleRecords Records => Team!.Records;
 
     /// <summary>Runs the job for a close, as the scheduler does. It ends when the cycles of the close are over.</summary>
     public Task RunAsync(DateTimeOffset closedAt, CancellationToken? cancellationToken = null) =>
@@ -199,6 +233,7 @@ internal sealed class CyclesApplication : IDisposable
     {
         // A cycle that is still held is let go, so that a run of the test's own ends as well.
         Cycles.ReleaseAll();
+        Team?.Models.ReleaseAll();
 
         if (!_stopped)
         {
@@ -216,8 +251,8 @@ internal static class CycleWaits
 }
 
 /// <summary>
-/// Stands for what a cycle does once it has started, which is not built: it keeps what each
-/// cycle was handed, in the order the cycles started, and how many ran at once, for each provider
+/// Stands for what a cycle does once it has started, for a test of what starts the cycles: it
+/// keeps what each cycle was handed, in the order the cycles started, and how many ran at once, for each provider
 /// and for each key of a user. A test can hold the cycles until it lets them go, so that they run
 /// at the same time for as long as it says, and can have a cycle fail.
 /// </summary>

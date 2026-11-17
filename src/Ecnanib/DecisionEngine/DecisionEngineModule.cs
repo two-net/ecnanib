@@ -10,17 +10,24 @@ public static class DecisionEngineModule
 {
     /// <summary>
     /// Registers the component: what starts a cycle for each running agent when a candle closes
-    /// (FR-CYC-1), what builds the data package of a cycle (FR-CYC-2), what reads the prompt
-    /// templates that are in use (FR-PRM-7), what composes the prompt of a role call from them
-    /// (FR-PRM-1), and what says whether the model of a role searches live for its call
-    /// (FR-CYC-3).
+    /// (FR-CYC-1), what builds the data package of a cycle (FR-CYC-2), what runs the roles of
+    /// the team, validates their results, and records their calls (FR-TEAM-6 to FR-TEAM-9), what
+    /// reads the prompt templates that are in use (FR-PRM-7), what composes the prompt of a role
+    /// call from them (FR-PRM-1), and what says whether the model of a role searches live for
+    /// its call (FR-CYC-3).
     /// </summary>
     public static IServiceCollection AddDecisionEngine(this IServiceCollection services)
     {
-        // What a cycle does once it has started: it builds its data package, and makes no
-        // decision, for the calls of the team are not built. What reconciles an agent with the
-        // exchange registers an IReconciliation, when it is built.
-        services.AddSingleton<IDecisionCycle, NoDecisionYet>();
+        // What a cycle does once it has started: it builds its data package, runs the four roles
+        // of the team, validates what each answered, and records every call (FR-TEAM-6 to
+        // FR-TEAM-9). It ends with the decision of the team: the Risk Guard and the orders are
+        // not built. What reconciles an agent with the exchange registers an IReconciliation,
+        // when it is built.
+        services.AddSingleton<IDecisionCycle, TeamCycle>();
+
+        // One role of a team in a cycle: its prompt, the call of its model with the key of the
+        // agent's user, the validation of its answer, and the one call more (FR-TEAM-9).
+        services.AddSingleton<RoleRuns>();
 
         // The data package of a cycle: candles, the context of the higher timeframes, the
         // indicators, which the system computes, and what the agent holds. What keeps positions
@@ -50,8 +57,15 @@ public static class DecisionEngineModule
 
         // What the model of a role is called with. Only the Sentiment Analyst searches live, and
         // only with a model that the configuration file says can (FR-CYC-3). It makes no call:
-        // what runs the roles of a cycle is not built.
+        // what runs the roles of a cycle does.
         services.AddSingleton<IRoleCalls, RoleCalls>();
+
+        // What validates the answer of a role: against the fixed schema of the role, and against
+        // the ranges of its values (FR-TEAM-6, NFR-SEC-7). Only it makes a result.
+        services.AddSingleton<IRoleResults, RoleResults>();
+
+        // What records a cycle with the calls of its roles, once, when it ends (FR-TEAM-8).
+        services.AddSingleton<ICycleRecords, CycleRecords>();
 
         return services;
     }

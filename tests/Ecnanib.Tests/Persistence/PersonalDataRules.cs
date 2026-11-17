@@ -75,6 +75,13 @@ internal static class PersonalDataRules
             "it. It is shown to its user alone, is in the export, is in no log event, and goes with the account.",
         ["agents.symbol"] = "A symbol of Binance that the configuration file lists, such as BTCUSDT.",
         ["agents.quote_asset"] = "The asset that the symbol is priced in, as Binance names it, such as USDT.",
+        ["role_outputs.rejection"] =
+            "Why the answer of a role was rejected, in the service's own words: a field of the fixed schema of the role " +
+            "and the rule that it broke. It repeats nothing of the answer.",
+        ["role_outputs.result"] =
+            "What the model of a role answered, as one line of JSON: a report, a plan, or a review. The model was sent " +
+            "market data, agent settings, position state, and lessons, and nothing that says who the user is (FR-PRM-9, " +
+            "NFR-SEC-8), and an answer that holds an email address or an identifier is not kept.",
     };
 
     /// <summary>Every column that is listed, in any of the three lists.</summary>

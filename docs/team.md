@@ -1,0 +1,355 @@
+# The team
+
+Roles run in the order of the decision cycle (SRS 3.2): the Market Analyst and the Sentiment Analyst in parallel, then the Strategist, then the Risk Manager. Each role receives only the inputs defined for it and returns a structured result that is validated against a fixed schema, plus a short rationale (FR-TEAM-6). Results outside the schema, or with values outside the allowed ranges, are rejected (NFR-SEC-7).
+
+The Risk Manager may approve a plan, reduce its risk fraction, or veto it. It cannot increase risk, change direction, or widen the stop-loss, and it cannot block a plan that closes a position or tightens protection (FR-TEAM-7). Each role call records the provider, model, prompt template version, latency, token usage, structured result, and validation outcome (FR-TEAM-8). If a role call times out or returns an invalid result, it is retried once. If the Sentiment Analyst still fails, the cycle continues with sentiment marked unavailable. If any other role still fails, the cycle ends with no decision and no new entry (FR-TEAM-9).
+
+Models cannot place orders or call internal functions. The only path from a model's output to an order is schema validation, then the Risk Guard, then the Exchange Gateway (NFR-SEC-6).
+
+What is built is steps 3 to 5 of the decision cycle: the calls of the four roles, the validation of what each answers, what the review of the Risk Manager does to a plan, and the record of a cycle with the calls of its roles. A cycle ends with the decision of the team. The Risk Guard, which checks every plan, and the orders are not built, so nothing is placed. See "Not built yet".
+
+The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Team` and `Role`, and in `RiskManagerReviewTests`.
+
+What starts a cycle, and the data package that it builds, are in [cycles.md](cycles.md). The templates of the roles and what composes a prompt are in [prompts.md](prompts.md). How a model is called is in [ai-providers.md](ai-providers.md), and how a stored key is handed to a call in [credentials.md](credentials.md). Who chooses the model of a role is in [agents.md](agents.md).
+
+## The order
+
+`TeamCycle` is what a cycle does once it has started: it is the registered `IDecisionCycle`.
+
+| Step of SRS 3.2 | What happens |
+|---|---|
+| 2 | The data package is built, by `IDataPackages`. A package that cannot be built ends the cycle as failed. |
+| 3 | **The Market Analyst and the Sentiment Analyst are called at the same time.** Neither reads what the other answers. |
+| 4 | **The Strategist is called when both are over,** with both reports. |
+| 5 | **The Risk Manager is called when the Strategist is over,** with its plan, for a plan that opens a position. |
+| 6, 7 | Not built. The cycle ends with the decision of the team: see "The outcome of a cycle". |
+| 8 | The cycle is recorded, with the calls of its roles. |
+
+| Rule | Detail |
+|---|---|
+| **An agent runs with its whole team** (FR-TEAM-1). | A cycle of an agent that lacks the model of a role fails before any model is called, so no model is paid for a cycle that cannot be completed. Agents starts an agent only with its whole team: see "The controls" in [agents.md](agents.md). |
+| **The Risk Manager is called for a plan that opens a position, and for no other.** | Open long, open short, and reverse: `PlanReview.Reviews`. A plan that holds changes nothing, and a plan that closes a position or adjusts protection reduces risk. Neither is handed to the Risk Manager, so nothing that its model answers, and no call of it that fails, stands in the way of reducing risk (FR-TEAM-7). Such a cycle is three calls, on the user's own keys. |
+| **A cycle is two calls at once at most.** | The two analysts. The places that a cycle takes in the queue are of cycles, and not of calls: see "The queue" in [cycles.md](cycles.md). |
+| One object runs the cycles of every agent. | `TeamCycle` holds nothing of a cycle: everything of a cycle is local to its run. |
+
+## What a role is given
+
+**Each role receives only the inputs defined for it** (FR-TEAM-6, SRS 4.5). The context of the agent, which is its symbol, its equity, its position, and its limits, is a part of every prompt (FR-PRM-1). What differs is the part under `# Data package`, and the lessons:
+
+| Role | Its data package | Lessons |
+|---|---|---|
+| Market Analyst | The text of the data package: the candles, the indicators, the open orders, and on Futures the mark price, the funding, and the open interest. | None |
+| Sentiment Analyst | One line: `Candle close: 2026-11-18T10:15Z`. It reads news and social context, and no candle: its read is its own, and not a second read of the price. | None |
+| Strategist | The text of the data package, the report of the Market Analyst, and the report of the Sentiment Analyst with its mark. | Those that were recalled (FR-EXP-7). None yet. |
+| Risk Manager | The text of the data package, and the plan of the Strategist. | Those that were recalled. None yet. |
+
+- **The Risk Manager is given neither report.** It reviews the plan independently (SRS 4.5): it forms its own view from the market data. What a search found reaches it only in the words of the Strategist's plan, so untrusted content has one role less to reach (risk R6).
+- `DataPackage.ForMarketAnalyst`, `ForSentimentAnalyst`, `ForStrategist`, and `ForRiskManager` make the parts of each prompt. Everything is placed in the data package, which the instructions of every role name as data: see "Untrusted content" in [prompts.md](prompts.md).
+
+What the Strategist reads under the text of the package, and what the Risk Manager reads there:
+
+```
+Market report:
+{"bias":"bullish","keyLevels":[{"price":60000,"kind":"support"}],"volatility":"normal","rationale":"Higher lows."}
+
+Sentiment report: live data
+{"bias":"neutral","notableEvents":["A spot ETF saw record inflows."],"confidence":0.6,"liveDataAvailable":true,"rationale":"Mixed headlines."}
+```
+
+```
+Trade plan:
+{"action":"open_long","entryType":"market","entryPrice":null,"stopLoss":59000,"takeProfit":64000,"riskFraction":0.01,"rationale":"A pullback into support."}
+```
+
+| Rule | Detail |
+|---|---|
+| **A result is one line of JSON, whatever the model wrote.** | A line break inside a text is written as `\n`. So no line of a report or of a plan begins as a heading of a prompt does, or as the line above another result does: a result cannot pose as either. Nothing of it is lost. |
+| **Only a result that was validated is placed.** | `ForStrategist` and `ForRiskManager` take the result of the validation, and throw for one that was rejected. |
+| **The mark of the sentiment report is the service's.** | `live data`, `no live data`, or `unavailable`: see "Live search" in [cycles.md](cycles.md), and "When a role gives no valid result" below. |
+
+## The schemas
+
+The schema of what a role answers is fixed: `IRoleResults.SchemaOf(role)`. The provider of the role's model is sent it with the call, and the answer is validated against the same document.
+
+| Role | Fields |
+|---|---|
+| Market Analyst | `bias`: `bullish`, `bearish`, or `neutral`. `keyLevels`: a list of `price` and `kind`, which is `support` or `resistance`. `volatility`: `low`, `normal`, or `high`. `rationale`. |
+| Sentiment Analyst | `bias`. `notableEvents`: a list of texts. `confidence`. `liveDataAvailable`. `rationale`. |
+| Strategist | `action`: `open_long`, `open_short`, `hold`, `close`, `reverse`, or `adjust_protection`. `entryType`: `market`, `limit`, or null. `entryPrice`, `stopLoss`, `takeProfit`, `riskFraction`: a number or null. `rationale`. |
+| Risk Manager | `verdict`: `approve`, `reduce`, or `veto`. `riskFraction`: a number or null. `rationale`, which is its reasons. |
+
+- **They are the structured results of the specification** (SRS 4.5), each with the rationale that every role returns. `RoleSchemaTests` holds them to it.
+- **A schema stays inside what all four providers take:** every object lists all of its properties in `required` and sets `additionalProperties` to `false`, a value that may be absent is null, and nothing says a range. See "Result schemas" in [ai-providers.md](ai-providers.md).
+- **No schema has a place for a quantity or a leverage.** Models choose neither (FR-RSK-5).
+- **The instructions of a role name every field of its schema,** with what it means and what it may be: see "The templates" in [prompts.md](prompts.md). `RoleSchemaTests` holds the two to each other.
+- A schema is one line in the source file, which is the same in every checkout.
+
+## Validating a result
+
+```csharp
+public interface IRoleResults
+{
+    string SchemaOf(Role role);
+
+    RoleResult<MarketReport> ReadMarketReport(string answered);
+
+    RoleResult<SentimentRead> ReadSentiment(string answered);
+
+    RoleResult<TradePlan> ReadPlan(string answered, AgentRisk limits);
+
+    RoleResult<RiskReview> ReadReview(string answered, TradePlan plan);
+}
+
+public sealed record RoleResult<T>
+{
+    public T? Value { get; }
+    public string? Json { get; }
+    public RoleRejection? Rejection { get; }
+    public bool IsValid { get; }
+}
+
+public sealed record RoleRejection(RejectionRule Rule, string Field);
+```
+
+**An answer is valid when all of these hold.** Otherwise it is rejected:
+
+| Check | What is asked |
+|---|---|
+| **The schema** | `SchemaCheck` checks the answer against the document that was sent: every field is there, once, with a value of its type and, where the schema lists values, one of them, and no field is there that the schema does not define. |
+| **The ranges** | What a schema cannot say: see "The ranges". |
+| **What a prompt never holds** | A report or a plan that holds a secret, an email address, or an identifier is rejected, as `PromptScreen` finds it: a later role reads it in its prompt (FR-PRM-9). It is asked of the text as it is placed, so an escape of the answer is the character that it stands for. |
+
+| Rule | Detail |
+|---|---|
+| **The answer is checked against the very schema that was sent.** | `SchemaCheck` knows `type`, also as a list of types, `enum`, `properties`, `required`, `additionalProperties` that is `false`, and `items`. A schema that says anything else throws: nothing that a schema says goes unchecked. |
+| **A field that is there twice is rejected.** | A parser keeps the last of the two, and a prompt would hold both. |
+| **A rejection is the service's own words.** | `RoleRejection` is a rule and a field of the fixed schema, such as `keyLevels[1].price`, or `answer` for the answer as a whole. It is stored and logged as `confidence: OutOfRange`. A field that the schema does not define is never named, and no value is repeated: what a model wrote is in no log event. |
+| **Only the validation makes a result.** | `MarketReport`, `SentimentRead`, `TradePlan`, and `RiskReview` have no public constructor. `TeamRulesTests` finds every type of the application that makes one, and fails for one that is not `RoleResults`. So whatever holds a plan holds an answer that was validated. |
+| **A rejected answer is rejected whole.** | Nothing of it is taken out, repaired, or clamped. The role is called once more. |
+| **A link to a source can reject a report.** | An address of a page may hold an identifier. The instructions of the Sentiment Analyst ask for sources in words, with no link, no address, and no identifier. |
+| **The review of the Risk Manager is not asked what it holds.** | No prompt reads it. A review that holds an address is valid, and is not kept. |
+
+### The ranges
+
+The ranges are fixed, in `RoleRanges`, and are no settings.
+
+| Value | Allowed |
+|---|---|
+| The answer as a whole | At most 16 000 characters. |
+| `rationale` | Not empty, and at most 2 000 characters. The instructions ask for 60 or 80 words. |
+| `keyLevels` | At most 12. |
+| `notableEvents` | At most 10, each not empty and at most 500 characters. |
+| `confidence` | From 0 to 1. |
+| A price | Above zero, and a number that an exact decimal can be. |
+| `riskFraction` of a plan | Above zero, and at most the agent's risk per trade, as a fraction: 0.02 for an agent that risks 2 percent. |
+| `riskFraction` of a review | Above zero, and below the one of the plan. |
+
+- **The risk fraction is a share of the agent's equity** (FR-RSK-5): what is lost if the stop-loss is hit. A plan that asks for more than its agent allows is rejected, and is not cut down to what is allowed. A fraction that was written as a percentage, such as `2`, is rejected in the same way.
+- **The limit is that of the agent of the cycle,** as its prompt stated it: `DataPackage.Agent.Limits`.
+
+**A plan has the fields that its action needs, and no others:**
+
+| Action | `entryType` | `entryPrice` | `stopLoss`, `takeProfit` | `riskFraction` |
+|---|---|---|---|---|
+| `open_long`, `open_short`, `reverse` | `market` or `limit` | The price of a limit entry, and null for a market entry | Both | A fraction |
+| `adjust_protection` | null | null | One of them, or both | null |
+| `hold`, `close` | null | null | null | null |
+
+- So a plan that opens a position always includes a stop-loss price and a take-profit price (FR-CYC-7).
+- **A review names a fraction to reduce a plan, and for nothing else.** An approval and a veto with a fraction are rejected, and so is a reduction with none.
+- Whether a market allows the action, on which side of the entry a stop-loss stands, and whether an adjustment tightens the protection are not asked here: see "Not built yet".
+
+## The review
+
+`PlanReview.Of(plan, review)` is what the review of the Risk Manager does to a plan (FR-TEAM-7):
+
+| Plan | Review | What goes on to the Risk Guard | Outcome |
+|---|---|---|---|
+| `hold` | None | Nothing | `Hold` |
+| `close`, `adjust_protection` | None | The plan, as planned | `Unreviewed` |
+| `open_long`, `open_short`, `reverse` | `approve` | The plan, as planned | `Approved` |
+| | `reduce` | The plan, with the lower risk fraction, and with nothing else of it changed | `Reduced` |
+| | `veto` | Nothing | `Vetoed` |
+| | No valid review | Nothing | `NoDecision` |
+
+| What the Risk Manager cannot do | Why it cannot |
+|---|---|
+| **Increase risk** | A reduction to a fraction that is not below the one of the plan is rejected, and no other verdict names a fraction. `PlanReview.Of` raises no risk either: it throws for a review that was read for another plan. |
+| **Change direction, or widen the stop-loss** | A review is a verdict, a risk fraction, and reasons. It has no direction, no entry, no stop-loss, and no take-profit, and an answer with a field that the schema does not define is rejected. What goes on is the plan of the Strategist. |
+| **Block a plan that closes a position or tightens protection** | It is not asked about one. |
+
+- **A vetoed plan does not go on, in whole.** A reverse that is vetoed closes nothing: the position stays as it is, with its protective orders, and the Strategist plans again at the next close.
+- **A veto is a decision, and no failure.** The cycle ended, and its record says `Vetoed`. The plan that was vetoed is in the record, with its entry, its stop-loss, and its take-profit (FR-EXP-5).
+
+## A role call
+
+`RoleRuns` runs one role of a team in a cycle:
+
+1. It composes the prompt of the role, with `IPromptComposition`, from what the role is given.
+2. `IRoleCalls` says what the model is called with: the model that the agent's user gave the role, the prompt, the schema, and whether the model may search live. See "Live search" in [cycles.md](cycles.md).
+3. It asks for the key of the agent's user for the provider of the model, with `IKeyHandOver` of Credentials: see "Handing a key to a call" in [credentials.md](credentials.md).
+4. It calls the model, through `IAiProviderGateway`.
+5. It validates what the model answered, with `IRoleResults`.
+6. It keeps the call for the record of the cycle.
+
+| Rule | Detail |
+|---|---|
+| **The prompt is composed once.** | A call that is made once more is made with the same prompt and the same schema. |
+| **The key is asked for as each call is made,** and for the next call again. | It is handed to the gateway with that call, and is kept nowhere: not in a field, not in the record, and not in a log event (FR-KEY-9). |
+| **A call is made with the key of the agent's own user** (FR-KEY-1). | The user is that of the agent's row. There is no key of the service to fall back on. |
+| **A role whose user has no key that can be used is not called.** | No key, a key that its provider refused, or one that does not decrypt. The role gave no result, and is not asked again. The call is recorded as `NoKey`. |
+| **A key that a provider refuses is checked again.** | A call that ends as `AuthenticationFailed` starts `IKeyValidation.RevalidateAiKeyAsync`, once in a cycle for each provider. A key that the provider then refuses is marked invalid, and the agents that run with it move to Attention required (FR-KEY-3, FR-KEY-10). The check is started and not waited for, and is over when the cycle is. |
+| Every event of a call says its role. | The call is made inside `Correlation(Role: ...)`, so what the gateway logs of it carries the role with the user, the agent, and the cycle (NFR-LOG-3). |
+
+## When a role gives no valid result
+
+**A call that times out or returns an invalid result is made once more** (FR-TEAM-9):
+
+| How the call ended | Made once more |
+|---|---|
+| `TimedOut`: the provider did not answer within its time limit. | Yes |
+| `InvalidResult`: the answer was no JSON object. | Yes |
+| `Succeeded`, and the answer was rejected. | Yes |
+| `Failed`: no connection, a limit of the provider, or a fault of it. | No |
+| `AuthenticationFailed`, `ModelNotFound`: the same key and the same model would be refused again. | No |
+| `NoKey`: no call was made. | No |
+
+A role is called twice at most: `RoleRuns.Attempts`. **What becomes of the cycle when a role gave no valid result:**
+
+| Role | The cycle |
+|---|---|
+| Sentiment Analyst | **Continues with sentiment marked unavailable.** The Strategist reads `Sentiment report: unavailable`, with no report under it, and its instructions say what that means: `SentimentReport.Unavailable`. |
+| Market Analyst, Strategist | **Ends with no decision and no new entry.** No later role is called. |
+| Risk Manager | **Ends with no decision and no new entry.** It is asked only about a plan that opens a position, so a review that fails blocks no close. |
+
+- **A cycle with no decision has ended, and has not failed.** `RunAsync` returns, the job counts the cycle as ended, and the record says `NoDecision`. It is a warning in the log, and no error: a provider that does not answer is no fault of the service.
+- An open position stays as it is, with its protective orders, which rest on the exchange.
+
+## The outcome of a cycle
+
+`CycleOutcome` is how a cycle ended. It is stored by its name.
+
+| Outcome | When |
+|---|---|
+| `Hold` | The plan is to hold. |
+| `Unreviewed` | The plan closes a position or adjusts protection, and goes on as planned. |
+| `Approved`, `Reduced`, `Vetoed` | The plan opens a position, and this is what the Risk Manager made of it. |
+| `NoDecision` | A role other than the Sentiment Analyst gave no valid result. |
+| `Failed` | An error ended the cycle: its data package could not be built, its team is not whole, a prompt was refused, or its record could not be stored. |
+| `Stopped` | The cycle was stopped: with the application, or because the next close was near. |
+
+- **What goes on, goes on to nothing yet.** The Risk Guard and the orders are not built. The decision of a cycle is in its record and in the log.
+- An error that ends a cycle leaves `RunAsync`, as before, and the job logs it once and counts the cycle as failed: see "What a cycle is handed" in [cycles.md](cycles.md).
+
+## The record of a cycle
+
+**Each role call records the provider, model, prompt template version, latency, token usage, structured result, and validation outcome** (FR-TEAM-8).
+
+```csharp
+public interface ICycleRecords
+{
+    Task StoreAsync(DecisionCycle cycle, IReadOnlyList<RoleOutput> outputs, CancellationToken cancellationToken);
+}
+```
+
+| Rule | Detail |
+|---|---|
+| **A cycle is recorded once, when it ends, however it ends.** | With a decision, with none, with an error, or stopped. The cycle and the calls of its roles are stored in one transaction: all of them or none. |
+| **A call that is made once more is a row of its own.** | `attempt` is 1 or 2. |
+| **A call that was under way when the cycle was stopped is recorded,** as `Canceled`. | The provider may have charged for it. |
+| **The write has a time limit of its own:** 5 seconds, `TeamCycle.RecordsWithin`. | A cycle that is stopped has its token canceled, and the run that started it waits for it. |
+| **A cycle whose record cannot be stored has failed.** | Unless it is ending with an error of its own, or is being stopped: that is then what the job is told, and the log says beside it that the record could not be stored. |
+| A cycle that never started leaves no row. | One that was skipped, or whose agent no longer ran. See "Not built yet" in [cycles.md](cycles.md). |
+
+| Table | Columns |
+|---|---|
+| `decision_cycles` | `id`, `agent_id`, `user_id`, `mode`, `closed_at`, `started_at`, `ended_at`, `outcome`. Indexed by `(agent_id, user_id, closed_at)`. |
+| `role_outputs` | `id`, `cycle_id`, `user_id`, `role`, `attempt`, `model_id`, `role_template_id`, `market_template_id`, `timeframe_template_id`, `profile_template_id`, `called_at`, `latency_ms`, `input_tokens`, `output_tokens`, `live_searches`, `outcome`, `validation`, `rejection`, `result`. One row for each `(cycle_id, user_id, role, attempt)`. |
+
+| Column | What it holds |
+|---|---|
+| `decision_cycles.id` | The id of the cycle, which what starts the cycles assigned, and which everything logged for the cycle carries. |
+| `decision_cycles.mode` | The mode that the agent was in, as the name of a member of `TradingMode`. It stays as it was written when the agent is switched (FR-BIN-11). |
+| `decision_cycles.outcome` | The name of a member of `CycleOutcome`. |
+| `role_outputs.model_id` | The model of the catalog that was called. A model is of one provider and is never deleted, so the row says the provider and the model for good. |
+| The four `_template_id` | The versions of the templates that the prompt of the call was composed from: the instructions of the role, and the modules of the market, the timeframe, and the profile. A version is never changed (FR-PRM-6). See "What a role output records" in [prompts.md](prompts.md). |
+| `latency_ms` | How long the call took, as the gateway measured it, in whole milliseconds. |
+| `input_tokens`, `output_tokens` | What the provider counted, or null when it did not say: a call that timed out or failed has none. |
+| `live_searches` | How many searches the provider ran, for a call that offered the model a search (FR-CYC-3). Null for a call that offered none. |
+| `outcome` | How the call ended, as the name of a member of `RoleCallOutcome`: the six outcomes of the gateway, `NoKey`, or `Canceled`. |
+| `validation` | `Valid`, `Rejected`, or `NoResult` for a call that gave no answer. |
+| `rejection` | Why an answer was rejected, as `RoleRejection` writes it. |
+| `result` | What the model answered, on one line of JSON, with its rationale. An answer that was rejected is kept as well. Null for a call that gave no answer, and for an answer that is no JSON, is too long, or holds what a prompt never holds. |
+
+- **The rows are their user's:** `DecisionCycle` and `RoleOutput` implement `IUserOwned`. The Decision Engine may not use Accounts, so a row carries its owner along to the row that it hangs on: `(agent_id, user_id)` points at `agents (id, user_id)`, and `(cycle_id, user_id)` at `decision_cycles (id, user_id)`. The database holds the owners to being the same. See [ownership.md](ownership.md).
+- **The record of a cycle goes with its agent,** and with the account: an agent is deleted only while it is a draft, or is stopped with nothing open.
+- **They hold no prompt, no key, and no personal data.** A model is sent nothing that says who the user is (FR-PRM-9). `PersonalDataRules` lists `rejection` and `result` with what they hold.
+- **They are not in the export of a user's data.** A user exports their trades and decisions as CSV (FR-RPT-4), which is not built. `ExportRules` lists both tables with that.
+- A table of role outputs points at the versions of the templates: `PromptRulesTests` holds every such table to it.
+
+## What a model cannot do
+
+**Models cannot place orders or call internal functions** (NFR-SEC-6). `TeamRulesTests` and `TeamRecordTests` hold the code to it:
+
+| What holds it | How |
+|---|---|
+| **A model is offered nothing that it could call.** | A call is made with a model, a prompt, a schema, and whether the model may search live: `AiCallRequest` has no place for a function or a tool, which is pinned. Across a cycle, no request to a provider offers a tool but the live search of the Sentiment Analyst's own provider, which reads the web and nothing of the service. |
+| **What a model answers is read as data.** | Into a result with the fields of its schema and no others. An answer that asks for a function to be called is no JSON object, so it is no result: the role is called once more, and nothing is called for it. |
+| **A plan is no order.** | It has no quantity and no leverage. What goes on of a plan goes on to the Risk Guard, which computes both and checks every limit (FR-RSK-3, FR-RSK-5). |
+| **What runs the team uses nothing of the exchange.** | `TeamCycle`, `RoleRuns`, `RoleResults`, `SchemaCheck`, and `PlanReview` reference no type of the Exchange Gateway. Operations that place orders belong in `Ecnanib.ExchangeGateway.Trading`: see "Placing orders" in [architecture.md](architecture.md). |
+| **Only the Decision Engine is handed a stored key,** and only it calls a model. | `IKeyHandOver` is asked by `RoleRuns` alone. See "What a provider is sent" in [prompts.md](prompts.md). |
+
+## The log
+
+`TeamCycle` logs under the area `Ecnanib.DecisionEngine.TeamCycle`, and `RoleRuns` under `Ecnanib.DecisionEngine.RoleRuns`. Both write inside a cycle, so every event carries `UserId`, `AgentId`, and `CycleId`, and an event of a role call carries `Role`.
+
+```
+The team of agent {AgentId} decided for the close at {ClosedAt}: {CycleOutcome}, for a plan to {PlanAction}
+The cycle of agent {AgentId} for the close at {ClosedAt} ended with no decision and no new entry: the {Role} gave no valid result
+The cycle of agent {AgentId} for the close at {ClosedAt} continues with sentiment marked unavailable
+The record of the cycle of agent {AgentId} for the close at {ClosedAt} could not be stored ({CycleOutcome})
+The {Role} of agent {AgentId} gave no valid result for the close at {ClosedAt}
+The result of the {Role} of agent {AgentId} was rejected on attempt {Attempt}: {RejectedField} is {RejectionRule}
+The {Role} of agent {AgentId} is not called: user {UserId} has no key for the AI provider {Provider} that can be used ({KeyHandOverOutcome})
+The AI provider {Provider} refused the key of user {UserId} in a call, so the key was checked again: {KeyCheckOutcome}
+The key of user {UserId} for the AI provider {Provider} could not be checked again after a call that it failed
+```
+
+| Level | Event |
+|---|---|
+| `Information` | The decision of the team, and a key that was checked again. |
+| `Warning` | A result that was rejected, a role that gave no valid result, a role that is not called, sentiment that is unavailable, and a cycle with no decision. |
+| `Error` | A record that could not be stored, and a key that could not be checked again, each with the error. |
+
+An event names a field of a schema and a rule, an action, and an outcome. It never holds a price, a fraction, or anything that a model wrote. What the gateway logs of each call is in "AI calls" in [logging.md](logging.md).
+
+## Testing
+
+`CyclesApplication` runs the job with the application's own inside of a cycle when a test says that its cycles build packages. The team is then behind stand-ins, for agents that need no rows:
+
+| Stand-in | In place of | What it does |
+|---|---|---|
+| `StandInModels` | `IAiProviderGateway` | Answers each role with a valid result of its schema, unless the test says what a call of a role is answered with. It keeps every call in the order the calls came in, and holds the calls of a role until the test lets them go. |
+| `StandInKeys` | `IKeyHandOver` | Hands every user a key of their own for every provider, unless the test says otherwise. |
+| `StandInCycleRecords` | `ICycleRecords` | Keeps the records in the order they were stored, and fails when the test says so. |
+| `StandInKeyChecks` | `IKeyValidation` | Keeps whose key it was asked to check again. |
+
+- **An order is held to through what a call was made with,** and not through waiting for something not to happen: the prompt of the Strategist holds what both analysts answered, and the prompt of the Risk Manager the plan.
+- `TeamRecordTests` runs cycles of agents of the database through the gateway itself, with the stored keys of their users, and with a stand-in for the providers: `CyclesApplication` with `providers`.
+- `TeamAnswers` has a valid answer of each role, and `StoredCycleRows.GiveCycleAsync` gives an agent the record of a cycle without one that runs.
+- `LiveProviderTests` sends the schema of each role to the providers themselves, and reads what they answer with `IRoleResults`. It is skipped unless a key and a model are given: see "Checking against the real providers" in [ai-providers.md](ai-providers.md).
+
+## Not built yet
+
+- The Risk Guard, which checks every plan that goes on and computes the order size (FR-RSK-3, FR-RSK-5), and the orders (FR-BIN-6). A cycle ends with the decision of the team.
+- Holding a plan to the actions that its market allows, to one position, to a stop-loss on the right side of its entry, and to protection that only tightens (FR-CYC-4 to FR-CYC-6). The schema of a plan has the actions of both markets. With it comes what a reverse is when only its close can go on.
+- The stale limit: a decision that completes later than the limit of its timeframe opens no position (FR-CYC-9).
+- Recalling lessons for the Strategist and the Risk Manager (FR-EXP-7). Both are given none.
+- Moving an agent to Attention required when a call reports that its model does not exist (FR-CAT-8). The call is recorded as `ModelNotFound`, and the cycle ends as its role says. The catalog marks a model that its provider no longer lists, which moves the agents that run with it: see "When a model goes" in [agents.md](agents.md).
+- Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A call that ends as `Failed` is not made again, and the next close calls again.
+- The summary of the data package in the record of a cycle, the results of the Risk Guard, the orders, and the timeline that shows a cycle (FR-CYC-10). Recording a cycle that never started.
+- Exporting decisions as CSV (FR-RPT-4), and showing AI usage from the recorded tokens (FR-RPT-3, FR-KEY-11).
+- Retention of the records: decision records are kept 365 days and role transcripts 90 (NFR-DAT-5). `Retention` has the settings, and nothing deletes yet.
+- Telling a model why its first answer was rejected. The call that is made once more has the same prompt.
+- A test cycle that a user runs for an agent (FR-CYC-12).
+- Sending the schemas to the real providers in the suite. `LiveProviderTests` does when it is given keys.

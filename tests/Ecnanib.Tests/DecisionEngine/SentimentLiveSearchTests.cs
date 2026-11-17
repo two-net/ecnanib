@@ -21,9 +21,9 @@ namespace Ecnanib.Tests.DecisionEngine;
 /// file.
 /// </summary>
 /// <remarks>
-/// What runs the roles of a cycle is not built, so no cycle calls a model. These hold what a
-/// cycle will go by: what the model of a role is called with, how the report of the Sentiment
-/// Analyst is marked, and what the Strategist reads and is told.
+/// These hold what a cycle goes by: what the model of a role is called with, how the report of
+/// the Sentiment Analyst is marked, and what the Strategist reads and is told. What runs the
+/// roles of a cycle is held to it in <c>TeamOrderTests</c> and <c>TeamRetryTests</c>.
 /// </remarks>
 public class SentimentLiveSearchTests
 {
@@ -243,16 +243,24 @@ public class SentimentLiveSearchTests
 
         foreach (var role in new[] { Role.SentimentAnalyst, Role.Strategist })
         {
-            var instructions = inUse.Roles[role];
             var outline = stored.Single(template => template.Subject == role.ToString() && template.Version == 1).Text;
             var second = stored.Single(template => template.Subject == role.ToString() && template.Version == 2).Text;
+            var third = stored.Single(template => template.Subject == role.ToString() && template.Version == 3).Text;
 
             // The edit took nothing away: the outline of the role, one paragraph about live
             // data, and the instructions about untrusted content as they were (FR-PRM-8).
-            Assert.Equal(3, instructions.Version);
-            Assert.StartsWith($"{outline}\nLive data: ", instructions.Text, StringComparison.Ordinal);
+            Assert.StartsWith($"{outline}\nLive data: ", third, StringComparison.Ordinal);
+            Assert.EndsWith(second[outline.Length..], third, StringComparison.Ordinal);
+            Assert.Equal(second.Split('\n').Length + 1, third.Split('\n').Length);
+
+            // And a later version keeps what was said: the version in use begins with the
+            // outline and with that paragraph, as they were, and ends with the instructions
+            // about untrusted content.
+            var instructions = inUse.Roles[role];
+
+            Assert.True(instructions.Version >= 3);
+            Assert.StartsWith($"{outline}\n{third.Split('\n')[1]}\n", instructions.Text, StringComparison.Ordinal);
             Assert.EndsWith(second[outline.Length..], instructions.Text, StringComparison.Ordinal);
-            Assert.Equal(second.Split('\n').Length + 1, instructions.Text.Split('\n').Length);
         }
 
         // The Sentiment Analyst searches where its call offers a search, and says so where it
@@ -267,7 +275,9 @@ public class SentimentLiveSearchTests
         Assert.Contains("give it no weight", strategist, StringComparison.Ordinal);
 
         // The other two roles are told nothing of it.
-        Assert.All(new[] { Role.MarketAnalyst, Role.RiskManager }, role => Assert.Equal(2, inUse.Roles[role].Version));
+        Assert.All(new[] { Role.MarketAnalyst, Role.RiskManager }, role =>
+            Assert.DoesNotContain(
+                inUse.Roles[role].Text.Split('\n'), paragraph => paragraph.StartsWith("Live data:", StringComparison.Ordinal)));
     }
 
     /// <summary>A role with a model of a provider, as a cycle is handed it.</summary>

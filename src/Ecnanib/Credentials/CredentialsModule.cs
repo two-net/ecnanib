@@ -20,6 +20,10 @@ public static class CredentialsModule
         services.AddSingleton<IKeyValidation, KeyValidator>();
         services.AddBackgroundJob<KeyValidationJob>();
 
+        // What hands a stored key to the call of a model, decrypted for that call alone
+        // (FR-KEY-9). What calls a model for an agent asks it, and nothing else does.
+        services.AddSingleton<IKeyHandOver, KeyHandOver>();
+
         // One object keeps which models a key can use, for what stores a key and for what
         // checks one again, and says from that which models a user can select (FR-CAT-9).
         services.AddSingleton<KeyModels>();

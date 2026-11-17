@@ -1,5 +1,6 @@
 using System.Net;
 using Ecnanib.Agents;
+using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Shared;
@@ -11,9 +12,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Ecnanib.Tests.DecisionEngine;
 
 /// <summary>
-/// A cycle that starts builds its data package (FR-CYC-2, SRS 3.2, step 2), and makes no decision
-/// yet: the calls of the team are not built. A cycle whose market data the exchange does not
-/// give makes none either, and the other cycles go on. See "The data package" in docs/cycles.md.
+/// A cycle that starts builds its data package (FR-CYC-2, SRS 3.2, step 2), and then runs the
+/// team of its agent, which stand-ins answer for here: see <c>TeamOrderTests</c> for the team.
+/// A cycle whose market data the exchange does not give makes no decision, and the other cycles
+/// go on. See "The data package" in docs/cycles.md.
 /// </summary>
 public class CycleDataPackageTests
 {
@@ -64,13 +66,17 @@ public class CycleDataPackageTests
             Assert.Equal(0, written["OrderCount"].GetInt32());
         });
 
-        // The cycles ended, with no decision: nothing calls the team yet.
+        // The cycles ended, each with the decision of its team, which read the package.
         var summary = application.SummaryOf(Quarter);
 
         Assert.Equal((2, 0), (summary["Ended"].GetInt32(), summary["Failed"].GetInt32()));
         Assert.DoesNotContain(
             application.Written().Concat(application.Written(DataPackagesLog.Area)),
             written => written.Level is "Warning" or "Error" or "Fatal");
+        Assert.Equal(
+            new[] { onSpot, onFutures }.Order(),
+            application.Records.Stored.Select(stored => stored.Cycle.AgentId).Order());
+        Assert.All(application.Records.Stored, stored => Assert.Equal(CycleOutcome.Approved, stored.Cycle.Outcome));
     }
 
     [Fact]
@@ -104,6 +110,11 @@ public class CycleDataPackageTests
         var built = Assert.Single(application.Written(DataPackagesLog.Area, DataPackagesLog.Built));
 
         Assert.Equal(withData.ToString(), built.Text("AgentId"));
+
+        // No model was called for the cycle that has none, and its record says how it ended.
+        Assert.Equal(CycleOutcome.Failed, application.Records.Of(without).Cycle.Outcome);
+        Assert.Empty(application.Records.Of(without).Outputs);
+        Assert.Equal(CycleOutcome.Approved, application.Records.Of(withData).Cycle.Outcome);
 
         var summary = application.SummaryOf(Quarter);
 
@@ -147,6 +158,9 @@ public class CycleDataPackageTests
             {
                 services.AddSingleton<TimeProvider>(clock);
                 services.AddSingleton<IRunningAgents>(agents);
+
+                // The teams of the agents, which need no rows: this is about what they read.
+                new StandInTeam().Behind(services);
             },
             runsCycles: true);
 

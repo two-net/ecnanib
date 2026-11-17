@@ -19,7 +19,8 @@ internal enum SentData
 /// What holds for the prompt templates beyond what the database refuses, in one place. Templates
 /// are managed by the system and delivered as seed data (FR-PRM-7): nothing of the application
 /// but the seed creates one. And each role output records the template versions it used
-/// (FR-PRM-6): role outputs are not built, so the rule waits for the table that stores them.
+/// (FR-PRM-6): the table of the role outputs points at the versions, and a table of role
+/// outputs that is added later is held to the same.
 /// And what composes a prompt is given no template: the modules follow from the settings of the
 /// agent, so a mismatched combination cannot be chosen (FR-PRM-4). And what it is given is what an
 /// AI provider is sent: it is limited to market data, agent settings, position state, and

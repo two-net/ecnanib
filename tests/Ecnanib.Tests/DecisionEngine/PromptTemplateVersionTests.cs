@@ -50,7 +50,10 @@ public class PromptTemplateVersionTests
     [Theory]
     [InlineData("DELETE FROM prompt_templates WHERE kind = 'Market' AND subject = 'Spot'")]
     [InlineData("DELETE FROM prompt_templates")]
-    [InlineData("TRUNCATE prompt_templates")]
+
+    // Emptying the table, with the calls of the roles that point at its rows.
+    [InlineData("TRUNCATE prompt_templates CASCADE")]
+    [InlineData("TRUNCATE prompt_templates, role_outputs")]
     public void A_version_of_a_template_is_never_deleted(string deletion)
     {
         var database = Migrated.Value;
@@ -60,6 +63,22 @@ public class PromptTemplateVersionTests
 
         Assert.Equal(PostgresErrorCodes.RestrictViolation, refused.SqlState);
         Assert.Contains("(FR-PRM-6)", refused.MessageText);
+        Assert.Equal(before, StoredTemplate.All(database));
+    }
+
+    [Fact]
+    public void Emptying_the_table_alone_is_refused_before_the_rule_is_asked()
+    {
+        var database = Migrated.Value;
+        var before = StoredTemplate.All(database);
+
+        // Each call of a role points at the versions that it used (FR-TEAM-8), so the database
+        // empties the table only together with the calls, which the rule of the versions then
+        // refuses: see above. Alone, it is refused at once.
+        var refused = Assert.Throws<PostgresException>(() => database.Execute("TRUNCATE prompt_templates"));
+
+        Assert.Equal(PostgresErrorCodes.FeatureNotSupported, refused.SqlState);
+        Assert.Contains("role_outputs", $"{refused.MessageText} {refused.Detail} {refused.Hint}", StringComparison.Ordinal);
         Assert.Equal(before, StoredTemplate.All(database));
     }
 

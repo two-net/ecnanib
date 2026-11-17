@@ -441,7 +441,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | It is a file. | JSON, one thing to a line, with the names of things and not their numbers. It is sent as an attachment called `account-data-<date>.json`, and with `Cache-Control: no-store`, so that neither the browser nor anything on the way keeps it. The link is marked `download`, so the browser asks for the file once. |
 | Every table is decided. | `ExportRules` in [`DataExportTests.cs`](../tests/Ecnanib.Tests/Accounts/DataExportTests.cs) lists each table of users' rows as exported, or as not exported with why. A table that is added later fails the test until it is listed. |
 
-Two tables are not exported. `pending_sign_ins` holds the hash of a token and a time, for ten minutes at most. `two_factor_recovery_codes` holds hashes: the export says how many codes are left.
+Four tables are not exported. `pending_sign_ins` holds the hash of a token and a time, for ten minutes at most. `two_factor_recovery_codes` holds hashes: the export says how many codes are left. `decision_cycles` and `role_outputs` hold what the teams of a user's agents decided, cycle by cycle, and what their models answered: a user exports their trades and decisions as CSV (FR-RPT-4), which is not built. The Decision Engine keeps them, and may not use Accounts, which declares what an export is made of. They hold no personal data: see "The record of a cycle" in [team.md](team.md).
 
 Accounts depends on no other component, so it cannot read the rows that a component above it keeps. It declares `IExportedPart`, and that component implements and registers it, once for each section. See "When a lower component must trigger a higher one" in [architecture.md](architecture.md).
 

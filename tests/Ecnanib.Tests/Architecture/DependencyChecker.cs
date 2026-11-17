@@ -170,6 +170,19 @@ internal sealed class DependencyChecker(RuleSet rules)
             .Order(StringComparer.Ordinal),
     ];
 
+    /// <summary>
+    /// The types that a type of an assembly depends on, each by its full name: what it and the
+    /// types that the compiler nests in it reference. The type is named by its full name.
+    /// </summary>
+    public static IReadOnlyList<string> FindDependenciesOf(Assembly assembly, string type) =>
+    [
+        .. Load(assembly).Types
+            .Where(origin => origin.FullName == type || origin.FullName.StartsWith($"{type}+", StringComparison.Ordinal))
+            .SelectMany(origin => origin.Dependencies.Select(dependency => dependency.Target.FullName))
+            .Distinct()
+            .Order(StringComparer.Ordinal),
+    ];
+
     private bool IsInAdapters(string @namespace)
     {
         var area = AreaOf(@namespace);

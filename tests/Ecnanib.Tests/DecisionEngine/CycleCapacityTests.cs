@@ -6,10 +6,10 @@ namespace Ecnanib.Tests.DecisionEngine;
 
 /// <summary>
 /// With providers responding normally, 95% of cycles finish within 90 seconds of candle close
-/// (NFR-PRF-2). What a cycle does once it has started is not built, so what is held to here is
-/// the share of what starts it: the queue takes no time worth counting for the agents of a
-/// whole service, and every close says how many of its cycles ended in time. See "How long a
-/// cycle takes" in docs/cycles.md.
+/// (NFR-PRF-2). What a cycle does once it has started is the calls of its team, which take as
+/// long as the providers do. What is held to here is the share of what starts a cycle: the
+/// queue takes no time worth counting for the agents of a whole service, and every close says
+/// how many of its cycles ended in time. See "How long a cycle takes" in docs/cycles.md.
 /// </summary>
 public class CycleCapacityTests
 {

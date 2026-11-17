@@ -17,7 +17,8 @@ namespace Ecnanib.DecisionEngine;
 /// Analyst whose model cannot search is called all the same, without a search, and its report is
 /// marked as resting on no live data: see <see cref="SentimentReport"/>. No other role searches,
 /// whatever its model can do: what the web says reaches the team through one role alone, whose
-/// report every later role reads as untrusted content (FR-PRM-8).
+/// report the Strategist reads as untrusted content (FR-PRM-8). The Risk Manager is not given
+/// the report: what a search found reaches it only in the words of the Strategist's plan.
 /// </para>
 /// <para>
 /// It makes no call. What runs the roles of a cycle hands the request to the gateway with the

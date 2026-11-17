@@ -77,6 +77,73 @@ public sealed record DataPackage(
 
         return new PromptParts(Agent, $"{Text}\n\n{sentiment.Text}", lessons);
     }
+
+    /// <summary>What the line of the close begins with, in the data package of the Sentiment Analyst.</summary>
+    public const string CloseHeading = "Candle close: ";
+
+    /// <summary>The line above the report of the Market Analyst, in the data package of the Strategist.</summary>
+    public const string MarketReportHeading = "Market report:";
+
+    /// <summary>The line above the plan of the Strategist, in the data package of the Risk Manager.</summary>
+    public const string TradePlanHeading = "Trade plan:";
+
+    /// <summary>
+    /// What the Market Analyst is given: the context of the agent and the text of this package,
+    /// which is the price, the volume, and the indicators, and on Futures the funding and the
+    /// open interest (SRS 4.5). It is given no lesson (FR-EXP-7).
+    /// </summary>
+    public PromptParts ForMarketAnalyst() => PartsWith([]);
+
+    /// <summary>
+    /// What the Sentiment Analyst is given: the context of the agent, which names the symbol,
+    /// and the close that the cycle is for. It reads news and social context (SRS 4.5), and no
+    /// candle: so its read is its own, and not a second read of the price.
+    /// </summary>
+    public PromptParts ForSentimentAnalyst() => new(Agent, $"{CloseHeading}{Written.Time(ClosedAt)}", []);
+
+    /// <summary>
+    /// What the Strategist is given: the text of this package, and under it the two reports
+    /// (SRS 4.5). The report of the Market Analyst is one line of JSON under its heading, and
+    /// the report of the Sentiment Analyst stands as <see cref="SentimentReport.Text"/> writes
+    /// it, with its mark (FR-CYC-3). Both are data there, like the rest of the package.
+    /// </summary>
+    /// <param name="lessons">The lessons that were recalled for the call, most recent first (FR-EXP-7). Empty when there are none.</param>
+    /// <param name="market">The report of the Market Analyst of this cycle, which was validated.</param>
+    /// <param name="sentiment">The report of the Sentiment Analyst of this cycle, or the one that says that there is none.</param>
+    /// <exception cref="ArgumentException">The report of the Market Analyst is not a valid result.</exception>
+    public PromptParts ForStrategist(IReadOnlyList<string> lessons, RoleResult<MarketReport> market, SentimentReport sentiment)
+    {
+        ArgumentNullException.ThrowIfNull(sentiment);
+
+        return new PromptParts(Agent, $"{Text}\n\n{MarketReportHeading}\n{Placed(market)}\n\n{sentiment.Text}", lessons);
+    }
+
+    /// <summary>
+    /// What the Risk Manager is given: the text of this package, and under it the plan of the
+    /// Strategist, as one line of JSON under its heading. It reviews the plan independently
+    /// (SRS 4.5): it is given neither report, so what a search found reaches it only as the
+    /// Strategist's own words.
+    /// </summary>
+    /// <param name="lessons">The lessons that were recalled for the call, most recent first (FR-EXP-7). Empty when there are none.</param>
+    /// <param name="plan">The plan of the Strategist of this cycle, which was validated.</param>
+    /// <exception cref="ArgumentException">The plan is not a valid result.</exception>
+    public PromptParts ForRiskManager(IReadOnlyList<string> lessons, RoleResult<TradePlan> plan) =>
+        new(Agent, $"{Text}\n\n{TradePlanHeading}\n{Placed(plan)}", lessons);
+
+    /// <summary>
+    /// A result as a later role reads it: one line of JSON, whatever the model wrote, so that no
+    /// line of it begins as a heading of a prompt does. Only a result that was validated is
+    /// placed (NFR-SEC-7).
+    /// </summary>
+    private static string Placed<T>(RoleResult<T> result)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return result is { IsValid: true, Json: { } placed }
+            ? placed
+            : throw new ArgumentException("Only a result that was validated is placed in the prompt of a later role.", nameof(result));
+    }
 }
 
 /// <summary>The closed candles of one length that a data package holds, with their indicators.</summary>
