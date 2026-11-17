@@ -45,10 +45,10 @@ public class RiskCheckRecordTests
         var ada = await application.RegisterVerifiedAsync(Ada);
         var agent = await application.GiveAgentAsync(ada.Id, Close);
 
-        // A plan that the Risk Guard rejected: its reward is 1.4 times its risk, and its order
-        // has no size.
+        // A plan that the Risk Guard rejected: its reward is 1.4 times its risk, and the
+        // exchange did not say the rules of the symbol, so its order has no size.
         var cycle = Cycle(agent, ada.Id, Close);
-        var rejected = GuardCases.OpenLongOnFutures with { TakeProfit = 61400m, Size = null };
+        var rejected = GuardCases.OpenLongOnFutures with { TakeProfit = 61400m, SymbolsKnown = false, Symbol = null };
         var made = GuardCheck.Of(rejected);
 
         await application.CycleRecords.StoreAsync(
@@ -83,6 +83,60 @@ public class RiskCheckRecordTests
         Assert.Equal(
             (RuleOutcome.Failed, 1.4m, 1.5m),
             (read.Rules[(int)GuardRule.RewardToRisk].Outcome, read.Rules[(int)GuardRule.RewardToRisk].Measured, read.Rules[(int)GuardRule.RewardToRisk].Threshold));
+
+        // No size was computed for its order, and none is stored.
+        Assert.Null(made.Size);
+        Assert.Equal((null, null), (read.Quantity, read.Leverage));
+        Assert.Equal(1L, application.Database.Scalar<long>("SELECT count(*) FROM risk_checks WHERE quantity IS NULL AND leverage IS NULL"));
+    }
+
+    [Fact]
+    public async Task The_size_that_a_check_computed_is_stored_with_it()
+    {
+        using var application = new AccountsApplication(clock: new TestClock(Close));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.Id, Close, market: Market.Futures);
+
+        // Three checks, an hour apart: a plan to open long on Futures that was accepted, whose
+        // order came to 0.02 at a leverage of 2, a plan with no stop-loss, whose order came to
+        // no quantity, and a plan to close, which has no order of its own to size.
+        (GuardCase Case, PlanAction Action)[] checkedPlans =
+        [
+            (GuardCases.OpenLongOnFutures, PlanAction.OpenLong),
+            (GuardCases.OpenLongOnFutures with { StopLoss = null }, PlanAction.OpenLong),
+            (GuardCases.Close, PlanAction.Close),
+        ];
+
+        for (var hour = 0; hour < checkedPlans.Length; hour++)
+        {
+            var cycle = Cycle(agent, ada.Id, Close.AddHours(hour));
+
+            await application.CycleRecords.StoreAsync(
+                cycle,
+                [],
+                [GuardedCycles.Check(cycle.Id, ada.Id, cycle.ClosedAt.AddSeconds(39), checkedPlans[hour].Case, checkedPlans[hour].Action)],
+                TestContext.Current.CancellationToken);
+        }
+
+        // The quantity is an exact number, and the leverage a whole one: the computed quantity
+        // and leverage are stored with the Risk Guard result (FR-RSK-5).
+        Assert.Equal(
+            ["Accepted|0.02|2", "Rejected|0|1", "Accepted||"],
+            application.Database.Column(
+                "SELECT r.verdict || '|' || coalesce(trim_scale(r.quantity)::text, '') || '|' || coalesce(r.leverage::text, '') " +
+                "FROM risk_checks r JOIN decision_cycles c ON c.id = r.cycle_id ORDER BY c.closed_at"));
+        Assert.Equal(
+            ["numeric", "integer"],
+            application.Database.Column(
+                "SELECT data_type FROM information_schema.columns WHERE table_name = 'risk_checks' AND column_name IN ('quantity', 'leverage') " +
+                "ORDER BY column_name DESC"));
+
+        // Its user reads each as it was computed, latest first.
+        var history = await application.RiskCheckRecords.LatestAsync(ada.Id, agent, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [(PlanAction.Close, null, null), (PlanAction.OpenLong, 0m, 1), (PlanAction.OpenLong, 0.02m, 2)],
+            history.Checks.Select(check => (check.Action, check.Quantity, check.Leverage)));
     }
 
     [Fact]
@@ -127,19 +181,21 @@ public class RiskCheckRecordTests
         Assert.All(rules, rule => Assert.Equal((check.Id, ada), (rule.CheckId, rule.UserId)));
 
         // The user has stored no Binance key, which Credentials says: neither the mode nor the
-        // market of the agent is permitted. And nothing computes the size of the order.
+        // market of the agent is permitted. Every other rule is known to hold.
         Assert.Equal(
             [GuardRule.ModePermitted, GuardRule.MarketPermitted],
             rules.Where(rule => rule.Outcome == RuleOutcome.Failed).Select(rule => rule.Rule));
-        Assert.Equal(
-            [GuardRule.QuantityStep, GuardRule.MinimumValue],
-            rules.Where(rule => rule.Outcome == RuleOutcome.Unknown).Select(rule => rule.Rule));
+        Assert.DoesNotContain(rules, rule => rule.Outcome == RuleOutcome.Unknown);
+
+        // The size that the check computed is stored with it, also of a plan that was
+        // rejected: 1 percent of 1000 over the 1000 to the stop-loss, with no leverage on Spot.
+        Assert.Equal((0.01m, 1), (check.Quantity, check.Leverage));
 
         // And the user reads it.
         var read = Assert.Single(
             (await application.Application.RiskCheckRecords.LatestAsync(ada, agent, TestContext.Current.CancellationToken)).Checks);
 
-        Assert.Equal((Close, GuardVerdict.Rejected), (read.ClosedAt, read.Verdict));
+        Assert.Equal((Close, GuardVerdict.Rejected, 0.01m, 1), (read.ClosedAt, read.Verdict, read.Quantity, read.Leverage));
     }
 
     [Fact]
@@ -168,10 +224,11 @@ public class RiskCheckRecordTests
         var check = Assert.Single(
             (await application.Application.RiskCheckRecords.LatestAsync(user.Id, agent, TestContext.Current.CancellationToken)).Checks);
 
-        // Only the size of the order stands in the way.
+        // Nothing stands in the way: the plan is accepted, with the size of its order.
         Assert.Equal(RuleOutcome.Passed, check.Rules[(int)GuardRule.ModePermitted].Outcome);
         Assert.Equal(RuleOutcome.Passed, check.Rules[(int)GuardRule.MarketPermitted].Outcome);
-        Assert.DoesNotContain(check.Rules, rule => rule.Outcome == RuleOutcome.Failed);
+        Assert.DoesNotContain(check.Rules, rule => rule.Outcome is RuleOutcome.Failed or RuleOutcome.Unknown);
+        Assert.Equal((GuardVerdict.Accepted, 0.01m, 1), (check.Verdict, check.Quantity, check.Leverage));
     }
 
     [Fact]
@@ -200,10 +257,11 @@ public class RiskCheckRecordTests
                 application.Database.Scalar<long>("SELECT count(*) FROM risk_checks"),
                 application.Database.Scalar<long>("SELECT count(*) FROM risk_check_rules")));
 
-        // The two checks of a reverse that was rejected: the reverse, and its close.
+        // The two checks of a reverse that was rejected, here for a global halt: the reverse,
+        // and its close.
         RiskCheckRecord[] ofAReverse =
         [
-            GuardedCycles.Check(cycle.Id, ada.Id, Close.AddSeconds(39), GuardCases.Reverse with { Size = null }, PlanAction.Reverse),
+            GuardedCycles.Check(cycle.Id, ada.Id, Close.AddSeconds(39), GuardCases.Reverse with { GlobalHalt = true }, PlanAction.Reverse),
             GuardedCycles.Check(cycle.Id, ada.Id, Close.AddSeconds(39), GuardCases.Close, PlanAction.Close, sequence: 2),
         ];
 
@@ -327,7 +385,7 @@ public class RiskCheckRecordTests
             latest,
             [],
             [
-                GuardedCycles.Check(latest.Id, ada.Id, latest.ClosedAt.AddSeconds(39), GuardCases.Reverse with { Size = null }, PlanAction.Reverse),
+                GuardedCycles.Check(latest.Id, ada.Id, latest.ClosedAt.AddSeconds(39), GuardCases.Reverse with { GlobalHalt = true }, PlanAction.Reverse),
                 GuardedCycles.Check(latest.Id, ada.Id, latest.ClosedAt.AddSeconds(39), GuardCases.Close, PlanAction.Close, sequence: 2),
             ],
             TestContext.Current.CancellationToken);

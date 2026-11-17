@@ -10,12 +10,22 @@ namespace Ecnanib.Tests.RiskGuard;
 /// </summary>
 internal static class GuardCases
 {
-    /// <summary>The rules of the symbol of the tests: a price step of 0.1, a quantity step of 0.001, and a least value of 5.</summary>
-    public static readonly SymbolRules Symbol = new(Trading: true, PriceStep: 0.1m, QuantityStep: 0.001m, MinValue: 5m);
+    /// <summary>
+    /// The rules of the symbol of the tests: a price step of 0.1, a quantity step of 0.001, an
+    /// order of 0.001 at least and 1000 at most, and a least value of 5.
+    /// </summary>
+    public static readonly SymbolRules Symbol = new(
+        Trading: true, PriceStep: 0.1m, QuantityStep: 0.001m, MinQuantity: 0.001m, MaxQuantity: 1000m, MinValue: 5m);
 
     /// <summary>The risk settings of the agent of the tests: the defaults of the specification (SRS Appendix B).</summary>
     public static readonly GuardLimits Limits = new(
-        MinRewardToRisk: 1.5m, MaxEntryDistancePercent: 1m, LiquidationBuffer: 2m, DailyLossPercent: 6m, DrawdownPercent: 25m);
+        RiskPerTradePercent: 2m,
+        MinRewardToRisk: 1.5m,
+        MaxEntryDistancePercent: 1m,
+        LeverageCap: 5,
+        LiquidationBuffer: 2m,
+        DailyLossPercent: 6m,
+        DrawdownPercent: 25m);
 
     /// <summary>A long position, with its stop-loss resting below its entry.</summary>
     public static readonly GuardedPosition Long = new(TradeSide.Long, Quantity: 0.01m, StopLoss: 59500m);
@@ -26,8 +36,9 @@ internal static class GuardCases
     /// <summary>
     /// A plan to open a long position on Spot at the market, which every rule holds for: the
     /// price is 60000, the stop-loss 1000 below it, and the take-profit 2000 above it, which is
-    /// a reward-to-risk ratio of 2. The order is for 0.01, worth 600, and the agent holds
-    /// nothing, has lost nothing, and is checked half a minute after the close.
+    /// a reward-to-risk ratio of 2. It risks 1 percent of an equity of 1000, which is 10, over
+    /// a distance of 1000: so the order comes to 0.01, worth 600. The agent holds nothing, has
+    /// lost nothing, and is checked half a minute after the close.
     /// </summary>
     public static readonly GuardCase OpenLong = new(
         GuardedAction.OpenLong,
@@ -35,11 +46,11 @@ internal static class GuardCases
         EntryPrice: null,
         StopLoss: 59000m,
         TakeProfit: 62000m,
+        RiskFraction: 0.01m,
         CurrentPrice: 60000m,
         SymbolsKnown: true,
         Symbol,
         Limits,
-        new OrderSize(Quantity: 0.01m, Leverage: 1),
         Position: null,
         Equity: 1000m,
         EquityAtDayStart: 1000m,
@@ -50,8 +61,12 @@ internal static class GuardCases
         MarketPermitted: true,
         GlobalHalt: false);
 
-    /// <summary>The same on Futures, with a leverage of 5: the liquidation is 12 times as far from the entry as the stop-loss.</summary>
-    public static readonly GuardCase OpenLongOnFutures = OpenLong with { Market = Market.Futures, Size = new OrderSize(0.01m, Leverage: 5) };
+    /// <summary>
+    /// The same on Futures, risking 2 percent: the order comes to 0.02, worth 1200, which takes
+    /// a leverage of 2 to fit within the equity. The liquidation is 30 times as far from the
+    /// entry as the stop-loss.
+    /// </summary>
+    public static readonly GuardCase OpenLongOnFutures = OpenLong with { Market = Market.Futures, RiskFraction = 0.02m };
 
     /// <summary>A plan to open a short position on Futures at the market: the stop-loss 1000 above the price, and the take-profit 2000 below it.</summary>
     public static readonly GuardCase OpenShort = OpenLongOnFutures with { Action = GuardedAction.OpenShort, StopLoss = 61000m, TakeProfit = 58000m };
@@ -62,7 +77,7 @@ internal static class GuardCases
     /// <summary>A plan to close the long position that the agent holds.</summary>
     public static readonly GuardCase Close = OpenLong with
     {
-        Action = GuardedAction.Close, StopLoss = null, TakeProfit = null, Size = null, Position = Long,
+        Action = GuardedAction.Close, StopLoss = null, TakeProfit = null, RiskFraction = null, Position = Long,
     };
 
     /// <summary>A plan to move the stop-loss of the long position that the agent holds up, which reduces its risk.</summary>

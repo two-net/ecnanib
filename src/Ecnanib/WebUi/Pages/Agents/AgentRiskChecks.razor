@@ -12,7 +12,9 @@
     Guard made of the plans of an agent of the user: for each check the close of the candle that
     its cycle was for, the mode that the agent was in then, what the plan does, the verdict, and
     the outcome of every rule with why it held or did not, in plain language and with the numbers
-    (FR-RSK-9, NFR-USA-2). So a user sees exactly why a plan was accepted or rejected. The page
+    (FR-RSK-9, NFR-USA-2). So a user sees exactly why a plan was accepted or rejected. A check of
+    a plan that opens a position says the size that the system computed for its order as well:
+    its quantity, and on Futures its leverage (FR-RSK-5). The page
     has no form: nothing that is posted at it is taken, and nothing on it switches a rule off
     (FR-RSK-3). An outcome is said as words, and does not rely on a colour. The badge of the mode
     is under the heading, and each check says the mode it was made in (FR-UI-3, FR-BIN-11).
@@ -54,6 +56,12 @@
             <strong class="guard-verdict">@RiskCheckPages.Describe(check.Verdict)</strong>, in <ModeBadge Mode="@check.Mode" />, for the
             candle that closed at @PageTimes.At(check.ClosedAt). @RiskCheckPages.Explain(check)
         </p>
+
+        @* The size that the check computed for the order of a plan that opens a position (FR-RSK-5). *@
+        @if (RiskCheckPages.Sized(check) is { } sized)
+        {
+            <p class="guard-size">@sized</p>
+        }
 
         @* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
         <div class="agents risk-check-rules" role="region" aria-labelledby="@heading" tabindex="0">

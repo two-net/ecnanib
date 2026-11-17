@@ -1106,6 +1106,14 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("cycle_id");
 
+                    b.Property<int?>("Leverage")
+                        .HasColumnType("integer")
+                        .HasColumnName("leverage");
+
+                    b.Property<decimal?>("Quantity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("quantity");
+
                     b.Property<int>("Sequence")
                         .HasColumnType("integer")
                         .HasColumnName("sequence");

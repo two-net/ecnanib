@@ -24,7 +24,7 @@ What starts a cycle, and the data package that it builds, are in [cycles.md](cyc
 | 3 | **The Market Analyst and the Sentiment Analyst are called at the same time.** Neither reads what the other answers. |
 | 4 | **The Strategist is called when both are over,** with both reports. |
 | 5 | **The Risk Manager is called when the Strategist is over,** with its plan, for a plan that opens a position and whose decision is not stale by then. |
-| 6 | **The Risk Guard checks what goes on of the plan,** when the team has decided, and calls no model: see [risk-guard.md](risk-guard.md). It computes no order size yet. |
+| 6 | **The Risk Guard checks what goes on of the plan,** when the team has decided, and calls no model: see [risk-guard.md](risk-guard.md). It computes the size of the order that the plan opens, from the risk fraction that the Risk Manager left it (FR-RSK-5). |
 | 7 | Not built: nothing is placed. See "The outcome of a cycle". |
 | 8 | The cycle is recorded, with the calls of its roles. |
 
@@ -149,7 +149,7 @@ The ranges are fixed, in `RoleRanges`, and are no settings.
 | `riskFraction` of a plan | Above zero, and at most the agent's risk per trade, as a fraction: 0.02 for an agent that risks 2 percent. |
 | `riskFraction` of a review | Above zero, and below the one of the plan. |
 
-- **The risk fraction is a share of the agent's equity** (FR-RSK-5): what is lost if the stop-loss is hit. A plan that asks for more than its agent allows is rejected, and is not cut down to what is allowed. A fraction that was written as a percentage, such as `2`, is rejected in the same way.
+- **The risk fraction is a share of the agent's equity** (FR-RSK-5): what is lost if the stop-loss is hit. A plan that asks for more than its agent allows is rejected, and is not cut down to what is allowed. A fraction that was written as a percentage, such as `2`, is rejected in the same way. The Risk Guard computes the quantity of the order from the fraction, and holds it to the agent's risk per trade once more as it does: see "The size of an order" in [risk-guard.md](risk-guard.md).
 - **The limit is that of the agent of the cycle,** as its prompt stated it: `DataPackage.Agent`, which `ReadPlan` is handed, has the limits.
 
 **A plan has the fields that its action needs, and no others:**
@@ -414,7 +414,7 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 
 ## Not built yet
 
-- The orders (FR-BIN-6), and the size of an order, which the Risk Guard computes (FR-RSK-5). What goes on of a plan is checked, and nothing is placed: see "Not built yet" in [risk-guard.md](risk-guard.md).
+- The orders (FR-BIN-6). What goes on of a plan is checked, the size of its order is computed (FR-RSK-5), and nothing is placed: see "Not built yet" in [risk-guard.md](risk-guard.md).
 - Leaving out the calls of a cycle that can decide nothing: one that is stale as it starts, for an agent that holds no position. Its team is called, and what it plans ends as `Hold` or `Stale`.
 - Recalling lessons for the Strategist and the Risk Manager (FR-EXP-7). Both are given none.
 - Moving an agent to Attention required when a call reports that its model does not exist (FR-CAT-8). The call is recorded as `ModelNotFound`, and the cycle ends as its role says. The catalog marks a model that its provider no longer lists, which moves the agents that run with it: see "When a model goes" in [agents.md](agents.md).

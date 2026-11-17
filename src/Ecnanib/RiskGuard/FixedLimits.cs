@@ -7,7 +7,10 @@ namespace Ecnanib.RiskGuard;
 /// </summary>
 public static class FixedLimits
 {
-    /// <summary>The most that a position on Spot is worth, as a share of the agent's equity in percent (FR-RSK-5).</summary>
+    /// <summary>
+    /// The most that a position on Spot is worth, as a share of the agent's equity in percent
+    /// (FR-RSK-5). The size of an order is held to it as it is computed: see <see cref="OrderSizing"/>.
+    /// </summary>
     public const int SpotPositionPercentOfEquity = 100;
 
     /// <summary>

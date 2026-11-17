@@ -22,6 +22,9 @@ public enum GuardRule
     /// <summary>The quantity of every order is a multiple of the quantity step of the symbol.</summary>
     QuantityStep,
 
+    /// <summary>The quantity of the entry is at least the least quantity of an order in the symbol.</summary>
+    MinimumQuantity,
+
     /// <summary>The value of the entry, its price times its quantity, is at least the least value of an order in the symbol.</summary>
     MinimumValue,
 
@@ -74,8 +77,8 @@ public enum RuleOutcome
 
     /// <summary>
     /// Whether the rule holds is not known: something that it needs was not there, such as a
-    /// price that the exchange did not give, or the size of an order that nothing has computed.
-    /// A plan that opens a position is not accepted on it.
+    /// price that the exchange did not give, or the size of an order that could not be computed
+    /// without one. A plan that opens a position is not accepted on it.
     /// </summary>
     Unknown,
 

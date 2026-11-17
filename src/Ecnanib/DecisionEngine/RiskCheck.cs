@@ -7,8 +7,9 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// One check of the Risk Guard, as a row of the <c>risk_checks</c> table: which cycle it was
-/// made in, what the plan that was checked does, when, and the verdict. The outcome of every
-/// rule hangs on it: see <see cref="RiskCheckRule"/> (FR-RSK-9). See "The record of a check" in
+/// made in, what the plan that was checked does, when, the verdict, and the quantity and the
+/// leverage that the check computed for the order (FR-RSK-5). The outcome of every rule hangs on
+/// it: see <see cref="RiskCheckRule"/> (FR-RSK-9). See "The record of a check" in
 /// docs/risk-guard.md.
 /// </summary>
 /// <remarks>
@@ -30,6 +31,11 @@ namespace Ecnanib.DecisionEngine;
 /// <param name="action">What the plan that was checked does.</param>
 /// <param name="checkedAt">When it was checked: when the facts had been read.</param>
 /// <param name="verdict">Whether the plan goes on to the orders.</param>
+/// <param name="quantity">
+/// The quantity of the order that the plan opens, which the check computed. Zero when the facts
+/// gave no order. Null for a plan that opens nothing, and when no size was computed.
+/// </param>
+/// <param name="leverage">The leverage of that order: 1 on Spot. Null where the quantity is.</param>
 public sealed class RiskCheck(
     Guid id,
     Guid cycleId,
@@ -37,7 +43,9 @@ public sealed class RiskCheck(
     int sequence,
     PlanAction action,
     DateTimeOffset checkedAt,
-    GuardVerdict verdict) : IUserOwned
+    GuardVerdict verdict,
+    decimal? quantity,
+    int? leverage) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -52,6 +60,10 @@ public sealed class RiskCheck(
     public DateTimeOffset CheckedAt { get; } = checkedAt;
 
     public GuardVerdict Verdict { get; } = verdict;
+
+    public decimal? Quantity { get; } = quantity;
+
+    public int? Leverage { get; } = leverage;
 }
 
 /// <summary>
@@ -108,7 +120,10 @@ public sealed record RiskCheckRecord(RiskCheck Check, IReadOnlyList<RiskCheckRul
     {
         ArgumentNullException.ThrowIfNull(result);
 
-        var check = new RiskCheck(Guid.CreateVersion7(), cycleId, userId, sequence, action, checkedAt, result.Verdict);
+        // The size that the check computed is stored with it, as numbers: also of a plan that
+        // was rejected, so that its user sees what the rules were asked of (FR-RSK-5).
+        var check = new RiskCheck(
+            Guid.CreateVersion7(), cycleId, userId, sequence, action, checkedAt, result.Verdict, result.Size?.Quantity, result.Size?.Leverage);
 
         return new RiskCheckRecord(
             check,
@@ -131,6 +146,8 @@ internal sealed class RiskCheckConfiguration : IEntityTypeConfiguration<RiskChec
         builder.Property(check => check.Action);
         builder.Property(check => check.CheckedAt);
         builder.Property(check => check.Verdict);
+        builder.Property(check => check.Quantity);
+        builder.Property(check => check.Leverage);
 
         // The checks of a cycle, in their order. It is also the index of the key below.
         builder.HasIndex(check => new { check.CycleId, check.UserId, check.Sequence }).IsUnique();

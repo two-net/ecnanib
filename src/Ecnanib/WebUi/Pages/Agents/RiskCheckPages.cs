@@ -72,6 +72,45 @@ public static class RiskCheckPages
         };
     }
 
+    /// <summary>
+    /// What the check computed for the order of a plan that opens a position: its quantity, and
+    /// on Futures its leverage (FR-RSK-5). Null for a plan that opens nothing, which has no
+    /// order of its own to size.
+    /// </summary>
+    public static string? Sized(RiskCheckView check)
+    {
+        ArgumentNullException.ThrowIfNull(check);
+
+        if (check.Action is not (PlanAction.OpenLong or PlanAction.OpenShort or PlanAction.Reverse))
+        {
+            return null;
+        }
+
+        if (check.Quantity is not { } quantity || check.Leverage is not { } leverage)
+        {
+            return "No size was computed for the order: something that it follows from was not known.";
+        }
+
+        if (quantity <= 0m)
+        {
+            return "The order came to no quantity, so there is nothing to place: the plan has no stop-loss on the losing side of " +
+                "its entry to measure its risk by, or the risk that was approved buys less than one step of the quantity.";
+        }
+
+        const string Follows = "follows from the risk that was approved, the agent's equity, and the distance from the entry to the stop-loss";
+
+        // Whether the check was made on Futures is told from the check itself: the liquidation
+        // buffer is asked there, and the market of the agent may have been changed since.
+        var onFutures = check.Rules.Any(rule => rule.Rule == GuardRule.LiquidationBuffer && rule.Outcome != RuleOutcome.NotApplied);
+
+        return onFutures
+            ? $"The system computed the size of the order, and no model chose it: a quantity of {AgentPages.Number(quantity)}, at a " +
+                $"leverage of {leverage}. The quantity {Follows}. The leverage is the lowest that fits the margin of the position " +
+                "within the agent's equity, up to the agent's leverage cap."
+            : $"The system computed the size of the order, and no model chose it: a quantity of {AgentPages.Number(quantity)}. " +
+                $"It {Follows}, and the position is worth at most the agent's equity.";
+    }
+
     /// <summary>The outcome of a rule, as words: it never relies on a colour.</summary>
     public static string Describe(RuleOutcome outcome) => outcome switch
     {
@@ -90,6 +129,7 @@ public static class RiskCheckPages
         GuardRule.EntryDistance => "Distance of the entry",
         GuardRule.PriceStep => "Price step",
         GuardRule.QuantityStep => "Quantity step",
+        GuardRule.MinimumQuantity => "Least quantity of an order",
         GuardRule.MinimumValue => "Least value of an order",
         GuardRule.HeldPosition => "Open position",
         GuardRule.ProtectionTightens => "Protection only tightens",
@@ -159,10 +199,21 @@ public static class RiskCheckPages
 
             (GuardRule.QuantityStep, RuleOutcome.Passed) when !hasThreshold => "The symbol has no quantity step.",
             (GuardRule.QuantityStep, RuleOutcome.Passed) => $"The quantity is a multiple of the quantity step of the symbol, {threshold}.",
-            (GuardRule.QuantityStep, RuleOutcome.Failed) when !hasThreshold => $"The quantity {measured} is no quantity of an order.",
+            (GuardRule.QuantityStep, RuleOutcome.Failed) when !hasThreshold || result.Measured is <= 0m =>
+                $"The quantity {measured} is no quantity of an order.",
             (GuardRule.QuantityStep, RuleOutcome.Failed) => $"The quantity {measured} is not a multiple of the quantity step of the symbol, {threshold}.",
             (GuardRule.QuantityStep, _) when !hasThreshold => "The exchange did not say the rules of the symbol.",
             (GuardRule.QuantityStep, _) => "The quantity of the order is not known.",
+
+            (GuardRule.MinimumQuantity, RuleOutcome.Passed) when result.Threshold is not > 0m =>
+                $"The order is for {measured}. The symbol has no least quantity of an order.",
+            (GuardRule.MinimumQuantity, RuleOutcome.Passed) =>
+                $"The order is for {measured}. The least quantity of an order in the symbol is {threshold}.",
+            (GuardRule.MinimumQuantity, RuleOutcome.Failed) when !hasMeasure => "The order came to no quantity above zero.",
+            (GuardRule.MinimumQuantity, RuleOutcome.Failed) =>
+                $"The order is for {measured}, which is less than the least quantity of an order in the symbol, {threshold}.",
+            (GuardRule.MinimumQuantity, _) when !hasThreshold => "The exchange did not say the rules of the symbol.",
+            (GuardRule.MinimumQuantity, _) => "The quantity of the order is not known.",
 
             (GuardRule.MinimumValue, RuleOutcome.Passed) => $"The entry is worth {measured}. The least value of an order in the symbol is {threshold}.",
             (GuardRule.MinimumValue, RuleOutcome.Failed) when !hasMeasure => "The entry has no price or no quantity that makes sense.",
@@ -220,7 +271,7 @@ public static class RiskCheckPages
             (GuardRule.LiquidationBuffer, RuleOutcome.Passed) =>
                 $"The estimated liquidation price is {measured} times as far from the entry as the stop-loss. The agent asks for at least {threshold}.",
             (GuardRule.LiquidationBuffer, RuleOutcome.Failed) when !hasMeasure =>
-                "The plan has no stop-loss on the correct side of its entry, or no leverage that makes sense.",
+                "The plan has no stop-loss on the correct side of its entry, or its entry price is no price.",
             (GuardRule.LiquidationBuffer, RuleOutcome.Failed) =>
                 $"The estimated liquidation price is only {measured} times as far from the entry as the stop-loss. The agent asks for at least {threshold}.",
             (GuardRule.LiquidationBuffer, _) => "The leverage of the order is not known, or its entry is not.",

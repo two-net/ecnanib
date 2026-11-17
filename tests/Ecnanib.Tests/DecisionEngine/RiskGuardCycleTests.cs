@@ -12,7 +12,8 @@ namespace Ecnanib.Tests.DecisionEngine;
 /// nor a user action can bypass it for a trade (FR-RSK-3). These run cycles as the application
 /// runs them, and hold what goes on of each plan to the fixed rules, with the facts as they are
 /// when the plan is checked (FR-RSK-4), and to the outcome of every rule in the record of the
-/// cycle (FR-RSK-9). See docs/risk-guard.md.
+/// cycle (FR-RSK-9), with the quantity and the leverage that the check computed for the order
+/// (FR-RSK-5). See docs/risk-guard.md.
 /// </summary>
 public class RiskGuardCycleTests
 {
@@ -28,8 +29,8 @@ public class RiskGuardCycleTests
     /// <summary>A plan to reverse a long position, which opens a short one.</summary>
     private static readonly string Reverse = TeamAnswers.Plan("reverse", stopLoss: 61000m, takeProfit: 56000m);
 
-    /// <summary>The rules that need the size of an order, which nothing computes yet (FR-RSK-5).</summary>
-    private static readonly GuardRule[] NeedASize = [GuardRule.QuantityStep, GuardRule.MinimumValue];
+    /// <summary>The rules of a quantity, which are asked of the size that the check computed for the order (FR-RSK-5).</summary>
+    private static readonly GuardRule[] OfAQuantity = [GuardRule.QuantityStep, GuardRule.MinimumQuantity, GuardRule.MinimumValue];
 
     public static TheoryData<string, string, string?, bool, Market, CycleOutcome, PlanAction[]> WhatGoesOn => new()
     {
@@ -134,35 +135,75 @@ public class RiskGuardCycleTests
         Assert.Equal(Role.RiskManager, models.Roles[^1]);
     }
 
+    /// <summary>
+    /// Plans that every rule holds for, each with what the Risk Guard computes for its order. The
+    /// agent has an equity of 1000, risks 1.5 percent a trade at most, and has a leverage cap of
+    /// 4. The price is 60000, and the quantity step 0.001.
+    /// </summary>
+    public static TheoryData<string, string, string?, Market, decimal, int> WhatAnOrderComesTo => new()
+    {
+        // 1 percent of 1000 is 10, over the 1000 to the stop-loss.
+        { "a plan on Spot", TeamAnswers.Plan(), null, Market.Spot, 0.01m, 1 },
+
+        // The Risk Manager left it 0.4 percent: the size follows from the fraction that was approved.
+        { "a plan that the Risk Manager reduced", TeamAnswers.Plan(), TeamAnswers.Review("reduce", 0.004m), Market.Spot, 0.004m, 1 },
+
+        // A stop-loss 200 below: 0.05 would be worth 3000. On Spot the position is worth at
+        // most the equity, which buys 0.016.
+        { "a plan on Spot whose position would be worth three times the equity", TeamAnswers.Plan(stopLoss: 59800m), null, Market.Spot, 0.016m, 1 },
+
+        // On Futures, 0.01 is worth 600, whose margin fits within the equity with no leverage,
+        // and 0.05 is worth 3000, which takes 3.
+        { "a plan on Futures", TeamAnswers.Plan(), null, Market.Futures, 0.01m, 1 },
+        { "a plan on Futures whose position is worth three times the equity", TeamAnswers.Plan(stopLoss: 59800m), null, Market.Futures, 0.05m, 3 },
+
+        // A stop-loss 100 below: 0.1 would be worth 6000, which takes 6. The cap is 4, and 4000 buys 0.066.
+        { "a plan on Futures that would take more than the leverage cap", TeamAnswers.Plan(stopLoss: 59900m), null, Market.Futures, 0.066m, 4 },
+        { "a plan to open short", OpenShort, null, Market.Futures, 0.01m, 1 },
+        {
+            "a plan to open short that would take more than the leverage cap",
+            TeamAnswers.Plan("open_short", stopLoss: 60100m, takeProfit: 56000m), null, Market.Futures, 0.066m, 4
+        },
+    };
+
     [Theory]
-    [InlineData("open_long", Market.Spot)]
-    [InlineData("open_long", Market.Futures)]
-    [InlineData("open_short", Market.Futures)]
-    public async Task A_plan_to_open_a_position_is_rejected_while_nothing_computes_the_size_of_its_order(string action, Market market)
+    [MemberData(nameof(WhatAnOrderComesTo))]
+    public async Task A_plan_to_open_a_position_is_accepted_when_every_rule_holds_and_the_size_of_its_order_is_stored(
+        string what, string plan, string? review, Market market, decimal quantity, int leverage)
     {
         using var cycles = new CyclesApplication(Quarter, buildsPackages: true);
         var agent = cycles.Agents!.Give(Guid.NewGuid(), market: market);
 
-        cycles.Models.Says(Role.Strategist, action == "open_short" ? OpenShort : TeamAnswers.Plan());
+        cycles.Models.Says(Role.Strategist, plan);
+
+        if (review is not null)
+        {
+            cycles.Models.Says(Role.RiskManager, review);
+        }
 
         await cycles.RunAsync(Quarter).Within();
 
         var record = cycles.Records.Of(agent);
         var check = record.Check;
 
-        // The team decided, and its decision stands in the record. The Risk Guard rejected the plan.
-        Assert.Equal(CycleOutcome.Approved, record.Cycle.Outcome);
-        Assert.Equal((1, GuardVerdict.Rejected), (check.Check.Sequence, check.Check.Verdict));
-        Assert.Equal(Quarter, check.Check.CheckedAt);
+        // The team decided, and its decision stands in the record. The Risk Guard accepted the plan.
+        Assert.Equal(review is null ? CycleOutcome.Approved : CycleOutcome.Reduced, record.Cycle.Outcome);
+        Assert.True(check.Check.Verdict == GuardVerdict.Accepted, $"The Risk Guard rejected {what}.");
+        Assert.Equal((1, Quarter), (check.Check.Sequence, check.Check.CheckedAt));
 
-        // The rules that need the size of the order are not known to hold, and on Futures the
-        // one that needs its leverage. Every other rule that the plan is held to holds.
-        GuardRule[] unknown = market == Market.Futures ? [.. NeedASize, GuardRule.LiquidationBuffer] : NeedASize;
+        // The system computed the quantity and the leverage of the order, from the risk
+        // fraction that was approved, the agent's equity, and the distance to the stop-loss
+        // (FR-RSK-5), and both are stored with the check. No model named either.
+        Assert.True(
+            (check.Check.Quantity, check.Check.Leverage) == (quantity, leverage),
+            $"The order of {what} came to {check.Check.Quantity} at {check.Check.Leverage}, and not to {quantity} at {leverage}.");
+
+        // Every rule that the plan is held to holds: none failed, and none is not known.
         GuardRule[] notAsked = market == Market.Futures
             ? [GuardRule.ProtectionTightens]
             : [GuardRule.ProtectionTightens, GuardRule.LiquidationBuffer];
 
-        Assert.Equal(unknown, RulesThat(check, RuleOutcome.Unknown));
+        Assert.Empty(RulesThat(check, RuleOutcome.Unknown));
         Assert.Equal(notAsked, RulesThat(check, RuleOutcome.NotApplied));
         Assert.Empty(RulesThat(check, RuleOutcome.Failed));
 
@@ -174,21 +215,24 @@ public class RiskGuardCycleTests
                 .Where(rule => rule.Rule is GuardRule.RewardToRisk or GuardRule.EntryDistance or GuardRule.DailyLossLimit or GuardRule.DrawdownLimit or GuardRule.NotStale)
                 .Select(rule => (rule.Rule, rule.Threshold!.Value)));
 
-        // A rejection is a decision, and no failure: it is said once, with the rules that
-        // stand in the way, and with no price and no number of the plan.
-        var rejected = Assert.Single(cycles.Written(PlanChecksLog.Area));
+        // It is said once, with no price, and with neither the quantity nor the leverage.
+        var accepted = Assert.Single(cycles.Written(PlanChecksLog.Area));
 
-        Assert.Equal((PlanChecksLog.Rejected, "Information", agent.ToString()), (rejected.Template, rejected.Level, rejected.Text("AgentId")));
-        Assert.Equal(string.Join(", ", unknown.Select(rule => $"{rule}: Unknown")), rejected.Text("GuardRules"));
-        Assert.True(rejected.Has("CycleId"));
+        Assert.Equal((PlanChecksLog.Accepted, "Information", agent.ToString()), (accepted.Template, accepted.Level, accepted.Text("AgentId")));
+        Assert.True(accepted.Has("CycleId"));
+        Assert.False(accepted.Has("Quantity") || accepted.Has("Leverage") || accepted.Has("GuardRules"));
         Assert.Equal((1, 0), (cycles.SummaryOf(Quarter)["Ended"].GetInt32(), cycles.SummaryOf(Quarter)["Failed"].GetInt32()));
     }
 
     [Theory]
     [InlineData("an entry too far from the current price", new[] { GuardRule.EntryDistance })]
     [InlineData("a reward-to-risk ratio below the minimum", new[] { GuardRule.RewardToRisk })]
-    [InlineData("a stop-loss on the wrong side of the entry", new[] { GuardRule.StopLossSide, GuardRule.RewardToRisk })]
+    [InlineData(
+        "a stop-loss on the wrong side of the entry",
+        new[] { GuardRule.StopLossSide, GuardRule.RewardToRisk, GuardRule.QuantityStep, GuardRule.MinimumQuantity, GuardRule.MinimumValue })]
     [InlineData("a price off the price step", new[] { GuardRule.PriceStep })]
+    [InlineData("an equity that buys less than one step of the quantity", new[] { GuardRule.QuantityStep, GuardRule.MinimumQuantity, GuardRule.MinimumValue })]
+    [InlineData("an order of less than the least quantity", new[] { GuardRule.MinimumQuantity })]
     [InlineData("a position that opened meanwhile", new[] { GuardRule.HeldPosition })]
     [InlineData("a loss of the day at the limit", new[] { GuardRule.DailyLossLimit })]
     [InlineData("a drawdown at the limit", new[] { GuardRule.DrawdownLimit })]
@@ -223,12 +267,25 @@ public class RiskGuardCycleTests
                 break;
 
             case "a stop-loss on the wrong side of the entry":
-                // A long that enters at the market, at 60000, with its stop-loss above that.
+                // A long that enters at the market, at 60000, with its stop-loss above that. It
+                // has no risk to size an order by, so its order comes to no quantity.
                 plan = TeamAnswers.Plan(stopLoss: 60500m);
                 break;
 
             case "a price off the price step":
                 market.Symbols = _ => [StandInMarket.Listed("BTCUSDT", priceStep: 7m)];
+                break;
+
+            case "an equity that buys less than one step of the quantity":
+                // 1 percent of 50 is 0.5, over the 1000 to the stop-loss: 0.0005, on a step of
+                // 0.001. A quantity is rounded down, and never up.
+                market.AsThePriceIsRead = () => holdings.Holds = holdings.Holds with { Equity = 50m, EquityAtDayStart = 50m, PeakEquity = 50m };
+                break;
+
+            case "an order of less than the least quantity":
+                // The order comes to 0.01, and the exchange takes 0.05 at least: it is not
+                // raised to that, which would risk more than was approved.
+                market.Symbols = _ => [StandInMarket.Listed("BTCUSDT") with { MinQuantity = 0.05m }];
                 break;
 
             case "a position that opened meanwhile":
@@ -290,6 +347,12 @@ public class RiskGuardCycleTests
         Assert.Empty(cycles.Written(TeamLog.Area, TeamLog.Stale));
         Assert.True(check.Check.Verdict == GuardVerdict.Rejected, $"A plan with {what} was accepted.");
         Assert.Equal(broken, RulesThat(check, RuleOutcome.Failed));
+
+        // Exactly those reject it: every other rule is known to hold, the rules of a quantity
+        // among them. A symbol that the market does not have has no rules to size an order by.
+        Assert.Equal(
+            what == "a symbol that the market does not have" ? [GuardRule.PriceStep, .. OfAQuantity] : [],
+            RulesThat(check, RuleOutcome.Unknown));
 
         // It is said once, and names each rule that failed.
         var rejected = Assert.Single(cycles.Written(PlanChecksLog.Area, PlanChecksLog.Rejected));
@@ -398,13 +461,10 @@ public class RiskGuardCycleTests
         Assert.Equal([broken], RulesThat(record.Check, RuleOutcome.Failed));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Of_a_reverse_that_the_Risk_Guard_rejects_the_close_alone_is_checked_and_goes_on(bool halted)
+    [Fact]
+    public async Task A_reverse_that_every_rule_holds_for_is_accepted_whole_and_its_close_is_not_checked_apart()
     {
-        using var cycles = new CyclesApplication(
-            Quarter, buildsPackages: true, holdings: PlanAgents.Holding(PlanAgents.Long), halt: new StandInHalt(halted));
+        using var cycles = new CyclesApplication(Quarter, buildsPackages: true, holdings: PlanAgents.Holding(PlanAgents.Long));
         var agent = cycles.Agents!.Give(Guid.NewGuid(), market: Market.Futures);
 
         cycles.Models.Says(Role.Strategist, Reverse);
@@ -412,9 +472,51 @@ public class RiskGuardCycleTests
         await cycles.RunAsync(Quarter).Within();
 
         var record = cycles.Records.Of(agent);
+        var check = Assert.Single(record.Checks);
 
-        // The Risk Manager approved the reverse. What it opens is rejected, as every plan that
-        // opens a position is while its order has no size, and with a halt for that as well.
+        // One check, of the reverse: it closes the long, and opens a short of 0.01, which is
+        // 1 percent of 1000 over the 1000 up to its stop-loss.
+        Assert.Equal(CycleOutcome.Approved, record.Cycle.Outcome);
+        Assert.Equal((1, PlanAction.Reverse, GuardVerdict.Accepted), (check.Check.Sequence, check.Check.Action, check.Check.Verdict));
+        Assert.Equal((0.01m, 1), (check.Check.Quantity, check.Check.Leverage));
+        Assert.Equal([GuardRule.ProtectionTightens], RulesThat(check, RuleOutcome.NotApplied));
+        Assert.Empty(RulesThat(check, RuleOutcome.Failed));
+        Assert.Empty(RulesThat(check, RuleOutcome.Unknown));
+
+        var accepted = Assert.Single(cycles.Written(PlanChecksLog.Area));
+
+        Assert.Equal((PlanChecksLog.Accepted, "Reverse"), (accepted.Template, accepted.Text("PlanAction")));
+    }
+
+    [Theory]
+    [InlineData("a global halt", GuardRule.NoGlobalHalt)]
+    [InlineData("a decision that is stale by now", GuardRule.NotStale)]
+    [InlineData("a reward-to-risk ratio below the minimum", GuardRule.RewardToRisk)]
+    public async Task Of_a_reverse_that_the_Risk_Guard_rejects_the_close_alone_is_checked_and_goes_on(string what, GuardRule broken)
+    {
+        using var cycles = new CyclesApplication(
+            Quarter, buildsPackages: true, holdings: PlanAgents.Holding(PlanAgents.Long), halt: new StandInHalt(what == "a global halt"));
+        var agent = cycles.Agents!.Give(Guid.NewGuid(), market: Market.Futures);
+
+        if (what == "a decision that is stale by now")
+        {
+            // In time when the Risk Manager answered, and one second past the limit of 100
+            // seconds when the facts have been read.
+            cycles.Market!.AsThePriceIsRead = () => cycles.Clock.Set(Quarter.AddSeconds(101));
+        }
+
+        // 1500 of reward against 1000 of risk, where the agent asks for 1.75. Or the plan that
+        // every rule would hold for.
+        cycles.Models.Says(
+            Role.Strategist,
+            what == "a reward-to-risk ratio below the minimum" ? TeamAnswers.Plan("reverse", stopLoss: 61000m, takeProfit: 58500m) : Reverse);
+
+        await cycles.RunAsync(Quarter).Within();
+
+        var record = cycles.Records.Of(agent);
+
+        // The Risk Manager approved the reverse. What it opens is rejected, for the one rule
+        // that does not hold.
         Assert.Equal(CycleOutcome.Approved, record.Cycle.Outcome);
         Assert.Equal(
             [(1, PlanAction.Reverse, GuardVerdict.Rejected), (2, PlanAction.Close, GuardVerdict.Accepted)],
@@ -422,16 +524,22 @@ public class RiskGuardCycleTests
 
         var reverse = record.Checks[0];
 
-        Assert.Equal([.. NeedASize, GuardRule.LiquidationBuffer], RulesThat(reverse, RuleOutcome.Unknown));
-        Assert.Equal(halted ? [GuardRule.NoGlobalHalt] : [], RulesThat(reverse, RuleOutcome.Failed));
+        Assert.Equal([broken], RulesThat(reverse, RuleOutcome.Failed));
+        Assert.Empty(RulesThat(reverse, RuleOutcome.Unknown));
+
+        // The size that was computed for what the reverse would open is stored with its check,
+        // also though it was rejected.
+        Assert.Equal((0.01m, 1), (reverse.Check.Quantity, reverse.Check.Leverage));
 
         // The close reduces risk: it is checked as a plan to close is, on the same facts, and
-        // goes on. Open positions are still managed while a halt is on (FR-OPS-3).
+        // goes on. Open positions are still managed while a halt is on (FR-OPS-3). It has no
+        // order of its own to size.
         var close = record.Checks[1];
 
         Assert.Equal([GuardRule.PriceStep, GuardRule.QuantityStep, GuardRule.HeldPosition], RulesThat(close, RuleOutcome.Passed));
-        Assert.Equal(13, RulesThat(close, RuleOutcome.NotApplied).Count);
+        Assert.Equal(14, RulesThat(close, RuleOutcome.NotApplied).Count);
         Assert.Equal(reverse.Check.CheckedAt, close.Check.CheckedAt);
+        Assert.Equal((null, null), (close.Check.Quantity, close.Check.Leverage));
 
         // The facts were read once for both, and no model was called for either.
         Assert.Equal((1, 1), (cycles.Market!.AskedPrices, cycles.Market.AskedSymbols));
@@ -463,6 +571,9 @@ public class RiskGuardCycleTests
             [(PlanAction.Reverse, GuardVerdict.Rejected), (PlanAction.Close, GuardVerdict.Rejected)],
             record.Checks.Select(check => (check.Check.Action, check.Check.Verdict)));
         Assert.All(record.Checks, check => Assert.Equal([GuardRule.HeldPosition], RulesThat(check, RuleOutcome.Failed)));
+
+        // With no position to reverse, no side is opened: no order is sized.
+        Assert.All(record.Checks, check => Assert.Equal((null, null), (check.Check.Quantity, check.Check.Leverage)));
     }
 
     [Fact]
@@ -501,10 +612,14 @@ public class RiskGuardCycleTests
                     ?
                     [
                         GuardRule.StopLossSide, GuardRule.RewardToRisk, GuardRule.EntryDistance, GuardRule.PriceStep,
-                        GuardRule.QuantityStep, GuardRule.MinimumValue, GuardRule.SymbolPermitted,
+                        .. OfAQuantity, GuardRule.SymbolPermitted,
                     ]
                     : [GuardRule.QuantityStep],
                 RulesThat(check, RuleOutcome.Unknown));
+
+            // No order is sized without the price and the rules of the symbol: the size is not
+            // known, and is no size of zero.
+            Assert.Equal((null, null), (check.Check.Quantity, check.Check.Leverage));
 
             // Each read that gave nothing is a warning, with how it ended.
             Assert.Equal(

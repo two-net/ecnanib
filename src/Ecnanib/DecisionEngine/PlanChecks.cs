@@ -10,7 +10,8 @@ namespace Ecnanib.DecisionEngine;
 /// Has the Risk Guard check what goes on of the plan of a cycle, after the Risk Manager and
 /// before any order (FR-RSK-3; SRS 3.2, step 6): it gathers the facts that the rules are asked
 /// of, asks <see cref="GuardCheck"/>, and keeps the outcome of every rule for the record of the
-/// cycle (FR-RSK-9). See docs/risk-guard.md.
+/// cycle (FR-RSK-9), with the size that the check computed for the order (FR-RSK-5). See
+/// docs/risk-guard.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,6 +21,11 @@ namespace Ecnanib.DecisionEngine;
 /// holds now, whether the Binance key of its user lets it trade on its market, whether a global
 /// halt is on, and how long ago the candle closed. No fact comes from what a model answered but
 /// the plan itself, which was validated.
+/// </para>
+/// <para>
+/// <b>It says no size.</b> The Risk Guard computes the quantity and the leverage of the order
+/// from the risk fraction of the plan and from the facts, as it checks the plan, and its result
+/// says them: a case has no place for either.
 /// </para>
 /// <para>
 /// <b>It calls no model,</b> and places nothing: the orders are not built. What it reads of the
@@ -150,7 +156,10 @@ internal sealed class PlanChecks(
         return new Facts(
             price.Price,
             known,
-            known && symbol is not null ? new SymbolRules(symbol.Trading, symbol.PriceStep, symbol.QuantityStep, symbol.MinValue) : null,
+            known && symbol is not null
+                ? new SymbolRules(
+                    symbol.Trading, symbol.PriceStep, symbol.QuantityStep, symbol.MinQuantity, symbol.MaxQuantity, symbol.MinValue)
+                : null,
             await holding,
             await blocking,
             await halting,
@@ -201,6 +210,10 @@ internal sealed class PlanChecks(
             plan.EntryPrice,
             plan.StopLoss,
             plan.TakeProfit,
+
+            // The risk fraction as the Risk Manager left it: the Risk Guard computes the size
+            // of the order from it, and no model names a quantity or a leverage (FR-RSK-5).
+            plan.RiskFraction,
             facts.Price,
             facts.SymbolsKnown,
             facts.Symbol,
@@ -208,16 +221,13 @@ internal sealed class PlanChecks(
             // The settings of the agent as they were stored when the turn of the cycle came: a
             // change applies from the agent's next cycle (FR-AGT-8).
             new GuardLimits(
+                agent.RiskPerTradePercent,
                 agent.MinRewardToRisk,
                 agent.MaxEntryDistancePercent,
+                agent.LeverageCap,
                 agent.LiquidationBuffer,
                 agent.DailyLossPercent,
                 agent.DrawdownPercent),
-
-            // Nothing computes the size of an order yet (FR-RSK-5). A plan that opens a position
-            // has none, so the rules that need one are not known to hold, and the plan is
-            // rejected: see "Not built yet" in docs/risk-guard.md.
-            Size: null,
             facts.Holds.Position is { } held
                 ? new GuardedPosition(held.Side == PositionSide.Long ? TradeSide.Long : TradeSide.Short, held.Quantity, held.StopLoss)
                 : null,

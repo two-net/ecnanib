@@ -11,9 +11,9 @@ namespace Ecnanib.Tests.RiskGuard;
 /// <summary>
 /// The Risk Guard is a set of fixed rules applied after the Risk Manager and before any order.
 /// Neither AI output nor a user action can bypass it for a trade (FR-RSK-3). These hold the code
-/// to it: who makes a result of the Risk Guard, who gathers the facts that it is asked with,
-/// that it calls no model, and that it has no switch. See "What cannot bypass it" in
-/// docs/risk-guard.md.
+/// to it: who makes a result of the Risk Guard, who gathers the facts that it is asked with, who
+/// computes the size of an order (FR-RSK-5), that it calls no model, and that it has no switch.
+/// See "What cannot bypass it" in docs/risk-guard.md.
 /// </summary>
 public class RiskGuardRulesTests(EcnanibApplicationFactory application) : IClassFixture<EcnanibApplicationFactory>
 {
@@ -71,6 +71,36 @@ public class RiskGuardRulesTests(EcnanibApplicationFactory application) : IClass
     }
 
     [Fact]
+    public void Only_the_Risk_Guard_computes_the_size_of_an_order()
+    {
+        // Models do not choose quantity or leverage, and neither does anything else: the size
+        // of an order is made where the Risk Guard computes it, as a plan is checked (FR-RSK-5).
+        const string Sizing = "Ecnanib.RiskGuard.OrderSizing";
+
+        var makers = DependencyChecker.FindCallersOf(Application, $"{typeof(OrderSize).FullName}::.ctor")
+            .Where(maker => maker != typeof(OrderSize).FullName)
+            .ToList();
+
+        // The rule finds what computes a size, so it would find another that makes one.
+        Assert.Contains(makers, maker => maker.StartsWith(Sizing, StringComparison.Ordinal));
+
+        var others = makers.Where(maker => !maker.StartsWith(Sizing, StringComparison.Ordinal)).ToList();
+
+        Assert.True(
+            others.Count == 0,
+            $"These make an {nameof(OrderSize)}, and are not what computes one: {string.Join(", ", others)}. The quantity and " +
+            "the leverage of an order are computed by the Risk Guard, from the risk fraction of the plan, the agent's equity, " +
+            "and the distance to the stop-loss (FR-RSK-5). See docs/risk-guard.md.");
+
+        // And nothing hands a check a size: a case has no place for one, so a result says the
+        // size that its check computed.
+        Assert.DoesNotContain(
+            typeof(GuardCase).GetProperties(BindingFlags.Public | BindingFlags.Instance),
+            property => property.PropertyType == typeof(OrderSize));
+        Assert.Equal(typeof(OrderSize), typeof(GuardResult).GetProperty(nameof(GuardResult.Size))!.PropertyType);
+    }
+
+    [Fact]
     public void A_check_has_no_place_for_a_switch()
     {
         // What a check is asked with: the plan, and facts. Pinned, so that a place that is
@@ -79,8 +109,8 @@ public class RiskGuardRulesTests(EcnanibApplicationFactory application) : IClass
         Assert.Equal(
             [
                 "Action", "CurrentPrice", "EntryPrice", "Equity", "EquityAtDayStart", "GlobalHalt", "Limits", "Market",
-                "MarketPermitted", "ModePermitted", "OpensPosition", "PeakEquity", "Position", "SinceClose", "Size", "StaleLimit",
-                "StopLoss", "Symbol", "SymbolsKnown", "TakeProfit",
+                "MarketPermitted", "ModePermitted", "OpensPosition", "PeakEquity", "Position", "RiskFraction", "SinceClose",
+                "StaleLimit", "StopLoss", "Symbol", "SymbolsKnown", "TakeProfit",
             ],
             typeof(GuardCase).GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Select(property => property.Name)
@@ -203,7 +233,7 @@ public class RiskGuardRulesTests(EcnanibApplicationFactory application) : IClass
             unguarded.Count == 0,
             $"These place orders, and take no {nameof(GuardResult)}: {string.Join(", ", unguarded)}. An order is made from what " +
             $"the Risk Guard accepted: take the {nameof(GuardResult)} that {nameof(GuardResult.IsAccepted)} where the order " +
-            "is made, and make the order from its case (FR-RSK-3, NFR-SEC-6). See docs/risk-guard.md.");
+            "is made, and make the order from its case and its size (FR-RSK-3, FR-RSK-5, NFR-SEC-6). See docs/risk-guard.md.");
 
         static bool IsOf(Type type, string area) =>
             type.Namespace is { } name && (name == area || name.StartsWith($"{area}.", StringComparison.Ordinal));

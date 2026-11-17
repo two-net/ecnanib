@@ -15,6 +15,11 @@ namespace Ecnanib.Tests.RiskGuard;
 /// from entry than the stop-loss by at least the liquidation buffer factor (FR-RSK-6). See "The
 /// rules" in docs/risk-guard.md.
 /// </summary>
+/// <remarks>
+/// The rules of a quantity and the liquidation buffer are asked of the size that the check
+/// computes (FR-RSK-5), which no test hands it: a test changes a fact that the size follows
+/// from. <see cref="OrderSizeTests"/> shows the sizes themselves.
+/// </remarks>
 public class GuardCheckTests
 {
     private static readonly GuardRule[] EveryRule = Enum.GetValues<GuardRule>();
@@ -40,8 +45,12 @@ public class GuardCheckTests
             Assert.All(result.Rules, rule => Assert.Equal(
                 notAsked.Contains(rule.Rule) ? RuleOutcome.NotApplied : RuleOutcome.Passed, rule.Outcome));
 
-            // What was checked is in the result: an order is made from that, and nothing else.
+            // What was checked is in the result, with the size that the check computed for the
+            // order: an order is made from those, and nothing else.
             Assert.Same(opens, result.Case);
+            Assert.NotNull(result.Size);
+            Assert.True(result.Size.Quantity > 0m);
+            Assert.Equal(opens.Market == Market.Spot ? 1 : 2, result.Size.Leverage);
         });
     }
 
@@ -54,7 +63,7 @@ public class GuardCheckTests
             .. GuardCases.ThatReduceRisk,
 
             // A plan that many rules reject at once: none is skipped after the first that failed.
-            GuardCases.OpenLong with { StopLoss = null, GlobalHalt = true, ModePermitted = false, Size = null },
+            GuardCases.OpenLong with { StopLoss = null, GlobalHalt = true, ModePermitted = false },
         ];
 
         Assert.All(checkedCases, checkedCase =>
@@ -64,24 +73,36 @@ public class GuardCheckTests
         // review as what it is.
         Assert.Equal(
             [
-                "StopLossSide", "RewardToRisk", "EntryDistance", "PriceStep", "QuantityStep", "MinimumValue", "HeldPosition",
-                "ProtectionTightens", "DailyLossLimit", "DrawdownLimit", "NotStale", "ModePermitted", "MarketPermitted",
-                "SymbolPermitted", "NoGlobalHalt", "LiquidationBuffer",
+                "StopLossSide", "RewardToRisk", "EntryDistance", "PriceStep", "QuantityStep", "MinimumQuantity", "MinimumValue",
+                "HeldPosition", "ProtectionTightens", "DailyLossLimit", "DrawdownLimit", "NotStale", "ModePermitted",
+                "MarketPermitted", "SymbolPermitted", "NoGlobalHalt", "LiquidationBuffer",
             ],
             Enum.GetNames<GuardRule>());
     }
 
+    /// <summary>The rules of a quantity, which an order of no quantity does not keep.</summary>
+    private static readonly GuardRule[] OfAQuantity = [GuardRule.QuantityStep, GuardRule.MinimumQuantity, GuardRule.MinimumValue];
+
     public static TheoryData<string, GuardCase, GuardRule[]> WhatARuleRejects => new()
     {
         // A stop-loss is present and on the correct side of entry. A plan with no stop-loss on
-        // the correct side has no risk to measure its reward against either.
-        { "no stop-loss", GuardCases.OpenLong with { StopLoss = null }, [GuardRule.StopLossSide, GuardRule.RewardToRisk] },
-        { "a stop-loss above the entry of a long", GuardCases.OpenLong with { StopLoss = 60500m }, [GuardRule.StopLossSide, GuardRule.RewardToRisk] },
-        { "a stop-loss at the entry", GuardCases.OpenLong with { StopLoss = 60000m }, [GuardRule.StopLossSide, GuardRule.RewardToRisk] },
+        // the correct side has no risk to measure its reward against either, and none to size
+        // an order by: its order comes to no quantity.
+        { "no stop-loss", GuardCases.OpenLong with { StopLoss = null }, [GuardRule.StopLossSide, GuardRule.RewardToRisk, .. OfAQuantity] },
+        {
+            "a stop-loss above the entry of a long",
+            GuardCases.OpenLong with { StopLoss = 60500m },
+            [GuardRule.StopLossSide, GuardRule.RewardToRisk, .. OfAQuantity]
+        },
+        {
+            "a stop-loss at the entry",
+            GuardCases.OpenLong with { StopLoss = 60000m },
+            [GuardRule.StopLossSide, GuardRule.RewardToRisk, .. OfAQuantity]
+        },
         {
             "a stop-loss below the entry of a short",
             GuardCases.OpenShort with { StopLoss = 59500m },
-            [GuardRule.StopLossSide, GuardRule.RewardToRisk, GuardRule.LiquidationBuffer]
+            [GuardRule.StopLossSide, GuardRule.RewardToRisk, .. OfAQuantity, GuardRule.LiquidationBuffer]
         },
 
         // The reward-to-risk ratio meets the minimum, which is 1.5: 1400 against 1000 is 1.4.
@@ -111,7 +132,18 @@ public class GuardCheckTests
             GuardCases.OpenLong with { EntryPrice = 60000.07m },
             [GuardRule.PriceStep]
         },
-        { "a quantity off the quantity step", GuardCases.OpenLong with { Size = new OrderSize(0.0105m, 1) }, [GuardRule.QuantityStep] },
+        // The quantity of an entry is computed onto the quantity step, so it is never off it.
+        // A risk that buys less than one step comes to no quantity: 0.01 on a step of 0.1.
+        {
+            "a risk that buys less than one step of the quantity",
+            GuardCases.OpenLong with { Symbol = GuardCases.Symbol with { QuantityStep = 0.1m } },
+            OfAQuantity
+        },
+        {
+            "an entry of less than the least quantity",
+            GuardCases.OpenLong with { Symbol = GuardCases.Symbol with { MinQuantity = 0.011m } },
+            [GuardRule.MinimumQuantity]
+        },
         {
             "an entry worth less than the least value",
             GuardCases.OpenLong with { Symbol = GuardCases.Symbol with { MinValue = 600.01m } },
@@ -158,15 +190,16 @@ public class GuardCheckTests
         { "a global halt, for a reverse", GuardCases.Reverse with { GlobalHalt = true }, [GuardRule.NoGlobalHalt] },
 
         // On Futures, the liquidation is further from the entry than the stop-loss by the
-        // buffer, which is 2: at 40 times leverage it is 1500 away, and the stop-loss 1000.
+        // buffer. At the leverage of 2 that the order takes it is 30000 away, and the stop-loss
+        // 1000: 30 times as far, which is less than an agent that asks for 40 allows.
         {
             "a liquidation price too near the stop-loss",
-            GuardCases.OpenLongOnFutures with { Size = new OrderSize(0.01m, Leverage: 40) },
+            GuardCases.OpenLongOnFutures with { Limits = GuardCases.Limits with { LiquidationBuffer = 40m } },
             [GuardRule.LiquidationBuffer]
         },
         {
             "a liquidation price too near the stop-loss of a short",
-            GuardCases.OpenShort with { Size = new OrderSize(0.01m, Leverage: 31) },
+            GuardCases.OpenShort with { Limits = GuardCases.Limits with { LiquidationBuffer = 31m } },
             [GuardRule.LiquidationBuffer]
         },
     };
@@ -197,10 +230,12 @@ public class GuardCheckTests
         Assert.Equal(GuardVerdict.Rejected, result.Verdict);
         Assert.Equal(RuleOutcome.Failed, result.Of(GuardRule.SymbolPermitted).Outcome);
 
-        // The rules of the exchange cannot be asked of a symbol that it does not list.
+        // The rules of the exchange cannot be asked of a symbol that it does not list, and no
+        // order is sized without them.
         Assert.Equal(
-            [GuardRule.PriceStep, GuardRule.QuantityStep, GuardRule.MinimumValue],
+            [GuardRule.PriceStep, .. OfAQuantity],
             result.InTheWay.Where(rule => rule.Outcome == RuleOutcome.Unknown).Select(rule => rule.Rule));
+        Assert.Null(result.Size);
     }
 
     [Fact]
@@ -217,15 +252,17 @@ public class GuardCheckTests
             GuardCases.OpenLong with { EntryPrice = 60600m, StopLoss = 59600m, TakeProfit = 62600m },
             GuardCases.OpenLong with { EntryPrice = 59400m, StopLoss = 58400m, TakeProfit = 61400m },
 
-            // An entry worth exactly the least value.
+            // An entry of exactly the least quantity, and one worth exactly the least value.
+            GuardCases.OpenLong with { Symbol = GuardCases.Symbol with { MinQuantity = 0.01m } },
             GuardCases.OpenLong with { Symbol = GuardCases.Symbol with { MinValue = 600m } },
 
             // A decision that is checked at the stale limit itself.
             GuardCases.OpenLong with { SinceClose = TimeSpan.FromSeconds(120) },
 
-            // A liquidation exactly twice as far from the entry as the stop-loss: 2000 at 30 times.
-            GuardCases.OpenLongOnFutures with { Size = new OrderSize(0.01m, Leverage: 30) },
-            GuardCases.OpenShort with { Size = new OrderSize(0.01m, Leverage: 30) },
+            // A liquidation exactly as far from the entry as the agent asks for: 30000 at the
+            // leverage of 2, which is 30 times the 1000 to the stop-loss.
+            GuardCases.OpenLongOnFutures with { Limits = GuardCases.Limits with { LiquidationBuffer = 30m } },
+            GuardCases.OpenShort with { Limits = GuardCases.Limits with { LiquidationBuffer = 30m } },
 
             // A loss that is a little short of the limit, of the day and from the peak.
             GuardCases.OpenLong with { Equity = 940.01m },
@@ -241,7 +278,11 @@ public class GuardCheckTests
         Assert.Equal([GuardRule.EntryDistance], (GuardCases.OpenLong with { EntryPrice = 60600.1m, StopLoss = 59600m, TakeProfit = 62600m }).InTheWayOf());
         Assert.Equal([GuardRule.RewardToRisk], (GuardCases.OpenLong with { TakeProfit = 61499.9m }).InTheWayOf());
         Assert.Equal(
-            [GuardRule.LiquidationBuffer], (GuardCases.OpenLongOnFutures with { Size = new OrderSize(0.01m, Leverage: 31) }).InTheWayOf());
+            [GuardRule.MinimumQuantity],
+            (GuardCases.OpenLong with { Symbol = GuardCases.Symbol with { MinQuantity = 0.0101m } }).InTheWayOf());
+        Assert.Equal(
+            [GuardRule.LiquidationBuffer],
+            (GuardCases.OpenLongOnFutures with { Limits = GuardCases.Limits with { LiquidationBuffer = 30.01m } }).InTheWayOf());
     }
 
     [Fact]
@@ -267,8 +308,11 @@ public class GuardCheckTests
     [Fact]
     public void A_check_says_what_each_rule_measured_and_what_it_held_that_to()
     {
-        // So that a user sees exactly why a plan was accepted or rejected (FR-RSK-9).
+        // So that a user sees exactly why a plan was accepted or rejected (FR-RSK-9). With an
+        // equity of 970 the order comes to 0.019: 2 percent of it over 1000, down to the step.
         var result = GuardCheck.Of(GuardCases.OpenLongOnFutures with { Equity = 970m, PeakEquity = 1100m });
+
+        Assert.Equal(new OrderSize(0.019m, Leverage: 2), result.Size);
 
         (GuardRule Rule, decimal? Measured, decimal? Threshold)[] said =
             [.. result.Rules.Select(rule => (rule.Rule, rule.Measured, rule.Threshold))];
@@ -280,7 +324,8 @@ public class GuardCheckTests
                 (GuardRule.EntryDistance, 0m, 1m),
                 (GuardRule.PriceStep, null, 0.1m),
                 (GuardRule.QuantityStep, null, 0.001m),
-                (GuardRule.MinimumValue, 600m, 5m),
+                (GuardRule.MinimumQuantity, 0.019m, 0.001m),
+                (GuardRule.MinimumValue, 1140m, 5m),
                 (GuardRule.HeldPosition, 0m, FixedLimits.OpenPositionsPerAgent),
                 (GuardRule.ProtectionTightens, null, null),
 
@@ -293,8 +338,8 @@ public class GuardCheckTests
                 (GuardRule.SymbolPermitted, null, null),
                 (GuardRule.NoGlobalHalt, null, null),
 
-                // At 5 times leverage the liquidation is 12000 from the entry, and the stop-loss 1000.
-                (GuardRule.LiquidationBuffer, 12m, 2m),
+                // At the leverage of 2 the liquidation is 30000 from the entry, and the stop-loss 1000.
+                (GuardRule.LiquidationBuffer, 30m, 2m),
             ],
             said);
 
@@ -307,22 +352,28 @@ public class GuardCheckTests
     [Fact]
     public void A_plan_to_open_a_position_is_rejected_for_a_rule_that_is_not_known_to_hold()
     {
-        // The size of the order is not known: nothing has computed it.
-        var unsized = GuardCheck.Of(GuardCases.OpenLong with { Size = null });
+        // The size of the order is not known: the plan says no risk fraction to compute it from.
+        var unsized = GuardCheck.Of(GuardCases.OpenLong with { RiskFraction = null });
 
         Assert.Equal(GuardVerdict.Rejected, unsized.Verdict);
-        Assert.Equal([GuardRule.QuantityStep, GuardRule.MinimumValue], unsized.InTheWay.Select(rule => rule.Rule));
+        Assert.Null(unsized.Size);
+        Assert.Equal(OfAQuantity, unsized.InTheWay.Select(rule => rule.Rule));
         Assert.All(unsized.InTheWay, rule => Assert.Equal(RuleOutcome.Unknown, rule.Outcome));
 
         // On Futures the leverage is not known either.
         Assert.Equal(
-            [GuardRule.QuantityStep, GuardRule.MinimumValue, GuardRule.LiquidationBuffer],
-            (GuardCases.OpenShort with { Size = null }).InTheWayOf());
+            [.. OfAQuantity, GuardRule.LiquidationBuffer],
+            (GuardCases.OpenShort with { RiskFraction = null }).InTheWayOf());
 
-        // The exchange did not say the current price, which an entry at the market is.
+        // The exchange did not say the current price, which an entry at the market is: so the
+        // distance to the stop-loss is not known, and neither is the size.
+        var unpriced = GuardCheck.Of(GuardCases.OpenLong with { CurrentPrice = null });
+
+        Assert.Null(unpriced.Size);
         Assert.Equal(
-            [GuardRule.StopLossSide, GuardRule.RewardToRisk, GuardRule.EntryDistance, GuardRule.MinimumValue],
-            (GuardCases.OpenLong with { CurrentPrice = null }).InTheWayOf());
+            [GuardRule.StopLossSide, GuardRule.RewardToRisk, GuardRule.EntryDistance, .. OfAQuantity],
+            unpriced.InTheWay.Select(rule => rule.Rule));
+        Assert.All(unpriced.InTheWay, rule => Assert.Equal(RuleOutcome.Unknown, rule.Outcome));
 
         // A limit entry has its own price, and only its distance from the current one is not known.
         Assert.Equal(
@@ -333,8 +384,9 @@ public class GuardCheckTests
         var unlisted = GuardCheck.Of(GuardCases.OpenLong with { SymbolsKnown = false, Symbol = null });
 
         Assert.Equal(GuardVerdict.Rejected, unlisted.Verdict);
+        Assert.Null(unlisted.Size);
         Assert.Equal(
-            [GuardRule.PriceStep, GuardRule.QuantityStep, GuardRule.MinimumValue, GuardRule.SymbolPermitted],
+            [GuardRule.PriceStep, .. OfAQuantity, GuardRule.SymbolPermitted],
             unlisted.InTheWay.Select(rule => rule.Rule));
         Assert.All(unlisted.InTheWay, rule => Assert.Equal(RuleOutcome.Unknown, rule.Outcome));
     }
@@ -482,28 +534,31 @@ public class GuardCheckTests
     [Fact]
     public void The_liquidation_buffer_is_asked_on_Futures_only()
     {
-        // A leverage that would be far too high on Futures.
-        var onSpot = GuardCheck.Of(GuardCases.OpenLong with { Size = new OrderSize(0.01m, Leverage: 100) });
+        // A buffer that the plan would not keep on Futures.
+        var strict = GuardCases.Limits with { LiquidationBuffer = 100m };
+        var onSpot = GuardCheck.Of(GuardCases.OpenLong with { Limits = strict });
 
         Assert.Equal(RuleOutcome.NotApplied, onSpot.Of(GuardRule.LiquidationBuffer).Outcome);
         Assert.Equal(GuardVerdict.Accepted, onSpot.Verdict);
 
-        Assert.Equal(
-            [GuardRule.LiquidationBuffer],
-            (GuardCases.OpenLongOnFutures with { Size = new OrderSize(0.01m, Leverage: 100) }).InTheWayOf());
+        // A position on Spot has no leverage: the order is sized with 1.
+        Assert.Equal(1, onSpot.Size!.Leverage);
+
+        Assert.Equal([GuardRule.LiquidationBuffer], (GuardCases.OpenLongOnFutures with { Limits = strict }).InTheWayOf());
     }
 
     [Fact]
     public void A_step_of_zero_is_no_rule()
     {
-        // The exchange writes zero where it has no step.
-        var noSteps = GuardCases.Symbol with { PriceStep = 0m, QuantityStep = 0m, MinValue = 0m };
-        var result = GuardCheck.Of(GuardCases.OpenLong with
-        {
-            Symbol = noSteps, StopLoss = 59000.123456m, Size = new OrderSize(0.0100001m, 1),
-        });
+        // The exchange writes zero where it has no step, and no least or most.
+        var noSteps = GuardCases.Symbol with { PriceStep = 0m, QuantityStep = 0m, MinQuantity = 0m, MaxQuantity = 0m, MinValue = 0m };
+        var result = GuardCheck.Of(GuardCases.OpenLong with { Symbol = noSteps, StopLoss = 59000.123456m });
 
         Assert.Empty(result.InTheWay);
+
+        // With no step to round down to, the quantity is kept to 8 decimal places: 10 over
+        // 999.876544 is 0.0100012347 and more.
+        Assert.Equal(0.01000123m, result.Size!.Quantity);
     }
 
     public static TheoryData<string, GuardCase> NumbersThatMakeNoSense => new()
@@ -514,14 +569,24 @@ public class GuardCheckTests
         { "a limit price below zero", GuardCases.OpenLongOnFutures with { EntryPrice = -60000m } },
         { "a stop-loss below zero", GuardCases.OpenLong with { StopLoss = -59000m } },
         { "a take-profit of zero", GuardCases.OpenLong with { TakeProfit = 0m } },
-        { "a quantity of zero", GuardCases.OpenLong with { Size = new OrderSize(0m, 1) } },
-        { "a quantity below zero", GuardCases.OpenLong with { Size = new OrderSize(-0.01m, 1) } },
-        { "a leverage of zero", GuardCases.OpenLongOnFutures with { Size = new OrderSize(0.01m, Leverage: 0) } },
+        { "a risk fraction of zero", GuardCases.OpenLong with { RiskFraction = 0m } },
+        { "a risk fraction below zero", GuardCases.OpenLong with { RiskFraction = -0.01m } },
+        { "a risk per trade of zero", GuardCases.OpenLong with { Limits = GuardCases.Limits with { RiskPerTradePercent = 0m } } },
+        { "a leverage cap of zero", GuardCases.OpenLongOnFutures with { Limits = GuardCases.Limits with { LeverageCap = 0 } } },
+        { "an equity of zero", GuardCases.OpenLong with { Equity = 0m, EquityAtDayStart = 0m, PeakEquity = 0m } },
+        { "an equity below zero", GuardCases.OpenLongOnFutures with { Equity = -1000m } },
         { "an equity of the day's start of zero", GuardCases.OpenLong with { EquityAtDayStart = 0m } },
         { "a peak equity below zero", GuardCases.OpenLong with { PeakEquity = -5m } },
         { "a price beyond every number", GuardCases.OpenLong with { EntryPrice = decimal.MaxValue } },
         { "a take-profit beyond every number", GuardCases.OpenLongOnFutures with { TakeProfit = decimal.MaxValue, CurrentPrice = decimal.MaxValue } },
-        { "a quantity beyond every number", GuardCases.OpenLong with { Size = new OrderSize(decimal.MaxValue, 1) } },
+        {
+            "an equity beyond every number",
+            GuardCases.OpenLong with { Equity = decimal.MaxValue, EquityAtDayStart = decimal.MaxValue, PeakEquity = decimal.MaxValue }
+        },
+        {
+            "an equity beyond every number, on Futures",
+            GuardCases.OpenLongOnFutures with { Equity = decimal.MaxValue, EquityAtDayStart = decimal.MaxValue, PeakEquity = decimal.MaxValue }
+        },
         { "a position of no quantity to close", GuardCases.Close with { Position = GuardCases.Long with { Quantity = 0m } } },
         { "a stop-loss of zero to move to", GuardCases.Adjust with { StopLoss = 0m } },
     };

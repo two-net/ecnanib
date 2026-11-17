@@ -189,8 +189,9 @@ internal sealed class TeamCycle(
             plan.Action);
 
         // Step 6: the Risk Guard checks what goes on, after the Risk Manager and before any
-        // order (FR-RSK-3). Every plan that goes on is handed to it, and what it accepted is
-        // what an order is made from. Step 7 is not built: nothing is placed.
+        // order (FR-RSK-3), and computes the size of the order (FR-RSK-5). Every plan that goes
+        // on is handed to it, and what it accepted is what an order is made from. Step 7 is not
+        // built: nothing is placed.
         if (decision.GoesOn is { } goesOn)
         {
             await checks.CheckAsync(cycle, goesOn, kept, cancellationToken);

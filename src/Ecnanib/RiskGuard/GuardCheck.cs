@@ -12,9 +12,16 @@ namespace Ecnanib.RiskGuard;
 /// <b>A plan that opens a position is rejected unless every rule holds</b> (FR-RSK-4, FR-RSK-6):
 /// a stop-loss on the correct side of the entry, the reward-to-risk ratio, the distance of the
 /// entry from the current price, the rules of the exchange for the price step, the quantity step,
-/// and the least value, the loss limits, the stale limit, the mode, the market, and the symbol,
-/// no global halt, and on Futures the liquidation buffer. A rule that is not known to hold does
-/// not hold: such a plan is rejected as well.
+/// the least quantity, and the least value, the loss limits, the stale limit, the mode, the
+/// market, and the symbol, no global halt, and on Futures the liquidation buffer. A rule that is
+/// not known to hold does not hold: such a plan is rejected as well.
+/// </para>
+/// <para>
+/// <b>The check computes the size of the order that such a plan opens,</b> its quantity and its
+/// leverage, from the risk fraction of the plan, the agent's equity, and the distance to the
+/// stop-loss (FR-RSK-5): see <see cref="OrderSizing"/>. No model chooses either, and nothing
+/// hands a check a size. The rules of a quantity and the liquidation buffer are asked of the size
+/// that was computed, and the result says it.
 /// </para>
 /// <para>
 /// <b>A plan that only closes a position or adjusts protection is held to the rules of the
@@ -51,7 +58,7 @@ public static class GuardCheck
             ? results.All(result => result.Outcome is RuleOutcome.Passed or RuleOutcome.NotApplied)
             : results.All(result => result.Outcome != RuleOutcome.Failed);
 
-        return new GuardResult(accepted ? GuardVerdict.Accepted : GuardVerdict.Rejected, results, @case);
+        return new GuardResult(accepted ? GuardVerdict.Accepted : GuardVerdict.Rejected, results, @case, facts.Size);
     }
 
     private static RuleResult Asked(GuardRule rule, Facts facts)
@@ -65,6 +72,7 @@ public static class GuardCheck
                 GuardRule.EntryDistance => EntryDistance(facts),
                 GuardRule.PriceStep => PriceStep(facts),
                 GuardRule.QuantityStep => QuantityStep(facts),
+                GuardRule.MinimumQuantity => MinimumQuantity(facts),
                 GuardRule.MinimumValue => MinimumValue(facts),
                 GuardRule.HeldPosition => HeldPosition(facts),
                 GuardRule.ProtectionTightens => ProtectionTightens(facts),
@@ -211,12 +219,12 @@ public static class GuardCheck
         const GuardRule Rule = GuardRule.QuantityStep;
         var @case = facts.Case;
 
-        // The quantity of each order: of the entry, which is the size, and of what closes or
-        // protects the open position, which is what the position holds.
+        // The quantity of each order: of the entry, which is the size that was computed, and of
+        // what closes or protects the open position, which is what the position holds.
         decimal?[] ordered = @case.Action switch
         {
-            GuardedAction.OpenLong or GuardedAction.OpenShort => [@case.Size?.Quantity],
-            GuardedAction.Reverse => [@case.Position?.Quantity, @case.Size?.Quantity],
+            GuardedAction.OpenLong or GuardedAction.OpenShort => [facts.Size?.Quantity],
+            GuardedAction.Reverse => [@case.Position?.Quantity, facts.Size?.Quantity],
             _ => [@case.Position?.Quantity],
         };
         decimal[] quantities = [.. ordered.OfType<decimal>()];
@@ -237,6 +245,30 @@ public static class GuardCheck
         return OnStep(Rule, quantities, symbol.QuantityStep);
     }
 
+    private static RuleResult MinimumQuantity(Facts facts)
+    {
+        const GuardRule Rule = GuardRule.MinimumQuantity;
+        var least = facts.Symbol?.MinQuantity;
+
+        if (!facts.Opens)
+        {
+            return NotApplied(Rule);
+        }
+
+        // An order of no quantity is below every least quantity.
+        if (facts.Size is { Quantity: <= 0m })
+        {
+            return Failed(Rule, measured: null, least);
+        }
+
+        if (facts.Size is not { } size || facts.Symbol is not { } symbol)
+        {
+            return Unknown(Rule, measured: null, least);
+        }
+
+        return Held(Rule, symbol.MinQuantity <= 0m || size.Quantity >= symbol.MinQuantity, size.Quantity, symbol.MinQuantity);
+    }
+
     private static RuleResult MinimumValue(Facts facts)
     {
         const GuardRule Rule = GuardRule.MinimumValue;
@@ -247,12 +279,12 @@ public static class GuardCheck
             return NotApplied(Rule);
         }
 
-        if (facts.EntryMakesNoSense || facts.Case.Size is { Quantity: <= 0m })
+        if (facts.EntryMakesNoSense || facts.Size is { Quantity: <= 0m })
         {
             return Failed(Rule, measured: null, least);
         }
 
-        if (facts.Case.Size is not { } size || facts.Symbol is not { } symbol || facts.Entry is not { } entry)
+        if (facts.Size is not { } size || facts.Symbol is not { } symbol || facts.Entry is not { } entry)
         {
             return Unknown(Rule, measured: null, least);
         }
@@ -357,12 +389,13 @@ public static class GuardCheck
             return NotApplied(Rule);
         }
 
-        if (facts.Stop is not { } stop || facts.EntryMakesNoSense || facts.Case.Size is { Leverage: < 1 })
+        if (facts.Stop is not { } stop || facts.EntryMakesNoSense)
         {
             return Failed(Rule, measured: null, buffer);
         }
 
-        if (facts.Case.Size is not { } size || facts.Side is not { } side || facts.Entry is not { } entry)
+        // The leverage is that of the size that was computed, which is 1 at least.
+        if (facts.Size is not { } size || facts.Side is not { } side || facts.Entry is not { } entry)
         {
             return Unknown(Rule, measured: null, buffer);
         }
@@ -423,58 +456,83 @@ public static class GuardCheck
     private static RuleResult NotApplied(GuardRule rule) => new(rule, RuleOutcome.NotApplied, Measured: null, Threshold: null);
 
     /// <summary>The facts of a case as the rules read them: a price that is not above zero is no price.</summary>
-    private sealed class Facts(GuardCase @case)
+    private sealed class Facts
     {
-        public GuardCase Case { get; } = @case;
+        public Facts(GuardCase @case)
+        {
+            Case = @case;
+            Opens = @case.OpensPosition;
+            Side = @case.Action switch
+            {
+                GuardedAction.OpenLong => TradeSide.Long,
+                GuardedAction.OpenShort => TradeSide.Short,
+                GuardedAction.Reverse => @case.Position?.Side switch
+                {
+                    TradeSide.Long => TradeSide.Short,
+                    TradeSide.Short => TradeSide.Long,
+                    _ => null,
+                },
+                _ => null,
+            };
+            Price = AboveZero(@case.CurrentPrice);
+            EntryMakesNoSense = @case.EntryPrice is <= 0m;
+            Entry = @case.EntryPrice is null ? AboveZero(@case.CurrentPrice) : AboveZero(@case.EntryPrice);
+            Stop = AboveZero(@case.StopLoss);
+            Target = AboveZero(@case.TakeProfit);
+            Symbol = @case.SymbolsKnown ? @case.Symbol : null;
 
-        public bool Opens { get; } = @case.OpensPosition;
+            // Computed once, from the facts as the rules read them, so the rules of a quantity
+            // and the result of the check say the same size.
+            Size = OrderSizing.Of(@case, Side, Entry, Stop, Symbol);
+        }
+
+        public GuardCase Case { get; }
+
+        public bool Opens { get; }
 
         /// <summary>The side that the plan opens. A reverse opens the side opposite to the position that is held.</summary>
-        public TradeSide? Side { get; } = @case.Action switch
-        {
-            GuardedAction.OpenLong => TradeSide.Long,
-            GuardedAction.OpenShort => TradeSide.Short,
-            GuardedAction.Reverse => @case.Position?.Side switch
-            {
-                TradeSide.Long => TradeSide.Short,
-                TradeSide.Short => TradeSide.Long,
-                _ => null,
-            },
-            _ => null,
-        };
+        public TradeSide? Side { get; }
 
         /// <summary>The current price, when the exchange said one.</summary>
-        public decimal? Price { get; } = AboveZero(@case.CurrentPrice);
+        public decimal? Price { get; }
 
         /// <summary>Whether the plan names a limit price that is no price.</summary>
-        public bool EntryMakesNoSense { get; } = @case.EntryPrice is <= 0m;
+        public bool EntryMakesNoSense { get; }
 
         /// <summary>The price that the plan enters at: its limit price, or the current price for an entry at the market.</summary>
-        public decimal? Entry { get; } = @case.EntryPrice is null ? AboveZero(@case.CurrentPrice) : AboveZero(@case.EntryPrice);
+        public decimal? Entry { get; }
 
-        public decimal? Stop { get; } = AboveZero(@case.StopLoss);
+        public decimal? Stop { get; }
 
-        public decimal? Target { get; } = AboveZero(@case.TakeProfit);
+        public decimal? Target { get; }
 
         /// <summary>The rules of the symbol, when the exchange said them and the market has the symbol.</summary>
-        public SymbolRules? Symbol { get; } = @case.SymbolsKnown ? @case.Symbol : null;
+        public SymbolRules? Symbol { get; }
+
+        /// <summary>
+        /// The size of the order that the plan opens, which the check computes (FR-RSK-5). Null
+        /// for a plan that opens nothing, and when a fact that it follows from is not there.
+        /// </summary>
+        public OrderSize? Size { get; }
 
         private static decimal? AboveZero(decimal? value) => value > 0m ? value : null;
     }
 }
 
 /// <summary>
-/// What a check of the Risk Guard made of a plan: the verdict, and the outcome of every rule
-/// (FR-RSK-9). Only <see cref="GuardCheck"/> makes one, so whatever holds one holds a plan that
-/// was checked against every rule (FR-RSK-3).
+/// What a check of the Risk Guard made of a plan: the verdict, the outcome of every rule
+/// (FR-RSK-9), and the size of the order that the plan opens (FR-RSK-5). Only
+/// <see cref="GuardCheck"/> makes one, so whatever holds one holds a plan that was checked
+/// against every rule, with a size that the Risk Guard computed (FR-RSK-3).
 /// </summary>
 public sealed class GuardResult
 {
-    internal GuardResult(GuardVerdict verdict, IReadOnlyList<RuleResult> rules, GuardCase @case)
+    internal GuardResult(GuardVerdict verdict, IReadOnlyList<RuleResult> rules, GuardCase @case, OrderSize? size)
     {
         Verdict = verdict;
         Rules = rules;
         Case = @case;
+        Size = size;
     }
 
     /// <summary>Whether the plan goes on to the orders.</summary>
@@ -483,8 +541,17 @@ public sealed class GuardResult
     /// <summary>The outcome of every rule, in the order of <see cref="GuardRule"/>: one for each, also for a rule that the plan is not held to.</summary>
     public IReadOnlyList<RuleResult> Rules { get; }
 
-    /// <summary>The plan that was checked, with the facts that it was checked on: what an order is made from is this, and nothing else.</summary>
+    /// <summary>The plan that was checked, with the facts that it was checked on: what an order is made from is this and <see cref="Size"/>, and nothing else.</summary>
     public GuardCase Case { get; }
+
+    /// <summary>
+    /// The quantity and the leverage of the order that the plan opens, which the check computed
+    /// from the risk fraction of the plan, the agent's equity, and the distance to the stop-loss
+    /// (FR-RSK-5). The quantity is zero when the facts give no order, and such a plan is
+    /// rejected. Null for a plan that opens nothing, and when a fact that the size follows from
+    /// was not there.
+    /// </summary>
+    public OrderSize? Size { get; }
 
     /// <summary>Whether the plan was accepted.</summary>
     public bool IsAccepted => Verdict == GuardVerdict.Accepted;

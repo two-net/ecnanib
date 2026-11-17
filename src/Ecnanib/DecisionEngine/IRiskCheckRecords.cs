@@ -35,7 +35,12 @@ public sealed record RiskCheckHistory(int Total, IReadOnlyList<RiskCheckView> Ch
 /// <param name="Action">What the plan that was checked does.</param>
 /// <param name="CheckedAt">When it was checked.</param>
 /// <param name="Verdict">Whether the plan went on to the orders.</param>
-/// <param name="Rules">The outcome of every rule, in the order of <see cref="GuardRule"/>.</param>
+/// <param name="Quantity">
+/// The quantity of the order that the plan opens, which the check computed (FR-RSK-5). Zero when
+/// the facts gave no order. Null for a plan that opens nothing, and when no size was computed.
+/// </param>
+/// <param name="Leverage">The leverage of that order: 1 on Spot. Null where the quantity is.</param>
+/// <param name="Rules">The outcome of every rule that the check stored, in the order of <see cref="GuardRule"/>.</param>
 public sealed record RiskCheckView(
     DateTimeOffset ClosedAt,
     TradingMode Mode,
@@ -43,6 +48,8 @@ public sealed record RiskCheckView(
     PlanAction Action,
     DateTimeOffset CheckedAt,
     GuardVerdict Verdict,
+    decimal? Quantity,
+    int? Leverage,
     IReadOnlyList<RuleResult> Rules);
 
 /// <summary>Reads the stored checks of an agent, of the user that it is asked for.</summary>
@@ -91,6 +98,8 @@ internal sealed class RiskCheckRecords(IDbContextFactory<EcnanibDbContext> conte
                     found.Check.Action,
                     found.Check.CheckedAt,
                     found.Check.Verdict,
+                    found.Check.Quantity,
+                    found.Check.Leverage,
                     [
                         .. byCheck[found.Check.Id]
                             .OrderBy(rule => rule.Rule)

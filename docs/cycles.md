@@ -462,7 +462,7 @@ A limit is held to through what the stand-in counted while the cycles were held,
 
 ## Not built yet
 
-- The orders (FR-BIN-6), and the size of an order (FR-RSK-5). `TeamCycle` builds the package, runs the team, and has the Risk Guard check what goes on of its plan: see "Not built yet" in [team.md](team.md) and in [risk-guard.md](risk-guard.md).
+- The orders (FR-BIN-6). `TeamCycle` builds the package, runs the team, and has the Risk Guard check what goes on of its plan and compute the size of its order (FR-RSK-5): see "Not built yet" in [team.md](team.md) and in [risk-guard.md](risk-guard.md).
 - What keeps positions and orders, and the results of an agent, which answers `IAgentHoldings`. Until then a package says that an agent holds nothing, and that its equity is its allocated capital.
 - Asking again for market data that a read did not give. A cycle whose package cannot be built makes no decision, and the next close starts the next one.
 - Waiting for a candle of a higher timeframe that came one short. The candles of the agent's own timeframe cover the same time.

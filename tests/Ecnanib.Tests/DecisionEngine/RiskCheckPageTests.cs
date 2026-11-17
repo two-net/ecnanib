@@ -24,8 +24,11 @@ public partial class RiskCheckPageTests
 
     private static readonly DateTimeOffset Morning = new(2026, 11, 17, 9, 0, 0, TimeSpan.Zero);
 
-    /// <summary>A plan to open long on Futures whose reward is 1.4 times its risk, and whose order has no size.</summary>
-    private static readonly GuardCase Rejected = GuardCases.OpenLongOnFutures with { TakeProfit = 61400m, Size = null };
+    /// <summary>
+    /// A plan to open long on Futures whose reward is 1.4 times its risk, checked while the
+    /// exchange did not say the rules of the symbols: so its order has no size.
+    /// </summary>
+    private static readonly GuardCase Rejected = GuardCases.OpenLongOnFutures with { TakeProfit = 61400m, SymbolsKnown = false, Symbol = null };
 
     [Fact]
     public async Task The_page_shows_exactly_why_a_plan_was_accepted_or_rejected()
@@ -73,8 +76,9 @@ public partial class RiskCheckPageTests
             Enum.GetValues<GuardRule>().Select(RiskCheckPages.NameOf), rules.Select(rule => rule.Name)));
 
         // Why the plan to open was rejected: the ratio does not hold, with the numbers, and
-        // what needs the size of the order is not known.
+        // what needs the rules of the symbol, or the size of the order, is not known.
         var rejected = checks[1];
+        const string NoRules = "The exchange did not say the rules of the symbol.";
 
         Assert.Equal(
             [
@@ -84,9 +88,10 @@ public partial class RiskCheckPageTests
                     "Does not hold",
                     "The take-profit is only 1.4 times as far from the entry as the stop-loss. The agent asks for at least 1.5."),
                 new ShownRule("Distance of the entry", "Holds", "The entry is 0 percent from the current price. The agent allows up to 1 percent."),
-                new ShownRule("Price step", "Holds", "Every price of the plan is a multiple of the price step of the symbol, 0.1."),
-                new ShownRule("Quantity step", "Not known", "The quantity of the order is not known."),
-                new ShownRule("Least value of an order", "Not known", "The value of the entry is not known: its quantity or its price is not known."),
+                new ShownRule("Price step", "Not known", NoRules),
+                new ShownRule("Quantity step", "Not known", NoRules),
+                new ShownRule("Least quantity of an order", "Not known", NoRules),
+                new ShownRule("Least value of an order", "Not known", NoRules),
                 new ShownRule("Open position", "Holds", "The agent holds no position, so it can open one."),
                 new ShownRule("Protection only tightens", "Not asked", "Asked only of a plan that adjusts the protection."),
                 new ShownRule(
@@ -98,11 +103,17 @@ public partial class RiskCheckPageTests
                     "The plan was checked 30 seconds after the candle closed. The stale limit of the agent's timeframe is 120 seconds."),
                 new ShownRule("Mode", "Holds", "You have a valid Binance key for the environment that the agent trades in."),
                 new ShownRule("Market", "Holds", "Your Binance key may trade on the market of the agent."),
-                new ShownRule("Symbol", "Holds", "The market has the symbol of the agent, and the exchange takes orders in it."),
+                new ShownRule("Symbol", "Not known", "The exchange did not say which symbols the market has."),
                 new ShownRule("Global halt", "Holds", "No global halt is on."),
                 new ShownRule("Liquidation buffer", "Not known", "The leverage of the order is not known, or its entry is not."),
             ],
             rejected);
+
+        // The check says that its order has no size, and the close says nothing of one: it
+        // has no order of its own to size.
+        Assert.Equal(
+            ["No size was computed for the order: something that it follows from was not known."],
+            Size().Matches(page).Select(size => AgentBrowser.Read(size.Groups[1].Value)));
 
         // Why the plan to close was accepted: the few rules that it is held to hold, and no
         // other rule is asked of it.
@@ -116,8 +127,8 @@ public partial class RiskCheckPageTests
                 new ShownRule("Open position", "Holds", "The agent holds the position that the plan acts on."),
             ],
             accepted.Where(rule => rule.Outcome == "Holds"));
-        Assert.Equal(13, accepted.Count(rule => rule.Outcome == "Not asked"));
-        Assert.Equal(12, accepted.Count(rule => rule.Why == NotAsked));
+        Assert.Equal(14, accepted.Count(rule => rule.Outcome == "Not asked"));
+        Assert.Equal(13, accepted.Count(rule => rule.Why == NotAsked));
 
         // An outcome is said as words, with a class beside it: it does not rely on a colour.
         Assert.Contains("<span class=\"rule-outcome rule-failed\">Does not hold</span>", page);
@@ -126,6 +137,64 @@ public partial class RiskCheckPageTests
         // The page leads back to the other pages of the agent.
         Assert.Contains($"<a href=\"{AgentBrowser.AgentStatePage(agent)}\">State of the agent</a>", page);
         Assert.Contains($"<a href=\"{AgentBrowser.AgentPage(agent)}\">Settings of the agent</a>", page);
+    }
+
+    [Fact]
+    public async Task A_check_of_a_plan_that_opens_a_position_says_the_size_that_the_system_computed()
+    {
+        using var application = AgentsApplication.With(new StandInMarketData(), new TestClock(Morning));
+        using var client = application.CreateClient();
+        var user = await application.RegisterVerifiedAsync(Ada);
+        await client.SignInAsync(Ada);
+        var agent = await application.GiveAgentAsync(user.Id, Morning, market: Market.Futures);
+
+        // Four checks, an hour apart: a plan to open long that was checked on Spot, one that
+        // was checked on Futures, one with no stop-loss, and a plan to close.
+        await GiveCheckAsync(application, user.Id, agent, Morning, GuardCases.OpenLong, PlanAction.OpenLong);
+        await GiveCheckAsync(application, user.Id, agent, Morning.AddHours(1), GuardCases.OpenLongOnFutures, PlanAction.OpenLong);
+        await GiveCheckAsync(
+            application, user.Id, agent, Morning.AddHours(2), GuardCases.OpenLongOnFutures with { StopLoss = null }, PlanAction.OpenLong);
+        await GiveCheckAsync(application, user.Id, agent, Morning.AddHours(3), GuardCases.Close, PlanAction.Close);
+
+        var page = await client.PageAsync(RiskChecksPage(agent));
+
+        // The quantity, and on Futures the leverage, with what they follow from, in plain
+        // language (FR-RSK-5, NFR-USA-2). The latest check first: the close says nothing of a
+        // size. A check says the market that it was made on, whatever the agent trades on now.
+        const string Follows = "follows from the risk that was approved, the agent's equity, and the distance from the entry to the stop-loss";
+
+        Assert.Equal(
+            [
+                "The order came to no quantity, so there is nothing to place: the plan has no stop-loss on the losing side of its " +
+                "entry to measure its risk by, or the risk that was approved buys less than one step of the quantity.",
+                "The system computed the size of the order, and no model chose it: a quantity of 0.02, at a leverage of 2. The " +
+                $"quantity {Follows}. The leverage is the lowest that fits the margin of the position within the agent's equity, " +
+                "up to the agent's leverage cap.",
+                "The system computed the size of the order, and no model chose it: a quantity of 0.01. " +
+                $"It {Follows}, and the position is worth at most the agent's equity.",
+            ],
+            Size().Matches(page).Select(size => AgentBrowser.Read(size.Groups[1].Value)));
+
+        // An order of no quantity is explained where its rules do not hold.
+        var checks = RulesOn(page);
+
+        Assert.Equal(4, checks.Count);
+        Assert.Contains(new ShownRule("Quantity step", "Does not hold", "The quantity 0 is no quantity of an order."), checks[1]);
+        Assert.Contains(new ShownRule("Least quantity of an order", "Does not hold", "The order came to no quantity above zero."), checks[1]);
+
+        // And the rules of a quantity say the size that they were asked of.
+        Assert.Contains(
+            new ShownRule("Least quantity of an order", "Holds", "The order is for 0.02. The least quantity of an order in the symbol is 0.001."),
+            checks[2]);
+        Assert.Contains(
+            new ShownRule("Least value of an order", "Holds", "The entry is worth 1200. The least value of an order in the symbol is 5."),
+            checks[2]);
+        Assert.Contains(
+            new ShownRule(
+                "Liquidation buffer",
+                "Holds",
+                "The estimated liquidation price is 30 times as far from the entry as the stop-loss. The agent asks for at least 2."),
+            checks[2]);
     }
 
     [Fact]
@@ -392,6 +461,9 @@ public partial class RiskCheckPageTests
 
     [GeneratedRegex(@"<strong class=""guard-verdict"">([^<]*)</strong>")]
     private static partial Regex Verdict();
+
+    [GeneratedRegex(@"<p class=""guard-size"">([^<]*)</p>")]
+    private static partial Regex Size();
 
     [GeneratedRegex(@", in <span class=""mode-badge mode-(demo|live)"">(Demo|Live)</span>, for the")]
     private static partial Regex CheckMode();

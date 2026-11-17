@@ -35,24 +35,35 @@ public enum TradeSide
 /// <param name="Trading">Whether the exchange takes orders in the symbol now.</param>
 /// <param name="PriceStep">What a price must be a multiple of. Zero or less is no rule.</param>
 /// <param name="QuantityStep">What a quantity must be a multiple of. Zero or less is no rule.</param>
+/// <param name="MinQuantity">The least quantity of an order. Zero or less is no rule.</param>
+/// <param name="MaxQuantity">The most quantity of an order. Zero or less is no rule.</param>
 /// <param name="MinValue">The least value of an order: its price times its quantity. Zero or less is no rule.</param>
-public sealed record SymbolRules(bool Trading, decimal PriceStep, decimal QuantityStep, decimal MinValue);
+public sealed record SymbolRules(
+    bool Trading, decimal PriceStep, decimal QuantityStep, decimal MinQuantity, decimal MaxQuantity, decimal MinValue);
 
 /// <summary>The risk settings of the agent that a check holds a plan to (SRS Appendix B).</summary>
+/// <param name="RiskPerTradePercent">The most that one trade risks, in percent of the agent's equity: what the size of an order is held to.</param>
 /// <param name="MinRewardToRisk">The lowest reward-to-risk ratio at the entry.</param>
 /// <param name="MaxEntryDistancePercent">How far an entry price may be from the current price, in percent of the current price.</param>
+/// <param name="LeverageCap">The highest leverage of a position on Futures: what the size of an order is held to.</param>
 /// <param name="LiquidationBuffer">How many times further from the entry than the stop-loss the liquidation price must be, on Futures.</param>
 /// <param name="DailyLossPercent">The loss in one UTC day that the agent may not reach, in percent of its equity as the day began.</param>
 /// <param name="DrawdownPercent">The fall from its peak equity that the agent may not reach, in percent of the peak.</param>
 public sealed record GuardLimits(
+    decimal RiskPerTradePercent,
     decimal MinRewardToRisk,
     decimal MaxEntryDistancePercent,
+    int LeverageCap,
     decimal LiquidationBuffer,
     decimal DailyLossPercent,
     decimal DrawdownPercent);
 
-/// <summary>The size of the order that a plan opens, which the system computes and no model chooses (FR-RSK-5).</summary>
-/// <param name="Quantity">How much of the asset that is traded the entry is for.</param>
+/// <summary>
+/// The size of the order that a plan opens, which the Risk Guard computes as it checks the plan,
+/// and no model chooses (FR-RSK-5). Nothing hands a check a size: see "The size of an order" in
+/// docs/risk-guard.md.
+/// </summary>
+/// <param name="Quantity">How much of the asset that is traded the entry is for. Zero when the facts give no order.</param>
 /// <param name="Leverage">The leverage of the position on Futures, and 1 on Spot.</param>
 public sealed record OrderSize(decimal Quantity, int Leverage);
 
@@ -69,18 +80,23 @@ public sealed record GuardedPosition(TradeSide Side, decimal Quantity, decimal? 
 /// </summary>
 /// <remarks>
 /// It has no place for a switch: nothing in it turns a rule off, and which rules a plan is held
-/// to follows from <see cref="Action"/> and <see cref="Market"/> alone (FR-RSK-3).
+/// to follows from <see cref="Action"/> and <see cref="Market"/> alone (FR-RSK-3). It has no
+/// place for a size either: the check computes the quantity and the leverage of the order from
+/// what is here (FR-RSK-5).
 /// </remarks>
 /// <param name="Action">What the plan does.</param>
 /// <param name="Market">The market of the agent.</param>
 /// <param name="EntryPrice">The price of a limit entry. Null for a market entry, which enters at the current price, and for a plan that opens nothing.</param>
 /// <param name="StopLoss">The stop-loss of the position that the plan opens, or the one that it moves the stop-loss to. Null when the plan names none.</param>
 /// <param name="TakeProfit">The take-profit of the position that the plan opens, or the one that it moves the take-profit to. Null when the plan names none.</param>
+/// <param name="RiskFraction">
+/// The share of the agent's equity that the plan risks, as the Risk Manager left it, as a
+/// fraction: <c>0.02</c> is 2 percent. Null for a plan that opens nothing.
+/// </param>
 /// <param name="CurrentPrice">The price that the symbol last traded at, or null when the exchange did not say.</param>
 /// <param name="SymbolsKnown">Whether the exchange said which symbols the market has in the agent's environment.</param>
 /// <param name="Symbol">The rules of the agent's symbol. Null when the market does not have the symbol, and when the exchange did not say.</param>
 /// <param name="Limits">The risk settings of the agent.</param>
-/// <param name="Size">The size of the order that the plan opens, or null when it is not known.</param>
 /// <param name="Position">The position that the agent holds now, or null when it holds none.</param>
 /// <param name="Equity">The equity of the agent now, with unrealized profit and loss.</param>
 /// <param name="EquityAtDayStart">Its equity as the UTC day began.</param>
@@ -96,11 +112,11 @@ public sealed record GuardCase(
     decimal? EntryPrice,
     decimal? StopLoss,
     decimal? TakeProfit,
+    decimal? RiskFraction,
     decimal? CurrentPrice,
     bool SymbolsKnown,
     SymbolRules? Symbol,
     GuardLimits Limits,
-    OrderSize? Size,
     GuardedPosition? Position,
     decimal Equity,
     decimal EquityAtDayStart,
