@@ -4,11 +4,13 @@ Roles run in the order of the decision cycle (SRS 3.2): the Market Analyst and t
 
 The Risk Manager may approve a plan, reduce its risk fraction, or veto it. It cannot increase risk, change direction, or widen the stop-loss, and it cannot block a plan that closes a position or tightens protection (FR-TEAM-7). Each role call records the provider, model, prompt template version, latency, token usage, structured result, and validation outcome (FR-TEAM-8). If a role call times out or returns an invalid result, it is retried once. If the Sentiment Analyst still fails, the cycle continues with sentiment marked unavailable. If any other role still fails, the cycle ends with no decision and no new entry (FR-TEAM-9).
 
+Allowed actions on Spot are open long, hold, close, and adjust protection. Futures adds open short and reverse, which closes the position and then opens the opposite side (FR-CYC-4). An agent holds at most one position, and adding to an open position is not supported (FR-CYC-5). Adjust protection may move the stop-loss only in the direction that reduces risk, and the take-profit in either direction (FR-CYC-6). A plan to open a position always includes a stop-loss price and a take-profit price (FR-CYC-7). A decision that completes later than the stale limit for its timeframe cannot open a position. It can still close a position or tighten protection (FR-CYC-9).
+
 Models cannot place orders or call internal functions. The only path from a model's output to an order is schema validation, then the Risk Guard, then the Exchange Gateway (NFR-SEC-6).
 
-What is built is steps 3 to 5 of the decision cycle: the calls of the four roles, the validation of what each answers, what the review of the Risk Manager does to a plan, and the record of a cycle with the calls of its roles. A cycle ends with the decision of the team. The Risk Guard, which checks every plan, and the orders are not built, so nothing is placed. See "Not built yet".
+What is built is steps 3 to 5 of the decision cycle: the calls of the four roles, the validation of what each answers, what a plan may do, what the review of the Risk Manager does to a plan, what the stale limit does to a decision, and the record of a cycle with the calls of its roles. A cycle ends with the decision of the team. The Risk Guard, which checks every plan, and the orders are not built, so nothing is placed. See "Not built yet".
 
-The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Team` and `Role`, and in `RiskManagerReviewTests`.
+The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Team` and `Role`, and in `RiskManagerReviewTests`, `PlanRuleTests`, and `StaleDecisionTests`.
 
 What starts a cycle, and the data package that it builds, are in [cycles.md](cycles.md). The templates of the roles and what composes a prompt are in [prompts.md](prompts.md). How a model is called is in [ai-providers.md](ai-providers.md), and how a stored key is handed to a call in [credentials.md](credentials.md). Who chooses the model of a role is in [agents.md](agents.md).
 
@@ -21,7 +23,7 @@ What starts a cycle, and the data package that it builds, are in [cycles.md](cyc
 | 2 | The data package is built, by `IDataPackages`. A package that cannot be built ends the cycle as failed. |
 | 3 | **The Market Analyst and the Sentiment Analyst are called at the same time.** Neither reads what the other answers. |
 | 4 | **The Strategist is called when both are over,** with both reports. |
-| 5 | **The Risk Manager is called when the Strategist is over,** with its plan, for a plan that opens a position. |
+| 5 | **The Risk Manager is called when the Strategist is over,** with its plan, for a plan that opens a position and whose decision is not stale by then. |
 | 6, 7 | Not built. The cycle ends with the decision of the team: see "The outcome of a cycle". |
 | 8 | The cycle is recorded, with the calls of its roles. |
 
@@ -29,6 +31,7 @@ What starts a cycle, and the data package that it builds, are in [cycles.md](cyc
 |---|---|
 | **An agent runs with its whole team** (FR-TEAM-1). | A cycle of an agent that lacks the model of a role fails before any model is called, so no model is paid for a cycle that cannot be completed. Agents starts an agent only with its whole team: see "The controls" in [agents.md](agents.md). |
 | **The Risk Manager is called for a plan that opens a position, and for no other.** | Open long, open short, and reverse: `PlanReview.Reviews`. A plan that holds changes nothing, and a plan that closes a position or adjusts protection reduces risk. Neither is handed to the Risk Manager, so nothing that its model answers, and no call of it that fails, stands in the way of reducing risk (FR-TEAM-7). Such a cycle is three calls, on the user's own keys. |
+| **A plan that is stale before it is reviewed is not reviewed.** | It opens no position whatever a review says (FR-CYC-9), so no model is called, and paid, to review it. See "The stale limit". |
 | **A cycle is two calls at once at most.** | The two analysts. The places that a cycle takes in the queue are of cycles, and not of calls: see "The queue" in [cycles.md](cycles.md). |
 | One object runs the cycles of every agent. | `TeamCycle` holds nothing of a cycle: everything of a cycle is local to its run. |
 
@@ -95,7 +98,7 @@ public interface IRoleResults
 
     RoleResult<SentimentRead> ReadSentiment(string answered);
 
-    RoleResult<TradePlan> ReadPlan(string answered, AgentRisk limits);
+    RoleResult<TradePlan> ReadPlan(string answered, AgentContext agent);
 
     RoleResult<RiskReview> ReadReview(string answered, TradePlan plan);
 }
@@ -117,6 +120,7 @@ public sealed record RoleRejection(RejectionRule Rule, string Field);
 |---|---|
 | **The schema** | `SchemaCheck` checks the answer against the document that was sent: every field is there, once, with a value of its type and, where the schema lists values, one of them, and no field is there that the schema does not define. |
 | **The ranges** | What a schema cannot say: see "The ranges". |
+| **What a plan may do** | The plan of the Strategist is held to the market and the position of its agent: see "What a plan may do". |
 | **What a prompt never holds** | A report or a plan that holds a secret, an email address, or an identifier is rejected, as `PromptScreen` finds it: a later role reads it in its prompt (FR-PRM-9). It is asked of the text as it is placed, so an escape of the answer is the character that it stands for. |
 
 | Rule | Detail |
@@ -145,7 +149,7 @@ The ranges are fixed, in `RoleRanges`, and are no settings.
 | `riskFraction` of a review | Above zero, and below the one of the plan. |
 
 - **The risk fraction is a share of the agent's equity** (FR-RSK-5): what is lost if the stop-loss is hit. A plan that asks for more than its agent allows is rejected, and is not cut down to what is allowed. A fraction that was written as a percentage, such as `2`, is rejected in the same way.
-- **The limit is that of the agent of the cycle,** as its prompt stated it: `DataPackage.Agent.Limits`.
+- **The limit is that of the agent of the cycle,** as its prompt stated it: `DataPackage.Agent`, which `ReadPlan` is handed, has the limits.
 
 **A plan has the fields that its action needs, and no others:**
 
@@ -155,9 +159,35 @@ The ranges are fixed, in `RoleRanges`, and are no settings.
 | `adjust_protection` | null | null | One of them, or both | null |
 | `hold`, `close` | null | null | null | null |
 
-- So a plan that opens a position always includes a stop-loss price and a take-profit price (FR-CYC-7).
+- **So a plan that opens a position always includes a stop-loss price and a take-profit price** (FR-CYC-7). One that lacks either is rejected, as `stopLoss: Required` or `takeProfit: Required`, and a price is above zero.
 - **A review names a fraction to reduce a plan, and for nothing else.** An approval and a veto with a fraction are rejected, and so is a reduction with none.
-- Whether a market allows the action, on which side of the entry a stop-loss stands, and whether an adjustment tightens the protection are not asked here: see "Not built yet".
+- On which side of the entry a stop-loss stands is not asked here: see "Not built yet".
+
+### What a plan may do
+
+**A plan is held to the agent as the prompt of the Strategist stated it:** its market and its open position, which are in `DataPackage.Agent`. A plan that breaks one of these rules is rejected, like an answer outside a range:
+
+| Rule | A plan is rejected when | Rejection |
+|---|---|---|
+| **The action is one that the market allows** (FR-CYC-4). | It opens short or reverses on Spot. | `action: NotOnMarket` |
+| **An agent holds at most one position, and adds to none** (FR-CYC-5). | It opens long or opens short, and the agent has a position. | `action: PositionOpen` |
+| What closes, reverses, or adjusts needs a position. | It closes, reverses, or adjusts protection, and the agent has none. | `action: NoPosition` |
+| **Adjust protection moves the stop-loss only in the direction that reduces risk** (FR-CYC-6). | Its stop-loss is below the one of a long position, or above the one of a short position. | `stopLoss: AddsRisk` |
+
+| Market | With no position | With a position |
+|---|---|---|
+| Spot | `open_long`, `hold` | `hold`, `close`, `adjust_protection` |
+| Futures | `open_long`, `open_short`, `hold` | `hold`, `close`, `reverse`, `adjust_protection` |
+
+- **`PlanActions.AllowedOn` is the one list of the actions of a market.** The module of the market in the prompt names the same actions, and `PlanRuleTests` holds the two to each other. The schema of a plan has the actions of both markets: a schema is fixed, and is the same for every agent.
+- **The way to the other side is a reverse.** A plan that opens short while the agent is long is rejected, and so is one that opens long: it would add to the position.
+- **A stop-loss that stays where it is adds no risk,** and is taken. A position that has no stop-loss resting on the exchange takes any: whatever is placed reduces the risk of having none.
+- **The take-profit moves in either direction** (FR-CYC-6). Nothing is asked of it.
+- **The order of the rules:** the market, then the position, then the ranges of a price and of the risk fraction, then the fields of the action, then the stop-loss of an adjustment. An answer is rejected by the first that it breaks: a plan to open long with no stop-loss, which risks more than its agent allows, is rejected as `riskFraction: OutOfRange`.
+- **A plan that breaks a rule is no valid result.** The Strategist is called once more, and a cycle whose Strategist breaks a rule again ends with no decision and no new entry (FR-TEAM-9). Nothing of such a plan is taken out or repaired: a short on Spot is not read as a hold.
+- **The Strategist is told the rules.** Its instructions say which actions go with a position and which with none, and where a new stop-loss may stand: see "The roles" in [prompts.md](prompts.md).
+- **The position is the one of the data package,** which is what the model was told. What an agent holds may change while its cycle runs: a stop-loss that is hit closes the position. What the agent holds when an order is due is the Risk Guard's to ask: see "Not built yet".
+- An entry that rests on the exchange and has not filled is no position. An unfilled limit entry is cancelled at the next cycle (FR-BIN-S2), which is not built.
 
 ## The review
 
@@ -180,6 +210,39 @@ The ranges are fixed, in `RoleRanges`, and are no settings.
 
 - **A vetoed plan does not go on, in whole.** A reverse that is vetoed closes nothing: the position stays as it is, with its protective orders, and the Strategist plans again at the next close.
 - **A veto is a decision, and no failure.** The cycle ended, and its record says `Vetoed`. The plan that was vetoed is in the record, with its entry, its stop-loss, and its take-profit (FR-EXP-5).
+
+## The stale limit
+
+**A decision that completes later than the stale limit for its timeframe cannot open a position. It can still close a position or tighten protection** (FR-CYC-9). `StaleLimit` is what the limit does to a decision:
+
+```csharp
+public static class StaleLimit
+{
+    public static bool IsStale(DateTimeOffset closedAt, DateTimeOffset completedAt, TimeSpan limit);
+
+    public static TeamDecision Of(TradePlan plan);
+}
+```
+
+| Plan | Decision | What goes on to the Risk Guard | Outcome |
+|---|---|---|---|
+| `hold`, `close`, `adjust_protection` | In time, or stale | As in "The review": nothing of a hold, and the plan as planned of the other two | `Hold`, `Unreviewed` |
+| `open_long`, `open_short` | Stale | Nothing | `Stale` |
+| `reverse` | Stale | **The close alone:** a plan to close the open position | `Stale` |
+
+| Rule | Detail |
+|---|---|
+| **The limit counts from the close of the candle** that the cycle is for. | It is the one of the agent's timeframe in `Trading:StaleSeconds`, which `StaleSecondsSettings.Of` gives: in the tracked file 120 seconds for 15m, 300 for 1H, 600 for 4H, and 900 for 1D (SRS Appendix B). |
+| **A decision is stale when it completes later than the limit.** | One that completes at the limit itself is in time: `StaleLimit.IsStale`. |
+| **A decision completes with the last answer that it takes.** | It is asked twice. When the plan of the Strategist is read: a plan that opens a position and is stale by then is not reviewed. And when the review of the Risk Manager is read: a plan that would go on, and is stale by then, opens nothing. |
+| **Only a plan that opens a position is held to it.** | Open long, open short, and reverse. A plan that holds, closes a position, or adjusts protection goes on as it would in time. An adjustment moves the stop-loss only in the direction that reduces risk, so nothing that is late adds risk. |
+| **Of a reverse, the close goes on.** | A reverse closes the open position, and then opens one on the opposite side. The second half opens a position, and is dropped. The first reduces risk, and goes on as a plan to close: `StaleLimit.Of`. A reverse that is stale before it is reviewed is not reviewed, as no plan to close is. Of one that the Risk Manager approved or reduced, and that is stale by then, the close goes on as well. |
+| **A veto is a veto, in time or not.** | A plan that the Risk Manager vetoed does not go on, in whole, also when the decision is stale: the outcome is `Vetoed`, and a reverse closes nothing. |
+| **A plan that had no valid review ends with no decision,** in time or not. | The outcome is `NoDecision`. |
+| **A stale decision is a decision, and no failure.** | The cycle ended, its record says `Stale`, and the log says once, as a warning, how late the decision was. |
+
+- **A cycle may be stale as it starts.** A cycle starts up to 5 minutes after its close, which is later than the 120 seconds of 15m in the tracked file. Its team is called all the same: it may close a position or tighten protection.
+- **The limit is asked with the clock of the application,** when the answer of a role is read. What the Risk Guard asks when an order is due is its own: see "Not built yet".
 
 ## A role call
 
@@ -234,7 +297,8 @@ A role is called twice at most: `RoleRuns.Attempts`. **What becomes of the cycle
 | `Hold` | The plan is to hold. |
 | `Unreviewed` | The plan closes a position or adjusts protection, and goes on as planned. |
 | `Approved`, `Reduced`, `Vetoed` | The plan opens a position, and this is what the Risk Manager made of it. |
-| `NoDecision` | A role other than the Sentiment Analyst gave no valid result. |
+| `Stale` | The plan opens a position, and the decision completed later than the stale limit of the agent's timeframe: no position is opened. Of a reverse, the close goes on. |
+| `NoDecision` | A role other than the Sentiment Analyst gave no valid result. A plan that does what a plan may not do is none. |
 | `Failed` | An error ended the cycle: its data package could not be built, its team is not whole, a prompt was refused, or its record could not be stored. |
 | `Stopped` | The cycle was stopped: with the application, or because the next close was near. |
 
@@ -296,7 +360,7 @@ public interface ICycleRecords
 | **A model is offered nothing that it could call.** | A call is made with a model, a prompt, a schema, and whether the model may search live: `AiCallRequest` has no place for a function or a tool, which is pinned. Across a cycle, no request to a provider offers a tool but the live search of the Sentiment Analyst's own provider, which reads the web and nothing of the service. |
 | **What a model answers is read as data.** | Into a result with the fields of its schema and no others. An answer that asks for a function to be called is no JSON object, so it is no result: the role is called once more, and nothing is called for it. |
 | **A plan is no order.** | It has no quantity and no leverage. What goes on of a plan goes on to the Risk Guard, which computes both and checks every limit (FR-RSK-3, FR-RSK-5). |
-| **What runs the team uses nothing of the exchange.** | `TeamCycle`, `RoleRuns`, `RoleResults`, `SchemaCheck`, and `PlanReview` reference no type of the Exchange Gateway. Operations that place orders belong in `Ecnanib.ExchangeGateway.Trading`: see "Placing orders" in [architecture.md](architecture.md). |
+| **What runs the team uses nothing of the exchange.** | `TeamCycle`, `RoleRuns`, `RoleResults`, `SchemaCheck`, `PlanReview`, and `StaleLimit` reference no type of the Exchange Gateway. Operations that place orders belong in `Ecnanib.ExchangeGateway.Trading`: see "Placing orders" in [architecture.md](architecture.md). |
 | **Only the Decision Engine is handed a stored key,** and only it calls a model. | `IKeyHandOver` is asked by `RoleRuns` alone. See "What a provider is sent" in [prompts.md](prompts.md). |
 
 ## The log
@@ -306,6 +370,7 @@ public interface ICycleRecords
 ```
 The team of agent {AgentId} decided for the close at {ClosedAt}: {CycleOutcome}, for a plan to {PlanAction}
 The cycle of agent {AgentId} for the close at {ClosedAt} ended with no decision and no new entry: the {Role} gave no valid result
+The decision of agent {AgentId} for the close at {ClosedAt} is stale: it completed {CompletedAfterSeconds} s after the close, and the stale limit of {Timeframe} is {StaleSeconds} s. Its plan to {PlanAction} opens no position, and what goes on is {GoesOn}
 The cycle of agent {AgentId} for the close at {ClosedAt} continues with sentiment marked unavailable
 The record of the cycle of agent {AgentId} for the close at {ClosedAt} could not be stored ({CycleOutcome})
 The {Role} of agent {AgentId} gave no valid result for the close at {ClosedAt}
@@ -318,10 +383,10 @@ The key of user {UserId} for the AI provider {Provider} could not be checked aga
 | Level | Event |
 |---|---|
 | `Information` | The decision of the team, and a key that was checked again. |
-| `Warning` | A result that was rejected, a role that gave no valid result, a role that is not called, sentiment that is unavailable, and a cycle with no decision. |
+| `Warning` | A result that was rejected, a role that gave no valid result, a role that is not called, sentiment that is unavailable, a cycle with no decision, and a decision that is stale. |
 | `Error` | A record that could not be stored, and a key that could not be checked again, each with the error. |
 
-An event names a field of a schema and a rule, an action, and an outcome. It never holds a price, a fraction, or anything that a model wrote. What the gateway logs of each call is in "AI calls" in [logging.md](logging.md).
+An event names a field of a schema and a rule, an action, and an outcome, and a stale decision says how late it was and what of its plan goes on: `Close`, or `nothing`. It never holds a price, a fraction, or anything that a model wrote. What the gateway logs of each call is in "AI calls" in [logging.md](logging.md).
 
 ## Testing
 
@@ -337,13 +402,17 @@ An event names a field of a schema and a rule, an action, and an outcome. It nev
 - **An order is held to through what a call was made with,** and not through waiting for something not to happen: the prompt of the Strategist holds what both analysts answered, and the prompt of the Risk Manager the plan.
 - `TeamRecordTests` runs cycles of agents of the database through the gateway itself, with the stored keys of their users, and with a stand-in for the providers: `CyclesApplication` with `providers`.
 - `TeamAnswers` has a valid answer of each role, and `StoredCycleRows.GiveCycleAsync` gives an agent the record of a cycle without one that runs.
+- **A plan is read for an agent.** `PlanAgents.On` is an agent on a market, with the position that it holds or with none, and `PlanAgents.For` is one that may have the plan of an answer, whatever its action. A cycle whose agent holds a position is given `PlanAgents.Holding`, which is a `StandInHoldings`: see "Testing" in [cycles.md](cycles.md).
+- **A decision is made stale by moving the clock while a call is held.** `StandInModels.Hold` holds the call of the Strategist or of the Risk Manager, the test sets the clock to when the role answers, and lets the call go. The limits are those of the file of the tests: 100 seconds for 15m, 200 for 1H, 400 for 4H, and 800 for 1D.
 - `LiveProviderTests` sends the schema of each role to the providers themselves, and reads what they answer with `IRoleResults`. It is skipped unless a key and a model are given: see "Checking against the real providers" in [ai-providers.md](ai-providers.md).
 
 ## Not built yet
 
 - The Risk Guard, which checks every plan that goes on and computes the order size (FR-RSK-3, FR-RSK-5), and the orders (FR-BIN-6). A cycle ends with the decision of the team.
-- Holding a plan to the actions that its market allows, to one position, to a stop-loss on the right side of its entry, and to protection that only tightens (FR-CYC-4 to FR-CYC-6). The schema of a plan has the actions of both markets. With it comes what a reverse is when only its close can go on.
-- The stale limit: a decision that completes later than the limit of its timeframe opens no position (FR-CYC-9).
+- Holding a plan to a stop-loss on the correct side of its entry, which the Risk Guard does with the price (FR-RSK-4). A plan that opens long with a stop-loss above its take-profit is read as a result.
+- Asking again, when an order is due, what was asked when the plan was read: the Risk Guard holds a plan to the position that the agent has then, to protection that only tightens, and to the stale limit (FR-RSK-4). A plan is held to the position of its data package, and a decision to the limit when it completes.
+- Leaving out the calls of a cycle that can decide nothing: one that is stale as it starts, for an agent that holds no position. Its team is called, and what it plans ends as `Hold` or `Stale`.
+- What a reverse is when the Risk Guard rejects what it opens. Of a stale reverse the close goes on, and of a vetoed one nothing.
 - Recalling lessons for the Strategist and the Risk Manager (FR-EXP-7). Both are given none.
 - Moving an agent to Attention required when a call reports that its model does not exist (FR-CAT-8). The call is recorded as `ModelNotFound`, and the cycle ends as its role says. The catalog marks a model that its provider no longer lists, which moves the agents that run with it: see "When a model goes" in [agents.md](agents.md).
 - Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A call that ends as `Failed` is not made again, and the next close calls again.

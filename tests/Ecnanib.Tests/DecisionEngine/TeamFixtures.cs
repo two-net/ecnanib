@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Text.Json;
 using Ecnanib.Agents;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.Credentials;
@@ -85,6 +86,66 @@ internal static class Plans
     /// <summary>Everything of a plan but its risk fraction.</summary>
     public static (PlanAction, EntryType?, decimal?, decimal?, decimal?, string) ButForItsRisk(this TradePlan plan) =>
         (plan.Action, plan.EntryType, plan.EntryPrice, plan.StopLoss, plan.TakeProfit, plan.Rationale);
+
+    /// <summary>
+    /// Reads a plan for an agent that may have it: see <see cref="PlanAgents.For"/>. A test of
+    /// what a plan may do names the agent itself.
+    /// </summary>
+    public static RoleResult<TradePlan> ReadPlan(this IRoleResults results, string answered) =>
+        results.ReadPlan(answered, PlanAgents.For(answered));
+}
+
+/// <summary>
+/// The agents that the tests read a plan for: a market, and the position that the agent holds,
+/// as the prompt of the Strategist states them (FR-CYC-4 to FR-CYC-6).
+/// </summary>
+internal static class PlanAgents
+{
+    /// <summary>A long position: its stop-loss rests below its entry, and its take-profit above.</summary>
+    public static readonly PositionContext Long = new(
+        PositionSide.Long, EntryPrice: 60000m, Quantity: 0.01m, StopLoss: 59500m, TakeProfit: 64000m);
+
+    /// <summary>A short position: its stop-loss rests above its entry, and its take-profit below.</summary>
+    public static readonly PositionContext Short = new(
+        PositionSide.Short, EntryPrice: 60000m, Quantity: 0.01m, StopLoss: 61000m, TakeProfit: 56000m);
+
+    /// <summary>An agent on a market, with the position that it holds, or none.</summary>
+    public static AgentContext On(Market market, PositionContext? position = null, AgentRisk? limits = null) =>
+        new(market, Timeframe.OneHour, "BTCUSDT", "USDT", Equity: 1000m, position, limits ?? TeamAnswers.Limits);
+
+    /// <summary>
+    /// An agent that may have the plan of an answer, whatever its action: on Futures, which
+    /// allows every action, with a long position where the action is one that needs a position,
+    /// and with none where it is not.
+    /// </summary>
+    public static AgentContext For(string answered, AgentRisk? limits = null) =>
+        On(Market.Futures, NeedsPosition(answered) ? Long : null, limits);
+
+    /// <summary>What an agent with a position holds, for a cycle that builds its data package.</summary>
+    public static StandInHoldings Holding(PositionContext position) =>
+        new(new AgentHoldings(Equity: 1000m, position, Orders: []));
+
+    /// <summary>The same for the plan of an answer, or null where its action needs no position: the agent then holds nothing.</summary>
+    public static StandInHoldings? HoldingFor(string answered) => NeedsPosition(answered) ? Holding(Long) : null;
+
+    /// <summary>Whether the action of an answer is one that needs a position: close, reverse, and adjust protection.</summary>
+    public static bool NeedsPosition(string answered)
+    {
+        try
+        {
+            using var answer = JsonDocument.Parse(answered);
+
+            return answer.RootElement.ValueKind == JsonValueKind.Object
+                && answer.RootElement.TryGetProperty("action", out var action)
+                && action.ValueKind == JsonValueKind.String
+                && action.GetString() is "close" or "reverse" or "adjust_protection";
+        }
+        catch (JsonException)
+        {
+            // An answer that is no JSON names no action.
+            return false;
+        }
+    }
 }
 
 /// <summary>Data packages and reports as a cycle has them, for a test that says what a role is given.</summary>
@@ -198,6 +259,9 @@ internal static class TeamLog
         "The team of agent {AgentId} decided for the close at {ClosedAt}: {CycleOutcome}, for a plan to {PlanAction}";
     public const string NoDecision =
         "The cycle of agent {AgentId} for the close at {ClosedAt} ended with no decision and no new entry: the {Role} gave no valid result";
+    public const string Stale =
+        "The decision of agent {AgentId} for the close at {ClosedAt} is stale: it completed {CompletedAfterSeconds} s after the close, " +
+        "and the stale limit of {Timeframe} is {StaleSeconds} s. Its plan to {PlanAction} opens no position, and what goes on is {GoesOn}";
     public const string SentimentUnavailable =
         "The cycle of agent {AgentId} for the close at {ClosedAt} continues with sentiment marked unavailable";
     public const string NotRecorded =

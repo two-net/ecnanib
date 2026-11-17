@@ -36,7 +36,7 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
         Assert.Equal(["A spot ETF saw record inflows."], sentiment.Value.NotableEvents);
         Assert.Equal("Mixed headlines, with no clear lead.", sentiment.Value.Rationale);
 
-        var plan = Results.ReadPlan(TeamAnswers.Plan("open_short", "limit", entryPrice: 61250.25m), TeamAnswers.Limits);
+        var plan = Results.ReadPlan(TeamAnswers.Plan("open_short", "limit", entryPrice: 61250.25m));
 
         Assert.True(plan.IsValid);
         Assert.Equal(
@@ -175,7 +175,7 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
         Assert.True(Results.ReadSentiment(TeamAnswers.Sentiment.Replace("0.6", "1", StringComparison.Ordinal)).IsValid);
 
         // The whole risk per trade of the agent, which the profile asks for.
-        Assert.True(Results.ReadPlan(TeamAnswers.Plan(riskFraction: 0.015m), TeamAnswers.Limits).IsValid);
+        Assert.True(Results.ReadPlan(TeamAnswers.Plan(riskFraction: 0.015m)).IsValid);
 
         // No level and no event, and as many as there may be.
         Assert.True(Results.ReadMarketReport(TeamAnswers.MarketReport.Replace("[{\"price\":60000,\"kind\":\"support\"},{\"price\":62500.5,\"kind\":\"resistance\"}]", "[]", StringComparison.Ordinal)).IsValid);
@@ -221,7 +221,7 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
     [MemberData(nameof(PlansByAction))]
     public void A_plan_has_the_fields_that_its_action_needs_and_no_others(string what, string answered, RejectionRule? rule, string? field)
     {
-        var plan = Results.ReadPlan(answered, TeamAnswers.Limits);
+        var plan = Results.ReadPlan(answered);
 
         if (rule is null)
         {
@@ -241,7 +241,7 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
         // and how much it risks.
         Assert.All(new[] { "open_long", "open_short", "reverse" }, action =>
         {
-            var plan = Results.ReadPlan(TeamAnswers.Plan(action), TeamAnswers.Limits).Value!;
+            var plan = Results.ReadPlan(TeamAnswers.Plan(action)).Value!;
 
             Assert.True(plan.OpensPosition);
             Assert.NotNull(plan.EntryType);
@@ -251,7 +251,7 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
         });
 
         Assert.All(new[] { TeamAnswers.Hold, TeamAnswers.Close, TeamAnswers.Adjust }, answered =>
-            Assert.False(Results.ReadPlan(answered, TeamAnswers.Limits).Value!.OpensPosition));
+            Assert.False(Results.ReadPlan(answered).Value!.OpensPosition));
     }
 
     [Fact]
@@ -263,8 +263,8 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
         // The same answer, for two agents: 1 percent of the equity.
         Assert.Equal(
             new RoleRejection(RejectionRule.OutOfRange, "riskFraction"),
-            Results.ReadPlan(TeamAnswers.Plan(), cautious).Rejection);
-        Assert.True(Results.ReadPlan(TeamAnswers.Plan(), bold).IsValid);
+            Results.ReadPlan(TeamAnswers.Plan(), PlanAgents.On(Market.Spot, limits: cautious)).Rejection);
+        Assert.True(Results.ReadPlan(TeamAnswers.Plan(), PlanAgents.On(Market.Spot, limits: bold)).IsValid);
 
         Assert.Equal(0.005m, RoleRanges.HighestRiskFraction(cautious));
         Assert.Equal(0.05m, RoleRanges.HighestRiskFraction(bold));
@@ -289,7 +289,7 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
 
         Assert.All(answers, answered =>
         {
-            var plan = Results.ReadPlan(answered, TeamAnswers.Limits);
+            var plan = Results.ReadPlan(answered);
 
             Assert.False(plan.IsValid);
 
@@ -321,7 +321,7 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
         [
             Rejection(Results.ReadMarketReport(TeamAnswers.MarketReport.Replace("Higher lows above the 50-period average.", text, StringComparison.Ordinal))),
             Rejection(Results.ReadSentiment(TeamAnswers.Sentiment.Replace("A spot ETF saw record inflows.", text, StringComparison.Ordinal))),
-            Rejection(Results.ReadPlan(TeamAnswers.Plan(rationale: text), TeamAnswers.Limits)),
+            Rejection(Results.ReadPlan(TeamAnswers.Plan(rationale: text))),
         ];
 
         Assert.All(rejections, rejection =>
@@ -329,7 +329,7 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
 
         // No prompt reads the review of the Risk Manager, so what it holds rejects none. It is
         // not kept all the same.
-        var plan = Results.ReadPlan(TeamAnswers.Plan(), TeamAnswers.Limits).Value!;
+        var plan = Results.ReadPlan(TeamAnswers.Plan()).Value!;
         var review = Results.ReadReview(TeamAnswers.Review(rationale: text), plan);
 
         Assert.True(review.IsValid, $"A review with {what} was rejected.");
@@ -351,14 +351,14 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
     {
         // What was rejected shows what the model answered, on one line.
         var answered = TeamAnswers.Plan(riskFraction: 2m);
-        var plan = Results.ReadPlan(answered, TeamAnswers.Limits);
+        var plan = Results.ReadPlan(answered);
 
         Assert.False(plan.IsValid);
         Assert.Equal(answered, plan.Json);
 
         // An answer that is no JSON, or that is too long, is not kept.
-        Assert.Null(Results.ReadPlan("hold", TeamAnswers.Limits).Json);
-        Assert.Null(Results.ReadPlan(TeamAnswers.Hold + new string(' ', 16000), TeamAnswers.Limits).Json);
+        Assert.Null(Results.ReadPlan("hold").Json);
+        Assert.Null(Results.ReadPlan(TeamAnswers.Hold + new string(' ', 16000)).Json);
     }
 
     private (bool Valid, RoleRejection? Rejection) Read(Role role, string answered)
@@ -374,11 +374,11 @@ public class RoleResultTests(EcnanibApplicationFactory application) : IClassFixt
                 return (sentiment.IsValid, sentiment.Rejection);
 
             case Role.Strategist:
-                var plan = Results.ReadPlan(answered, TeamAnswers.Limits);
+                var plan = Results.ReadPlan(answered);
                 return (plan.IsValid, plan.Rejection);
 
             default:
-                var review = Results.ReadReview(answered, Results.ReadPlan(TeamAnswers.Plan(), TeamAnswers.Limits).Value!);
+                var review = Results.ReadReview(answered, Results.ReadPlan(TeamAnswers.Plan()).Value!);
                 return (review.IsValid, review.Rejection);
         }
     }

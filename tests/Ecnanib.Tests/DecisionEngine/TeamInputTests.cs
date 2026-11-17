@@ -27,7 +27,7 @@ public class TeamInputTests(EcnanibApplicationFactory application) : IClassFixtu
         var package = TeamPackages.Of(Context(market, Timeframe.OneHour));
         var report = Results.ReadMarketReport(TeamAnswers.MarketReport);
         var sentiment = TeamPackages.SentimentOf(TeamAnswers.Sentiment, liveData: true);
-        var plan = Results.ReadPlan(TeamAnswers.Plan(), TeamAnswers.Limits);
+        var plan = Results.ReadPlan(TeamAnswers.Plan());
 
         // The Market Analyst: the package, which is price, volume, and indicators.
         var analyst = await DataOf(Role.MarketAnalyst, package.ForMarketAnalyst());
@@ -67,7 +67,7 @@ public class TeamInputTests(EcnanibApplicationFactory application) : IClassFixtu
     {
         var package = TeamPackages.Of(Context(Market.Spot, Timeframe.FourHours));
         var report = Results.ReadMarketReport(TeamAnswers.MarketReport);
-        var plan = Results.ReadPlan(TeamAnswers.Plan(), TeamAnswers.Limits);
+        var plan = Results.ReadPlan(TeamAnswers.Plan());
         string[] lessons = ["Entries against the 4H trend lost."];
 
         // The lessons are for the Strategist and the Risk Manager (FR-EXP-7).
@@ -112,7 +112,7 @@ public class TeamInputTests(EcnanibApplicationFactory application) : IClassFixtu
         var report = Results.ReadMarketReport(TeamAnswers.MarketReport.Replace("Higher lows above the 50-period average.", Posing, StringComparison.Ordinal));
         var sentiment = TeamPackages.SentimentOf(
             TeamAnswers.Sentiment.Replace("A spot ETF saw record inflows.", Posing, StringComparison.Ordinal), liveData: false);
-        var plan = Results.ReadPlan(TeamAnswers.Plan(rationale: Posing), TeamAnswers.Limits);
+        var plan = Results.ReadPlan(TeamAnswers.Plan(rationale: Posing));
 
         Assert.True(report.IsValid);
         Assert.True(plan.IsValid);
@@ -150,7 +150,7 @@ public class TeamInputTests(EcnanibApplicationFactory application) : IClassFixtu
 
         // A report whose bias is none of the three, and a plan that risks more than its agent allows.
         var report = Results.ReadMarketReport(TeamAnswers.MarketReport.Replace("bullish", "to the moon", StringComparison.Ordinal));
-        var plan = Results.ReadPlan(TeamAnswers.Plan(riskFraction: 0.5m), TeamAnswers.Limits);
+        var plan = Results.ReadPlan(TeamAnswers.Plan(riskFraction: 0.5m));
 
         Assert.False(report.IsValid);
         Assert.False(plan.IsValid);

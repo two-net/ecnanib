@@ -219,7 +219,7 @@ public class RiskManagerReviewTests(EcnanibApplicationFactory application) : ICl
 
     private TradePlan PlanOf(string answered)
     {
-        var plan = Results.ReadPlan(answered, TeamAnswers.Limits);
+        var plan = Results.ReadPlan(answered);
 
         Assert.True(plan.IsValid, $"The plan of the test was rejected: {plan.Rejection}.");
 

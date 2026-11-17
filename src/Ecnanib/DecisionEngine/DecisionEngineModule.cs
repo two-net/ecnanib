@@ -20,9 +20,10 @@ public static class DecisionEngineModule
     {
         // What a cycle does once it has started: it builds its data package, runs the four roles
         // of the team, validates what each answered, and records every call (FR-TEAM-6 to
-        // FR-TEAM-9). It ends with the decision of the team: the Risk Guard and the orders are
-        // not built. What reconciles an agent with the exchange registers an IReconciliation,
-        // when it is built.
+        // FR-TEAM-9). A decision that completes later than the stale limit of the agent's
+        // timeframe opens no position (FR-CYC-9). It ends with the decision of the team: the
+        // Risk Guard and the orders are not built. What reconciles an agent with the exchange
+        // registers an IReconciliation, when it is built.
         services.AddSingleton<IDecisionCycle, TeamCycle>();
 
         // One role of a team in a cycle: its prompt, the call of its model with the key of the
@@ -60,8 +61,10 @@ public static class DecisionEngineModule
         // what runs the roles of a cycle does.
         services.AddSingleton<IRoleCalls, RoleCalls>();
 
-        // What validates the answer of a role: against the fixed schema of the role, and against
-        // the ranges of its values (FR-TEAM-6, NFR-SEC-7). Only it makes a result.
+        // What validates the answer of a role: against the fixed schema of the role, against the
+        // ranges of its values (FR-TEAM-6, NFR-SEC-7), and, for a plan, against what a plan may
+        // do for its agent: the actions of its market, one position, and protection that only
+        // tightens (FR-CYC-4 to FR-CYC-7). Only it makes a result.
         services.AddSingleton<IRoleResults, RoleResults>();
 
         // What records a cycle with the calls of its roles, once, when it ends (FR-TEAM-8).

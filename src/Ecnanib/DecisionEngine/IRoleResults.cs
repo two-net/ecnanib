@@ -5,8 +5,9 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// Validates what the model of a role answered (FR-TEAM-6, NFR-SEC-7): against the fixed schema
-/// of the role, and against the ranges that its values are allowed. A result outside either is
-/// rejected. See "Validating a result" in docs/team.md.
+/// of the role, against the ranges that its values are allowed, and, for a plan, against what a
+/// plan may do for its agent (FR-CYC-4 to FR-CYC-7). A result outside any of them is rejected.
+/// See "Validating a result" in docs/team.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,13 +37,17 @@ public interface IRoleResults
     /// <param name="answered">The answer, as the gateway gave it.</param>
     RoleResult<SentimentRead> ReadSentiment(string answered);
 
-    /// <summary>Reads what the Strategist answered.</summary>
+    /// <summary>
+    /// Reads what the Strategist answered, and holds it to what a plan may do for the agent
+    /// (FR-CYC-4 to FR-CYC-7). See "What a plan may do" in docs/team.md.
+    /// </summary>
     /// <param name="answered">The answer, as the gateway gave it.</param>
-    /// <param name="limits">
-    /// The limits of the agent, as its prompt stated them: a plan that opens a position risks at
+    /// <param name="agent">
+    /// The agent, as the prompt of the Strategist stated it: its market, which says the actions
+    /// that are allowed, its open position, and its limits. A plan that opens a position risks at
     /// most the agent's risk per trade.
     /// </param>
-    RoleResult<TradePlan> ReadPlan(string answered, AgentRisk limits);
+    RoleResult<TradePlan> ReadPlan(string answered, AgentContext agent);
 
     /// <summary>Reads what the Risk Manager answered about a plan.</summary>
     /// <param name="answered">The answer, as the gateway gave it.</param>
@@ -142,6 +147,18 @@ public enum RejectionRule
 
     /// <summary>The answer holds what a prompt never holds: a secret, an email address, or an identifier (FR-PRM-9).</summary>
     HoldsWhatAPromptNeverHolds,
+
+    /// <summary>The action of the plan is not one that the market of the agent allows (FR-CYC-4).</summary>
+    NotOnMarket,
+
+    /// <summary>The plan opens a position, and the agent has one: it holds one at most, and adds to none (FR-CYC-5).</summary>
+    PositionOpen,
+
+    /// <summary>The plan closes, reverses, or adjusts the protection of a position, and the agent has none.</summary>
+    NoPosition,
+
+    /// <summary>The plan moves the stop-loss in the direction that adds risk (FR-CYC-6).</summary>
+    AddsRisk,
 }
 
 /// <summary>

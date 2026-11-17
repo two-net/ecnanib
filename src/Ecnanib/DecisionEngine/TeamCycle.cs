@@ -1,4 +1,5 @@
 using Ecnanib.Agents;
+using Ecnanib.Platform.Settings;
 using Ecnanib.Shared;
 
 namespace Ecnanib.DecisionEngine;
@@ -18,7 +19,14 @@ namespace Ecnanib.DecisionEngine;
 /// <para>
 /// <b>When a role gives no valid result,</b> also when it was called once more: a cycle whose
 /// Sentiment Analyst gave none continues with sentiment marked unavailable, and a cycle whose
-/// other role gave none ends with no decision and no new entry (FR-TEAM-9).
+/// other role gave none ends with no decision and no new entry (FR-TEAM-9). A plan that does
+/// what a plan may not do is no valid result (FR-CYC-4 to FR-CYC-7).
+/// </para>
+/// <para>
+/// <b>A decision that is stale opens no position</b> (FR-CYC-9): one that completes later than
+/// the stale limit of the agent's timeframe after the close. It is asked when the plan is read,
+/// so that a plan which cannot open is not reviewed, and again when the review is. A plan that
+/// closes a position or adjusts protection goes on all the same. See <see cref="StaleLimit"/>.
 /// </para>
 /// <para>
 /// <b>It ends with the decision of the team, and places nothing.</b> The Risk Guard, which
@@ -36,6 +44,7 @@ internal sealed class TeamCycle(
     IRoleResults results,
     RoleRuns roles,
     ICycleRecords records,
+    TradingSettings settings,
     TimeProvider clock,
     ILogger<TeamCycle> logger) : IDecisionCycle
 {
@@ -105,13 +114,15 @@ internal sealed class TeamCycle(
 
         var sentiment = SentimentOf(cycle, await searching);
 
-        // Step 4: the Strategist, with both reports. A plan risks at most what the agent allows.
+        // Step 4: the Strategist, with both reports. A plan does what a plan may do for the
+        // agent as its prompt stated it: the actions of its market, one position, protection
+        // that only tightens, and at most the risk that the agent allows (FR-CYC-4 to FR-CYC-7).
         var planning = await roles.RunAsync(
             kept,
             cycle,
             team[Role.Strategist],
             package.ForStrategist(NoLessons, market, sentiment),
-            answered => results.ReadPlan(answered, package.Agent.Limits),
+            answered => results.ReadPlan(answered, package.Agent),
             cancellationToken);
 
         if (planning.Result is not { Value: { } plan } planned)
@@ -119,12 +130,24 @@ internal sealed class TeamCycle(
             return NoDecision(cycle, Role.Strategist);
         }
 
-        // Step 5: the Risk Manager, for a plan that opens a position. It is given the plan, and
-        // neither report.
-        RiskReview? review = null;
+        TeamDecision decision;
 
-        if (PlanReview.Reviews(plan))
+        if (!PlanReview.Reviews(plan))
         {
+            // It holds, closes a position, or adjusts protection: it is not reviewed, and it is
+            // not held to the stale limit either, so nothing stands in the way of reducing risk.
+            decision = PlanReview.Of(plan, review: null);
+        }
+        else if (IsStale(cycle))
+        {
+            // The plan opens a position, and the decision is stale before it is reviewed: it
+            // opens none whatever a review says (FR-CYC-9), so no model is called to review it.
+            decision = Stale(cycle, plan);
+        }
+        else
+        {
+            // Step 5: the Risk Manager, for a plan that opens a position. It is given the plan,
+            // and neither report.
             var reviewing = await roles.RunAsync(
                 kept,
                 cycle,
@@ -133,15 +156,20 @@ internal sealed class TeamCycle(
                 answered => results.ReadReview(answered, plan),
                 cancellationToken);
 
-            if (reviewing.Result is not { Value: { } reviewed })
+            if (reviewing.Result is not { Value: { } review })
             {
                 return NoDecision(cycle, Role.RiskManager);
             }
 
-            review = reviewed;
-        }
+            decision = PlanReview.Of(plan, review);
 
-        var decision = PlanReview.Of(plan, review);
+            // The decision completes with the review. A plan that would go on, and is stale by
+            // now, opens no position. A veto is a veto, in time or not: nothing goes on.
+            if (decision.GoesOn is not null && IsStale(cycle))
+            {
+                decision = Stale(cycle, plan);
+            }
+        }
 
         // Steps 6 and 7 are not built: the Risk Guard, which checks what goes on, and the
         // orders. The decision of the team is recorded, and nothing is placed.
@@ -173,6 +201,32 @@ internal sealed class TeamCycle(
             cycle.ClosedAt);
 
         return SentimentReport.Unavailable;
+    }
+
+    /// <summary>
+    /// Whether a decision that completes now is stale: later than the stale limit of the agent's
+    /// timeframe after the close that the cycle is for (FR-CYC-9).
+    /// </summary>
+    private bool IsStale(CycleStart cycle) =>
+        StaleLimit.IsStale(cycle.ClosedAt, clock.GetUtcNow(), settings.StaleSeconds.Of(cycle.Agent.Timeframe));
+
+    /// <summary>What becomes of a plan that opens a position when its decision is stale, which is said as a warning.</summary>
+    private TeamDecision Stale(CycleStart cycle, TradePlan plan)
+    {
+        var decision = StaleLimit.Of(plan);
+
+        logger.LogWarning(
+            "The decision of agent {AgentId} for the close at {ClosedAt} is stale: it completed {CompletedAfterSeconds} s after the close, " +
+            "and the stale limit of {Timeframe} is {StaleSeconds} s. Its plan to {PlanAction} opens no position, and what goes on is {GoesOn}",
+            cycle.Agent.Id,
+            cycle.ClosedAt,
+            Math.Round((clock.GetUtcNow() - cycle.ClosedAt).TotalSeconds, 1),
+            cycle.Agent.Timeframe.Code(),
+            settings.StaleSeconds.Of(cycle.Agent.Timeframe).TotalSeconds,
+            plan.Action,
+            decision.GoesOn?.Action.ToString() ?? "nothing");
+
+        return decision;
     }
 
     private CycleOutcome NoDecision(CycleStart cycle, Role role)

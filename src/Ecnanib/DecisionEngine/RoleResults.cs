@@ -7,9 +7,10 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// Validates what the model of a role answered (FR-TEAM-6, NFR-SEC-7). An answer is valid when
-/// it is inside the schema of its role, when its values are inside their ranges, and, where a
-/// later role reads it, when it holds nothing that a prompt never holds. See "Validating a
-/// result" in docs/team.md.
+/// it is inside the schema of its role, when its values are inside their ranges, when a plan
+/// does what a plan may do for its agent (FR-CYC-4 to FR-CYC-7), and, where a later role reads
+/// it, when it holds nothing that a prompt never holds. See "Validating a result" in
+/// docs/team.md.
 /// </summary>
 internal sealed class RoleResults(PromptScreen screen) : IRoleResults
 {
@@ -30,11 +31,12 @@ internal sealed class RoleResults(PromptScreen screen) : IRoleResults
     public RoleResult<SentimentRead> ReadSentiment(string answered) =>
         Read(Role.SentimentAnalyst, answered, placed: true, SentimentOf);
 
-    public RoleResult<TradePlan> ReadPlan(string answered, AgentRisk limits)
+    public RoleResult<TradePlan> ReadPlan(string answered, AgentContext agent)
     {
-        ArgumentNullException.ThrowIfNull(limits);
+        ArgumentNullException.ThrowIfNull(agent);
+        ArgumentNullException.ThrowIfNull(agent.Limits);
 
-        return Read(Role.Strategist, answered, placed: true, plan => PlanOf(plan, RoleRanges.HighestRiskFraction(limits)));
+        return Read(Role.Strategist, answered, placed: true, plan => PlanOf(plan, agent));
     }
 
     public RoleResult<RiskReview> ReadReview(string answered, TradePlan plan)
@@ -184,12 +186,38 @@ internal sealed class RoleResults(PromptScreen screen) : IRoleResults
     }
 
     /// <summary>
-    /// A plan has the fields that its action needs, and no others (SRS 4.5). Whether a market
-    /// allows the action, and where a stop-loss stands to its entry, is not asked here.
+    /// A plan does what a plan may do for its agent (FR-CYC-4 to FR-CYC-7), and has the fields
+    /// that its action needs, and no others (SRS 4.5). Where a stop-loss stands to its entry is
+    /// not asked here: the Risk Guard asks, with the price (FR-RSK-4).
     /// </summary>
-    private static Values<TradePlan> PlanOf(JsonElement answer, decimal highestRiskFraction)
+    /// <remarks>
+    /// The agent is as the prompt of the Strategist stated it, so a plan is held to what its
+    /// model was told. What the agent holds when an order is due is the Risk Guard's to ask.
+    /// </remarks>
+    private static Values<TradePlan> PlanOf(JsonElement answer, AgentContext agent)
     {
         var action = Named<PlanAction>(answer.GetProperty("action"));
+        var position = agent.Position;
+
+        // The action is one that the market allows: Spot has no short, and so no reverse (FR-CYC-4).
+        if (!PlanActions.AllowedOn(agent.Market).Contains(action))
+        {
+            return Broke(RejectionRule.NotOnMarket, "action");
+        }
+
+        // An agent holds one position at most, and adds to none (FR-CYC-5). So a plan opens one
+        // only for an agent that has none, and what closes, reverses, or adjusts needs one.
+        if (position is not null && action is PlanAction.OpenLong or PlanAction.OpenShort)
+        {
+            return Broke(RejectionRule.PositionOpen, "action");
+        }
+
+        if (position is null && action is PlanAction.Close or PlanAction.Reverse or PlanAction.AdjustProtection)
+        {
+            return Broke(RejectionRule.NoPosition, "action");
+        }
+
+        var highestRiskFraction = RoleRanges.HighestRiskFraction(agent.Limits);
         var entry = answer.GetProperty("entryType");
         EntryType? entryType = entry.ValueKind == JsonValueKind.Null ? null : Named<EntryType>(entry);
 
@@ -253,6 +281,17 @@ internal sealed class RoleResults(PromptScreen screen) : IRoleResults
         if (action == PlanAction.AdjustProtection && stopLoss is null && takeProfit is null)
         {
             return Broke(RejectionRule.Required, "stopLoss");
+        }
+
+        // An adjustment moves the stop-loss only in the direction that reduces risk: up for a
+        // long, and down for a short (FR-CYC-6). A stop-loss that stays where it is adds none,
+        // and a position that has none resting takes any. The take-profit moves either way.
+        if (action == PlanAction.AdjustProtection
+            && stopLoss is { } moved
+            && position is { StopLoss: { } resting }
+            && (position.Side == PositionSide.Long ? moved < resting : moved > resting))
+        {
+            return Broke(RejectionRule.AddsRisk, "stopLoss");
         }
 
         if (RationaleOf(answer) is { } rejection)

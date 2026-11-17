@@ -6,7 +6,9 @@ A cycle that starts builds its data package: the most recent closed candles of t
 
 The Sentiment Analyst gathers news and social context using the live-search capability of its model where the provider offers one. If the selected model has none, the role still runs, its report is marked "no live data", and the Strategist is told to give it no weight (FR-CYC-3).
 
-What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, what the call of the Sentiment Analyst and its report go by, which is in "Live search", and the calls of the team, which are in [team.md](team.md): the four roles in their order, the validation of what each answers, and the record of the cycle (SRS 3.2, steps 3 to 5). What comes after the team is not built: the Risk Guard and the orders (steps 6 and 7). A cycle that starts builds its package, runs its team, and ends with the decision of the team, and with no order. See "Not built yet".
+A plan does only what a plan may do: the actions of its market, for an agent that holds at most one position, with protection that only tightens, and with a stop-loss and a take-profit where it opens a position (FR-CYC-4 to FR-CYC-7). A decision that completes later than the stale limit for its timeframe cannot open a position (FR-CYC-9). Both are in [team.md](team.md): "What a plan may do" and "The stale limit".
+
+What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, what the call of the Sentiment Analyst and its report go by, which is in "Live search", and the calls of the team, which are in [team.md](team.md): the four roles in their order, the validation of what each answers, what a plan may do, the stale limit, and the record of the cycle (SRS 3.2, steps 3 to 5). What comes after the team is not built: the Risk Guard and the orders (steps 6 and 7). A cycle that starts builds its package, runs its team, and ends with the decision of the team, and with no order. See "Not built yet".
 
 The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests`, `IndicatorTests`, and `SentimentLiveSearchTests`. Those of the team are in the classes whose names begin with `Team`.
 
@@ -253,7 +255,7 @@ public sealed record OpenOrder(OpenOrderKind Kind, OrderSide Side, decimal Quant
 |---|---|
 | **Nothing implements it yet, and an agent holds nothing.** | No position and no orders, and its equity is the capital that its user allocated to it: it has made no profit and no loss. `AgentHoldings.NothingYet` is that. `DataPackageTests` has a test that fails as soon as a table of positions or of orders is in the model and nothing answers. |
 | The equity is the allocated capital plus the net profit or loss to date. | In the asset that the symbol is priced in. What keeps the results of an agent says it. |
-| An agent has one position at most. | `PositionContext` is the position as a prompt states it, with the prices of its stop-loss and its take-profit. |
+| An agent has one position at most. | `PositionContext` is the position as a prompt states it, with the prices of its stop-loss and its take-profit. The plan of the Strategist is held to it: a plan opens a position only for an agent that has none, and moves a stop-loss only to where it reduces risk (FR-CYC-5, FR-CYC-6). See "What a plan may do" in [team.md](team.md). |
 | **An order is one that rests on the exchange.** | An entry that has not filled, a stop-loss, or a take-profit: `OpenOrderKind`. `Price` is the price of a limit entry, or the price that a protective order is triggered at. |
 | It is asked for one agent, as its package is built, and only reads. | What it answers has no id and no name, as a prompt has none. The implementation that was registered last answers, as a service is found. |
 
@@ -387,6 +389,7 @@ With providers responding normally, 95% of cycles finish within 90 seconds of ca
 | `Trading:Cycles:MaxPerKey` | 4 | The most cycles that use the key of one user for one AI provider at once. 1 or more. |
 | `Trading:DataPackage:Candles` | 200 | The most recent closed candles of the agent's timeframe that a data package holds (FR-CYC-2). From 1 to 498. |
 | `Trading:DataPackage:ContextCandles` | 50 | The most recent closed candles of each higher timeframe that a data package holds. From 1 to 498. |
+| `Trading:StaleSeconds:15m`, `1H`, `4H`, `1D` | 120, 300, 600, 900 | The stale limit of each timeframe: how many seconds after the close of a candle a decision may still open a position (FR-CYC-9). 1 or more. See "The stale limit" in [team.md](team.md). |
 
 The quarter hour, the 5 minutes, the half minutes, and the 5 seconds are fixed, as the time limit of a call to the exchange is. So are the periods of the indicators.
 
@@ -453,7 +456,7 @@ A limit is held to through what the stand-in counted while the cycles were held,
 | `StandInMarket` | `IExchangeMarketData` | Has all the market data that a package is built from: candles of every length through the latest close by the clock of the test, the week included, the mark price with its funding, and the open interest. A test gives it another answer for candles, and says how a read of Futures ends. It keeps what it was asked. |
 | `StandInHoldings` | `IAgentHoldings` | Says of every agent what the test gave it: an equity, a position, and orders. Without it an agent holds nothing, as in the application. |
 
-`PackagesApplication` is the application with both, and builds the package of a cycle of an agent that needs no row. `CyclesApplication` runs the job with the application's own inside of a cycle, on `StandInMarket`, when a test says that its cycles build packages: `CycleDataPackageTests` does, and runs the job behind the gateway itself once, with a stand-in for Binance. Such a cycle runs the team of its agent as well, behind stand-ins for the models, the keys, and the records: see "Testing" in [team.md](team.md).
+`PackagesApplication` is the application with both, and builds the package of a cycle of an agent that needs no row. `CyclesApplication` takes a `StandInHoldings` as well, for cycles whose agent holds a position, and other settings of the file of the tests, such as a stale limit: see "Testing" in [team.md](team.md). `CyclesApplication` runs the job with the application's own inside of a cycle, on `StandInMarket`, when a test says that its cycles build packages: `CycleDataPackageTests` does, and runs the job behind the gateway itself once, with a stand-in for Binance. Such a cycle runs the team of its agent as well, behind stand-ins for the models, the keys, and the records: see "Testing" in [team.md](team.md).
 
 ## Not built yet
 
@@ -465,7 +468,6 @@ A limit is held to through what the stand-in counted while the cycles were held,
 - Taking out of a report what a prompt never holds, so that the rest of it can be read. A report that holds it is rejected whole.
 - The summary of the data package that the record of a cycle keeps (FR-CYC-10). A package leaves one event in the log.
 - Reconciliation, which answers `IReconciliation` (FR-BIN-7), and the order of a start: migrate, reconcile, then schedule (NFR-REL-3).
-- The stale limit: a decision that completes later than the limit of its timeframe opens no position (FR-CYC-9). `Trading:StaleSeconds` has the limits, and nothing reads them yet.
 - Recording a cycle that never started: one that was skipped, or whose agent no longer ran (FR-CYC-10). It leaves its events in the log. A cycle that started is recorded, with the calls of its roles.
 - A test cycle that a user runs for an agent (FR-CYC-12). The queue is of one run of the job, so a cycle that starts outside a run takes none of its places.
 - Limits on calls. The places are of cycles: a cycle is two calls with one key while the two analysts work.

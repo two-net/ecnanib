@@ -1,3 +1,5 @@
+using Ecnanib.Shared;
+
 namespace Ecnanib.DecisionEngine;
 
 /// <summary>Which way a role reads the market.</summary>
@@ -26,7 +28,10 @@ public enum Volatility
     High,
 }
 
-/// <summary>What a trade plan does (FR-CYC-4). Which of them a market allows is not held to here.</summary>
+/// <summary>
+/// What a trade plan does (FR-CYC-4). Which of them a market allows is what
+/// <see cref="PlanActions.AllowedOn"/> says.
+/// </summary>
 public enum PlanAction
 {
     /// <summary>Buy, to gain when the price rises.</summary>
@@ -46,6 +51,27 @@ public enum PlanAction
 
     /// <summary>Move the stop-loss or the take-profit of the open position.</summary>
     AdjustProtection,
+}
+
+/// <summary>
+/// The actions that each market allows (FR-CYC-4): on Spot open long, hold, close, and adjust
+/// protection, and on Futures open short and reverse as well. The market module of a prompt
+/// names the same. See "What a plan may do" in docs/team.md.
+/// </summary>
+public static class PlanActions
+{
+    private static readonly PlanAction[] OnSpot =
+        [PlanAction.OpenLong, PlanAction.Hold, PlanAction.Close, PlanAction.AdjustProtection];
+
+    private static readonly PlanAction[] OnFutures = [.. Enum.GetValues<PlanAction>()];
+
+    /// <summary>The actions that a plan of an agent on a market may have, in the order of <see cref="PlanAction"/>.</summary>
+    public static IReadOnlyList<PlanAction> AllowedOn(Market market) => market switch
+    {
+        Market.Spot => OnSpot,
+        Market.Futures => OnFutures,
+        _ => throw new ArgumentOutOfRangeException(nameof(market), market, "No such market."),
+    };
 }
 
 /// <summary>How a plan enters a position (FR-BIN-S2).</summary>
@@ -217,6 +243,16 @@ public sealed record TradePlan
     /// <summary>The same plan with a lower risk fraction, and nothing else of it changed.</summary>
     internal TradePlan WithRisk(decimal riskFraction) =>
         new(Action, EntryType, EntryPrice, StopLoss, TakeProfit, riskFraction, Rationale);
+
+    /// <summary>
+    /// The close of a plan that reverses, and nothing of what it opens: a plan to close the open
+    /// position, with the rationale as it was. It is what goes on of a reverse whose decision is
+    /// stale (FR-CYC-9).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The plan does not reverse, so it has no close of its own.</exception>
+    internal TradePlan ClosingOnly() => Action == PlanAction.Reverse
+        ? new(PlanAction.Close, entryType: null, entryPrice: null, stopLoss: null, takeProfit: null, riskFraction: null, Rationale)
+        : throw new InvalidOperationException($"Only a plan that reverses closes a position before it opens one, and this plan is to {Action}.");
 }
 
 /// <summary>

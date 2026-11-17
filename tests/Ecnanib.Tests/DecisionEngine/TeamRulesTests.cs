@@ -25,6 +25,7 @@ public class TeamRulesTests
         "Ecnanib.DecisionEngine.RoleResults",
         "Ecnanib.DecisionEngine.SchemaCheck",
         "Ecnanib.DecisionEngine.PlanReview",
+        "Ecnanib.DecisionEngine.StaleLimit",
     ];
 
     private static readonly Assembly Application = typeof(Program).Assembly;

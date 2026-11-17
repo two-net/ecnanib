@@ -99,7 +99,9 @@ public class TeamOrderTests
     public async Task The_Risk_Manager_is_called_for_a_plan_that_opens_a_position_and_for_no_other(
         string what, string plan, bool reviewed, CycleOutcome outcome)
     {
-        using var application = new CyclesApplication(Quarter, buildsPackages: true);
+        // The agent is on Futures, which allows every action, and holds a position where the
+        // plan is one that closes, reverses, or adjusts one (FR-CYC-4, FR-CYC-5).
+        using var application = new CyclesApplication(Quarter, buildsPackages: true, holdings: PlanAgents.HoldingFor(plan));
         var models = application.Models;
         var agent = application.Agents!.Give(Guid.NewGuid(), market: Market.Futures);
 

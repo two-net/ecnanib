@@ -108,12 +108,13 @@ public class LiveProviderTests
         Assert.Equal(AiCallOutcome.Succeeded, result.Outcome);
 
         // And what it answered is inside the schema and the ranges of the role.
-        var plan = results.ReadPlan(TeamAnswers.Plan(), TeamAnswers.Limits).Value!;
+        var plan = results.ReadPlan(TeamAnswers.Plan()).Value!;
         var rejection = role switch
         {
             Role.MarketAnalyst => results.ReadMarketReport(result.ResultJson!).Rejection,
             Role.SentimentAnalyst => results.ReadSentiment(result.ResultJson!).Rejection,
-            Role.Strategist => results.ReadPlan(result.ResultJson!, TeamAnswers.Limits).Rejection,
+            // The prompt says that the agent has no open position: a plan is held to that.
+            Role.Strategist => results.ReadPlan(result.ResultJson!, PlanAgents.On(Market.Futures)).Rejection,
             _ => results.ReadReview(result.ResultJson!, plan).Rejection,
         };
 

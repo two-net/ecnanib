@@ -26,6 +26,13 @@ public enum CycleOutcome
     Vetoed,
 
     /// <summary>
+    /// The plan opens a position, and the decision completed later than the stale limit of the
+    /// agent's timeframe: no position is opened (FR-CYC-9). Of a plan that reverses, the close
+    /// goes on, and of every other nothing does. See <see cref="StaleLimit"/>.
+    /// </summary>
+    Stale,
+
+    /// <summary>
     /// A role other than the Sentiment Analyst gave no valid result, also when it was called once
     /// more: the cycle ended with no decision and no new entry (FR-TEAM-9).
     /// </summary>
@@ -43,7 +50,8 @@ public enum CycleOutcome
 /// <param name="GoesOn">
 /// The plan that goes on to the Risk Guard, which checks every plan before any order (FR-RSK-3),
 /// or null when nothing goes on. It is the plan of the Strategist, with a lower risk fraction
-/// when the Risk Manager reduced it, and with nothing else of it changed.
+/// when the Risk Manager reduced it, and with nothing else of it changed. Of a reverse whose
+/// decision is stale, it is the close alone (FR-CYC-9).
 /// </param>
 public sealed record TeamDecision(CycleOutcome Outcome, TradePlan? GoesOn);
 

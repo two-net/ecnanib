@@ -37,7 +37,8 @@ A template is a row of `prompt_templates`, and a row is one version of it.
 - **Version 2 of each module has its full wording:** see "The modules".
 - **Version 2 of each role is its outline with the instructions about untrusted content** (FR-PRM-8): see "Untrusted content".
 - **Version 3 of the Sentiment Analyst and of the Strategist says what each does about live data** (FR-CYC-3): see "Live data".
-- **The latest version of each role has its full wording** (FR-TEAM-6): see "The roles". It is version 3 of the Market Analyst and of the Risk Manager, and version 4 of the Sentiment Analyst and of the Strategist.
+- **The latest version of each role has its full wording** (FR-TEAM-6): see "The roles". It is version 3 of the Market Analyst and of the Risk Manager, version 4 of the Sentiment Analyst, and version 5 of the Strategist.
+- **Version 5 of the Strategist says what a plan may do** (FR-CYC-4 to FR-CYC-6): which actions go with a position and which with none, and where a new stop-loss may stand. The rest of it is version 4.
 - **The rows belong to the service.** The templates are the same for every user, so the table is listed in `OwnershipRules.cs`, and a row names no user.
 
 ## The modules
@@ -65,7 +66,7 @@ A module is what every role of an agent is told about its market, about its time
 - **A module has no placeholder.** It is sent as a user reads it. It names the limits of the agent as "the stated limits", and the context of the agent states them in the same prompt: see "Composing a prompt".
 - **A module says what its kind is about, and nothing of another.** The module of a timeframe names no market, and the module of a market no timeframe: it says "the expected holding period", which the module of the timeframe sets. So each of the eight combinations is two modules that were written apart.
 - **A paragraph ends with `\n`,** written as that in the source file, which is the same in every checkout.
-- The module of a market tells a role which actions it has. What holds a plan to them is not built: see "Not built yet".
+- **The module of a market tells a role which actions it has, and a plan is held to them** (FR-CYC-4). `PlanActions.AllowedOn` is the list that a plan is validated against, and `PlanRuleTests` holds it to the actions that the module names: see "What a plan may do" in [team.md](team.md).
 
 ## The roles
 
@@ -84,6 +85,7 @@ The instructions of a role are its outline, as the specification gives it, and a
 - **A field is named as the schema names it,** such as `"riskFraction"`, and no field is named that the schema lacks. A value of a fixed set is written as the schema lists it, such as `open_long`.
 - **The Sentiment Analyst is asked for sources in words:** no link, no address, and no identifier. A result that holds one is rejected, because the Strategist reads the report in its prompt: see "What a prompt never holds".
 - **The Strategist is told what the risk fraction is:** the share of the equity that is lost if the stop-loss is hit, as a fraction, at most the risk per trade of the stated limits, which states it in percent. And that it names no quantity and no leverage: the system computes both (FR-RSK-5).
+- **The Strategist is told what a plan may do** (FR-CYC-4 to FR-CYC-6). The action is one that the market of the prompt allows. The agent holds one position at most, and never adds to one: with no position the action is `open_long`, `hold`, or on Futures `open_short`, and with an open position it is `hold`, `close`, `adjust_protection`, or on Futures `reverse`. A new stop-loss only reduces risk: at or above the current stop-loss of a long position, and at or below that of a short one. The take-profit may move either way. A plan is validated against all of it: see "What a plan may do" in [team.md](team.md).
 - **No paragraph but "Live data" says "no weight".** `SentimentLiveSearchTests` finds what the Strategist is told about a report without live data by those words.
 - What the instructions say is held by the validation, and not by the instructions alone: an answer that does not follow them is rejected.
 
@@ -335,7 +337,6 @@ Whether users may edit prompts, or add instructions of their own for an agent, i
 ## Not built yet
 
 - What hands a prompt its lessons, which are recalled for the Strategist and the Risk Manager (FR-EXP-7), and what keeps the equity and the position of an agent. The data package of a cycle is built (FR-CYC-2), and says both of an agent that holds nothing: see "The data package" in [cycles.md](cycles.md).
-- Holding a plan to the actions that the module of its market allows (FR-CYC-4). The module tells a role which they are, and the schema of a plan has those of both markets.
 - Keeping addresses and ids out of a lesson that a model wrote, before it is handed over. A prompt that would hold one is refused, and the cycle that asked for it makes no decision.
 - Keeping a lesson from posing as a part of the prompt, with a line that reads as a heading. The instructions say which parts are data. A report and a plan are each written as one line, and cannot.
 - Saying in the Privacy Policy what goes to AI providers (NFR-SEC-8). Its text is a draft: see "Legal documents" in [accounts.md](accounts.md). The pages of the keys and the page of an agent's prompts say it.

@@ -80,6 +80,12 @@ internal sealed class CyclesApplication : IDisposable
     /// database: the agents are then those of the database. Unless a test says so, the models,
     /// the keys, and the records of a cycle that runs its team are those of <see cref="Team"/>.
     /// </param>
+    /// <param name="holdings">
+    /// What every agent holds, for cycles that build their data packages: a position, for a test
+    /// of a plan that closes, reverses, or adjusts one. Unless a test says so, an agent holds
+    /// nothing, as in the application.
+    /// </param>
+    /// <param name="settings">Other settings of the file of the tests, such as a stale limit.</param>
     public CyclesApplication(
         DateTimeOffset now,
         int? maxPerProvider = null,
@@ -88,7 +94,9 @@ internal sealed class CyclesApplication : IDisposable
         StandInReconciliation? reconciliation = null,
         TestDatabase? database = null,
         bool buildsPackages = false,
-        StandInSystem? providers = null)
+        StandInSystem? providers = null,
+        StandInHoldings? holdings = null,
+        Func<SettingsJson, SettingsJson>? settings = null)
     {
         buildsPackages |= providers is not null;
         storedAgents |= providers is not null;
@@ -105,8 +113,9 @@ internal sealed class CyclesApplication : IDisposable
             settings: file =>
             {
                 file = maxPerProvider is { } perProvider ? file.With("Trading:Cycles:MaxPerProvider", perProvider) : file;
+                file = maxPerKey is { } perKey ? file.With("Trading:Cycles:MaxPerKey", perKey) : file;
 
-                return maxPerKey is { } perKey ? file.With("Trading:Cycles:MaxPerKey", perKey) : file;
+                return settings?.Invoke(file) ?? file;
             },
             host: builder => builder.ConfigureServices(services =>
             {
@@ -138,6 +147,11 @@ internal sealed class CyclesApplication : IDisposable
                 if (reconciliation is not null)
                 {
                     services.AddSingleton<IReconciliation>(reconciliation);
+                }
+
+                if (holdings is not null)
+                {
+                    services.AddSingleton<IAgentHoldings>(holdings);
                 }
             }),
             runsCycles: true);

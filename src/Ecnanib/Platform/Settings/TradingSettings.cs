@@ -114,11 +114,22 @@ public sealed record AggressiveSettings(
 }
 
 /// <summary>
-/// How long after a candle closes a decision may still be acted on, per timeframe. In the file the
-/// keys are the timeframe codes <c>15m</c>, <c>1H</c>, <c>4H</c>, and <c>1D</c>.
+/// How long after a candle closes a decision may still open a position, per timeframe (FR-CYC-9,
+/// SRS Appendix B). In the file the keys are the timeframe codes <c>15m</c>, <c>1H</c>,
+/// <c>4H</c>, and <c>1D</c>. See "The stale limit" in docs/team.md.
 /// </summary>
 public sealed record StaleSecondsSettings(int FifteenMinutes, int OneHour, int FourHours, int OneDay)
 {
+    /// <summary>The stale limit of a timeframe: how long after the close of a candle a decision is in time.</summary>
+    public TimeSpan Of(Timeframe timeframe) => TimeSpan.FromSeconds(timeframe switch
+    {
+        Timeframe.FifteenMinutes => FifteenMinutes,
+        Timeframe.OneHour => OneHour,
+        Timeframe.FourHours => FourHours,
+        Timeframe.OneDay => OneDay,
+        _ => throw new ArgumentOutOfRangeException(nameof(timeframe), timeframe, "The timeframe has no stale limit."),
+    });
+
     internal static StaleSecondsSettings Read(SettingsReader file) =>
         new(
             file.WholeNumber("Trading:StaleSeconds:15m"),
