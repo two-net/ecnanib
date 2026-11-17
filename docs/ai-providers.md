@@ -2,6 +2,8 @@
 
 Every call to a model goes through the AI Provider Gateway: one adapter each for Claude, Gemini, GPT, and Grok, behind a common interface (SRS 3.1, NFR-ARC-3). A call takes prompt text and a result schema, and returns the structured result with its token usage and its latency. The prompt is the same for every provider. Only how the structured result is asked for is a provider's own (FR-PRM-10).
 
+A call can let its model search live, with the search of the model's own provider, and its result says how many searches the provider ran (FR-CYC-3): see "Live search".
+
 The gateway also asks each provider for the list of its models, which is what the catalog is filled from (FR-CAT-1): see "The list of models".
 
 The code is in `src/Ecnanib/AiProviderGateway`. The rules below are enforced by tests in `tests/Ecnanib.Tests/AiProviderGateway`, `tests/Ecnanib.Tests/AiProviderRouterTests.cs`, and `tests/Ecnanib.Tests/Architecture`.
@@ -19,9 +21,10 @@ public interface IAiProviderGateway
         AiProviderCode provider, AiCallRequest request, string apiKey, CancellationToken cancellationToken);
 }
 
-public sealed record AiCallRequest(string Model, string Prompt, string ResultSchema);
+public sealed record AiCallRequest(string Model, string Prompt, string ResultSchema, bool LiveSearch = false);
 
-public sealed record AiCallResult(AiCallOutcome Outcome, string? ResultJson, AiTokenUsage? Usage, TimeSpan Latency);
+public sealed record AiCallResult(
+    AiCallOutcome Outcome, string? ResultJson, AiTokenUsage? Usage, TimeSpan Latency, int? LiveSearches = null);
 
 public readonly record struct AiTokenUsage(int InputTokens, int OutputTokens);
 ```
@@ -29,7 +32,7 @@ public readonly record struct AiTokenUsage(int InputTokens, int OutputTokens);
 | Rule | Detail |
 |---|---|
 | **Callers name the provider by its code and never branch on it.** | `AiProviderCode` is an open set of codes, and not an enum. The four adapters are private to the gateway. What calls a model does the same for each of them. |
-| **The prompt is sent as it is** (FR-PRM-10). | It is the one message of the user in every provider's request. An adapter adds no instruction to it, and sends no system prompt, no sampling parameter, and no setting for how much a model reasons. |
+| **The prompt is sent as it is** (FR-PRM-10). | It is the one message of the user in every provider's request. An adapter adds no instruction to it, and sends no system prompt, no sampling parameter, and no setting for how much a model reasons. A live search is a tool of the request, and no text. |
 | The result schema is a JSON Schema, as text. | An adapter puts it where its provider takes a schema, unchanged. See "Result schemas" for what all four take. |
 | **The call is made once.** | The gateway does not call again after a failure. Whether a call is made again is its caller's to decide (FR-TEAM-9). |
 | **The model that was asked for answers, or none.** | A provider may offer to hand a refused request to another model. The gateway does not take that: the system never puts another model in the place of the one that was chosen (FR-CAT-8), and experience is measured for each model. |
@@ -55,6 +58,7 @@ A call that gives no result is not an error. Its result says how it ended, so th
 - **The gateway does not check a result against its schema.** It asks the provider for one that matches, and takes a finished answer that is a JSON object. Whether the object matches the schema, and whether its values are in range, is for what validates the result (FR-TEAM-6, NFR-SEC-7).
 - **Only a provider's own word is a missing model.** A 404 from a wrong address in the configuration file, or from something between the application and the provider, is `Failed`. It must not send a user to look after a model that is there.
 - **`Usage` is null when the provider did not count.** Null is unknown, and not none: a call that timed out may still be charged for. An `InvalidResult` carries its usage, because the tokens were spent.
+- **`LiveSearches` is null when no answer was read,** for the same reason. An answer that was read says how many searches it shows, also when it is an `InvalidResult`. See "Live search".
 
 ## What each provider is sent, and how its answer reads
 
@@ -84,12 +88,41 @@ The tokens of a call are counted the same way for every provider, so that they c
 | | Input | Output |
 |---|---|---|
 | Claude | `input_tokens`, with `cache_creation_input_tokens` and `cache_read_input_tokens` | `output_tokens` |
-| Gemini | `promptTokenCount` | `candidatesTokenCount` and `thoughtsTokenCount` |
+| Gemini | `promptTokenCount` and `toolUsePromptTokenCount` | `candidatesTokenCount` and `thoughtsTokenCount` |
 | GPT, Grok | `input_tokens` | `total_tokens` less `input_tokens`, or `output_tokens` where there is no total |
 
 - Claude counts what it read from a cache, and what it wrote to one, apart from the rest of the input.
-- Gemini counts what the model reasoned apart from its answer, and charges both as output.
+- Gemini counts what the model reasoned apart from its answer, and charges both as output. It counts what a tool put before the model, such as the results of a search, apart from the prompt, and both are input.
 - GPT counts what the model reasoned inside `output_tokens`, and Grok's examples count it beside. What the total holds beyond the input is right for both.
+- What a search found is input wherever a provider counts it as tokens. The searches themselves are counted apart, and are no tokens: see "Live search".
+
+## Live search
+
+A model searches live with the search that its own provider runs for it, on the provider's side (FR-CYC-3). `AiCallRequest.LiveSearch` asks for it, and the adapter then offers the model the provider's search as a tool of the request. The Decision Engine asks for it for the Sentiment Analyst alone, with a model that the configuration file says can search live: see "Live search" in [cycles.md](cycles.md).
+
+| | Claude | Gemini | GPT | Grok |
+|---|---|---|---|---|
+| Added to the body | `tools`: `web_search_20250305`, named `web_search`, with `max_uses: 5` | `tools`: `googleSearch` | `tools`: `web_search` | `tools`: `web_search` and `x_search`. `include: ["no_inline_citations"]`. `max_turns: 5` |
+| The answer | The `text` blocks after the last block of a tool | Unchanged | The messages after the last item of a tool's call | The same |
+| `LiveSearches` | `usage.server_tool_use.web_search_requests` | The queries of `candidates[0].groundingMetadata.webSearchQueries` that are not empty | The items of type `web_search_call` whose action is a search | `web_search_calls` and `x_search_calls` of `usage.server_side_tool_usage_details`. Where the usage has neither: the items of a web search, and the items of type `custom_tool_call` whose `call_id` begins with `xs_` |
+
+| Rule | Detail |
+|---|---|
+| **Nothing else of the body changes** (FR-PRM-10). | The prompt, the schema, and the model are those of a call without search. `AiLiveSearchTests` holds the two bodies of every provider against each other. A call that asks for no search is offered no tool. |
+| **The model decides whether it searches.** | No adapter forces a search. The prompt of the role says when to search, and the same prompt goes to every provider. |
+| **The result is what the model wrote after its last search.** | A model may say what it is about to look for before it does. That is no part of its answer, and neither is what a search found. Without a search every block of text is the answer, as before. |
+| **`LiveSearches` is how many searches the provider says it ran.** | It is 0 for an answer that shows none, and null when no answer was read. A caller goes by it to say whether a result rests on live data. |
+| **A model that was offered a search and ran none is logged as a warning,** under `ModelCall`. | The result is there all the same. The model saw no reason to search, or the provider counts its searches where the adapter does not look: its user may be charged for searches while the result counts as resting on none. |
+| **A search is limited where the provider takes a limit.** | `max_uses` of Claude and `max_turns` of Grok are constants of their adapters, as `max_tokens` is. At the limit the model answers from what it has found. GPT and Gemini are sent none. |
+| **Claude is offered the first version of its web search.** | The model calls it directly. The later versions run what a search found through code first, which not every model and not every platform of the provider has. |
+| **Grok is told not to write its sources into the text.** | It does by default, as links beside what they support. The text is the structured result, which holds its fields and nothing else. |
+| **A turn that Claude paused while it searched is no result.** | `stop_reason: pause_turn` is an `InvalidResult`. The gateway calls once, and does not take the turn up again: whether the call is made again is its caller's to decide (FR-TEAM-9). |
+| **A model that does not take the search is a failed call.** | A provider refuses the request, which is `Failed`. Not every model of a provider takes its search together with a schema, so the `LiveSearch` patterns of the file name the models that do: see "Which models can be selected" in [catalog.md](catalog.md). |
+
+- **A provider charges for searching beside the tokens,** on the key that the call was made with: Claude and GPT for each search, Gemini for each query that the model ran, and Grok for each search of the web and for each post and profile that a search of X fetched. The form of an agent says so where a user chooses the model of the Sentiment Analyst: see "The team" in [agents.md](agents.md).
+- **A call that searches takes longer.** The time limit covers the searches. A provider whose models search may need a longer `TimeoutSeconds` than the 60 seconds of the tracked file.
+- The event of a call that asked for live search says how many ran, as `LiveSearches`: see [logging.md](logging.md).
+- What a model asks the search is its own doing, from the prompt that it was sent, and goes to its own provider under the user's key (NFR-SEC-8).
 
 ## The time limit
 
@@ -187,11 +220,12 @@ ECNANIB_LIVE_CLAUDE_KEY=... ECNANIB_LIVE_CLAUDE_MODEL=... \
   dotnet test --solution Ecnanib.slnx --filter-class "*LiveProviderTests"
 ```
 
-The variables are `ECNANIB_LIVE_<PROVIDER>_KEY` and `ECNANIB_LIVE_<PROVIDER>_MODEL`, with `CLAUDE`, `GEMINI`, `GPT`, or `GROK`. Give them for one provider or for several. For each provider that has both, three calls to a model are made, and its models are listed twice, at the addresses of the tracked configuration file:
+The variables are `ECNANIB_LIVE_<PROVIDER>_KEY` and `ECNANIB_LIVE_<PROVIDER>_MODEL`, with `CLAUDE`, `GEMINI`, `GPT`, or `GROK`. Give them for one provider or for several. For each provider that has both, three calls to a model are made, and its models are listed twice, at the addresses of the tracked configuration file. With `ECNANIB_LIVE_<PROVIDER>_SEARCH_MODEL` as well, which names a model that can search live, a fourth call is made with live search. It costs the searches that the model runs beside its tokens.
 
 | Call | What it must end as |
 |---|---|
 | A small prompt with a schema, to the model that was given. | `Succeeded`, with a result of the schema and a usage. |
+| A prompt that asks for news of the last day, with the schema and with live search, to the model that was given as one that searches. | `Succeeded`, with a result of the schema, and at least one search in `LiveSearches`. |
 | The same with a key that is none. It costs nothing. | `AuthenticationFailed` |
 | The same to a model that does not exist. | `ModelNotFound` |
 | The list of models. It costs nothing. | `Listed`, with the model that was given among the models, and with what the list of that provider is read for. |
@@ -206,12 +240,21 @@ Run it when an adapter is added or changed, and when a provider changes its API.
 - That Gemini takes a schema as `responseJsonSchema` with `generateContent`. Its documentation now leads with a newer way of calling a model.
 - What each list says about a model beyond its identifier: the limits and the dates of Claude, under the version of its API that the gateway names, the `shutdown_date` of GPT, and the `context_length` of Grok. A field that a provider does not send is unknown, and nothing fails for it.
 - That GPT lists a model that an account trained under an identifier that begins with `ft:`.
+- **That a provider takes its search together with a schema.** No run has shown it for any of the four, and their documentation does not promise it of every model:
+  - Claude's says that citations and a schema do not go together, and that its web search always cites. It does not say which of the two holds.
+  - Gemini's says it of the Gemini 3 and 4 series alone, as a preview.
+  - GPT's says nothing of it.
+  - Grok's says it of "supported Grok 4 family models". The tracked file names `grok-4*` on that.
+- Where each provider counts its searches, and that the answer of Claude and of GPT is what follows the last block or item of a tool.
+- That Grok takes `include: ["no_inline_citations"]` and `max_turns` together with `store: false`, and that an item of a search of X is told by the `xs_` of its `call_id`.
+- That Gemini counts `toolUsePromptTokenCount` apart from `promptTokenCount`.
 
 ## Not built yet
 
 - What hands a stored key to a call, and has the key checked again when the call ends as `AuthenticationFailed` (FR-KEY-9, FR-KEY-3). It comes with what calls the gateway for an agent.
 - Validating a result against its schema, and calling again after a timeout or an invalid result (FR-TEAM-6, FR-TEAM-9).
-- Live search for the Sentiment Analyst (FR-CYC-3).
+- Taking up a turn that a provider paused while its model searched. It is an invalid result.
+- A setting for how much a call may search, and a limit for GPT and Gemini. The time limit of the call ends a search that goes on.
 - Breakers for repeated failures of a provider or a key (NFR-REL-4).
 - Limits on how many calls a provider or a key takes at once. The gateway has none. What starts the cycles limits how many cycles use a provider, and the key of a user for it, at once (FR-CYC-11): see "The queue" in [cycles.md](cycles.md).
-- Recording the usage of each call, for the reports (FR-TEAM-8, FR-RPT-3).
+- Recording the usage of each call, and the searches that it ran, for the reports (FR-TEAM-8, FR-RPT-3).

@@ -13,8 +13,16 @@ namespace Ecnanib.AiProviderGateway.Adapters.Claude;
 /// <c>not_found_error</c>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A request that Claude refuses is not sent on to another model, which the provider offers to
 /// do: the system never puts another model in the place of the one that was chosen (FR-CAT-8).
+/// </para>
+/// <para>
+/// A model searches live with the web search of the provider, which runs on the provider's side
+/// and is offered as a tool of the request (FR-CYC-3). It is the first version of that tool: the
+/// model calls it directly, and the later versions run its results through code first, which not
+/// every model and not every platform of the provider has.
+/// </para>
 /// </remarks>
 internal sealed class ClaudeAdapter(ModelCall call) : IAiProviderAdapter, IModelCallFormat
 {
@@ -22,6 +30,13 @@ internal sealed class ClaudeAdapter(ModelCall call) : IAiProviderAdapter, IModel
     // reasons before it answers spends them on that too, so the room is for both. An answer that
     // needs more is cut short, and is then no result.
     private const int MostTokens = 16_000;
+
+    // The most searches one call may run, each of which the provider charges for. A search past
+    // it is answered to the model with an error of the tool, and the model answers from what it
+    // has by then.
+    private const int MostSearches = 5;
+
+    private const string WebSearch = "web_search_20250305";
 
     private const string NoSuchModel = "not_found_error";
 
@@ -34,16 +49,31 @@ internal sealed class ClaudeAdapter(ModelCall call) : IAiProviderAdapter, IModel
 
     public void Authorize(HttpRequestHeaders headers, string apiKey) => ClaudeApi.Authorize(headers, apiKey);
 
-    public JsonObject BodyOf(AiCallRequest request, JsonNode schema) => new()
+    public JsonObject BodyOf(AiCallRequest request, JsonNode schema)
     {
-        ["model"] = request.Model,
-        ["max_tokens"] = MostTokens,
-        ["messages"] = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = request.Prompt }),
-        ["output_config"] = new JsonObject
+        var body = new JsonObject
         {
-            ["format"] = new JsonObject { ["type"] = "json_schema", ["schema"] = schema },
-        },
-    };
+            ["model"] = request.Model,
+            ["max_tokens"] = MostTokens,
+            ["messages"] = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = request.Prompt }),
+            ["output_config"] = new JsonObject
+            {
+                ["format"] = new JsonObject { ["type"] = "json_schema", ["schema"] = schema },
+            },
+        };
+
+        if (request.LiveSearch)
+        {
+            body["tools"] = new JsonArray(new JsonObject
+            {
+                ["type"] = WebSearch,
+                ["name"] = "web_search",
+                ["max_uses"] = MostSearches,
+            });
+        }
+
+        return body;
+    }
 
     public ModelAnswer? Read(JsonElement answer)
     {
@@ -58,15 +88,29 @@ internal sealed class ClaudeAdapter(ModelCall call) : IAiProviderAdapter, IModel
             "end_turn" => AnswerEnd.Complete,
             "max_tokens" or "model_context_window_exceeded" => AnswerEnd.Truncated,
             "refusal" => AnswerEnd.Refused,
+
+            // A turn that the provider paused in the middle of its searches is among the rest:
+            // the call is made once, and what there is of it is no finished answer.
             _ => AnswerEnd.Other,
         };
 
-        // What the model reasoned comes before its answer, in blocks of another type.
+        // What the model reasoned comes before its answer, in blocks of another type. A model
+        // that searches may also say what it is about to look for: its answer is what it wrote
+        // after the last block of a tool. Without a tool that is every block of text.
+        var blocks = answer.Items("content").ToList();
+        var afterTools = blocks.FindLastIndex(block => IsOfTool(block.Text("type"))) + 1;
         var text = string.Concat(
-            answer.Items("content").Where(block => block.Text("type") == "text").Select(block => block.Text("text")));
+            blocks.Skip(afterTools).Where(block => block.Text("type") == "text").Select(block => block.Text("text")));
 
-        return new ModelAnswer(end, text, UsageOf(answer.Member("usage")), reason);
+        var usage = answer.Member("usage");
+
+        return new ModelAnswer(
+            end, text, UsageOf(usage), reason, usage.Member("server_tool_use").Count("web_search_requests") ?? 0);
     }
+
+    /// <summary>Whether a block is the call of a tool or what the tool answered, by its type.</summary>
+    private static bool IsOfTool(string? type) =>
+        type is "server_tool_use" or "tool_use" || type?.EndsWith("_tool_result", StringComparison.Ordinal) == true;
 
     public AiCallOutcome OutcomeOfError(HttpStatusCode status, JsonElement? error) => status switch
     {

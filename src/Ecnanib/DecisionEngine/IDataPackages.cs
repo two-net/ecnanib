@@ -63,6 +63,20 @@ public sealed record DataPackage(
     /// </summary>
     /// <param name="lessons">The lessons, most recent first. Empty when the call is given none.</param>
     public PromptParts PartsWith(IReadOnlyList<string> lessons) => new(Agent, Text, lessons);
+
+    /// <summary>
+    /// The same for a role that reads the report of the Sentiment Analyst, as the Strategist
+    /// does: the report stands under the text of this package, with the mark that says whether it
+    /// rests on live data (FR-CYC-3). It is data there, like the rest of the package.
+    /// </summary>
+    /// <param name="lessons">The lessons, most recent first. Empty when the call is given none.</param>
+    /// <param name="sentiment">The report of the Sentiment Analyst of this cycle.</param>
+    public PromptParts PartsWith(IReadOnlyList<string> lessons, SentimentReport sentiment)
+    {
+        ArgumentNullException.ThrowIfNull(sentiment);
+
+        return new PromptParts(Agent, $"{Text}\n\n{sentiment.Text}", lessons);
+    }
 }
 
 /// <summary>The closed candles of one length that a data package holds, with their indicators.</summary>

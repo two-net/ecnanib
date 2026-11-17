@@ -105,12 +105,13 @@ Only an eligible model can be selected for an agent (FR-CAT-6). Which models are
 |---|---|
 | `AiProviders:<Provider>:Allow` | Patterns of the models that may be selected. |
 | `AiProviders:<Provider>:Deny` | Patterns of the models that may not, whatever `Allow` says. |
-| `AiProviders:<Provider>:LiveSearch` | Patterns of the models that can search live, which a selector shows (FR-CYC-3). |
+| `AiProviders:<Provider>:LiveSearch` | Patterns of the models that can search live, which a selector shows, and which the call of a Sentiment Analyst goes by (FR-CYC-3). |
 
 - **A model is eligible when an `Allow` pattern of its provider names it, and no `Deny` pattern does.** A provider with no `Allow` pattern has no eligible model: a model is selected because someone allowed it, and never because nobody thought of it. The tracked file allows the models that each provider names after itself, such as `claude-*`. A deployment lists what it has tried.
 - **A pattern is the identifier of a model, in which `*` stands for any run of characters,** an empty one included. Nothing else in it is special, and letter case is ignored. `gpt-5*` names `gpt-5` and `gpt-5.5-mini`, and `*-preview` every identifier that ends so.
 - **To allow a model is to say that it can do the work of a role.** Every role returns a structured result (FR-TEAM-6), so a model that cannot return one is not allowed. There is no list for that capability beside `Allow`: it would say the same again.
 - **`LiveSearch` says something of a model, and allows none.** A model that cannot search live is selected like any other: its role runs without live data.
+- **A `LiveSearch` pattern names models that take the search of their provider together with a result schema.** A Sentiment Analyst whose model the file names is called with that search: see "Live search" in [ai-providers.md](ai-providers.md). A provider refuses the call of a model that does not take both, and the call fails. Not every model of a provider does, and no provider's documentation promises it of all, so a deployment names what it has tried. The tracked file names `grok-4*` for Grok, and no model of the other three.
 - **A model that can be selected is `Active` too.** One that its provider no longer offers cannot be selected until the provider lists it again.
 - **Nothing of this is stored.** The file is read once, as the application starts, and the patterns are held against the active models when someone asks. A pattern that was changed holds for every model of the catalog from the next start, with no sync in between. A model that the file no longer allows tells nothing to an agent that was given it before: the agent is not started or resumed with it, and one that runs is not told. See "Not built yet".
 
@@ -126,6 +127,19 @@ public interface ISelectableModels
 ```
 
 A `SelectableModel` is the id of the model in the catalog, its provider, its identifier, its name, and whether it can search live. Which of these a user's own key can use is for Credentials to say, and that is what the form of an agent offers for each role of its team: see "The models a key can use" in [credentials.md](credentials.md), and "The team" in [agents.md](agents.md). A role stores the id of its model, and `ICatalogModels.FindAsync` finds the model for good, also once it is gone.
+
+`IModelCapabilities` answers what calls a model, from the file alone:
+
+```csharp
+public interface IModelCapabilities
+{
+    bool SearchesLive(AiProviderCode provider, string identifier);
+}
+```
+
+- **It says what a selector shows.** `SelectableModel.LiveSearch` is the same answer, so what a user was shown when they chose a model and what a call of that model goes by are the same (FR-CYC-3).
+- It asks no database and no provider, and says the same of a model for as long as the application runs. It answers for any identifier, also of a model that is in no catalog.
+- The Decision Engine asks it whether the model of a Sentiment Analyst searches live: see "Live search" in [cycles.md](cycles.md).
 
 ### What depends on a model
 

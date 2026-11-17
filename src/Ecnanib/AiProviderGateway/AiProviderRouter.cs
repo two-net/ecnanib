@@ -70,7 +70,7 @@ internal sealed class AiProviderRouter : IAiProviderGateway
             throw;
         }
 
-        Log(result);
+        Log(request, result);
 
         return result;
     }
@@ -78,27 +78,46 @@ internal sealed class AiProviderRouter : IAiProviderGateway
     /// <summary>
     /// Logs a call by how it ended: one that gave no result is a warning. The duration is the
     /// latency of the result, which is what the caller records, and the tokens are there when the
-    /// provider counted them.
+    /// provider counted them. A call that asked for live search says how many searches the
+    /// provider ran, which it charges for beside the tokens (FR-CYC-3).
     /// </summary>
-    private void Log(AiCallResult result)
+    private void Log(AiCallRequest request, AiCallResult result)
     {
         var level = result.Outcome == AiCallOutcome.Succeeded ? LogLevel.Information : LogLevel.Warning;
         var outcome = result.Outcome.ToString();
         var duration = Math.Round(result.Latency.TotalMilliseconds, 1);
+        var searches = request.LiveSearch ? result.LiveSearches : null;
 
-        if (result.Usage is { } usage)
+        switch (result.Usage, searches)
         {
-            _logger.Log(
-                level,
-                "AI call {Outcome} in {DurationMs} ms, using {InputTokens} input and {OutputTokens} output tokens",
-                outcome,
-                duration,
-                usage.InputTokens,
-                usage.OutputTokens);
-        }
-        else
-        {
-            _logger.Log(level, "AI call {Outcome} in {DurationMs} ms", outcome, duration);
+            case ({ } usage, { } ran):
+                _logger.Log(
+                    level,
+                    "AI call {Outcome} in {DurationMs} ms, using {InputTokens} input and {OutputTokens} output tokens, with {LiveSearches} live searches",
+                    outcome,
+                    duration,
+                    usage.InputTokens,
+                    usage.OutputTokens,
+                    ran);
+                break;
+
+            case ({ } usage, null):
+                _logger.Log(
+                    level,
+                    "AI call {Outcome} in {DurationMs} ms, using {InputTokens} input and {OutputTokens} output tokens",
+                    outcome,
+                    duration,
+                    usage.InputTokens,
+                    usage.OutputTokens);
+                break;
+
+            case (null, { } ran):
+                _logger.Log(level, "AI call {Outcome} in {DurationMs} ms, with {LiveSearches} live searches", outcome, duration, ran);
+                break;
+
+            default:
+                _logger.Log(level, "AI call {Outcome} in {DurationMs} ms", outcome, duration);
+                break;
         }
     }
 }

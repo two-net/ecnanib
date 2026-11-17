@@ -156,6 +156,12 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What builds the data package of a cycle.</summary>
     public IDataPackages DataPackages => _application.Services.GetRequiredService<IDataPackages>();
 
+    /// <summary>What says what the model of a role is called with.</summary>
+    public IRoleCalls RoleCalls => _application.Services.GetRequiredService<IRoleCalls>();
+
+    /// <summary>The gateway that a call to a model goes through.</summary>
+    public IAiProviderGateway AiProviders => _application.Services.GetRequiredService<IAiProviderGateway>();
+
     /// <summary>
     /// Runs the job that checks the stored keys, now, as the scheduler does on the hour. A test
     /// runs it itself to see what a run does at a time of its choosing.

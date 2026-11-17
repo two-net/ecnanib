@@ -4,9 +4,11 @@ A cycle is one run of an agent's team, triggered when a candle closes. A cycle s
 
 A cycle that starts builds its data package: the most recent closed candles of the agent's timeframe, the higher-timeframe context, indicators that the system computes and no model does, the position, the orders, and the equity of the agent, its limits, and on Futures the mark price, the funding, and the open interest (FR-CYC-2).
 
-What is built is what starts a cycle and lets it wait for its turn, and the data package that the cycle then builds. What a cycle does after that is not built: the calls of the team, the Risk Guard, and the orders (SRS 3.2, steps 3 to 8). A cycle that starts builds its package and ends, with no decision and no order. See "Not built yet".
+The Sentiment Analyst gathers news and social context using the live-search capability of its model where the provider offers one. If the selected model has none, the role still runs, its report is marked "no live data", and the Strategist is told to give it no weight (FR-CYC-3).
 
-The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests` and `IndicatorTests`.
+What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, and what the call of the Sentiment Analyst and its report go by: see "Live search". What a cycle does after its package is not built: the calls of the team, the Risk Guard, and the orders (SRS 3.2, steps 3 to 8). A cycle that starts builds its package and ends, with no decision and no order. See "Not built yet".
+
+The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests`, `IndicatorTests`, and `SentimentLiveSearchTests`.
 
 How a job is scheduled, and what becomes of a boundary that passed, is in [background-work.md](background-work.md). The states of an agent are in [agents.md](agents.md). The candles are in "Market data" in [exchange.md](exchange.md), and the settings in [configuration.md](configuration.md).
 
@@ -296,6 +298,71 @@ Futures: mark price 61888.1, funding rate 0.01%, next funding 2026-11-16T08:00Z,
 | No line reads as a heading of a prompt. | None begins with `#`. |
 | **Every package is composed into a prompt.** | `DataPackageTests` builds the package of each market and timeframe and composes the prompt of every role from it: `PromptScreen` finds no secret, no address, and no identifier in it (FR-PRM-9). |
 
+## Live search
+
+The Sentiment Analyst reads news and social context for the symbol and the wider market (SRS 4.5). The service supplies neither: the model of the role searches for them itself, with the live search of its own provider, on the key of the agent's user (FR-CYC-3). How a provider is asked for its search is in "Live search" in [ai-providers.md](ai-providers.md).
+
+No cycle calls a model yet. What is built is what such a call goes by, behind two public types, for what runs the roles of a cycle to use:
+
+```csharp
+public interface IRoleCalls
+{
+    RoleCall Of(AgentRoleView role, ComposedPrompt prompt, string resultSchema);
+}
+
+public sealed record RoleCall(AgentRoleView Role, AiCallRequest Request);
+
+public sealed record SentimentReport
+{
+    public const string NoLiveData = "no live data";
+
+    public string ResultJson { get; }
+    public bool LiveData { get; }
+    public string Text { get; }
+
+    public static SentimentReport Of(RoleCall call, AiCallResult result);
+}
+```
+
+**The call.** `IRoleCalls.Of` says what the model of a role is called with: the model that the agent's user gave the role, the prompt that was composed for it, the schema of what the role answers, and whether the model may search live.
+
+| Rule | Detail |
+|---|---|
+| **Only the Sentiment Analyst searches live.** | The request of every other role asks for no search, whatever its model can do. What the web says reaches the team through one role, whose report every later role reads as untrusted content (FR-PRM-8). And only one call of a cycle can add charges for searching. |
+| **Which models have live search comes from the capability flags in the configuration file.** | `IModelCapabilities.SearchesLive` of the Catalog says it, from the `LiveSearch` patterns of the model's provider. It is what the selector showed the user who chose the model. Nothing is stored, and no provider is asked: see "Which models can be selected" in [catalog.md](catalog.md). |
+| **A Sentiment Analyst whose model has none still runs.** | It is called with the same prompt and the same schema, without a search. Nothing skips the role. |
+| It makes no call. | What runs the roles hands the request to the gateway with the key of the agent's user, and decides whether a call is made again (FR-TEAM-9). |
+
+**The mark.** `SentimentReport.Of` makes the report of a call of the Sentiment Analyst that succeeded, and marks it.
+
+| Rule | Detail |
+|---|---|
+| **A report rests on live data when its call offered a live search and the provider ran at least one.** | `AiCallResult.LiveSearches` says how many ran. |
+| **Every other report is marked "no live data".** | That of a model that has no live search. And that of a model that could search and did not, or whose provider did not say: a report that nothing shows to rest on a search counts as resting on none. |
+| **The mark is the service's, and not the model's.** | The structured result of the role says whether live data was available (SRS 4.5). The mark does not go by it. So content that a search found cannot make a report count for more than it does. |
+| **Only `Of` makes a report.** | `SentimentReport` has no public constructor, and its `LiveData` cannot be set. It throws for a call of another role, and for a call that did not succeed: what becomes of a cycle whose Sentiment Analyst gave no result is not built (FR-TEAM-9). |
+
+**What the Strategist reads.** `DataPackage.PartsWith(lessons, sentiment)` is the parts of a prompt with the report under the text of the package, as `SentimentReport.Text` writes it:
+
+```
+Sentiment report: no live data
+{"bias":"bullish","notableEvents":["A spot ETF saw record inflows."],"confidence":0.7}
+```
+
+| Rule | Detail |
+|---|---|
+| **The mark is a line of its own, above the report.** | `Sentiment report: no live data`, or `Sentiment report: live data`. |
+| **The report is one line of JSON, whatever the model wrote.** | A line break inside a text of the report is written as `\n`, as JSON writes it. So no line of a report begins as a heading of a prompt does, or as the line of the mark does, and a report cannot pose as either. Nothing of it is lost: letters beyond ASCII and signs such as `<` stay as they are. |
+| **The Strategist is told to give a report without live data no weight.** | In its instructions, and not in the data package: a role follows no instruction that it finds in the data package (FR-PRM-8). The mark is a fact there, and the instructions say what to do with it. See "Live data" in [prompts.md](prompts.md). |
+
+**Whether the Sentiment Analyst relies on each provider's own live search, or the service supplies a news feed, is an open question of the specification (Q10).** Until it is decided, it relies on the search of its provider, as the requirement says.
+
+What runs the roles of a cycle inherits three things with this:
+
+- **A report can hold what a prompt never holds.** A link that a search found may hold a UUID or an address. `PromptScreen` refuses the prompt of the Strategist then, and the cycle makes no decision: see "What a prompt never holds" in [prompts.md](prompts.md).
+- **A call that searches takes longer,** and the Sentiment Analyst is one of the two calls that a cycle starts with. Its share of the 90 seconds of "How long a cycle takes" is the time limit of its provider at most.
+- **A `LiveSearch` pattern that names a model which does not take the search fails every call of that model as a Sentiment Analyst.** The provider refuses the request. The tracked file names `grok-4*` for Grok, and no model of another provider.
+
 ## How long a cycle takes
 
 With providers responding normally, 95% of cycles finish within 90 seconds of candle close (NFR-PRF-2). That cannot be shown before a cycle calls a model. What starts the cycles has its share of it, and measures the rest:
@@ -388,7 +455,10 @@ A limit is held to through what the stand-in counted while the cycles were held,
 - Asking again for market data that a read did not give. A cycle whose package cannot be built makes no decision, and the next close starts the next one.
 - Waiting for a candle of a higher timeframe that came one short. The candles of the agent's own timeframe cover the same time.
 - The price that a symbol last traded at. A package has the close of the latest candle, and on Futures the mark price. What holds an entry to its distance from the current price asks for the price (FR-RSK-4).
-- What the Sentiment Analyst reads, which its model searches for itself (FR-CYC-3), and the reports of the analysts and the plan, which a later role is given with the package (FR-TEAM-6).
+- Calling the Sentiment Analyst, whose model searches for what it reads (FR-CYC-3). What its call asks for, how its report is marked, and where the Strategist reads it are built: see "Live search". Nothing makes the call yet.
+- The report of the Market Analyst and the plan, which a later role is given with the package (FR-TEAM-6), and what the Risk Manager reads of the report of the Sentiment Analyst.
+- What becomes of a cycle whose Sentiment Analyst gave no result: it is called once more, and the cycle then continues with sentiment marked unavailable (FR-TEAM-9).
+- Taking out of a report what a prompt never holds, before the report is placed in a prompt. A prompt that would hold it is refused.
 - The summary of the data package that the record of a cycle keeps (FR-CYC-10). A package leaves one event in the log.
 - Reconciliation, which answers `IReconciliation` (FR-BIN-7), and the order of a start: migrate, reconcile, then schedule (NFR-REL-3).
 - The stale limit: a decision that completes later than the limit of its timeframe opens no position (FR-CYC-9). `Trading:StaleSeconds` has the limits, and nothing reads them yet.

@@ -36,7 +36,13 @@ internal static class ResponsesFormat
         ["store"] = false,
     };
 
-    /// <summary>Reads an answer: the text of its message, how it ended, and its usage.</summary>
+    /// <summary>
+    /// The search of the web that both providers run on their side, as a tool of a request. A
+    /// model that is offered it searches live when it sees reason to (FR-CYC-3).
+    /// </summary>
+    public static JsonObject WebSearch() => new() { ["type"] = "web_search" };
+
+    /// <summary>Reads an answer: the text of its message, how it ended, its usage, and the searches it shows.</summary>
     public static ModelAnswer? Read(JsonElement answer)
     {
         var status = answer.Text("status");
@@ -47,30 +53,45 @@ internal static class ResponsesFormat
             return null;
         }
 
-        var parts = answer.Items("output")
+        // A model that searches may say what it is about to look for, in a message before the
+        // call of the tool: its answer is what it wrote after the last call. Without a call
+        // that is every message.
+        var items = answer.Items("output").ToList();
+        var afterCalls = items.FindLastIndex(item => item.Text("type")?.EndsWith("_call", StringComparison.Ordinal) == true) + 1;
+
+        var parts = items.Skip(afterCalls)
             .Where(item => item.Text("type") == "message")
             .SelectMany(message => message.Items("content"))
             .ToList();
 
         var text = string.Concat(parts.Where(part => part.Text("type") == "output_text").Select(part => part.Text("text")));
         var usage = UsageOf(answer.Member("usage"));
+        var searches = items.Count(IsWebSearch);
 
         // A model that will not answer says so in a part of its own, in an answer that is complete.
         if (parts.Any(part => part.Text("type") == "refusal"))
         {
-            return new ModelAnswer(AnswerEnd.Refused, text, usage, "refusal");
+            return new ModelAnswer(AnswerEnd.Refused, text, usage, "refusal", searches);
         }
 
         var cause = answer.Member("incomplete_details").Text("reason");
 
         return status switch
         {
-            "completed" => new ModelAnswer(AnswerEnd.Complete, text, usage, status),
-            "incomplete" when cause == "max_output_tokens" => new ModelAnswer(AnswerEnd.Truncated, text, usage, cause),
-            "incomplete" when cause == "content_filter" => new ModelAnswer(AnswerEnd.Refused, text, usage, cause),
-            _ => new ModelAnswer(AnswerEnd.Other, text, usage, cause ?? status),
+            "completed" => new ModelAnswer(AnswerEnd.Complete, text, usage, status, searches),
+            "incomplete" when cause == "max_output_tokens" => new ModelAnswer(AnswerEnd.Truncated, text, usage, cause, searches),
+            "incomplete" when cause == "content_filter" => new ModelAnswer(AnswerEnd.Refused, text, usage, cause, searches),
+            _ => new ModelAnswer(AnswerEnd.Other, text, usage, cause ?? status, searches),
         };
     }
+
+    /// <summary>
+    /// Whether an item of an answer is a search of the web that the provider ran. Opening a page
+    /// that a search found, or looking inside one, is an item of the same type with another
+    /// action: neither is a search, and neither is charged as one.
+    /// </summary>
+    private static bool IsWebSearch(JsonElement item) =>
+        item.Text("type") == "web_search_call" && item.Member("action").Text("type") is null or "search";
 
     /// <summary>
     /// The usage of an answer. The output is what the total holds beyond the input: one provider

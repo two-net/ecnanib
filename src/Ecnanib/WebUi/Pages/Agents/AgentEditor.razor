@@ -270,6 +270,9 @@
 
                 <p>@AgentPages.RolesExplained</p>
 
+                @* Said with the choices that mark the models that search live: it may add provider charges (FR-CYC-3). *@
+                <p>@AgentPages.LiveSearchExplained</p>
+
                 @* Said of the providers that the form holds now, so before a reduced team is saved (FR-TEAM-5). *@
                 @foreach (var warning in Warnings())
                 {
@@ -310,6 +313,12 @@
                         @if (models.Any(model => !Selectable(role, model)))
                         {
                             <p role="note">@AgentPages.ModelNotSelectableNow</p>
+                        }
+
+                        @* A note, and no warning: the role runs with such a model. A model that cannot be selected now has its own. *@
+                        @if (role == Role.SentimentAnalyst && chosen is { LiveSearch: false } && Selectable(role, chosen))
+                        {
+                            <p role="note">@AgentPages.SentimentWithoutLiveSearch</p>
                         }
 
                         @if (provider is not null && AgentPages.Says(provider) is { } nothingOffered)

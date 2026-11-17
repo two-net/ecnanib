@@ -22,6 +22,12 @@ namespace Ecnanib.Tests.AiProviderGateway;
 /// on the key that was given. The lists of models cost nothing. See docs/ai-providers.md.
 /// </para>
 /// <para>
+/// A call with live search is made only when the run also names a model that can search, as
+/// <c>ECNANIB_LIVE_CLAUDE_SEARCH_MODEL</c>, and the same with the other providers. It costs one
+/// more call and the searches that the model runs, which a provider charges for beside the
+/// tokens.
+/// </para>
+/// <para>
 /// The variables are read here, by the tests. The application reads none.
 /// </para>
 /// </remarks>
@@ -30,6 +36,11 @@ public class LiveProviderTests
     private const string Prompt =
         "Bitcoin closed higher on each of the last five days, on rising volume. " +
         "Say whether the bias is bullish, bearish, or neutral, and how confident you are, from 0 to 1.";
+
+    // Nothing in it can be answered from memory: a model that is offered a search has to use it.
+    private const string SearchPrompt =
+        "Search for news about Bitcoin that was published in the last 24 hours, and read at least one source. " +
+        "From what you found alone, say whether the bias is bullish, bearish, or neutral, and how confident you are, from 0 to 1.";
 
     public static TheoryData<string> Providers => [.. ModelCalls.Providers];
 
@@ -55,6 +66,36 @@ public class LiveProviderTests
         Assert.True(result.Usage.Value.InputTokens > 0, "The provider counted no input tokens.");
         Assert.True(result.Usage.Value.OutputTokens > 0, "The provider counted no output tokens.");
         Assert.InRange(result.Latency, TimeSpan.FromMilliseconds(1), TimeSpan.FromMinutes(1));
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_provider_searches_live_and_answers_with_a_result_of_the_schema(string code)
+    {
+        var (key, _) = GivenFor(code);
+        var model = SearchModelFor(code);
+        using var application = OnTheNetwork();
+        var gateway = application.Services.GetRequiredService<IAiProviderGateway>();
+
+        var result = await gateway.CompleteAsync(
+            new AiProviderCode(code),
+            new AiCallRequest(model, SearchPrompt, ModelCalls.Schema, LiveSearch: true),
+            key,
+            TestContext.Current.CancellationToken);
+
+        // The provider took its search together with the schema, which its documentation does
+        // not promise of every model, and the result is the object alone: no word before the
+        // search, and no source written into it.
+        Assert.Equal(AiCallOutcome.Succeeded, result.Outcome);
+
+        using var answer = JsonDocument.Parse(result.ResultJson!);
+        Assert.Contains(answer.RootElement.GetProperty("bias").GetString(), new[] { "bullish", "bearish", "neutral" });
+        Assert.Equal(JsonValueKind.Number, answer.RootElement.GetProperty("confidence").ValueKind);
+        Assert.Equal(2, answer.RootElement.EnumerateObject().Count());
+
+        // The searches that the provider ran are where the adapter looks for them.
+        Assert.True(result.LiveSearches > 0, $"The result says that {result.LiveSearches} searches ran.");
+        Assert.NotNull(result.Usage);
     }
 
     [Theory]
@@ -166,6 +207,21 @@ public class LiveProviderTests
             $"Set {name}_KEY and {name}_MODEL to call {code} for real. See docs/ai-providers.md.");
 
         return (key!.Trim(), model!.Trim());
+    }
+
+    /// <summary>
+    /// The model that the run named as one that can search live at a provider. Without it, the
+    /// test is skipped: not every model of a provider takes its search, and a search is charged for.
+    /// </summary>
+    private static string SearchModelFor(string code)
+    {
+        var name = $"ECNANIB_LIVE_{code.ToUpperInvariant()}_SEARCH_MODEL";
+        var model = Environment.GetEnvironmentVariable(name);
+
+        Assert.SkipWhen(
+            string.IsNullOrWhiteSpace(model), $"Set {name} to have a model of {code} search live for real. See docs/ai-providers.md.");
+
+        return model!.Trim();
     }
 
     /// <summary>

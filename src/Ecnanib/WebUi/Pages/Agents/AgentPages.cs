@@ -128,6 +128,24 @@ public static class AgentPages
         "the agent's next cycle.";
 
     /// <summary>
+    /// What the form says about live search, with the choices that mark the models that have it:
+    /// what the mark means, which role uses it, and that it may add provider charges (FR-CYC-3).
+    /// </summary>
+    public const string LiveSearchExplained =
+        "A model that says \"searches live\" can look up current news and posts with the search of its provider. Only the " +
+        "Sentiment Analyst searches, in every cycle of the agent. Searching may add charges of the provider to your own " +
+        "key, beside the tokens of the call: for each search, and at some providers for what a search reads. The other " +
+        "roles never search, whatever their model can do.";
+
+    /// <summary>
+    /// What the form says under the Sentiment Analyst when the model chosen for it cannot
+    /// search live: the role still runs, and what becomes of its report (FR-CYC-3).
+    /// </summary>
+    public const string SentimentWithoutLiveSearch =
+        "This model cannot search live. The Sentiment Analyst still runs with it, but its report is marked \"no live data\" " +
+        "and the Strategist gives it no weight. Choose a model that searches live to give the team current news and posts.";
+
+    /// <summary>
     /// What the form says of a role whose model cannot be selected now: its user sees which
     /// model the role has, and that the agent does not run with it.
     /// </summary>

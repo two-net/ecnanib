@@ -25,7 +25,7 @@ namespace Ecnanib.Catalog;
 /// holds for every model of the catalog from the next start, with no sync in between.
 /// </para>
 /// </remarks>
-internal sealed class ModelEligibility(AiProvidersSettings providers)
+internal sealed class ModelEligibility(AiProvidersSettings providers) : IModelCapabilities
 {
     /// <summary>Whether a model may be selected, as far as the file goes: its status is the catalog's to say.</summary>
     /// <param name="provider">The provider that offers the model.</param>

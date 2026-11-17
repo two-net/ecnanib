@@ -25,7 +25,21 @@ internal sealed class GptAdapter(ModelCall call) : IAiProviderAdapter, IModelCal
 
     public void Authorize(HttpRequestHeaders headers, string apiKey) => GptApi.Authorize(headers, apiKey);
 
-    public JsonObject BodyOf(AiCallRequest request, JsonNode schema) => ResponsesFormat.BodyOf(request, schema);
+    /// <summary>
+    /// The body of the format, with the search of the web as a tool when the request asks for
+    /// live search (FR-CYC-3). The tool takes no limit on how often the model searches.
+    /// </summary>
+    public JsonObject BodyOf(AiCallRequest request, JsonNode schema)
+    {
+        var body = ResponsesFormat.BodyOf(request, schema);
+
+        if (request.LiveSearch)
+        {
+            body["tools"] = new JsonArray(ResponsesFormat.WebSearch());
+        }
+
+        return body;
+    }
 
     public ModelAnswer? Read(JsonElement answer) => ResponsesFormat.Read(answer);
 

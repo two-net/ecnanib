@@ -216,6 +216,18 @@ public class ModelEligibilityTests
         Assert.Equal(
             [("claude", "claude-opus-5-5", false), ("grok", "grok-3", false), ("grok", "grok-4-fast", true)],
             selectable.Select(model => (model.Provider.Value, model.Identifier, model.LiveSearch)));
+
+        // What calls a model is told the same as a selector shows, of every model that can be
+        // selected: which models have live search comes from the flags of the file (FR-CYC-3).
+        var capabilities = application.Capabilities;
+        Assert.All(selectable, model => Assert.Equal(model.LiveSearch, capabilities.SearchesLive(model.Provider, model.Identifier)));
+
+        // It goes by the file alone, and by the patterns of the model's own provider: letter
+        // case is ignored, as in every pattern, and a model that is in no catalog is answered too.
+        Assert.True(capabilities.SearchesLive(Grok, "GROK-4.7"));
+        Assert.True(capabilities.SearchesLive(Grok, "aurora-4-image"));
+        Assert.False(capabilities.SearchesLive(Claude, "grok-4-fast"));
+        Assert.False(capabilities.SearchesLive(new AiProviderCode("unheard-of"), "grok-4-fast"));
     }
 
     private static CatalogApplication WithAKeyForClaude(

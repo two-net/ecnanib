@@ -44,6 +44,12 @@ internal static class ModelCalls
 
     public static AiCallRequest RequestTo(string provider) => new(ModelOf(provider), Prompt, Schema);
 
+    /// <summary>The same request, of a model that may search live for it.</summary>
+    public static AiCallRequest SearchingRequestTo(string provider) => RequestTo(provider) with { LiveSearch = true };
+
+    /// <summary>What a model says before it searches, which is no part of its answer.</summary>
+    public const string BeforeSearching = "I will look for today's news about Bitcoin first.";
+
     /// <summary>The provider that a request went to, by the host of the test's configuration file, such as <c>claude.example</c>.</summary>
     public static string ProviderOf(HttpRequestMessage request) => request.RequestUri!.Host.Split('.')[0];
 
@@ -120,6 +126,107 @@ internal static class ModelCalls
                 "input_tokens": {{input}}, "output_tokens": {{output}},
                 "output_tokens_details": { "reasoning_tokens": {{reasoning}} }, "total_tokens": {{total ?? input + output}}
               }
+            }
+            """;
+    }
+
+    /// <summary>
+    /// The answer of a provider whose model searched live before it finished, with the text it
+    /// wrote after its last search, in the form that the provider's documentation gives. The
+    /// model said <see cref="BeforeSearching"/> first.
+    /// </summary>
+    public static string Searched(string provider, string text) => provider switch
+    {
+        "claude" => ClaudeSearched(text),
+        "gemini" => GeminiSearched(text),
+        "gpt" => ResponsesSearched(text),
+        "grok" => ResponsesSearched(text, countedByGrok: (Web: 1, X: 1)),
+        _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, null),
+    };
+
+    /// <summary>
+    /// An answer of Claude's Messages API with its web search: what the model said before it
+    /// searched, each search with its results, and the answer, in two blocks, as an answer that
+    /// names its sources is. The usage counts the searches.
+    /// </summary>
+    public static string ClaudeSearched(string text, int searches = 2, string stopReason = "end_turn")
+    {
+        var half = text.Length / 2;
+        var searching = string.Concat(Enumerable.Range(1, searches).Select(number =>
+            $$"""
+            { "type": "server_tool_use", "id": "srvtoolu_0{{number}}", "name": "web_search", "input": { "query": "bitcoin news {{number}}" } },
+            { "type": "web_search_tool_result", "tool_use_id": "srvtoolu_0{{number}}", "content": [
+              { "type": "web_search_result", "url": "https://news.example/{{number}}", "title": "Bitcoin today", "encrypted_content": "RW5j", "page_age": "November 17, 2026" } ] },
+            """));
+
+        return $$"""
+            {
+              "id": "msg_01", "type": "message", "role": "assistant", "model": "claude-test-model",
+              "content": [
+                { "type": "text", "text": {{Quoted(BeforeSearching)}} },
+                {{searching}}
+                { "type": "text", "text": {{Quoted(text[..half])}} },
+                { "type": "text", "text": {{Quoted(text[half..])}}, "citations": [
+                  { "type": "web_search_result_location", "url": "https://news.example/1", "title": "Bitcoin today", "encrypted_index": "RW5j", "cited_text": "Bitcoin rose." } ] }
+              ],
+              "stop_reason": "{{stopReason}}", "stop_sequence": null,
+              "usage": { "input_tokens": 100, "output_tokens": 50, "server_tool_use": { "web_search_requests": {{searches}} } }
+            }
+            """;
+    }
+
+    /// <summary>
+    /// An answer of Gemini's <c>generateContent</c> that was grounded with Google Search: the
+    /// queries that the model ran are listed with the candidate, and what the tool put before
+    /// the model is counted apart from the prompt.
+    /// </summary>
+    public static string GeminiSearched(string text, string[]? queries = null, int toolUsePrompt = 400) =>
+        $$"""
+        {
+          "candidates": [ {
+            "content": { "role": "model", "parts": [ { "text": "What to look for.", "thought": true }, { "text": {{Quoted(text)}} } ] },
+            "finishReason": "STOP", "index": 0,
+            "groundingMetadata": {
+              "webSearchQueries": {{JsonSerializer.Serialize(queries ?? ["bitcoin news today", "bitcoin etf flows"])}},
+              "groundingChunks": [ { "web": { "uri": "https://news.example/1", "title": "news.example" } } ],
+              "searchEntryPoint": { "renderedContent": "<div>Search</div>" }
+            }
+          } ],
+          "usageMetadata": {
+            "promptTokenCount": 100, "toolUsePromptTokenCount": {{toolUsePrompt}}, "candidatesTokenCount": 50, "thoughtsTokenCount": 0,
+            "totalTokenCount": {{150 + toolUsePrompt}}
+          },
+          "modelVersion": "gemini-test-model"
+        }
+        """;
+
+    /// <summary>
+    /// An answer of the Responses API whose model searched: what it said before, a search of the
+    /// web, a page that it opened, which is no search, a search that Grok ran on X, and the
+    /// answer. GPT counts no searches in its usage, and Grok does where
+    /// <paramref name="countedByGrok"/> says how many.
+    /// </summary>
+    public static string ResponsesSearched(string text, (int Web, int X)? countedByGrok = null, string status = "completed")
+    {
+        var counted = countedByGrok is { } searches
+            ? $$""", "server_side_tool_usage_details": { "web_search_calls": {{searches.Web}}, "x_search_calls": {{searches.X}}, "x_posts_fetched": 44 }"""
+            : string.Empty;
+
+        return $$"""
+            {
+              "id": "resp_01", "object": "response", "status": "{{status}}", "incomplete_details": null,
+              "output": [
+                { "id": "rs_01", "type": "reasoning", "summary": [] },
+                { "id": "msg_00", "type": "message", "role": "assistant", "status": "completed",
+                  "content": [ { "type": "output_text", "text": {{Quoted(BeforeSearching)}}, "annotations": [] } ] },
+                { "id": "ws_01", "type": "web_search_call", "status": "completed", "action": { "type": "search", "query": "bitcoin news today" } },
+                { "id": "ws_02", "type": "web_search_call", "status": "completed", "action": { "type": "open_page", "url": "https://news.example/1" } },
+                { "id": "ctc_01", "type": "custom_tool_call", "call_id": "xs_01", "name": "x_keyword_search", "status": "completed" },
+                { "id": "msg_01", "type": "message", "role": "assistant", "status": "completed",
+                  "content": [ { "type": "output_text", "text": {{Quoted(text)}},
+                    "annotations": [ { "type": "url_citation", "start_index": 1, "end_index": 5, "url": "https://news.example/1", "title": "1" } ] } ] }
+              ],
+              "usage": { "input_tokens": 100, "output_tokens": 50, "total_tokens": 150{{counted}} }
             }
             """;
     }

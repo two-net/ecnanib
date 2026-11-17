@@ -97,6 +97,63 @@ public class AgentRoleTests
     }
 
     [Fact]
+    public async Task The_form_says_that_live_search_may_add_provider_charges_and_notes_a_Sentiment_Analyst_that_has_none()
+    {
+        using var application = AgentsApplication.With(new StandInMarketData(), new TestClock(Morning), settings: AllowingEveryProvider);
+        using var client = application.CreateClient();
+        var user = await application.RegisterVerifiedAsync(Ada);
+        await client.SignInAsync(Ada);
+
+        // The file says of the model of Grok that it can search live, and not of the one of Claude.
+        var claudeA = await application.GiveModelAsync("claude", "claude-a", Morning, "Claude A");
+        var grokLive = await application.GiveModelAsync("grok", "grok-live", Morning);
+        await application.GiveAiKeyAsync(user.Id, "claude", Morning, ["claude-a"]);
+        await application.GiveAiKeyAsync(user.Id, "grok", Morning, ["grok-live"]);
+
+        // The form says it with the choices that mark the models, before any is chosen: what
+        // the mark means, which role searches, and that it may add provider charges (FR-CYC-3).
+        var form = AgentBrowser.Read(await client.PageAsync(NewAgentPage));
+
+        Assert.Contains($"<p>{AgentPages.LiveSearchExplained}</p>", form);
+        Assert.Contains("\"searches live\"", AgentPages.LiveSearchExplained);
+        Assert.Contains("Only the Sentiment Analyst searches, in every cycle of the agent.", AgentPages.LiveSearchExplained);
+        Assert.Contains("Searching may add charges of the provider to your own key, beside the tokens of the call", AgentPages.LiveSearchExplained);
+        Assert.DoesNotContain(AgentPages.SentimentWithoutLiveSearch, form);
+
+        // A Sentiment Analyst whose model searches live is noted for nothing, whatever the
+        // models of the other roles can do.
+        await client.CreateAgentAsync(AgentBrowser.Entry(name: "Reads the news")
+            .WithTeam("claude", claudeA)
+            .WithRole("SentimentAnalyst", "grok", grokLive));
+
+        var searching = AgentBrowser.Read(await client.PageAsync(
+            AgentBrowser.AgentPage(StoredAgent.Named(application.Database, "Reads the news").Id)));
+
+        Assert.Equal("grok-live, searches live", AgentBrowser.ModelChosenOn(searching, "sentiment-analyst"));
+        Assert.DoesNotContain(AgentPages.SentimentWithoutLiveSearch, searching);
+
+        // One whose model cannot is saved like any other: the role still runs. The form says
+        // what becomes of its report, once, under that role, as a note and not as a warning.
+        var (saved, _) = await client.CreateAgentAsync(AgentBrowser.Entry(name: "Reads nothing", symbol: "SOLUSDT")
+            .WithTeam("grok", grokLive)
+            .WithRole("SentimentAnalyst", "claude", claudeA));
+
+        Assert.Equal(AgentBrowser.AgentsPage, saved);
+
+        var page = await client.PageAsync(AgentBrowser.AgentPage(StoredAgent.Named(application.Database, "Reads nothing").Id));
+        var without = AgentBrowser.Read(page);
+        var note = $"<p role=\"note\">{AgentPages.SentimentWithoutLiveSearch}</p>";
+
+        Assert.Equal(without.IndexOf(note, StringComparison.Ordinal), without.LastIndexOf(note, StringComparison.Ordinal));
+        Assert.InRange(
+            without.IndexOf(note, StringComparison.Ordinal),
+            without.IndexOf("id=\"agent-sentiment-analyst-model\"", StringComparison.Ordinal),
+            without.IndexOf("id=\"agent-strategist-provider\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(AgentPages.SentimentWithoutLiveSearch, AgentBrowser.WarningsOn(page));
+        Assert.Contains("its report is marked \"no live data\" and the Strategist gives it no weight", AgentPages.SentimentWithoutLiveSearch);
+    }
+
+    [Fact]
     public async Task A_user_gives_each_role_a_model_and_the_choice_is_stored_with_the_agent()
     {
         var clock = new TestClock(Morning);

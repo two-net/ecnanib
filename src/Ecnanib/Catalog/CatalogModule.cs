@@ -25,6 +25,9 @@ public static class CatalogModule
         services.AddSingleton<ModelEligibility>();
         services.AddSingleton<ISelectableModels, SelectableModels>();
 
+        // What the file says that a model can do, for what calls one: whether it searches live.
+        services.AddSingleton<IModelCapabilities>(provider => provider.GetRequiredService<ModelEligibility>());
+
         // The catalog as the screen lists it: every model, also one that cannot be selected.
         services.AddSingleton<ICatalogModels, CatalogModels>();
 

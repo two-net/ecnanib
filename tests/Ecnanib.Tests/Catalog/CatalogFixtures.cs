@@ -129,6 +129,9 @@ internal sealed class CatalogApplication : IDisposable
     /// <summary>What says which models of the catalog can be selected.</summary>
     public ISelectableModels Selectable => _application.Services.GetRequiredService<ISelectableModels>();
 
+    /// <summary>What says what the configuration file says that a model can do.</summary>
+    public IModelCapabilities Capabilities => _application.Services.GetRequiredService<IModelCapabilities>();
+
     /// <summary>
     /// Starts the application, and waits until the job that syncs the catalog has had its first
     /// run on this database, which is due as the background work starts there.

@@ -35,19 +35,31 @@ internal sealed class GeminiAdapter(ModelCall call) : IAiProviderAdapter, IModel
 
     public void Authorize(HttpRequestHeaders headers, string apiKey) => GeminiApi.Authorize(headers, apiKey);
 
-    public JsonObject BodyOf(AiCallRequest request, JsonNode schema) => new()
+    public JsonObject BodyOf(AiCallRequest request, JsonNode schema)
     {
-        ["contents"] = new JsonArray(new JsonObject
+        var body = new JsonObject
         {
-            ["role"] = "user",
-            ["parts"] = new JsonArray(new JsonObject { ["text"] = request.Prompt }),
-        }),
-        ["generationConfig"] = new JsonObject
+            ["contents"] = new JsonArray(new JsonObject
+            {
+                ["role"] = "user",
+                ["parts"] = new JsonArray(new JsonObject { ["text"] = request.Prompt }),
+            }),
+            ["generationConfig"] = new JsonObject
+            {
+                ["responseMimeType"] = "application/json",
+                ["responseJsonSchema"] = schema,
+            },
+        };
+
+        // A model searches live with Google Search, which the provider calls grounding
+        // (FR-CYC-3). The tool takes no limit on how often the model searches.
+        if (request.LiveSearch)
         {
-            ["responseMimeType"] = "application/json",
-            ["responseJsonSchema"] = schema,
-        },
-    };
+            body["tools"] = new JsonArray(new JsonObject { ["googleSearch"] = new JsonObject() });
+        }
+
+        return body;
+    }
 
     public ModelAnswer? Read(JsonElement answer)
     {
@@ -77,8 +89,18 @@ internal sealed class GeminiAdapter(ModelCall call) : IAiProviderAdapter, IModel
                 .Select(part => part.Text("text")))
             : null;
 
-        return new ModelAnswer(end, text, usage, reason);
+        return new ModelAnswer(end, text, usage, reason, SearchesOf(candidate));
     }
+
+    /// <summary>
+    /// The searches that an answer was grounded on: the queries that the model ran, which the
+    /// answer lists. The provider charges for each, and counts no query that is empty.
+    /// </summary>
+    private static int SearchesOf(JsonElement candidate) =>
+        candidate.Member("groundingMetadata") is { } grounding
+            ? grounding.Items("webSearchQueries").Count(query =>
+                query.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(query.GetString()))
+            : 0;
 
     public AiCallOutcome OutcomeOfError(HttpStatusCode status, JsonElement? error) => status switch
     {
@@ -90,10 +112,13 @@ internal sealed class GeminiAdapter(ModelCall call) : IAiProviderAdapter, IModel
 
     /// <summary>
     /// The usage of an answer. Gemini counts what the model reasoned apart from its answer, and
-    /// charges both as output.
+    /// charges both as output. It counts what a tool put before the model, such as the results
+    /// of a search, apart from the prompt, and both are input.
     /// </summary>
     private static AiTokenUsage? UsageOf(JsonElement? usage) =>
         usage.Count("promptTokenCount") is { } input
-            ? new AiTokenUsage(input, (usage.Count("candidatesTokenCount") ?? 0) + (usage.Count("thoughtsTokenCount") ?? 0))
+            ? new AiTokenUsage(
+                input + (usage.Count("toolUsePromptTokenCount") ?? 0),
+                (usage.Count("candidatesTokenCount") ?? 0) + (usage.Count("thoughtsTokenCount") ?? 0))
             : null;
 }

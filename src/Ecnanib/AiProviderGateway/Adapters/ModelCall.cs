@@ -89,7 +89,15 @@ internal sealed class ModelCall(
 
             if (read.End == AnswerEnd.Complete && IsJsonObject(read.Text))
             {
-                return new AiCallResult(AiCallOutcome.Succeeded, read.Text, read.Usage, latency);
+                // The model was free to search and did not, or the provider counts its searches
+                // where this code does not look. Either way the result rests on no live data
+                // that anyone can show, and its caller treats it so (FR-CYC-3).
+                if (request.LiveSearch && read.LiveSearches == 0)
+                {
+                    logger.LogWarning("The model was offered a live search, and its answer shows none");
+                }
+
+                return new AiCallResult(AiCallOutcome.Succeeded, read.Text, read.Usage, latency, read.LiveSearches);
             }
 
             // The status says that the call went well, so the log of outbound calls does too.
@@ -106,7 +114,8 @@ internal sealed class ModelCall(
                 logger.LogWarning("The answer of the model holds no structured result: {Reason}", WhyNot(read));
             }
 
-            return Without(AiCallOutcome.InvalidResult, latency, read.Usage);
+            // The searches ran, and are charged for, as the tokens are.
+            return Without(AiCallOutcome.InvalidResult, latency, read.Usage, read.LiveSearches);
         }
         catch (HttpRequestException)
         {
@@ -125,8 +134,10 @@ internal sealed class ModelCall(
         }
     }
 
-    private static AiCallResult Without(AiCallOutcome outcome, TimeSpan latency, AiTokenUsage? usage = null) =>
-        new(outcome, ResultJson: null, usage, latency);
+    /// <summary>A call without a result. Only an answer that was read says its usage and its searches.</summary>
+    private static AiCallResult Without(
+        AiCallOutcome outcome, TimeSpan latency, AiTokenUsage? usage = null, int? liveSearches = null) =>
+        new(outcome, ResultJson: null, usage, latency, liveSearches);
 
     /// <summary>The schema of a request, which is a JSON object. It is read anew for each call: a node belongs to one body.</summary>
     private static JsonNode SchemaOf(AiCallRequest request)

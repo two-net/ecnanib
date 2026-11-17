@@ -24,8 +24,9 @@ internal interface IModelCallFormat
 
     /// <summary>
     /// The body of the request: the model, the prompt as it is, and the schema where the provider
-    /// takes it. How the structured result is asked for is all that a provider's body has of its
-    /// own (FR-PRM-10).
+    /// takes it. How the structured result is asked for is what a provider's body has of its own
+    /// (FR-PRM-10), with the provider's search, as a tool, when the request asks for live search
+    /// (FR-CYC-3). A body never holds text beside the prompt.
     /// </summary>
     JsonObject BodyOf(AiCallRequest request, JsonNode schema);
 
@@ -65,7 +66,9 @@ internal enum AnswerEnd
 /// <param name="Text">The text the model wrote, which is the structured result when the answer is complete.</param>
 /// <param name="Usage">The tokens the provider counted, or null when the answer does not say.</param>
 /// <param name="ProviderReason">The provider's own word for how it ended, such as <c>max_tokens</c>, for the log.</param>
-internal readonly record struct ModelAnswer(AnswerEnd End, string? Text, AiTokenUsage? Usage, string? ProviderReason);
+/// <param name="LiveSearches">How many live searches the answer shows that the provider ran. None when the request offered no search.</param>
+internal readonly record struct ModelAnswer(
+    AnswerEnd End, string? Text, AiTokenUsage? Usage, string? ProviderReason, int LiveSearches = 0);
 
 /// <summary>Reads the parts of an answer, each of which may be missing or of another kind than expected.</summary>
 internal static class AnswerReading

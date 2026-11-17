@@ -11,8 +11,9 @@ public static class DecisionEngineModule
     /// <summary>
     /// Registers the component: what starts a cycle for each running agent when a candle closes
     /// (FR-CYC-1), what builds the data package of a cycle (FR-CYC-2), what reads the prompt
-    /// templates that are in use (FR-PRM-7), and what composes the prompt of a role call from
-    /// them (FR-PRM-1).
+    /// templates that are in use (FR-PRM-7), what composes the prompt of a role call from them
+    /// (FR-PRM-1), and what says whether the model of a role searches live for its call
+    /// (FR-CYC-3).
     /// </summary>
     public static IServiceCollection AddDecisionEngine(this IServiceCollection services)
     {
@@ -46,6 +47,11 @@ public static class DecisionEngineModule
         // The prompt of a role call, from the templates of the agent's market and timeframe and
         // from what the call is given. Every part of it passes the screen. It calls no model.
         services.AddSingleton<IPromptComposition, PromptComposition>();
+
+        // What the model of a role is called with. Only the Sentiment Analyst searches live, and
+        // only with a model that the configuration file says can (FR-CYC-3). It makes no call:
+        // what runs the roles of a cycle is not built.
+        services.AddSingleton<IRoleCalls, RoleCalls>();
 
         return services;
     }

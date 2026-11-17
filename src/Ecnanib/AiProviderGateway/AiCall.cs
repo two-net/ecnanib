@@ -7,7 +7,13 @@ namespace Ecnanib.AiProviderGateway;
 /// (FR-PRM-10).
 /// </param>
 /// <param name="ResultSchema">The JSON Schema that the structured result must match: a JSON object.</param>
-public sealed record AiCallRequest(string Model, string Prompt, string ResultSchema);
+/// <param name="LiveSearch">
+/// Whether the model may search live for the call, with the search of its own provider
+/// (FR-CYC-3). An adapter then offers the model the provider's search as a tool of the request,
+/// and adds nothing to the prompt. The caller says it only of a model that the configuration
+/// file says can search live: a provider refuses the request of a model that cannot.
+/// </param>
+public sealed record AiCallRequest(string Model, string Prompt, string ResultSchema, bool LiveSearch = false);
 
 /// <summary>
 /// How a call to a model ended. A call that gives no result is not an error of the gateway: it
@@ -57,7 +63,14 @@ public enum AiCallOutcome
 /// none: a call that timed out may still be charged for.
 /// </param>
 /// <param name="Latency">How long the call took, from the request to the answer or the failure.</param>
-public sealed record AiCallResult(AiCallOutcome Outcome, string? ResultJson, AiTokenUsage? Usage, TimeSpan Latency)
+/// <param name="LiveSearches">
+/// How many live searches the provider ran for the call, as its answer says, or null when no
+/// answer was read. Null is unknown, and not none: a call that timed out may have searched, and
+/// be charged for it. An answer that shows no search says 0, which is every answer to a call
+/// that asked for none (FR-CYC-3).
+/// </param>
+public sealed record AiCallResult(
+    AiCallOutcome Outcome, string? ResultJson, AiTokenUsage? Usage, TimeSpan Latency, int? LiveSearches = null)
 {
     public string? ResultJson { get; } = (Outcome == AiCallOutcome.Succeeded) == (ResultJson is not null)
         ? ResultJson

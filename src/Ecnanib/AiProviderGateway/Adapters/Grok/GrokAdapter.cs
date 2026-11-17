@@ -21,6 +21,13 @@ internal sealed class GrokAdapter(ModelCall call) : IAiProviderAdapter, IModelCa
 {
     private const string AboutTheKey = "API key";
 
+    // The most turns of searching one call may take, each of which the provider charges for. At
+    // the limit the model answers from what it has found by then.
+    private const int MostSearchTurns = 5;
+
+    // How the id of a call begins that searched X, in an item of an answer.
+    private const string SearchOfX = "xs_";
+
     public AiProviderCode Provider => GrokApi.Provider;
 
     public Task<AiCallResult> CompleteAsync(AiCallRequest request, string apiKey, CancellationToken cancellationToken) =>
@@ -30,9 +37,51 @@ internal sealed class GrokAdapter(ModelCall call) : IAiProviderAdapter, IModelCa
 
     public void Authorize(HttpRequestHeaders headers, string apiKey) => GrokApi.Authorize(headers, apiKey);
 
-    public JsonObject BodyOf(AiCallRequest request, JsonNode schema) => ResponsesFormat.BodyOf(request, schema);
+    /// <summary>
+    /// The body of the format. A model searches live with two tools of the provider, the search
+    /// of the web and the search of X, where much news of this market appears first (FR-CYC-3).
+    /// </summary>
+    /// <remarks>
+    /// Grok writes its sources into the text of an answer unless told otherwise, as links beside
+    /// what they support. The text is the structured result, which holds nothing but its fields,
+    /// so they are turned off.
+    /// </remarks>
+    public JsonObject BodyOf(AiCallRequest request, JsonNode schema)
+    {
+        var body = ResponsesFormat.BodyOf(request, schema);
 
-    public ModelAnswer? Read(JsonElement answer) => ResponsesFormat.Read(answer);
+        if (request.LiveSearch)
+        {
+            body["tools"] = new JsonArray(ResponsesFormat.WebSearch(), new JsonObject { ["type"] = "x_search" });
+            body["include"] = new JsonArray("no_inline_citations");
+            body["max_turns"] = MostSearchTurns;
+        }
+
+        return body;
+    }
+
+    /// <summary>
+    /// Reads an answer of the format. Grok counts the searches of a call in its usage, those of X
+    /// beside those of the web. Where the usage does not say, the items of the answer do: a
+    /// search of X is an item of a tool of Grok's own, which only the id of its call tells apart.
+    /// </summary>
+    public ModelAnswer? Read(JsonElement answer)
+    {
+        if (ResponsesFormat.Read(answer) is not { } read)
+        {
+            return null;
+        }
+
+        var counted = answer.Member("usage").Member("server_side_tool_usage_details");
+        var ofTheWeb = counted.Count("web_search_calls");
+        var ofX = counted.Count("x_search_calls");
+
+        var searches = ofTheWeb is null && ofX is null
+            ? read.LiveSearches + answer.Items("output").Count(IsSearchOfX)
+            : (ofTheWeb ?? 0) + (ofX ?? 0);
+
+        return read with { LiveSearches = searches };
+    }
 
     public AiCallOutcome OutcomeOfError(HttpStatusCode status, JsonElement? error) => status switch
     {
@@ -49,4 +98,7 @@ internal sealed class GrokAdapter(ModelCall call) : IAiProviderAdapter, IModelCa
     /// </summary>
     private static string? MessageOf(JsonElement? error) =>
         error.Text("error") ?? error.Member("error").Text("message");
+
+    private static bool IsSearchOfX(JsonElement item) =>
+        item.Text("type") == "custom_tool_call" && item.Text("call_id")?.StartsWith(SearchOfX, StringComparison.Ordinal) == true;
 }
