@@ -205,6 +205,9 @@ internal sealed class CyclesApplication : IDisposable
     /// <summary>The records of the cycles, where the cycles run the teams of their agents.</summary>
     public StandInCycleRecords Records => Team!.Records;
 
+    /// <summary>What stands for what places the orders of a cycle, and keeps what it was handed.</summary>
+    public StandInPlanOrders Orders => Team!.Orders;
+
     /// <summary>Runs the job for a close, as the scheduler does. It ends when the cycles of the close are over.</summary>
     public Task RunAsync(DateTimeOffset closedAt, CancellationToken? cancellationToken = null) =>
         Application.RunCyclesAsync(closedAt, cancellationToken);

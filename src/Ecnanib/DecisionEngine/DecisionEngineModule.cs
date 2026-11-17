@@ -1,3 +1,4 @@
+using Ecnanib.Agents;
 using Ecnanib.Platform.BackgroundWork;
 
 namespace Ecnanib.DecisionEngine;
@@ -22,9 +23,29 @@ public static class DecisionEngineModule
         // of the team, validates what each answered, and records every call (FR-TEAM-6 to
         // FR-TEAM-9). A decision that completes later than the stale limit of the agent's
         // timeframe opens no position (FR-CYC-9). What goes on of its plan is checked by the
-        // Risk Guard (FR-RSK-3), and nothing is placed: the orders are not built. What
-        // reconciles an agent with the exchange registers an IReconciliation, when it is built.
+        // Risk Guard (FR-RSK-3), and what the Risk Guard accepted is handed to what places the
+        // orders.
         services.AddSingleton<IDecisionCycle, TeamCycle>();
+
+        // The orders (SRS 3.2, step 7): what places the entry and the stop-loss of a plan that
+        // the Risk Guard accepted, closes a position, and settles the orders of an agent with
+        // the exchange. An order is never sent twice (FR-BIN-6), and every open position has a
+        // stop-loss that rests on the exchange, or is closed at market (FR-RSK-7). It is the one
+        // place that uses the orders of the Exchange Gateway (NFR-SEC-6).
+        services.AddSingleton<StoredOrders>();
+        services.AddSingleton<IPlanOrders, AgentOrders>();
+
+        // What the positions and the orders answer to those that waited for them: Agents asks
+        // what an agent holds on the exchange and has its position closed, a cycle reads what
+        // its agent holds, and what starts a cycle asks whether the orders of its agent are
+        // settled, so that a restart places no order twice (NFR-REL-3).
+        services.AddSingleton<IAgentExposure, AgentExposure>();
+        services.AddSingleton<IAgentHoldings, StoredHoldings>();
+        services.AddSingleton<IReconciliation, OrderReconciliation>();
+
+        // Settles the orders every minute, for the agents that have something to settle: what
+        // a cycle could not finish, and what was under way when the application stopped.
+        services.AddBackgroundJob<OrderSettlingJob>();
 
         // What has the Risk Guard check what goes on of a plan: it gathers the facts that the
         // fixed rules are asked of, and keeps the outcome of every rule for the record of the
@@ -40,9 +61,8 @@ public static class DecisionEngineModule
         services.AddSingleton<RoleRuns>();
 
         // The data package of a cycle: candles, the context of the higher timeframes, the
-        // indicators, which the system computes, and what the agent holds. What keeps positions
-        // and orders registers an IAgentHoldings, when it is built: until then an agent holds
-        // nothing, and its equity is its allocated capital.
+        // indicators, which the system computes, and what the agent holds, which what keeps the
+        // positions and the orders says.
         services.AddSingleton<IDataPackages, DataPackages>();
 
         // The candles that a cycle starts with, asked for until they reach its close (FR-CYC-1).

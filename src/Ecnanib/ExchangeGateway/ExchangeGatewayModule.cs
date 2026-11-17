@@ -1,4 +1,5 @@
 using Ecnanib.ExchangeGateway.Adapters.Binance;
+using Ecnanib.ExchangeGateway.Trading;
 using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Logging;
 
@@ -21,6 +22,12 @@ public static class ExchangeGatewayModule
         // Binance, behind the common interface, and the one exchange that every call to it makes.
         services.AddSingleton<BinanceCall>();
         services.AddSingleton<IExchangeAdapter, BinanceAdapter>();
+
+        // The orders of Binance: placing one, asking what became of it, taking it off the
+        // exchange, and reading its executions (FR-BIN-6). Only the Decision Engine may use
+        // them, after the Risk Guard (NFR-SEC-6). They pass the same one exchange, and so the
+        // same limiter and the same watch on the clock.
+        services.AddSingleton<IExchangeOrders, BinanceOrders>();
 
         // The one limiter that every one of those calls passes, for all users: Binance counts
         // its limits on requests against the address of the service (FR-BIN-4). It is one

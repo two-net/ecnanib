@@ -5,8 +5,8 @@ namespace Ecnanib.ExchangeGateway;
 /// <summary>
 /// The common interface the exchange sits behind, so the rest of the application does not depend
 /// on Binance's request formats. Implementations live under <c>ExchangeGateway/Adapters</c>.
-/// Operations that place orders belong in the <c>ExchangeGateway.Trading</c> namespace, which
-/// only the Decision Engine may use. See docs/exchange.md.
+/// Operations that place orders are in the <c>ExchangeGateway.Trading</c> namespace, which only
+/// the Decision Engine may use: see <see cref="Trading.IExchangeOrders"/>. See docs/exchange.md.
 /// </summary>
 /// <remarks>
 /// Every operation here reads. None withdraws, deposits, or transfers funds, and none will

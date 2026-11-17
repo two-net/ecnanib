@@ -9,10 +9,9 @@ namespace Ecnanib.DecisionEngine;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing implements it yet: positions and orders are not built, and no result of an agent is
-/// stored. Until then an agent holds nothing, and its equity is the capital that its user
-/// allocated to it. A test fails as soon as a table of positions or of orders is in the model and
-/// nothing answers here.
+/// What keeps the positions and the orders answers here, from its rows: see docs/orders.md. No
+/// result of an agent is stored yet, so its equity is still the capital that its user allocated
+/// to it. Where nothing answers, an agent holds nothing.
 /// </para>
 /// <para>
 /// It is asked for one agent, as its data package is built, and only reads. What it answers is

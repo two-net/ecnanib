@@ -80,8 +80,9 @@ public class CycleOverloadTests
         application.Clock.Set(Quarter);
         await application.Cycles.StartedAsync(1);
 
-        // Half a minute before the next close it is stopped, through its token.
-        application.Clock.Set(NextQuarter.AddSeconds(-30));
+        // 45 seconds before the next close it is stopped, through its token: by then a cycle
+        // whose entry is on its way has time to let that call end, and to protect the entry.
+        application.Clock.Set(NextQuarter.AddSeconds(-45));
         await Wait.UntilAsync(() => application.Cycles.Stopped.Count == 1, "the cycle to be stopped");
         Assert.Equal([agent], application.Cycles.Stopped);
 

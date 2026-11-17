@@ -9,11 +9,11 @@ using Ecnanib.Shared;
 namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 
 /// <summary>
-/// The one exchange that every call to Binance makes: a GET to the address that the configuration
-/// file gives for the market and the environment, when the limiter has room for it, within a
-/// time limit, signed where the call needs a credential (FR-BIN-1, FR-BIN-2, FR-BIN-4). What
-/// differs between calls is which <see cref="BinanceEndpoint"/> it is and how its answer reads.
-/// See docs/exchange.md.
+/// The one exchange that every call to Binance makes: a request to the address that the
+/// configuration file gives for the market and the environment, when the limiter has room for
+/// it, within a time limit, signed where the call needs a credential (FR-BIN-1, FR-BIN-2,
+/// FR-BIN-4). What differs between calls is which <see cref="BinanceEndpoint"/> it is and how
+/// its answer reads. See docs/exchange.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -35,6 +35,15 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// </para>
 /// <para>
 /// The call is made once. Whether it is made again is the caller's to decide.
+/// </para>
+/// <para>
+/// A call that places an order, or takes one off the exchange, is not given up by its caller
+/// once it is sent (FR-BIN-6). A caller that cancels ends the wait for a turn at the limiter, and
+/// then nothing was sent. From the moment that the call is sent it runs to its answer or to its
+/// time limit, whatever its caller does: a call that was dropped half way would leave nobody
+/// knowing whether the exchange took the order. What such a call was answered with is said
+/// beside its outcome, the status and the number of Binance's error, so that what places the
+/// order can tell a refusal, after which there is no order, from an end that leaves it unknown.
 /// </para>
 /// <para>
 /// A call that Binance refuses for the time that it carries tells <see cref="BinanceClock"/>,
@@ -86,7 +95,10 @@ internal sealed class BinanceCall(
         CancellationToken cancellationToken) =>
         SendAsync(endpoint, mode, userId: null, apiKey: null, secretKey: null, read, cancellationToken);
 
-    /// <summary>Makes a call that is signed with a credential, and says how it ended.</summary>
+    /// <summary>
+    /// Makes a call that is signed with a credential, and says how it ended. A call that changes
+    /// something at the exchange cannot be cancelled once it is sent: see the remarks of the class.
+    /// </summary>
     /// <param name="endpoint">The call.</param>
     /// <param name="mode">The environment that the credential is for.</param>
     /// <param name="userId">Whose call it is, for the limiter, which gives the users whose calls wait their turns.</param>
@@ -96,7 +108,10 @@ internal sealed class BinanceCall(
     /// What the answer says, or null when it is not what Binance sends to this call. It is given
     /// the answer to a success only.
     /// </param>
-    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <param name="cancellationToken">
+    /// Cancels the call. Of a call that changes something at the exchange it cancels the wait
+    /// for a turn only, before anything is sent.
+    /// </param>
     public Task<BinanceAnswer<T>> AskSignedAsync<T>(
         BinanceEndpoint endpoint,
         TradingMode mode,
@@ -150,18 +165,32 @@ internal sealed class BinanceCall(
         // time that it says it was made at.
         var query = secretKey is null ? endpoint.Query : Signed(endpoint.Query, secretKey);
 
+        // A call that changes something at the exchange is the caller's to cancel until here,
+        // where nothing is sent yet. From here on it is not: see the remarks of the class.
+        var held = endpoint.Changes;
+        if (held)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
         // The limit runs on the application's clock, and covers the sending and the reading of
         // the answer.
         using var limit = new CancellationTokenSource(Limit, clock);
-        using var either = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, limit.Token);
+        using var either = held
+            ? CancellationTokenSource.CreateLinkedTokenSource(limit.Token)
+            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, limit.Token);
 
         // Whether Binance answered that it has had too many requests. However the call ends
         // after that, that is how it ended.
         var throttled = false;
 
+        // The status of the answer, once there is one.
+        int? status = null;
+
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, query.Length == 0 ? address : $"{address}?{query}");
+            // Every parameter is in the query, also of a call that is no GET: the request has no body.
+            using var request = new HttpRequestMessage(endpoint.Method, query.Length == 0 ? address : $"{address}?{query}");
             if (apiKey is not null)
             {
                 request.Headers.TryAddWithoutValidation("X-MBX-APIKEY", apiKey);
@@ -177,6 +206,7 @@ internal sealed class BinanceCall(
             var sent = clock.GetTimestamp();
             using var response = await client.SendAsync(request, either.Token);
             var took = clock.GetElapsedTime(sent);
+            status = (int)response.StatusCode;
 
             // The limiter hears of every answer: of the signal, which stops the calls, and
             // otherwise of what Binance has counted against the service.
@@ -197,7 +227,7 @@ internal sealed class BinanceCall(
             {
                 if (body is { } answer && read(answer) is { } value)
                 {
-                    return new BinanceAnswer<T>(ExchangeCallOutcome.Succeeded, value, sentAt, took);
+                    return new BinanceAnswer<T>(ExchangeCallOutcome.Succeeded, value, sentAt, took, status);
                 }
 
                 // The status says that the call went well, so the log of outbound calls does too.
@@ -210,7 +240,7 @@ internal sealed class BinanceCall(
                     mode.ToString(),
                     body is null ? "NotJson" : "NotExpected");
 
-                return Without(ExchangeCallOutcome.Failed);
+                return Without(ExchangeCallOutcome.Failed, status);
             }
 
             var code = CodeOf(body);
@@ -236,7 +266,7 @@ internal sealed class BinanceCall(
 
             if (throttled)
             {
-                return Without(ExchangeCallOutcome.RateLimited);
+                return Without(ExchangeCallOutcome.RateLimited, status, code);
             }
 
             // Anything but a refusal says nothing about the credential: a clock that is off, a
@@ -244,7 +274,7 @@ internal sealed class BinanceCall(
             var refused = response.StatusCode == HttpStatusCode.Unauthorized
                 || (code is { } error && Refusals.Contains(error));
 
-            return Without(refused ? ExchangeCallOutcome.AuthenticationFailed : ExchangeCallOutcome.Failed);
+            return Without(refused ? ExchangeCallOutcome.AuthenticationFailed : ExchangeCallOutcome.Failed, status, code);
         }
         catch (HttpRequestException)
         {
@@ -254,15 +284,16 @@ internal sealed class BinanceCall(
         catch (IOException)
         {
             // The answer broke off while it was read.
-            return Without(throttled ? ExchangeCallOutcome.RateLimited : ExchangeCallOutcome.Failed);
+            return Without(throttled ? ExchangeCallOutcome.RateLimited : ExchangeCallOutcome.Failed, status);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (held || !cancellationToken.IsCancellationRequested)
         {
-            // Binance took longer than the limit. The caller did not cancel.
-            return Without(throttled ? ExchangeCallOutcome.RateLimited : ExchangeCallOutcome.TimedOut);
+            // Binance took longer than the limit. The caller did not cancel, or could not.
+            return Without(throttled ? ExchangeCallOutcome.RateLimited : ExchangeCallOutcome.TimedOut, status);
         }
 
-        static BinanceAnswer<T> Without(ExchangeCallOutcome outcome) => new(outcome, default);
+        static BinanceAnswer<T> Without(ExchangeCallOutcome outcome, int? status = null, int? code = null) =>
+            new(outcome, default, Status: status, Code: code);
     }
 
     /// <summary>
@@ -346,5 +377,10 @@ internal sealed class BinanceCall(
 /// <param name="Value">What the answer says. It is there when the call succeeded, and never otherwise.</param>
 /// <param name="SentAt">When the call was sent, by the application's clock. It is there when the call succeeded.</param>
 /// <param name="Took">How long the answer took from then, without the wait for a turn at the limiter. It is there when the call succeeded.</param>
+/// <param name="Status">
+/// The status of the answer, or null when there was none: the call was not sent, no connection
+/// was made or it broke, or Binance took longer than the limit before it answered.
+/// </param>
+/// <param name="Code">The number that Binance gave its error, or null when the answer has none.</param>
 internal readonly record struct BinanceAnswer<T>(
-    ExchangeCallOutcome Outcome, T? Value, DateTimeOffset SentAt = default, TimeSpan Took = default);
+    ExchangeCallOutcome Outcome, T? Value, DateTimeOffset SentAt = default, TimeSpan Took = default, int? Status = null, int? Code = null);

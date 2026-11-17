@@ -16,6 +16,14 @@ public static class NotificationsModule
         // docs/architecture.md.
         services.AddSingleton<IAccountMailer, AccountMailer>();
 
+        // The in-app notifications of users: what raises one, and what reads the ones that a
+        // user has not read (FR-NTF-1). What is built is the alert that a failure of the
+        // protection of a position raises (FR-RSK-7).
+        services.AddSingleton<INotifications, StoredNotifications>();
+
+        // The part of the export of a user's data that this component keeps (NFR-SEC-9).
+        services.AddSingleton<IExportedPart, NotificationsExport>();
+
         return services;
     }
 }

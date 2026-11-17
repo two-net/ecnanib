@@ -269,8 +269,8 @@ public class TeamRetryTests
         application.Clock.Set(Quarter);
         await models.StartedAsync(Role.Strategist);
 
-        // Half a minute before the next close the cycle is stopped, through its token.
-        application.Clock.Set(NextQuarter.AddSeconds(-30));
+        // 45 seconds before the next close the cycle is stopped, through its token.
+        application.Clock.Set(NextQuarter.AddSeconds(-45));
         await Wait.UntilAsync(() => application.Records.Stored.Count == 1, "the cycle to be recorded");
 
         // The record says so, with the two calls that were answered and the one that was under way.

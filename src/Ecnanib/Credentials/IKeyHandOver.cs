@@ -21,6 +21,10 @@ namespace Ecnanib.Credentials;
 /// A user's own key is the only key that a call of their agent is made with (FR-KEY-1): there
 /// is no key of the service to fall back on.
 /// </para>
+/// <para>
+/// What places an order for an agent asks for the Binance credential of the agent's user the
+/// same way, as it makes the call, and hands it to the Exchange Gateway with that call.
+/// </para>
 /// </remarks>
 public interface IKeyHandOver
 {
@@ -29,6 +33,18 @@ public interface IKeyHandOver
     /// <param name="provider">The provider of the model that is called.</param>
     /// <param name="cancellationToken">Cancels the question.</param>
     Task<HandedKey> AiKeyAsync(Guid userId, AiProviderCode provider, CancellationToken cancellationToken);
+
+    /// <summary>The Binance credential of a user for an environment, for one call about an order.</summary>
+    /// <remarks>
+    /// It is handed over whatever the last check of the credential found: an order that closes a
+    /// position is tried in any state, so that risk can always be reduced, and Binance says
+    /// whether it still takes the credential. A plan that opens a position does not come this
+    /// far with a credential that is not valid: the Risk Guard rejects it (FR-RSK-4).
+    /// </remarks>
+    /// <param name="userId">The user whose agent the call is for.</param>
+    /// <param name="environment">The environment of the agent: a user has one credential for each.</param>
+    /// <param name="cancellationToken">Cancels the question.</param>
+    Task<HandedExchangeKey> ExchangeKeyAsync(Guid userId, TradingMode environment, CancellationToken cancellationToken);
 }
 
 /// <summary>What came of asking for a key.</summary>
@@ -80,5 +96,46 @@ public sealed class HandedKey
         : new HandedKey(why, key: null);
 
     /// <summary>The outcome, and never the key.</summary>
+    public override string ToString() => Outcome.ToString();
+}
+
+/// <summary>A Binance credential that was asked for: its two keys, or why there are none.</summary>
+/// <remarks>
+/// It is a class of its own, and no record, so that nothing writes a key by writing this: its
+/// text is the outcome alone.
+/// </remarks>
+public sealed class HandedExchangeKey
+{
+    private HandedExchangeKey(KeyHandOverOutcome outcome, string? apiKey, string? secretKey)
+    {
+        Outcome = outcome;
+        ApiKey = apiKey;
+        SecretKey = secretKey;
+    }
+
+    /// <summary>What came of asking.</summary>
+    public KeyHandOverOutcome Outcome { get; }
+
+    /// <summary>The API key, when the credential is handed over, and null otherwise.</summary>
+    public string? ApiKey { get; }
+
+    /// <summary>The secret key that belongs to it, when the credential is handed over, and null otherwise.</summary>
+    public string? SecretKey { get; }
+
+    /// <summary>A credential that is handed over.</summary>
+    public static HandedExchangeKey Of(string apiKey, string secretKey)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(apiKey);
+        ArgumentException.ThrowIfNullOrEmpty(secretKey);
+
+        return new HandedExchangeKey(KeyHandOverOutcome.Handed, apiKey, secretKey);
+    }
+
+    /// <summary>No credential, and why.</summary>
+    public static HandedExchangeKey None(KeyHandOverOutcome why) => why == KeyHandOverOutcome.Handed
+        ? throw new ArgumentOutOfRangeException(nameof(why), why, "A credential that is handed over is a credential.")
+        : new HandedExchangeKey(why, apiKey: null, secretKey: null);
+
+    /// <summary>The outcome, and never a key.</summary>
     public override string ToString() => Outcome.ToString();
 }

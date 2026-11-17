@@ -1,6 +1,8 @@
 using Ecnanib.ExchangeGateway;
+using Ecnanib.ExchangeGateway.Trading;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Architecture;
+using Ecnanib.Tests.DecisionEngine;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.ExchangeGateway;
@@ -8,8 +10,9 @@ namespace Ecnanib.Tests.ExchangeGateway;
 /// <summary>
 /// Ecnanib never withdraws, deposits, or transfers funds, between the Spot and the Futures wallet
 /// of a user included (FR-BIN-9). The gateway has no operation that does: everything it can send
-/// to Binance is a short list of calls that read, and every call it makes passes one place.
-/// Binance is the only exchange behind it (FR-BIN-1).
+/// to Binance is a short list of calls that read and of calls about orders, which trade in the
+/// account that the credential is of, and every call it makes passes one place. Binance is the
+/// only exchange behind it (FR-BIN-1).
 /// </summary>
 public class NoFundMovementTests
 {
@@ -36,6 +39,26 @@ public class NoFundMovementTests
         "GET /sapi/v1/account/apiRestrictions",
     ];
 
+    // Everything that the gateway sends to Binance about an order: it places one, asks what
+    // became of it, takes it off the exchange, and reads its executions, on each market, and
+    // on the Futures market the same for a stop, which Binance keeps apart there. An order
+    // buys or sells in the account of the credential. None of these calls moves funds out of
+    // that account, into it, or between its wallets: Binance has those under sapi.
+    private static readonly string[] Orders =
+    [
+        "DELETE /api/v3/order",
+        "DELETE /fapi/v1/algoOrder",
+        "DELETE /fapi/v1/order",
+        "GET /api/v3/myTrades",
+        "GET /api/v3/order",
+        "GET /fapi/v1/algoOrder",
+        "GET /fapi/v1/order",
+        "GET /fapi/v1/userTrades",
+        "POST /api/v3/order",
+        "POST /fapi/v1/algoOrder",
+        "POST /fapi/v1/order",
+    ];
+
     // The operations of the gateway, which the first test asks one by one. An operation that is
     // added is asked there too, so that what it sends is held to the list.
     private static readonly string[] Operations =
@@ -55,17 +78,31 @@ public class NoFundMovementTests
         nameof(IExchangeMarketData.GetSymbolsAsync),
     ];
 
+    // The same of the orders, which only the Decision Engine may use.
+    private static readonly string[] OrderOperations =
+    [
+        nameof(IExchangeOrders.CancelAsync),
+        nameof(IExchangeOrders.FillsAsync),
+        nameof(IExchangeOrders.FindAsync),
+        nameof(IExchangeOrders.PlaceAsync),
+    ];
+
     [Fact]
-    public async Task Whatever_the_gateway_is_asked_it_sends_binance_nothing_but_calls_that_read()
+    public async Task Whatever_the_gateway_is_asked_it_sends_binance_calls_that_read_and_calls_about_orders_and_nothing_else()
     {
         Assert.Equal(Operations, typeof(IExchangeAdapter).GetMembers().Select(member => member.Name).Order(StringComparer.Ordinal));
         Assert.Equal(
             MarketDataOperations, typeof(IExchangeMarketData).GetMembers().Select(member => member.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(OrderOperations, typeof(IExchangeOrders).GetMembers().Select(member => member.Name).Order(StringComparer.Ordinal));
 
-        var binance = BinanceCalls.ThatAnswers();
+        // A Binance that keeps orders, and answers every other call with what its
+        // documentation gives for it.
+        var trading = new TradingBinance();
+        var binance = trading.System;
         using var application = BinanceCalls.Behind(binance);
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
         var marketData = application.Services.GetRequiredService<IExchangeMarketData>();
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
 
         foreach (var mode in new[] { TradingMode.Live, TradingMode.Demo })
         {
@@ -81,18 +118,40 @@ public class NoFundMovementTests
                     market, mode, MarketService.Symbol, CandleInterval.OneHour, TestContext.Current.CancellationToken);
                 await marketData.GetPriceAsync(market, mode, MarketService.Symbol, TestContext.Current.CancellationToken);
                 await marketData.GetSymbolsAsync(market, mode, TestContext.Current.CancellationToken);
+
+                // Every operation of the orders, for each kind of order that the gateway places.
+                foreach (var type in Enum.GetValues<ExchangeOrderType>())
+                {
+                    var id = $"{market}-{mode}-{type}";
+                    var which = new ExchangeOrderRef(id, MarketService.Symbol, type);
+                    var order = new ExchangeOrderRequest(
+                        id, MarketService.Symbol, ExchangeOrderSide.Sell, type, 0.01m, type == ExchangeOrderType.Stop ? 59000m : null, Closes: true);
+
+                    var placed = await orders.PlaceAsync(BinanceCalls.User, market, mode, apiKey, secretKey, order, TestContext.Current.CancellationToken);
+                    await orders.FindAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+                    await orders.CancelAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+                    await orders.FillsAsync(
+                        BinanceCalls.User, market, mode, apiKey, secretKey, MarketService.Symbol, placed.Order!.ExchangeOrderId,
+                        TestContext.Current.CancellationToken);
+                }
             }
 
             await marketData.GetMarkPriceAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
             await marketData.GetOpenInterestAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
         }
 
-        // All of the list, and nothing that is not on it.
+        // All of the two lists, and nothing that is not on them.
         Assert.Equal(
-            Reads,
+            Reads.Concat(Orders).Order(StringComparer.Ordinal),
             binance.Calls.Select(call => $"{call.Method} {call.Address.AbsolutePath}").Distinct().Order(StringComparer.Ordinal));
 
-        // A call that reads sends nothing but its address.
+        // Only a call about an order is anything but a GET, and each of those names one order
+        // by its identifier: it carries no amount of an asset to move, and no address to move it to.
+        Assert.All(
+            binance.Calls.Where(call => call.Method != "GET"),
+            call => Assert.Contains(call.Query, parameter => parameter.Name is "newClientOrderId" or "origClientOrderId" or "clientAlgoId"));
+
+        // Every call sends nothing but its address: a call about an order as well.
         Assert.All(binance.Calls, call => Assert.Null(call.Body));
 
         // The wallet API is asked on the real exchange only, at the address of its Spot market.

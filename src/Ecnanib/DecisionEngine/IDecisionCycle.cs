@@ -11,10 +11,9 @@ namespace Ecnanib.DecisionEngine;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The data package, the calls of the team, and the checks of the Risk Guard are built:
-/// <c>TeamCycle</c> builds the package, runs the four roles, and has the Risk Guard check what
-/// goes on of the plan. The orders are not built, so a cycle places nothing. See docs/team.md
-/// and docs/risk-guard.md.
+/// <c>TeamCycle</c> builds the package, runs the four roles, has the Risk Guard check what goes
+/// on of the plan, and hands what the Risk Guard accepted to what places the orders. See
+/// docs/team.md, docs/risk-guard.md, and docs/orders.md.
 /// </para>
 /// <para>
 /// A cycle is run for an agent that ran when its turn came. An agent is paused or stopped by its
@@ -27,7 +26,7 @@ public interface IDecisionCycle
     /// <param name="cycle">What the cycle is for.</param>
     /// <param name="cancellationToken">
     /// Canceled when the application stops, when it stops being the instance that runs the
-    /// background work, and half a minute before the next close, by which the cycles of a close
+    /// background work, and 45 seconds before the next close, by which the cycles of a close
     /// are over. The cycle then ends soon, by throwing <see cref="OperationCanceledException"/>,
     /// and leaves no entry without its protection (NFR-REL-5).
     /// </param>

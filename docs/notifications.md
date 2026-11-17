@@ -1,0 +1,62 @@
+# Notifications
+
+In-app notifications cover: position opened or closed; agent halted or needing attention; key invalid; model unavailable; order or protection failure; reconciliation mismatch; and liquidation warning (FR-NTF-1).
+
+What is built is what the first of them needs: a failure of the protection of a position. Every open position has a stop-loss order resting on the exchange, and if the protective order cannot be placed after an entry fills, the system closes the position at market at once and alerts the user (FR-RSK-7). The alert is a notification, which is stored for its user and shown on the page of the agent that it is about.
+
+The code is in `src/Ecnanib/Notifications`: `Notification`, `INotifications`, and `StoredNotifications`. The page is `AgentStatus.razor` in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by `NotificationTests` in `tests/Ecnanib.Tests/Notifications`, and by `ProtectiveStopTests` in `tests/Ecnanib.Tests/DecisionEngine` for when one is raised.
+
+What raises the notification is in [orders.md](orders.md). The email that the same component sends for an account is in [accounts.md](accounts.md).
+
+## The interface
+
+```csharp
+public interface INotifications
+{
+    Task RaiseAsync(Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken);
+    Task<IReadOnlyList<NotificationView>> UnreadOfAgentAsync(HttpContext request, Guid agentId);
+}
+```
+
+| Rule | Detail |
+|---|---|
+| **A notification belongs to one user** | `RaiseAsync` takes the user by id: it is asked by background work, where nobody is signed in, and the id is the owner of the row that the notification is about. `UnreadOfAgentAsync` reads for the user of the session, and asks for the rows by owner. See [ownership.md](ownership.md). |
+| **It says what happened, in plain words** | The content is the service's own text, in 500 characters at most: what became of a position, with its symbol and its mode. Nothing that a user typed is in it, and no secret. |
+| **It names its agent by the id alone** | Notifications may not use Agents, so the row does not point at the agent's row. A notification belongs to the account, and stays when the agent is deleted. |
+| **It is not read until its user says so** | Nothing marks one as read yet, so every notification about an agent is on the page of the agent. |
+| **The log does not repeat it** | The event of a notification that was raised names the user, the agent, and what it is about. |
+
+## What is raised
+
+| Type | When | What it says |
+|---|---|---|
+| `ProtectionFailure` | The stop-loss of a position could not be placed, and the position was closed at market. | "The stop-loss of the position in BTCUSDT (Demo) could not be placed, so the position was closed at market." |
+| `ProtectionFailure` | The stop-loss could not be placed, and the position could not be closed either. It is said once for each time that a position comes to that. | "The stop-loss of the position in BTCUSDT (Demo) could not be placed, and the position could not be closed at market either. It is open with no stop-loss. Close it with "Close position now", or at Binance." |
+
+That the user could not be told, because the notification could not be stored, is said in the log as an error, and stops nothing of the orders.
+
+## The page
+
+The page of the state of an agent, `/agents/{id}/state`, has a section "Notifications" when its user has not read something about the agent: each notification with what it is about, when it was raised, and what it says, the latest first, 20 at most. What a notification says is written as text, and never as markup (NFR-SEC-4). With nothing to say, the page has no such section.
+
+## The data
+
+The migration `AddOrders` adds the table.
+
+| Table | Columns |
+|---|---|
+| `notifications` | `id`, `user_id`, `type`, `agent_id`, `content`, `is_read`, `created_at` |
+
+| Rule | Detail |
+|---|---|
+| **The rows go with the account** | `user_id` points at `users`, and the rows are deleted with the account (FR-ACC-9). |
+| **They are in the export** | The section `notifications` of the export of a user's data holds each, with whether it is read (NFR-SEC-9). See [accounts.md](accounts.md). |
+| **The type is stored by its name** | Renaming a member of `NotificationType` needs a migration. What raises a notification adds its member when it is built. |
+
+## Not built yet
+
+- The other events of FR-NTF-1: a position that was opened or closed, an agent that was halted or needs attention, a key that is invalid, a model that is unavailable, a reconciliation mismatch, and a liquidation warning.
+- The list of all notifications of a user, and marking one as read.
+- Email for critical events, for a user who opted in (FR-NTF-3).
+- Showing a notification without a reload of the page (FR-NTF-2).
+- Removing notifications after the days of `Retention:NotificationDays` (NFR-DAT-5).

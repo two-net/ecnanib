@@ -5,20 +5,24 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 
 /// <summary>
 /// One call of Binance's API that the gateway makes: the market whose address serves it, its
-/// path, its query, and what it costs of which limit on requests. These are all of them.
+/// method, its path, its query, and what it costs of which limit on requests. These are all of them.
 /// <see cref="BinanceCall"/> takes nothing else, and nothing outside this class can make one, so
 /// what the gateway can send to Binance is this list. See docs/exchange.md.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every one of them reads. None withdraws, deposits, or transfers funds, between the Spot and
-/// the Futures wallet of a user included (FR-BIN-9): Binance keeps those calls in its wallet API,
-/// under <c>sapi</c>, of which the gateway makes one call, which reads the permissions of a key.
+/// Most of them read. The ones that do not place an order, or take one off the exchange
+/// (FR-BIN-6): they are the calls of the orders, at the end of the list, and each says its
+/// method. None withdraws, deposits, or transfers funds, between the Spot and the Futures wallet
+/// of a user included (FR-BIN-9): Binance keeps those calls in its wallet API, under <c>sapi</c>,
+/// of which the gateway makes one call, which reads the permissions of a key.
 /// </para>
 /// <para>
 /// A call of the market data takes parameters of its caller: a symbol, and the length of a
-/// candle. Such a call is made here as well, from the one of the list that it is, with its
-/// parameters percent-encoded, which Binance requires.
+/// candle. A call of an order takes the order. Such a call is made here as well, from the one of
+/// the list that it is, with its parameters percent-encoded, which Binance requires. Every
+/// parameter is in the query, also of a call that is no <c>GET</c>: Binance takes them there, and
+/// the log of outbound calls leaves the query out.
 /// </para>
 /// </remarks>
 internal sealed class BinanceEndpoint
@@ -85,11 +89,52 @@ internal sealed class BinanceEndpoint
     private static readonly BinanceEndpoint FuturesOpenInterest =
         new(Market.Futures, "fapi/v1/openInterest", BinanceLimit.Futures, weight: 1);
 
+    // The calls of the orders. Each takes the order of its caller, so each is made with one of
+    // the methods below. The weights are what Binance documents: placing an order on the Futures
+    // market costs nothing of the limit on requests, and is counted by the order.
+
+    // An order of the Spot market: placed, asked about, and taken off the exchange.
+    private static readonly BinanceEndpoint SpotOrder =
+        new(Market.Spot, "api/v3/order", BinanceLimit.Spot, weight: 1, method: HttpMethod.Post);
+
+    private static readonly BinanceEndpoint SpotOrderStatus = new(Market.Spot, "api/v3/order", BinanceLimit.Spot, weight: 4);
+
+    private static readonly BinanceEndpoint SpotOrderCancel =
+        new(Market.Spot, "api/v3/order", BinanceLimit.Spot, weight: 1, method: HttpMethod.Delete);
+
+    // The executions of one order of the Spot market. Asked with the order, it costs 5.
+    private static readonly BinanceEndpoint SpotTrades = new(Market.Spot, "api/v3/myTrades", BinanceLimit.Spot, weight: 5);
+
+    // An order of the Futures market that is placed at once: at the market.
+    private static readonly BinanceEndpoint FuturesOrder =
+        new(Market.Futures, "fapi/v1/order", BinanceLimit.Futures, weight: 0, method: HttpMethod.Post);
+
+    private static readonly BinanceEndpoint FuturesOrderStatus = new(Market.Futures, "fapi/v1/order", BinanceLimit.Futures, weight: 1);
+
+    private static readonly BinanceEndpoint FuturesOrderCancel =
+        new(Market.Futures, "fapi/v1/order", BinanceLimit.Futures, weight: 1, method: HttpMethod.Delete);
+
+    // An order of the Futures market that waits for a price: Binance takes a stop there with
+    // the calls of its conditional orders only, and answers one at the call above with -4120.
+    private static readonly BinanceEndpoint FuturesStop =
+        new(Market.Futures, "fapi/v1/algoOrder", BinanceLimit.Futures, weight: 0, "algoType=CONDITIONAL", method: HttpMethod.Post);
+
+    private static readonly BinanceEndpoint FuturesStopStatus =
+        new(Market.Futures, "fapi/v1/algoOrder", BinanceLimit.Futures, weight: 1);
+
+    private static readonly BinanceEndpoint FuturesStopCancel =
+        new(Market.Futures, "fapi/v1/algoOrder", BinanceLimit.Futures, weight: 1, method: HttpMethod.Delete);
+
+    // The executions of one order of the Futures market.
+    private static readonly BinanceEndpoint FuturesTrades = new(Market.Futures, "fapi/v1/userTrades", BinanceLimit.Futures, weight: 5);
+
     /// <summary>Every call, which is how the limiter knows the heaviest of each limit.</summary>
     public static readonly IReadOnlyList<BinanceEndpoint> All =
     [
         SpotTime, FuturesTime, KeyPermissions, SpotAccount, FuturesAccountSettings, FuturesBalances,
         SpotCandles, FuturesCandles, SpotPrice, FuturesPrice, SpotSymbols, FuturesSymbols, FuturesMarkPrice, FuturesOpenInterest,
+        SpotOrder, SpotOrderStatus, SpotOrderCancel, SpotTrades,
+        FuturesOrder, FuturesOrderStatus, FuturesOrderCancel, FuturesStop, FuturesStopStatus, FuturesStopCancel, FuturesTrades,
     ];
 
     /// <summary>The clock of a market.</summary>
@@ -149,7 +194,104 @@ internal sealed class BinanceEndpoint
     /// <summary>The open interest of a symbol of the Futures market.</summary>
     public static BinanceEndpoint OpenInterestOf(string symbol) => FuturesOpenInterest.With(("symbol", symbol));
 
-    private BinanceEndpoint(Market market, string path, BinanceLimit limit, int weight, string query = "", bool reportsUsage = true)
+    /// <summary>
+    /// An order that is placed at the market: it buys or sells a quantity at once, at the best
+    /// prices that there are. It carries the identifier that its caller gave it (FR-BIN-6), and
+    /// asks for an answer that says what became of it.
+    /// </summary>
+    /// <param name="market">The market.</param>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="side">Binance's name of the side: <c>BUY</c> or <c>SELL</c>.</param>
+    /// <param name="quantity">How much of the asset that is traded.</param>
+    /// <param name="clientOrderId">The identifier of the order, which its caller chose.</param>
+    /// <param name="closes">
+    /// Whether the order only closes a position. On the Futures market such an order is sent as
+    /// one that only reduces, so that it opens nothing when the position is gone already. The
+    /// Spot market has no positions: a sale there sells what the account holds.
+    /// </param>
+    public static BinanceEndpoint MarketOrderOf(
+        Market market, string symbol, string side, string quantity, string clientOrderId, bool closes) => market switch
+        {
+            // The full answer of the Spot market has the executions of the order, with their fees.
+            Market.Spot => SpotOrder.With(
+                ("symbol", symbol), ("side", side), ("type", "MARKET"), ("quantity", quantity),
+                ("newClientOrderId", clientOrderId), ("newOrderRespType", "FULL")),
+            Market.Futures => FuturesOrder.With(
+            [
+                ("symbol", symbol), ("side", side), ("type", "MARKET"), ("quantity", quantity),
+                ("newClientOrderId", clientOrderId), ("newOrderRespType", "RESULT"),
+                .. closes ? [("reduceOnly", "true")] : Array.Empty<(string, string)>(),
+            ]),
+            _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
+        };
+
+    /// <summary>
+    /// An order that rests on the exchange until the price reaches its trigger, and is then
+    /// placed at the market: a stop. On the Spot market it is a stop-loss order. On the Futures
+    /// market it is a conditional order, which Binance takes with calls of its own.
+    /// </summary>
+    /// <param name="market">The market.</param>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="side">Binance's name of the side: <c>BUY</c> or <c>SELL</c>.</param>
+    /// <param name="quantity">How much of the asset that is traded.</param>
+    /// <param name="triggerPrice">The price that the order is triggered at.</param>
+    /// <param name="clientOrderId">The identifier of the order, which its caller chose.</param>
+    /// <param name="closes">Whether the order only closes a position, as in <see cref="MarketOrderOf"/>.</param>
+    public static BinanceEndpoint StopOrderOf(
+        Market market, string symbol, string side, string quantity, string triggerPrice, string clientOrderId, bool closes) =>
+        market switch
+        {
+            Market.Spot => SpotOrder.With(
+                ("symbol", symbol), ("side", side), ("type", "STOP_LOSS"), ("quantity", quantity), ("stopPrice", triggerPrice),
+                ("newClientOrderId", clientOrderId), ("newOrderRespType", "RESULT")),
+            Market.Futures => FuturesStop.With(
+            [
+                ("symbol", symbol), ("side", side), ("type", "STOP_MARKET"), ("quantity", quantity), ("triggerPrice", triggerPrice),
+                ("clientAlgoId", clientOrderId),
+                .. closes ? [("reduceOnly", "true")] : Array.Empty<(string, string)>(),
+            ]),
+            _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
+        };
+
+    /// <summary>What became of an order, asked by the identifier that its caller gave it.</summary>
+    /// <param name="market">The market.</param>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="clientOrderId">The identifier of the order.</param>
+    /// <param name="stop">Whether the order is a stop, which the Futures market keeps apart.</param>
+    public static BinanceEndpoint OrderStatusOf(Market market, string symbol, string clientOrderId, bool stop) => market switch
+    {
+        Market.Spot => SpotOrderStatus.With(("symbol", symbol), ("origClientOrderId", clientOrderId)),
+        Market.Futures when stop => FuturesStopStatus.With(("clientAlgoId", clientOrderId)),
+        Market.Futures => FuturesOrderStatus.With(("symbol", symbol), ("origClientOrderId", clientOrderId)),
+        _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
+    };
+
+    /// <summary>Takes an order off the exchange, by the identifier that its caller gave it.</summary>
+    /// <param name="market">The market.</param>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="clientOrderId">The identifier of the order.</param>
+    /// <param name="stop">Whether the order is a stop, which the Futures market keeps apart.</param>
+    public static BinanceEndpoint OrderCancelOf(Market market, string symbol, string clientOrderId, bool stop) => market switch
+    {
+        Market.Spot => SpotOrderCancel.With(("symbol", symbol), ("origClientOrderId", clientOrderId)),
+        Market.Futures when stop => FuturesStopCancel.With(("clientAlgoId", clientOrderId)),
+        Market.Futures => FuturesOrderCancel.With(("symbol", symbol), ("origClientOrderId", clientOrderId)),
+        _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
+    };
+
+    /// <summary>The executions of one order, by the number that the exchange gave the order.</summary>
+    /// <param name="market">The market.</param>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="exchangeOrderId">The number that the exchange gave the order.</param>
+    public static BinanceEndpoint TradesOf(Market market, string symbol, string exchangeOrderId) => market switch
+    {
+        Market.Spot => SpotTrades.With(("symbol", symbol), ("orderId", exchangeOrderId)),
+        Market.Futures => FuturesTrades.With(("symbol", symbol), ("orderId", exchangeOrderId)),
+        _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
+    };
+
+    private BinanceEndpoint(
+        Market market, string path, BinanceLimit limit, int weight, string query = "", bool reportsUsage = true, HttpMethod? method = null)
     {
         Market = market;
         Path = path;
@@ -157,7 +299,17 @@ internal sealed class BinanceEndpoint
         Weight = weight;
         Query = query;
         ReportsUsage = reportsUsage;
+        Method = method ?? HttpMethod.Get;
     }
+
+    /// <summary>
+    /// The method of the call. It is <c>GET</c> for every call that reads. A call that places an
+    /// order is a <c>POST</c>, and one that takes an order off the exchange a <c>DELETE</c>.
+    /// </summary>
+    public HttpMethod Method { get; }
+
+    /// <summary>Whether the call changes something at the exchange: it places an order, or takes one off.</summary>
+    public bool Changes => Method != HttpMethod.Get;
 
     /// <summary>The market whose address of the configuration file serves the call.</summary>
     public Market Market { get; }
@@ -191,7 +343,7 @@ internal sealed class BinanceEndpoint
     {
         var given = string.Join('&', parameters.Select(parameter => $"{parameter.Name}={Uri.EscapeDataString(parameter.Value)}"));
 
-        return new BinanceEndpoint(Market, Path, Limit, Weight, Query.Length == 0 ? given : $"{Query}&{given}", ReportsUsage);
+        return new BinanceEndpoint(Market, Path, Limit, Weight, Query.Length == 0 ? given : $"{Query}&{given}", ReportsUsage, Method);
     }
 }
 

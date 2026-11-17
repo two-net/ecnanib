@@ -4,6 +4,7 @@ using Ecnanib.Agents;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 using Ecnanib.DecisionEngine;
+using Ecnanib.Notifications;
 using Ecnanib.Platform.Settings;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
@@ -231,7 +232,7 @@ public static class AgentPages
             "A loss limit was reached, and the agent's position was closed. It runs no cycle and opens no position.",
         AgentState.AttentionRequired =>
             "Something that the agent needs is missing or failing, and it waits for you. It runs no cycle and opens no " +
-            "position. An open position stays open with its stop-loss and take-profit orders.",
+            "position. An open position stays open with its stop-loss order, unless the reason says that it has none.",
         AgentState.Stopped =>
             "You stopped the agent. It runs no cycle and opens no position. An open position was closed or kept, as you chose.",
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, "The state has no explanation."),
@@ -262,7 +263,18 @@ public static class AgentPages
         AgentStateCause.ModelUnavailable =>
             "The provider of a model that a role of the agent uses no longer offers it. No other model was put in its " +
             "place. Give the role another model on the page of the agent's settings, and resume the agent.",
+        AgentStateCause.PositionUnprotected =>
+            "The stop-loss of the agent's position could not be placed, and the position could not be closed at market " +
+            "either. The position is open with no stop-loss. The service keeps trying to protect or close it. Close it " +
+            "with \"Close position now\", or at Binance, and resume the agent.",
         _ => throw new ArgumentOutOfRangeException(nameof(cause), cause, "The cause has no description."),
+    };
+
+    /// <summary>What a notification is about, as its user reads it (FR-NTF-1).</summary>
+    public static string Describe(NotificationType type) => type switch
+    {
+        NotificationType.ProtectionFailure => "Order or protection failure",
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "The type has no description."),
     };
 
     /// <summary>The name of the form of a control that starts, pauses, or resumes an agent.</summary>

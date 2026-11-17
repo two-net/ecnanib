@@ -8,7 +8,7 @@ Models do not choose quantity or leverage. The system computes quantity from the
 
 Each Risk Guard check stores the outcome of every rule, so a user can see exactly why a plan was accepted or rejected (FR-RSK-9).
 
-What is built is step 6 of the decision cycle (SRS 3.2): the rules, what computes the size of an order, what gathers the facts that both are asked of, the record of each check, and the page that shows a user the checks of an agent. The orders are not built, so nothing is placed.
+What is built is step 6 of the decision cycle (SRS 3.2): the rules, what computes the size of an order, what gathers the facts that both are asked of, the record of each check, and the page that shows a user the checks of an agent. What the Risk Guard accepted is handed to what places the orders: see [orders.md](orders.md).
 
 The rules and the sizing are in `src/Ecnanib/RiskGuard`, as `GuardCheck` and `OrderSizing`, and what asks them for a cycle in `src/Ecnanib/DecisionEngine`: `PlanChecks`, `RiskCheck`, and `IRiskCheckRecords`. The page is in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/RiskGuard`, and in `RiskGuardCycleTests`, `RiskCheckRecordTests`, and `RiskCheckPageTests` of `tests/Ecnanib.Tests/DecisionEngine`.
 
@@ -35,7 +35,7 @@ What the team of an agent decides, and what goes on of its plan, is in [team.md]
 | **It is after the Risk Manager.** | No fact is read while a role is called: the facts are as they are when the last answer of the team has been read. |
 | **The outcome of a cycle stays the decision of its team.** | `CycleOutcome` says `Approved` for a plan that the Risk Manager approved, also when the Risk Guard rejected it. What the Risk Guard made of it is in the record beside it: see "The record of a check". |
 | **It makes no model call.** | Neither the rules nor `PlanChecks` uses anything of the AI Provider Gateway: `RiskGuardRulesTests` holds both to it. A cycle is the four calls of its team, with a check or without. |
-| **It places nothing.** | `PlanChecks.CheckAsync` answers with what the Risk Guard accepted, which is what an order is made from. Nothing takes it yet. |
+| **It places nothing.** | `PlanChecks.CheckAsync` answers with what the Risk Guard accepted, which is what an order is made from. `TeamCycle` hands it to `IPlanOrders`, and hands it nothing else: see "Where it stands in a cycle" in [orders.md](orders.md). |
 
 ## The rules
 
@@ -147,7 +147,7 @@ With a price of 60000, a quantity step of 0.001, an equity of 1000, and a risk f
 - **The size is computed for every plan that opens a position,** also for one that a rule rejects: a check says what its rules were asked of.
 - **The equity is the agent's own, as it is now:** see "The facts". Whether the account of its user holds the balance or the margin for the order is asked where the order is placed (FR-BIN-S3, FR-BIN-F6).
 - **The entry of a plan at the market is the current price.** The order fills where the market is then, which is for what places it.
-- **The leverage is a number here, and no setting of the exchange.** What places an order sets the leverage of the symbol before the entry (FR-BIN-F2): see "Not built yet".
+- **The leverage is a number here, and no setting of the exchange.** Setting the leverage of the symbol before the entry (FR-BIN-F2) is not built, so an entry on Futures uses the leverage that the account has for the symbol: see "Not built yet".
 
 ## The facts
 
@@ -181,7 +181,7 @@ With a price of 60000, a quantity step of 0.001, an equity of 1000, and a risk f
 
 - `IKeyValidation.BlockForAsync` of Credentials answers the first two, as it does when an agent is started (FR-KEY-5): `NoKey` and `NotValid` fail both, and `SpotTradingMissing` and `FuturesTradingMissing` the market. See "What an agent needs" in [credentials.md](credentials.md).
 - A key that is deleted or refused while an agent runs moves the agent to Attention required, which ends its cycles: see "When a key goes" in [agents.md](agents.md). The rule is for the cycle that is under way then.
-- **Whether the agent still runs is not asked here.** What places an entry asks `AgentStates.TakesNewEntries` again: see "Not built yet" in [agents.md](agents.md).
+- **Whether the agent still runs is not asked here.** What places an entry asks `AgentStates.TakesNewEntries` again, under the lock of the account, as it writes the entry: see "When no entry is placed" in [orders.md](orders.md).
 
 ### The global halt
 
@@ -233,7 +233,7 @@ A reverse closes the open position, and then opens one on the opposite side. It 
 | **A model answers a plan, and nothing more.** | The plan is validated against its schema before it goes on, and has no quantity and no leverage: see "What a model cannot do" in [team.md](team.md). A plan that the Risk Manager approved is rejected all the same when a rule does not hold. |
 | **Nothing hands a check a size.** | `GuardCase` has the risk fraction of the plan, and no place for a quantity or a leverage: the check computes both (FR-RSK-5). `RiskGuardRulesTests` finds every type of the application that makes an `OrderSize`, and fails for one that is not `OrderSizing`. So the size that a result says is within the agent's risk per trade, within its equity on Spot, and within its leverage cap on Futures. |
 | **The page takes nothing.** | It has no form. A form that is posted at it changes nothing. |
-| **An order is made from what was accepted.** | `GuardResult.Case` is the plan that was checked, with the facts that it was checked on, and `GuardResult.Size` the quantity and the leverage that the check computed for its order. `RiskGuardRulesTests` has a test that fails as soon as `Ecnanib.ExchangeGateway.Trading` has a type and what uses it takes no `GuardResult`. |
+| **An order is made from what was accepted.** | `GuardResult.Case` is the plan that was checked, with the facts that it was checked on, and `GuardResult.Size` the quantity and the leverage that the check computed for its order. `IPlanOrders.PlaceAsync` takes the result, and refuses one that is not accepted. `RiskGuardRulesTests` pins what uses `Ecnanib.ExchangeGateway.Trading` outside the gateway, which is `AgentOrders` alone, and fails for a type that uses it and takes no `GuardResult`. What settles the orders and what closes a position for its user take none: they open nothing. |
 
 ## The record of a check
 
@@ -327,15 +327,13 @@ The exchange did not give {Missing} for the Risk Guard to check the plan of agen
 
 ## Not built yet
 
-- The orders (FR-BIN-6): what places what the Risk Guard accepted, with the size that it computed. A test waits for it to take a `GuardResult`.
-- Setting the leverage of the symbol to that of the order before an entry (FR-BIN-F2), and the leverage brackets of a symbol, by which Binance allows less leverage for a larger position. The brackets are not read: they come with the orders.
+- Setting the leverage of the symbol to that of the order before an entry (FR-BIN-F2), and the leverage brackets of a symbol, by which Binance allows less leverage for a larger position. Until then an entry on Futures uses the leverage that the account has for the symbol, so the liquidation buffer was checked against a leverage that is not applied. The brackets are not read.
 - Skipping an entry that the balance or the margin of the account does not cover (FR-BIN-S3, FR-BIN-F6). The size is held to the agent's equity, and not to what the account holds.
 - Bringing the prices of a plan onto the price step of its symbol. A model is not told the step, and a plan with a price off it is rejected. What makes an order from a plan decides whether to round, and which way.
 - The global halt of an Operator (FR-OPS-3), which answers `IGlobalHalt`.
 - Closing the position of an agent and halting it when a loss limit is reached, at every cycle and every reconciliation (FR-RSK-8), and the equity of an agent as the day began and at its peak, which what keeps the results of an agent says.
 - The maintenance margin in the liquidation estimate, and warning a user when a position approaches liquidation (FR-BIN-F5).
-- Checking a close that a user asks for: "Close position now", and the close of an agent that is stopped (FR-AGT-11, FR-AGT-12). Such a close has no cycle, so its check has no row to hang on yet. Nothing closes a position, and `IAgentExposure` has no implementation.
-- Asking whether the agent still takes new entries when an entry is due, and whether entries are paused for the clock of the exchange (FR-BIN-5): both are for what places an entry.
-- The rules of a market order, `MARKET_LOT_SIZE`, and whether the exchange takes a close below the least value. They come with the orders. The least and the most quantity that an entry is held to are those of `LOT_SIZE`, for an entry at the market as well.
+- Checking a close that a user asks for: "Close position now", and the close of an agent that is stopped (FR-AGT-11, FR-AGT-12). Such a close has no cycle, so its check has no row to hang on. It is placed without a check: it opens nothing, and takes no result of the Risk Guard. See "Closing a position" in [orders.md](orders.md).
+- The rules of a market order, `MARKET_LOT_SIZE`, and whether the exchange takes a close below the least value. The least and the most quantity that an entry is held to are those of `LOT_SIZE`, for an entry at the market as well.
 - The timeline that shows a cycle with its calls and its checks (FR-CYC-10), the agent detail screen (FR-RPT-2), and the export of decisions as CSV (FR-RPT-4). The page of the risk checks is where a user reads them until then.
 - Retention: decision records are kept 365 days (NFR-DAT-5), and nothing deletes yet.

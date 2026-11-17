@@ -1,10 +1,12 @@
 @page "/agents/{Id:guid}/state"
 @attribute [Authorize]
 @using Ecnanib.Agents
+@using Ecnanib.Notifications
 @using Ecnanib.Shared
 @using Ecnanib.WebUi.Pages.Account
 @inject IStoredAgents Agents
 @inject IAgentControls Controls
+@inject INotifications Notifications
 @inject NavigationManager Navigation
 
 @*
@@ -19,7 +21,9 @@
     ResumeAsync are told that nobody was asked (FR-UI-3). When a form is posted, all three forms
     are on the page: a form that is not there cannot be answered, and one that is sent twice
     finds the agent in another state the second time. The badge of the mode is under the
-    heading, and each change of the state says the mode it happened in (FR-BIN-11).
+    heading, and each change of the state says the mode it happened in (FR-BIN-11). What the
+    service has to tell the user about the agent, and they have not read, is said first: that a
+    stop-loss could not be placed, and what became of the position (FR-RSK-7, FR-NTF-1).
 *@
 
 @if (_agent is not null)
@@ -51,6 +55,20 @@
         {
             <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
         }
+    }
+
+    @if (_notifications is { Count: > 0 })
+    {
+        <h2 id="notifications-heading">Notifications</h2>
+
+        <p>What the service has to tell you about this agent, latest first.</p>
+
+        <ul class="agent-notifications" aria-labelledby="notifications-heading">
+            @foreach (var notification in _notifications)
+            {
+                <li><strong>@AgentPages.Describe(notification.Type)</strong>, @PageTimes.At(notification.CreatedAt). @notification.Content</li>
+            }
+        </ul>
     }
 
     <p>State: <strong>@AgentPages.Describe(_agent.State)</strong>, since @PageTimes.At(_agent.StateChangedAt). @AgentPages.Explain(_agent.State)</p>
@@ -173,6 +191,7 @@
 
     private AgentView? _agent;
     private AgentStateHistory? _history;
+    private IReadOnlyList<NotificationView>? _notifications;
     private bool _posted;
     private bool _keyBlocks;
     private IReadOnlyList<RoleBlock>? _roles;
@@ -272,11 +291,18 @@
         _refused ??= AgentPages.NotOffered(control, _agent!.State);
     }
 
-    /// <summary>Reads the agent and the changes of its state. False when the user has no agent of that id.</summary>
+    /// <summary>
+    /// Reads the agent, the changes of its state, and what the service has to tell its user
+    /// about it. False when the user has no agent of that id.
+    /// </summary>
     private async Task<bool> ReadAsync(HttpContext request)
     {
         _agent = await Agents.FindAsync(request, Id);
         _history = _agent is null ? null : await Controls.HistoryAsync(request, Id);
+
+        // Asked for the user of the session, as the agent is: the notifications of another
+        // user are not found.
+        _notifications = _agent is null ? null : await Notifications.UnreadOfAgentAsync(request, Id);
 
         return _agent is not null;
     }

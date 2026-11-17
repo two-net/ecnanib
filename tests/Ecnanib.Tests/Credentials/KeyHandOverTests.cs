@@ -145,4 +145,90 @@ public class KeyHandOverTests
         Assert.Throws<ArgumentOutOfRangeException>(() => HandedKey.None(KeyHandOverOutcome.Handed));
         Assert.Throws<ArgumentException>(() => HandedKey.Of(string.Empty));
     }
+
+    [Fact]
+    public async Task A_call_about_an_order_is_handed_the_two_keys_of_its_own_user_for_its_environment()
+    {
+        using var application = new AccountsApplication(clock: new TestClock(Morning));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var grace = await application.RegisterVerifiedAsync(Grace);
+
+        // Each has a credential for Demo, and neither has one for Live.
+        await application.GiveKeysAsync(ada.Id, Morning);
+        await application.GiveKeysAsync(grace.Id, Morning);
+
+        var handed = await application.KeyHandOver.ExchangeKeyAsync(ada.Id, TradingMode.Demo, TestContext.Current.CancellationToken);
+
+        // The API key and the secret key as their user stored them, each on its own, which the
+        // database holds only encrypted, as one value.
+        Assert.Equal(KeyHandOverOutcome.Handed, handed.Outcome);
+        Assert.Equal(
+            (Keys.Of(ada.Id.ToString("N"), "demo"), Keys.Of(ada.Id.ToString("N"), "seal")),
+            (handed.ApiKey, handed.SecretKey));
+        Assert.Equal(
+            Keys.Of(grace.Id.ToString("N"), "demo"),
+            (await application.KeyHandOver.ExchangeKeyAsync(grace.Id, TradingMode.Demo, TestContext.Current.CancellationToken)).ApiKey);
+
+        // There is no credential of another environment to fall back on, nor of another user.
+        var none = await application.KeyHandOver.ExchangeKeyAsync(ada.Id, TradingMode.Live, TestContext.Current.CancellationToken);
+        Assert.Equal((KeyHandOverOutcome.NoKey, null, null), (none.Outcome, none.ApiKey, none.SecretKey));
+        Assert.Equal(
+            KeyHandOverOutcome.NoKey,
+            (await application.KeyHandOver.ExchangeKeyAsync(Guid.CreateVersion7(), TradingMode.Demo, TestContext.Current.CancellationToken)).Outcome);
+
+        // Nothing is written by handing it over: neither a row, nor an event that holds a key.
+        Assert.All(Keys.FormsOf(handed.ApiKey!).Concat(Keys.FormsOf(handed.SecretKey!)), form =>
+        {
+            Assert.DoesNotContain(form, application.EverythingStored(), StringComparison.Ordinal);
+            Assert.DoesNotContain(form, application.LogText(), StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public async Task A_Binance_credential_is_handed_over_whatever_its_last_check_found_and_not_when_it_does_not_decrypt()
+    {
+        using var application = new AccountsApplication(clock: new TestClock(Morning));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        await application.GiveKeysAsync(ada.Id, Morning);
+
+        // Binance refused the credential when it was last asked. A position is closed with it
+        // all the same, in any state, so that risk can always be reduced: Binance says whether
+        // it takes the credential now. No position is opened with it: the Risk Guard rejects
+        // the plan (FR-RSK-4).
+        application.Database.Execute("UPDATE exchange_credentials SET status = 'Invalid'");
+
+        Assert.Equal(
+            KeyHandOverOutcome.Handed,
+            (await application.KeyHandOver.ExchangeKeyAsync(ada.Id, TradingMode.Demo, TestContext.Current.CancellationToken)).Outcome);
+
+        // The row names a master key that the configuration file does not list.
+        application.Database.Execute("UPDATE exchange_credentials SET master_key_id = 'retired'");
+
+        var unreadable = await application.KeyHandOver.ExchangeKeyAsync(ada.Id, TradingMode.Demo, TestContext.Current.CancellationToken);
+
+        Assert.Equal((KeyHandOverOutcome.Unreadable, null, null), (unreadable.Outcome, unreadable.ApiKey, unreadable.SecretKey));
+
+        var said = Assert.Single(
+            application.Events(),
+            written => written.Template == "The key of user {UserId} of Binance for {TradingMode} cannot be read, so it is handed to no call");
+
+        Assert.Equal("Error", said.Level);
+        Assert.Equal((ada.Id.ToString(), "Demo"), (said.Text("UserId"), said.Text("TradingMode")));
+    }
+
+    [Fact]
+    public void A_Binance_credential_that_is_handed_over_writes_its_outcome_and_never_a_key()
+    {
+        var handed = HandedExchangeKey.Of(Keys.BinanceApi, Keys.BinanceSecret);
+
+        // Whatever writes it as text, in a log event or an error, writes no key.
+        Assert.Equal("Handed", handed.ToString());
+        Assert.Equal("Handed", $"{handed}");
+        Assert.Equal("Unreadable", HandedExchangeKey.None(KeyHandOverOutcome.Unreadable).ToString());
+
+        // A credential that is handed over has both keys, and one that is not has neither.
+        Assert.Throws<ArgumentOutOfRangeException>(() => HandedExchangeKey.None(KeyHandOverOutcome.Handed));
+        Assert.Throws<ArgumentException>(() => HandedExchangeKey.Of(string.Empty, Keys.BinanceSecret));
+        Assert.Throws<ArgumentException>(() => HandedExchangeKey.Of(Keys.BinanceApi, string.Empty));
+    }
 }

@@ -64,6 +64,8 @@ internal static class AgentsRules
             "Reads the agents of all users that run cycles, for what starts a cycle when a candle closes. It changes no agent.",
         ["IRunningAgents.FindAsync"] =
             "Reads one agent when it runs cycles, for what starts its cycle when the turn of the cycle comes. It changes no agent.",
+        ["IAgentTrading.StateUnderLockAsync"] =
+            "Reads the state of one agent under the lock of its account, for what writes an order of the agent. It changes no agent.",
     };
 
     /// <summary>
@@ -88,6 +90,9 @@ internal static class AgentsRules
             "Closes the position of an agent by hand: it records the request in the audit trail, and asks whatever keeps positions.",
         ["IAgentExposure.ClosePositionAtMarketAsync"] =
             "Asked by Agents of whatever keeps positions, after Agents recorded the request of the user. Agents places no order.",
+        ["IAgentTrading.RequireAttentionAsync"] =
+            "Moves an agent that runs to Attention required, because its position is open with no stop-loss and could not be " +
+            "closed. It is the service's doing, and no action of a user: it starts nothing, and the change of the state records it.",
     };
 
     /// <summary>

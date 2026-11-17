@@ -49,7 +49,7 @@ internal sealed class RecoveryCodeConfiguration : IEntityTypeConfiguration<Recov
 ```
 
 - **Every row carries its owner itself,** also a row that hangs on another row of the same user. A query for it needs no join to know whose it is.
-- **A component that may not use Accounts cannot point at `users`.** The Decision Engine is one. Its rows carry the owner along in the foreign key to the row they hang on: `(agent_id, user_id)` to `agents (id, user_id)`. The database then holds the two owners to being the same, and the row it hangs on points at the account. `decision_cycles` hangs on its agent this way, and `role_outputs` on its cycle, as `(cycle_id, user_id)` to `decision_cycles (id, user_id)`: see "The record of a cycle" in [team.md](team.md). `risk_checks` hangs on its cycle in the same way, and `risk_check_rules` on its check: see "The record of a check" in [risk-guard.md](risk-guard.md). `agents` has `(id, user_id)` as a key of its own for it.
+- **A component that may not use Accounts cannot point at `users`.** The Decision Engine is one. Its rows carry the owner along in the foreign key to the row they hang on: `(agent_id, user_id)` to `agents (id, user_id)`. The database then holds the two owners to being the same, and the row it hangs on points at the account. `decision_cycles` hangs on its agent this way, and `role_outputs` on its cycle, as `(cycle_id, user_id)` to `decision_cycles (id, user_id)`: see "The record of a cycle" in [team.md](team.md). `risk_checks` hangs on its cycle in the same way, and `risk_check_rules` on its check: see "The record of a check" in [risk-guard.md](risk-guard.md). `orders` and `positions` hang on their agent, and `fills` on its order, as `(order_id, user_id)` to `orders (id, user_id)`: see "The record of an order" in [orders.md](orders.md). `agents` has `(id, user_id)` as a key of its own for it.
 - **A row goes with its account.** The foreign key that carries the owner is declared with `OnDelete(DeleteBehavior.Cascade)`, at every row on the way to `users`. Deleting an account deletes one row, and the database deletes the rest, stored keys included. See "Deleting the account" in [accounts.md](accounts.md).
 - **Another foreign key between two rows of one user must not stand in the way of that.** One that is declared with `Restrict` can refuse the deletion of the account, depending on the order the database deletes in. The test that deletes an account with a row in every table shows whether it does.
 - The owner is an id. It tells nothing about the person, so it is not personal data, and a component that must not see personal data may hold it.
@@ -58,7 +58,7 @@ A row that belongs to no user belongs to the service: vocabulary, the catalog, t
 
 | Rows of users | Rows of the service |
 |---|---|
-| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials`, `agents`, `agent_roles`, `agent_state_changes`, `decision_cycles`, `role_outputs`, `risk_checks`, `risk_check_rules` | `roles`, `ai_providers`, `ai_models`, `catalog_sync_runs`, `prompt_templates`, `background_jobs` |
+| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials`, `agents`, `agent_roles`, `agent_state_changes`, `decision_cycles`, `role_outputs`, `risk_checks`, `risk_check_rules`, `orders`, `fills`, `positions`, `notifications` | `roles`, `ai_providers`, `ai_models`, `catalog_sync_runs`, `prompt_templates`, `background_jobs` |
 
 `users` is the account itself. No table holds both kinds of row.
 
@@ -99,7 +99,7 @@ if (agent is null)
 ### What is not asked for by owner
 
 - **A row that is found by a secret token.** A session is found by the hash of the token in its cookie, and so are a sign-in that waits for a code, a verification link, and a reset link. No user is named, because this is how a request comes to have one: the token is the proof. See [accounts.md](accounts.md).
-- **Background work.** A job has no user who is signed in. It works across users, takes the owner from the row it works on, and writes what it writes with that owner. It never takes an owner from what came in from outside, such as the output of a model. `IRunningAgents` of Agents is asked this way: it says the agents of every user that run, for the job that starts their cycles, and no page or endpoint asks it. See [cycles.md](cycles.md).
+- **Background work.** A job has no user who is signed in. It works across users, takes the owner from the row it works on, and writes what it writes with that owner. It never takes an owner from what came in from outside, such as the output of a model. `IRunningAgents` of Agents is asked this way: it says the agents of every user that run, for the job that starts their cycles, and no page or endpoint asks it. See [cycles.md](cycles.md). The job that settles the orders works this way too: it finds the agents of every user that have something to settle, and each order says whose it is, which is whose key a call about it is made with, and who is told what became of the position. See [orders.md](orders.md).
 - **Operator functions.** See below.
 
 ## Operators

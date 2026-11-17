@@ -8,7 +8,7 @@ The Sentiment Analyst gathers news and social context using the live-search capa
 
 A plan does only what a plan may do: the actions of its market, for an agent that holds at most one position, with protection that only tightens, and with a stop-loss and a take-profit where it opens a position (FR-CYC-4 to FR-CYC-7). A decision that completes later than the stale limit for its timeframe cannot open a position (FR-CYC-9). Both are in [team.md](team.md): "What a plan may do" and "The stale limit".
 
-What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, what the call of the Sentiment Analyst and its report go by, which is in "Live search", and the calls of the team, which are in [team.md](team.md): the four roles in their order, the validation of what each answers, what a plan may do, the stale limit, and the record of the cycle (SRS 3.2, steps 3 to 5). What goes on of the plan of the team is checked by the Risk Guard, which is in [risk-guard.md](risk-guard.md) (step 6). The orders are not built (step 7): a cycle that starts builds its package, runs its team, has what goes on of its plan checked, and ends with no order. See "Not built yet".
+What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, what the call of the Sentiment Analyst and its report go by, which is in "Live search", and the calls of the team, which are in [team.md](team.md): the four roles in their order, the validation of what each answers, what a plan may do, the stale limit, and the record of the cycle (SRS 3.2, steps 3 to 5). What goes on of the plan of the team is checked by the Risk Guard, which is in [risk-guard.md](risk-guard.md) (step 6). What the Risk Guard accepted is handed to what places the orders, which is in [orders.md](orders.md) (step 7): a cycle that starts settles the orders of its agent with the exchange, builds its package, runs its team, has what goes on of its plan checked, and places the orders of what was accepted, or does nothing.
 
 The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests`, `IndicatorTests`, and `SentimentLiveSearchTests`. Those of the team are in the classes whose names begin with `Team`.
 
@@ -98,10 +98,10 @@ In the tracked file the limits are 250 for a provider and 4 for a key. A team of
 | Rule | When | What happens |
 |---|---|---|
 | **A cycle that could not start within 5 minutes of its close is skipped.** | `DecisionCyclesJob.StartsWithin` | Every cycle that still waits is taken out of the queue, with one warning that says how many. They are not made up for: the next close starts the next ones. |
-| **A cycle that still runs half a minute before the next close is stopped.** | `DecisionCyclesJob.EndsBefore` | Its token is canceled, as it is when the application stops. A warning says how many were stopped, and one for each says which. |
+| **A cycle that still runs 45 seconds before the next close is stopped.** | `DecisionCyclesJob.EndsBefore` | Its token is canceled, as it is when the application stops. A warning says how many were stopped, and one for each says which. |
 
 - **Why 5 minutes.** The longest cycle is three calls of the team one after the other, each made twice at most (FR-TEAM-9). With the time limit of 60 seconds of the tracked file that is 6 minutes, so a cycle that starts within 5 is over long before it would be stopped. With time limits that are raised far above that, a cycle can reach the stop.
-- **Why half a minute.** A cycle that has just placed an entry needs one more call to the exchange to protect it, which takes its time limit and its wait at the limiter at most, 25 seconds. It is over before the next run is due.
+- **Why 45 seconds.** A cycle whose entry is on its way when it is stopped lets that call end, which takes its time limit at most, 15 seconds: an order that is sent is not given up. It then needs one more call to the exchange to protect the entry, which takes its wait at the limiter and its time limit at most, 25 seconds. Both are over, and the cycle is recorded, before the next run is due. What is left undone then is done by what settles the orders: see "The stop-loss" in [orders.md](orders.md).
 - **A cycle is stopped, and never left behind.** The run returns only when every cycle that it started has ended. A cycle that ran on beside the next run would be a second cycle of its agent, outside the lock of the background work. A cycle that does not end when it is told to keeps the run going, and the scheduler then skips the next close, with its warning.
 - **A run that begins 5 minutes after its close or later starts no cycle.** The scheduler starts a run that is late for its boundary, after the machine slept or the clock was set, and the job judges that it is too late.
 - **When the application stops, or is no longer the instance that runs the background work, the cycles stop with it** (NFR-REL-5). Nothing more starts, the cycles that run are told to stop, and the run ends when they have, as `Stopped`. Nothing of the queue is kept: a cycle that did not start is not made up for.
@@ -111,7 +111,7 @@ In the tracked file the limits are 250 for a provider and 4 for a key. A team of
 
 **Cycles missed while the service was down are skipped, not replayed** (FR-CYC-8). The job is on UTC boundaries, so the scheduler makes up for no boundary that passed while the application was down, or while the machine slept: see "Schedules" in [background-work.md](background-work.md). After a restart the job waits for the next close. The queue is in memory, so there is no cycle from before to go on with.
 
-**The system reconciles first** (FR-CYC-8, NFR-REL-3). Reconciliation is not built. What reconciles the records of an agent with the exchange answers through `IReconciliation`, which the Decision Engine declares:
+**The system reconciles first** (FR-CYC-8, NFR-REL-3). What reconciles the records of an agent with the exchange answers through `IReconciliation`, which the Decision Engine declares:
 
 ```csharp
 public interface IReconciliation
@@ -124,8 +124,8 @@ public interface IReconciliation
 |---|---|
 | **An agent that is not reconciled yet gets no cycle.** | It is asked as the turn of a cycle comes, after the agent was found to run. The cycle of that close is skipped for it, and the next close asks again. |
 | **No other agent waits for it.** | The question is about one agent, and is answered at once. An account that cannot be reconciled, because its key is refused, keeps nobody else from trading. |
-| "Reconciled" is since this instance took up the background work. | At the start of the application, and again after the lock of the background work was lost and taken back. What implements it keeps that. |
-| **Nothing implements it yet, and every agent passes.** | No position and no order is stored that could differ from the exchange. `CycleReconciliationTests` has a test that fails as soon as a table of positions or of orders is in the model and nothing answers. |
+| **An agent whose orders are not settled is not reconciled.** | `OrderReconciliation` answers from the rows of the orders: an agent with an order of which it is not known whether Binance has it, or with an open position without a stop-loss that rests, gets no cycle. Every order is written before it is sent, so an order that was under way when the application stopped is such an order, and nothing is placed for its agent until Binance was asked about it. That is what keeps a restart from placing an order twice (NFR-REL-3). A job settles the orders every minute, and as the background work starts when there is anything to settle: see "Settling" in [orders.md](orders.md). |
+| **An agent passes when everything that answers says so.** | What compares everything that an account holds with the records, at the start and every 5 minutes (FR-BIN-7), is not built. It answers here as well when it is: "reconciled" is then since this instance took up the background work, at the start of the application, and again after the lock of the background work was lost and taken back. |
 
 ## What a cycle is handed
 
@@ -152,7 +152,7 @@ public sealed record CycleStart(
 | `ClosedAt` | The close of the candle that the cycle is for. |
 | `Candles` | The closed candles through that close. |
 
-- **The token is canceled** when the application stops, when it stops being the instance that runs the background work, and half a minute before the next close. The cycle then ends soon, by letting `OperationCanceledException` out, and leaves no entry without its protection (NFR-REL-5).
+- **The token is canceled** when the application stops, when it stops being the instance that runs the background work, and 45 seconds before the next close. The cycle then ends soon, by letting `OperationCanceledException` out, and leaves no entry without its protection (NFR-REL-5).
 - An error that leaves `RunAsync` ends the cycle with no decision.
 - **The registered implementation builds the data package of the cycle, and runs the team of the agent.** `TeamCycle` asks `IDataPackages` for the package, hands each role its part of it, and ends with the decision of the team: see [team.md](team.md). A cycle whose role gave no valid result ends without an error: it returns, and is counted as ended. It changes nothing of when a cycle starts.
 - **A cycle that started is recorded when it ends,** however it ends: see "The record of a cycle" in [team.md](team.md).
@@ -238,7 +238,7 @@ public sealed record FuturesData(decimal MarkPrice, decimal FundingRate, DateTim
 
 ### What an agent holds
 
-Positions and orders are not built, and no result of an agent is stored. What a package says of them comes through `IAgentHoldings`, which the Decision Engine declares, for whatever keeps positions and orders to implement and register:
+What a package says of the position and the orders of an agent comes through `IAgentHoldings`, which the Decision Engine declares, and which what keeps the positions and the orders answers: `StoredHoldings`, from its rows. See "What an agent holds" in [orders.md](orders.md). No result of an agent is stored yet.
 
 ```csharp
 public interface IAgentHoldings
@@ -254,8 +254,10 @@ public sealed record OpenOrder(OpenOrderKind Kind, OrderSide Side, decimal Quant
 
 | Rule | Detail |
 |---|---|
-| **Nothing implements it yet, and an agent holds nothing.** | No position and no orders, and its equity is the capital that its user allocated to it: it has made no profit and no loss. `AgentHoldings.NothingYet` is that. `DataPackageTests` has a test that fails as soon as a table of positions or of orders is in the model and nothing answers. |
-| The equity is the allocated capital plus the net profit or loss to date. | In the asset that the symbol is priced in, with unrealized profit and loss. What keeps the results of an agent says it. |
+| **The orders of the agent are settled before its package is built.** | `TeamCycle` asks `IPlanOrders.SettleAsync` first: a stop-loss may have been executed since the last cycle, and then the agent holds no position any more. |
+| **An agent that has placed nothing holds nothing.** | No position and no orders, and its equity is the capital that its user allocated to it. `AgentHoldings.NothingYet` is that, and it is what an agent holds where nothing answers. |
+| **The stop-loss of a position is said when an order for it rests on the exchange.** | The price alone protects nothing. No order rests for a take-profit yet, so none is said. |
+| The equity is the allocated capital plus the net profit or loss to date. | In the asset that the symbol is priced in, with unrealized profit and loss. No result is stored yet, so it is the allocated capital still: see "Not built yet". |
 | **The equity as the UTC day began, and the peak equity, are what the loss limits are counted from.** | No prompt states them: the Risk Guard holds a plan that opens a position to the daily loss limit and to the drawdown limit (FR-RSK-4). Until something keeps results, both are the allocated capital: the agent has lost nothing. See "The loss limits" in [risk-guard.md](risk-guard.md). |
 | An agent has one position at most. | `PositionContext` is the position as a prompt states it, with the prices of its stop-loss and its take-profit. The plan of the Strategist is held to it: a plan opens a position only for an agent that has none, and moves a stop-loss only to where it reduces risk (FR-CYC-5, FR-CYC-6). See "What a plan may do" in [team.md](team.md). |
 | **An order is one that rests on the exchange.** | An entry that has not filled, a stop-loss, or a take-profit: `OpenOrderKind`. `Price` is the price of a limit entry, or the price that a protective order is triggered at. |
@@ -462,14 +464,14 @@ A limit is held to through what the stand-in counted while the cycles were held,
 
 ## Not built yet
 
-- The orders (FR-BIN-6). `TeamCycle` builds the package, runs the team, and has the Risk Guard check what goes on of its plan and compute the size of its order (FR-RSK-5): see "Not built yet" in [team.md](team.md) and in [risk-guard.md](risk-guard.md).
-- What keeps positions and orders, and the results of an agent, which answers `IAgentHoldings`. Until then a package says that an agent holds nothing, and that its equity is its allocated capital.
+- The orders that only one market has: see "Not built yet" in [orders.md](orders.md).
+- The results of an agent, which what answers `IAgentHoldings` would say. Until then a package says that the equity of an agent is its allocated capital, also for an agent that has gained or lost.
 - Asking again for market data that a read did not give. A cycle whose package cannot be built makes no decision, and the next close starts the next one.
 - Waiting for a candle of a higher timeframe that came one short. The candles of the agent's own timeframe cover the same time.
 - The price that a symbol last traded at, in a package. A package has the close of the latest candle, and on Futures the mark price. What has the Risk Guard check a plan asks for the price then, and holds an entry to its distance from it (FR-RSK-4): see "The facts" in [risk-guard.md](risk-guard.md).
 - Taking out of a report what a prompt never holds, so that the rest of it can be read. A report that holds it is rejected whole.
 - The summary of the data package that the record of a cycle keeps (FR-CYC-10). A package leaves one event in the log.
-- Reconciliation, which answers `IReconciliation` (FR-BIN-7), and the order of a start: migrate, reconcile, then schedule (NFR-REL-3).
+- Reconciliation of everything that an account holds, which answers `IReconciliation` beside what settles the orders (FR-BIN-7, FR-BIN-8), and the order of a start: migrate, reconcile, then schedule (NFR-REL-3). The orders are settled as the background work starts, beside the other jobs, and an agent that is not settled gets no cycle.
 - Recording a cycle that never started: one that was skipped, or whose agent no longer ran (FR-CYC-10). It leaves its events in the log. A cycle that started is recorded, with the calls of its roles.
 - A test cycle that a user runs for an agent (FR-CYC-12). The queue is of one run of the job, so a cycle that starts outside a run takes none of its places.
 - Limits on calls. The places are of cycles: a cycle is two calls with one key while the two analysts work.

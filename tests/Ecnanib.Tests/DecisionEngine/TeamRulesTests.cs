@@ -145,5 +145,19 @@ public class TeamRulesTests
             .ToList();
 
         Assert.Equal(["Ecnanib.DecisionEngine.RoleRuns"], reading);
+
+        // The Binance credential of a user is handed to what places the orders of their agent,
+        // with each call, and is read there alone.
+        Assert.Equal(
+            ["Ecnanib.DecisionEngine.AgentOrders"],
+            DependencyChecker.FindCallersOf(Application, "Ecnanib.Credentials.IKeyHandOver::ExchangeKeyAsync")
+                .Select(caller => caller.Split('+')[0])
+                .Distinct());
+        Assert.Equal(
+            ["Ecnanib.DecisionEngine.AgentOrders"],
+            new[] { "get_ApiKey", "get_SecretKey" }
+                .SelectMany(key => DependencyChecker.FindCallersOf(Application, $"Ecnanib.Credentials.HandedExchangeKey::{key}"))
+                .Select(caller => caller.Split('+')[0])
+                .Distinct());
     }
 }

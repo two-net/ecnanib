@@ -88,6 +88,78 @@ public class RiskGuardCycleTests
     }
 
     [Fact]
+    public async Task What_the_Risk_Guard_accepted_is_handed_to_what_places_the_orders_and_nothing_else_is()
+    {
+        // A plan to open a position, which the Risk Manager approves: once with facts that
+        // every rule holds for, and once while the exchange says no price. And a plan to hold.
+        foreach (var (plan, price, placed) in new[]
+        {
+            (TeamAnswers.Plan(), ExchangeCallOutcome.Succeeded, true),
+            (TeamAnswers.Plan(), ExchangeCallOutcome.TimedOut, false),
+            (TeamAnswers.Hold, ExchangeCallOutcome.Succeeded, false),
+        })
+        {
+            using var cycles = new CyclesApplication(Quarter, buildsPackages: true);
+            var agent = cycles.Agents!.Give(Guid.NewGuid());
+
+            cycles.Market!.PriceOutcome = price;
+            cycles.Models.Says(Role.Strategist, plan);
+
+            await cycles.RunAsync(Quarter).Within();
+
+            var record = cycles.Records.Of(agent);
+
+            // Before its team is run, the orders of the agent are settled with the exchange,
+            // so that the team decides on what the agent holds now.
+            Assert.Equal([agent], cycles.Orders.Settled);
+
+            if (!placed)
+            {
+                // A plan that the Risk Guard rejected, and a plan that holds, reach no order.
+                Assert.Empty(cycles.Orders.Placed);
+                Assert.All(record.Checks, check => Assert.Equal(GuardVerdict.Rejected, check.Check.Verdict));
+
+                continue;
+            }
+
+            // The only path from what a model answered to an order is schema validation, then
+            // the Risk Guard, then the Exchange Gateway (NFR-SEC-6): what reaches the orders is
+            // the result of the Risk Guard that accepted the plan, with the size that the
+            // check computed, under the id of the cycle.
+            var (agentId, cycleId, result) = Assert.Single(cycles.Orders.Placed);
+
+            Assert.Equal((agent, record.Cycle.Id), (agentId, cycleId));
+            Assert.True(result.IsAccepted);
+            Assert.Equal(GuardedAction.OpenLong, result.Case.Action);
+            Assert.Equal(record.Check.Check.Quantity, result.Size!.Quantity);
+            Assert.Equal(CycleOutcome.Approved, record.Cycle.Outcome);
+        }
+    }
+
+    [Fact]
+    public async Task The_outcome_of_a_cycle_stays_the_decision_of_its_team_whatever_becomes_of_its_orders()
+    {
+        using var cycles = new CyclesApplication(Quarter, buildsPackages: true);
+        var agent = cycles.Agents!.Give(Guid.NewGuid());
+
+        // What places the orders fails with an error of its own.
+        cycles.Orders.Fails = new InvalidOperationException("The orders could not be placed.");
+        cycles.Models.Says(Role.Strategist, TeamAnswers.Plan());
+
+        await cycles.RunAsync(Quarter).Within();
+
+        // The cycle is recorded with what its team decided and what the Risk Guard made of it:
+        // what was placed is in the records of the orders. That it ended with an error is said
+        // once, as of any cycle, and the cycles of the other agents go on.
+        var record = cycles.Records.Of(agent);
+
+        Assert.Equal(CycleOutcome.Approved, record.Cycle.Outcome);
+        Assert.Equal(GuardVerdict.Accepted, record.Check.Check.Verdict);
+        Assert.Single(cycles.Orders.Placed);
+        Assert.Equal(1, cycles.SummaryOf(Quarter)["Failed"].GetInt32());
+    }
+
+    [Fact]
     public async Task A_cycle_with_no_decision_has_nothing_that_goes_on_to_the_Risk_Guard()
     {
         using var cycles = new CyclesApplication(Quarter, buildsPackages: true);

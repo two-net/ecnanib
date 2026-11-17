@@ -9,9 +9,13 @@ namespace Ecnanib.DecisionEngine;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing implements it yet: reconciliation is not built, and no position or order is stored
-/// that could differ from the exchange. Until then every agent passes. A test fails as soon as a
-/// table of positions or of orders is in the model and nothing answers here.
+/// What settles the orders answers here: an agent that has an order of which it is not known
+/// whether the exchange has it, or an open position without a stop-loss that rests, is not
+/// reconciled, and gets no cycle until that is settled. So a restart places no order twice
+/// (NFR-REL-3). See "Settling" in docs/orders.md. What compares everything that an account
+/// holds with the records, at the start and on a schedule, is not built: it answers here as
+/// well, when it is, and an agent passes when every one that answers says so. Where nothing
+/// answers, every agent passes.
 /// </para>
 /// <para>
 /// It is asked for one agent, as the turn of its cycle comes, and answers at once. An agent that
@@ -22,9 +26,9 @@ namespace Ecnanib.DecisionEngine;
 public interface IReconciliation
 {
     /// <summary>
-    /// Whether the records of an agent have been reconciled with the exchange since this instance
-    /// took up the background work: at the start of the application, and again after the lock of
-    /// the background work was lost and taken back.
+    /// Whether the records of an agent are reconciled with the exchange, as far as what answers
+    /// knows: that nothing of the agent's orders is left to settle, and, of what reconciles the
+    /// whole account, that it has done so since this instance took up the background work.
     /// </summary>
     /// <param name="agent">The agent whose cycle is about to start.</param>
     /// <param name="cancellationToken">Canceled when the cycles of the close are stopped.</param>

@@ -1,5 +1,6 @@
 using Ecnanib.Agents;
 using Ecnanib.Platform.Settings;
+using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
 
 namespace Ecnanib.DecisionEngine;
@@ -7,8 +8,9 @@ namespace Ecnanib.DecisionEngine;
 /// <summary>
 /// What a cycle does once it has started: it builds its data package, runs the four roles of the
 /// agent's team in the order of the specification, validates what each answered, has the Risk
-/// Guard check what goes on, and records every call and every check (SRS 3.2, steps 2 to 6;
-/// FR-TEAM-6 to FR-TEAM-9, FR-RSK-3). See docs/team.md and docs/risk-guard.md.
+/// Guard check what goes on, hands what the Risk Guard accepted to what places the orders, and
+/// records every call and every check (SRS 3.2, steps 2 to 7; FR-TEAM-6 to FR-TEAM-9, FR-RSK-3).
+/// See docs/team.md, docs/risk-guard.md, and docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -38,9 +40,16 @@ namespace Ecnanib.DecisionEngine;
 /// the record beside it.
 /// </para>
 /// <para>
-/// <b>It places nothing.</b> The orders are not built. The only path from what a model answered
-/// to an order is schema validation, which is here, then the Risk Guard, then the Exchange
-/// Gateway (NFR-SEC-6): this uses nothing of the exchange.
+/// <b>It places no order itself,</b> and uses nothing of the exchange. The only path from what a
+/// model answered to an order is schema validation, which is here, then the Risk Guard, then the
+/// Exchange Gateway (NFR-SEC-6): what the Risk Guard accepted is handed to
+/// <see cref="IPlanOrders"/>, and nothing else is. Before the team is run, the orders of the
+/// agent are settled with the exchange, so that the team decides on what the agent holds now: a
+/// stop-loss may have been executed since the last cycle.
+/// </para>
+/// <para>
+/// <b>The outcome of a cycle is the decision of its team,</b> whatever becomes of its orders:
+/// what was placed is in the records of the orders, under the id of the cycle.
 /// </para>
 /// <para>
 /// <b>A cycle is recorded once, when it ends, however it ends</b> (FR-TEAM-8, FR-RSK-9). One
@@ -53,6 +62,7 @@ internal sealed class TeamCycle(
     IRoleResults results,
     RoleRuns roles,
     PlanChecks checks,
+    IPlanOrders orders,
     ICycleRecords records,
     TradingSettings settings,
     TimeProvider clock,
@@ -75,14 +85,28 @@ internal sealed class TeamCycle(
         var startedAt = clock.GetUtcNow();
         var kept = new CycleCalls();
         var outcome = CycleOutcome.Failed;
+        var decided = false;
 
         try
         {
-            outcome = await DecideAsync(cycle, kept, cancellationToken);
+            (outcome, var accepted) = await DecideAsync(cycle, kept, cancellationToken);
+            decided = true;
+
+            // Step 7: what the Risk Guard accepted is what an order is made from, and nothing
+            // else goes on to the orders (NFR-SEC-6).
+            if (accepted is not null)
+            {
+                await orders.PlaceAsync(cycle, accepted, cancellationToken);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            outcome = CycleOutcome.Stopped;
+            // A cycle that is stopped once its team has decided keeps the decision: it is only
+            // the orders that were not all placed.
+            if (!decided)
+            {
+                outcome = CycleOutcome.Stopped;
+            }
 
             throw;
         }
@@ -95,8 +119,9 @@ internal sealed class TeamCycle(
         }
     }
 
-    /// <summary>Runs the team, and says what it decided.</summary>
-    private async Task<CycleOutcome> DecideAsync(CycleStart cycle, CycleCalls kept, CancellationToken cancellationToken)
+    /// <summary>Runs the team, and says what it decided, with what the Risk Guard accepted of it.</summary>
+    private async Task<(CycleOutcome Outcome, GuardResult? Accepted)> DecideAsync(
+        CycleStart cycle, CycleCalls kept, CancellationToken cancellationToken)
     {
         // An agent runs with its whole team (FR-TEAM-1). Asked before anything is called, so
         // that no model is paid for a cycle that cannot be completed.
@@ -105,6 +130,10 @@ internal sealed class TeamCycle(
             role => cycle.Roles.SingleOrDefault(given => given.Role == role)
                 ?? throw new InvalidOperationException(
                     $"The {role} of the agent has no model, so its team cannot be run. An agent runs with its whole team (FR-TEAM-1)."));
+
+        // What the exchange says of the agent's orders first, so that the data package says
+        // what the agent holds now.
+        await orders.SettleAsync(cycle.Agent.Id, cancellationToken);
 
         var package = await packages.BuildAsync(cycle, cancellationToken);
 
@@ -119,7 +148,7 @@ internal sealed class TeamCycle(
 
         if ((await analysing).Result is not { } market)
         {
-            return NoDecision(cycle, Role.MarketAnalyst);
+            return (NoDecision(cycle, Role.MarketAnalyst), null);
         }
 
         var sentiment = SentimentOf(cycle, await searching);
@@ -137,7 +166,7 @@ internal sealed class TeamCycle(
 
         if (planning.Result is not { Value: { } plan } planned)
         {
-            return NoDecision(cycle, Role.Strategist);
+            return (NoDecision(cycle, Role.Strategist), null);
         }
 
         TeamDecision decision;
@@ -168,7 +197,7 @@ internal sealed class TeamCycle(
 
             if (reviewing.Result is not { Value: { } review })
             {
-                return NoDecision(cycle, Role.RiskManager);
+                return (NoDecision(cycle, Role.RiskManager), null);
             }
 
             decision = PlanReview.Of(plan, review);
@@ -190,14 +219,10 @@ internal sealed class TeamCycle(
 
         // Step 6: the Risk Guard checks what goes on, after the Risk Manager and before any
         // order (FR-RSK-3), and computes the size of the order (FR-RSK-5). Every plan that goes
-        // on is handed to it, and what it accepted is what an order is made from. Step 7 is not
-        // built: nothing is placed.
-        if (decision.GoesOn is { } goesOn)
-        {
-            await checks.CheckAsync(cycle, goesOn, kept, cancellationToken);
-        }
+        // on is handed to it, and what it accepted is what an order is made from.
+        var accepted = decision.GoesOn is { } goesOn ? await checks.CheckAsync(cycle, goesOn, kept, cancellationToken) : null;
 
-        return decision.Outcome;
+        return (decision.Outcome, accepted);
     }
 
     /// <summary>

@@ -73,6 +73,12 @@ public enum AgentStateCause
 
     /// <summary>The provider of a model that a role of the agent's team was given no longer offers it, while the agent ran (FR-CAT-8).</summary>
     ModelUnavailable,
+
+    /// <summary>
+    /// The position of the agent is open with no stop-loss on the exchange, and could not be
+    /// closed at market either, while the agent ran (FR-RSK-7).
+    /// </summary>
+    PositionUnprotected,
 }
 
 /// <summary>What a user does to the state of an agent (FR-AGT-1).</summary>

@@ -28,8 +28,8 @@ namespace Ecnanib.DecisionEngine;
 /// says them: a case has no place for either.
 /// </para>
 /// <para>
-/// <b>It calls no model,</b> and places nothing: the orders are not built. What it reads of the
-/// exchange is market data, which every agent shares.
+/// <b>It calls no model,</b> and places nothing: what it accepted is handed to what places the
+/// orders, by the cycle. What it reads of the exchange is market data, which every agent shares.
 /// </para>
 /// <para>
 /// <b>Of a reverse that is rejected, the close alone is checked again, and goes on when it is

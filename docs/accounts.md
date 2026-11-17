@@ -427,6 +427,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `legalAcceptances` | Each document that was accepted, with its version and the time. |
 | `sessions` | Each browser that is signed in: when it signed in, and when it was last used. |
 | `auditEvents` | Each event of the account in the audit trail: the action, what it was done to, when, and the IP address it came from. |
+| `notifications` | Each notification of the user: what it is about, the id of the agent that it is about, what it says, whether it is read, and when it was raised. |
 | `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, when it was saved, what its last check found and when, and the identifiers of the models that the provider listed to it, or nothing where it has listed none yet. Never the key. |
 | `exchangeKeys` | Each Binance credential that is stored: its id, the environment, the last four characters of the API key, when it was saved, what its last check found and when, and what Binance said it may do: trade on Spot, trade on Futures, and work only from listed addresses. Never a key. |
 | `agents` | Each agent: its id, its name, its mode, market, symbol, and timeframe, its allocated capital and the asset it is in, its risk settings, its state with its cause and since when, and when it was created. |
@@ -441,7 +442,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | It is a file. | JSON, one thing to a line, with the names of things and not their numbers. It is sent as an attachment called `account-data-<date>.json`, and with `Cache-Control: no-store`, so that neither the browser nor anything on the way keeps it. The link is marked `download`, so the browser asks for the file once. |
 | Every table is decided. | `ExportRules` in [`DataExportTests.cs`](../tests/Ecnanib.Tests/Accounts/DataExportTests.cs) lists each table of users' rows as exported, or as not exported with why. A table that is added later fails the test until it is listed. |
 
-Six tables are not exported. `pending_sign_ins` holds the hash of a token and a time, for ten minutes at most. `two_factor_recovery_codes` holds hashes: the export says how many codes are left. `decision_cycles` and `role_outputs` hold what the teams of a user's agents decided, cycle by cycle, and what their models answered: a user exports their trades and decisions as CSV (FR-RPT-4), which is not built. `risk_checks` and `risk_check_rules` hold what the Risk Guard made of the plans of those cycles, rule by rule, and are exported with them. The Decision Engine keeps all four, and may not use Accounts, which declares what an export is made of. They hold no personal data: see "The record of a cycle" in [team.md](team.md) and "The record of a check" in [risk-guard.md](risk-guard.md).
+Nine tables are not exported. `pending_sign_ins` holds the hash of a token and a time, for ten minutes at most. `two_factor_recovery_codes` holds hashes: the export says how many codes are left. `decision_cycles` and `role_outputs` hold what the teams of a user's agents decided, cycle by cycle, and what their models answered: a user exports their trades and decisions as CSV (FR-RPT-4), which is not built. `risk_checks` and `risk_check_rules` hold what the Risk Guard made of the plans of those cycles, rule by rule, and are exported with them. `orders`, `fills`, and `positions` hold what the agents of a user traded, order by order, and are exported as the trades of the user, in the same CSV. The Decision Engine keeps all seven, and may not use Accounts, which declares what an export is made of. They hold no personal data: see "The record of a cycle" in [team.md](team.md), "The record of a check" in [risk-guard.md](risk-guard.md), and "The record of an order" in [orders.md](orders.md).
 
 Accounts depends on no other component, so it cannot read the rows that a component above it keeps. It declares `IExportedPart`, and that component implements and registers it, once for each section. See "When a lower component must trigger a higher one" in [architecture.md](architecture.md).
 
@@ -456,7 +457,7 @@ public interface IExportedPart
 
 - **A part is a section of the file,** beside the ones of Accounts, under the name it gives. It is there also when the user has no such rows, as an empty list.
 - **A part asks for the rows of the user it is given,** with `OwnedBy`, and holds no secret.
-- Credentials hands over `aiKeys` and `exchangeKeys` this way, and Agents hands over `agents`, `agentRoles`, and `agentStateChanges`. See [credentials.md](credentials.md) and [agents.md](agents.md).
+- Credentials hands over `aiKeys` and `exchangeKeys` this way, Agents hands over `agents`, `agentRoles`, and `agentStateChanges`, and Notifications hands over `notifications`. See [credentials.md](credentials.md), [agents.md](agents.md), and [notifications.md](notifications.md).
 
 The log has `User {UserId} exported their data`, and nothing of the data.
 

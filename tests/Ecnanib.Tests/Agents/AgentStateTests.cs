@@ -102,6 +102,7 @@ public class AgentStateTests
                 "AiKeyDeleted",
                 "AiKeyInvalid",
                 "ModelUnavailable",
+                "PositionUnprotected",
             ],
             Enum.GetNames<AgentStateCause>());
     }
@@ -129,7 +130,12 @@ public class AgentStateTests
         Assert.Contains("manages the open one", AgentPages.Explain(AgentState.Running));
         Assert.Contains("stays open with its stop-loss and take-profit orders", AgentPages.Explain(AgentState.Paused));
         Assert.Contains("position was closed", AgentPages.Explain(AgentState.Halted));
-        Assert.Contains("stays open with its stop-loss and take-profit orders", AgentPages.Explain(AgentState.AttentionRequired));
+        // An agent that waits for its user because its position has no stop-loss says so with
+        // its cause, so the state does not promise one (FR-RSK-7).
+        Assert.Contains(
+            "stays open with its stop-loss order, unless the reason says that it has none",
+            AgentPages.Explain(AgentState.AttentionRequired));
+        Assert.Contains("open with no stop-loss", AgentPages.Says(AgentStateCause.PositionUnprotected));
         Assert.Contains("closed or kept, as you chose", AgentPages.Explain(AgentState.Stopped));
 
         // Every state that runs no cycle says so, and that it opens no position.

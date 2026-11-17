@@ -24,6 +24,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using Ecnanib.ExchangeGateway.Trading;
 
 namespace Ecnanib.Tests.Accounts;
 
@@ -88,13 +89,15 @@ internal sealed class AccountsApplication : IDisposable
     /// <param name="settings">Further changes to the configuration file.</param>
     /// <param name="host">Further changes to the host, such as a request handler of the test's own.</param>
     /// <param name="runsCycles">Whether the application starts the cycles of the agents that run, which only a test of the cycles wants.</param>
+    /// <param name="settlesOrders">Whether the application settles the orders of agents with the exchange on its schedule, which only a test of that wants.</param>
     public AccountsApplication(
         bool registrationOpen = true,
         TestClock? clock = null,
         TestDatabase? database = null,
         Func<SettingsJson, SettingsJson>? settings = null,
         Action<IWebHostBuilder>? host = null,
-        bool runsCycles = false)
+        bool runsCycles = false,
+        bool settlesOrders = false)
     {
         Database = database ?? PostgresServer.CreateDatabase();
 
@@ -125,7 +128,8 @@ internal sealed class AccountsApplication : IDisposable
                 host?.Invoke(builder);
             },
             Database,
-            runsCycles: runsCycles);
+            runsCycles: runsCycles,
+            settlesOrders: settlesOrders);
     }
 
     public TestDatabase Database { get; }
@@ -196,6 +200,39 @@ internal sealed class AccountsApplication : IDisposable
 
     /// <summary>What says which agents run cycles, of every user.</summary>
     public IRunningAgents RunningAgents => _application.Services.GetRequiredService<IRunningAgents>();
+
+    /// <summary>What places the orders of a cycle, and settles them with the exchange.</summary>
+    public IPlanOrders PlanOrders => _application.Services.GetRequiredService<IPlanOrders>();
+
+    /// <summary>The orders of the exchange, as the gateway has them.</summary>
+    public IExchangeOrders ExchangeOrders => _application.Services.GetRequiredService<IExchangeOrders>();
+
+    /// <summary>What raises the in-app notifications of users, and reads them.</summary>
+    public INotifications Notifications => _application.Services.GetRequiredService<INotifications>();
+
+    /// <summary>Everything that says what an agent holds on the exchange, and closes its position.</summary>
+    public IEnumerable<IAgentExposure> Exposures => _application.Services.GetServices<IAgentExposure>();
+
+    /// <summary>Everything that says what an agent holds as its cycle starts.</summary>
+    public IEnumerable<IAgentHoldings> Holdings => _application.Services.GetServices<IAgentHoldings>();
+
+    /// <summary>Everything that says whether an agent is reconciled with the exchange.</summary>
+    public IEnumerable<IReconciliation> Reconciliations => _application.Services.GetServices<IReconciliation>();
+
+    /// <summary>
+    /// Runs the job that settles the orders with the exchange, now, as the scheduler does every
+    /// minute. A test runs it itself to have a run at a moment of its choosing.
+    /// </summary>
+    public Task SettleOrdersAsync(DateTimeOffset scheduledFor, CancellationToken? cancellationToken = null) =>
+        OrderSettling.RunAsync(new BackgroundJobRun(scheduledFor), cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>
+    /// The job that settles the orders with the exchange: the one that the scheduler runs, in an
+    /// application that settles orders on its schedule, and otherwise the one that only a test runs.
+    /// </summary>
+    public IBackgroundJob OrderSettling =>
+        _application.Services.GetKeyedService<IBackgroundJob>(EcnanibApplicationFactory.OrderSettlingKey)
+            ?? _application.Services.GetServices<IBackgroundJob>().Single(job => job.Name == "order-settling");
 
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 

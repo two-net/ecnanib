@@ -204,12 +204,12 @@ public class RiskGuardRulesTests(EcnanibApplicationFactory application) : IClass
     }
 
     [Fact]
-    public void Once_the_gateway_places_orders_what_places_one_is_handed_what_the_Risk_Guard_accepted()
+    public void What_places_an_order_is_handed_what_the_Risk_Guard_accepted()
     {
-        // Orders are not built yet, so nothing is placed. As soon as the gateway has its
-        // namespace for them, an order is made from a plan that the Risk Guard accepted, and
-        // from nothing else: the only path from what a model answered to an order is schema
-        // validation, then the Risk Guard, then the Exchange Gateway (NFR-SEC-6).
+        // The gateway places orders. An order that opens a position is made from a plan that
+        // the Risk Guard accepted, and from nothing else: the only path from what a model
+        // answered to an order is schema validation, then the Risk Guard, then the Exchange
+        // Gateway (NFR-SEC-6).
         const string Trading = "Ecnanib.ExchangeGateway.Trading";
         var result = typeof(GuardResult).FullName!;
 
@@ -217,13 +217,16 @@ public class RiskGuardRulesTests(EcnanibApplicationFactory application) : IClass
         // order with none.
         Assert.Contains(result, DependencyChecker.FindDependenciesOf(Application, GathersTheFacts));
 
-        // Whatever outside the gateway uses its operations that place orders. There is none yet.
+        // Whatever outside the gateway uses its operations that place orders. Pinned: it is one
+        // type, so that another shows in a review as what it is, one more way to an order.
         var placing = Application.GetTypes()
             .Where(type => !type.IsNested && type.Namespace is not null && !IsOf(type, "Ecnanib.ExchangeGateway"))
             .Where(type => DependencyChecker.FindDependenciesOf(Application, type.FullName!)
                 .Any(used => used.StartsWith($"{Trading}.", StringComparison.Ordinal)))
             .Select(type => type.FullName!)
             .ToList();
+
+        Assert.Equal(["Ecnanib.DecisionEngine.AgentOrders"], placing);
 
         var unguarded = placing
             .Where(type => !DependencyChecker.FindDependenciesOf(Application, type).Contains(result))
@@ -234,6 +237,17 @@ public class RiskGuardRulesTests(EcnanibApplicationFactory application) : IClass
             $"These place orders, and take no {nameof(GuardResult)}: {string.Join(", ", unguarded)}. An order is made from what " +
             $"the Risk Guard accepted: take the {nameof(GuardResult)} that {nameof(GuardResult.IsAccepted)} where the order " +
             "is made, and make the order from its case and its size (FR-RSK-3, FR-RSK-5, NFR-SEC-6). See docs/risk-guard.md.");
+
+        // What a cycle hands over to be placed is a result of the Risk Guard, and it is refused
+        // when the Risk Guard rejected the plan: see PlanOrderTests.
+        var place = typeof(IPlanOrders).GetMethod(nameof(IPlanOrders.PlaceAsync))!;
+        Assert.Contains(typeof(GuardResult), place.GetParameters().Select(parameter => parameter.ParameterType));
+
+        // What settles the orders and what closes a position for its user take none: they
+        // open nothing, so that risk can always be reduced (FR-RSK-4, FR-AGT-12).
+        Assert.All(
+            typeof(IPlanOrders).GetMethods().Where(method => method != place),
+            method => Assert.DoesNotContain(typeof(GuardResult), method.GetParameters().Select(parameter => parameter.ParameterType)));
 
         static bool IsOf(Type type, string area) =>
             type.Namespace is { } name && (name == area || name.StartsWith($"{area}.", StringComparison.Ordinal));

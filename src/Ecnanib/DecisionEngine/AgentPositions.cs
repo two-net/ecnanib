@@ -1,0 +1,133 @@
+using Ecnanib.Agents;
+using Ecnanib.Platform.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace Ecnanib.DecisionEngine;
+
+/// <summary>
+/// Answers Agents about what an agent holds on the exchange, from the positions and the orders
+/// that the Decision Engine keeps, and has the position of an agent closed at market for its
+/// user (FR-AGT-8, FR-AGT-11, FR-AGT-12). See <see cref="IAgentExposure"/> and docs/orders.md.
+/// </summary>
+/// <remarks>
+/// <para>
+/// An agent has an open position from the moment that its entry is written, and not only once
+/// the entry is executed: an entry that is on its way, or whose outcome is not known, may open
+/// one. So a user who stops the agent then is asked what to do with the position.
+/// </para>
+/// <para>
+/// It places no order itself: the close is asked of what places the orders.
+/// </para>
+/// </remarks>
+internal sealed class AgentExposure(IPlanOrders orders) : IAgentExposure
+{
+    public async Task<bool> HasOpenPositionOrOrdersAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return await HoldsAsync(context, agentId, cancellationToken)
+            || await context.Set<Order>()
+                .AsNoTracking()
+                .AnyAsync(order => order.AgentId == agentId && OrderStatuses.Live.Contains(order.Status), cancellationToken);
+    }
+
+    public async Task<bool> HasOpenPositionAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return await HoldsAsync(context, agentId, cancellationToken)
+            || await context.Set<Order>()
+                .AsNoTracking()
+                .AnyAsync(
+                    order => order.AgentId == agentId
+                        && order.Purpose == OrderPurpose.Entry
+                        && OrderStatuses.Live.Contains(order.Status),
+                    cancellationToken);
+    }
+
+    public Task<PositionCloseOutcome> ClosePositionAtMarketAsync(Guid agentId, CancellationToken cancellationToken) =>
+        orders.CloseAtMarketAsync(agentId, cancellationToken);
+
+    private static Task<bool> HoldsAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken) =>
+        context.Set<Position>()
+            .AsNoTracking()
+            .AnyAsync(position => position.AgentId == agentId && position.ClosedAt == null, cancellationToken);
+}
+
+/// <summary>
+/// What an agent holds as its cycle starts, and as its plan is checked, from the positions and
+/// the orders that the Decision Engine keeps (FR-CYC-2). See <see cref="IAgentHoldings"/> and
+/// "What an agent holds" in docs/cycles.md.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The stop-loss of the position is said when an order for it rests on the exchange, and not
+/// otherwise: the price alone protects nothing. No order rests for a take-profit yet, so none is
+/// said.
+/// </para>
+/// <para>
+/// The equity of an agent is still the capital that its user allocated to it: no result of a
+/// position is stored yet.
+/// </para>
+/// </remarks>
+internal sealed class StoredHoldings(IDbContextFactory<EcnanibDbContext> contexts) : IAgentHoldings
+{
+    public async Task<AgentHoldings> OfAsync(Agent agent, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        var position = await StoredOrders.OpenPositionAsync(context, agent.Id, cancellationToken);
+
+        // The orders that rest on the exchange: what is left of each.
+        var resting = (await StoredOrders.LiveOrdersAsync(context, agent.Id, cancellationToken))
+            .Where(order => OrderStatuses.IsResting(order.Status) && order.Purpose != OrderPurpose.Close && order.Price is not null)
+            .ToList();
+
+        var stopLoss = resting.FirstOrDefault(order => order.Purpose == OrderPurpose.StopLoss && order.PositionId == position?.Id);
+
+        return new AgentHoldings(
+            agent.AllocatedCapital,
+            position is null
+                ? null
+                : new PositionContext(position.Side, position.EntryPrice, position.Quantity, stopLoss?.Price, TakeProfit: null),
+            [
+                .. resting.Select(order => new OpenOrder(
+                    order.Purpose == OrderPurpose.StopLoss ? OpenOrderKind.StopLoss : OpenOrderKind.Entry,
+                    order.Side,
+                    order.Quantity - order.ExecutedQuantity,
+                    order.Price!.Value)),
+            ],
+            EquityAtDayStart: agent.AllocatedCapital,
+            PeakEquity: agent.AllocatedCapital);
+    }
+}
+
+/// <summary>
+/// Says whether the orders of an agent are settled with the exchange, which a cycle of the agent
+/// waits for (FR-CYC-8, NFR-REL-3). See <see cref="IReconciliation"/> and "After a restart" in
+/// docs/cycles.md.
+/// </summary>
+/// <remarks>
+/// <para>
+/// An agent is settled when its records hold no order of which it is not known whether the
+/// exchange has it, and no open position without a stop-loss that rests. Every order is written
+/// before it is sent, so an order that was under way when the application stopped is such an
+/// order: the agent gets no cycle, and so places no order, until the exchange was asked about
+/// it. That is what keeps a restart from placing an order twice.
+/// </para>
+/// <para>
+/// It answers from the rows, at once. What settles the orders is a job of its own, and what
+/// compares everything that an account holds with the records is not built.
+/// </para>
+/// </remarks>
+internal sealed class OrderReconciliation(StoredOrders stored) : IReconciliation
+{
+    public Task<bool> HasReconciledAsync(RunningAgent agent, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        return stored.IsSettledAsync(agent.Agent.Id, cancellationToken);
+    }
+}

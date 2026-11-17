@@ -16,7 +16,11 @@ public enum ExchangeCallOutcome
     /// </summary>
     AuthenticationFailed,
 
-    /// <summary>The call ended without an answer, and its caller did not cancel it: the exchange took longer than the limit.</summary>
+    /// <summary>
+    /// The call ended without an answer, and its caller did not cancel it: the exchange took
+    /// longer than the limit. A call that reads may be made again. What became of a call that
+    /// placed an order is not known: see <see cref="Trading.ExchangeOrderOutcome.Unknown"/>.
+    /// </summary>
     TimedOut,
 
     /// <summary>

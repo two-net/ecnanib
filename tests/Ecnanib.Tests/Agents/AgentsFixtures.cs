@@ -450,7 +450,7 @@ internal sealed class StandInMarketData : IExchangeMarketData
     public static ExchangeSymbols Listed(params string[] symbols) =>
         new(
             ExchangeCallOutcome.Succeeded,
-            [.. symbols.Select(symbol => new ExchangeSymbol(symbol, symbol[..^4], symbol[^4..], true, 0.01m, 0.001m, 0.001m, 1000m, 5m))],
+            [.. symbols.Select(symbol => new ExchangeSymbol(symbol, symbol[..^4], symbol[^4..], true, 0.01m, 0.001m, 0.001m, 1000m, 5m, StopOrders: true))],
             DateTimeOffset.UnixEpoch);
 
     /// <summary>A reading that failed: the exchange gave no answer.</summary>

@@ -9,8 +9,8 @@ public static class AgentsModule
 {
     /// <summary>
     /// Registers the component. What an agent holds on the exchange is asked through
-    /// <see cref="IAgentExposure"/>, and its position is closed through it, which whatever keeps
-    /// positions and orders implements and registers.
+    /// <see cref="IAgentExposure"/>, and its position is closed through it, which the Decision
+    /// Engine implements and registers: it keeps the positions and the orders.
     /// </summary>
     public static IServiceCollection AddAgents(this IServiceCollection services)
     {
@@ -38,6 +38,11 @@ public static class AgentsModule
         // What starts a cycle asks which agents run, of every user, when a candle closes, and
         // whether an agent still runs when the turn of its cycle comes (FR-CYC-1).
         services.AddSingleton<IRunningAgents, RunningAgents>();
+
+        // What whatever places the orders of an agent asks: whether the agent may still open a
+        // position, as the entry is written, and that it wait for its user when its position is
+        // left without protection (FR-RSK-7).
+        services.AddSingleton<IAgentTrading, AgentTrading>();
 
         // What Accounts asks before it deletes an account: whether an agent of the user is
         // active (FR-ACC-9).

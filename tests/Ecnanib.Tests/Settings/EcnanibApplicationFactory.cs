@@ -20,11 +20,21 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     // The job of the Decision Engine that starts the cycles, named in the same way.
     private const string Cycles = "Ecnanib.DecisionEngine.DecisionCyclesJob";
 
+    // The job of the Decision Engine that settles the orders with the exchange, named in the same way.
+    private const string OrderSettling = "Ecnanib.DecisionEngine.OrderSettlingJob";
+
+    /// <summary>
+    /// The key under which the job that settles the orders is kept in an application whose
+    /// scheduler does not run it: a test runs it from there itself, at a moment of its choosing.
+    /// </summary>
+    public const string OrderSettlingKey = "order-settling";
+
     private SettingsDirectory? _ownDirectory;
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
     private readonly bool _watchesBinanceClock;
     private readonly bool _runsCycles;
+    private readonly bool _settlesOrders;
 
     /// <summary>
     /// Where a test's client sends its requests. Over TLS, as a browser does: the application
@@ -52,16 +62,24 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// it does outside the tests. Only a test of the cycles says so, and gives the application
     /// candles to start them with.
     /// </param>
+    /// <param name="settlesOrders">
+    /// Whether the application settles the orders of agents with the exchange on its schedule, as
+    /// it does outside the tests. Only a test of that schedule says so, and gives the application
+    /// a Binance to ask. Without it the job is still there, under <see cref="OrderSettlingKey"/>,
+    /// for a test to run itself.
+    /// </param>
     internal EcnanibApplicationFactory(
         SettingsDirectory contentRoot,
         Action<IWebHostBuilder>? configure = null,
         bool watchesBinanceClock = false,
-        bool runsCycles = false)
+        bool runsCycles = false,
+        bool settlesOrders = false)
     {
         _contentRoot = contentRoot.Path;
         _configure = configure;
         _watchesBinanceClock = watchesBinanceClock;
         _runsCycles = runsCycles;
+        _settlesOrders = settlesOrders;
         ClientOptions.BaseAddress = Address;
     }
 
@@ -96,6 +114,25 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
             {
                 services.Remove(services.Single(job =>
                     job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == Cycles));
+            }
+
+            // The job that settles the orders runs every minute, for the agents whose orders
+            // or positions have something to settle, and asks the exchange about them. Many
+            // tests give a user orders and positions for a reason of their own: their
+            // application would ask a Binance that is not there about them, and write what
+            // came of it, at a moment that the test does not choose. So the application of a
+            // test is without this job as well, unless the test is about it.
+            if (!_settlesOrders)
+            {
+                var settling = services.Single(job =>
+                    job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == OrderSettling);
+
+                services.Remove(settling);
+
+                // The scheduler does not know it any more. A test that is about what a run does
+                // finds it by its key, and runs it at a moment that the test chooses, with no
+                // run of the schedule beside it.
+                services.AddKeyedSingleton(typeof(IBackgroundJob), OrderSettlingKey, settling.ImplementationType!);
             }
         });
 

@@ -113,6 +113,11 @@ public sealed record ExchangeSymbols(ExchangeCallOutcome Outcome, IReadOnlyList<
 /// <param name="MinQuantity">The least quantity of an order.</param>
 /// <param name="MaxQuantity">The most quantity of an order.</param>
 /// <param name="MinValue">The least value of an order: its price times its quantity, in the quote asset.</param>
+/// <param name="StopOrders">
+/// Whether the exchange takes a stop in it: an order that rests until the price reaches its
+/// trigger, and is then placed at the market. It is what protects a position, so no position is
+/// opened in a symbol that takes none (FR-RSK-7). A symbol that does not say is one that takes none.
+/// </param>
 public sealed record ExchangeSymbol(
     string Symbol,
     string BaseAsset,
@@ -122,7 +127,8 @@ public sealed record ExchangeSymbol(
     decimal QuantityStep,
     decimal MinQuantity,
     decimal MaxQuantity,
-    decimal MinValue);
+    decimal MinValue,
+    bool StopOrders);
 
 /// <summary>What reading the mark price of a symbol on the Futures market gave.</summary>
 /// <param name="Outcome">How the read ended.</param>

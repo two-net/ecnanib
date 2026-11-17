@@ -116,7 +116,9 @@ internal static class BinanceCalls
                 { "filterType": "MIN_NOTIONAL", "minNotional": "5.00000000", "applyToMarket": true, "avgPriceMins": 5 }
               ], "permissions": [], "permissionSets": [] },
             { "symbol": "BTCUSDT", "status": "TRADING", "baseAsset": "BTC", "baseAssetPrecision": 8, "quoteAsset": "USDT",
-              "quoteAssetPrecision": 8, "orderTypes": [ "LIMIT", "MARKET" ], "isSpotTradingAllowed": true,
+              "quoteAssetPrecision": 8,
+              "orderTypes": [ "LIMIT", "LIMIT_MAKER", "MARKET", "STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT" ],
+              "isSpotTradingAllowed": true,
               "filters": [
                 { "filterType": "PRICE_FILTER", "minPrice": "0.01000000", "maxPrice": "1000000.00000000", "tickSize": "0.01000000" },
                 { "filterType": "LOT_SIZE", "minQty": "0.00001000", "maxQty": "9000.00000000", "stepSize": "0.00001000" },
@@ -151,7 +153,8 @@ internal static class BinanceCalls
                 { "filterType": "MAX_NUM_ORDERS", "limit": 200 },
                 { "filterType": "MIN_NOTIONAL", "notional": "100" },
                 { "filterType": "PERCENT_PRICE", "multiplierUp": "1.0500", "multiplierDown": "0.9500", "multiplierDecimal": "4" }
-              ], "orderTypes": [ "LIMIT", "MARKET", "STOP" ], "timeInForce": [ "GTC", "IOC" ] },
+              ], "orderTypes": [ "LIMIT", "MARKET", "STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET" ],
+              "timeInForce": [ "GTC", "IOC" ] },
             { "symbol": "BTCUSDT_270326", "pair": "BTCUSDT", "contractType": "CURRENT_QUARTER", "status": "TRADING",
               "baseAsset": "BTC", "quoteAsset": "USDT", "marginAsset": "USDT", "filters": [] },
             { "symbol": "ETHUSDT", "pair": "ETHUSDT", "contractType": "PERPETUAL", "status": "TRADING", "baseAsset": "ETH",

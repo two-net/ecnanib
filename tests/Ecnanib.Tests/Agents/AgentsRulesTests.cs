@@ -61,6 +61,7 @@ public class AgentsRulesTests
                 "IAgentExposure.ClosePositionAtMarketAsync",
                 "IAgentModes.SwitchToDemoAsync",
                 "IAgentModes.SwitchToLiveAsync",
+                "IAgentTrading.RequireAttentionAsync",
             ],
             AgentsRules.OperationsBeyondSettings());
     }

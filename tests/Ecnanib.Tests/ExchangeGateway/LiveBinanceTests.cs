@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.ExchangeGateway.Trading;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Logging;
 using Microsoft.AspNetCore.Hosting;
@@ -19,7 +20,15 @@ namespace Ecnanib.Tests.ExchangeGateway;
 /// environment of the run: <c>ECNANIB_LIVE_BINANCE_DEMO_KEY</c> and
 /// <c>ECNANIB_LIVE_BINANCE_DEMO_SECRET</c> for Binance's test environment, and the same with
 /// <c>LIVE</c> for the real exchange. So the suite never reaches Binance by itself, and no key is
-/// stored. Every call reads, and costs request weight only. See docs/exchange.md.
+/// stored. Every call reads, and costs request weight only, but for one test, which places a
+/// stop in the test environment, far from the price, and takes it off again: no order is ever
+/// placed on the real exchange, and none that is executed. See docs/exchange.md.
+/// </para>
+/// <para>
+/// That test settles what Binance's documentation leaves open about the orders: that the test
+/// environment takes a stop on both markets, on Futures with the calls of its conditional
+/// orders, and what Binance answers when it is asked about an order that it does not have,
+/// which is what says that an order was not placed (FR-BIN-6).
 /// </para>
 /// <para>
 /// They also settle what Binance's documentation leaves open: that one credential of the test
@@ -226,6 +235,83 @@ public class LiveBinanceTests
 
         Assert.Equal(ExchangeCallOutcome.Succeeded, openInterest.Outcome);
         Assert.True(openInterest.OpenInterest >= 0);
+    }
+
+    [Theory]
+    [InlineData(Market.Spot)]
+    [InlineData(Market.Futures)]
+    public async Task A_stop_is_placed_found_and_taken_off_in_the_test_environment_and_an_order_that_binance_lacks_is_not_found(Market market)
+    {
+        // In the test environment only: no test places an order with real funds.
+        const TradingMode mode = TradingMode.Demo;
+
+        var (apiKey, secretKey) = GivenFor(mode);
+        using var application = OnTheNetwork();
+        var data = application.Services.GetRequiredService<IExchangeMarketData>();
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+
+        var price = await data.GetPriceAsync(market, mode, TrackedSymbol, TestContext.Current.CancellationToken);
+        var symbols = await data.GetSymbolsAsync(market, mode, TestContext.Current.CancellationToken);
+        var symbol = Assert.Single(symbols.Symbols, listed => listed.Symbol == TrackedSymbol);
+
+        // The symbol takes a stop, which is what an entry in it waits for (FR-RSK-7).
+        Assert.True(symbol.StopOrders);
+
+        // A stop that buys a tenth above the price: it rests, opens nothing while the price
+        // does not rise that far, and takes no position to be there. It is for a little more
+        // than the least that an order can be for.
+        var trigger = Math.Floor(price.Price!.Value * 1.1m / symbol.PriceStep) * symbol.PriceStep;
+        var quantity = Math.Max(symbol.MinQuantity, Math.Ceiling(2m * symbol.MinValue / trigger / symbol.QuantityStep) * symbol.QuantityStep);
+        var id = Guid.CreateVersion7().ToString("N");
+        var which = new ExchangeOrderRef(id, TrackedSymbol, ExchangeOrderType.Stop);
+
+        // Before it is placed, Binance has no such order, and says so in its own words.
+        var before = await orders.FindAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeOrderOutcome.NotFound, before.Outcome);
+
+        var placed = await orders.PlaceAsync(
+            BinanceCalls.User,
+            market,
+            mode,
+            apiKey,
+            secretKey,
+            new ExchangeOrderRequest(id, TrackedSymbol, ExchangeOrderSide.Buy, ExchangeOrderType.Stop, quantity, trigger, Closes: false),
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            Assert.Equal(ExchangeOrderOutcome.Answered, placed.Outcome);
+            Assert.Equal((ExchangeOrderStatus.Open, 0m), (placed.Order!.Status, placed.Order.ExecutedQuantity));
+
+            // It is found by the identifier that it carries, as the order that was placed.
+            var found = await orders.FindAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+            Assert.Equal(ExchangeOrderOutcome.Answered, found.Outcome);
+            Assert.Equal((ExchangeOrderStatus.Open, placed.Order.ExchangeOrderId), (found.Order!.Status, found.Order.ExchangeOrderId));
+        }
+        finally
+        {
+            // Taken off whatever the test found, so that nothing of it rests at Binance.
+            var taken = await orders.CancelAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, CancellationToken.None);
+
+            if (placed.Outcome == ExchangeOrderOutcome.Answered)
+            {
+                Assert.Equal(ExchangeOrderOutcome.Answered, taken.Outcome);
+                Assert.Equal(ExchangeOrderStatus.Canceled, taken.Order!.Status);
+            }
+        }
+
+        // Taken off once more, no such order rests.
+        var again = await orders.CancelAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeOrderOutcome.NotFound, again.Outcome);
+
+        // And asked about, it is the order that was taken off, with nothing executed.
+        var after = await orders.FindAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeOrderOutcome.Answered, after.Outcome);
+        Assert.Equal((ExchangeOrderStatus.Canceled, 0m), (after.Order!.Status, after.Order.ExecutedQuantity));
     }
 
     /// <summary>The credential that the run was given for an environment. Without both keys, the test is skipped.</summary>

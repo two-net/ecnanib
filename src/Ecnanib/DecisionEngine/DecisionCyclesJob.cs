@@ -53,11 +53,13 @@ internal sealed class DecisionCyclesJob(
     internal static readonly TimeSpan StartsWithin = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// How long before the next close the cycles that still run are stopped. A cycle that has
-    /// just placed an entry needs one more call to the exchange to protect it, which takes its
-    /// time limit and its wait at the limiter at most, and is over before the next run is due.
+    /// How long before the next close the cycles that still run are stopped. A cycle whose
+    /// entry is on its way then lets that call end, which takes its time limit at most, and
+    /// needs one more call to the exchange to protect the entry, which takes its wait at the
+    /// limiter and its time limit at most. Both are over, and the cycle is recorded, before the
+    /// next run is due.
     /// </summary>
-    internal static readonly TimeSpan EndsBefore = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan EndsBefore = TimeSpan.FromSeconds(45);
 
     /// <summary>
     /// How long the first cycles wait for the candles of the others. The cycles of a symbol

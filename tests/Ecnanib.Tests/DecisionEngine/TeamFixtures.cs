@@ -192,9 +192,10 @@ internal static class StoredCycleRows
     /// cycle for a close, which ended as the test says, with one call of each role of the
     /// agent's team, each with a valid answer and the templates that are in use for the agent.
     /// The plan of the cycle went on to the Risk Guard, which accepted it: the cycle has one
-    /// check, with the outcome of every rule. It is for a test that is about something else,
-    /// and needs a row in every table that holds rows of users. The agent has a team, as
-    /// <c>GiveAgentAsync</c> gives it one.
+    /// check, with the outcome of every rule. And the cycle placed its orders, for a position
+    /// that is over by now: see <see cref="StoredOrderRows.GiveOrdersAsync"/>. It is for a test
+    /// that is about something else, and needs a row in every table that holds rows of users.
+    /// The agent has a team, as <c>GiveAgentAsync</c> gives it one.
     /// </summary>
     /// <returns>The id of the cycle.</returns>
     public static async Task<Guid> GiveCycleAsync(
@@ -248,6 +249,8 @@ internal static class StoredCycleRows
 
         await application.CycleRecords.StoreAsync(
             cycle, outputs, [GuardedCycles.Check(cycleId, userId, closedAt.AddSeconds(39))], TestContext.Current.CancellationToken);
+
+        await application.GiveOrdersAsync(userId, agentId, cycleId, closedAt.AddSeconds(40));
 
         return cycleId;
     }
@@ -504,6 +507,46 @@ internal sealed class StandInKeys : IKeyHandOver
 
         return Task.FromResult(outcome == KeyHandOverOutcome.Handed ? HandedKey.Of(KeyOf(userId, provider)) : HandedKey.None(outcome));
     }
+
+    /// <summary>The Binance credential of a user for an environment, which is the user's own.</summary>
+    public Task<HandedExchangeKey> ExchangeKeyAsync(Guid userId, TradingMode environment, CancellationToken cancellationToken) =>
+        Task.FromResult(HandedExchangeKey.Of($"api-key-of-{userId:N}-for-{environment}", $"secret-key-of-{userId:N}-for-{environment}"));
+}
+
+/// <summary>
+/// Stands for what places the orders of a cycle, for agents that need no rows: it places
+/// nothing, and keeps what it was handed, in order.
+/// </summary>
+internal sealed class StandInPlanOrders : IPlanOrders
+{
+    private readonly ConcurrentQueue<(Guid AgentId, Guid CycleId, GuardResult Accepted)> _placed = new();
+    private readonly ConcurrentQueue<Guid> _settled = new();
+
+    /// <summary>What was handed over to be placed: for which agent, in which cycle, and what the Risk Guard accepted.</summary>
+    public IReadOnlyList<(Guid AgentId, Guid CycleId, GuardResult Accepted)> Placed => [.. _placed];
+
+    /// <summary>The agents whose orders were asked to be settled, in order.</summary>
+    public IReadOnlyList<Guid> Settled => [.. _settled];
+
+    /// <summary>The error that placing the orders of a plan ends with, when the test gives it one.</summary>
+    public Exception? Fails { get; set; }
+
+    public Task PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken)
+    {
+        _placed.Enqueue((cycle.Agent.Id, cycle.CycleId, accepted));
+
+        return Fails is { } error ? Task.FromException(error) : Task.CompletedTask;
+    }
+
+    public Task SettleAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        _settled.Enqueue(agentId);
+
+        return Task.CompletedTask;
+    }
+
+    public Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken) =>
+        Task.FromResult(PositionCloseOutcome.NothingOpen);
 }
 
 /// <summary>The record of a cycle, as <see cref="StandInCycleRecords"/> was handed it.</summary>
@@ -602,6 +645,9 @@ internal sealed class StandInTeam
     /// <summary>What stands for the check of a key that a provider refused.</summary>
     public StandInKeyChecks KeyChecks { get; } = new();
 
+    /// <summary>What stands for what places the orders of a cycle: it places nothing.</summary>
+    public StandInPlanOrders Orders { get; } = new();
+
     /// <summary>Puts the stand-ins behind the interfaces that what runs a team asks.</summary>
     public void Behind(IServiceCollection services)
     {
@@ -609,5 +655,6 @@ internal sealed class StandInTeam
         services.AddSingleton<IKeyHandOver>(Keys);
         services.AddSingleton<ICycleRecords>(Records);
         services.AddSingleton<IKeyValidation>(KeyChecks);
+        services.AddSingleton<IPlanOrders>(Orders);
     }
 }

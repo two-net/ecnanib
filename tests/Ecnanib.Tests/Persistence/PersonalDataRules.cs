@@ -82,6 +82,16 @@ internal static class PersonalDataRules
             "What the model of a role answered, as one line of JSON: a report, a plan, or a review. The model was sent " +
             "market data, agent settings, position state, and lessons, and nothing that says who the user is (FR-PRM-9, " +
             "NFR-SEC-8), and an answer that holds an email address or an identifier is not kept.",
+        ["orders.symbol"] = "A symbol of Binance that the configuration file lists, such as BTCUSDT: the one of the agent when the order was placed.",
+        ["orders.client_order_id"] =
+            "The identifier that the order carries at Binance, which the application made: the id of the row, as 32 hexadecimal digits.",
+        ["orders.exchange_order_id"] = "The number that Binance gave the order.",
+        ["fills.trade_id"] = "The number that Binance gave the execution of an order.",
+        ["fills.fee_asset"] = "The asset that Binance took the fee of an execution in, as Binance names it, such as BNB.",
+        ["positions.symbol"] = "A symbol of Binance that the configuration file lists: the one of the agent when the position was opened.",
+        ["notifications.content"] =
+            "What the service tells the user about an agent, in the service's own words: what happened to a position, " +
+            "with its symbol and its mode. Nothing that a user typed is in it, and no secret (FR-NTF-1). It is in the export.",
     };
 
     /// <summary>Every column that is listed, in any of the three lists.</summary>

@@ -14,8 +14,9 @@ namespace Ecnanib.Agents;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing implements it until positions and orders are built. Until then no agent holds any:
-/// nothing stands in the way, no user is asked what to do with a position, and none is closed.
+/// The Decision Engine keeps the positions and the orders, and implements it: see
+/// docs/orders.md. Where nothing answers, no agent holds any: nothing stands in the way, no user
+/// is asked what to do with a position, and none is closed.
 /// </para>
 /// <para>
 /// A question is asked with the context of whoever asks, inside its transaction where it has

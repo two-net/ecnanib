@@ -364,10 +364,10 @@ public class ClockWatchTests
     }
 
     [Fact]
-    public void Once_the_gateway_places_orders_what_places_an_entry_asks_whether_entries_are_paused()
+    public void What_places_an_entry_asks_whether_entries_are_paused()
     {
-        // Orders are not built yet, and nothing opens a position. As soon as the gateway has its
-        // namespace for them, what places an entry must ask: the watch pauses nothing by itself.
+        // The gateway places orders, and the watch pauses nothing by itself: what places an
+        // entry asks. That no entry is placed while they are paused is in PlanOrderTests.
         var types = typeof(IExchangeClock).Assembly.GetTypes();
         var placesOrders = types.Any(type => IsOf(type, "Ecnanib.ExchangeGateway.Trading"));
         var asks = types
@@ -375,6 +375,15 @@ public class ClockWatchTests
             .SelectMany(type => type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             .SelectMany(constructor => constructor.GetParameters())
             .Any(parameter => parameter.ParameterType == typeof(IExchangeClock));
+
+        Assert.True(placesOrders);
+        Assert.Contains(
+            "Ecnanib.DecisionEngine.AgentOrders",
+            types
+                .Where(type => type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                    .SelectMany(constructor => constructor.GetParameters())
+                    .Any(parameter => parameter.ParameterType == typeof(IExchangeClock)))
+                .Select(type => type.FullName));
 
         Assert.True(
             asks || !placesOrders,

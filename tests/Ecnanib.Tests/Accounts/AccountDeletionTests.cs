@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using Ecnanib.Tests.Notifications;
 
 namespace Ecnanib.Tests.Accounts;
 
@@ -53,7 +54,8 @@ public class AccountDeletionTests
         // Grace has a row in every table that holds rows of users: what she accepted, her
         // recovery codes, the event of turning two-factor authentication on, a session on her
         // desk, a sign-in on her phone that waits for its code, a key of an AI provider and of
-        // Binance, and an agent, which is a draft, with a cycle and the calls of its roles.
+        // Binance, and an agent, which is a draft, with a cycle, the calls of its roles, the
+        // orders of a position that is over, and a notification about it.
         var (grace, gracesApp, _) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
@@ -61,16 +63,18 @@ public class AccountDeletionTests
         Assert.Equal("/", (await gracesDesk.EnterCodeAsync(gracesApp.CodeAt(clock.GetUtcNow()))).Path);
         await gracesPhone.SignInAsync(Grace);
         await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
-        await application.GiveCycleAsync(
-            grace.Id, await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true), clock.GetUtcNow());
+        var gracesAgent = await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true);
+        await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow());
+        await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
 
         // So has Ada, who is signed in on two browsers. Her stored keys go with her account, at
         // once (FR-ACC-9), and so do her agents, none of which is active, with what their teams
         // decided.
         var (ada, app, _) = await application.RegisterWithTwoFactorAsync(Ada, clock);
         await application.GiveKeysAsync(ada.Id, clock.GetUtcNow());
-        await application.GiveCycleAsync(
-            ada.Id, await application.GiveAgentAsync(ada.Id, clock.GetUtcNow(), team: true), clock.GetUtcNow());
+        var adasAgent = await application.GiveAgentAsync(ada.Id, clock.GetUtcNow(), team: true);
+        await application.GiveCycleAsync(ada.Id, adasAgent, clock.GetUtcNow());
+        await application.GiveNotificationAsync(ada.Id, adasAgent, clock.GetUtcNow());
         using var desk = application.CreateClient();
         using var tablet = application.CreateClient();
         using var phone = application.CreateClient();

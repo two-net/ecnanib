@@ -8,6 +8,7 @@ using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.WebUi;
+using Ecnanib.Tests.Notifications;
 
 namespace Ecnanib.Tests.Accounts;
 
@@ -25,6 +26,10 @@ internal static class ExportRules
         ["legal_acceptances"] = "legalAcceptances",
         ["sessions"] = "sessions",
         ["audit_events"] = "auditEvents",
+
+        // What the service told the user about their agents. Notifications hands them over, and
+        // its own tests say what the section holds: see NotificationTests.
+        ["notifications"] = "notifications",
 
         // Which keys are stored, each by its last four characters, and never a key. Credentials
         // hands them over, and its own tests say what the sections hold: see KeyPageTests.
@@ -62,6 +67,17 @@ internal static class ExportRules
         ["risk_check_rules"] =
             "The outcome of each rule of a check of the Risk Guard: the names of a rule and of an outcome, and two numbers. " +
             "They are exported with their checks (FR-RPT-4), which is not built.",
+
+        // What the agents of a user traded. The Decision Engine keeps the rows too.
+        ["orders"] =
+            "The orders of a user's agents at Binance, order by order. They hold no personal data. A user exports their " +
+            "trades and decisions as CSV (FR-RPT-4), which is not built, and has every order at Binance itself.",
+        ["fills"] =
+            "The executions of those orders: prices, quantities, and fees. They are exported with the trades that they " +
+            "belong to (FR-RPT-4), which is not built.",
+        ["positions"] =
+            "The positions of a user's agents, each from when it was opened to when it was closed. They are exported as " +
+            "the trades of the user (FR-RPT-4), which is not built.",
     };
 }
 
@@ -96,8 +112,8 @@ public class DataExportTests
         Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
         Assert.Equal(
             [
-                "exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "aiKeys", "exchangeKeys", "agents",
-                "agentRoles", "agentStateChanges",
+                "exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "notifications", "aiKeys", "exchangeKeys",
+                "agents", "agentRoles", "agentStateChanges",
             ],
             NamesIn(export));
         Assert.Equal(Morning.AddMinutes(5), export.GetProperty("exportedAt").GetDateTimeOffset());
@@ -253,7 +269,8 @@ public class DataExportTests
         await gracesPhone.SignInAsync(Grace);
         await gracesPhone.EnterCodeAsync(gracesCodes[0]);
         await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
-        await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true);
+        await application.GiveNotificationAsync(
+            grace.Id, await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true), clock.GetUtcNow());
         Assert.All(
             ExportRules.Exported.Keys,
             table => Assert.True(application.RowsOf(grace.Id)[table].Count > 0, $"Grace has no row in {table}, so nothing shows that it stays out."));
@@ -316,7 +333,8 @@ public class DataExportTests
         await client.SignInAsync(Ada);
         await client.EnterCodeAsync(app.CodeAt(clock.GetUtcNow()));
         await application.GiveKeysAsync(ada.Id, clock.GetUtcNow());
-        await application.GiveAgentAsync(ada.Id, clock.GetUtcNow(), team: true);
+        await application.GiveNotificationAsync(
+            ada.Id, await application.GiveAgentAsync(ada.Id, clock.GetUtcNow(), team: true), clock.GetUtcNow());
 
         var rows = application.RowsOf(ada.Id);
         var export = JsonDocument.Parse(await client.PageAsync(Export)).RootElement;

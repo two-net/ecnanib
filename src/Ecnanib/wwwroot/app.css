@@ -313,6 +313,25 @@ fieldset {
     margin: 0.25rem 0 1rem;
 }
 
+/* What the service has to tell a user about an agent. It says so in words, under a heading of
+   its own, and is marked by a line at its side, as a warning of a form is. */
+.agent-notifications {
+    border-left: 0.25rem solid #b3261e;
+    list-style: none;
+    margin: 0 0 1rem;
+    padding-left: 0.75rem;
+}
+
+.agent-notifications > li + li {
+    margin-top: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    .agent-notifications {
+        border-left-color: #f2b8b5;
+    }
+}
+
 /* What a form warns of, and does not refuse. It says so in words, and is marked by a line at its
    side, in a colour that reads on a light page and on a dark one: the text keeps the colour of
    the text around it. */

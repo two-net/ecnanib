@@ -53,7 +53,7 @@ A path that names no provider or no environment is answered with "not found". Wh
 
 ## Write-only
 
-A key comes in with a form, is shown to its provider, is encrypted, and is stored. No page and no export reads it back. Two places decrypt a stored key, each for one call: `KeyValidator`, for the call that asks the provider about it again, and `KeyHandOver`, for the call of a model of an agent of its user (FR-KEY-8, FR-KEY-9). See "Handing a key to a call". A key of an AI provider that the provider took is handed on once more, to the Catalog, which asks the provider for the list of its models with it: see "The catalog".
+A key comes in with a form, is shown to its provider, is encrypted, and is stored. No page and no export reads it back. Two places decrypt a stored key, each for one call: `KeyValidator`, for the call that asks the provider about it again, and `KeyHandOver`, for the call of a model of an agent of its user, and for a call about an order of such an agent (FR-KEY-8, FR-KEY-9). See "Handing a key to a call". A key of an AI provider that the provider took is handed on once more, to the Catalog, which asks the provider for the list of its models with it: see "The catalog".
 
 | Where | How a key stays out of it |
 |---|---|
@@ -66,7 +66,7 @@ A key comes in with a form, is shown to its provider, is encrypted, and is store
 | The audit trail | An event names the key by the id of its row, and nothing that makes an event takes text. See "The audit trail" in [accounts.md](accounts.md). |
 | The export | The sections `aiKeys` and `exchangeKeys` say which keys are stored: the id, the provider or the environment, the last four characters, when it was saved, and what the last check found. For an AI key that includes the identifiers of the models that its provider listed to it. See "Exporting your data" in [accounts.md](accounts.md). |
 | An error | No exception of this component carries what was entered, and an unhandled error shows the user a reference id and nothing else. See "Unhandled errors" in [logging.md](logging.md). |
-| A prompt | Nothing that composes a prompt reads a key. What decrypts one is internal to this component. It hands the key to the gateway, for the check, to the Catalog, for the list of the provider's models, and to what makes the call of a model for an agent, which hands it to the gateway with that call and keeps it nowhere: see "Handing a key to a call". |
+| A prompt | Nothing that composes a prompt reads a key. What decrypts one is internal to this component. It hands the key to the gateway, for the check, to the Catalog, for the list of the provider's models, and to what makes the call of a model for an agent, or a call about an order of it, which hands it to the gateway with that call and keeps it nowhere: see "Handing a key to a call". |
 
 ## Handing a key to a call
 
@@ -76,6 +76,8 @@ A stored key is handed to the call of an agent that needs it, decrypted only in 
 public interface IKeyHandOver
 {
     Task<HandedKey> AiKeyAsync(Guid userId, AiProviderCode provider, CancellationToken cancellationToken);
+
+    Task<HandedExchangeKey> ExchangeKeyAsync(Guid userId, TradingMode environment, CancellationToken cancellationToken);
 }
 ```
 
@@ -83,12 +85,14 @@ public interface IKeyHandOver
 |---|---|
 | `Handed` | The key of the user for the provider, as text. |
 | `NoKey` | The user has stored no key for the provider. |
-| `Invalid` | The provider refused the key when it was last asked about it. No call is made with such a key. |
+| `Invalid` | The provider refused the key when it was last asked about it. No call of a model is made with such a key. A Binance credential is never handed over as this: see below. |
 | `Unreadable` | The stored value does not decrypt: it names a master key that the configuration file does not list, or it was copied from another row. The log has an `Error`. |
 
 | Rule | Detail |
 |---|---|
-| **Only what calls a model for an agent asks.** | `RoleRuns` of the Decision Engine, as it makes each call of a role: see "A role call" in [team.md](team.md). `TeamRulesTests` finds every type of the application that asks, and fails for another. No page and no endpoint asks. |
+| **Only what calls a model for an agent asks for the key of a provider.** | `RoleRuns` of the Decision Engine, as it makes each call of a role: see "A role call" in [team.md](team.md). `TeamRulesTests` finds every type of the application that asks, and fails for another. No page and no endpoint asks. |
+| **Only what places the orders of an agent asks for a Binance credential.** | `AgentOrders` of the Decision Engine, as it makes each call about an order: see [orders.md](orders.md). `TeamRulesTests` pins that as well, and that the two keys are read there alone. `HandedExchangeKey` has the API key and the secret key each on its own, as the gateway takes them, and its text is its outcome. |
+| **A Binance credential is handed over whatever its last check found.** | A position is closed with it in any state, so that risk can always be reduced, and Binance says whether it takes the credential now. No position is opened with a credential that is not valid: the Risk Guard rejects the plan (FR-RSK-4). A credential that Binance refuses for a call about an order is checked again at once. |
 | **A key is handed over for one call.** | It is asked for as the call is made, handed to the gateway with that call, and kept nowhere: not in a field, not in a row, and not in a log event. The next call asks again. |
 | **A user's own key is the only key** (FR-KEY-1). | The user is named by id, which is that of the agent's row. A user who has no key for a provider is handed none, and never the key of another user or of the service. |
 | **A key that was never checked is handed over,** and one that was refused is not. | A key is checked before it is stored, so `Unchecked` is a key from before keys were checked. The agents that run with a key that is marked invalid move to Attention required when it is marked (FR-KEY-10), and a cycle that was under way then makes no further call with it. |
@@ -127,7 +131,7 @@ A key is validated by asking its provider about it, with a call that only reads 
 |---|---|
 | When it is saved. | In the request that brings it, before it is stored: see "Storing a key". |
 | Daily. | The job `key-validation` runs every hour, on the hour, and checks every key whose provider last answered a check a day ago or longer, and every key that was never checked. So each key is checked about a day after its last check, and not all keys at one time of day. See [background-work.md](background-work.md). |
-| When a call with it fails authentication. | Whatever made the call asks `IKeyValidation.RevalidateAiKeyAsync` or `RevalidateExchangeKeyAsync`, which checks the key at once. A call to a model that ends as `AuthenticationFailed` is such a call, and what runs the team of an agent asks then: see "A role call" in [team.md](team.md). So is a call to Binance that ends as `AuthenticationFailed`, which nothing makes for an agent yet: see "Not built yet". |
+| When a call with it fails authentication. | Whatever made the call asks `IKeyValidation.RevalidateAiKeyAsync` or `RevalidateExchangeKeyAsync`, which checks the key at once. A call to a model that ends as `AuthenticationFailed` is such a call, and what runs the team of an agent asks then: see "A role call" in [team.md](team.md). So is a call about an order that Binance answers as it answers a wrong credential, and what places the orders of an agent asks then: see "Settling" in [orders.md](orders.md). |
 | When its user asks. | The button "Check again" on `/account/keys`, for a user who changed something about the key at the provider. Binance shows a secret key only once, so a user who turns a permission on cannot enter the key again. It takes no proof: it shows nothing of the key and stores none. |
 
 All but the first come to `KeyValidator`, which reads the stored key, asks the provider, and records what it said.
@@ -301,9 +305,7 @@ Whether a key can withdraw is not stored: a key that can is not.
 
 ## Not built yet
 
-- Handing a Binance credential to the call of an agent that needs it, decrypted only in memory and only for that call (FR-KEY-9). The Exchange Gateway takes a credential with each call: see "The credential" in [exchange.md](exchange.md). What hands a stored credential over comes with what calls Binance for an agent. The key of an AI provider is handed over: see "Handing a key to a call".
-- Checking a Binance credential again when a call with it fails authentication. `IKeyValidation.RevalidateExchangeKeyAsync` takes the request, and nothing asks it yet: a call to Binance tells it with the outcome `AuthenticationFailed`, see "Outcomes" in [exchange.md](exchange.md), and what calls Binance for an agent asks then. The key of an AI provider is checked again when a call of a model fails authentication.
 - Telling Agents when the list of the models that a key can use changes: when a key is replaced, and when a check records a list that lacks a model that an agent runs with. `IKeyDependents` is told when a key is deleted or becomes invalid, and not then. See "Not built yet" in [agents.md](agents.md).
 - Saying on `/account/keys` which models a key can use, or that it is not known. The export of a user's data says it.
-- Telling the user that a key is invalid (FR-NTF-1). The list of keys says so. In-app notifications are not built.
+- Telling the user that a key is invalid (FR-NTF-1). The list of keys says so. A notification is raised for a failure of the protection of a position only: see [notifications.md](notifications.md).
 - The usage of each AI key: calls, tokens, and estimated cost (FR-KEY-11).

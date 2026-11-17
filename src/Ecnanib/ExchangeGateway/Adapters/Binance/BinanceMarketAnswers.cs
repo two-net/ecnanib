@@ -124,7 +124,7 @@ internal static class BinanceMarketAnswers
 
             // A symbol that is there twice, or whose rules do not read: which rules an order
             // must keep is not known, and a list without it would say that the market lacks it.
-            if (Symbol(row, symbol) is not { } read || !found.TryAdd(symbol, read))
+            if (Symbol(row, symbol, market) is not { } read || !found.TryAdd(symbol, read))
             {
                 return null;
             }
@@ -134,7 +134,7 @@ internal static class BinanceMarketAnswers
     }
 
     /// <summary>A symbol with its rules, or null when the row lacks one of them.</summary>
-    private static ExchangeSymbol? Symbol(JsonElement row, string symbol)
+    private static ExchangeSymbol? Symbol(JsonElement row, string symbol, Market market)
     {
         if (Text(row, "status") is not { } status
             || Text(row, "baseAsset")?.GetString() is not { Length: > 0 } baseAsset
@@ -170,8 +170,34 @@ internal static class BinanceMarketAnswers
         }
 
         return priceStep is { } price && quantityStep is { } quantity && minQuantity is { } least && maxQuantity is { } most && minValue is { } value
-            ? new ExchangeSymbol(symbol, baseAsset, quoteAsset, status.ValueEquals("TRADING"), price, quantity, least, most, value)
+            ? new ExchangeSymbol(
+                symbol, baseAsset, quoteAsset, status.ValueEquals("TRADING"), price, quantity, least, most, value, TakesStops(row, market))
             : null;
+    }
+
+    /// <summary>
+    /// Whether a symbol takes a stop that is placed at the market when it is triggered, which
+    /// the row says among the types of order that the symbol takes. Binance names it differently
+    /// on the two markets. A row that names no types takes none.
+    /// </summary>
+    private static bool TakesStops(JsonElement row, Market market)
+    {
+        if (!row.TryGetProperty("orderTypes", out var types) || types.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var stop = market == Market.Spot ? "STOP_LOSS" : "STOP_MARKET";
+
+        foreach (var type in types.EnumerateArray())
+        {
+            if (type.ValueKind == JsonValueKind.String && type.ValueEquals(stop))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>An amount of a rule, or null when the rule does not have it.</summary>

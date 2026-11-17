@@ -179,8 +179,18 @@ internal sealed class StandInMarket(TimeProvider clock) : IExchangeMarketData
     /// A symbol as the exchange lists it, with rules that the plans of the tests keep: a price
     /// step of 0.1, a quantity step of 0.001, and a least value of 5.
     /// </summary>
-    public static ExchangeSymbol Listed(string symbol, bool trading = true, decimal priceStep = 0.1m) =>
-        new(symbol, symbol[..^4], "USDT", trading, priceStep, QuantityStep: 0.001m, MinQuantity: 0.001m, MaxQuantity: 1000m, MinValue: 5m);
+    public static ExchangeSymbol Listed(string symbol, bool trading = true, decimal priceStep = 0.1m, bool stopOrders = true) =>
+        new(
+            symbol,
+            symbol[..^4],
+            "USDT",
+            trading,
+            priceStep,
+            QuantityStep: 0.001m,
+            MinQuantity: 0.001m,
+            MaxQuantity: 1000m,
+            MinValue: 5m,
+            StopOrders: stopOrders);
 
     /// <summary>What the exchange answers an ask for candles with, when it is not the candles through the latest close: null is those.</summary>
     public Func<AskedCandles, ExchangeCandles?>? Candles { get; set; }

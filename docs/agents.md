@@ -129,7 +129,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `Running` | Its user starts or resumes it. | Yes | Yes | Managed by the team | Yes |
 | `Paused` | Its user pauses it. | No | No | Stays open with its protective orders | Yes |
 | `Halted` | A loss limit of the Risk Guard is reached (FR-RSK-8). Nothing does this yet. | No | No | Closed by the system | Yes |
-| `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, or the provider of a model of its team no longer offers the model. The other causes of the specification are not built. | No | No | Stays open with its protective orders | Yes |
+| `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, the provider of a model of its team no longer offers the model, or its position is open with no stop-loss and could not be closed (FR-RSK-7). The other causes of the specification are not built. | No | No | Stays open with its protective orders, unless the cause says that it has none | Yes |
 | `Stopped` | Its user stops it. | No | No | Closed or kept, as its user chose | No |
 
 - **Only a running agent runs cycles and opens positions.** `AgentStates.RunsCycles` and `AgentStates.TakesNewEntries` say so, for what runs a cycle and what places an entry to ask. What starts the cycles asks `IRunningAgents`, which goes by `AgentStates.RunsCycles`: when a candle closes, and again as the turn of a cycle comes. See "What other components ask of Agents".
@@ -191,7 +191,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 
 ### What an agent holds
 
-Positions and orders are not built. Agents may not use the Decision Engine, and places no order, so it declares `IAgentExposure`, and whatever keeps positions and orders implements and registers it. See "When a lower component must trigger a higher one" in [architecture.md](architecture.md).
+Agents may not use the Decision Engine, and places no order, so it declares `IAgentExposure`, and whatever keeps positions and orders implements and registers it: the Decision Engine does, with `AgentExposure`. See "When a lower component must trigger a higher one" in [architecture.md](architecture.md), and "What an agent holds" in [orders.md](orders.md).
 
 ```csharp
 public interface IAgentExposure
@@ -213,7 +213,31 @@ public interface IAgentExposure
 - A question is asked with the context of whoever asks, inside its transaction where it has one. An implementation asks for the rows of the agent it is given, and commits nothing.
 - **A close is asked for after the transaction, and never inside it.** It waits for the exchange, and would hold the lock of the account for as long. Agents has recorded the request by then, and does not give it up when the browser goes away. What an implementation must not lose once it has taken the request is its own to keep.
 - **An implementation answers with an outcome, and not with an error,** when the exchange refuses or gives no answer.
-- **Nothing implements it yet.** Until then no agent holds anything: nothing stands in the way of a change or a deletion, no user is asked what to do with a position, and no control that closes one is shown. `AgentsRulesTests` has a test that fails as soon as a table of positions or of orders is in the model and nothing answers. The tests of Agents use a stand-in, `StandInExposure`.
+- **An agent has a position from the moment that its entry is written.** An entry that is on its way, or whose outcome is not known, may open one, so a user who stops the agent then is asked what to do with the position, and its market cannot be changed under it.
+- **A close settles the orders of the agent first,** and then takes the stop-loss off the exchange and closes the position at the market. When the position cannot be closed, the stop-loss is placed again, and the answer is `Failed`. See "Closing a position" in [orders.md](orders.md).
+- Where nothing answers, no agent holds anything: nothing stands in the way of a change or a deletion, no user is asked what to do with a position, and no control that closes one is shown. The tests of Agents use a stand-in, `StandInExposure`.
+
+### What places the orders asks
+
+The Decision Engine places the orders of an agent, and asks Agents two things for it, through `IAgentTrading`:
+
+```csharp
+public interface IAgentTrading
+{
+    Task<AgentState?> StateUnderLockAsync(EcnanibDbContext context, Guid userId, Guid agentId, CancellationToken cancellationToken);
+
+    Task<bool> RequireAttentionAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+}
+```
+
+| Member | What it does |
+|---|---|
+| `StateUnderLockAsync` | Says the state that the agent is in now, read under the lock of its account, inside the transaction that writes an order of the agent. The lock is the one that the controls of its user take. So an entry and a stop of the agent's user cannot cross: either the entry is written first, and the stop finds it and asks for the choice, or the agent is stopped first, and no entry is written (`AgentStates.TakesNewEntries`). It changes nothing. |
+| `RequireAttentionAsync` | Moves an agent that runs to Attention required, with the cause `PositionUnprotected`: its position is open with no stop-loss on the exchange, and could not be closed at market either (FR-RSK-7). An agent in any other state stays as it is: one that its user paused or stopped is not made to look as if it could be resumed for this. |
+
+- Both take the user and the agent by their ids, which are those of the agent's own row: they are asked by background work, where nobody is signed in. See [ownership.md](ownership.md).
+- **The move is the service's doing, and no action of a user.** The change of the state records it, and the audit trail does not. The user is told with a notification, which what places the orders raises: see [notifications.md](notifications.md).
+- The page of the state says of such an agent that its position is open with no stop-loss, that the service keeps trying to protect or close it, and how to close it by hand.
 
 ### Stopping an agent that has an open position
 
@@ -327,7 +351,7 @@ In Live an agent trades with real money, so `SwitchToLiveAsync` asks for more. I
 **What an agent did is stored with the mode it did it in, row by row, and is never read through the mode that the agent is in now** (FR-BIN-11). So what an agent did in Demo stays Demo after it is switched to Live, and is not combined with what it does there.
 
 - **A change of the state says its mode:** `agent_state_changes.mode`, written by `AgentStateChanges.MoveAsync` with the mode that the agent is in under the lock. The page of the state shows it for each change, as a badge, and the export has it.
-- **No results are stored yet:** no trade, no position, and no profit or loss. What stores them gives each row its mode. `AgentsRulesTests` fails for a table that has rows of an agent and no column `mode`, unless `AgentsRules.AgentRowsWithoutMode` lists it with why nothing in it is a result.
+- **An order and a position say their mode:** `orders.mode` and `positions.mode`, written with the mode that the agent had when the order was placed, and kept when the agent is switched. See "The record of an order" in [orders.md](orders.md). No profit or loss is stored yet. `AgentsRulesTests` fails for a table that has rows of an agent and no column `mode`, unless `AgentsRules.AgentRowsWithoutMode` lists it with why nothing in it is a result.
 - **Nothing is added up over both modes.** What counts the agents of a user counts them whatever their mode: the fair-use limit, and whether an account has an active agent. Neither is a result.
 
 ## Creating, changing, copying, and deleting
@@ -356,7 +380,7 @@ The pages are rendered on the server for each request, and none is interactive. 
 | `/agents` | The agents of the user, oldest first: name, mode as its badge, market, symbol, timeframe, capital, and state. It says how many agents the user has of how many an account can have, and leads to the form unless the user may create none. Each agent has a link to the page of its state, a button that copies it, and a link to the page that deletes it, and an agent that has an open position has "Close position now". Under the table it says what each state means. |
 | `/agents/new` | The form that creates an agent. Each role has a choice of its provider, which starts from the default mapping, and a choice of its model. It says that a model which searches live may add provider charges. See "The team". |
 | `/agents/<id>` | The same form, with the settings of the agent and the models of its roles. It says the state, and leads to the page of the state, to the page of the prompts, and to the page that switches the mode. For an agent in Live it asks once more before a change to the capital, to a risk setting, or to the model of a role is stored. |
-| `/agents/<id>/state` | The state of the agent, since when, what it means, and why the agent is in it. The buttons that start, pause, and resume the agent, each in the states that it is offered in, a link to the page that stops it, and "Close position now" when it has an open position. An agent that was not started or resumed because of its team is told which roles stand in the way. For an agent in Live, links to the page that asks once more stand in place of the three buttons. A link to the page that switches the mode, or when the mode can be switched. The changes of its state, latest first, each with its mode. A link to the page of the prompts, and one to the page of the risk checks. |
+| `/agents/<id>/state` | What the service has to tell the user about the agent and they have not read, when there is something: see [notifications.md](notifications.md). The state of the agent, since when, what it means, and why the agent is in it. The buttons that start, pause, and resume the agent, each in the states that it is offered in, a link to the page that stops it, and "Close position now" when it has an open position. An agent that was not started or resumed because of its team is told which roles stand in the way. For an agent in Live, links to the page that asks once more stand in place of the three buttons. A link to the page that switches the mode, or when the mode can be switched. The changes of its state, latest first, each with its mode. A link to the page of the prompts, and one to the page of the risk checks. |
 | `/agents/<id>/risk-checks` | What the Risk Guard made of the plans of the agent: each check with its verdict, and every rule with its outcome and why, in plain language (FR-RSK-9). It has no form. See "The page" in [risk-guard.md](risk-guard.md). |
 | `/agents/<id>/prompts` | The prompt templates that the agent uses now: the instructions of each role, and the modules of its market, its timeframe, and the profile, each with its version. It has no form: a user reads the prompts, and cannot edit them (FR-PRM-7). It says what an AI provider is sent with them, under whose key, and under whose terms (NFR-SEC-8). See [prompts.md](prompts.md). |
 | `/agents/<id>/confirm/<control>` | The page that asks once more before the agent is started, paused, or resumed: `start`, `pause`, or `resume`. Another name is no page. |
@@ -521,17 +545,16 @@ An event names a user and an agent by their ids, and never holds a name or a num
 
 ## Not built yet
 
-- What keeps positions and orders, which answers `IAgentExposure` and closes a position. Until it is built, no agent has a position: stopping an agent asks for no choice, and no "Close position now" is shown. With it comes cancelling an entry that has not filled when its agent stops running (FR-BIN-S2).
-- The orders. A cycle of an agent that runs starts when a candle of its timeframe closes, builds its data package, runs its team, and has the Risk Guard check what goes on of its plan: see [cycles.md](cycles.md), [team.md](team.md), and [risk-guard.md](risk-guard.md). The package says that the agent holds nothing, and that its equity is its allocated capital, until something keeps positions and orders.
-- Stopping the cycle of an agent that its user pauses or stops while the cycle runs. Whether an agent runs is asked when its cycle starts. What places an entry asks `AgentStates.TakesNewEntries` again.
-- Placing an order of the size that the Risk Guard computes. The size holds a trade to the risk per trade, to the leverage cap, and to a position on Spot worth at most the equity (FR-RSK-5), and is stored with the check: see "The size of an order" in [risk-guard.md](risk-guard.md). The Risk Guard holds a plan to the other risk settings, and to one open position: see "The rules" there. Agents keeps the settings, and holds them to the bounds when they are saved.
+- Cancelling an entry that has not filled when its agent stops running (FR-BIN-S2). No entry rests yet: an entry is placed at the market. See "Not built yet" in [orders.md](orders.md).
+- Stopping the cycle of an agent that its user pauses or stops while the cycle runs. Whether an agent runs is asked when its cycle starts, and again, under the lock of its account, as its entry is written: no entry is placed for an agent that no longer runs.
+- The leverage that the Risk Guard computes, as a setting of the exchange (FR-BIN-F2). The quantity of an entry is the one that the Risk Guard computed: see "The size of an order" in [risk-guard.md](risk-guard.md). Agents keeps the settings, and holds them to the bounds when they are saved.
 - Holding a stored risk setting to bounds that the file is given later. An agent whose value is outside bounds that were narrowed since keeps it, and so does a copy of it. Its form shows the value, and is saved only once the value is within the bounds.
 - What halts an agent when a loss limit is reached, and what resumes it after a daily loss limit, on the next UTC day (FR-RSK-8). A halted agent is resumed and stopped by its user already.
 - The other causes of Attention required: a call that reports that a model does not exist (FR-CAT-8), an exchange setting that conflicts (FR-BIN-F2), and calls that fail repeatedly (NFR-REL-4). With the second comes refusing a start while the account is in a conflicting mode or holds a position in the symbol. The first takes an operation of Agents that a cycle can ask: what runs the team records such a call as `ModelNotFound`, and the cycle ends as its role says, but nothing moves the agent for it. See "Not built yet" in [team.md](team.md).
 - Moving an agent that runs when its user's key for a provider can no longer use a model of its team. Which models a key can use is recorded when its provider lists them: when a key is stored or replaced, and at each check. A list that comes to lack the model, and a key that is replaced, tell Agents nothing, and the list is written apart from the lock of the account, so a start may go by the list as it was a moment before. Such an agent is refused the next time it is started or resumed. Until then its calls of that model fail, and nothing moves it for them: see the item above. See "The models a key can use" in [credentials.md](credentials.md).
 - Moving an agent that runs when the configuration file stops allowing a model of its team. Such a model can no longer be selected, and the agent is not started or resumed with it, but nothing tells an agent that runs. See "Not built yet" in [catalog.md](catalog.md).
-- Telling the user that an agent was halted or needs attention (FR-NTF-1), and showing a change of state without a reload (FR-NTF-2). In-app notifications are not built.
+- Telling the user that an agent was halted or needs attention (FR-NTF-1), and showing a change of state without a reload (FR-NTF-2). A user is told with a notification that a position could not be protected, which is when an agent comes to wait for them for that cause: see [notifications.md](notifications.md). Nothing tells them of the other causes.
 - Recommending a team by measured strength, and applying it in one action (FR-TEAM-4), and reassigning the roles of an agent by strength on its own (FR-TEAM-10). The default mapping is the starting point until there is something to measure.
-- The results of an agent: its trades, its positions, and its profit or loss. None is stored. What stores them gives each row the mode it is of, and adds nothing up over both modes (FR-BIN-11): see "Demo is labeled as Demo".
+- The results of an agent: its profit or loss, and the pages that show its positions and its orders (FR-RPT-2). The orders and the positions are stored, each with the mode it is of. What adds them up adds nothing up over both modes (FR-BIN-11): see "Demo is labeled as Demo".
 - A record of the risk confirmation of its own, with the version of the risk disclosure that was confirmed. The event of the switch in the audit trail stands for the confirmation.
 - The agent detail screen (FR-RPT-2), and the times of an agent in the local time of its user. The page of the state of an agent is where its position, its trades, and its decisions will be shown.
