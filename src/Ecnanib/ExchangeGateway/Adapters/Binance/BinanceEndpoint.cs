@@ -93,7 +93,8 @@ internal sealed class BinanceEndpoint
     // the methods below. The weights are what Binance documents: placing an order on the Futures
     // market costs nothing of the limit on requests, and is counted by the order.
 
-    // An order of the Spot market: placed, asked about, and taken off the exchange.
+    // An order of the Spot market: placed, at the market, at a price, or as a stop, asked about,
+    // and taken off the exchange.
     private static readonly BinanceEndpoint SpotOrder =
         new(Market.Spot, "api/v3/order", BinanceLimit.Spot, weight: 1, method: HttpMethod.Post);
 
@@ -104,6 +105,14 @@ internal sealed class BinanceEndpoint
 
     // The executions of one order of the Spot market. Asked with the order, it costs 5.
     private static readonly BinanceEndpoint SpotTrades = new(Market.Spot, "api/v3/myTrades", BinanceLimit.Spot, weight: 5);
+
+    // The pair of the Spot market: two orders that Binance holds as one list, of which it ends
+    // one when the other is triggered. It is placed with one call, and taken off with one.
+    private static readonly BinanceEndpoint SpotPair =
+        new(Market.Spot, "api/v3/orderList/oco", BinanceLimit.Spot, weight: 1, method: HttpMethod.Post);
+
+    private static readonly BinanceEndpoint SpotPairCancel =
+        new(Market.Spot, "api/v3/orderList", BinanceLimit.Spot, weight: 1, method: HttpMethod.Delete);
 
     // An order of the Futures market that is placed at once: at the market.
     private static readonly BinanceEndpoint FuturesOrder =
@@ -133,7 +142,7 @@ internal sealed class BinanceEndpoint
     [
         SpotTime, FuturesTime, KeyPermissions, SpotAccount, FuturesAccountSettings, FuturesBalances,
         SpotCandles, FuturesCandles, SpotPrice, FuturesPrice, SpotSymbols, FuturesSymbols, FuturesMarkPrice, FuturesOpenInterest,
-        SpotOrder, SpotOrderStatus, SpotOrderCancel, SpotTrades,
+        SpotOrder, SpotOrderStatus, SpotOrderCancel, SpotTrades, SpotPair, SpotPairCancel,
         FuturesOrder, FuturesOrderStatus, FuturesOrderCancel, FuturesStop, FuturesStopStatus, FuturesStopCancel, FuturesTrades,
     ];
 
@@ -224,6 +233,61 @@ internal sealed class BinanceEndpoint
             ]),
             _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
         };
+
+    /// <summary>
+    /// An order at a price: it is executed at that price or a better one, and what is not
+    /// executed at once rests until it is, or until it is taken off the exchange (FR-BIN-S2).
+    /// </summary>
+    /// <param name="market">The market.</param>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="side">Binance's name of the side: <c>BUY</c> or <c>SELL</c>.</param>
+    /// <param name="quantity">How much of the asset that is traded.</param>
+    /// <param name="price">The price of the order.</param>
+    /// <param name="clientOrderId">The identifier of the order, which its caller chose.</param>
+    /// <param name="closes">Whether the order only closes a position, as in <see cref="MarketOrderOf"/>.</param>
+    public static BinanceEndpoint LimitOrderOf(
+        Market market, string symbol, string side, string quantity, string price, string clientOrderId, bool closes) => market switch
+        {
+            // It may be executed at once, so the Spot market is asked for its executions, as for
+            // an order at the market.
+            Market.Spot => SpotOrder.With(
+                ("symbol", symbol), ("side", side), ("type", "LIMIT"), ("timeInForce", "GTC"), ("quantity", quantity), ("price", price),
+                ("newClientOrderId", clientOrderId), ("newOrderRespType", "FULL")),
+            Market.Futures => FuturesOrder.With(
+            [
+                ("symbol", symbol), ("side", side), ("type", "LIMIT"), ("timeInForce", "GTC"), ("quantity", quantity), ("price", price),
+                ("newClientOrderId", clientOrderId), ("newOrderRespType", "RESULT"),
+                .. closes ? [("reduceOnly", "true")] : Array.Empty<(string, string)>(),
+            ]),
+            _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
+        };
+
+    /// <summary>
+    /// The pair of the Spot market that protects what a position holds: a take-profit above the
+    /// price and a stop-loss below it, which both sell the same quantity, and each of which is
+    /// placed at the market when the price reaches its trigger. Binance ends the other then
+    /// (FR-BIN-S2). Each carries an identifier of its own, and the pair one more.
+    /// </summary>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="quantity">How much of the asset that is traded each of the two sells.</param>
+    /// <param name="pairId">The identifier of the pair, which its caller chose.</param>
+    /// <param name="takeProfitPrice">The price that the take-profit is triggered at.</param>
+    /// <param name="takeProfitId">The identifier of the take-profit.</param>
+    /// <param name="stopLossPrice">The price that the stop-loss is triggered at.</param>
+    /// <param name="stopLossId">The identifier of the stop-loss.</param>
+    public static BinanceEndpoint PairOf(
+        string symbol, string quantity, string pairId, string takeProfitPrice, string takeProfitId, string stopLossPrice, string stopLossId) =>
+        SpotPair.With(
+            ("symbol", symbol), ("side", "SELL"), ("quantity", quantity), ("listClientOrderId", pairId),
+            ("aboveType", "TAKE_PROFIT"), ("aboveStopPrice", takeProfitPrice), ("aboveClientOrderId", takeProfitId),
+            ("belowType", "STOP_LOSS"), ("belowStopPrice", stopLossPrice), ("belowClientOrderId", stopLossId),
+            ("newOrderRespType", "RESULT"));
+
+    /// <summary>Takes a pair of the Spot market off the exchange, by the identifier that its caller gave it.</summary>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="pairId">The identifier of the pair.</param>
+    public static BinanceEndpoint PairCancelOf(string symbol, string pairId) =>
+        SpotPairCancel.With(("symbol", symbol), ("listClientOrderId", pairId));
 
     /// <summary>
     /// An order that rests on the exchange until the price reaches its trigger, and is then

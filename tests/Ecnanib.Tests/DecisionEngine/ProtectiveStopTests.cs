@@ -10,7 +10,9 @@ namespace Ecnanib.Tests.DecisionEngine;
 /// <summary>
 /// Every open position has a stop-loss order resting on the exchange. If the protective order
 /// cannot be placed after an entry fills, the system closes the position at market at once and
-/// alerts the user (FR-RSK-7). See "The stop-loss" in docs/orders.md.
+/// alerts the user (FR-RSK-7). On the Spot market the stop-loss is one order of a pair with the
+/// take-profit, so what holds for it there holds for the pair: see <see cref="ProtectivePairTests"/>.
+/// See "The stop-loss" in docs/orders.md.
 /// </summary>
 public class ProtectiveStopTests
 {
@@ -26,15 +28,25 @@ public class ProtectiveStopTests
 
         await application.PlaceAsync(agent, plan);
 
-        // Binance has two orders: the entry at the market, for the quantity that the Risk Guard
-        // computed, and then the stop-loss at the price of the plan, for what was bought, which
-        // only closes the position.
+        // Binance was asked twice: for the entry at the market, for the quantity that the Risk
+        // Guard computed, and then for the stop-loss at the price of the plan, for what was
+        // bought, which only closes the position. On Spot the stop-loss comes with the
+        // take-profit of the plan, as one pair that carries an identifier of its own.
         var binance = application.Binance;
+        var stopLoss = new AskedOrder(
+            market, binance.Orders[1].Asked.ClientOrderId, Stop: true, "SELL", quantity, Trigger: 59000m, ReduceOnly: market == Market.Futures);
+
         Assert.Equal(
             [
                 new AskedOrder(market, binance.Orders[0].Asked.ClientOrderId, Stop: false, "BUY", quantity, Trigger: null, ReduceOnly: false),
-                new AskedOrder(
-                    market, binance.Orders[1].Asked.ClientOrderId, Stop: true, "SELL", quantity, Trigger: 59000m, ReduceOnly: market == Market.Futures),
+                market == Market.Spot
+                    ? stopLoss with
+                    {
+                        TakeProfit = 62000m,
+                        TakeProfitId = binance.TheTakeProfit().Asked.ClientOrderId,
+                        PairId = binance.Orders[1].Asked.PairId,
+                    }
+                    : stopLoss,
             ],
             binance.Asked);
         Assert.Equal("NEW", binance.The(stop: true).Status);
@@ -46,13 +58,16 @@ public class ProtectiveStopTests
             (position.Side, position.EntryPrice, position.Quantity, position.StopLoss, position.TakeProfit, position.ClosedAt, position.Mode,
                 position.Market, position.Symbol));
 
-        // And its two orders: the entry that opened it, which is executed, and the stop-loss
-        // that rests.
+        // And its orders: the entry that opened it, which is executed, and the stop-loss that
+        // rests, with the take-profit that rests beside it on Spot.
         var orders = await application.OrdersOfAsync(agent.Id);
         Assert.Equal(
             [
                 (OrderPurpose.Entry, OrderType.Market, OrderSide.Buy, OrderStatus.Filled, (decimal?)null),
                 (OrderPurpose.StopLoss, OrderType.Stop, OrderSide.Sell, OrderStatus.Open, 59000m),
+                .. market == Market.Spot
+                    ? new[] { (OrderPurpose.TakeProfit, OrderType.Stop, OrderSide.Sell, OrderStatus.Open, (decimal?)62000m) }
+                    : [],
             ],
             orders.Select(order => (order.Purpose, order.Type, order.Side, order.Status, order.Price)));
         Assert.All(orders, order => Assert.Equal(position.Id, order.PositionId));
@@ -75,8 +90,10 @@ public class ProtectiveStopTests
         await application.PlaceAsync(agent, GuardCases.OpenLong);
 
         // What the account holds of the purchase is 0.00999, which is what a sale can be for:
-        // an order for all of 0.01 would be refused for lack of the asset.
+        // an order for all of 0.01 would be refused for lack of the asset. The take-profit
+        // sells the same, and no more: an agent sells only what it bought (FR-BIN-S3).
         Assert.Equal(0.00999m, application.Binance.The(stop: true).Asked.Quantity);
+        Assert.Equal(0.00999m, application.Binance.TheTakeProfit().Asked.Quantity);
         Assert.Equal(0.00999m, Assert.Single(await application.PositionsOfAsync(agent.Id)).Quantity);
 
         // The execution is stored with its fee, as Binance said it.
@@ -114,6 +131,7 @@ public class ProtectiveStopTests
             [
                 (OrderPurpose.Entry, OrderStatus.Filled),
                 (OrderPurpose.StopLoss, OrderStatus.Rejected),
+                .. market == Market.Spot ? new[] { (OrderPurpose.TakeProfit, OrderStatus.Rejected) } : [],
                 (OrderPurpose.Close, OrderStatus.Filled),
             ],
             (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status)));
@@ -149,7 +167,12 @@ public class ProtectiveStopTests
         Assert.Null(position.ClosedAt);
         Assert.NotNull(position.AlertedAt);
         Assert.Equal(
-            [(OrderPurpose.Entry, OrderStatus.Filled), (OrderPurpose.StopLoss, OrderStatus.Rejected), (OrderPurpose.Close, OrderStatus.Rejected)],
+            [
+                (OrderPurpose.Entry, OrderStatus.Filled),
+                (OrderPurpose.StopLoss, OrderStatus.Rejected),
+                (OrderPurpose.TakeProfit, OrderStatus.Rejected),
+                (OrderPurpose.Close, OrderStatus.Rejected),
+            ],
             (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status)));
 
         var notification = Assert.Single(await application.NotificationsOfAsync(agent.UserId));
@@ -255,13 +278,21 @@ public class ProtectiveStopTests
 
         await application.SettleAsync(agent.Id);
 
-        // The position has a stop-loss again: a new order, with an identifier of its own.
+        // The take-profit went with it at Binance, for the two are one pair. The position has
+        // a stop-loss again: a new order, with an identifier of its own, in a new pair.
         var orders = await application.OrdersOfAsync(agent.Id);
         Assert.Equal(
-            [(OrderPurpose.Entry, OrderStatus.Filled), (OrderPurpose.StopLoss, OrderStatus.Canceled), (OrderPurpose.StopLoss, OrderStatus.Open)],
+            [
+                (OrderPurpose.Entry, OrderStatus.Filled),
+                (OrderPurpose.StopLoss, OrderStatus.Canceled),
+                (OrderPurpose.TakeProfit, OrderStatus.Canceled),
+                (OrderPurpose.StopLoss, OrderStatus.Open),
+                (OrderPurpose.TakeProfit, OrderStatus.Open),
+            ],
             orders.Select(order => (order.Purpose, order.Status)));
-        Assert.NotEqual(orders[1].ClientOrderId, orders[2].ClientOrderId);
-        Assert.Equal("NEW", Assert.Single(application.Binance.Orders, order => order.Asked.ClientOrderId == orders[2].ClientOrderId).Status);
+        Assert.NotEqual(orders[1].ClientOrderId, orders[3].ClientOrderId);
+        Assert.NotEqual(orders[1].PairId, orders[3].PairId);
+        Assert.Equal("NEW", Assert.Single(application.Binance.Orders, order => order.Asked.ClientOrderId == orders[3].ClientOrderId).Status);
         Assert.Null(Assert.Single(await application.PositionsOfAsync(agent.Id)).ClosedAt);
     }
 
@@ -289,7 +320,7 @@ public class ProtectiveStopTests
         // The call that placed the entry was not given up, and the entry is not left without
         // its protection (NFR-REL-5).
         Assert.Equal(
-            [(OrderPurpose.Entry, OrderStatus.Filled), (OrderPurpose.StopLoss, OrderStatus.Open)],
+            [(OrderPurpose.Entry, OrderStatus.Filled), (OrderPurpose.StopLoss, OrderStatus.Open), (OrderPurpose.TakeProfit, OrderStatus.Open)],
             (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status)));
         Assert.Equal("NEW", application.Binance.The(stop: true).Status);
     }

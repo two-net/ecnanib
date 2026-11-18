@@ -46,7 +46,7 @@ namespace Ecnanib.DecisionEngine;
 /// <param name="purpose">What it is for.</param>
 /// <param name="type">The kind of order.</param>
 /// <param name="side">Whether it buys or sells.</param>
-/// <param name="price">The price that a stop is triggered at. Null for an order at the market.</param>
+/// <param name="price">The price that a stop is triggered at, or the price of an entry at a price. Null for an order at the market.</param>
 /// <param name="stopLoss">
 /// The price of the stop-loss of the position that an entry opens, as the Risk Guard accepted
 /// it. It is kept with the entry, so that the position is protected at that price also when the
@@ -63,6 +63,17 @@ namespace Ecnanib.DecisionEngine;
 /// <param name="createdAt">When the row was written, before the order was sent.</param>
 /// <param name="updatedAt">When its status last changed.</param>
 /// <param name="checkedAt">When the exchange last said what has become of it, or null when it never did.</param>
+/// <param name="pairId">
+/// The pair that it is one order of: the stop-loss and the take-profit of a position of the Spot
+/// market, which the exchange holds as one list and of which it ends one when the other is
+/// triggered (FR-BIN-S2). Both carry it, and it is the identifier that the pair carries at the
+/// exchange. Null for every order that is of no pair.
+/// </param>
+/// <param name="cancelAfter">
+/// When an entry at a price that still rests is taken off the exchange: the next close of the
+/// candles of its agent, which is when the next cycle of the agent starts (FR-BIN-S2). Null for
+/// every other order.
+/// </param>
 public sealed class Order(
     Guid id,
     Guid agentId,
@@ -89,7 +100,9 @@ public sealed class Order(
     bool fillsRecorded,
     DateTimeOffset createdAt,
     DateTimeOffset updatedAt,
-    DateTimeOffset? checkedAt) : IUserOwned
+    DateTimeOffset? checkedAt,
+    Guid? pairId,
+    DateTimeOffset? cancelAfter) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -143,8 +156,18 @@ public sealed class Order(
 
     public DateTimeOffset? CheckedAt { get; } = checkedAt;
 
+    public Guid? PairId { get; } = pairId;
+
+    public DateTimeOffset? CancelAfter { get; } = cancelAfter;
+
     /// <summary>The identifier that the order of a row carries: the id of the row, as 32 hexadecimal digits.</summary>
     public static string ClientOrderIdOf(Guid id) => id.ToString("N");
+
+    /// <summary>
+    /// The identifier that a pair carries at the exchange: its id, written as the identifier of
+    /// an order is. No order has it: the id of a pair is the id of no row.
+    /// </summary>
+    public static string PairIdOf(Guid pairId) => pairId.ToString("N");
 }
 
 /// <summary>What an order is for. A member is stored by its name, so renaming one needs a migration.</summary>
@@ -158,6 +181,13 @@ public enum OrderPurpose
 
     /// <summary>It closes the position at the market.</summary>
     Close,
+
+    /// <summary>
+    /// It rests on the exchange, and closes the position at a profit when the price reaches it.
+    /// It is one order of a pair with the stop-loss: the exchange ends the other when one of the
+    /// two is triggered (FR-BIN-S2).
+    /// </summary>
+    TakeProfit,
 }
 
 /// <summary>The kind of an order. A member is stored by its name, so renaming one needs a migration.</summary>
@@ -168,6 +198,12 @@ public enum OrderType
 
     /// <summary>It rests until the price reaches its trigger, and is then placed at the market.</summary>
     Stop,
+
+    /// <summary>
+    /// It is executed at its price or a better one, and what is not executed at once rests until
+    /// it is, or until it is taken off the exchange (FR-BIN-S2).
+    /// </summary>
+    Limit,
 }
 
 /// <summary>
@@ -264,13 +300,16 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(order => order.CreatedAt);
         builder.Property(order => order.UpdatedAt);
         builder.Property(order => order.CheckedAt);
+        builder.Property(order => order.PairId);
+        builder.Property(order => order.CancelAfter);
 
         // Every order carries an identifier that no other order has (FR-BIN-6).
         builder.HasIndex(order => order.ClientOrderId).IsUnique();
 
         // An agent has one order of each purpose that is not over, at most: no second entry
-        // beside one whose outcome is unknown, and one stop-loss that rests. The statuses are
-        // those of OrderStatuses.Live. It is also what finds the orders that are to be settled.
+        // beside one whose outcome is unknown or that rests, and one stop-loss that rests, with
+        // one take-profit beside it. The statuses are those of OrderStatuses.Live. It is also
+        // what finds the orders that are to be settled.
         builder.HasIndex(order => new { order.AgentId, order.Purpose })
             .IsUnique()
             .HasFilter("status IN ('Sending', 'Unknown', 'Open', 'PartiallyFilled')");

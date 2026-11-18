@@ -171,27 +171,35 @@ internal static class BinanceMarketAnswers
 
         return priceStep is { } price && quantityStep is { } quantity && minQuantity is { } least && maxQuantity is { } most && minValue is { } value
             ? new ExchangeSymbol(
-                symbol, baseAsset, quoteAsset, status.ValueEquals("TRADING"), price, quantity, least, most, value, TakesStops(row, market))
+                symbol,
+                baseAsset,
+                quoteAsset,
+                status.ValueEquals("TRADING"),
+                price,
+                quantity,
+                least,
+                most,
+                value,
+                Takes(row, market == Market.Spot ? "STOP_LOSS" : "STOP_MARKET"),
+                TakesPairs(row, market))
             : null;
     }
 
     /// <summary>
-    /// Whether a symbol takes a stop that is placed at the market when it is triggered, which
-    /// the row says among the types of order that the symbol takes. Binance names it differently
-    /// on the two markets. A row that names no types takes none.
+    /// Whether a symbol takes a type of order, which the row says among the types of order that
+    /// the symbol takes. A stop that is placed at the market when it is triggered is named
+    /// differently on the two markets. A row that names no types takes none.
     /// </summary>
-    private static bool TakesStops(JsonElement row, Market market)
+    private static bool Takes(JsonElement row, string orderType)
     {
         if (!row.TryGetProperty("orderTypes", out var types) || types.ValueKind != JsonValueKind.Array)
         {
             return false;
         }
 
-        var stop = market == Market.Spot ? "STOP_LOSS" : "STOP_MARKET";
-
         foreach (var type in types.EnumerateArray())
         {
-            if (type.ValueKind == JsonValueKind.String && type.ValueEquals(stop))
+            if (type.ValueKind == JsonValueKind.String && type.ValueEquals(orderType))
             {
                 return true;
             }
@@ -199,6 +207,18 @@ internal static class BinanceMarketAnswers
 
         return false;
     }
+
+    /// <summary>
+    /// Whether a symbol takes the pair of a stop-loss and a take-profit, of which Binance ends
+    /// one when the other is triggered: a symbol of the Spot market that says so, and that takes
+    /// both orders of the pair. The Futures market has no such pair.
+    /// </summary>
+    private static bool TakesPairs(JsonElement row, Market market) =>
+        market == Market.Spot
+        && row.TryGetProperty("ocoAllowed", out var allowed)
+        && allowed.ValueKind == JsonValueKind.True
+        && Takes(row, "STOP_LOSS")
+        && Takes(row, "TAKE_PROFIT");
 
     /// <summary>An amount of a rule, or null when the rule does not have it.</summary>
     private static decimal? Rule(JsonElement filter, string name) => Text(filter, name) is { } value ? Amount(value) : null;

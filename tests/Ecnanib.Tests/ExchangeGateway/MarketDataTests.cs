@@ -221,15 +221,18 @@ public class MarketDataTests
         // file does not list. The least value of an order is read under both of its names, and
         // a symbol that is not traded for the moment says so. A symbol takes a stop when it
         // names the stop-loss that is placed at the market among its types of order, and one
-        // that does not name it takes none (FR-RSK-7).
+        // that does not name it takes none (FR-RSK-7). It takes the pair of a stop-loss and a
+        // take-profit when it says so and takes both of them (FR-BIN-S2).
         Assert.Equal(
             [
                 new ExchangeSymbol(
                     "BTCUSDT", "BTC", "USDT", Trading: true,
-                    PriceStep: 0.01m, QuantityStep: 0.00001m, MinQuantity: 0.00001m, MaxQuantity: 9000m, MinValue: 5m, StopOrders: true),
+                    PriceStep: 0.01m, QuantityStep: 0.00001m, MinQuantity: 0.00001m, MaxQuantity: 9000m, MinValue: 5m, StopOrders: true,
+                    PairOrders: true),
                 new ExchangeSymbol(
                     "SOLUSDT", "SOL", "USDT", Trading: false,
-                    PriceStep: 0.01m, QuantityStep: 0.001m, MinQuantity: 0.001m, MaxQuantity: 90000m, MinValue: 5m, StopOrders: false),
+                    PriceStep: 0.01m, QuantityStep: 0.001m, MinQuantity: 0.001m, MaxQuantity: 90000m, MinValue: 5m, StopOrders: false,
+                    PairOrders: false),
             ],
             symbols.Symbols);
     }
@@ -244,12 +247,13 @@ public class MarketDataTests
         var symbols = await data.GetSymbolsAsync(Market.Futures, TradingMode.Demo, TestContext.Current.CancellationToken);
 
         // The file lists two symbols, and the market has one of them. It takes a stop, which
-        // the Futures market names in its own way.
+        // the Futures market names in its own way, and no pair: only the Spot market has one.
         Assert.Equal(
             [
                 new ExchangeSymbol(
                     "BTCUSDT", "BTC", "USDT", Trading: true,
-                    PriceStep: 0.1m, QuantityStep: 0.001m, MinQuantity: 0.001m, MaxQuantity: 1000m, MinValue: 100m, StopOrders: true),
+                    PriceStep: 0.1m, QuantityStep: 0.001m, MinQuantity: 0.001m, MaxQuantity: 1000m, MinValue: 100m, StopOrders: true,
+                    PairOrders: false),
             ],
             symbols.Symbols);
     }
@@ -567,7 +571,7 @@ public class MarketDataTests
     {
         var at = BinanceCalls.Now;
         var candle = new ExchangeCandle(at.AddHours(-1), at, 1m, 2m, 0.5m, 1.5m, 10m);
-        var symbol = new ExchangeSymbol("BTCUSDT", "BTC", "USDT", true, 0.01m, 0.001m, 0.001m, 9000m, 5m, StopOrders: true);
+        var symbol = new ExchangeSymbol("BTCUSDT", "BTC", "USDT", true, 0.01m, 0.001m, 0.001m, 9000m, 5m, StopOrders: true, PairOrders: true);
 
         Assert.Equal([candle], new ExchangeCandles(ExchangeCallOutcome.Succeeded, [candle], at).Candles);
         Assert.Throws<ArgumentException>(() => new ExchangeCandles(ExchangeCallOutcome.Failed, [candle], null));

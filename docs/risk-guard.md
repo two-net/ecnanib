@@ -145,7 +145,7 @@ With a price of 60000, a quantity step of 0.001, an equity of 1000, and a risk f
 - **A quantity is never raised:** not to the least quantity of the exchange, and not to its least value. `MinimumQuantity` and `MinimumValue` reject an order that is too small.
 - **Products decide, as they do for the rules.** A division rounds in its last digit. So the quantity that was rounded down is held to the risk and to the cap by multiplying, and is taken one step down where it does not keep them. The leverage is found by dividing, and held by multiplying in the same way.
 - **The size is computed for every plan that opens a position,** also for one that a rule rejects: a check says what its rules were asked of.
-- **The equity is the agent's own, as it is now:** see "The facts". Whether the account of its user holds the balance or the margin for the order is asked where the order is placed (FR-BIN-S3, FR-BIN-F6).
+- **The equity is the agent's own, as it is now:** see "The facts". Whether the account of its user holds the balance or the margin for the order is asked where the order is placed (FR-BIN-S3, FR-BIN-F6): see "The quote balance" in [orders.md](orders.md) for Spot. The margin of Futures is not asked yet.
 - **The entry of a plan at the market is the current price.** The order fills where the market is then, which is for what places it.
 - **The leverage is a number here, and no setting of the exchange.** Setting the leverage of the symbol before the entry (FR-BIN-F2) is not built, so an entry on Futures uses the leverage that the account has for the symbol: see "Not built yet".
 
@@ -328,7 +328,7 @@ The exchange did not give {Missing} for the Risk Guard to check the plan of agen
 ## Not built yet
 
 - Setting the leverage of the symbol to that of the order before an entry (FR-BIN-F2), and the leverage brackets of a symbol, by which Binance allows less leverage for a larger position. Until then an entry on Futures uses the leverage that the account has for the symbol, so the liquidation buffer was checked against a leverage that is not applied. The brackets are not read.
-- Skipping an entry that the balance or the margin of the account does not cover (FR-BIN-S3, FR-BIN-F6). The size is held to the agent's equity, and not to what the account holds.
+- Skipping an entry on Futures that the margin of the wallet does not cover (FR-BIN-F6). The size is held to the agent's equity, and not to what the account holds. On Spot an entry that the quote balance does not cover is skipped where the order is placed (FR-BIN-S3).
 - Bringing the prices of a plan onto the price step of its symbol. A model is not told the step, and a plan with a price off it is rejected. What makes an order from a plan decides whether to round, and which way.
 - The global halt of an Operator (FR-OPS-3), which answers `IGlobalHalt`.
 - Closing the position of an agent and halting it when a loss limit is reached, at every cycle and every reconciliation (FR-RSK-8), and the equity of an agent as the day began and at its peak, which what keeps the results of an agent says.

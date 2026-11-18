@@ -5,9 +5,10 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// Settles the orders of agents with the exchange, every minute: an order of unknown outcome is
-/// asked about, an open position without a stop-loss is protected or closed at market, and a
-/// stop-loss that rests is asked about again (FR-BIN-6, FR-RSK-7). See "Settling" in
-/// docs/orders.md.
+/// asked about, an open position without a stop-loss is protected or closed at market, a
+/// stop-loss that rests is asked about again, with its take-profit, and an entry at a price that
+/// rests is asked about, so that what it bought is protected, and taken off when it is not to
+/// rest any longer (FR-BIN-6, FR-RSK-7, FR-BIN-S2). See "Settling" in docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,8 +19,9 @@ namespace Ecnanib.DecisionEngine;
 /// <para>
 /// It runs for the agents that have something to settle, and for no other: most runs find none.
 /// A stop-loss that rests is asked about when it was last asked about longer ago than the time
-/// between reconciliations of the configuration file. It is due as the background work starts
-/// when there is anything to settle, so a restart settles first (NFR-REL-3).
+/// between reconciliations of the configuration file, and an entry that rests with every run.
+/// It is due as the background work starts when there is anything to settle, so a restart
+/// settles first (NFR-REL-3).
 /// </para>
 /// <para>
 /// The agents are settled a few at a time, each on its own: what cannot be settled for one,

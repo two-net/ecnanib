@@ -23,31 +23,45 @@ public class OrderIdempotencyTests
         using var application = new OrdersApplication();
         var agent = await application.GiveAgentAsync();
 
-        // What the records hold of an order at the moment that Binance is sent it.
+        // What the records hold of an order at the moment that Binance is sent it. The pair of
+        // a stop-loss and a take-profit is two orders that are sent with one call.
         var storedAsSent = new List<(string ClientOrderId, OrderStatus? Status)>();
         application.Binance.Fate = asked =>
         {
-            var stored = application.OrdersOfAsync(agent.Id).GetAwaiter().GetResult()
-                .SingleOrDefault(order => order.ClientOrderId == asked.ClientOrderId);
-            storedAsSent.Add((asked.ClientOrderId, stored?.Status));
+            var stored = application.OrdersOfAsync(agent.Id).GetAwaiter().GetResult();
 
-            // The stop-loss is refused, so that a third order follows: the one that closes.
+            foreach (var identifier in IdentifiersOf(asked))
+            {
+                storedAsSent.Add((identifier, stored.SingleOrDefault(order => order.ClientOrderId == identifier)?.Status));
+            }
+
+            // The pair is refused, so that one more order follows: the one that closes.
             return asked.Stop ? OrderFate.Refused : OrderFate.Taken;
         };
 
         await application.PlaceAsync(agent, GuardCases.OpenLong);
 
-        // Three orders were sent, and the row of each was there first, saying that it is being sent.
-        Assert.Equal(3, storedAsSent.Count);
+        // Four orders were sent, with three calls, and the row of each was there first, saying
+        // that it is being sent.
+        Assert.Equal(3, application.Binance.Asked.Count);
+        Assert.Equal(4, storedAsSent.Count);
         Assert.All(storedAsSent, sent => Assert.Equal(OrderStatus.Sending, sent.Status));
 
         // Each carries the identifier of its row, which is the id of the row as 32 hexadecimal
         // digits, and no two carry the same one.
         var orders = await application.OrdersOfAsync(agent.Id);
-        Assert.Equal(orders.Select(order => order.ClientOrderId), application.Binance.Asked.Select(asked => asked.ClientOrderId));
+        Assert.Equal(orders.Select(order => order.ClientOrderId), application.Binance.Asked.SelectMany(IdentifiersOf));
         Assert.All(orders, order => Assert.Equal(order.Id.ToString("N"), order.ClientOrderId));
-        Assert.Equal(3, orders.Select(order => order.ClientOrderId).Distinct().Count());
+        Assert.Equal(4, orders.Select(order => order.ClientOrderId).Distinct().Count());
         Assert.All(orders, order => Assert.Matches("^[0-9a-f]{32}$", order.ClientOrderId));
+
+        // The pair carries one more, which both of its rows say, and which no order carries.
+        var pair = Assert.Single(application.Binance.Asked, asked => asked.PairId is not null);
+        Assert.Equal([pair.PairId, pair.PairId], orders.Where(order => order.PairId is not null).Select(order => Order.PairIdOf(order.PairId!.Value)));
+        Assert.DoesNotContain(pair.PairId, orders.Select(order => order.ClientOrderId));
+
+        static IEnumerable<string> IdentifiersOf(AskedOrder asked) =>
+            asked.TakeProfitId is { } takeProfit ? [asked.ClientOrderId, takeProfit] : [asked.ClientOrderId];
     }
 
     [Theory]
@@ -75,7 +89,11 @@ public class OrderIdempotencyTests
         var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
         Assert.Equal((quantity, null), (position.Quantity, position.ClosedAt));
         Assert.Equal(
-            [(OrderPurpose.Entry, OrderStatus.Filled, 1), (OrderPurpose.StopLoss, OrderStatus.Open, 1)],
+            [
+                (OrderPurpose.Entry, OrderStatus.Filled, 1),
+                (OrderPurpose.StopLoss, OrderStatus.Open, 1),
+                .. market == Market.Spot ? new[] { (OrderPurpose.TakeProfit, OrderStatus.Open, 1) } : [],
+            ],
             (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status, order.Sends)));
     }
 
@@ -151,19 +169,20 @@ public class OrderIdempotencyTests
     public async Task A_stop_loss_that_Binance_does_not_have_is_asked_about_before_it_is_sent_once_more_as_the_same_order()
     {
         using var application = new OrdersApplication();
-        var agent = await application.GiveAgentAsync();
+        var agent = await application.GiveAgentAsync(market: Market.Futures);
 
         // The first call that places the stop-loss is lost. The second one is taken.
         var stops = 0;
         application.Binance.Fate = asked => asked.Stop && ++stops == 1 ? OrderFate.Lost : OrderFate.Taken;
 
-        await application.PlaceAsync(agent, GuardCases.OpenLong);
+        await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
 
         // The stop-loss was sent, asked about, and only then sent again: with the identifier
-        // that it had, so that Binance would refuse it if it had the first one after all.
+        // that it had, so that Binance would refuse it if it had the first one after all. The
+        // same holds for the pair of the Spot market: see ProtectivePairTests.
         var stopLoss = Assert.Single(await application.OrdersOfAsync(agent.Id), order => order.Purpose == OrderPurpose.StopLoss);
         Assert.Equal(
-            ["POST /api/v3/order", "POST /api/v3/order", "GET /api/v3/order", "POST /api/v3/order"],
+            ["POST /fapi/v1/order", "POST /fapi/v1/algoOrder", "GET /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder"],
             application.Binance.OrderCalls);
         Assert.Equal([stopLoss.ClientOrderId], application.Binance.AskedAbout);
         Assert.Equal(
@@ -198,7 +217,8 @@ public class OrderIdempotencyTests
                     id, agent.Id, agent.UserId, agent.Mode, agent.Market, agent.Symbol, cycleId: Guid.CreateVersion7(), positionId: null,
                     Order.ClientOrderIdOf(id), exchangeOrderId: null, OrderPurpose.Entry, OrderType.Market, OrderSide.Buy, price: null,
                     stopLoss: 59000m, takeProfit: 62000m, quantity: 0.01m, OrderStatus.Sending, executedQuantity: 0m, averagePrice: null,
-                    exitReason: null, sends: 1, fillsRecorded: false, OrdersApplication.Start, OrdersApplication.Start, checkedAt: null));
+                    exitReason: null, sends: 1, fillsRecorded: false, OrdersApplication.Start, OrdersApplication.Start, checkedAt: null,
+                    pairId: null, cancelAfter: null));
                 await context.SaveChangesAsync(TestContext.Current.CancellationToken);
             }
 
@@ -206,7 +226,7 @@ public class OrderIdempotencyTests
             await before.Application.ExchangeOrders.PlaceAsync(
                 agent.UserId, agent.Market, agent.Mode, Keys.Of(owner, "demo"), Keys.Of(owner, "seal"),
                 new ExchangeOrderRequest(
-                    Order.ClientOrderIdOf(id), agent.Symbol, ExchangeOrderSide.Buy, ExchangeOrderType.Market, 0.01m, TriggerPrice: null, Closes: false),
+                    Order.ClientOrderIdOf(id), agent.Symbol, ExchangeOrderSide.Buy, ExchangeOrderType.Market, 0.01m, Price: null, Closes: false),
                 TestContext.Current.CancellationToken);
         }
 
@@ -233,12 +253,12 @@ public class OrderIdempotencyTests
         var entry = (await after.OrdersOfAsync(agent.Id))[0];
         Assert.Contains(entry.ClientOrderId, binance.AskedAbout);
         Assert.Equal(
-            [(OrderPurpose.Entry, OrderStatus.Filled), (OrderPurpose.StopLoss, OrderStatus.Open)],
+            [(OrderPurpose.Entry, OrderStatus.Filled), (OrderPurpose.StopLoss, OrderStatus.Open), (OrderPurpose.TakeProfit, OrderStatus.Open)],
             (await after.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status)));
         Assert.Null(Assert.Single(await after.PositionsOfAsync(agent.Id)).ClosedAt);
 
-        // The entry reached Binance once, before the restart, and nothing sent it again: the
-        // one order that was placed after it is the stop-loss.
+        // The entry reached Binance once, before the restart, and nothing sent it again: what
+        // was placed after it is the pair of its stop-loss and its take-profit, with one call.
         Assert.Equal([(false, "BUY"), (true, "SELL")], binance.Asked.Select(asked => (asked.Stop, asked.Side)));
         Assert.Single(binance.Orders, order => !order.Asked.Stop);
     }

@@ -203,7 +203,7 @@ Every open position has a stop-loss that rests on the exchange (FR-RSK-7). It is
 
 The Decision Engine keeps the orders, their executions, and the positions, in `orders`, `fills`, and `positions`, each row with its owner and the mode of its agent. From them it answers what an agent holds, for a cycle through `IAgentHoldings` and for Agents through `IAgentExposure`, and closes a position for the user of an agent.
 
-Not built yet: the orders that only one market has, which are a limit entry, an order for the take-profit, the pair of Spot, and the margin, the leverage, and the trigger on the mark price of Futures, and the results of a position. See [orders.md](orders.md).
+Not built yet: the orders that only Futures has, which are an entry at a price there, an order for the take-profit, and the margin, the leverage, and the trigger on the mark price, and the results of a position. See [orders.md](orders.md).
 
 ## Risk Guard
 

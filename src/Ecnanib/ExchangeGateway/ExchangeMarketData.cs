@@ -118,6 +118,12 @@ public sealed record ExchangeSymbols(ExchangeCallOutcome Outcome, IReadOnlyList<
 /// trigger, and is then placed at the market. It is what protects a position, so no position is
 /// opened in a symbol that takes none (FR-RSK-7). A symbol that does not say is one that takes none.
 /// </param>
+/// <param name="PairOrders">
+/// Whether the exchange takes the pair of a stop-loss and a take-profit in it, of which it ends
+/// one when the other is triggered. It is what protects a position of the Spot market, so no
+/// position is opened there in a symbol that takes none (FR-BIN-S2). The Futures market has no
+/// such pair, and a symbol that does not say is one that takes none.
+/// </param>
 public sealed record ExchangeSymbol(
     string Symbol,
     string BaseAsset,
@@ -128,7 +134,8 @@ public sealed record ExchangeSymbol(
     decimal MinQuantity,
     decimal MaxQuantity,
     decimal MinValue,
-    bool StopOrders);
+    bool StopOrders,
+    bool PairOrders);
 
 /// <summary>What reading the mark price of a symbol on the Futures market gave.</summary>
 /// <param name="Outcome">How the read ended.</param>

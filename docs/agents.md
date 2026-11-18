@@ -213,7 +213,8 @@ public interface IAgentExposure
 - A question is asked with the context of whoever asks, inside its transaction where it has one. An implementation asks for the rows of the agent it is given, and commits nothing.
 - **A close is asked for after the transaction, and never inside it.** It waits for the exchange, and would hold the lock of the account for as long. Agents has recorded the request by then, and does not give it up when the browser goes away. What an implementation must not lose once it has taken the request is its own to keep.
 - **An implementation answers with an outcome, and not with an error,** when the exchange refuses or gives no answer.
-- **An agent has a position from the moment that its entry is written.** An entry that is on its way, or whose outcome is not known, may open one, so a user who stops the agent then is asked what to do with the position, and its market cannot be changed under it.
+- **An agent has a position from the moment that its entry is written.** An entry that is on its way, or whose outcome is not known, may open one, so a user who stops the agent then is asked what to do with the position, and its market cannot be changed under it. So may an entry at a price that rests on the exchange, on Spot: for as long as it rests, "Close position now" is there, and takes it off.
+- **An entry that rests is taken off when its agent no longer runs** (FR-BIN-S2). An agent that its user paused or stopped, or that waits for its user, opens no position, so what places the orders takes its entry off the exchange within a minute, whatever its user chose to do with a position. What the entry bought by then is a position, with its protective orders. See "An entry at a price" in [orders.md](orders.md).
 - **A close settles the orders of the agent first,** and then takes the stop-loss off the exchange and closes the position at the market. When the position cannot be closed, the stop-loss is placed again, and the answer is `Failed`. See "Closing a position" in [orders.md](orders.md).
 - Where nothing answers, no agent holds anything: nothing stands in the way of a change or a deletion, no user is asked what to do with a position, and no control that closes one is shown. The tests of Agents use a stand-in, `StandInExposure`.
 
@@ -545,7 +546,6 @@ An event names a user and an agent by their ids, and never holds a name or a num
 
 ## Not built yet
 
-- Cancelling an entry that has not filled when its agent stops running (FR-BIN-S2). No entry rests yet: an entry is placed at the market. See "Not built yet" in [orders.md](orders.md).
 - Stopping the cycle of an agent that its user pauses or stops while the cycle runs. Whether an agent runs is asked when its cycle starts, and again, under the lock of its account, as its entry is written: no entry is placed for an agent that no longer runs.
 - The leverage that the Risk Guard computes, as a setting of the exchange (FR-BIN-F2). The quantity of an entry is the one that the Risk Guard computed: see "The size of an order" in [risk-guard.md](risk-guard.md). Agents keeps the settings, and holds them to the bounds when they are saved.
 - Holding a stored risk setting to bounds that the file is given later. An agent whose value is outside bounds that were narrowed since keeps it, and so does a copy of it. Its form shows the value, and is saved only once the value is within the bounds.

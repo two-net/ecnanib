@@ -19,7 +19,8 @@ namespace Ecnanib.DecisionEngine;
 /// <para>
 /// <b>Its stop-loss is a price, and an order.</b> The price is here. The order that rests on the
 /// exchange at that price is a row of the <c>orders</c> table that names the position
-/// (FR-RSK-7). The take-profit is a price only: no order is placed for it yet.
+/// (FR-RSK-7). On the Spot market the take-profit is an order as well, of one pair with the
+/// stop-loss (FR-BIN-S2). On the Futures market it is a price only: no order is placed for it yet.
 /// </para>
 /// <para>
 /// It says the mode, the market, and the symbol that the agent had when the position was
@@ -114,6 +115,9 @@ public enum ExitReason
 
     /// <summary>Its stop-loss could not be placed, so the service closed it at market (FR-RSK-7).</summary>
     ProtectionFailed,
+
+    /// <summary>Its take-profit was executed (FR-BIN-S2).</summary>
+    TakeProfit,
 }
 
 internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>

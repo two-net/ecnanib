@@ -91,7 +91,8 @@ internal static class BinanceCalls
     /// <summary>
     /// Every symbol of the Spot market with its rules: one that the configuration file of the
     /// tests does not list, and its two, in another order than the file's. One names the least
-    /// value of an order as Binance used to, and is not traded for the moment.
+    /// value of an order as Binance used to, is not traded for the moment, and allows the pair
+    /// of a stop-loss and a take-profit without taking either of the two.
     /// </summary>
     public const string SpotSymbols =
         """
@@ -109,7 +110,7 @@ internal static class BinanceCalls
                   "applyMaxToMarket": false, "avgPriceMins": 5 }
               ], "permissions": [], "permissionSets": [] },
             { "symbol": "SOLUSDT", "status": "BREAK", "baseAsset": "SOL", "baseAssetPrecision": 8, "quoteAsset": "USDT",
-              "quoteAssetPrecision": 8, "orderTypes": [ "LIMIT", "MARKET" ], "isSpotTradingAllowed": true,
+              "quoteAssetPrecision": 8, "orderTypes": [ "LIMIT", "MARKET" ], "ocoAllowed": true, "isSpotTradingAllowed": true,
               "filters": [
                 { "filterType": "PRICE_FILTER", "minPrice": "0.01000000", "maxPrice": "100000.00000000", "tickSize": "0.01000000" },
                 { "filterType": "LOT_SIZE", "minQty": "0.00100000", "maxQty": "90000.00000000", "stepSize": "0.00100000" },
@@ -118,7 +119,7 @@ internal static class BinanceCalls
             { "symbol": "BTCUSDT", "status": "TRADING", "baseAsset": "BTC", "baseAssetPrecision": 8, "quoteAsset": "USDT",
               "quoteAssetPrecision": 8,
               "orderTypes": [ "LIMIT", "LIMIT_MAKER", "MARKET", "STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT" ],
-              "isSpotTradingAllowed": true,
+              "ocoAllowed": true, "otoAllowed": true, "isSpotTradingAllowed": true,
               "filters": [
                 { "filterType": "PRICE_FILTER", "minPrice": "0.01000000", "maxPrice": "1000000.00000000", "tickSize": "0.01000000" },
                 { "filterType": "LOT_SIZE", "minQty": "0.00001000", "maxQty": "9000.00000000", "stepSize": "0.00001000" },

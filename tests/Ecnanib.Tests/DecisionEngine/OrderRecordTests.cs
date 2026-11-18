@@ -221,7 +221,7 @@ public class OrderRecordTests
             id, agentId, userId, TradingMode.Demo, Market.Spot, "BTCUSDT", cycleId: null, positionId: null,
             clientOrderId ?? Order.ClientOrderIdOf(id), exchangeOrderId: null, OrderPurpose.Entry, OrderType.Market, OrderSide.Buy,
             price: null, stopLoss: 59000m, takeProfit: 62000m, quantity: 0.01m, status, executedQuantity: 0m, averagePrice: null,
-            exitReason: null, sends: 1, fillsRecorded: false, Morning, Morning, checkedAt: null);
+            exitReason: null, sends: 1, fillsRecorded: false, Morning, Morning, checkedAt: null, pairId: null, cancelAfter: null);
     }
 
     private static Position PositionOf(Guid agentId, Guid userId, bool closed) => new(

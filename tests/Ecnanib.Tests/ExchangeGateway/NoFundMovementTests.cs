@@ -41,12 +41,15 @@ public class NoFundMovementTests
 
     // Everything that the gateway sends to Binance about an order: it places one, asks what
     // became of it, takes it off the exchange, and reads its executions, on each market, and
-    // on the Futures market the same for a stop, which Binance keeps apart there. An order
-    // buys or sells in the account of the credential. None of these calls moves funds out of
-    // that account, into it, or between its wallets: Binance has those under sapi.
+    // on the Futures market the same for a stop, which Binance keeps apart there. On the Spot
+    // market it places the pair of a stop-loss and a take-profit as one list, and takes the
+    // list off. An order buys or sells in the account of the credential. None of these calls
+    // moves funds out of that account, into it, or between its wallets: Binance has those
+    // under sapi.
     private static readonly string[] Orders =
     [
         "DELETE /api/v3/order",
+        "DELETE /api/v3/orderList",
         "DELETE /fapi/v1/algoOrder",
         "DELETE /fapi/v1/order",
         "GET /api/v3/myTrades",
@@ -55,6 +58,7 @@ public class NoFundMovementTests
         "GET /fapi/v1/order",
         "GET /fapi/v1/userTrades",
         "POST /api/v3/order",
+        "POST /api/v3/orderList/oco",
         "POST /fapi/v1/algoOrder",
         "POST /fapi/v1/order",
     ];
@@ -82,9 +86,11 @@ public class NoFundMovementTests
     private static readonly string[] OrderOperations =
     [
         nameof(IExchangeOrders.CancelAsync),
+        nameof(IExchangeOrders.CancelPairAsync),
         nameof(IExchangeOrders.FillsAsync),
         nameof(IExchangeOrders.FindAsync),
         nameof(IExchangeOrders.PlaceAsync),
+        nameof(IExchangeOrders.PlacePairAsync),
     ];
 
     [Fact]
@@ -125,7 +131,7 @@ public class NoFundMovementTests
                     var id = $"{market}-{mode}-{type}";
                     var which = new ExchangeOrderRef(id, MarketService.Symbol, type);
                     var order = new ExchangeOrderRequest(
-                        id, MarketService.Symbol, ExchangeOrderSide.Sell, type, 0.01m, type == ExchangeOrderType.Stop ? 59000m : null, Closes: true);
+                        id, MarketService.Symbol, ExchangeOrderSide.Sell, type, 0.01m, type == ExchangeOrderType.Market ? null : 59000m, Closes: true);
 
                     var placed = await orders.PlaceAsync(BinanceCalls.User, market, mode, apiKey, secretKey, order, TestContext.Current.CancellationToken);
                     await orders.FindAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, TestContext.Current.CancellationToken);
@@ -136,6 +142,14 @@ public class NoFundMovementTests
                 }
             }
 
+            // The pair of the Spot market: placed as one list, and taken off as one.
+            var pair = new ExchangePairRequest($"{mode}-Pair", MarketService.Symbol, 0.01m, $"{mode}-StopLoss", 59000m, $"{mode}-TakeProfit", 62000m);
+
+            await orders.PlacePairAsync(BinanceCalls.User, mode, apiKey, secretKey, pair, TestContext.Current.CancellationToken);
+            await orders.CancelPairAsync(
+                BinanceCalls.User, mode, apiKey, secretKey, new ExchangePairRef(pair.PairId, pair.Symbol, pair.StopLossId, pair.TakeProfitId),
+                TestContext.Current.CancellationToken);
+
             await marketData.GetMarkPriceAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
             await marketData.GetOpenInterestAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
         }
@@ -145,11 +159,14 @@ public class NoFundMovementTests
             Reads.Concat(Orders).Order(StringComparer.Ordinal),
             binance.Calls.Select(call => $"{call.Method} {call.Address.AbsolutePath}").Distinct().Order(StringComparer.Ordinal));
 
-        // Only a call about an order is anything but a GET, and each of those names one order
-        // by its identifier: it carries no amount of an asset to move, and no address to move it to.
+        // Only a call about an order is anything but a GET, and each of those names one order,
+        // or one pair of them, by its identifier: it carries no amount of an asset to move, and
+        // no address to move it to.
         Assert.All(
             binance.Calls.Where(call => call.Method != "GET"),
-            call => Assert.Contains(call.Query, parameter => parameter.Name is "newClientOrderId" or "origClientOrderId" or "clientAlgoId"));
+            call => Assert.Contains(
+                call.Query,
+                parameter => parameter.Name is "newClientOrderId" or "origClientOrderId" or "clientAlgoId" or "listClientOrderId"));
 
         // Every call sends nothing but its address: a call about an order as well.
         Assert.All(binance.Calls, call => Assert.Null(call.Body));

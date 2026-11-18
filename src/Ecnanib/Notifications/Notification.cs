@@ -58,6 +58,12 @@ public enum NotificationType
     /// position was closed at market, or could not be closed either (FR-RSK-7).
     /// </summary>
     ProtectionFailure,
+
+    /// <summary>
+    /// An entry was skipped: the account of its user does not hold what the plan needs
+    /// (FR-BIN-S3).
+    /// </summary>
+    EntrySkipped,
 }
 
 internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>

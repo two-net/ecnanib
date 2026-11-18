@@ -12,8 +12,9 @@ namespace Ecnanib.Tests.Notifications;
 
 /// <summary>
 /// In-app notifications cover an order or protection failure (FR-NTF-1): the user of an agent is
-/// alerted when the stop-loss of its position could not be placed (FR-RSK-7). A notification
-/// belongs to one user, and holds no secret. See docs/notifications.md.
+/// alerted when the stop-loss of its position could not be placed (FR-RSK-7), and notified when
+/// an entry is skipped because the quote balance is below what the plan needs (FR-BIN-S3). A
+/// notification belongs to one user, and holds no secret. See docs/notifications.md.
 /// </summary>
 public class NotificationTests
 {
@@ -66,6 +67,62 @@ public class NotificationTests
             TestContext.Current.CancellationToken));
 
         Assert.Equal(0, application.Database.Scalar<long>("SELECT count(*) FROM notifications"));
+    }
+
+    [Fact]
+    public async Task What_is_raised_once_in_a_time_is_not_raised_again_about_the_same_agent_within_it()
+    {
+        var clock = new TestClock(Morning);
+        using var application = new AccountsApplication(clock: clock);
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var grace = await application.RegisterVerifiedAsync(Grace);
+        var agent = await application.GiveAgentAsync(ada.Id, Morning, name: "Swing");
+        var other = await application.GiveAgentAsync(ada.Id, Morning, name: "Other", symbol: "SOLUSDT");
+        var day = TimeSpan.FromDays(1);
+
+        Task<bool> RaiseOnceAsync(Guid userId, NotificationType type, Guid about) =>
+            application.Notifications.RaiseOnceAsync(userId, type, about, "An entry was skipped.", day, TestContext.Current.CancellationToken);
+
+        // The first is raised. What happens again while nothing changes is not said again.
+        Assert.True(await RaiseOnceAsync(ada.Id, NotificationType.EntrySkipped, agent));
+
+        clock.Set(Morning.AddHours(23));
+        Assert.False(await RaiseOnceAsync(ada.Id, NotificationType.EntrySkipped, agent));
+
+        // It is said once for each agent, for each thing that it is about, and for each user:
+        // what is asked is asked by owner, so the notification of another user stands in no way.
+        Assert.True(await RaiseOnceAsync(ada.Id, NotificationType.EntrySkipped, other));
+        Assert.True(await RaiseOnceAsync(ada.Id, NotificationType.ProtectionFailure, agent));
+        Assert.True(await RaiseOnceAsync(grace.Id, NotificationType.EntrySkipped, agent));
+
+        // And again once the time has passed.
+        clock.Set(Morning.AddDays(1));
+        Assert.True(await RaiseOnceAsync(ada.Id, NotificationType.EntrySkipped, agent));
+
+        Assert.Equal(5, application.Database.Scalar<long>("SELECT count(*) FROM notifications"));
+        Assert.Equal(5, application.Events().Count(said => said.Area == "Ecnanib.Notifications.StoredNotifications"));
+    }
+
+    [Fact]
+    public async Task The_page_says_what_each_kind_of_notification_is_about()
+    {
+        using var application = new AccountsApplication(clock: new TestClock(Morning));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.Id, Morning, name: "Swing");
+        using var client = application.CreateClient();
+        await client.SignInAsync(Ada);
+
+        // One of every kind: a kind that the page has no words for would fail the page.
+        foreach (var type in Enum.GetValues<NotificationType>())
+        {
+            await application.Notifications.RaiseAsync(ada.Id, type, agent, $"Something of the kind {type}.", TestContext.Current.CancellationToken);
+        }
+
+        var page = AgentBrowser.Read(await client.PageAsync(AgentBrowser.AgentStatePage(agent)));
+
+        Assert.Contains("<strong>Order or protection failure</strong>", page);
+        Assert.Contains("<strong>Entry skipped</strong>", page);
+        Assert.All(Enum.GetValues<NotificationType>(), type => Assert.Contains($"Something of the kind {type}.", page));
     }
 
     [Fact]

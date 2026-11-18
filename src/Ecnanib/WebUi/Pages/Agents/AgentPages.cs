@@ -274,6 +274,7 @@ public static class AgentPages
     public static string Describe(NotificationType type) => type switch
     {
         NotificationType.ProtectionFailure => "Order or protection failure",
+        NotificationType.EntrySkipped => "Entry skipped",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "The type has no description."),
     };
 

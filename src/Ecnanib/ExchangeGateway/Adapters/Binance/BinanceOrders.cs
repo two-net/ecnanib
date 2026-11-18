@@ -7,9 +7,10 @@ using Ecnanib.Shared;
 namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 
 /// <summary>
-/// The orders of Binance, behind the common interface: an order at the market and a stop, on the
-/// Spot market and on the USDⓈ-margined perpetual Futures market, each on the real exchange and
-/// in Binance's test environment (FR-BIN-1, FR-BIN-2, FR-BIN-6). See docs/orders.md.
+/// The orders of Binance, behind the common interface: an order at the market, an order at a
+/// price, and a stop, on the Spot market and on the USDⓈ-margined perpetual Futures market, and
+/// the pair of a stop-loss and a take-profit of the Spot market, each on the real exchange and
+/// in Binance's test environment (FR-BIN-1, FR-BIN-2, FR-BIN-6, FR-BIN-S2). See docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,6 +23,13 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// like any other, of the type <c>STOP_LOSS</c>. On the Futures market Binance takes it as a
 /// conditional order, with calls of its own, and gives it an id of its own until it is triggered:
 /// then it becomes an order, and is known by that order's id.
+/// </para>
+/// <para>
+/// <b>The pair of the Spot market is one list of two orders,</b> which Binance calls an OCO: a
+/// take-profit above the price and a stop-loss below it, each placed at the market when the price
+/// reaches its trigger. Binance takes both with one call or neither, ends the other when one is
+/// triggered, and takes both off with one call. Each is an order like any other, with an
+/// identifier of its own, and is asked about as one.
 /// </para>
 /// <para>
 /// <b>How a call ended says whether there is an order,</b> and errs on the side of not knowing.
@@ -71,7 +79,15 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
                 order.Symbol,
                 side,
                 quantity,
-                Positive(order.TriggerPrice ?? 0m, nameof(order)),
+                Positive(order.Price ?? 0m, nameof(order)),
+                id,
+                order.Closes),
+            ExchangeOrderType.Limit => BinanceEndpoint.LimitOrderOf(
+                market,
+                order.Symbol,
+                side,
+                quantity,
+                Positive(order.Price ?? 0m, nameof(order)),
                 id,
                 order.Closes),
             _ => throw new ArgumentOutOfRangeException(nameof(order), order.Type, null),
@@ -146,28 +162,95 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
         return new ExchangeFills(answer.Outcome, answer.Value ?? []);
     }
 
-    /// <summary>
-    /// What the end of a call says about the order. See the remarks of the class.
-    /// </summary>
+    public async Task<ExchangePairResult> PlacePairAsync(
+        Guid userId,
+        TradingMode mode,
+        string apiKey,
+        string secretKey,
+        ExchangePairRequest pair,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(apiKey);
+        ArgumentNullException.ThrowIfNull(secretKey);
+        ArgumentNullException.ThrowIfNull(pair);
+
+        var (pairId, stopLossId, takeProfitId) = Identifiers(pair.PairId, pair.StopLossId, pair.TakeProfitId, nameof(pair));
+
+        var endpoint = BinanceEndpoint.PairOf(
+            pair.Symbol,
+            Positive(pair.Quantity, nameof(pair)),
+            pairId,
+            Positive(pair.TakeProfitPrice, nameof(pair)),
+            takeProfitId,
+            Positive(pair.StopLossPrice, nameof(pair)),
+            stopLossId);
+
+        var answer = await call.AskSignedAsync(
+            endpoint, mode, userId, apiKey, secretKey, body => PairOf(body, stopLossId, takeProfitId), cancellationToken);
+
+        return ResultOf(answer, places: true);
+    }
+
+    public async Task<ExchangePairResult> CancelPairAsync(
+        Guid userId,
+        TradingMode mode,
+        string apiKey,
+        string secretKey,
+        ExchangePairRef pair,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(apiKey);
+        ArgumentNullException.ThrowIfNull(secretKey);
+        ArgumentNullException.ThrowIfNull(pair);
+
+        var (pairId, stopLossId, takeProfitId) = Identifiers(pair.PairId, pair.StopLossId, pair.TakeProfitId, nameof(pair));
+
+        var answer = await call.AskSignedAsync(
+            BinanceEndpoint.PairCancelOf(pair.Symbol, pairId),
+            mode,
+            userId,
+            apiKey,
+            secretKey,
+            body => PairOf(body, stopLossId, takeProfitId),
+            cancellationToken);
+
+        return ResultOf(answer, places: false);
+    }
+
+    /// <summary>What the end of a call says about the order. See the remarks of the class.</summary>
     /// <param name="answer">How the call ended, and what it was answered with.</param>
     /// <param name="places">Whether the call placed the order. Another call asked about it, or took it off.</param>
-    private static ExchangeOrderResult ResultOf(BinanceAnswer<ExchangeOrder> answer, bool places)
+    private static ExchangeOrderResult ResultOf(BinanceAnswer<ExchangeOrder> answer, bool places) =>
+        OutcomeOf(answer, places) is var outcome && outcome == ExchangeOrderOutcome.Answered
+            ? new ExchangeOrderResult(outcome, answer.Value)
+            : ExchangeOrderResult.Without(outcome);
+
+    /// <summary>The same of a call about a pair: what it says, it says about both orders.</summary>
+    private static ExchangePairResult ResultOf(BinanceAnswer<PairOrders> answer, bool places) =>
+        OutcomeOf(answer, places) is var outcome && outcome == ExchangeOrderOutcome.Answered
+            ? new ExchangePairResult(outcome, answer.Value!.StopLoss, answer.Value.TakeProfit)
+            : ExchangePairResult.Without(outcome);
+
+    /// <summary>What the end of a call about an order, or about a pair of them, says. See the remarks of the class.</summary>
+    /// <param name="answer">How the call ended, and what it was answered with.</param>
+    /// <param name="places">Whether the call placed something. Another call asked about it, or took it off.</param>
+    private static ExchangeOrderOutcome OutcomeOf<T>(BinanceAnswer<T> answer, bool places)
     {
         switch (answer.Outcome)
         {
             case ExchangeCallOutcome.Succeeded:
-                return new ExchangeOrderResult(ExchangeOrderOutcome.Answered, answer.Value);
+                return ExchangeOrderOutcome.Answered;
 
             case ExchangeCallOutcome.AuthenticationFailed:
-                return ExchangeOrderResult.Without(ExchangeOrderOutcome.KeyRefused);
+                return ExchangeOrderOutcome.KeyRefused;
 
             // The limiter held it back, or Binance answered that it has had too many: neither
             // reached the orders.
             case ExchangeCallOutcome.RateLimited:
-                return ExchangeOrderResult.Without(ExchangeOrderOutcome.NotSent);
+                return ExchangeOrderOutcome.NotSent;
 
             case ExchangeCallOutcome.TimedOut:
-                return ExchangeOrderResult.Without(ExchangeOrderOutcome.Unknown);
+                return ExchangeOrderOutcome.Unknown;
         }
 
         // No answer at all, an answer that says that the call went well and does not read, a
@@ -176,16 +259,51 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
             || status is < 400 or >= 500 or 408
             || (answer.Code is { } unsaid && Unsaid.Contains(unsaid)))
         {
-            return ExchangeOrderResult.Without(ExchangeOrderOutcome.Unknown);
+            return ExchangeOrderOutcome.Unknown;
         }
 
         // Binance's own word that it has no such order, to a call that asked about one.
         if (!places && answer.Code is { } code && NoSuchOrder.Contains(code))
         {
-            return ExchangeOrderResult.Without(ExchangeOrderOutcome.NotFound);
+            return ExchangeOrderOutcome.NotFound;
         }
 
-        return ExchangeOrderResult.Without(ExchangeOrderOutcome.Rejected);
+        return ExchangeOrderOutcome.Rejected;
+    }
+
+    /// <summary>
+    /// The two orders of a pair as an answer about the pair says them, or null when the answer
+    /// does not say both. Binance reports each order of a list, and names it by its identifier:
+    /// as <c>clientOrderId</c> when the list was placed, and as <c>origClientOrderId</c> when it
+    /// was taken off, where <c>clientOrderId</c> is the identifier of the call that took it off.
+    /// </summary>
+    private static PairOrders? PairOf(JsonElement answer, string stopLossId, string takeProfitId)
+    {
+        if (answer.ValueKind != JsonValueKind.Object
+            || !answer.TryGetProperty("orderReports", out var reports)
+            || reports.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        ExchangeOrder? stopLoss = null;
+        ExchangeOrder? takeProfit = null;
+
+        foreach (var report in reports.EnumerateArray())
+        {
+            var named = Text(report, "origClientOrderId") ?? Text(report, "clientOrderId");
+
+            if (named == stopLossId)
+            {
+                stopLoss = SpotOrder(report);
+            }
+            else if (named == takeProfitId)
+            {
+                takeProfit = SpotOrder(report);
+            }
+        }
+
+        return stopLoss is not null && takeProfit is not null ? new PairOrders(stopLoss, takeProfit) : null;
     }
 
     /// <summary>What reads the answer about an order of a market: a conditional order of the Futures market reads differently.</summary>
@@ -345,10 +463,24 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
             : throw new ArgumentException(
                 "The identifier of an order is 1 to 36 characters, of letters, digits, and . : / _ -", nameof(clientOrderId));
 
+    /// <summary>
+    /// The identifiers of a pair and of its two orders as they are sent. The three differ: an
+    /// order is asked about by its own, and Binance keeps the one of the pair apart from them.
+    /// </summary>
+    private static (string Pair, string StopLoss, string TakeProfit) Identifiers(
+        string pairId, string stopLossId, string takeProfitId, string name)
+    {
+        var (pair, stopLoss, takeProfit) = (Identifier(pairId), Identifier(stopLossId), Identifier(takeProfitId));
+
+        return pair != stopLoss && pair != takeProfit && stopLoss != takeProfit
+            ? (pair, stopLoss, takeProfit)
+            : throw new ArgumentException("A pair and each of its two orders carry an identifier of their own.", name);
+    }
+
     /// <summary>An amount of an order as it is sent: in digits, with a point, whatever the culture.</summary>
     private static string Positive(decimal amount, string name) => amount > 0m
         ? amount.ToString(CultureInfo.InvariantCulture)
-        : throw new ArgumentException("A quantity and a trigger price of an order are above zero.", name);
+        : throw new ArgumentException("A quantity and a price of an order are above zero.", name);
 
     /// <summary>What an answer says under a name as text, or null when it says nothing there as text.</summary>
     private static string? Text(JsonElement body, string name) =>
@@ -393,4 +525,7 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
 
     [GeneratedRegex(@"^[\.A-Z:/a-z0-9_-]{1,36}$")]
     private static partial Regex TakenByBinance();
+
+    /// <summary>The two orders of a pair, as an answer about the pair says them.</summary>
+    private sealed record PairOrders(ExchangeOrder StopLoss, ExchangeOrder TakeProfit);
 }

@@ -308,10 +308,21 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
     public static readonly ExchangeKeyCheck TakenInLive =
         new(KeyVerdict.Accepted, SpotTrading: true, FuturesTrading: true, CanWithdraw: false, IpRestricted: true);
 
+    /// <summary>What an account of the tests holds unless a test says otherwise: more USDT than a plan of the tests needs.</summary>
+    public static readonly ExchangeBalances Funded =
+        new(ExchangeCallOutcome.Succeeded, [new ExchangeBalance("USDT", Total: 100_000m, Available: 100_000m)]);
+
     private readonly ConcurrentQueue<AskedKey> _asked = new();
+    private readonly ConcurrentQueue<(Market Market, TradingMode Mode)> _balancesAsked = new();
 
     /// <summary>Every time it was asked, in order.</summary>
     public IReadOnlyList<AskedKey> Asked => [.. _asked];
+
+    /// <summary>What Binance says that an account holds on a market in an environment, or how asking ends.</summary>
+    public Func<Market, TradingMode, ExchangeBalances> Balances { get; set; } = (_, _) => Funded;
+
+    /// <summary>Every time it was asked what an account holds, in order.</summary>
+    public IReadOnlyList<(Market Market, TradingMode Mode)> BalancesAsked => [.. _balancesAsked];
 
     /// <summary>What an AI provider, named by its code, says about a key.</summary>
     public Func<string, string, KeyVerdict> AiAnswer { get; set; } = (_, _) => KeyVerdict.Accepted;
@@ -346,10 +357,13 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
     public Task<ExchangeTime> GetServerTimeAsync(Market market, TradingMode mode, CancellationToken cancellationToken) =>
         Task.FromResult(new ExchangeTime(ExchangeCallOutcome.Succeeded, TimeProvider.System.GetUtcNow()));
 
-    // An account that holds nothing: nothing of these tests reads a balance.
     public Task<ExchangeBalances> GetBalancesAsync(
-        Guid userId, Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken) =>
-        Task.FromResult(new ExchangeBalances(ExchangeCallOutcome.Succeeded, []));
+        Guid userId, Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
+    {
+        _balancesAsked.Enqueue((market, mode));
+
+        return Task.FromResult(Balances(market, mode));
+    }
 
     private async Task MeanwhileAsync()
     {

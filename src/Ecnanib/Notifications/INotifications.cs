@@ -5,8 +5,9 @@ namespace Ecnanib.Notifications;
 /// (FR-NTF-1). See docs/notifications.md.
 /// </summary>
 /// <remarks>
-/// What is built is what the first event needs: a failure of the protection of a position, which
-/// its user is alerted to (FR-RSK-7). The list of all notifications of a user, marking one as
+/// What is built is what two events need: a failure of the protection of a position, which its
+/// user is alerted to (FR-RSK-7), and an entry that is skipped because the account does not hold
+/// what the plan needs (FR-BIN-S3). The list of all notifications of a user, marking one as
 /// read, the other events, and email for critical events are not built.
 /// </remarks>
 public interface INotifications
@@ -26,6 +27,21 @@ public interface INotifications
     /// </param>
     /// <param name="cancellationToken">Cancels the write.</param>
     Task RaiseAsync(Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Raises a notification about an agent, unless one of the same type about the same agent
+    /// was raised within a time: for what happens again and again while nothing changes, and is
+    /// worth saying once in that time.
+    /// </summary>
+    /// <param name="userId">The user who is told.</param>
+    /// <param name="type">What it is about.</param>
+    /// <param name="agentId">The agent that it is about.</param>
+    /// <param name="content">What it says, as for <see cref="RaiseAsync"/>.</param>
+    /// <param name="within">The time in which it is said once.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether it was raised. It was not when one was raised within the time.</returns>
+    Task<bool> RaiseOnceAsync(
+        Guid userId, NotificationType type, Guid agentId, string content, TimeSpan within, CancellationToken cancellationToken);
 
     /// <summary>
     /// The notifications about one agent that the signed-in user has not read, newest first.

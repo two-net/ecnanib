@@ -65,17 +65,19 @@ public class OrderSettlingTests
         // Once the stop-loss was last asked about longer ago than the time between
         // reconciliations of the configuration file, which is 4 minutes in the file of the
         // tests, it is asked about again: it may have been executed, or taken off at Binance.
+        // The take-profit of its pair is asked about with it.
         application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(2));
         await application.Application.SettleOrdersAsync(application.Clock.GetUtcNow());
 
-        var stopLoss = (await application.OrdersOfAsync(agent.Id))[1];
-        Assert.Equal([stopLoss.ClientOrderId], application.Binance.AskedAbout);
-        Assert.Equal((OrderStatus.Open, application.Clock.GetUtcNow()), (stopLoss.Status, stopLoss.CheckedAt));
+        var protection = (await application.OrdersOfAsync(agent.Id)).Skip(1).ToList();
+        Assert.Equal([OrderPurpose.StopLoss, OrderPurpose.TakeProfit], protection.Select(order => order.Purpose));
+        Assert.Equal(protection.Select(order => order.ClientOrderId), application.Binance.AskedAbout);
+        Assert.All(protection, order => Assert.Equal((OrderStatus.Open, application.Clock.GetUtcNow()), (order.Status, order.CheckedAt)));
 
         // And not again by the next run.
         await application.Application.SettleOrdersAsync(application.Clock.GetUtcNow());
 
-        Assert.Single(application.Binance.AskedAbout);
+        Assert.Equal(2, application.Binance.AskedAbout.Count);
     }
 
     [Fact]
@@ -110,7 +112,7 @@ public class OrderSettlingTests
 
         // The agent of Grace is settled: its entry was found, and its position is protected.
         Assert.Equal(
-            [(OrderPurpose.Entry, OrderStatus.Filled), (OrderPurpose.StopLoss, OrderStatus.Open)],
+            [(OrderPurpose.Entry, OrderStatus.Filled), (OrderPurpose.StopLoss, OrderStatus.Open), (OrderPurpose.TakeProfit, OrderStatus.Open)],
             (await application.OrdersOfAsync(graces.Id)).Select(order => (order.Purpose, order.Status)));
         Assert.True(await settled.HasReconciledAsync(new RunningAgent(graces, []), TestContext.Current.CancellationToken));
 

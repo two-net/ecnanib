@@ -32,6 +32,31 @@ internal sealed class StoredNotifications(
             "A notification was raised for user {UserId} about agent {AgentId}: {NotificationType}", userId, agentId, type);
     }
 
+    public async Task<bool> RaiseOnceAsync(
+        Guid userId, NotificationType type, Guid agentId, string content, TimeSpan within, CancellationToken cancellationToken)
+    {
+        var since = clock.GetUtcNow() - within;
+
+        await using (var context = await contexts.CreateDbContextAsync(cancellationToken))
+        {
+            // Asked for by owner. Two that ask at the same moment may both raise one: it is
+            // said twice then, which loses nothing.
+            if (await context.Set<Notification>()
+                .AsNoTracking()
+                .OwnedBy(userId)
+                .AnyAsync(
+                    notification => notification.AgentId == agentId && notification.Type == type && notification.CreatedAt > since,
+                    cancellationToken))
+            {
+                return false;
+            }
+        }
+
+        await RaiseAsync(userId, type, agentId, content, cancellationToken);
+
+        return true;
+    }
+
     public async Task<IReadOnlyList<NotificationView>> UnreadOfAgentAsync(HttpContext request, Guid agentId)
     {
         var userId = SignedInUser.RequiredIdOf(request);

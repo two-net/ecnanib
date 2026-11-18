@@ -188,7 +188,7 @@ The ranges are fixed, in `RoleRanges`, and are no settings.
 - **A plan that breaks a rule is no valid result.** The Strategist is called once more, and a cycle whose Strategist breaks a rule again ends with no decision and no new entry (FR-TEAM-9). Nothing of such a plan is taken out or repaired: a short on Spot is not read as a hold.
 - **The Strategist is told the rules.** Its instructions say which actions go with a position and which with none, and where a new stop-loss may stand: see "The roles" in [prompts.md](prompts.md).
 - **The position is the one of the data package,** which is what the model was told. What an agent holds may change while its cycle runs: a stop-loss that is hit closes the position. So the Risk Guard asks again what the agent holds, when it checks the plan: see "The facts" in [risk-guard.md](risk-guard.md).
-- An entry that rests on the exchange and has not filled is no position. An unfilled limit entry is cancelled at the next cycle (FR-BIN-S2), which is not built.
+- An entry that rests on the exchange and has not filled is no position. An unfilled limit entry is cancelled at the next cycle (FR-BIN-S2): the cycle settles the orders of its agent before its team is run, which takes the entry off the exchange. See "An entry at a price" in [orders.md](orders.md).
 
 ## The review
 

@@ -20,10 +20,19 @@ public class OrderPlacementTests
     private const string Id = "0193f3a1b2c34d5e8f9a0b1c2d3e4f50";
 
     private static readonly ExchangeOrderRequest Buy = new(
-        Id, MarketService.Symbol, ExchangeOrderSide.Buy, ExchangeOrderType.Market, 0.01m, TriggerPrice: null, Closes: false);
+        Id, MarketService.Symbol, ExchangeOrderSide.Buy, ExchangeOrderType.Market, 0.01m, Price: null, Closes: false);
+
+    private const string TakeProfitId = "0193f3a1b2c34d5e8f9a0b1c2d3e4f51";
+    private const string PairId = "0193f3a1b2c34d5e8f9a0b1c2d3e4f52";
 
     private static readonly ExchangeOrderRequest StopLoss = new(
-        Id, MarketService.Symbol, ExchangeOrderSide.Sell, ExchangeOrderType.Stop, 0.01m, TriggerPrice: 59000.5m, Closes: true);
+        Id, MarketService.Symbol, ExchangeOrderSide.Sell, ExchangeOrderType.Stop, 0.01m, Price: 59000.5m, Closes: true);
+
+    private static readonly ExchangeOrderRequest BuyAtAPrice = new(
+        Id, MarketService.Symbol, ExchangeOrderSide.Buy, ExchangeOrderType.Limit, 0.01m, Price: 59900.5m, Closes: false);
+
+    private static readonly ExchangePairRequest Pair = new(
+        PairId, MarketService.Symbol, 0.01m, StopLossId: Id, StopLossPrice: 59000.5m, TakeProfitId, TakeProfitPrice: 62000.5m);
 
     [Theory]
     [MemberData(nameof(BinanceCalls.MarketsAndEnvironments), MemberType = typeof(BinanceCalls))]
@@ -131,6 +140,222 @@ public class OrderPlacementTests
             Assert.Equal(ExchangeOrderOutcome.Answered, result.Outcome);
             Assert.Equal((ExchangeOrderStatus.Open, 0m, null, false), (result.Order!.Status, result.Order.ExecutedQuantity, result.Order.AveragePrice, result.Order.IsOver));
         });
+    }
+
+    [Theory]
+    [InlineData(Market.Spot, "POST /api/v3/order", "FULL")]
+    [InlineData(Market.Futures, "POST /fapi/v1/order", "RESULT")]
+    public async Task An_order_at_a_price_rests_until_it_is_executed_or_taken_off(Market market, string asks, string answers)
+    {
+        var binance = new TradingBinance();
+        using var application = BinanceCalls.Behind(binance.System);
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
+        var which = new ExchangeOrderRef(Id, MarketService.Symbol, ExchangeOrderType.Limit);
+
+        // Below the price of the symbol, which is 60000: nothing sells there yet.
+        var placed = await orders.PlaceAsync(
+            BinanceCalls.User, market, TradingMode.Demo, apiKey, secretKey, BuyAtAPrice, TestContext.Current.CancellationToken);
+
+        // The order of each market, good until it is taken off, at its price (FR-BIN-S2).
+        var call = Assert.Single(binance.System.Calls);
+        Assert.Equal(asks, $"{call.Method} {call.Address.AbsolutePath}");
+        Assert.Null(call.Body);
+        Assert.Equal(
+            [
+                ("symbol", MarketService.Symbol), ("side", "BUY"), ("type", "LIMIT"), ("timeInForce", "GTC"), ("quantity", "0.01"),
+                ("price", "59900.5"), ("newClientOrderId", Id), ("newOrderRespType", answers),
+            ],
+            call.Query.Take(8));
+
+        Assert.Equal(ExchangeOrderOutcome.Answered, placed.Outcome);
+        Assert.Equal((ExchangeOrderStatus.Open, 0m, null, false), (placed.Order!.Status, placed.Order.ExecutedQuantity, placed.Order.AveragePrice, placed.Order.IsOver));
+
+        // A part of it is executed, at its price, and the rest still rests.
+        binance.Execute(Assert.Single(binance.Orders), 0.004m);
+
+        var partly = await orders.FindAsync(BinanceCalls.User, market, TradingMode.Demo, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            (ExchangeOrderStatus.PartiallyFilled, 0.004m, 59900.5m, false),
+            (partly.Order!.Status, partly.Order.ExecutedQuantity, partly.Order.AveragePrice, partly.Order.IsOver));
+
+        // Taken off, it is over, and says what was executed of it before.
+        var taken = await orders.CancelAsync(BinanceCalls.User, market, TradingMode.Demo, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            (ExchangeOrderOutcome.Answered, ExchangeOrderStatus.Canceled, 0.004m, true),
+            (taken.Outcome, taken.Order!.Status, taken.Order.ExecutedQuantity, taken.Order.IsOver));
+    }
+
+    [Fact]
+    public async Task An_order_at_a_price_that_the_market_has_reached_is_executed_at_once_and_says_its_executions_on_the_Spot_market()
+    {
+        var binance = new TradingBinance { FeeAsset = "BTC" };
+        using var application = BinanceCalls.Behind(binance.System);
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
+
+        var placed = await orders.PlaceAsync(
+            BinanceCalls.User, Market.Spot, TradingMode.Demo, apiKey, secretKey, BuyAtAPrice with { Price = 60100m },
+            TestContext.Current.CancellationToken);
+
+        // At the price of the symbol, which is better than the one of the order, with the fee
+        // of the execution in the asset that was bought.
+        Assert.Equal((ExchangeOrderStatus.Filled, 0.01m, 60000m), (placed.Order!.Status, placed.Order.ExecutedQuantity, placed.Order.AveragePrice));
+
+        var fill = Assert.Single(placed.Order.Fills);
+        Assert.Equal((0.01m, 0.00001m, "BTC"), (fill.Quantity, fill.Fee, fill.FeeAsset));
+    }
+
+    [Theory]
+    [InlineData(TradingMode.Live)]
+    [InlineData(TradingMode.Demo)]
+    public async Task The_pair_of_the_Spot_market_is_one_signed_call_that_carries_an_identifier_for_the_pair_and_for_each_of_its_orders(TradingMode mode)
+    {
+        var binance = new TradingBinance();
+        using var application = BinanceCalls.Behind(binance.System);
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var (apiKey, secretKey) = BinanceCalls.CredentialOf(mode);
+
+        var result = await orders.PlacePairAsync(BinanceCalls.User, mode, apiKey, secretKey, Pair, TestContext.Current.CancellationToken);
+
+        // One call, to the address of the Spot market in the environment, with everything in
+        // its query. Both orders sell the same quantity: the take-profit above the price and
+        // the stop-loss below it, each placed at the market when the price reaches its trigger,
+        // and Binance ends the other then (FR-BIN-S2).
+        var call = Assert.Single(binance.System.Calls);
+        Assert.Equal($"POST {BinanceCalls.AddressOf(Market.Spot, mode)}/api/v3/orderList/oco", $"{call.Method} {call.Endpoint}");
+        Assert.Null(call.Body);
+        Assert.Equal(
+            [
+                ("symbol", MarketService.Symbol), ("side", "SELL"), ("quantity", "0.01"), ("listClientOrderId", PairId),
+                ("aboveType", "TAKE_PROFIT"), ("aboveStopPrice", "62000.5"), ("aboveClientOrderId", TakeProfitId),
+                ("belowType", "STOP_LOSS"), ("belowStopPrice", "59000.5"), ("belowClientOrderId", Id),
+                ("newOrderRespType", "RESULT"), ("recvWindow", "5000"),
+            ],
+            call.Query.Take(12));
+        Assert.Equal(["timestamp", "signature"], call.Query.Skip(12).Select(parameter => parameter.Name));
+        Assert.Equal(apiKey, call.Headers["X-MBX-APIKEY"]);
+        Assert.Equal(BinanceCalls.SignatureOf(call, secretKey), call.Query[^1].Value);
+
+        // Both rest, and each is said under its own number.
+        Assert.Equal(ExchangeOrderOutcome.Answered, result.Outcome);
+        Assert.Equal((ExchangeOrderStatus.Open, 0m), (result.StopLoss!.Status, result.StopLoss.ExecutedQuantity));
+        Assert.Equal((ExchangeOrderStatus.Open, 0m), (result.TakeProfit!.Status, result.TakeProfit.ExecutedQuantity));
+        Assert.Equal($"{binance.The(stop: true).Id}", result.StopLoss.ExchangeOrderId);
+        Assert.Equal($"{binance.TheTakeProfit().Id}", result.TakeProfit.ExchangeOrderId);
+
+        // No identifier of the pair is in the log.
+        var log = application.LogText();
+        Assert.All([PairId, Id, TakeProfitId, apiKey, secretKey], secret => Assert.DoesNotContain(secret, log));
+    }
+
+    [Fact]
+    public async Task Each_order_of_a_pair_is_asked_about_by_its_own_identifier_and_when_one_is_executed_the_other_has_ended()
+    {
+        var binance = new TradingBinance();
+        using var application = BinanceCalls.Behind(binance.System);
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
+        var stopLoss = new ExchangeOrderRef(Id, MarketService.Symbol, ExchangeOrderType.Stop);
+        var takeProfit = new ExchangeOrderRef(TakeProfitId, MarketService.Symbol, ExchangeOrderType.Stop);
+
+        await orders.PlacePairAsync(BinanceCalls.User, TradingMode.Demo, apiKey, secretKey, Pair, TestContext.Current.CancellationToken);
+
+        // The price reaches the take-profit.
+        binance.Execute(binance.TheTakeProfit());
+
+        var executed = await orders.FindAsync(
+            BinanceCalls.User, Market.Spot, TradingMode.Demo, apiKey, secretKey, takeProfit, TestContext.Current.CancellationToken);
+        var ended = await orders.FindAsync(
+            BinanceCalls.User, Market.Spot, TradingMode.Demo, apiKey, secretKey, stopLoss, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["GET /api/v3/order", "GET /api/v3/order"], binance.OrderCalls.Skip(1));
+        Assert.Equal([TakeProfitId, Id], binance.AskedAbout);
+        Assert.Equal((ExchangeOrderStatus.Filled, 0.01m, 62000.5m), (executed.Order!.Status, executed.Order.ExecutedQuantity, executed.Order.AveragePrice));
+        Assert.Equal((ExchangeOrderStatus.Expired, 0m, true), (ended.Order!.Status, ended.Order.ExecutedQuantity, ended.Order.IsOver));
+    }
+
+    [Fact]
+    public async Task A_pair_that_rests_is_taken_off_the_exchange_with_one_call_by_the_identifier_of_the_pair()
+    {
+        var binance = new TradingBinance();
+        using var application = BinanceCalls.Behind(binance.System);
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
+        var which = new ExchangePairRef(PairId, MarketService.Symbol, Id, TakeProfitId);
+
+        await orders.PlacePairAsync(BinanceCalls.User, TradingMode.Demo, apiKey, secretKey, Pair, TestContext.Current.CancellationToken);
+
+        var taken = await orders.CancelPairAsync(BinanceCalls.User, TradingMode.Demo, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+        var call = binance.System.Calls[^1];
+        Assert.Equal("DELETE /api/v3/orderList", $"{call.Method} {call.Address.AbsolutePath}");
+        Assert.Equal([("symbol", MarketService.Symbol), ("listClientOrderId", PairId)], call.Query.Take(2));
+        Assert.Null(call.Body);
+
+        // Binance reports each order that it took off under the identifier that the order
+        // carried, and the answer is read by that.
+        Assert.Equal(ExchangeOrderOutcome.Answered, taken.Outcome);
+        Assert.Equal((ExchangeOrderStatus.Canceled, $"{binance.The(stop: true).Id}"), (taken.StopLoss!.Status, taken.StopLoss.ExchangeOrderId));
+        Assert.Equal((ExchangeOrderStatus.Canceled, $"{binance.TheTakeProfit().Id}"), (taken.TakeProfit!.Status, taken.TakeProfit.ExchangeOrderId));
+        Assert.All(binance.Orders, order => Assert.Equal("CANCELED", order.Status));
+
+        // Taken off once more, no such pair rests.
+        var again = await orders.CancelPairAsync(BinanceCalls.User, TradingMode.Demo, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+        Assert.Equal((ExchangeOrderOutcome.NotFound, null, null), (again.Outcome, again.StopLoss, again.TakeProfit));
+    }
+
+    [Theory]
+
+    // Binance refused the pair: there is neither order.
+    [InlineData(400, """{ "code": -2010, "msg": "The relationship of the prices for the orders is not correct." }""", ExchangeOrderOutcome.Rejected)]
+    [InlineData(400, """{ "code": -2010, "msg": "Account has insufficient balance for requested action." }""", ExchangeOrderOutcome.Rejected)]
+    [InlineData(401, """{ "code": -2015, "msg": "Invalid API-key, IP, or permissions for action." }""", ExchangeOrderOutcome.KeyRefused)]
+    [InlineData(429, """{ "code": -1003, "msg": "Too many requests." }""", ExchangeOrderOutcome.NotSent)]
+
+    // What became of the call is not known: there may be both.
+    [InlineData(503, "", ExchangeOrderOutcome.Unknown)]
+    [InlineData(400, """{ "code": -1007, "msg": "Timeout waiting for response from backend server. Send status unknown; execution status unknown." }""", ExchangeOrderOutcome.Unknown)]
+
+    // An answer that says that the call went well, and does not say both orders: the same.
+    [InlineData(200, "{}", ExchangeOrderOutcome.Unknown)]
+    [InlineData(200, """{ "orderListId": 7, "orderReports": [ { "orderId": 28, "clientOrderId": "0193f3a1b2c34d5e8f9a0b1c2d3e4f50", "status": "NEW", "executedQty": "0.00000000" } ] }""", ExchangeOrderOutcome.Unknown)]
+    public async Task How_the_call_that_places_a_pair_ends_says_whether_there_are_its_orders_and_the_call_is_not_made_again(
+        int status, string body, ExchangeOrderOutcome expected)
+    {
+        var binance = new StandInSystem(_ => StandInSystem.Json((HttpStatusCode)status, body));
+        using var application = BinanceCalls.Behind(binance);
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
+
+        var result = await orders.PlacePairAsync(BinanceCalls.User, TradingMode.Demo, apiKey, secretKey, Pair, TestContext.Current.CancellationToken);
+
+        Assert.Equal((expected, null, null), (result.Outcome, result.StopLoss, result.TakeProfit));
+        Assert.Single(binance.Calls);
+    }
+
+    [Theory]
+    [InlineData(Id, Id, TakeProfitId)]
+    [InlineData(PairId, Id, Id)]
+    [InlineData(PairId, "has a space", TakeProfitId)]
+    public async Task A_pair_whose_identifiers_are_not_three_that_Binance_takes_is_an_error_of_the_caller_and_nothing_is_sent(
+        string pairId, string stopLossId, string takeProfitId)
+    {
+        var binance = new TradingBinance();
+        using var application = BinanceCalls.Behind(binance.System);
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
+
+        // An order is asked about by its own identifier, and Binance keeps the one of the pair
+        // apart from those of its orders.
+        await Assert.ThrowsAsync<ArgumentException>(() => orders.PlacePairAsync(
+            BinanceCalls.User, TradingMode.Demo, apiKey, secretKey,
+            Pair with { PairId = pairId, StopLossId = stopLossId, TakeProfitId = takeProfitId }, TestContext.Current.CancellationToken));
+
+        Assert.Empty(binance.System.Calls);
     }
 
     [Theory]
@@ -412,5 +637,12 @@ public class OrderPlacementTests
         Assert.Throws<ArgumentException>(() => new ExchangeOrderResult(ExchangeOrderOutcome.Answered, null));
         Assert.Throws<ArgumentException>(() => new ExchangeOrderResult(ExchangeOrderOutcome.Unknown, order));
         Assert.Null(ExchangeOrderResult.Without(ExchangeOrderOutcome.NotFound).Order);
+
+        // The same of a pair: both of its orders, or neither.
+        Assert.Same(order, new ExchangePairResult(ExchangeOrderOutcome.Answered, order, order).TakeProfit);
+        Assert.Throws<ArgumentException>(() => new ExchangePairResult(ExchangeOrderOutcome.Answered, order, null));
+        Assert.Throws<ArgumentException>(() => new ExchangePairResult(ExchangeOrderOutcome.Answered, null, order));
+        Assert.Throws<ArgumentException>(() => new ExchangePairResult(ExchangeOrderOutcome.Rejected, order, order));
+        Assert.Null(ExchangePairResult.Without(ExchangeOrderOutcome.Unknown).StopLoss);
     }
 }

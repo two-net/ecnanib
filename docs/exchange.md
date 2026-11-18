@@ -33,6 +33,7 @@ public sealed record ExchangeBalance(string Asset, decimal Total, decimal Availa
 |---|---|
 | **A caller names a market and an environment, and nothing of Binance.** | `Market` is `Spot` or `Futures`, and `TradingMode` is `Demo` or `Live`. The adapter is private to the gateway, and so are the paths, the parameters, and the errors of Binance. What a call gives is a type of the gateway. |
 | **Every operation of this interface reads.** | The clock of a market, what a credential may do, and what an account holds. The orders have an interface of their own: see "The orders" and "No funds are moved". |
+| **What an account holds is asked before an entry on Spot.** | `AgentOrders` of the Decision Engine asks `GetBalancesAsync` for the asset that the symbol of an entry is priced in, and skips an entry that the account does not cover (FR-BIN-S3). See "The quote balance" in [orders.md](orders.md). |
 | **The credential comes with the call.** | See "The credential". |
 | **A call with a credential says whose it is.** | `userId` is the user that the credential belongs to. It is for the limiter, which gives the users whose calls wait their turns, and it is not sent to Binance. An empty one is no call. See "The limiter". |
 | **A call is made once.** | The gateway does not call again after a failure. Whether a call is made again is its caller's to decide. |
@@ -81,11 +82,13 @@ The calls of the orders, each signed:
 
 | What | Call | Weight |
 |---|---|---|
-| Places an order on Spot: at the market, or a stop | `POST /api/v3/order` | 1 |
+| Places an order on Spot: at the market, at a price, or a stop | `POST /api/v3/order` | 1 |
 | What became of an order of Spot | `GET /api/v3/order` | 4 |
 | Takes an order of Spot off the exchange | `DELETE /api/v3/order` | 1 |
 | The executions of an order of Spot | `GET /api/v3/myTrades?symbol=…&orderId=…` | 5 |
-| Places an order at the market on Futures | `POST /fapi/v1/order` | 0 |
+| Places the pair of a stop-loss and a take-profit on Spot | `POST /api/v3/orderList/oco` | 1 |
+| Takes a pair of Spot off the exchange | `DELETE /api/v3/orderList` | 1 |
+| Places an order on Futures: at the market, or at a price | `POST /fapi/v1/order` | 0 |
 | What became of an order of Futures | `GET /fapi/v1/order` | 1 |
 | Takes an order of Futures off the exchange | `DELETE /fapi/v1/order` | 1 |
 | Places a stop on Futures | `POST /fapi/v1/algoOrder?algoType=CONDITIONAL` | 0 |
@@ -258,11 +261,25 @@ public interface IExchangeOrders
     Task<ExchangeFills> FillsAsync(
         Guid userId, Market market, TradingMode mode, string apiKey, string secretKey,
         string symbol, string exchangeOrderId, CancellationToken cancellationToken);
+
+    Task<ExchangePairResult> PlacePairAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey,
+        ExchangePairRequest pair, CancellationToken cancellationToken);
+
+    Task<ExchangePairResult> CancelPairAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey,
+        ExchangePairRef pair, CancellationToken cancellationToken);
 }
 
 public sealed record ExchangeOrderRequest(
     string ClientOrderId, string Symbol, ExchangeOrderSide Side, ExchangeOrderType Type,
-    decimal Quantity, decimal? TriggerPrice, bool Closes);
+    decimal Quantity, decimal? Price, bool Closes);
+
+public sealed record ExchangePairRequest(
+    string PairId, string Symbol, decimal Quantity,
+    string StopLossId, decimal StopLossPrice, string TakeProfitId, decimal TakeProfitPrice);
+
+public sealed record ExchangePairResult(ExchangeOrderOutcome Outcome, ExchangeOrder? StopLoss, ExchangeOrder? TakeProfit);
 
 public sealed record ExchangeOrderResult(ExchangeOrderOutcome Outcome, ExchangeOrder? Order);
 
@@ -275,10 +292,14 @@ public sealed record ExchangeOrder(
 |---|---|
 | **Every order carries the identifier that its caller gave it** (FR-BIN-6). | 1 to 36 characters of letters, digits, and `. : / _ -`, which is what Binance takes on both markets. It is sent as `newClientOrderId`, and for a stop of Futures as `clientAlgoId`. An identifier that Binance would not take is an error of the caller, and nothing is sent. |
 | **An order is asked about and taken off by that identifier.** | So it can be asked about although the call that placed it never said what Binance made of it. |
-| **There are two kinds of order.** | `Market` is executed at once. `Stop` rests until the price reaches its trigger, and is then placed at the market: `STOP_LOSS` on Spot, and `STOP_MARKET` on Futures. The kinds that only one market has are not built. |
+| **There are three kinds of order.** | `Market` is executed at once. `Stop` rests until the price reaches its trigger, and is then placed at the market: `STOP_LOSS` on Spot, and `STOP_MARKET` on Futures. `Limit` is executed at its price or a better one, and what is not executed at once rests until it is, or until it is taken off: `LIMIT`, good until it is taken off, on both markets (FR-BIN-S2). `Price` of a request is the trigger of a stop, or the price of a limit order. |
+| **The pair of Spot is one list of two orders.** | A take-profit above the price and a stop-loss below it, which both sell the same quantity. Each is a stop: it is placed at the market when the price reaches its trigger, `TAKE_PROFIT` and `STOP_LOSS`, and Binance ends the other then (FR-BIN-S2). Binance calls the list an OCO. `PlacePairAsync` places it with one call, and Binance takes both orders or neither. It takes no market: only Spot has such a pair, as only Futures has a mark price. |
+| **A pair carries three identifiers.** | One for each order, and one for the pair, which Binance keeps apart from those of the orders: `belowClientOrderId`, `aboveClientOrderId`, and `listClientOrderId`. A pair whose three are not different, or not what Binance takes, is an error of the caller, and nothing is sent. |
+| **Each order of a pair is an order like any other.** | It is asked about with `FindAsync`, by its own identifier. `CancelPairAsync` takes both off with one call, by the identifier of the pair, and Binance reports each under the identifier that it carried: `origClientOrderId`, where `clientOrderId` is the identifier of the call that took it off. An answer that does not say both orders does not read. |
+| **Binance takes a pair while the price is between its two triggers.** | It refuses one whose stop-loss is at or above the price, or whose take-profit is at or below it, as it refuses an order that would be triggered at once. That is a refusal: there is neither order. |
 | **A stop of Futures is a conditional order.** | Binance takes it with calls of its own, under `/fapi/v1/algoOrder`, and answers one at the call of the other orders with its error `-4120`. It gives it an id of its own until it is triggered. Then it becomes an order, and `ExchangeOrderId` is the number of that order, which its executions are read with. |
-| **An order that only closes is sent to Futures as one that only reduces.** | `Closes` is `reduceOnly=true` there, so that the order opens nothing when the position is gone already. Spot has no positions: a sale there sells what the account holds. |
-| **The answer says what became of the order.** | An order at the market is asked for with `newOrderRespType=FULL` on Spot, which has its executions with their fees, and `RESULT` on Futures. |
+| **An order that only closes is sent to Futures as one that only reduces.** | `Closes` is `reduceOnly=true` there, so that the order opens nothing when the position is gone already. Spot has no positions: a sale there sells what the account holds. So what sells on Spot sells the quantity that its agent bought, and no more: see "The stop-loss" in [orders.md](orders.md). |
+| **The answer says what became of the order.** | An order at the market, and one at a price, is asked for with `newOrderRespType=FULL` on Spot, which has its executions with their fees, and `RESULT` on Futures. A stop and a pair are asked for with `RESULT`: nothing of them is executed when they are placed. |
 | **A call is made once.** | Nothing here places an order again. |
 | **A call that changes something cannot be cancelled once it is sent.** | Cancelling ends the wait at the limiter, with the error of a cancelled call, and then nothing was sent. From the moment that the call is sent it runs to its answer or to its time limit, whatever its caller does: a call that was dropped half way would leave nobody knowing whether Binance took the order. |
 
@@ -294,6 +315,7 @@ How a call ended says whether there is an order, and errs on the side of not kno
 | `Unknown` | No answer in time, a connection that broke, a status from 500, the status 408, one of Binance's errors `-1000`, `-1001`, `-1006`, `-1007`, of which it says that the execution is unknown, or an answer that says that the call went well and does not read. | There may be an order. It is asked about before anything else is done with it. |
 
 - **Only `NotFound` says that Binance has no order.** Every other end of a question about an order says nothing about it: an order is never taken for one that was not placed because the question failed.
+- **A call about a pair ends as a call about an order does,** and what it says, it says of both orders: `ExchangePairResult` has both when Binance answered with them, and neither otherwise. A pair that Binance does not take off, because one of its orders was executed and the pair is over, ends as `NotFound`, or as `Rejected` where Binance answers with another of its errors: either way each order is asked about.
 - **`NotFound` is final only once the order could no longer arrive:** `ExchangeOrderTimes.FinalAfter`, 10 seconds after the call that placed it ended. Binance takes a call for 5 seconds after the time that it carries. What that means for an order is in "An order is never sent twice" in [orders.md](orders.md).
 - **An amount of an order is exact,** and is sent in digits with a point, whatever the culture.
 
@@ -311,7 +333,7 @@ How a call ended says whether there is an order, and errs on the side of not kno
 - **An asset that is not among the balances is one the account holds none of.** Spot is asked without them, and a row of Futures whose amounts are both zero is left out.
 - **An amount is exact.** Binance writes amounts as text, so that no digit is lost, and they are read as decimals. An amount of the Futures wallet can be below zero.
 - **A list is whole or it is none.** A row without an asset, an asset that is there twice, and an amount that does not read make the answer `Failed`, with no balance. A part of a list would make the rest look empty.
-- It reads the whole account. Which part of it an agent may use is for what sizes a position (FR-BIN-S3, FR-BIN-F6).
+- It reads the whole account. What is free of the asset that a symbol is priced in is what an entry on Spot is held to, where the order is placed (FR-BIN-S3): see "The quote balance" in [orders.md](orders.md). The margin of Futures is not asked yet (FR-BIN-F6).
 
 ## Market data
 
@@ -386,7 +408,7 @@ Candles are cached only for as long as cycles need them (NFR-DAT-6). A cycle tak
 public sealed record ExchangeSymbol(
     string Symbol, string BaseAsset, string QuoteAsset, bool Trading,
     decimal PriceStep, decimal QuantityStep, decimal MinQuantity, decimal MaxQuantity, decimal MinValue,
-    bool StopOrders);
+    bool StopOrders, bool PairOrders);
 ```
 
 | | Spot | Futures |
@@ -397,11 +419,13 @@ public sealed record ExchangeSymbol(
 | `QuantityStep`, `MinQuantity`, `MaxQuantity` | `stepSize`, `minQty`, `maxQty` of `LOT_SIZE` | The same |
 | `MinValue` | `minNotional` of `NOTIONAL`, or of `MIN_NOTIONAL` | `notional` of `MIN_NOTIONAL` |
 | `StopOrders` | `orderTypes` has `STOP_LOSS` | `orderTypes` has `STOP_MARKET` |
+| `PairOrders` | `ocoAllowed` is true, and `orderTypes` has `STOP_LOSS` and `TAKE_PROFIT` | Never |
 
 - **A symbol that is not among them is one that the market does not have,** which is what filters the symbols that an agent can be given (FR-AGT-6): Agents asks it for the form of an agent and when a market or a symbol is saved. See "The symbols" in [agents.md](agents.md). The steps, the least quantity, and the least value are what an order is held to before it is placed (FR-RSK-4), and the quantity step and the most quantity what the size of an order is held to as the Risk Guard computes it (FR-RSK-5): see "The size of an order" in [risk-guard.md](risk-guard.md).
 - **One call reads every symbol of a market.** Futures has no call for one symbol, and Spot answers a list with a symbol that it lacks with an error for the whole list. The answer of Spot is close to 7 megabytes, once an hour: it is asked without the permission sets of each symbol, with which it is more than twice that.
 - **A list is whole or it is none.** A symbol of the file without one of its rules, or that is there twice, makes the answer `Failed`: a list without it would say that the market lacks it.
 - **A symbol that takes no stop gets no entry.** `StopOrders` says whether Binance takes a stop in the symbol that is placed at the market when it is triggered, which is what protects a position (FR-RSK-7). A symbol that names no types of order takes none. See "When no entry is placed" in [orders.md](orders.md).
+- **A symbol of Spot that takes no pair gets no entry either.** `PairOrders` says whether Binance takes the pair of a stop-loss and a take-profit in the symbol (FR-BIN-S2). A symbol that does not say takes none. On 18 November 2026 both symbols of the tracked file took it, on the real exchange and in the test environment.
 - The rules of a market order, `MARKET_LOT_SIZE`, are not read.
 
 ### Nothing is stored
@@ -414,10 +438,10 @@ Ecnanib never withdraws, deposits, or transfers funds, between the Spot and the 
 
 | Rule | Detail |
 |---|---|
-| **The gateway has no such operation.** | `IExchangeAdapter` has the three above, and each reads. `IExchangeMarketData` has five, and each reads, with a call of Binance's public API, which takes no credential and so can move nothing. `IExchangeOrders` has four: an order buys or sells in the account that the credential is of, and moves nothing out of it, into it, or between its wallets. |
+| **The gateway has no such operation.** | `IExchangeAdapter` has the three above, and each reads. `IExchangeMarketData` has five, and each reads, with a call of Binance's public API, which takes no credential and so can move nothing. `IExchangeOrders` has six: an order, and a pair of them, buys or sells in the account that the credential is of, and moves nothing out of it, into it, or between its wallets. |
 | **It can send Binance nothing but the calls of the list.** | See "The calls". `NoFundMovementTests` asks the gateway for everything it does, in each market and each environment, and holds what was sent to the two lists. It fails for an operation of any of the three interfaces that it does not ask, so an operation that is added is held to the lists too. |
 | **Binance keeps the calls that move funds apart.** | Withdrawals, the addresses of deposits, and transfers between wallets are in its wallet API, under `/sapi`. The gateway makes one call there, which reads what a key may do. |
-| A call about an order names one order, and nothing to move. | Each call that is no `GET` carries the identifier of its order. None carries an amount of an asset to send, or an address to send it to. |
+| A call about an order names one order, and nothing to move. | Each call that is no `GET` carries the identifier of its order, or of its pair. None carries an amount of an asset to send, or an address to send it to. |
 
 ## The log
 
@@ -477,7 +501,7 @@ ECNANIB_LIVE_BINANCE_DEMO_KEY=... ECNANIB_LIVE_BINANCE_DEMO_SECRET=... \
   dotnet test --solution Ecnanib.slnx --filter-class "*LiveBinanceTests"
 ```
 
-The variables are `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_KEY` and `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_SECRET`, with `DEMO` or `LIVE`. Give them for one environment or for both. For each that has both, these calls are made, at the addresses of the tracked configuration file. Every one of them reads, and costs request weight only, but for the last, which places a stop in the test environment and takes it off again. No order is placed on the real exchange, and none that is executed:
+The variables are `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_KEY` and `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_SECRET`, with `DEMO` or `LIVE`. Give them for one environment or for both. For each that has both, these calls are made, at the addresses of the tracked configuration file. Every one of them reads, and costs request weight only, but for the last three, which place orders in the test environment. No order is placed on the real exchange. Two of the three place orders far from the price, and take them off again. The last buys a little at the market on Spot and sells it again: it is the one that is executed, with the funds of the test environment, which are none, and it is skipped when the account there does not cover it:
 
 | Call | What it must end as |
 |---|---|
@@ -490,6 +514,8 @@ The variables are `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_KEY` and `ECNANIB_LIVE_BIN
 | The price of `BTCUSDT` and the symbols of each market. | `Succeeded`, with a price, and with `BTCUSDT` among the symbols, with its rules. |
 | The mark price and the open interest of `BTCUSDT` on Futures. | `Succeeded`, with a funding rate, and a next funding that is ahead. |
 | A stop of `BTCUSDT` on each market of the test environment, which buys a tenth above the price: asked about before it is placed, placed, asked about, taken off, taken off once more, and asked about again. | `NotFound`, then `Answered` as an order that rests, the same order when it is asked about, `Canceled` when it is taken off, `NotFound` when it is taken off once more, and `Canceled` when it is asked about after that. |
+| An order at a price of `BTCUSDT` on Spot of the test environment, which buys a tenth below the price: placed, asked about, and taken off. | `Answered` as an order that rests, the same order when it is asked about, and `Canceled` when it is taken off, with nothing executed. |
+| What an entry of an agent on Spot does, in the test environment: the least of `BTCUSDT` that orders can be for is bought at the market, a pair is placed for what the account holds of it, a tenth below and a tenth above the price, each of its orders is asked about, the pair is taken off, taken off once more, one of its orders is asked about again, and what was bought is sold at the market. | The purchase `Filled`, with its executions and their fees. The pair `Answered`, with both orders resting, and each found by its own identifier. Both `Canceled` when the pair is taken off, each under the number that it had. `NotFound` when it is taken off once more, and `Canceled` when one is asked about after that. The sale `Filled`. |
 
 The market data needs no credential. It is asked under the same condition all the same, so that no run reaches Binance that was not meant to.
 
@@ -507,7 +533,10 @@ Run it when a call is added or changed, and when Binance changes its API. These 
 - What Binance allows an address in a minute, in its test environment above all, and that it sends `Retry-After` with its signal on Futures. Neither is asked by a run: the limits are in what `exchangeInfo` answers, which the gateway reads for the symbols and not for the limits yet.
 - That the test environment takes the calls of the orders: a stop of Spot as `STOP_LOSS`, and a stop of Futures as a conditional order, under `/fapi/v1/algoOrder`. Binance moved the stops of Futures there in December 2025, and its documentation of those calls names only two of the states that such an order can be in.
 - What Binance answers when it is asked about an order that it does not have, above all about a conditional order of Futures. The gateway takes `-2013` and `-2011` for its word that there is none. Another answer ends as `Rejected`, which says nothing about the order: such an order would stay unknown, and its agent would get no cycle, until this is settled.
-- What an order at the market answers with when it is executed, on both markets, and what a stop of Futures says once it is triggered. No run places an order that is executed.
+- What an order at the market answers with when it is executed on Futures, and what a stop of Futures says once it is triggered. The one order that a run has executed is of Spot.
+- That the test environment of Spot takes an order at a price and the pair, and that Binance reports the orders of a pair that it takes off under `origClientOrderId`. Binance documents the calls for the real exchange, and says that its test environment has the same features. The run above shows them, and no run has been made yet.
+- What Binance answers when it is asked to take off a pair that is over. The gateway takes `-2011` and `-2013` for its word that there is none, and what places the orders asks about both orders whatever the answer is.
+- What becomes of the other order of a pair when one is triggered. Binance's documentation says that it ends, as cancelled "because the other order of the pair started working", and does not say which of its states that is. The gateway reads both `CANCELED` and `EXPIRED` as an order that is over, and what places the orders goes by neither. No run triggers an order.
 - That Binance begins the next candle as one closes, also when nothing trades. Its documentation does not say when. Where it begins a candle late, the candle before it is given late, and never early: see "Candles".
 
 The calls of the market data were asked of Binance itself on 16 November 2026, on both markets, on the real exchange and in the test environment. Each ended as the table says. The run and what Binance answered beside it also showed what its documentation leaves open:
@@ -522,7 +551,8 @@ The calls of the market data were asked of Binance itself on 16 November 2026, o
 
 - The operator status screen, which shows what `IExchangeLimits` and `IExchangeClock` say (FR-OPS-2).
 - The limit on the orders of an account, which Binance counts for each account and not for the address. An order that Binance answers with its signal of too many ends as `NotSent`, as any call does. A protective order has no turn before other calls at the limiter either.
-- The orders that only one market has: a limit entry, the pair of stop-loss and take-profit of Spot, and the margin, the leverage, and the trigger on the mark price of Futures (FR-BIN-S2, FR-BIN-F2, FR-BIN-F3). See "Not built yet" in [orders.md](orders.md).
+- The orders that only Futures has: an order for the take-profit, and the margin, the leverage, and the trigger on the mark price (FR-BIN-F2, FR-BIN-F3). The gateway places an order at a price there, and nothing uses it yet. See "Not built yet" in [orders.md](orders.md).
+- The list of three orders of Spot, in which Binance places a pair by itself when an entry at a price is executed. See "Not built yet" in [orders.md](orders.md).
 - A page that asks for prices, and a data package that holds one. What has the Risk Guard check the plan of a cycle asks for the price that the symbol last traded at, and for the rules of its symbol, which it holds the plan to (FR-RSK-4): see "The facts" in [risk-guard.md](risk-guard.md). What starts the cycles asks for the candles of an agent's own timeframe through each close, and the data package of each cycle for the candles of the higher timeframes, and on Futures for the mark price, the funding rate, and the open interest (FR-CYC-2): see "The data package" in [cycles.md](cycles.md). An agent's timeframe is one of four, `Timeframe` in `Shared`: `CandleInterval` has a member of the same name for each, which `CandleIntervals.Of` gives, and the week as well, for context alone.
 - Prices that change on a screen within two seconds (FR-NTF-2). A price is read when it is asked for, and counts for a second: a screen that asked every second for every symbol would spend much of the budget.
 - Reading the limits of "The limiter" from `exchangeInfo`, which the gateway now calls for the symbols.

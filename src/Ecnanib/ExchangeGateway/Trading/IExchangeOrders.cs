@@ -4,8 +4,10 @@ namespace Ecnanib.ExchangeGateway.Trading;
 
 /// <summary>
 /// The orders of the exchange, behind a common interface: placing one, asking what became of
-/// one, taking one off the exchange, and reading its executions. Only the Decision Engine may use
-/// this namespace, after schema validation and the Risk Guard (NFR-SEC-6). See docs/orders.md.
+/// one, taking one off the exchange, and reading its executions, and the pair of a stop-loss and
+/// a take-profit of the Spot market, where the execution of one ends the other (FR-BIN-S2). Only
+/// the Decision Engine may use this namespace, after schema validation and the Risk Guard
+/// (NFR-SEC-6). See docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -113,6 +115,50 @@ public interface IExchangeOrders
         string symbol,
         string exchangeOrderId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Places the pair that protects what a position of the Spot market holds, once, as one
+    /// call: a stop-loss and a take-profit that both sell the same quantity, of which the
+    /// exchange ends one when the other is triggered (FR-BIN-S2). It takes no market: only the
+    /// Spot market has such a pair.
+    /// </summary>
+    /// <param name="userId">Whose call it is, for the limiter. It is not sent to the exchange.</param>
+    /// <param name="mode">The environment the credential is for.</param>
+    /// <param name="apiKey">The user's API key.</param>
+    /// <param name="secretKey">The secret key that belongs to it.</param>
+    /// <param name="pair">The pair.</param>
+    /// <param name="cancellationToken">Cancels the wait before the call is sent, and nothing after that.</param>
+    /// <returns>
+    /// How the call ended, with both orders as the exchange has them when it answered with them.
+    /// The exchange takes both or neither. Each is asked about with <see cref="FindAsync"/>, by
+    /// its own identifier.
+    /// </returns>
+    Task<ExchangePairResult> PlacePairAsync(
+        Guid userId,
+        TradingMode mode,
+        string apiKey,
+        string secretKey,
+        ExchangePairRequest pair,
+        CancellationToken cancellationToken);
+
+    /// <summary>Takes a pair that rests on the Spot market off it, both of its orders with one call, once.</summary>
+    /// <param name="userId">Whose call it is, for the limiter.</param>
+    /// <param name="mode">The environment the credential is for.</param>
+    /// <param name="apiKey">The user's API key.</param>
+    /// <param name="secretKey">The secret key that belongs to it.</param>
+    /// <param name="pair">Which pair.</param>
+    /// <param name="cancellationToken">Cancels the wait before the call is sent, and nothing after that.</param>
+    /// <returns>
+    /// <see cref="ExchangeOrderOutcome.Answered"/> with both orders when the exchange took the
+    /// pair off. Every other end says nothing about either order: each is asked about.
+    /// </returns>
+    Task<ExchangePairResult> CancelPairAsync(
+        Guid userId,
+        TradingMode mode,
+        string apiKey,
+        string secretKey,
+        ExchangePairRef pair,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>What is known of the time that the exchange takes an order in.</summary>
@@ -138,8 +184,8 @@ public enum ExchangeOrderSide
 }
 
 /// <summary>
-/// The kinds of order that the gateway places. The kinds that only one market has are not among
-/// them: see docs/orders.md.
+/// The kinds of order that the gateway places. The pair of the Spot market is two stops that the
+/// exchange holds together: see <see cref="IExchangeOrders.PlacePairAsync"/> and docs/orders.md.
 /// </summary>
 public enum ExchangeOrderType
 {
@@ -148,6 +194,12 @@ public enum ExchangeOrderType
 
     /// <summary>It rests on the exchange until the price reaches its trigger, and is then placed at the market.</summary>
     Stop,
+
+    /// <summary>
+    /// It is executed at its price or a better one, and what is not executed at once rests on
+    /// the exchange until it is, or until it is taken off (FR-BIN-S2).
+    /// </summary>
+    Limit,
 }
 
 /// <summary>An order to place.</summary>
@@ -159,7 +211,10 @@ public enum ExchangeOrderType
 /// <param name="Side">Whether it buys or sells.</param>
 /// <param name="Type">The kind of order.</param>
 /// <param name="Quantity">How much of the asset that is traded it is for.</param>
-/// <param name="TriggerPrice">The price that a stop is triggered at. Null for an order at the market.</param>
+/// <param name="Price">
+/// The price that a stop is triggered at, or the price of a limit order. Null for an order at
+/// the market.
+/// </param>
 /// <param name="Closes">
 /// Whether the order only closes a position: a stop-loss, and an order that closes at the
 /// market. Where the exchange keeps positions, such an order opens nothing when the position is
@@ -171,7 +226,7 @@ public sealed record ExchangeOrderRequest(
     ExchangeOrderSide Side,
     ExchangeOrderType Type,
     decimal Quantity,
-    decimal? TriggerPrice,
+    decimal? Price,
     bool Closes);
 
 /// <summary>Which order is asked about, or taken off the exchange.</summary>
@@ -284,6 +339,55 @@ public sealed record ExchangeOrderResult(ExchangeOrderOutcome Outcome, ExchangeO
 /// <param name="FeeAsset">The asset that the fee was taken in, which may be the asset that was bought.</param>
 /// <param name="At">When it was executed.</param>
 public sealed record ExchangeFill(string TradeId, decimal Price, decimal Quantity, decimal Fee, string FeeAsset, DateTimeOffset At);
+
+/// <summary>
+/// The pair to place: a stop-loss and a take-profit that sell the same quantity of what a
+/// position of the Spot market holds. Each is a stop, which is placed at the market when the
+/// price reaches its trigger, and the exchange ends the other then.
+/// </summary>
+/// <param name="PairId">
+/// The identifier that its caller gives the pair, which no other pair of the account that rests
+/// has, and which neither of its orders has: as an identifier of an order is written.
+/// </param>
+/// <param name="Symbol">The exchange's name of the symbol.</param>
+/// <param name="Quantity">How much of the asset that is traded each of the two sells.</param>
+/// <param name="StopLossId">The identifier of the stop-loss (FR-BIN-6).</param>
+/// <param name="StopLossPrice">The price that the stop-loss is triggered at, below the price of the symbol.</param>
+/// <param name="TakeProfitId">The identifier of the take-profit.</param>
+/// <param name="TakeProfitPrice">The price that the take-profit is triggered at, above the price of the symbol.</param>
+public sealed record ExchangePairRequest(
+    string PairId,
+    string Symbol,
+    decimal Quantity,
+    string StopLossId,
+    decimal StopLossPrice,
+    string TakeProfitId,
+    decimal TakeProfitPrice);
+
+/// <summary>Which pair is taken off the exchange, with the identifiers of its two orders, by which the answer is read.</summary>
+/// <param name="PairId">The identifier that its caller gave the pair.</param>
+/// <param name="Symbol">The symbol of the pair.</param>
+/// <param name="StopLossId">The identifier of its stop-loss.</param>
+/// <param name="TakeProfitId">The identifier of its take-profit.</param>
+public sealed record ExchangePairRef(string PairId, string Symbol, string StopLossId, string TakeProfitId);
+
+/// <summary>What a call about a pair gave.</summary>
+/// <param name="Outcome">How the call ended, in what it says about the two orders: as for one order.</param>
+/// <param name="StopLoss">The stop-loss as the exchange has it. It is there when the exchange answered with the pair, and never otherwise.</param>
+/// <param name="TakeProfit">The take-profit as the exchange has it, the same way.</param>
+public sealed record ExchangePairResult(ExchangeOrderOutcome Outcome, ExchangeOrder? StopLoss, ExchangeOrder? TakeProfit)
+{
+    public ExchangeOrder? StopLoss { get; } = (Outcome == ExchangeOrderOutcome.Answered) == (StopLoss is not null)
+        ? StopLoss
+        : throw new ArgumentException("A result has the orders of a pair when the exchange answered with them, and only then.", nameof(StopLoss));
+
+    public ExchangeOrder? TakeProfit { get; } = (Outcome == ExchangeOrderOutcome.Answered) == (TakeProfit is not null)
+        ? TakeProfit
+        : throw new ArgumentException("A result has the orders of a pair when the exchange answered with them, and only then.", nameof(TakeProfit));
+
+    /// <summary>A call that ended without the orders to say.</summary>
+    public static ExchangePairResult Without(ExchangeOrderOutcome outcome) => new(outcome, null, null);
+}
 
 /// <summary>What reading the executions of an order gave.</summary>
 /// <param name="Outcome">How the call ended.</param>

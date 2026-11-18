@@ -17,7 +17,8 @@ namespace Ecnanib.DecisionEngine;
 /// <para>
 /// <b>Every open position has a stop-loss that rests on the exchange</b> (FR-RSK-7). When the
 /// stop-loss cannot be placed after an entry is executed, the position is closed at market at
-/// once, and its user is told.
+/// once, and its user is told. On the Spot market the stop-loss rests as one pair with the
+/// take-profit, of which the exchange ends one when the other is triggered (FR-BIN-S2).
 /// </para>
 /// <para>
 /// It is public so that a test can put a stand-in behind it, for cycles of agents that need no
@@ -27,10 +28,11 @@ namespace Ecnanib.DecisionEngine;
 public interface IPlanOrders
 {
     /// <summary>
-    /// Places the orders of a plan that the Risk Guard accepted: an entry at the market with
-    /// its stop-loss, the close of the open position, both for a plan that reverses, or the
-    /// stop-loss at its new price. What it places is made from the result, and from nothing else
-    /// (NFR-SEC-6): the quantity is the one that the Risk Guard computed (FR-RSK-5).
+    /// Places the orders of a plan that the Risk Guard accepted: an entry with its protection,
+    /// the close of the open position, both for a plan that reverses, or the protection at its
+    /// new prices. An entry is placed at the market, or on the Spot market at the price of the
+    /// plan, where it rests (FR-BIN-S2). What it places is made from the result, and from
+    /// nothing else (NFR-SEC-6): the quantity is the one that the Risk Guard computed (FR-RSK-5).
     /// </summary>
     /// <param name="cycle">The cycle whose plan it is.</param>
     /// <param name="accepted">What the Risk Guard accepted.</param>
@@ -44,9 +46,11 @@ public interface IPlanOrders
 
     /// <summary>
     /// Settles the orders of an agent with the exchange, as far as the exchange says: an order
-    /// of unknown outcome is asked about, the stop-loss that rests is asked about, an open
-    /// position without one is protected or closed at market, and the executions of the orders
-    /// that are over are stored. It sends no order that the exchange may have already.
+    /// of unknown outcome is asked about, the stop-loss that rests is asked about, and the
+    /// take-profit with it, an entry at a price that rests is asked about, and taken off the
+    /// exchange when it is not to rest any longer (FR-BIN-S2), an open position without a
+    /// stop-loss is protected or closed at market, and the executions of the orders that are
+    /// over are stored. It sends no order that the exchange may have already.
     /// </summary>
     /// <param name="agentId">The agent.</param>
     /// <param name="cancellationToken">Canceled when what asked is stopped. Nothing is begun after that.</param>
@@ -55,7 +59,8 @@ public interface IPlanOrders
     /// <summary>
     /// Closes the open position of an agent at market, for its user (FR-AGT-11, FR-AGT-12): the
     /// stop-loss is taken off the exchange, and the position is closed. When it cannot be
-    /// closed, the stop-loss is placed again.
+    /// closed, the stop-loss is placed again. An entry at a price that still rests is taken off
+    /// the exchange, so that it opens nothing after the close.
     /// </summary>
     /// <param name="agentId">The agent.</param>
     /// <param name="cancellationToken">Canceled when what asked is stopped.</param>

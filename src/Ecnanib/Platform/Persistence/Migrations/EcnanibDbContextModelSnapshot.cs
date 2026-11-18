@@ -847,6 +847,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("numeric")
                         .HasColumnName("average_price");
 
+                    b.Property<DateTimeOffset?>("CancelAfter")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancel_after");
+
                     b.Property<DateTimeOffset?>("CheckedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("checked_at");
@@ -889,6 +893,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("mode");
+
+                    b.Property<Guid?>("PairId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pair_id");
 
                     b.Property<Guid?>("PositionId")
                         .HasColumnType("uuid")

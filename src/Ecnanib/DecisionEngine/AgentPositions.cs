@@ -62,8 +62,8 @@ internal sealed class AgentExposure(IPlanOrders orders) : IAgentExposure
 /// <remarks>
 /// <para>
 /// The stop-loss of the position is said when an order for it rests on the exchange, and not
-/// otherwise: the price alone protects nothing. No order rests for a take-profit yet, so none is
-/// said.
+/// otherwise: the price alone protects nothing. The same holds for its take-profit, for which an
+/// order rests on the Spot market, and none yet on the Futures market.
 /// </para>
 /// <para>
 /// The equity of an agent is still the capital that its user allocated to it: no result of a
@@ -86,15 +86,21 @@ internal sealed class StoredHoldings(IDbContextFactory<EcnanibDbContext> context
             .ToList();
 
         var stopLoss = resting.FirstOrDefault(order => order.Purpose == OrderPurpose.StopLoss && order.PositionId == position?.Id);
+        var takeProfit = resting.FirstOrDefault(order => order.Purpose == OrderPurpose.TakeProfit && order.PositionId == position?.Id);
 
         return new AgentHoldings(
             agent.AllocatedCapital,
             position is null
                 ? null
-                : new PositionContext(position.Side, position.EntryPrice, position.Quantity, stopLoss?.Price, TakeProfit: null),
+                : new PositionContext(position.Side, position.EntryPrice, position.Quantity, stopLoss?.Price, takeProfit?.Price),
             [
                 .. resting.Select(order => new OpenOrder(
-                    order.Purpose == OrderPurpose.StopLoss ? OpenOrderKind.StopLoss : OpenOrderKind.Entry,
+                    order.Purpose switch
+                    {
+                        OrderPurpose.StopLoss => OpenOrderKind.StopLoss,
+                        OrderPurpose.TakeProfit => OpenOrderKind.TakeProfit,
+                        _ => OpenOrderKind.Entry,
+                    },
                     order.Side,
                     order.Quantity - order.ExecutedQuantity,
                     order.Price!.Value)),
