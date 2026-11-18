@@ -10,8 +10,9 @@ namespace Ecnanib.Tests.ExchangeGateway;
 /// <summary>
 /// Ecnanib never withdraws, deposits, or transfers funds, between the Spot and the Futures wallet
 /// of a user included (FR-BIN-9). The gateway has no operation that does: everything it can send
-/// to Binance is a short list of calls that read and of calls about orders, which trade in the
-/// account that the credential is of, and every call it makes passes one place. Binance is the
+/// to Binance is a short list of calls that read, of calls about orders, which trade in the
+/// account that the credential is of, and of two calls that set how a symbol of the Futures
+/// market is margined in that account, and every call it makes passes one place. Binance is the
 /// only exchange behind it (FR-BIN-1).
 /// </summary>
 public class NoFundMovementTests
@@ -36,6 +37,7 @@ public class NoFundMovementTests
         "GET /fapi/v1/time",
         "GET /fapi/v2/ticker/price",
         "GET /fapi/v3/balance",
+        "GET /fapi/v3/positionRisk",
         "GET /sapi/v1/account/apiRestrictions",
     ];
 
@@ -63,12 +65,24 @@ public class NoFundMovementTests
         "POST /fapi/v1/order",
     ];
 
+    // What the gateway sends to Binance to set how a symbol of the Futures market is margined
+    // in the account of a credential: with margin of its own for a position, and at a leverage
+    // (FR-BIN-F2). Each is a setting of the symbol. Neither names an amount of an asset, or
+    // moves any: the margin of a position is taken from the wallet of the market by the order
+    // that opens it, and the gateway has no call that adds margin to a position.
+    private static readonly string[] Settings =
+    [
+        "POST /fapi/v1/leverage",
+        "POST /fapi/v1/marginType",
+    ];
+
     // The operations of the gateway, which the first test asks one by one. An operation that is
     // added is asked there too, so that what it sends is held to the list.
     private static readonly string[] Operations =
     [
         nameof(IExchangeAdapter.CheckKeyAsync),
         nameof(IExchangeAdapter.GetBalancesAsync),
+        nameof(IExchangeAdapter.GetFuturesAccountAsync),
         nameof(IExchangeAdapter.GetServerTimeAsync),
     ];
 
@@ -91,10 +105,11 @@ public class NoFundMovementTests
         nameof(IExchangeOrders.FindAsync),
         nameof(IExchangeOrders.PlaceAsync),
         nameof(IExchangeOrders.PlacePairAsync),
+        nameof(IExchangeOrders.SetIsolatedMarginAsync),
     ];
 
     [Fact]
-    public async Task Whatever_the_gateway_is_asked_it_sends_binance_calls_that_read_and_calls_about_orders_and_nothing_else()
+    public async Task Whatever_the_gateway_is_asked_it_sends_binance_calls_that_read_calls_about_orders_and_the_margin_of_a_symbol_and_nothing_else()
     {
         Assert.Equal(Operations, typeof(IExchangeAdapter).GetMembers().Select(member => member.Name).Order(StringComparer.Ordinal));
         Assert.Equal(
@@ -130,8 +145,17 @@ public class NoFundMovementTests
                 {
                     var id = $"{market}-{mode}-{type}";
                     var which = new ExchangeOrderRef(id, MarketService.Symbol, type);
-                    var order = new ExchangeOrderRequest(
-                        id, MarketService.Symbol, ExchangeOrderSide.Sell, type, 0.01m, type == ExchangeOrderType.Market ? null : 59000m, Closes: true);
+
+                    // Below the price of the symbol, which is 60000, but for a take-profit,
+                    // which sells above it.
+                    decimal? price = type switch
+                    {
+                        ExchangeOrderType.Market => null,
+                        ExchangeOrderType.TakeProfit => 62000m,
+                        _ => 59000m,
+                    };
+
+                    var order = new ExchangeOrderRequest(id, MarketService.Symbol, ExchangeOrderSide.Sell, type, 0.01m, price, Closes: true);
 
                     var placed = await orders.PlaceAsync(BinanceCalls.User, market, mode, apiKey, secretKey, order, TestContext.Current.CancellationToken);
                     await orders.FindAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, TestContext.Current.CancellationToken);
@@ -152,21 +176,35 @@ public class NoFundMovementTests
 
             await marketData.GetMarkPriceAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
             await marketData.GetOpenInterestAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
+
+            // The Futures market alone: how the account stands, and the margin of a symbol.
+            await exchange.GetFuturesAccountAsync(BinanceCalls.User, mode, apiKey, secretKey, MarketService.Symbol, TestContext.Current.CancellationToken);
+            await orders.SetIsolatedMarginAsync(BinanceCalls.User, mode, apiKey, secretKey, MarketService.Symbol, 3, TestContext.Current.CancellationToken);
         }
 
-        // All of the two lists, and nothing that is not on them.
+        // All of the three lists, and nothing that is not on them.
         Assert.Equal(
-            Reads.Concat(Orders).Order(StringComparer.Ordinal),
+            Reads.Concat(Orders).Concat(Settings).Order(StringComparer.Ordinal),
             binance.Calls.Select(call => $"{call.Method} {call.Address.AbsolutePath}").Distinct().Order(StringComparer.Ordinal));
 
-        // Only a call about an order is anything but a GET, and each of those names one order,
-        // or one pair of them, by its identifier: it carries no amount of an asset to move, and
-        // no address to move it to.
+        // A call that is no GET is one about an order, or one of the two that set the margin of
+        // a symbol. Each call about an order names one order, or one pair of them, by its
+        // identifier: it carries no amount of an asset to move, and no address to move it to.
         Assert.All(
-            binance.Calls.Where(call => call.Method != "GET"),
+            binance.Calls.Where(call => call.Method != "GET" && !Settings.Contains($"{call.Method} {call.Address.AbsolutePath}")),
             call => Assert.Contains(
                 call.Query,
                 parameter => parameter.Name is "newClientOrderId" or "origClientOrderId" or "clientAlgoId" or "listClientOrderId"));
+
+        // Each of the two settings names the symbol and what the symbol is to have, and nothing
+        // else: no asset, no amount, and no address.
+        Assert.All(
+            binance.Calls.Where(call => Settings.Contains($"{call.Method} {call.Address.AbsolutePath}")),
+            call => Assert.Equal(
+                call.Address.AbsolutePath == "/fapi/v1/marginType"
+                    ? ["marginType", "symbol", "recvWindow", "timestamp", "signature"]
+                    : ["symbol", "leverage", "recvWindow", "timestamp", "signature"],
+                call.Query.Select(parameter => parameter.Name)));
 
         // Every call sends nothing but its address: a call about an order as well.
         Assert.All(binance.Calls, call => Assert.Null(call.Body));

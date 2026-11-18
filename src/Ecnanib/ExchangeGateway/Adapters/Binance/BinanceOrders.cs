@@ -8,9 +8,11 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 
 /// <summary>
 /// The orders of Binance, behind the common interface: an order at the market, an order at a
-/// price, and a stop, on the Spot market and on the USDⓈ-margined perpetual Futures market, and
-/// the pair of a stop-loss and a take-profit of the Spot market, each on the real exchange and
-/// in Binance's test environment (FR-BIN-1, FR-BIN-2, FR-BIN-6, FR-BIN-S2). See docs/orders.md.
+/// price, a stop, and a take-profit, on the Spot market and on the USDⓈ-margined perpetual
+/// Futures market, the pair of a stop-loss and a take-profit of the Spot market, and the margin
+/// and the leverage of a symbol of the Futures market, each on the real exchange and in
+/// Binance's test environment (FR-BIN-1, FR-BIN-2, FR-BIN-6, FR-BIN-S2, FR-BIN-F2, FR-BIN-F3).
+/// See docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,10 +21,11 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// says, in the words of the gateway: nothing of Binance's own format leaves this class.
 /// </para>
 /// <para>
-/// <b>A stop is two different things on the two markets.</b> On the Spot market it is an order
-/// like any other, of the type <c>STOP_LOSS</c>. On the Futures market Binance takes it as a
-/// conditional order, with calls of its own, and gives it an id of its own until it is triggered:
-/// then it becomes an order, and is known by that order's id.
+/// <b>A stop is two different things on the two markets,</b> and so is a take-profit. On the
+/// Spot market it is an order like any other, of the type <c>STOP_LOSS</c> or
+/// <c>TAKE_PROFIT</c>. On the Futures market Binance takes it as a conditional order, with calls
+/// of its own, and gives it an id of its own until it is triggered: then it becomes an order,
+/// and is known by that order's id. There it is triggered on the mark price (FR-BIN-F3).
 /// </para>
 /// <para>
 /// <b>The pair of the Spot market is one list of two orders,</b> which Binance calls an OCO: a
@@ -49,6 +52,9 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
     // Binance's word that it has no such order: asked about, and asked to take off the exchange.
     private static readonly int[] NoSuchOrder = [-2013, -2011];
 
+    // Binance's word that a symbol has the margin type that it was asked to have already.
+    private const int NoNeedToChangeMarginType = -4046;
+
     // The first and the last moment that a count of milliseconds can name as a time.
     private static readonly long EarliestTime = DateTimeOffset.MinValue.ToUnixTimeMilliseconds();
     private static readonly long LatestTime = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds() - 1;
@@ -69,7 +75,7 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
         var id = Identifier(order.ClientOrderId);
         var side = order.Side == ExchangeOrderSide.Buy ? "BUY" : "SELL";
         var quantity = Positive(order.Quantity, nameof(order));
-        var stop = order.Type == ExchangeOrderType.Stop;
+        var stop = Waits(order.Type);
 
         var endpoint = order.Type switch
         {
@@ -83,6 +89,14 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
                 id,
                 order.Closes),
             ExchangeOrderType.Limit => BinanceEndpoint.LimitOrderOf(
+                market,
+                order.Symbol,
+                side,
+                quantity,
+                Positive(order.Price ?? 0m, nameof(order)),
+                id,
+                order.Closes),
+            ExchangeOrderType.TakeProfit => BinanceEndpoint.TakeProfitOrderOf(
                 market,
                 order.Symbol,
                 side,
@@ -111,7 +125,7 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
         ArgumentNullException.ThrowIfNull(secretKey);
         ArgumentNullException.ThrowIfNull(order);
 
-        var stop = order.Type == ExchangeOrderType.Stop;
+        var stop = Waits(order.Type);
         var endpoint = BinanceEndpoint.OrderStatusOf(market, order.Symbol, Identifier(order.ClientOrderId), stop);
         var answer = await call.AskSignedAsync(endpoint, mode, userId, apiKey, secretKey, ReaderOf(market, stop), cancellationToken);
 
@@ -131,7 +145,7 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
         ArgumentNullException.ThrowIfNull(secretKey);
         ArgumentNullException.ThrowIfNull(order);
 
-        var stop = order.Type == ExchangeOrderType.Stop;
+        var stop = Waits(order.Type);
         var endpoint = BinanceEndpoint.OrderCancelOf(market, order.Symbol, Identifier(order.ClientOrderId), stop);
 
         // Binance answers a conditional order that it took off with its id alone.
@@ -215,6 +229,51 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
             cancellationToken);
 
         return ResultOf(answer, places: false);
+    }
+
+    /// <summary>
+    /// Has the positions of a symbol of the Futures market use isolated margin, at a leverage:
+    /// two calls, the margin and then the leverage, each a setting of the symbol in the account
+    /// of the credential, and neither of the whole account (FR-BIN-F2).
+    /// </summary>
+    /// <remarks>
+    /// Binance answers a symbol that has isolated margin already with an error of its own, which
+    /// is no refusal: the symbol is as it was asked to be. A leverage is set when Binance
+    /// answers with that leverage, and an answer that says another does not read: how the
+    /// symbol is margined is not known then.
+    /// </remarks>
+    public async Task<ExchangeOrderOutcome> SetIsolatedMarginAsync(
+        Guid userId,
+        TradingMode mode,
+        string apiKey,
+        string secretKey,
+        string symbol,
+        int leverage,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(apiKey);
+        ArgumentNullException.ThrowIfNull(secretKey);
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+        ArgumentOutOfRangeException.ThrowIfLessThan(leverage, 1);
+
+        var margin = await call.AskSignedAsync(
+            BinanceEndpoint.IsolatedMarginOf(symbol), mode, userId, apiKey, secretKey, Done, cancellationToken);
+
+        if (margin.Code != NoNeedToChangeMarginType && OutcomeOf(margin, places: true) is var refused and not ExchangeOrderOutcome.Answered)
+        {
+            return refused;
+        }
+
+        var set = await call.AskSignedAsync(
+            BinanceEndpoint.LeverageOf(symbol, leverage),
+            mode,
+            userId,
+            apiKey,
+            secretKey,
+            answer => Number(answer, "leverage") == leverage.ToString(CultureInfo.InvariantCulture) ? "set" : null,
+            cancellationToken);
+
+        return OutcomeOf(set, places: true);
     }
 
     /// <summary>What the end of a call says about the order. See the remarks of the class.</summary>
@@ -305,6 +364,15 @@ internal sealed partial class BinanceOrders(BinanceCall call) : IExchangeOrders
 
         return stopLoss is not null && takeProfit is not null ? new PairOrders(stopLoss, takeProfit) : null;
     }
+
+    /// <summary>
+    /// Whether an order of a kind waits for a price to reach its trigger: a stop, and a
+    /// take-profit. The Futures market keeps such an order apart, as a conditional order.
+    /// </summary>
+    private static bool Waits(ExchangeOrderType type) => type is ExchangeOrderType.Stop or ExchangeOrderType.TakeProfit;
+
+    /// <summary>What an answer that says that a setting was taken says: that it is an answer of Binance.</summary>
+    private static string? Done(JsonElement answer) => answer.ValueKind == JsonValueKind.Object ? "set" : null;
 
     /// <summary>What reads the answer about an order of a market: a conditional order of the Futures market reads differently.</summary>
     private static Func<JsonElement, ExchangeOrder?> ReaderOf(Market market, bool stop) => market switch

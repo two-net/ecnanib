@@ -6,8 +6,9 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// Answers Agents about what an agent holds on the exchange, from the positions and the orders
-/// that the Decision Engine keeps, and has the position of an agent closed at market for its
-/// user (FR-AGT-8, FR-AGT-11, FR-AGT-12). See <see cref="IAgentExposure"/> and docs/orders.md.
+/// that the Decision Engine keeps, has the position of an agent closed at market for its user
+/// (FR-AGT-8, FR-AGT-11, FR-AGT-12), and says what in the account of its user at the exchange
+/// stands in the way of an agent (FR-BIN-F2). See <see cref="IAgentExposure"/> and docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,7 +17,8 @@ namespace Ecnanib.DecisionEngine;
 /// one. So a user who stops the agent then is asked what to do with the position.
 /// </para>
 /// <para>
-/// It places no order itself: the close is asked of what places the orders.
+/// It places no order itself: the close is asked of what places the orders, and so is the
+/// account, which is read with the key of the agent's user.
 /// </para>
 /// </remarks>
 internal sealed class AgentExposure(IPlanOrders orders) : IAgentExposure
@@ -48,6 +50,9 @@ internal sealed class AgentExposure(IPlanOrders orders) : IAgentExposure
     public Task<PositionCloseOutcome> ClosePositionAtMarketAsync(Guid agentId, CancellationToken cancellationToken) =>
         orders.CloseAtMarketAsync(agentId, cancellationToken);
 
+    public Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken) =>
+        orders.AccountConflictAsync(agent, cancellationToken);
+
     private static Task<bool> HoldsAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken) =>
         context.Set<Position>()
             .AsNoTracking()
@@ -63,7 +68,8 @@ internal sealed class AgentExposure(IPlanOrders orders) : IAgentExposure
 /// <para>
 /// The stop-loss of the position is said when an order for it rests on the exchange, and not
 /// otherwise: the price alone protects nothing. The same holds for its take-profit, for which an
-/// order rests on the Spot market, and none yet on the Futures market.
+/// order rests on both markets: as one pair with the stop-loss on the Spot market, and as an
+/// order of its own on the Futures market.
 /// </para>
 /// <para>
 /// The equity of an agent is still the capital that its user allocated to it: no result of a

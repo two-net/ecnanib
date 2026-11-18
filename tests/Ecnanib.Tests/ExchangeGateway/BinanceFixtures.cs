@@ -67,9 +67,21 @@ internal static class BinanceCalls
           "enableVanillaOptions": false, "enableSpotAndMarginTrading": true, "enablePortfolioMarginTrading": false }
         """;
 
-    /// <summary>The settings of the account of the Futures market.</summary>
+    /// <summary>The settings of the account of the Futures market: one in one-way mode, which margins with one asset.</summary>
     public const string FuturesAccountSettings =
-        """{ "feeTier": 0, "canTrade": true, "canDeposit": true, "canWithdraw": true, "dualSidePosition": false, "updateTime": 0 }""";
+        """
+        { "feeTier": 0, "canTrade": true, "canDeposit": true, "canWithdraw": true, "dualSidePosition": false, "updateTime": 0,
+          "multiAssetsMargin": false, "tradeGroupId": -1 }
+        """;
+
+    /// <summary>
+    /// The positions of an account of the Futures market that holds nothing in the symbol that
+    /// is asked for: Binance lists a symbol that has a position or orders, and no other.
+    /// </summary>
+    public const string NoPositions = "[]";
+
+    /// <summary>What Binance answers the call that sets the margin of a symbol with.</summary>
+    public const string MarginSet = """{ "code": 200, "msg": "success" }""";
 
     /// <summary>The price that a symbol last traded at on the Spot market.</summary>
     public const string SpotPrice = """{ "symbol": "BTCUSDT", "price": "104250.01000000" }""";
@@ -231,11 +243,46 @@ internal static class BinanceCalls
     public static StandInSystem ThatAnswers(Action<HttpResponseMessage>? with = null) =>
         new(request =>
         {
-            var answer = StandInSystem.Json(HttpStatusCode.OK, AnswerTo(request.RequestUri!.AbsolutePath));
+            var answer = StandInSystem.Json(HttpStatusCode.OK, AnswerTo(request));
             with?.Invoke(answer);
 
             return answer;
         });
+
+    /// <summary>
+    /// A position of an account of the Futures market in a symbol, as Binance lists it: in
+    /// one-way mode it has one row for the symbol, and in hedge mode one for each side.
+    /// </summary>
+    /// <param name="amount">How much the position holds: above zero for a long one, and below it for a short one.</param>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="side">Binance's name of the side of the row: <c>BOTH</c> in one-way mode.</param>
+    public static string PositionOf(string amount, string symbol = "BTCUSDT", string side = "BOTH") =>
+        $$"""
+        { "symbol": "{{symbol}}", "positionSide": "{{side}}", "positionAmt": "{{amount}}", "entryPrice": "104250.0",
+          "breakEvenPrice": "104302.1", "markPrice": "104250.64871234", "unRealizedProfit": "0.01946136", "liquidationPrice": "0",
+          "isolatedMargin": "0", "notional": "3127.51946136", "marginAsset": "USDT", "isolatedWallet": "0",
+          "initialMargin": "156.37597306", "maintMargin": "12.51007784", "positionInitialMargin": "156.37597306",
+          "openOrderInitialMargin": "0", "adl": 2, "bidNotional": "0", "askNotional": "0", "updateTime": 1720736417660 }
+        """;
+
+    /// <summary>What Binance answers the call that sets the leverage of a symbol with: the leverage that the symbol has now.</summary>
+    public static string LeverageSet(int leverage) =>
+        $$"""{ "leverage": {{leverage}}, "maxNotionalValue": "1000000", "symbol": "BTCUSDT" }""";
+
+    /// <summary>What Binance answers a call with: for the call that sets a leverage, with the leverage that was asked for.</summary>
+    public static string AnswerTo(HttpRequestMessage request)
+    {
+        var address = request.RequestUri!;
+
+        if (address.AbsolutePath != "/fapi/v1/leverage")
+        {
+            return AnswerTo(address.AbsolutePath);
+        }
+
+        var asked = address.Query.TrimStart('?').Split('&').Single(parameter => parameter.StartsWith("leverage=", StringComparison.Ordinal));
+
+        return LeverageSet(int.Parse(asked["leverage=".Length..], CultureInfo.InvariantCulture));
+    }
 
     /// <summary>What Binance answers a call to a path with.</summary>
     public static string AnswerTo(string path) => path switch
@@ -244,6 +291,8 @@ internal static class BinanceCalls
         "/api/v3/account" => SpotAccount,
         "/fapi/v3/balance" => FuturesBalances,
         "/fapi/v1/accountConfig" => FuturesAccountSettings,
+        "/fapi/v3/positionRisk" => NoPositions,
+        "/fapi/v1/marginType" => MarginSet,
         "/sapi/v1/account/apiRestrictions" => Restrictions,
 
         // The market data. Candles are of a quarter of an hour, as Binance has them at Now.

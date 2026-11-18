@@ -8,9 +8,11 @@ The Exchange Gateway places the entry and the protective orders on Binance, or d
 
 Spot agents are long-only: they buy the base asset with the quote asset and sell to exit. They do not borrow or short (FR-BIN-S1). Entries are market or limit orders. An unfilled limit entry is cancelled at the next cycle. Protection is a stop-loss and take-profit pair resting on the exchange, where filling one cancels the other (FR-BIN-S2). A Spot agent sells only the quantity it bought and never touches other holdings in the account. If the quote balance is below what the plan needs, the entry is skipped and the user is notified (FR-BIN-S3).
 
-What is built is step 7 of the decision cycle with the orders that both markets have, and with those of Spot. Both markets have an entry at the market, a stop-loss that rests, and an order that closes a position at the market. Spot has an entry at a price, which rests, and the pair of a stop-loss and a take-profit. With them a plan opens a position, closes it, reverses it, and moves its protection, and a user closes a position by hand. The orders that only Futures has are not built: an entry at a price there, an order for the take-profit, and the margin, the leverage, and the trigger on the mark price.
+Futures agents trade USDⓈ-margined perpetual contracts and can be long or short (FR-BIN-F1). They use isolated margin and one-way position mode. The system sets margin type and leverage for the agent's symbol before entry, and does not change account-wide settings: if the account is in a conflicting mode or already holds a position in the symbol, the agent does not start and the user is told what to change (FR-BIN-F2). Protection is a reduce-only stop-loss and a reduce-only take-profit resting on the exchange, triggered on the mark price (FR-BIN-F3). An entry is skipped, and the user notified, when the Futures wallet lacks the margin the plan needs (FR-BIN-F6).
 
-What places the orders is in `src/Ecnanib/DecisionEngine`: `IPlanOrders`, `AgentOrders`, `StoredOrders`, `Order`, `Fill`, `Position`, `AgentPositions.cs`, and `OrderSettlingJob`. The orders of the exchange are in `src/Ecnanib/ExchangeGateway/Trading`, and Binance's in `BinanceOrders`. The rules below are enforced by `OrderIdempotencyTests`, `ProtectiveStopTests`, `ProtectivePairTests`, `LimitEntryTests`, `SpotEntryTests`, `PlanOrderTests`, `OrderSettlingTests`, and `OrderRecordTests` of `tests/Ecnanib.Tests/DecisionEngine`, and by `OrderPlacementTests` of `tests/Ecnanib.Tests/ExchangeGateway`.
+What is built is step 7 of the decision cycle, on both markets. Both have an entry at the market, an entry at a price, which rests, a stop-loss that rests, and an order that closes a position at the market. Spot has the pair of a stop-loss and a take-profit. Futures has a take-profit that is an order of its own, the margin and the leverage of the symbol, which are set before an entry, and the trigger on the mark price. With them a plan opens a position, closes it, reverses it, and moves its protection, and a user closes a position by hand.
+
+What places the orders is in `src/Ecnanib/DecisionEngine`: `IPlanOrders`, `AgentOrders`, `StoredOrders`, `Order`, `Fill`, `Position`, `AgentPositions.cs`, and `OrderSettlingJob`. The orders of the exchange are in `src/Ecnanib/ExchangeGateway/Trading`, and Binance's in `BinanceOrders`. The rules below are enforced by `OrderIdempotencyTests`, `ProtectiveStopTests`, `ProtectivePairTests`, `LimitEntryTests`, `SpotEntryTests`, `FuturesEntryTests`, `FuturesProtectionTests`, `PlanOrderTests`, `OrderSettlingTests`, and `OrderRecordTests` of `tests/Ecnanib.Tests/DecisionEngine`, and by `OrderPlacementTests` and `FuturesAccountTests` of `tests/Ecnanib.Tests/ExchangeGateway`.
 
 The calls that the gateway makes for an order are in [exchange.md](exchange.md). What the Risk Guard accepts, and the size of an order, is in [risk-guard.md](risk-guard.md). What a cycle does before it comes to its orders is in [team.md](team.md) and [cycles.md](cycles.md). What Agents asks about a position, and the states of an agent, is in [agents.md](agents.md), the key that an order is placed with in [credentials.md](credentials.md), and what a user is told in [notifications.md](notifications.md).
 
@@ -24,25 +26,27 @@ public interface IPlanOrders
     Task PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken);
     Task SettleAsync(Guid agentId, CancellationToken cancellationToken);
     Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken);
+    Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken);
 }
 ```
 
 | Rule | Detail |
 |---|---|
-| **An order is made from a result of the Risk Guard** | `PlaceAsync` takes the `GuardResult`, and refuses one that is not accepted. The quantity of an entry is `GuardResult.Size`, which the check computed (FR-RSK-5). The price of an entry at a price, the stop-loss, and the take-profit are those of `GuardResult.Case`. |
+| **An order is made from a result of the Risk Guard** | `PlaceAsync` takes the `GuardResult`, and refuses one that is not accepted. The quantity of an entry is that of `GuardResult.Size`, which the check computed, and so is the leverage that the symbol is given on Futures (FR-RSK-5). The price of an entry at a price, the stop-loss, and the take-profit are those of `GuardResult.Case`. |
 | **One type uses the orders of the gateway** | `AgentOrders`. A test pins it, so another shows in a review as one more way to an order. |
 | **The orders of the agent are settled first** | Before the team is run, `TeamCycle` asks `SettleAsync`: a stop-loss or a take-profit may have been executed since the last cycle, an entry at a price of the cycle before is taken off the exchange, and the team decides on what the agent holds now. See "Settling" and "An entry at a price". |
 | **The outcome of a cycle is the decision of its team** | Whatever becomes of the orders. What was placed is in the rows of the orders, under the id of the cycle. A cycle whose orders fail with an error is recorded with its decision, and the error is said once. |
 | **What settles and what closes for a user take no result** | They open nothing, so that risk can always be reduced (FR-RSK-4, FR-AGT-12). |
+| **What reads the account for Agents places nothing** | `AccountConflictAsync` says what in the account of an agent's user stands in the way of the agent, before the agent is started or resumed: see "The account of Futures". It only reads. |
 
 ## What a plan places
 
 | The Risk Guard accepted | What is placed |
 |---|---|
-| Open long, open short | The entry: a buy for long, a sell for short. It is placed at the market, or on Spot at the price of a plan that names one, where it rests: see "An entry at a price". When it is executed, the stop-loss, on the other side, at the stop-loss of the plan. On Spot the take-profit of the plan is placed with it, as one pair: see "The pair of the Spot market". |
+| Open long, open short | The entry: a buy for long, a sell for short. It is placed at the market, or at the price of a plan that names one, where it rests: see "An entry at a price". On Futures the symbol is given isolated margin and the leverage of the order before it: see "The margin of Futures". When it is executed, the stop-loss, on the other side, at the stop-loss of the plan. On Spot the take-profit of the plan is placed with it, as one pair: see "The pair of the Spot market". On Futures it is placed once the stop-loss rests, as an order of its own: see "The take-profit of Futures". |
 | Close | The protection is taken off the exchange, and the position is closed at the market. See "Closing a position". |
 | Reverse | The close, as above. When the position is closed, and only then, the entry on the other side, with its stop-loss. Only Futures has it. |
-| Adjust protection | The stop-loss that rests is taken off, and one is placed at the new price. On Spot it is the pair that is taken off and placed anew, when the stop-loss or the take-profit moves. On Futures the take-profit of the plan is kept as a price. See "Moving the stop-loss". |
+| Adjust protection | The stop-loss that rests is taken off, and one is placed at the new price. On Spot it is the pair that is taken off and placed anew, when the stop-loss or the take-profit moves. On Futures each price moves its own order, and the other rests on. See "Moving the stop-loss". |
 
 An order that is not an entry only closes a position. The gateway sends it to Futures as an order that only reduces, so that it opens nothing when the position is gone already. On Spot it sells what the position holds, which is what the agent bought, and no more (FR-BIN-S3).
 
@@ -53,14 +57,19 @@ Each is said in the log, with its reason, and leaves no order behind. They are a
 | Reason | When |
 |---|---|
 | `SpotLongOnly` | The entry sells, on Spot. An agent there buys, and sells what it bought to exit (FR-BIN-S1). A plan that shorts on Spot is refused when it is read: see "What a plan may do" in [team.md](team.md). What places the orders holds to it as well, for a sale that opens would sell what else the account holds. |
-| `LimitEntry` | The plan enters at a price, on Futures. Such an entry rests until it is executed, and is protected from then on, which takes the orders that Futures has for it. They are not built. |
 | `EntriesPaused` | `IExchangeClock.EntriesPaused` says so for the market and the environment of the agent: the clock of the service is not near Binance's, or was not read (FR-BIN-5). |
 | `NoStopOrders` | The symbol takes no stop, or the exchange did not say its rules. No position is opened where no stop-loss can rest. See "Symbols" in [exchange.md](exchange.md). |
 | `NoPairOrders` | The symbol takes no pair of a stop-loss and a take-profit, on Spot. No position is opened there whose protection cannot rest as a pair (FR-BIN-S2). |
+| `NoTakeProfitOrders` | The symbol takes no take-profit as an order of its own, on Futures. No position is opened there whose take-profit cannot rest beside its stop-loss (FR-BIN-F3). |
 | `NotRunning` | The agent no longer opens positions: its user paused or stopped it, or it waits for its user, while its team decided. It is asked before the account is read, and again under the lock of the account, as the row of the entry is written. |
 | `Holding` | The agent holds a position, or has an order that is not over, an entry that rests among them. The Risk Guard rejects such a plan. This holds to it as well, at the same two moments. |
+| `AccountUnknown` | How the account stands on Futures could not be read. A failure leads to no entry (NFR-REL-2), and nobody is told. See "The account of Futures". |
+| `AccountConflict` | The account is in hedge mode or in Multi-Assets mode, or holds a position in the symbol that the agent did not open, on Futures. Its user is told what to change, and the agent waits for them (FR-BIN-F2). See "The account of Futures". |
 | `QuoteBalance` | The account holds less of the asset that the symbol is priced in than the entry needs, on Spot. The entry is skipped, and its user is notified. See "The quote balance". |
-| `BalanceUnknown` | What the account holds could not be read, on Spot. A failure leads to no entry (NFR-REL-2). |
+| `Margin` | The wallet of Futures has less of that asset available than the margin of the entry. The entry is skipped, and its user is notified (FR-BIN-F6). See "The margin of Futures". |
+| `BalanceUnknown` | What the account holds could not be read, on either market. A failure leads to no entry (NFR-REL-2). |
+| `MarginRefused` | Binance refused to give the symbol isolated margin, or the leverage of the order, on Futures. Its user is told. See "The margin of Futures". |
+| `MarginNotSet` | It is not known whether the symbol has isolated margin and the leverage of the order: a call did not say. No entry is placed at a leverage that the Risk Guard did not check (FR-RSK-6). |
 
 An entry whose user has no Binance key for the mode is not sent either, and its row says `NotPlaced`.
 
@@ -76,11 +85,41 @@ If the quote balance is below what the plan needs, the entry is skipped and the 
 | **The user is told, once in a day for an agent** | With a notification of the type `EntrySkipped`, which says what the entry needs and what the account has: see [notifications.md](notifications.md). A cycle that decides to enter comes with every candle, and the page of an agent shows the latest 20 that are not read, so one for each skipped entry would leave no room for a protection that failed. `AgentOrders.SkippedSaidEvery` is the day. Every skipped entry is in the log. |
 | **An account that cannot be read covers nothing** | The entry is not placed, and nobody is told: it is not known that the account is short. A key that Binance refuses is checked again (FR-KEY-3). |
 | **An entry that Binance refuses has the account read once more** | Two agents of one account may both find it covered at the same close, and the price moves between the read and the order. The user is told when the account is short then. |
-| The Risk Guard does not ask it. | The size of an order is held to the agent's equity, which is the capital that its user allocated: see "The size of an order" in [risk-guard.md](risk-guard.md). The margin that the Futures wallet lacks is not asked (FR-BIN-F6). |
+| The Risk Guard does not ask it. | The size of an order is held to the agent's equity, which is the capital that its user allocated: see "The size of an order" in [risk-guard.md](risk-guard.md). |
+
+### The account of Futures
+
+Futures agents use isolated margin and one-way position mode. The system does not change account-wide settings: if the account is in a conflicting mode or already holds a position in the symbol, the agent does not start and the user is told what to change (FR-BIN-F2). `FuturesEntryTests` holds what places the orders to the rules below, and `AgentAccountTests` of `tests/Ecnanib.Tests/Agents` the start of an agent.
+
+| Rule | Detail |
+|---|---|
+| **The account is read before an entry, and before an agent runs** | `IExchangeAdapter.GetFuturesAccountAsync` reads the settings of the account and its positions in the symbol of the agent, with the key of the agent's user: two calls, of 5 of request weight each. See "The account of Futures" in [exchange.md](exchange.md). |
+| **Three things stand in the way** | `AccountConflict.HedgeMode`: the account keeps a long and a short position of a symbol apart, and an agent has one position. `MultiAssetsMode`: the account margins with more than one asset, in which Binance takes no isolated margin. `PositionInSymbol`: the account holds a position in the symbol that the agent did not open. |
+| **The first two are of the whole account, and are never changed** | The service has no call that sets either. What is to change is its user's to change at Binance, and they are told what. |
+| **A position in the symbol is the agent's own when its records hold one** | Or an order that is not over, which may have opened one. So an agent that was paused with its position open is resumed. What the account holds beside the records is not compared: see "Not built yet". Before an entry the agent holds nothing, so a position there is not its own. |
+| **An account that cannot be read is not one that nothing stands in the way of** | `AccountConflict.NotKnown`. No entry is placed, as `AccountUnknown`, and nobody is told: it is not known that anything is to change. An agent is not started or resumed: its page says to try again. |
+| **A position that is still listed right after a reverse closed it alarms nobody** | A plan that reverses closes the position of the agent, and enters on the other side at once. A position that the account still says then may be the one that was closed a moment ago, which Binance has not taken off its list yet. No entry is placed, as `AccountUnknown`, nobody is told, and the agent runs on: a position that is still there is found by its next entry. |
+| **A conflict that an entry meets has the agent wait for its user** | The entry is skipped, as `AccountConflict`, its user is told what to change, with a notification of the type `AttentionRequired`, and `IAgentTrading.RequireAttentionAsync` moves the agent to Attention required, with the cause `ExchangeSettingConflict` (SRS 3.3). Its user resumes it once the account is changed: a resume asks again. See [agents.md](agents.md) and [notifications.md](notifications.md). |
+| **It is asked for Agents by what places the orders** | `IPlanOrders.AccountConflictAsync`, behind `IAgentExposure.AccountConflictAsync`: only `AgentOrders` is handed the key of a user. For an agent on Spot nothing stands in the way, and Binance is asked nothing. |
+
+### The margin of Futures
+
+The system sets margin type and leverage for the agent's symbol before entry (FR-BIN-F2). An entry is skipped, and the user notified, when the Futures wallet lacks the margin the plan needs (FR-BIN-F6).
+
+| Rule | Detail |
+|---|---|
+| **The wallet is read before the entry is begun** | `IExchangeAdapter.GetBalancesAsync` reads the wallet of Futures of the agent's user, in the mode of the agent. It is one call for each entry, of 5 of request weight. |
+| **The entry needs its margin** | Its quantity times its price, as for Spot, divided by the leverage of the order: `GuardResult.Size.Leverage`. What counts is `ExchangeBalance.Available` of `Agent.QuoteAsset`, which is what a new order can use. A wallet that has exactly the margin covers it. |
+| **The user is told, once in a day for an agent** | With a notification of the type `EntrySkipped`, which says the margin that the entry needs, its leverage, and what the wallet has available. A wallet that cannot be read covers nothing, and nobody is told. An entry that Binance refuses has the wallet read once more. All as in "The quote balance". |
+| **Then the symbol is given isolated margin, and the leverage of the order** | `IExchangeOrders.SetIsolatedMarginAsync`: two calls, each a setting of the symbol in the account, and neither one of the whole account. The leverage is the one that the Risk Guard computed for this order, which is what its liquidation buffer was checked against (FR-RSK-5, FR-RSK-6). It is set anew for each entry: the next order may take another. |
+| **The entry is placed only once Binance has said that both are set** | A symbol that is isolated already is one that is: Binance answers it with an error of its own. A leverage is set when Binance answers with that leverage. Anything else is `MarginNotSet`: no entry is placed, and the next cycle decides anew. |
+| **A setting that Binance refuses is said to the user** | As `MarginRefused`, with a notification of the type `EntrySkipped`, once in a day: Binance does not change the margin of a symbol while the account has open orders or a position in it, which are for its user to cancel or close. |
+| **Nothing is set for an entry that is not placed** | The account, the state of the agent, and the wallet are asked first. So an agent whose entry is skipped changes nothing at Binance. |
+| No margin is added to a position, and none is moved. | The margin of a position is taken from the wallet by the order that opens it. The gateway has no call that adds margin to one (FR-BIN-9, FR-BIN-F5). |
 
 ## An entry at a price
 
-On Spot an entry is an order at the market, or an order at a price, which rests on the exchange until it is executed (FR-BIN-S2). `LimitEntryTests` holds it to the rules below.
+An entry is an order at the market, or an order at a price, which rests on the exchange until it is executed (FR-BIN-S2). It is the same on both markets, but for what the last three rules say. `LimitEntryTests` holds it to the rules below.
 
 | Rule | Detail |
 |---|---|
@@ -88,11 +127,11 @@ On Spot an entry is an order at the market, or an order at a price, which rests 
 | **It opens no position while it rests** | Its row says `Open`, or `PartiallyFilled` with what is executed so far. The position is opened when the entry is over, for what was executed of it. Until then the agent has an entry that has not filled, which its data package says, and no second entry: see "What an agent holds". |
 | **It is asked about every minute** | Nothing tells the service that an order was executed: the account event feed is not built. So the job that settles the orders asks about an entry that rests with every run, and what it bought has its stop-loss and its take-profit within a minute of the execution. See "Not built yet". |
 | **It is taken off when the next candle of its agent has closed** | `orders.cancel_after` is that close: the close that the cycle of the entry was for, and the length of a candle of the agent after it. The cycle that starts then settles the orders of the agent before its team decides, which takes the entry off: the team decides on an agent that holds nothing. The job takes it off as well, so a cycle that does not start, because it came too late, the candle was not there, or the service was down, does not leave an entry of the day before resting. |
-| **A part that is executed is protected at once** | When a part is executed that an order can be for, the rest of the entry is taken off, and the part is a position with its pair. Left to rest, the entry would leave what it bought without a stop-loss until the rest is executed or its time is up, which is a day on the longest timeframe. |
-| **A part that no order can be for is no position** | Below the least quantity of the symbol, or worth less than its least value. Such a part is left to grow while the entry rests. When the entry is over with it, it opens no position: nothing could protect it or sell it, and an agent that held it would wait for its user for good. What was bought stays in the account, the executions are stored, and the log says it as a warning. |
+| **A part that is executed is protected at once** | When a part is executed that an order can be for, the rest of the entry is taken off, and the part is a position with its protection. Left to rest, the entry would leave what it bought without a stop-loss until the rest is executed or its time is up, which is a day on the longest timeframe. On Futures any part is one that an order can be for: an order that only reduces a position is held to no least value, and the part is leveraged. |
+| **On Spot a part that no order can be for is no position** | Below the least quantity of the symbol, or worth less than its least value. Such a part is left to grow while the entry rests. When the entry is over with it, it opens no position: nothing could protect it or sell it, and an agent that held it would wait for its user for good. What was bought stays in the account, the executions are stored, and the log says it as a warning. |
 | **It is taken off when its agent no longer opens positions** | An agent that its user paused or stopped, or that waits for its user, gets no cycle that would take it off. The job asks the state of the agent, under the lock of its account, and takes the entry off. |
 | **It is taken off when its user closes the position** | An agent has a position, as far as its user is asked, from the moment that its entry is written: see "What an agent holds". "Close position now" takes an entry that rests off, and sells what it bought by then. |
-| **What it bought is what the agent holds** | What was executed, less a fee that Binance took in the asset that was bought, down to the quantity step: see "The stop-loss". The answer about an order that rested has no executions, so they are read. |
+| **What it bought is what the agent holds** | On Spot what was executed, less a fee that Binance took in the asset that was bought, down to the quantity step: see "The stop-loss". The answer about an order that rested has no executions, so they are read. On Futures it is what was executed: no fee is taken in the contract. |
 
 ## An order is never sent twice
 
@@ -104,7 +143,8 @@ On Spot an entry is an order at the market, or an order at a price, which rests 
 | **An unknown outcome is asked about before anything else** | The order is asked about by its identifier. Nothing else is done with it, and nothing is placed beside it, until Binance has said what became of it. |
 | **Binance's word that it has no such order counts once the order could no longer arrive** | 10 seconds after the call ended (`ExchangeOrderTimes.FinalAfter`). Binance takes a call for 5 seconds after the time that the call carries, and no longer. Before that the answer says nothing: the order may still arrive. The same holds for an order that rests: that Binance has none counts once the order has rested for that long, so that no order is placed a second time beside one that Binance has just taken. |
 | **An entry is never sent again** | An entry that Binance does not have was not placed, and the next cycle decides anew. No failure leads to an entry (NFR-REL-2). |
-| **A stop-loss and a close are sent once more** | As the same order, with the same identifier, and only after Binance said that it does not have it once it could no longer arrive. An order that rests keeps its identifier taken, so Binance would refuse the second one if it had the first after all. When Binance refuses the second one, the order is asked about once more before the refusal is believed. |
+| **A stop-loss and a close are sent once more** | As the same order, with the same identifier, and only after Binance said that it does not have it once it could no longer arrive. An order that rests keeps its identifier taken, so Binance would refuse the second one if it had the first after all. When Binance refuses the second one, the order is asked about once more before the refusal is believed. The take-profit of Futures, which is an order of its own, is sent once more in the same way. |
+| **Nothing is sent once more for a position that is closed** | On Futures the other order of a position may have closed it meanwhile. An order that protects it would rest with nothing to protect, and act on the next position of the agent. |
 | **A pair is sent once more as a pair** | Both of its orders with one call, with the identifiers that they had and the one of the pair, and only after Binance said of both that it has neither. No order of a pair is ever sent alone: see "The pair of the Spot market". |
 | **A sent order is not given up by its caller** | Cancelling ends the wait at the limiter, and then nothing was sent. From the moment that the call is sent it runs to its answer or to its time limit. |
 
@@ -126,11 +166,12 @@ An order in the first two statuses is not settled: see "Settling". An order in t
 
 | Rule | Detail |
 |---|---|
-| **It is placed when the entry is executed** | For what the agent holds of the entry, at the stop-loss of the plan, as a stop that is placed at the market when the price reaches it. On Spot it is one order of a pair with the take-profit, and everything below holds for the pair: see "The pair of the Spot market". |
+| **It is placed when the entry is executed** | For what the agent holds of the entry, at the stop-loss of the plan, as a stop that is placed at the market when the price reaches it. On Spot it is one order of a pair with the take-profit, and everything below holds for the pair: see "The pair of the Spot market". On Futures it only reduces the position, and is triggered on the mark price (FR-BIN-F3). |
 | **On Spot it is for what was bought, less the fee** | Binance may take the fee of a purchase in the asset that was bought. What the account then holds is less than what was executed, and an order for more would be refused. The executions say the fee: they are in the answer to the entry, or are read. The quantity is rounded down to the quantity step of the symbol. |
 | **It is placed at most twice** | A second time when the first was not placed: it was not sent, or Binance does not have it. A stop-loss that Binance refused is not placed again. |
 | **When it cannot be placed, the position is closed at market at once** | And its user is told, with a notification (FR-RSK-7). The agent runs on. The position says `ProtectionFailed` as how it ended. |
 | **When it cannot be closed either** | The position is open with no stop-loss. Its user is told that, once. An agent that runs moves to Attention required, with the cause `PositionUnprotected`, and one that its user paused or stopped stays as it is. What settles the orders tries again every minute: the stop-loss first, and then the close. |
+| **One that is gone is placed again beside a take-profit that rests** | On Futures, where the take-profit is an order of its own: a stop-loss is begun whatever has become of the take-profit of the same position, and the take-profit is not touched for it. |
 | **A cycle that is being stopped still protects its entry** | Once the entry is sent, the stop-loss is sent as well, once. What is left after that, an unknown outcome, a second try, and the close at market, is done by what settles the orders (NFR-REL-5). |
 | **A stop-loss that rests is asked about** | At the start of each cycle of the agent, before a position is closed, and by the job that settles, when it was last asked about longer ago than `Binance:ReconcileMinutes`. Executed: the position is closed in the records, as `StopLoss`. Taken off or ended at Binance: the position is unprotected, and gets a new stop-loss. |
 
@@ -155,7 +196,24 @@ On Spot the protection of a position is a stop-loss and a take-profit that rest 
 | **It is taken off with one call** | Before a close, and before the protection is moved. Binance reports both orders, each under the identifier that it carried. Whatever the call says but that, both orders are asked about: a pair of which one order was executed is over at Binance, and has nothing to take off. |
 | **A take-profit that rests without its stop-loss protects nothing** | The records never come to that by what Binance says. Where they do, what rests is taken off, and only then the position gets its pair anew. |
 | **When the pair cannot be placed, the position is closed at market** | As in "The stop-loss": a pair that Binance refuses, because the price has passed one of its two triggers, or that is not placed at the second try. The notification says that the stop-loss could not be placed. |
-| Futures has no such pair. | A position there has its stop-loss, and its take-profit as a price. So has a position on Spot whose plan named no take-profit, which no plan that opens a position does (FR-CYC-7), and one that was opened before the pair was built, until its protection is next moved. |
+| Futures has no such pair. | A position there has its stop-loss, and its take-profit as an order of its own: see "The take-profit of Futures". A position on Spot whose plan named no take-profit, which no plan that opens a position does (FR-CYC-7), has its stop-loss alone, and so has one that was opened before the pair was built, until its protection is next moved. |
+
+## The take-profit of Futures
+
+On Futures protection is a reduce-only stop-loss and a reduce-only take-profit resting on the exchange, triggered on the mark price (FR-BIN-F3). Binance has no pair there: the two are conditional orders of their own, and it ends neither for the other. `FuturesProtectionTests` holds it to the rules below.
+
+| Rule | Detail |
+|---|---|
+| **The stop-loss comes first, and alone** | It is placed as in "The stop-loss", and nothing that becomes of the take-profit takes it off, but for a take-profit that Binance refuses: see below. Every open position has a stop-loss resting on the exchange (FR-RSK-7), and an agent is settled when its position has one, whatever has become of its take-profit. |
+| **The take-profit is placed once the stop-loss rests** | For what the position holds, at the take-profit of the plan, on the side that closes: a take-profit that is placed at the market when the mark price reaches it. It only reduces the position, so it opens nothing when the position is gone. |
+| **They are two rows, and no pair** | Each with the identifier that its order carries, and neither with a `pair_id`. Each is sent, asked about, sent once more, and taken off as the one order that it is: see "An order is never sent twice". The row of the take-profit is written only while the stop-loss of its position rests, and the agent has no other order that is not over. |
+| **A take-profit that Binance refuses closes the position at market** | Binance refuses one that would be triggered at once: the mark price has passed it, which is what the take-profit waits for. So the stop-loss is taken off, the position is closed at market, as `ProtectionFailed`, and its user is told that the take-profit could not be placed. It is what Spot does with a pair that Binance refuses. Protection that a plan moved goes back to its old price first: see "Moving the stop-loss". |
+| **When it cannot be closed, the stop-loss goes back, and the take-profit is given up** | The position says no take-profit from then on, until a plan names one, and its user is told that it is open with its stop-loss alone. Tried again with every run, the take-profit would have the stop-loss taken off every time. When the stop-loss cannot be placed again either, the position is one with no stop-loss: see "The stop-loss". |
+| **A take-profit that was not placed is owed, and closes nothing** | It was not sent, its outcome is not known, the key of its user is not there, or the cycle was stopped once the stop-loss was sent, which is the one more call that such a cycle has (NFR-REL-5). The position has its stop-loss. The job that settles the orders places the take-profit with its next run, which is within a minute. No row is written for one that cannot be sent. |
+| **When one of the two has closed the position, the other is taken off** | Binance leaves it resting. Left there, it would reduce a position that the agent opens later. What settles the orders takes it off in the pass that finds the position closed, and with every run until it is gone. Until then the agent is not settled, so it gets no cycle, and it holds an order that is not over, so it gets no entry. |
+| **A take-profit that was executed closes the position** | In the records, as `TakeProfit`, when it is next asked about: see "A stop-loss that rests is asked about". Nobody is told: it is no failure. |
+| **One that was taken off at Binance is placed again** | The stop-loss beside a take-profit that rests, and the take-profit beside a stop-loss that rests: what settles the orders places what is missing. |
+| **The take-profit is taken off before the stop-loss** | Before a close. So what is left when Binance does not take one of the two off is the stop-loss. |
 
 ### Moving the stop-loss
 
@@ -166,7 +224,9 @@ A plan that adjusts protection names a stop-loss that reduces the risk: the Risk
 3. When it cannot be placed there, the old price is written back, and a stop-loss is placed at the old price again.
 4. When that cannot be placed either, the position is closed at market, and its user is told.
 
-On Spot it is the pair that is taken off and placed, when the plan moves the stop-loss, the take-profit, or both, and both old prices that are written back. So a take-profit that Binance refuses, because the price has passed it, leaves the position with the pair that it had. On Futures the take-profit is a price only: it is written, and no order is moved for it.
+On Spot it is the pair that is taken off and placed, when the plan moves the stop-loss, the take-profit, or both, and both old prices that are written back. So a take-profit that Binance refuses, because the price has passed it, leaves the position with the pair that it had.
+
+On Futures each price moves its own order. The stop-loss is moved first, as above, while the take-profit rests. Then the take-profit that rests is taken off, its new price is written, and one is placed there, while the stop-loss rests: a plan that moves the take-profit alone leaves the position with its stop-loss all the while. A take-profit that Binance refuses at its new price is placed at the old one again, and when Binance refuses that as well, the position is closed at market: see "The take-profit of Futures".
 
 ## Closing a position
 
@@ -174,9 +234,9 @@ For a plan that closes or reverses, for the user of an agent (FR-AGT-11, FR-AGT-
 
 | Step | Rule |
 |---|---|
-| 1 | The stop-loss is taken off the exchange first, and on Spot the take-profit with it, as the one pair that they are. On Spot it holds what the close sells, and on Futures it would be left behind. When Binance has no stop-loss to take off, it is asked what became of it: a stop-loss or a take-profit that was executed has closed the position already, and nothing more is placed. When it cannot be taken off, the close fails, and the position is open as it was, with its stop-loss. |
+| 1 | The stop-loss is taken off the exchange first, and on Spot the take-profit with it, as the one pair that they are. On Spot it holds what the close sells, and on Futures it would be left behind. There the take-profit is taken off before the stop-loss, each as the order that it is. When Binance has no stop-loss to take off, it is asked what became of it: a stop-loss or a take-profit that was executed has closed the position already, and nothing more is placed. When it cannot be taken off, the close fails, and the position is open as it was, with its stop-loss. |
 | 2 | The order that closes the position is placed at the market, for what the position holds, at most twice: a second time when the first was not placed, or ended with a part of the position. |
-| 3 | When the position is not closed, its stop-loss is placed again, as in "The stop-loss". |
+| 3 | When the position is not closed, its stop-loss is placed again, as in "The stop-loss", and its take-profit with it or after it. |
 
 Between step 1 and step 2 the position has no stop-loss. That cannot be avoided on Spot.
 
@@ -198,14 +258,15 @@ Two closes of the same position at the same moment send one order: the second fi
 |---|---|
 | 1 | Each order that is not over is asked about by its identifier, and what Binance says is written. The two orders of a pair are asked about together. An order that is being sent now, by another instance, is left to that one. |
 | 2 | An entry that still rests is taken off the exchange when its time is up, when a part of it is executed that can be protected, or when its agent no longer opens positions: see "An entry at a price". |
-| 3 | An open position that no order is under way for has its stop-loss, or gets it now, as in "The stop-loss". |
-| 4 | The executions of the orders that are over are read and stored, where they are not stored yet. |
+| 3 | A stop-loss or a take-profit of Futures that still rests for a position which is closed is taken off the exchange: see "The take-profit of Futures". |
+| 4 | An open position that no order is under way for has its stop-loss, or gets it now, as in "The stop-loss". On Futures a position whose stop-loss rests gets the take-profit that it lacks. |
+| 5 | The executions of the orders that are over are read and stored, where they are not stored yet. |
 
 | Rule | Detail |
 |---|---|
-| **A job settles every minute** | `OrderSettlingJob`, named `order-settling`, for the agents that have something to settle: an order whose outcome is unknown, an entry that rests, an open position without a stop-loss that rests, a stop-loss or a take-profit that was last asked about longer ago than `Binance:ReconcileMinutes`, and executions that are not stored. Most runs find none. |
+| **A job settles every minute** | `OrderSettlingJob`, named `order-settling`, for the agents that have something to settle: an order whose outcome is unknown, an entry that rests, an open position without a stop-loss that rests, a stop-loss or a take-profit that was last asked about longer ago than `Binance:ReconcileMinutes`, executions that are not stored, and on Futures a position whose take-profit does not rest beside its stop-loss, and an order that protected a position which is closed. Most runs find none. |
 | **A restart settles first** | The job is due as the background work starts when there is anything to settle. |
-| **An agent that is not settled gets no cycle** | `IReconciliation.HasReconciledAsync` answers from the rows: an agent with an order in `Sending` or `Unknown`, or with an open position without a stop-loss that rests, is not reconciled. So no order is placed for it until Binance was asked. That is what keeps a restart from placing an order twice (NFR-REL-3). An entry that rests is settled: its agent gets the cycle that takes it off. See "After a restart" in [cycles.md](cycles.md). |
+| **An agent that is not settled gets no cycle** | `IReconciliation.HasReconciledAsync` answers from the rows: an agent with an order in `Sending` or `Unknown`, with an open position without a stop-loss that rests, or with an order of no pair that protected a position which is closed and is not over, is not reconciled. So no order is placed for it until Binance was asked. That is what keeps a restart from placing an order twice (NFR-REL-3). An entry that rests is settled: its agent gets the cycle that takes it off. See "After a restart" in [cycles.md](cycles.md). |
 | **No agent waits for another** | The agents are settled a few at a time, each on its own. One that cannot be settled, because its key is gone or refused, keeps no other waiting. |
 | **A refused key is checked again** | When Binance answers a call about an order as it answers a wrong credential, `IKeyValidation.RevalidateExchangeKeyAsync` is asked. The check decides whether the key is invalid (FR-KEY-3). |
 
@@ -215,8 +276,8 @@ The Decision Engine keeps the positions and the orders, so it answers those that
 
 | Interface | Answer |
 |---|---|
-| `IAgentExposure` of Agents | An agent has an open position or orders while it has a position without a time of closing, or an order that is not over. It has an open position, as far as stopping it goes, also while an entry of it is not over: such an entry may open one. `ClosePositionAtMarketAsync` is `IPlanOrders.CloseAtMarketAsync`. See [agents.md](agents.md). |
-| `IAgentHoldings` | The open position, with the prices of the stop-loss and of the take-profit that rest for it, and the orders that rest: an entry that has not filled, a stop-loss, and a take-profit. A take-profit is said when an order rests for it, which is on Spot. The equity is the capital that the user allocated: no result is stored yet. See "What an agent holds" in [cycles.md](cycles.md). |
+| `IAgentExposure` of Agents | An agent has an open position or orders while it has a position without a time of closing, or an order that is not over. It has an open position, as far as stopping it goes, also while an entry of it is not over: such an entry may open one. `ClosePositionAtMarketAsync` is `IPlanOrders.CloseAtMarketAsync`, and `AccountConflictAsync` is `IPlanOrders.AccountConflictAsync`: see "The account of Futures". See [agents.md](agents.md). |
+| `IAgentHoldings` | The open position, with the prices of the stop-loss and of the take-profit that rest for it, and the orders that rest: an entry that has not filled, a stop-loss, and a take-profit. A take-profit is said when an order rests for it, on either market. The equity is the capital that the user allocated: no result is stored yet. See "What an agent holds" in [cycles.md](cycles.md). |
 | `IReconciliation` | Whether the agent is settled. See "Settling". |
 
 ## One after the other
@@ -226,7 +287,7 @@ The Decision Engine keeps the positions and the orders, so it answers those that
 | **One at a time for an agent** | `AgentOrders` does what it does for one agent one after the other: a cycle, what settles, and a close of the agent's user take turns. |
 | **A row is begun under the lock of the account** | The row of an order is written in a transaction that first takes the lock of the agent's account, as the controls of its user do (`IAgentTrading.StateUnderLockAsync`). Under it the state of the agent and what it holds are asked. So an entry and a stop of the agent's user cannot cross, and two instances of the application begin an order of the same agent one after the other. |
 | **What becomes of an order is written by comparing and setting** | A write names the status that the row is expected to have, and writes nothing when the row has moved on. What follows from it, a position that is opened or closed, is written in the same transaction. |
-| **The database holds to the rest** | One open position for an agent, one order of each purpose that is not over, and no two orders with the same identifier. |
+| **The database holds to the rest** | One open position for an agent, one order of each purpose that is not over, and no two orders with the same identifier. So an agent of Futures has one stop-loss and one take-profit that are not over at most, as one on Spot has. |
 | **No transaction is held while Binance is asked** | |
 
 ## The record of an order
@@ -244,18 +305,18 @@ The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrde
 | `orders.mode`, `market`, `symbol` | Those of the agent when the order was placed. What an agent did in Demo is Demo for good (FR-BIN-11), and an order is asked about where it was placed. |
 | `orders.cycle_id` | The cycle that placed it, or nothing for an order that no cycle placed. It points at no row: a cycle is recorded when it ends, which is after its orders. |
 | `orders.purpose` | `Entry`, `StopLoss`, `TakeProfit`, or `Close`. |
-| `orders.type` | `Market`, `Stop`, or `Limit`. A take-profit is a `Stop`, as a stop-loss is. |
+| `orders.type` | `Market`, `Stop`, or `Limit`. A take-profit is a `Stop`, as a stop-loss is: its purpose says which of the two it is, and so which way its trigger is held against the price. |
 | `orders.price` | The price that a stop is triggered at, or the price of an entry at a price. |
 | `orders.stop_loss`, `take_profit` | Of an entry: the protection of the position that it opens. They are kept with the entry, so that the position is protected at that price also when the entry is found executed later, by what settles it. |
 | `orders.exchange_order_id` | The number that Binance knows the order by. A stop of Futures that was triggered is known by the order that it became. |
 | `orders.exit_reason` | Of an order that closes: why. |
 | `orders.sends` | 1, or 2 when it was sent once more. |
 | `orders.checked_at` | When Binance last said what has become of it. |
-| `orders.pair_id` | Of a stop-loss and a take-profit of Spot: the pair that they are, which both carry. Written without its hyphens, it is the identifier that the pair carries at Binance. It is the id of no row. |
+| `orders.pair_id` | Of a stop-loss and a take-profit of Spot: the pair that they are, which both carry. Written without its hyphens, it is the identifier that the pair carries at Binance. It is the id of no row. The two orders of Futures carry none: they are no pair. |
 | `orders.cancel_after` | Of an entry at a price: when it is taken off the exchange if it still rests, which is the next close of the candles of its agent. |
 | `fills.fee`, `fee_asset` | The fee of an execution, in the asset that Binance took it in. |
 | `positions.quantity` | What the position holds: what an order that protects or closes it is for. |
-| `positions.stop_loss`, `take_profit` | Prices. The order of the stop-loss is a row of `orders`, and so is the order of the take-profit on Spot. On Futures no order is placed for the take-profit. |
+| `positions.stop_loss`, `take_profit` | Prices. The order of the stop-loss is a row of `orders`, and so is the order of the take-profit. |
 | `positions.exit_reason` | `StopLoss`, `TakeProfit`, `TeamClose`, `UserClose`, or `ProtectionFailed`. |
 | `positions.alerted_at` | When its user was told that it is open with no stop-loss and could not be closed. |
 
@@ -278,11 +339,15 @@ The take-profit of the position of agent {AgentId} rests on the exchange as the 
 The entry of agent {AgentId} in {Symbol} rests on the exchange as the order {ExchangeOrderId}, until {CancelAfter}
 The entry of agent {AgentId} in {Symbol} that still rests is taken off the exchange: {EntryTakenOffReason}
 The entry of agent {AgentId} was executed as the order {ExchangeOrderId} for less than an order can be for, so it opens no position
+The take-profit of the position of agent {AgentId} could not be placed, so the position is closed at market
+The take-profit of the position of agent {AgentId} could not be placed at its new price, so it is placed at the old one again
+The position of agent {AgentId} could not be closed at market, so it is open with its stop-loss, and with no take-profit
 ```
 
 | Note | Detail |
 |---|---|
-| **Levels** | A change of an order and a position that is opened or closed are information. A stop-loss that cannot be placed is a warning, and so is an entry that bought less than an order can be for. A position that is left open with no stop-loss is an error. |
+| **Levels** | A change of an order and a position that is opened or closed are information. A stop-loss or a take-profit that cannot be placed is a warning, and so is an entry that bought less than an order can be for. A position that is left open with no stop-loss is an error. |
+| **Why no entry was placed** | `NoEntryReason` is one of "When no entry is placed". No event says an amount of the wallet, or the leverage of an order. |
 | **Why an entry was taken off** | `EntryTakenOffReason` is `TimeIsUp`, `PartlyExecuted`, `NotRunning`, or `UserClose`: see "An entry at a price". |
 | **A pair that is sent once more** | Is said with the event of an order that is, with `Pair` as its `OrderPurpose`. |
 | **The calls themselves** | Each call to Binance is in the log of outbound calls, with its duration and its outcome, and the number of an error of Binance under the gateway. See [exchange.md](exchange.md). |
@@ -290,7 +355,7 @@ The entry of agent {AgentId} was executed as the order {ExchangeOrderId} for les
 
 ## Testing
 
-The tests run the application on a database of their own, with a Binance that keeps orders behind the gateway (`TradingBinance` in `OrderFixtures.cs`): it takes an order, answers what became of it, takes it off, and lists its executions, in the form that Binance's documentation gives. An order at a price rests there until the test has it executed, in full or in part. A pair is two stops of one list: it is taken while the price is between its two triggers, when one is executed the other ends, and taking one off takes both. A test says what becomes of a call that places an order or a pair: taken, taken with an answer that never comes, lost, refused, or answered with a fault. What the account holds is what the test says, and more than a plan of the tests needs unless it says otherwise. The clock is the test's, so a test moves it on while the application waits for a moment of it.
+The tests run the application on a database of their own, with a Binance that keeps orders behind the gateway (`TradingBinance` in `OrderFixtures.cs`): it takes an order, answers what became of it, takes it off, and lists its executions, in the form that Binance's documentation gives. An order at a price rests there until the test has it executed, in full or in part. A pair is two stops of one list: it is taken while the price is between its two triggers, when one is executed the other ends, and taking one off takes both. On Futures a stop and a take-profit are conditional orders of their own, which it has at the calls of those orders only: one whose trigger the price has passed is refused, and neither ends when the other is executed. The symbol has isolated margin there once it was asked to have, after which that call is answered with Binance's error that nothing is to change, and the leverage that was last asked for. A test says what becomes of a call that places an order or a pair: taken, taken with an answer that never comes, lost, refused, or answered with a fault. What the account holds, and how it stands on Futures, is what the test says: more than a plan of the tests needs, in one-way mode, with one asset, and with no position in the symbol, unless it says otherwise. The clock is the test's, so a test moves it on while the application waits for a moment of it.
 
 | Requirement | Tests |
 |---|---|
@@ -303,13 +368,21 @@ The tests run the application on a database of their own, with a Binance that ke
 | Protection is a stop-loss and take-profit pair, where filling one cancels the other | `ProtectivePairTests` |
 | A Spot agent sells only the quantity it bought | `ProtectiveStopTests`, `ProtectivePairTests`, `LimitEntryTests` |
 | An entry that the quote balance does not cover is skipped, and the user is notified | `SpotEntryTests` |
+| Futures agents trade perpetual contracts, long or short | `PlanOrderTests`, `FuturesProtectionTests`, and `LimitEntryTests` for an entry at a price |
+| The system sets margin type and leverage for the agent's symbol before entry | `FuturesEntryTests`, and `FuturesAccountTests` for the calls |
+| It changes no account-wide setting, and an account that conflicts gets no entry and no start | `FuturesEntryTests`, `AgentAccountTests` of `tests/Ecnanib.Tests/Agents`, and `NoFundMovementTests` for what the gateway can send |
+| Protection is a reduce-only stop-loss and a reduce-only take-profit, triggered on the mark price | `FuturesProtectionTests`, `ProtectiveStopTests`, `PlanOrderTests`, and `OrderPlacementTests` for the calls |
+| An entry that the margin of the Futures wallet does not cover is skipped, and the user is notified | `FuturesEntryTests` |
 
 A check against Binance's own test environment is in `LiveBinanceTests`: see "Checking against Binance itself" in [exchange.md](exchange.md).
 
 ## Not built yet
 
 - Protection that Binance places by itself when an entry at a price is executed. The pair is placed by the service, within a minute of the execution, and later when the service is down then: until it is, what the entry bought has no stop-loss. Binance has a list of three orders for it, which places a pair when its entry is executed in full. Its documentation does not say how the quantity of that pair is held to what the account has once the fee of the purchase is taken in the asset, so it is not used.
-- The orders of Futures (FR-BIN-F2, FR-BIN-F3, FR-BIN-F6): an entry at a price, an order for the take-profit, isolated margin, one-way mode, the leverage that the Risk Guard computed, the trigger on the mark price, and the check of the margin. Until then a plan with a limit entry places nothing there, no order rests for a take-profit, and an entry uses the leverage that the account has for the symbol, so the liquidation buffer was checked against a leverage that is not applied.
+- Funding paid or received, as a record of a position (FR-BIN-F4), and the margin state of an open position, with a warning when it approaches liquidation (FR-BIN-F5). The service adds no margin to a position.
+- Finding a mode of the account that its user changes while a position is open. The account of Futures is read before an entry and before an agent runs, and not in between. Binance takes no change of the position mode while the account has a position or an order.
+- Comparing the position that an account of Futures holds in a symbol with the records of the agent. A position there is taken for the agent's own while its records hold one, and for one that the agent did not open while they hold none. It comes with reconciliation (FR-BIN-7, FR-BIN-8).
+- The leverage brackets of a symbol, by which Binance allows less leverage for a larger position. A leverage that Binance refuses for that gets no entry, and its user is told: see "The margin of Futures".
 - The account event feed and reconciliation (FR-BIN-7, FR-BIN-8). Until then a stop-loss or a take-profit that was executed shows in the records when it is next asked about, and an entry at a price within a minute. What a user does at Binance by hand is not detected, but for a stop-loss or a pair that they take off: a position that its user sold at Binance is given a new pair, which Binance refuses when the account does not hold what it sells.
 - The results of a position: its profit and loss, its fees, its funding, and its result in R (FR-BIN-10). The equity of an agent, and with it the loss limits (FR-RSK-8), still go by the allocated capital.
 - The orders of a cycle in its record and its timeline (FR-CYC-10). Why a plan placed nothing is in the log only.

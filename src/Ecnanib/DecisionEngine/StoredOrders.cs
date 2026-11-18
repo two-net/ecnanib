@@ -1,5 +1,6 @@
 using Ecnanib.Agents;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Shared;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.DecisionEngine;
@@ -16,8 +17,9 @@ namespace Ecnanib.DecisionEngine;
 /// user do. Under that lock it is asked what the agent holds, so two that begin an order of the
 /// same agent begin one after the other, and the second finds what the first wrote. An index
 /// holds an agent to one order of each purpose that is not over, and to one open position,
-/// whatever asks. The pair of a stop-loss and a take-profit is begun as two rows, both or
-/// neither.
+/// whatever asks. The pair of a stop-loss and a take-profit of the Spot market is begun as two
+/// rows, both or neither. On the Futures market the two are orders of their own: the stop-loss
+/// is begun first, and the take-profit beside it once the stop-loss rests (FR-BIN-F3).
 /// </para>
 /// <para>
 /// <b>What becomes of an order is written by comparing and setting:</b> a write names the
@@ -85,8 +87,9 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
 
     /// <summary>
     /// Whether the records of an agent hold nothing that is to be settled with the exchange: no
-    /// order of which it is not known whether the exchange has it, and no open position without
-    /// a stop-loss that rests on the exchange.
+    /// order of which it is not known whether the exchange has it, no order that protected a
+    /// position which is closed and is with the exchange still, and no open position without a
+    /// stop-loss that rests on the exchange.
     /// </summary>
     public async Task<bool> IsSettledAsync(Guid agentId, CancellationToken cancellationToken)
     {
@@ -95,6 +98,12 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
         var orders = context.Set<Order>().AsNoTracking();
 
         if (await orders.AnyAsync(order => order.AgentId == agentId && OrderStatuses.Unsettled.Contains(order.Status), cancellationToken))
+        {
+            return false;
+        }
+
+        // What is left of the protection of a position that is closed would act on the next one.
+        if (await LeftBehind(context).AnyAsync(order => order.AgentId == agentId, cancellationToken))
         {
             return false;
         }
@@ -114,8 +123,10 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
     /// The agents of all users whose records are to be settled with the exchange, in the order
     /// of their ids: one with an order of unknown outcome, one with an entry that rests, one
     /// with an open position that has no stop-loss resting, one whose resting stop-loss or
-    /// take-profit the exchange was last asked about before a moment, and one with executions
-    /// that are not stored yet.
+    /// take-profit the exchange was last asked about before a moment, one with executions that
+    /// are not stored yet, one with an order that protected a position which is closed, and one
+    /// with a position of the Futures market whose take-profit does not rest beside its
+    /// stop-loss (FR-BIN-F3).
     /// </summary>
     /// <param name="checkedBefore">An order that protects a position and that the exchange was asked about before this is asked about again.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
@@ -149,7 +160,38 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
                     && OrderStatuses.Resting.Contains(order.Status)))
             .Select(position => position.AgentId);
 
-        return await ofOrders.Union(ofPositions).OrderBy(id => id).ToListAsync(cancellationToken);
+        // What one order of a position left behind when the other closed it, which is taken off
+        // with every run until it is gone.
+        var ofLeftBehind = LeftBehind(context).Select(order => order.AgentId);
+
+        // A take-profit of the Futures market is an order of its own, which is placed once the
+        // stop-loss rests: one that is owed is placed with the next run.
+        var ofTakeProfits = context.Set<Position>()
+            .AsNoTracking()
+            .Where(position => position.ClosedAt == null
+                && position.Market == Market.Futures
+                && position.TakeProfit != null
+                && orders.Any(order => order.PositionId == position.Id
+                    && order.Purpose == OrderPurpose.StopLoss
+                    && order.Status == OrderStatus.Open)
+                && !orders.Any(order => order.AgentId == position.AgentId
+                    && order.Purpose == OrderPurpose.TakeProfit
+                    && OrderStatuses.Live.Contains(order.Status)))
+            .Select(position => position.AgentId);
+
+        return await ofOrders.Union(ofPositions).Union(ofLeftBehind).Union(ofTakeProfits).OrderBy(id => id).ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The orders of an agent that protected a position which is closed, and that are not over:
+    /// the stop-loss of a position of the Futures market whose take-profit was executed, or the
+    /// other way around. The exchange holds the two apart there, and ends neither for the other.
+    /// </summary>
+    public async Task<IReadOnlyList<Order>> LeftBehindAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await LeftBehind(context).Where(order => order.AgentId == agentId).OrderBy(order => order.Id).ToListAsync(cancellationToken);
     }
 
     /// <summary>
@@ -263,7 +305,9 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
     /// order that closes it at the market: writes its row, before it is sent. It is written
     /// only while the position is open and has no such order that is not over, and no order of
     /// the other kind either: a position is not protected while it is being closed, and not
-    /// closed over a stop-loss that still rests.
+    /// closed over a stop-loss that still rests. A stop-loss is begun beside the take-profit of
+    /// the same position that is an order of its own, on the Futures market: a stop-loss that
+    /// is gone is placed again whatever has become of the take-profit.
     /// </summary>
     /// <param name="positionId">The position.</param>
     /// <param name="purpose">A stop-loss, or a close.</param>
@@ -282,12 +326,12 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
-        if (await UnguardedAsync(context, positionId, cancellationToken) is not { } position)
+        var stop = purpose == OrderPurpose.StopLoss;
+
+        if (await UnguardedAsync(context, positionId, besideTakeProfit: stop, cancellationToken) is not { } position)
         {
             return null;
         }
-
-        var stop = purpose == OrderPurpose.StopLoss;
 
         var order = OrderOf(
             position,
@@ -323,7 +367,7 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
-        if (await UnguardedAsync(context, positionId, cancellationToken) is not { TakeProfit: { } takeProfitPrice } position)
+        if (await UnguardedAsync(context, positionId, besideTakeProfit: false, cancellationToken) is not { TakeProfit: { } takeProfitPrice } position)
         {
             return null;
         }
@@ -345,6 +389,44 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
         await transaction.CommitAsync(cancellationToken);
 
         return new OrderPair(stopLoss, takeProfit);
+    }
+
+    /// <summary>
+    /// Begins the take-profit of an open position of the Futures market, at the price that the
+    /// position says, for what the position holds: writes its row, before it is sent. There the
+    /// take-profit is an order of its own, which rests beside the stop-loss (FR-BIN-F3). It is
+    /// written only while the stop-loss of the position rests, and the agent has no other order
+    /// that is not over: the stop-loss comes first, and no take-profit rests without one.
+    /// </summary>
+    /// <param name="positionId">The position.</param>
+    /// <param name="cycleId">The cycle that begins it, or null when none does.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>The order, or null when none was begun.</returns>
+    public async Task<Order?> BeginTakeProfitAsync(Guid positionId, Guid? cycleId, CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        if (await UnderLockAsync(context, positionId, cancellationToken) is not { Market: Market.Futures, TakeProfit: { } price } position)
+        {
+            return null;
+        }
+
+        var live = await LiveOrdersAsync(context, position.AgentId, cancellationToken);
+
+        if (live is not [{ Purpose: OrderPurpose.StopLoss, PairId: null, Status: OrderStatus.Open } stopLoss] || stopLoss.PositionId != position.Id)
+        {
+            return null;
+        }
+
+        var order = OrderOf(
+            position, NextId(), cycleId, OrderPurpose.TakeProfit, OrderType.Stop, price, reason: null, pairId: null, clock.GetUtcNow());
+
+        context.Add(order);
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return order;
     }
 
     /// <summary>
@@ -803,7 +885,35 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
     /// over. Null otherwise. In whatever state the agent is: protecting and closing a position
     /// reduce risk.
     /// </summary>
-    private async Task<Position?> UnguardedAsync(EcnanibDbContext context, Guid positionId, CancellationToken cancellationToken)
+    /// <param name="context">The context, which holds a transaction.</param>
+    /// <param name="positionId">The position.</param>
+    /// <param name="besideTakeProfit">
+    /// Whether the order may be begun beside the take-profit of the position that is an order
+    /// of its own, and of no pair: a stop-loss may.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    private async Task<Position?> UnguardedAsync(
+        EcnanibDbContext context, Guid positionId, bool besideTakeProfit, CancellationToken cancellationToken)
+    {
+        if (await UnderLockAsync(context, positionId, cancellationToken) is not { } position)
+        {
+            return null;
+        }
+
+        var live = await LiveOrdersAsync(context, position.AgentId, cancellationToken);
+
+        return live.All(order => besideTakeProfit
+            && order is { Purpose: OrderPurpose.TakeProfit, PairId: null }
+            && order.PositionId == position.Id)
+                ? position
+                : null;
+    }
+
+    /// <summary>
+    /// A position as it is under the lock of its account, when it is open and holds something.
+    /// Null otherwise.
+    /// </summary>
+    private async Task<Position?> UnderLockAsync(EcnanibDbContext context, Guid positionId, CancellationToken cancellationToken)
     {
         var owner = await context.Set<Position>()
             .AsNoTracking()
@@ -819,13 +929,20 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
         // The position as it is under the lock.
         var position = await context.Set<Position>().AsNoTracking().SingleOrDefaultAsync(row => row.Id == positionId, cancellationToken);
 
-        return position is null
-            || position.ClosedAt is not null
-            || position.Quantity <= 0m
-            || (await LiveOrdersAsync(context, position.AgentId, cancellationToken)).Count > 0
-                ? null
-                : position;
+        return position is null || position.ClosedAt is not null || position.Quantity <= 0m ? null : position;
     }
+
+    /// <summary>
+    /// The orders that protected a position which is closed, are of no pair, and are not over.
+    /// The two orders of a pair are the exchange's to end, as one list.
+    /// </summary>
+    private static IQueryable<Order> LeftBehind(EcnanibDbContext context) =>
+        context.Set<Order>()
+            .AsNoTracking()
+            .Where(order => (order.Purpose == OrderPurpose.StopLoss || order.Purpose == OrderPurpose.TakeProfit)
+                && order.PairId == null
+                && OrderStatuses.Live.Contains(order.Status)
+                && context.Set<Position>().Any(position => position.Id == order.PositionId && position.ClosedAt != null));
 
     /// <summary>The row of an order that protects or closes a position, for what the position holds, as it is before it is sent.</summary>
     private static Order OrderOf(

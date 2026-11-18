@@ -191,7 +191,8 @@ internal sealed class StandInMarket(TimeProvider clock) : IExchangeMarketData
             MaxQuantity: 1000m,
             MinValue: 5m,
             StopOrders: stopOrders,
-            PairOrders: stopOrders);
+            PairOrders: stopOrders,
+            TakeProfitOrders: stopOrders);
 
     /// <summary>What the exchange answers an ask for candles with, when it is not the candles through the latest close: null is those.</summary>
     public Func<AskedCandles, ExchangeCandles?>? Candles { get; set; }

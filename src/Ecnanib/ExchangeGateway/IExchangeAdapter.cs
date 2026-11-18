@@ -69,6 +69,51 @@ public interface IExchangeAdapter
     /// </returns>
     Task<ExchangeBalances> GetBalancesAsync(
         Guid userId, Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads how the account of a credential stands on the Futures market for an agent that
+    /// trades one symbol there with isolated margin, in one-way mode (FR-BIN-F2): the modes that
+    /// hold for the whole account, which the service does not change, and whether the account
+    /// holds a position in the symbol. The calls are signed with the credential, and only read.
+    /// It takes no market: only the Futures market has positions.
+    /// </summary>
+    /// <param name="userId">Whose calls these are, as in <see cref="CheckKeyAsync"/>.</param>
+    /// <param name="mode">The environment the credential is for, which is the one that is asked.</param>
+    /// <param name="apiKey">The user's API key, passed on its own as in <see cref="CheckKeyAsync"/>.</param>
+    /// <param name="secretKey">The secret key that belongs to it, which signs the calls and is never sent.</param>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="cancellationToken">Cancels the calls.</param>
+    /// <returns>
+    /// How the account stands, or how asking ended. An exchange that does not answer is an
+    /// outcome: this does not fail for it.
+    /// </returns>
+    Task<ExchangeFuturesAccount> GetFuturesAccountAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, string symbol, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// How the account of a credential stands on the Futures market, for one symbol. All of it is as
+/// the exchange said when the read succeeded, and nothing of it says anything otherwise: an
+/// account that could not be read is not one that nothing stands in the way of.
+/// </summary>
+/// <param name="Outcome">How the read ended.</param>
+/// <param name="HedgeMode">
+/// Whether the account keeps a long and a short position of a symbol apart, where one-way mode
+/// has one position for a symbol. It holds for the whole account.
+/// </param>
+/// <param name="MultiAssetsMargin">
+/// Whether the account margins its positions with more than one asset. The exchange takes no
+/// isolated margin in that mode. It holds for the whole account.
+/// </param>
+/// <param name="HoldsPosition">Whether the account holds a position in the symbol, long or short.</param>
+public sealed record ExchangeFuturesAccount(ExchangeCallOutcome Outcome, bool HedgeMode, bool MultiAssetsMargin, bool HoldsPosition)
+{
+    public bool HedgeMode { get; } = Outcome == ExchangeCallOutcome.Succeeded || !(HedgeMode || MultiAssetsMargin || HoldsPosition)
+        ? HedgeMode
+        : throw new ArgumentException("A reading says how an account stands only when it succeeded.", nameof(HedgeMode));
+
+    /// <summary>A read that ended without saying how the account stands.</summary>
+    public static ExchangeFuturesAccount Without(ExchangeCallOutcome outcome) => new(outcome, false, false, false);
 }
 
 /// <summary>What the exchange said about a credential.</summary>

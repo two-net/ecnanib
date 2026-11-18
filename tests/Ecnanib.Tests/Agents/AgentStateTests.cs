@@ -103,6 +103,7 @@ public class AgentStateTests
                 "AiKeyInvalid",
                 "ModelUnavailable",
                 "PositionUnprotected",
+                "ExchangeSettingConflict",
             ],
             Enum.GetNames<AgentStateCause>());
     }

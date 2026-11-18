@@ -7,8 +7,9 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// <summary>
 /// Binance, behind the common interface: Spot and USDⓈ-margined perpetual Futures, each on the
 /// real exchange and in Binance's test environment, at the addresses of the configuration file
-/// (FR-BIN-1, FR-BIN-2). It reads the clock of a market, asks about a credential, and reads what
-/// an account holds. It has no operation that moves funds (FR-BIN-9). See docs/exchange.md.
+/// (FR-BIN-1, FR-BIN-2). It reads the clock of a market, asks about a credential, reads what an
+/// account holds, and reads how an account stands on the Futures market (FR-BIN-F2). It has no
+/// operation that moves funds (FR-BIN-9). See docs/exchange.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -76,6 +77,34 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
         };
 
         return new ExchangeBalances(answer.Outcome, answer.Value ?? []);
+    }
+
+    /// <summary>
+    /// Reads how the account of a credential stands on the Futures market for one symbol: its
+    /// settings, which say the two modes that hold for the whole account, and then its positions
+    /// in the symbol. The first that does not answer is how the read ended.
+    /// </summary>
+    public async Task<ExchangeFuturesAccount> GetFuturesAccountAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, string symbol, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(apiKey);
+        ArgumentNullException.ThrowIfNull(secretKey);
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        var settings = await call.AskSignedAsync(
+            BinanceEndpoint.FuturesAccountSettings, mode, userId, apiKey, secretKey, Modes, cancellationToken);
+
+        if (settings.Value is not { } modes)
+        {
+            return ExchangeFuturesAccount.Without(settings.Outcome);
+        }
+
+        var positions = await call.AskSignedAsync(
+            BinanceEndpoint.PositionsOf(symbol), mode, userId, apiKey, secretKey, answer => HoldsPosition(answer, symbol), cancellationToken);
+
+        return positions.Value is { } holds
+            ? new ExchangeFuturesAccount(positions.Outcome, modes.Hedge, modes.MultiAssets, holds)
+            : ExchangeFuturesAccount.Without(positions.Outcome);
     }
 
     private async Task<ExchangeKeyCheck> CheckLiveKeyAsync(
@@ -168,6 +197,47 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
     /// </summary>
     private static bool? MayTrade(JsonElement answer) =>
         answer.ValueKind == JsonValueKind.Object ? Flag(answer, "canTrade") ?? false : null;
+
+    /// <summary>
+    /// The two modes of the account of the Futures market that hold for all of its symbols, or
+    /// null when the answer does not say both: an account that does not say its mode is not
+    /// taken for one in one-way mode with one asset.
+    /// </summary>
+    private static (bool Hedge, bool MultiAssets)? Modes(JsonElement answer) =>
+        Flag(answer, "dualSidePosition") is { } hedge && Flag(answer, "multiAssetsMargin") is { } multiAssets
+            ? (hedge, multiAssets)
+            : null;
+
+    /// <summary>
+    /// Whether the positions of an account say one in a symbol, or null when the answer is not
+    /// their list or a row of it does not read. Binance lists a symbol that has a position or
+    /// orders, with an amount of nothing where it has orders only, so a list without the symbol
+    /// says that the account holds nothing in it. In hedge mode a symbol has a row for each side.
+    /// </summary>
+    private static bool? HoldsPosition(JsonElement answer, string symbol)
+    {
+        if (answer.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var holds = false;
+
+        foreach (var row in answer.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object
+                || !row.TryGetProperty("symbol", out var name)
+                || name.ValueKind != JsonValueKind.String
+                || Amount(row, "positionAmt") is not { } amount)
+            {
+                return null;
+            }
+
+            holds |= name.ValueEquals(symbol) && amount != 0m;
+        }
+
+        return holds;
+    }
 
     /// <summary>What the account of the Spot market holds, or null when the answer is not that account.</summary>
     private static List<ExchangeBalance>? SpotBalances(JsonElement answer) =>

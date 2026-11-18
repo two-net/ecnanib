@@ -11,8 +11,10 @@ namespace Ecnanib.Tests.DecisionEngine;
 /// Entries are market or limit orders. An unfilled limit entry is cancelled at the next cycle
 /// (FR-BIN-S2). An entry at a price rests on the exchange, so what settles the orders asks about
 /// it every minute, and what it bought gets its stop-loss and its take-profit as soon as that is
-/// seen (FR-RSK-7). A Spot agent sells only the quantity it bought (FR-BIN-S3). See "An entry at
-/// a price" in docs/orders.md.
+/// seen (FR-RSK-7). A Spot agent sells only the quantity it bought (FR-BIN-S3). An agent of the
+/// Futures market enters at a price by the same rules, with the margin of its symbol set before,
+/// and what the entry bought is protected by a stop-loss and a take-profit that only reduce the
+/// position (FR-BIN-F1 to FR-BIN-F3). See "An entry at a price" in docs/orders.md.
 /// </summary>
 public class LimitEntryTests
 {
@@ -25,6 +27,100 @@ public class LimitEntryTests
     /// over a distance of 900, so the order comes to 0.011, worth 658.9.
     /// </summary>
     private static readonly GuardCase AtAPrice = GuardCases.OpenLong with { EntryPrice = 59900m };
+
+    /// <summary>
+    /// The same on Futures, risking 20 over a distance of 900: the order comes to 0.022, worth
+    /// 1317.8, at a leverage of 2.
+    /// </summary>
+    private static readonly GuardCase AtAPriceOnFutures = GuardCases.OpenLongOnFutures with { EntryPrice = 59900m };
+
+    [Fact]
+    public async Task An_entry_at_a_price_rests_on_the_Futures_market_once_the_margin_of_its_symbol_is_set()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync(market: Market.Futures);
+        var cycle = application.CycleOf(agent);
+
+        await application.PlaceAsync(cycle, AtAPriceOnFutures);
+
+        // The margin of the symbol and its leverage first, and then one order, at the price of
+        // the plan, for the quantity that the Risk Guard computed. It opens a position, so it
+        // is not one that only reduces.
+        Assert.Equal(["/fapi/v1/marginType", "/fapi/v1/leverage", "/fapi/v1/order"], application.Binance.Changes);
+        Assert.Equal([2], application.Binance.Leverages);
+
+        var asked = Assert.Single(application.Binance.Asked);
+        Assert.Equal(("LIMIT", "BUY", 0.022m, (decimal?)59900m, false), (asked.Type, asked.Side, asked.Quantity, asked.Limit, asked.ReduceOnly));
+        Assert.Equal("NEW", Assert.Single(application.Binance.Orders).Status);
+
+        // It rests until the next close of the candles of the agent, and opens no position
+        // while it does.
+        var entry = Assert.Single(await application.OrdersOfAsync(agent.Id));
+        Assert.Equal(
+            (OrderPurpose.Entry, OrderType.Limit, OrderStatus.Open, 59900m, 59000m, 62000m, null),
+            (entry.Purpose, entry.Type, entry.Status, entry.Price, entry.StopLoss, entry.TakeProfit, entry.PositionId));
+        Assert.Equal(cycle.ClosedAt.AddHours(1), entry.CancelAfter);
+        Assert.Empty(await application.PositionsOfAsync(agent.Id));
+    }
+
+    [Fact]
+    public async Task What_settles_the_orders_finds_an_entry_of_the_Futures_market_executed_and_protects_it_with_two_orders()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync(market: Market.Futures);
+        await application.PlaceAsync(agent, AtAPriceOnFutures);
+
+        // The price comes down to the entry, and Binance executes it. Nothing tells the service.
+        application.Binance.Execute(application.Binance.The(stop: false));
+
+        await application.Application.SettleOrdersAsync(application.Clock.GetUtcNow());
+
+        // The position is open at the price of the entry, for what was executed: no fee is
+        // taken in the contract. Its stop-loss and its take-profit rest, each an order of its
+        // own that only reduces the position (FR-BIN-F3).
+        var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
+        Assert.Equal(
+            (PositionSide.Long, 59900m, 0.022m, 59000m, (decimal?)62000m, null),
+            (position.Side, position.EntryPrice, position.Quantity, position.StopLoss, position.TakeProfit, position.ClosedAt));
+        Assert.Equal(
+            [
+                (OrderPurpose.Entry, OrderStatus.Filled, 0.022m),
+                (OrderPurpose.StopLoss, OrderStatus.Open, 0.022m),
+                (OrderPurpose.TakeProfit, OrderStatus.Open, 0.022m),
+            ],
+            (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status, order.Quantity)));
+        Assert.Equal(
+            [("STOP_MARKET", true, "NEW"), ("TAKE_PROFIT_MARKET", true, "NEW")],
+            application.Binance.Orders.Skip(1).Select(order => (order.Type, order.Asked.ReduceOnly, order.Status)));
+    }
+
+    [Fact]
+    public async Task On_the_Futures_market_any_part_that_is_executed_is_protected_at_once()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync(market: Market.Futures);
+        await application.PlaceAsync(agent, AtAPriceOnFutures);
+
+        // Binance executes 0.001 of the entry, worth 59.9, which is less than the least that
+        // an order of the symbol can be worth there. On Spot such a part is left to grow. Here
+        // it is leveraged, and an order that only reduces a position is held to no least value.
+        application.Binance.Execute(application.Binance.The(stop: false), 0.001m);
+
+        await application.Application.SettleOrdersAsync(application.Clock.GetUtcNow());
+
+        Assert.Equal("CANCELED", application.Binance.The(stop: false).Status);
+        Assert.Equal("PartlyExecuted", Assert.Single(application.Application.Events(), said => said.Template == TakenOff).Text("EntryTakenOffReason"));
+
+        var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
+        Assert.Equal((0.001m, 59900m, null), (position.Quantity, position.EntryPrice, position.ClosedAt));
+        Assert.Equal(
+            [
+                (OrderPurpose.Entry, OrderStatus.Canceled, 0.022m, 0.001m),
+                (OrderPurpose.StopLoss, OrderStatus.Open, 0.001m, 0m),
+                (OrderPurpose.TakeProfit, OrderStatus.Open, 0.001m, 0m),
+            ],
+            (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status, order.Quantity, order.ExecutedQuantity)));
+    }
 
     [Fact]
     public async Task An_entry_at_a_price_rests_on_the_exchange_and_opens_no_position_while_it_does()

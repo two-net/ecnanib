@@ -312,8 +312,16 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
     public static readonly ExchangeBalances Funded =
         new(ExchangeCallOutcome.Succeeded, [new ExchangeBalance("USDT", Total: 100_000m, Available: 100_000m)]);
 
+    /// <summary>
+    /// How an account of the tests stands on the Futures market unless a test says otherwise:
+    /// in one-way mode, with one asset, and with no position in the symbol.
+    /// </summary>
+    public static readonly ExchangeFuturesAccount OneWay =
+        new(ExchangeCallOutcome.Succeeded, HedgeMode: false, MultiAssetsMargin: false, HoldsPosition: false);
+
     private readonly ConcurrentQueue<AskedKey> _asked = new();
     private readonly ConcurrentQueue<(Market Market, TradingMode Mode)> _balancesAsked = new();
+    private readonly ConcurrentQueue<(TradingMode Mode, string Symbol)> _accountsAsked = new();
 
     /// <summary>Every time it was asked, in order.</summary>
     public IReadOnlyList<AskedKey> Asked => [.. _asked];
@@ -323,6 +331,12 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
 
     /// <summary>Every time it was asked what an account holds, in order.</summary>
     public IReadOnlyList<(Market Market, TradingMode Mode)> BalancesAsked => [.. _balancesAsked];
+
+    /// <summary>What Binance says of how an account stands on the Futures market for a symbol, or how asking ends.</summary>
+    public Func<TradingMode, string, ExchangeFuturesAccount> FuturesAccount { get; set; } = (_, _) => OneWay;
+
+    /// <summary>Every time it was asked how an account stands on the Futures market, in order.</summary>
+    public IReadOnlyList<(TradingMode Mode, string Symbol)> FuturesAccountsAsked => [.. _accountsAsked];
 
     /// <summary>What an AI provider, named by its code, says about a key.</summary>
     public Func<string, string, KeyVerdict> AiAnswer { get; set; } = (_, _) => KeyVerdict.Accepted;
@@ -363,6 +377,14 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
         _balancesAsked.Enqueue((market, mode));
 
         return Task.FromResult(Balances(market, mode));
+    }
+
+    public Task<ExchangeFuturesAccount> GetFuturesAccountAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, string symbol, CancellationToken cancellationToken)
+    {
+        _accountsAsked.Enqueue((mode, symbol));
+
+        return Task.FromResult(FuturesAccount(mode, symbol));
     }
 
     private async Task MeanwhileAsync()

@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Ecnanib.Agents;
 
 /// <summary>
-/// What whatever places the orders of an agent asks of Agents (FR-RSK-7). See
+/// What whatever places the orders of an agent asks of Agents (FR-RSK-7, FR-BIN-F2). See
 /// <see cref="IAgentTrading"/> and docs/agents.md.
 /// </summary>
 internal sealed class AgentTrading(
@@ -38,8 +38,13 @@ internal sealed class AgentTrading(
         return states.Count == 1 ? states[0] : null;
     }
 
-    public async Task<bool> RequireAttentionAsync(Guid userId, Guid agentId, CancellationToken cancellationToken)
+    public async Task<bool> RequireAttentionAsync(Guid userId, Guid agentId, AgentStateCause cause, CancellationToken cancellationToken)
     {
+        if (cause is not (AgentStateCause.PositionUnprotected or AgentStateCause.ExchangeSettingConflict))
+        {
+            throw new ArgumentOutOfRangeException(nameof(cause), cause, "What places the orders of an agent finds no such cause.");
+        }
+
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
@@ -67,14 +72,13 @@ internal sealed class AgentTrading(
             agentId,
             agent.Mode,
             AgentState.AttentionRequired,
-            AgentStateCause.PositionUnprotected,
+            cause,
             clock.GetUtcNow(),
             cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
-        logger.LogWarning(
-            "Agent {AgentId} of user {UserId} requires attention: {AgentStateCause}", agentId, userId, AgentStateCause.PositionUnprotected);
+        logger.LogWarning("Agent {AgentId} of user {UserId} requires attention: {AgentStateCause}", agentId, userId, cause);
 
         return true;
     }

@@ -2,6 +2,7 @@ using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Notifications;
 using Ecnanib.Shared;
+using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.ExchangeGateway;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.RiskGuard;
@@ -198,12 +199,14 @@ public class SpotEntryTests
     {
         using var application = new OrdersApplication();
         var agent = await application.GiveAgentAsync(market: Market.Futures);
-        application.Application.Providers.Balances = (_, _) => Holding();
 
-        // The margin that the Futures wallet lacks is another check, which is not built (FR-BIN-F6).
+        // The account of Spot holds nothing. The entry is held to the margin that the wallet
+        // of Futures has for it, which is another check (FR-BIN-F6): see FuturesEntryTests.
+        application.Application.Providers.Balances = (market, _) => market == Market.Spot ? Holding() : StandInProviders.Funded;
+
         await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
 
-        Assert.Empty(application.Application.Providers.BalancesAsked);
+        Assert.Equal([(Market.Futures, TradingMode.Demo)], application.Application.Providers.BalancesAsked);
         Assert.Single(await application.PositionsOfAsync(agent.Id));
     }
 

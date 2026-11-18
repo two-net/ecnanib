@@ -12,9 +12,9 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// Places the orders of an agent, and settles them with the exchange (SRS 3.2, step 7; FR-BIN-6,
-/// FR-RSK-7, FR-BIN-S1 to FR-BIN-S3). It is the one place of the Decision Engine that uses the
-/// orders of the Exchange Gateway: an entry is made here from what the Risk Guard accepted, and
-/// from nothing else (NFR-SEC-6). See docs/orders.md.
+/// FR-RSK-7, FR-BIN-S1 to FR-BIN-S3, FR-BIN-F1 to FR-BIN-F3, FR-BIN-F6). It is the one place of
+/// the Decision Engine that uses the orders of the Exchange Gateway: an entry is made here from
+/// what the Risk Guard accepted, and from nothing else (NFR-SEC-6). See docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,20 +42,39 @@ namespace Ecnanib.DecisionEngine;
 /// of one of the two is written when the exchange has said it of that one.
 /// </para>
 /// <para>
-/// <b>An entry at a price rests</b> on the Spot market until it is executed, and is taken off
-/// the exchange when the next candle of its agent has closed, which is when the next cycle
-/// starts (FR-BIN-S2). It is taken off earlier when a part of it is executed that can be
-/// protected, so that what was bought has its pair at once, and when its agent no longer opens
-/// positions. What settles the orders asks about it every minute, and protects what it bought.
+/// <b>On the Futures market the stop-loss and the take-profit are two orders of their own</b>
+/// (FR-BIN-F3): each only reduces the position, and is triggered on the mark price. The exchange
+/// ends neither for the other. So the stop-loss is placed first, and the take-profit beside it
+/// once the stop-loss rests, and when one of the two has closed the position, the other is
+/// taken off the exchange, so that it never acts on a position that the agent opens later. A
+/// take-profit that the exchange refuses closes the position at market, as a stop-loss that it
+/// refuses does. One that was not placed for another reason is placed by what settles the
+/// orders: the position has its stop-loss meanwhile.
+/// </para>
+/// <para>
+/// <b>An entry at a price rests</b> until it is executed, and is taken off the exchange when
+/// the next candle of its agent has closed, which is when the next cycle starts (FR-BIN-S2).
+/// It is taken off earlier when a part of it is executed that can be protected, so that what
+/// was bought has its protection at once, and when its agent no longer opens positions. What
+/// settles the orders asks about it every minute, and protects what it bought.
 /// </para>
 /// <para>
 /// <b>No entry is placed</b> while new entries are paused for the market and the environment of
 /// the agent, because the clock of the service is not near the exchange's (FR-BIN-5), for an
 /// agent that no longer opens positions, in a symbol that takes no stop, or on the Spot market
-/// no pair, for a sale on the Spot market, where an agent sells only what it bought
-/// (FR-BIN-S1), and while the account of its user does not hold what the entry needs
-/// (FR-BIN-S3). A plan with an entry at a price places nothing on the Futures market, whose
-/// orders for it are not built.
+/// no pair, or on the Futures market no take-profit, for a sale on the Spot market, where an
+/// agent sells only what it bought (FR-BIN-S1), and while the account of its user does not hold
+/// what the entry needs: its value on the Spot market (FR-BIN-S3), and its margin on the
+/// Futures market (FR-BIN-F6).
+/// </para>
+/// <para>
+/// <b>On the Futures market an agent trades with isolated margin, in one-way mode</b>
+/// (FR-BIN-F2). Before an entry the account of its user is read: an account that keeps a long
+/// and a short position of a symbol apart, that margins with more than one asset, or that holds
+/// a position in the symbol which the agent did not open, gets no entry, its user is told what
+/// to change, and the agent waits for them. Those are settings of the whole account, which the
+/// service does not change. Then the symbol is given isolated margin and the leverage that the
+/// Risk Guard computed, which are settings of the symbol, and only then the entry is placed.
 /// </para>
 /// <para>
 /// <b>What it does for one agent it does one after the other:</b> a cycle, what settles the
@@ -90,9 +109,9 @@ internal sealed class AgentOrders(
 
     /// <summary>
     /// The time in which the user of an agent is told once that its entries are skipped because
-    /// the account does not hold what they need. A cycle that decides to enter comes with every
-    /// candle, and the page of an agent shows a few notifications: one for each would leave no
-    /// room for the others.
+    /// the account does not hold what they need, or because the exchange does not set the margin
+    /// of the symbol. A cycle that decides to enter comes with every candle, and the page of an
+    /// agent shows a few notifications: one for each would leave no room for the others.
     /// </summary>
     public static readonly TimeSpan SkippedSaidEvery = TimeSpan.FromDays(1);
 
@@ -138,7 +157,7 @@ internal sealed class AgentOrders(
                     && await CloseForPlanAsync(cycle, pace) == PositionCloseOutcome.Closed
                     && !pace.Stopping)
                 {
-                    await OpenAsync(cycle, accepted, held.Side == PositionSide.Long ? OrderSide.Sell : OrderSide.Buy, pace);
+                    await OpenAsync(cycle, accepted, held.Side == PositionSide.Long ? OrderSide.Sell : OrderSide.Buy, pace, closedJustNow: true);
                 }
 
                 break;
@@ -202,9 +221,16 @@ internal sealed class AgentOrders(
 
     /// <summary>
     /// Opens a position: an entry for the quantity that the Risk Guard computed, at the market
-    /// or, on the Spot market, at the price of the plan, and then its protection.
+    /// or at the price of the plan, and then its protection. On the Futures market the symbol is
+    /// given isolated margin and the leverage that the Risk Guard computed before the entry
+    /// (FR-BIN-F2).
     /// </summary>
-    private async Task OpenAsync(CycleStart cycle, GuardResult accepted, OrderSide side, Pace pace)
+    /// <param name="cycle">The cycle whose plan it is.</param>
+    /// <param name="accepted">What the Risk Guard accepted.</param>
+    /// <param name="side">Whether the entry buys or sells.</param>
+    /// <param name="pace">Whether the cycle is being stopped.</param>
+    /// <param name="closedJustNow">Whether the plan closed a position of the agent a moment ago, as one that reverses does.</param>
+    private async Task OpenAsync(CycleStart cycle, GuardResult accepted, OrderSide side, Pace pace, bool closedJustNow = false)
     {
         var agent = cycle.Agent;
         var plan = accepted.Case;
@@ -215,15 +241,6 @@ internal sealed class AgentOrders(
             // An agent of the Spot market buys, and sells what it bought to exit: it does not
             // borrow or short (FR-BIN-S1). A sale that opens would sell what else the account holds.
             NotEntered(cycle, "SpotLongOnly");
-
-            return;
-        }
-
-        if (plan.EntryPrice is not null && !spot)
-        {
-            // An entry at a price rests until it is executed, and is protected from then on.
-            // That takes the orders that the Futures market has for it, which are not built.
-            NotEntered(cycle, "LimitEntry");
 
             return;
         }
@@ -260,6 +277,14 @@ internal sealed class AgentOrders(
             return;
         }
 
+        // Nor on the Futures market where no take-profit can rest beside the stop-loss (FR-BIN-F3).
+        if (!spot && plan.TakeProfit is not null && !symbol.TakeProfitOrders)
+        {
+            NotEntered(cycle, "NoTakeProfitOrders");
+
+            return;
+        }
+
         // An agent that no longer opens positions, or holds one, is told so, and not that its
         // account is short. It is asked again as the row of the entry is written.
         if (await stored.EntryRefusalAsync(agent, pace.Token) is { } early)
@@ -269,12 +294,33 @@ internal sealed class AgentOrders(
             return;
         }
 
-        // What the entry needs of the asset that the symbol is priced in (FR-BIN-S3).
-        var needs = spot ? size.Quantity * (plan.EntryPrice ?? plan.CurrentPrice) : null;
+        // The account of the Futures market is one that the agent can trade in as it trades:
+        // in one-way mode, with isolated margin, and with no position in the symbol (FR-BIN-F2).
+        if (!spot && await AccountInTheWayAsync(agent, closedJustNow, pace.Token) is { } inTheWay)
+        {
+            NotEntered(cycle, inTheWay);
 
-        if (spot && await QuoteShortAsync(agent, needs, rechecksKey: true, pace.Token) is { } shortOf)
+            return;
+        }
+
+        // What the entry needs of the asset that the symbol is priced in: its value on the
+        // Spot market (FR-BIN-S3), and the margin of that value at the leverage of the order on
+        // the Futures market (FR-BIN-F6).
+        var leverage = Math.Max(size.Leverage, 1);
+        var value = size.Quantity * (plan.EntryPrice ?? plan.CurrentPrice);
+        var needs = spot ? value : value / leverage;
+
+        if (await ShortAsync(agent, needs, leverage, rechecksKey: true, pace.Token) is { } shortOf)
         {
             NotEntered(cycle, shortOf);
+
+            return;
+        }
+
+        // The margin of the symbol, and its leverage, are set before the entry (FR-BIN-F2).
+        if (!spot && await MarginNotSetAsync(agent, leverage, pace.Token) is { } notSet)
+        {
+            NotEntered(cycle, notSet);
 
             return;
         }
@@ -317,26 +363,202 @@ internal sealed class AgentOrders(
                 entry.ExchangeOrderId,
                 entry.CancelAfter);
         }
-        else if (spot && entry.Status == OrderStatus.Rejected)
+        else if (entry.Status == OrderStatus.Rejected)
         {
             // Another agent of the account may have spent what this entry counted on, or the
             // price moved: the exchange refuses an entry that the account cannot pay for.
-            await QuoteShortAsync(agent, needs, rechecksKey: false, CancellationToken.None);
+            await ShortAsync(agent, needs, leverage, rechecksKey: false, CancellationToken.None);
+        }
+    }
+
+    public async Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        // Only the Futures market has modes of an account, and positions.
+        return agent.Market == Market.Futures ? await ConflictAsync(agent, rechecksKey: false, cancellationToken) : null;
+    }
+
+    /// <summary>
+    /// What in the account of an agent's user on the Futures market stands in the way of the
+    /// agent, which trades one symbol there in one-way mode with isolated margin (FR-BIN-F2):
+    /// a mode of the whole account, which the service does not change, or a position in the
+    /// symbol that the agent did not open. An account that cannot be read is one of which it is
+    /// not known.
+    /// </summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="rechecksKey">Whether a credential that the exchange refuses is checked again.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    private async Task<AccountConflict?> ConflictAsync(Agent agent, bool rechecksKey, CancellationToken cancellationToken)
+    {
+        var key = await keys.ExchangeKeyAsync(agent.UserId, agent.Mode, CancellationToken.None);
+
+        if (key.Outcome != KeyHandOverOutcome.Handed)
+        {
+            return AccountConflict.NotKnown;
+        }
+
+        var read = await account.GetFuturesAccountAsync(
+            agent.UserId, agent.Mode, key.ApiKey!, key.SecretKey!, agent.Symbol, cancellationToken);
+
+        if (read.Outcome != ExchangeCallOutcome.Succeeded)
+        {
+            if (rechecksKey && read.Outcome == ExchangeCallOutcome.AuthenticationFailed)
+            {
+                await RecheckKeyAsync(agent.UserId, agent.Mode);
+            }
+
+            return AccountConflict.NotKnown;
+        }
+
+        if (read.HedgeMode)
+        {
+            return AccountConflict.HedgeMode;
+        }
+
+        if (read.MultiAssetsMargin)
+        {
+            return AccountConflict.MultiAssetsMode;
+        }
+
+        // A position in the symbol is the agent's own when its records hold one, or an order
+        // that may have opened one. What the account holds beside that is not compared.
+        return read.HoldsPosition
+            && await stored.OpenPositionAsync(agent.Id, cancellationToken) is null
+            && (await stored.LiveOrdersAsync(agent.Id, cancellationToken)).Count == 0
+                ? AccountConflict.PositionInSymbol
+                : null;
+    }
+
+    /// <summary>
+    /// Whether the account of an agent of the Futures market stands in the way of an entry, in
+    /// which case none is placed. Where it is a mode of the account, or a position in the
+    /// symbol, its user is told what to change, and the agent waits for them (FR-BIN-F2).
+    /// </summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="closedJustNow">
+    /// Whether the agent closed a position of its own a moment ago, for a plan that reverses.
+    /// A position that the account still says then may be that one, which the exchange has not
+    /// taken off its list yet: nobody is told for it, and no agent is made to wait.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Why no entry is placed, or null when nothing of the account stands in its way.</returns>
+    private async Task<string?> AccountInTheWayAsync(Agent agent, bool closedJustNow, CancellationToken cancellationToken)
+    {
+        if ((await keys.ExchangeKeyAsync(agent.UserId, agent.Mode, CancellationToken.None)).Outcome != KeyHandOverOutcome.Handed)
+        {
+            // Without a key nothing is sent: the row of the entry says so.
+            return null;
+        }
+
+        var conflict = await ConflictAsync(agent, rechecksKey: true, cancellationToken);
+
+        if (conflict is null)
+        {
+            return null;
+        }
+
+        if (conflict == AccountConflict.NotKnown || (closedJustNow && conflict == AccountConflict.PositionInSymbol))
+        {
+            // It is not known that anything is to change: a failure leads to no entry (NFR-REL-2).
+            // A position that is still there is found by the next entry.
+            return "AccountUnknown";
+        }
+
+        var toChange = conflict switch
+        {
+            AccountConflict.HedgeMode =>
+                "your Binance Futures account is in hedge mode, and the agent trades in one-way mode. Switch the position mode " +
+                "of the account to one-way at Binance",
+            AccountConflict.MultiAssetsMode =>
+                "your Binance Futures account is in Multi-Assets mode, in which Binance takes no isolated margin. Switch the " +
+                "asset mode of the account to single-asset at Binance",
+            _ => $"your Binance Futures account holds a position in {agent.Symbol} that the agent did not open. Close it at Binance",
+        };
+
+        try
+        {
+            await notifications.RaiseAsync(
+                agent.UserId,
+                NotificationType.AttentionRequired,
+                agent.Id,
+                $"An entry in {agent.Symbol} ({agent.Mode}) was skipped, and the agent waits for you: {toChange}, and resume the agent.",
+                CancellationToken.None);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            logger.LogError(error, "The user {UserId} could not be told that agent {AgentId} waits for them", agent.UserId, agent.Id);
+        }
+
+        await agents.RequireAttentionAsync(agent.UserId, agent.Id, AgentStateCause.ExchangeSettingConflict, CancellationToken.None);
+
+        return "AccountConflict";
+    }
+
+    /// <summary>
+    /// Has the symbol of an agent of the Futures market use isolated margin, at the leverage
+    /// that the Risk Guard computed for the order, before the entry is placed (FR-BIN-F2). Both
+    /// are settings of the symbol in the account of the agent's user, and neither is one of the
+    /// whole account. An entry is placed only once the exchange has said that both are set.
+    /// </summary>
+    /// <returns>Why no entry is placed, or null when both are set.</returns>
+    private async Task<string?> MarginNotSetAsync(Agent agent, int leverage, CancellationToken cancellationToken)
+    {
+        var key = await keys.ExchangeKeyAsync(agent.UserId, agent.Mode, CancellationToken.None);
+
+        if (key.Outcome != KeyHandOverOutcome.Handed)
+        {
+            // Without a key nothing is sent: the row of the entry says so.
+            return null;
+        }
+
+        var set = await exchange.SetIsolatedMarginAsync(
+            agent.UserId, agent.Mode, key.ApiKey!, key.SecretKey!, agent.Symbol, leverage, cancellationToken);
+
+        switch (set)
+        {
+            case ExchangeOrderOutcome.Answered:
+                return null;
+
+            case ExchangeOrderOutcome.KeyRefused:
+                await RecheckKeyAsync(agent.UserId, agent.Mode);
+
+                return "MarginNotSet";
+
+            // The exchange refused the setting, which it does while the account has orders or a
+            // position in the symbol that the setting would change the margin of.
+            case ExchangeOrderOutcome.Rejected:
+                await SkippedAsync(
+                    agent,
+                    $"An entry in {agent.Symbol} ({agent.Mode}) was skipped: Binance did not set isolated margin at a leverage of " +
+                    $"{leverage} for {agent.Symbol}. It does not change the margin of a symbol while the account has open orders or a " +
+                    "position in it: cancel or close them at Binance. This is said once in a day for an agent.");
+
+                return "MarginRefused";
+
+            // It is not known how the symbol is margined: a failure leads to no entry (NFR-REL-2).
+            default:
+                return "MarginNotSet";
         }
     }
 
     /// <summary>
-    /// Whether the account of an agent of the Spot market holds less of the asset that its
-    /// symbol is priced in than an entry needs, in which case the entry is skipped and its user
-    /// is told (FR-BIN-S3). An account that cannot be read is one that no entry is placed in
+    /// Whether the account of an agent holds less of the asset that its symbol is priced in
+    /// than an entry needs, in which case the entry is skipped and its user is told: the value
+    /// of the entry on the Spot market (FR-BIN-S3), and its margin in the wallet of the Futures
+    /// market (FR-BIN-F6). An account that cannot be read is one that no entry is placed in
     /// (NFR-REL-2).
     /// </summary>
     /// <param name="agent">The agent.</param>
-    /// <param name="needs">What the entry needs: its quantity at its price. Null when the price is not known.</param>
+    /// <param name="needs">
+    /// What the entry needs: its quantity at its price, and on the Futures market that value
+    /// divided by the leverage of the order. Null when the price is not known.
+    /// </param>
+    /// <param name="leverage">The leverage of the order on the Futures market, which the notification says.</param>
     /// <param name="rechecksKey">Whether a credential that the exchange refuses is checked again.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Why no entry is placed, or null when the account covers it.</returns>
-    private async Task<string?> QuoteShortAsync(Agent agent, decimal? needs, bool rechecksKey, CancellationToken cancellationToken)
+    private async Task<string?> ShortAsync(Agent agent, decimal? needs, int leverage, bool rechecksKey, CancellationToken cancellationToken)
     {
         var key = await keys.ExchangeKeyAsync(agent.UserId, agent.Mode, CancellationToken.None);
 
@@ -371,23 +593,40 @@ internal sealed class AgentOrders(
             return null;
         }
 
+        if (agent.Market == Market.Spot)
+        {
+            await SkippedAsync(
+                agent,
+                $"An entry in {agent.Symbol} ({agent.Mode}) was skipped: it needs {Written(amount)} {agent.QuoteAsset}, and the account " +
+                $"has {Written(free)} {agent.QuoteAsset} free. This is said once in a day for an agent.");
+
+            return "QuoteBalance";
+        }
+
+        await SkippedAsync(
+            agent,
+            $"An entry in {agent.Symbol} ({agent.Mode}) was skipped: it needs {Written(amount)} {agent.QuoteAsset} of margin at a " +
+            $"leverage of {leverage}, and the Futures wallet has {Written(free)} {agent.QuoteAsset} available. This is said once in a " +
+            "day for an agent.");
+
+        return "Margin";
+    }
+
+    /// <summary>
+    /// Tells the user of an agent that an entry of it was skipped, once in
+    /// <see cref="SkippedSaidEvery"/>. That it could not be told is said, and stops nothing.
+    /// </summary>
+    private async Task SkippedAsync(Agent agent, string content)
+    {
         try
         {
             await notifications.RaiseOnceAsync(
-                agent.UserId,
-                NotificationType.EntrySkipped,
-                agent.Id,
-                $"An entry in {agent.Symbol} ({agent.Mode}) was skipped: it needs {Written(amount)} {agent.QuoteAsset}, and the account " +
-                $"has {Written(free)} {agent.QuoteAsset} free. This is said once in a day for an agent.",
-                SkippedSaidEvery,
-                CancellationToken.None);
+                agent.UserId, NotificationType.EntrySkipped, agent.Id, content, SkippedSaidEvery, CancellationToken.None);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
             logger.LogError(error, "The user {UserId} could not be told that an entry of agent {AgentId} was skipped", agent.UserId, agent.Id);
         }
-
-        return "QuoteBalance";
     }
 
     /// <summary>Closes the open position of the agent of a cycle, for the plan of the cycle.</summary>
@@ -408,12 +647,12 @@ internal sealed class AgentOrders(
     }
 
     /// <summary>
-    /// Moves the protection of the open position to the prices of the plan. The stop-loss that
-    /// rests is taken off first, and the new one is placed. When the new one cannot be placed,
-    /// the old price is tried again, and when that cannot be placed either, the position is
-    /// closed at market (FR-RSK-7). On the Spot market the stop-loss and the take-profit are
-    /// one pair, which is taken off and placed anew when either price changes. Where no order
-    /// rests for the take-profit, its price is written, and nothing more.
+    /// Moves the protection of the open position to the prices of the plan. What rests is taken
+    /// off first, and placed at the new price. When it cannot be placed there, the old price is
+    /// tried again, and when that cannot be placed either, the position is closed at market
+    /// (FR-RSK-7). On the Spot market the stop-loss and the take-profit are one pair, which is
+    /// taken off and placed anew when either price changes. On the Futures market they are two
+    /// orders, and each price moves its own: the stop-loss rests on while the take-profit moves.
     /// </summary>
     private async Task AdjustAsync(CycleStart cycle, GuardResult accepted, Pace pace)
     {
@@ -431,53 +670,95 @@ internal sealed class AgentOrders(
 
         var stopLoss = plan.StopLoss ?? position.StopLoss;
         var takeProfit = plan.TakeProfit ?? position.TakeProfit;
-        var pairs = Pairs(position.Market, takeProfit);
 
-        if (!pairs)
-        {
-            // The take-profit is a price only: no order rests for it.
-            if (takeProfit is { } price && price != position.TakeProfit)
-            {
-                await stored.TakeProfitToAsync(position.Id, price, CancellationToken.None);
-            }
-
-            if (stopLoss == position.StopLoss)
-            {
-                return;
-            }
-        }
-        else if (stopLoss == position.StopLoss && takeProfit == position.TakeProfit)
+        if (stopLoss == position.StopLoss && takeProfit == position.TakeProfit)
         {
             return;
         }
 
-        if (!await TakeOffProtectionAsync(position))
+        if (Pairs(position.Market, takeProfit))
         {
-            // It rests as it was: the position is protected at the old prices.
+            if (!await TakeOffProtectionAsync(position))
+            {
+                // It rests as it was: the position is protected at the old prices.
+                logger.LogWarning(
+                    "The stop-loss of the position of agent {AgentId} could not be taken off the exchange, so it stays where it is",
+                    position.AgentId);
+
+                return;
+            }
+
+            if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } now)
+            {
+                return;
+            }
+
+            await stored.ProtectionToAsync(now.Id, stopLoss, takeProfit, CancellationToken.None);
+
+            if (await stored.PositionAsync(position.Id, CancellationToken.None) is { ClosedAt: null } paired)
+            {
+                await ProtectAsync(paired, cycle.CycleId, pace, previous: new Protection(position.StopLoss, position.TakeProfit));
+            }
+
+            return;
+        }
+
+        // Each price moves its own order. The stop-loss first: it is what the position must have.
+        if (stopLoss != position.StopLoss)
+        {
+            if (!await TakeOffAsync(position, OrderPurpose.StopLoss))
+            {
+                // It rests as it was: the position is protected at the old price.
+                logger.LogWarning(
+                    "The stop-loss of the position of agent {AgentId} could not be taken off the exchange, so it stays where it is",
+                    position.AgentId);
+
+                return;
+            }
+
+            if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } now)
+            {
+                return;
+            }
+
+            await stored.StopLossToAsync(now.Id, stopLoss, CancellationToken.None);
+
+            if (await stored.PositionAsync(position.Id, CancellationToken.None) is { ClosedAt: null } moved)
+            {
+                await ProtectAsync(moved, cycle.CycleId, pace, previous: new Protection(position.StopLoss, moved.TakeProfit));
+            }
+        }
+
+        if (takeProfit is not { } target || target == position.TakeProfit || pace.Stopping)
+        {
+            return;
+        }
+
+        // Then the take-profit, while the stop-loss rests where it is.
+        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } held)
+        {
+            return;
+        }
+
+        if (!await TakeOffAsync(held, OrderPurpose.TakeProfit))
+        {
             logger.LogWarning(
-                "The stop-loss of the position of agent {AgentId} could not be taken off the exchange, so it stays where it is",
+                "The take-profit of the position of agent {AgentId} could not be taken off the exchange, so it stays where it is",
                 position.AgentId);
 
             return;
         }
 
-        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } now)
+        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null })
         {
             return;
         }
 
-        if (pairs)
-        {
-            await stored.ProtectionToAsync(now.Id, stopLoss, takeProfit, CancellationToken.None);
-        }
-        else
-        {
-            await stored.StopLossToAsync(now.Id, stopLoss, CancellationToken.None);
-        }
+        await stored.TakeProfitToAsync(position.Id, target, CancellationToken.None);
 
-        if (await stored.PositionAsync(position.Id, CancellationToken.None) is { ClosedAt: null } moved)
+        if (await stored.PositionAsync(position.Id, CancellationToken.None) is { ClosedAt: null } aimed)
         {
-            await ProtectAsync(moved, cycle.CycleId, pace, previous: new Protection(position.StopLoss, pairs ? position.TakeProfit : moved.TakeProfit));
+            await ProtectAsync(aimed, cycle.CycleId, pace, previous: new Protection(aimed.StopLoss, position.TakeProfit));
         }
     }
 
@@ -524,13 +805,16 @@ internal sealed class AgentOrders(
     /// <summary>
     /// Takes the protection of a position off the exchange, and says whether none rests any
     /// more: it was taken off, or was executed, or there was none. A pair is taken off as one.
-    /// It is false when an order of the agent is still with the exchange, or may be.
+    /// Where the two are orders of their own, the take-profit is taken off first, so that what
+    /// is left when the exchange does not take one off is the stop-loss. It is false when an
+    /// order of the agent is still with the exchange, or may be.
     /// </summary>
     private async Task<bool> TakeOffProtectionAsync(Position position)
     {
         var pairs = new HashSet<Guid>();
+        var live = await stored.LiveOrdersAsync(position.AgentId, CancellationToken.None);
 
-        foreach (var order in await stored.LiveOrdersAsync(position.AgentId, CancellationToken.None))
+        foreach (var order in live.OrderBy(order => order.Purpose == OrderPurpose.StopLoss))
         {
             if (order.Purpose is not (OrderPurpose.StopLoss or OrderPurpose.TakeProfit) || !OrderStatuses.IsResting(order.Status))
             {
@@ -556,6 +840,47 @@ internal sealed class AgentOrders(
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Takes the order of one purpose that protects a position off the exchange, where it is an
+    /// order of its own and of no pair, and says whether none of that purpose is with the
+    /// exchange any more, or may be: it was taken off, or was executed, or there was none.
+    /// </summary>
+    private async Task<bool> TakeOffAsync(Position position, OrderPurpose purpose)
+    {
+        foreach (var order in await stored.LiveOrdersAsync(position.AgentId, CancellationToken.None))
+        {
+            if (order.Purpose != purpose)
+            {
+                continue;
+            }
+
+            if (!OrderStatuses.IsResting(order.Status) || OrderStatuses.IsLive((await CancelAsync(order)).Status))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Takes what is left of the protection of a position that is closed off the exchange: on
+    /// the Futures market the stop-loss and the take-profit are two orders, and the exchange
+    /// ends neither when the other has closed the position (FR-BIN-F3). Left to rest, it would
+    /// act on a position that the agent opens later.
+    /// </summary>
+    private async Task TakeOffLeftBehindAsync(Guid agentId)
+    {
+        foreach (var order in await stored.LeftBehindAsync(agentId, CancellationToken.None))
+        {
+            // One whose outcome is not known is asked about first, and is not sent again.
+            if (OrderStatuses.IsResting(order.Status))
+            {
+                await CancelAsync(order);
+            }
+        }
     }
 
     /// <summary>
@@ -652,22 +977,176 @@ internal sealed class AgentOrders(
 
     /// <summary>
     /// Has the stop-loss of an open position rest on the exchange, at the price that the
-    /// position says (FR-RSK-7), and on the Spot market its take-profit with it, as one pair
-    /// (FR-BIN-S2). It is placed at most twice: a second time when the first was not placed.
-    /// When the exchange refuses it, or it is not placed at the second try, the position is
-    /// closed at market at once, and its user is told.
+    /// position says (FR-RSK-7), and its take-profit with it: on the Spot market as one pair
+    /// (FR-BIN-S2), and on the Futures market as an order of its own, which is placed once the
+    /// stop-loss rests (FR-BIN-F3). Each is placed at most twice: a second time when the first
+    /// was not placed. When the exchange refuses one, or the stop-loss is not placed at the
+    /// second try, the position is closed at market at once, and its user is told.
     /// </summary>
     /// <param name="position">The position.</param>
     /// <param name="cycleId">The cycle that asks, or null when none does.</param>
-    /// <param name="pace">Whether what asks is being stopped: then the protection is sent once, and the rest is left to what settles the orders.</param>
+    /// <param name="pace">Whether what asks is being stopped: then the stop-loss is sent once, and the rest is left to what settles the orders.</param>
     /// <param name="previous">
     /// The prices that the protection was at before a plan moved it. When it cannot be placed at
     /// the new prices, it is placed at these again before the position is given up on.
     /// </param>
-    /// <returns>Whether the position is protected, or closed.</returns>
+    /// <returns>Whether the position is protected by its stop-loss, or closed.</returns>
     private async Task<bool> ProtectAsync(Position position, Guid? cycleId, Pace pace, Protection? previous)
     {
+        var what = "stop-loss";
+        var placed = await PlaceStopLossAsync(position, cycleId, pace);
+
+        if (placed == Placed.Rests && TakesProfitAlone(position.Market, position.TakeProfit))
+        {
+            // The position has its stop-loss. A take-profit that is not placed now is placed by
+            // what settles the orders, and only one that the exchange refuses closes the position.
+            if (await PlaceTakeProfitAsync(position, cycleId, pace) != Placed.Failed)
+            {
+                return true;
+            }
+
+            what = "take-profit";
+            placed = Placed.Failed;
+        }
+
+        if (placed != Placed.Failed)
+        {
+            return placed == Placed.Rests;
+        }
+
+        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } open)
+        {
+            return true;
+        }
+
+        // Protection that a plan moved goes back to where it was, and rests there as before.
+        if (previous is { } old && (old.StopLoss != open.StopLoss || old.TakeProfit != open.TakeProfit))
+        {
+            if (what == "stop-loss")
+            {
+                logger.LogWarning(
+                    "The stop-loss of the position of agent {AgentId} could not be placed at its new price, so it is placed at the old one again",
+                    open.AgentId);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "The take-profit of the position of agent {AgentId} could not be placed at its new price, so it is placed at the old one again",
+                    open.AgentId);
+            }
+
+            await stored.ProtectionToAsync(open.Id, old.StopLoss, old.TakeProfit, CancellationToken.None);
+
+            return await stored.PositionAsync(open.Id, CancellationToken.None) is not { ClosedAt: null } restored
+                || await ProtectAsync(restored, cycleId, pace, previous: null);
+        }
+
+        // What still rests for the position is taken off before it is closed: an order that
+        // closes is not begun beside one that rests. When it cannot be taken off, the position
+        // is as it was, and what settles the orders tries again.
+        if (!await TakeOffProtectionAsync(open))
+        {
+            return false;
+        }
+
+        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null })
+        {
+            return true;
+        }
+
+        // The protective order cannot be placed: the position is closed at market at once, and
+        // its user is told (FR-RSK-7).
+        if (what == "stop-loss")
+        {
+            logger.LogWarning(
+                "The stop-loss of the position of agent {AgentId} could not be placed, so the position is closed at market", open.AgentId);
+        }
+        else
+        {
+            logger.LogWarning(
+                "The take-profit of the position of agent {AgentId} could not be placed, so the position is closed at market", open.AgentId);
+        }
+
+        if (await CloseAtMarketAsync(open, ExitReason.ProtectionFailed, cycleId, pace))
+        {
+            await TellAsync(
+                open,
+                $"The {what} of the position in {open.Symbol} ({open.Mode}) could not be placed, so the position was closed at market.");
+
+            return true;
+        }
+
+        // A position whose take-profit was refused had its stop-loss taken off for the close.
+        // It goes back, and the take-profit is given up: tried again with every run, it would
+        // have the stop-loss taken off every time. The position says no take-profit from then
+        // on, until a plan names one, and its user is told.
+        if (what == "take-profit"
+            && !pace.Stopping
+            && await stored.PositionAsync(position.Id, CancellationToken.None) is { ClosedAt: null } left
+            && await PlaceStopLossAsync(left, cycleId, pace) == Placed.Rests)
+        {
+            await stored.ProtectionToAsync(left.Id, left.StopLoss, takeProfit: null, CancellationToken.None);
+
+            logger.LogWarning(
+                "The position of agent {AgentId} could not be closed at market, so it is open with its stop-loss, and with no take-profit",
+                left.AgentId);
+
+            await TellAsync(
+                left,
+                $"The take-profit of the position in {left.Symbol} ({left.Mode}) could not be placed, and the position could not be " +
+                "closed at market either. It is open with its stop-loss, and with no take-profit. Close it with \"Close position " +
+                "now\", or at Binance.");
+
+            return true;
+        }
+
+        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null })
+        {
+            return true;
+        }
+
+        // It is open with no stop-loss, and could not be closed. Its user is told once, an
+        // agent that runs waits for its user, and what settles the orders tries again.
+        if (await stored.AlertedAsync(open.Id, CancellationToken.None))
+        {
+            logger.LogError(
+                "The position of agent {AgentId} is open with no stop-loss, and could not be closed at market", open.AgentId);
+
+            await TellAsync(
+                open,
+                $"The {what} of the position in {open.Symbol} ({open.Mode}) could not be placed, and the position could not be " +
+                "closed at market either. It is open with no stop-loss. Close it with \"Close position now\", or at Binance.");
+
+            await agents.RequireAttentionAsync(open.UserId, open.AgentId, AgentStateCause.PositionUnprotected, CancellationToken.None);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Has the stop-loss of an open position rest on the exchange, at most twice: a second time
+    /// when the first was not placed. On the Spot market it is placed as one pair with the
+    /// take-profit of a position that says one. One that rests already is left as it is.
+    /// </summary>
+    /// <returns>
+    /// That it rests, or the position is closed. That it is left to what settles the orders: its
+    /// outcome is not known, another is at it, or what asked is being stopped. Or that it
+    /// failed: the exchange refused it, or it was not placed at the second try.
+    /// </returns>
+    private async Task<Placed> PlaceStopLossAsync(Position position, Guid? cycleId, Pace pace)
+    {
         var pairs = Pairs(position.Market, position.TakeProfit);
+
+        // Where the take-profit is an order of its own, the stop-loss may rest already, and
+        // the take-profit be what is missing.
+        if (!pairs
+            && (await stored.LiveOrdersAsync(position.AgentId, CancellationToken.None)).Any(order =>
+                order is { Purpose: OrderPurpose.StopLoss, PairId: null }
+                && order.PositionId == position.Id
+                && OrderStatuses.IsResting(order.Status)))
+        {
+            return Placed.Rests;
+        }
 
         for (var attempt = 1; attempt <= 2; attempt++)
         {
@@ -679,7 +1158,7 @@ internal sealed class AgentOrders(
                 if (await stored.BeginPairAsync(position.Id, cycleId, CancellationToken.None) is not { } pair)
                 {
                     // Closed meanwhile, or another is at it.
-                    return await stored.IsSettledAsync(position.AgentId, CancellationToken.None);
+                    return await stored.IsSettledAsync(position.AgentId, CancellationToken.None) ? Placed.Rests : Placed.Later;
                 }
 
                 pair = await SendPairAsync(pair);
@@ -692,7 +1171,7 @@ internal sealed class AgentOrders(
                     is not { } alone)
                 {
                     // Closed meanwhile, or another is at it.
-                    return await stored.IsSettledAsync(position.AgentId, CancellationToken.None);
+                    return await stored.IsSettledAsync(position.AgentId, CancellationToken.None) ? Placed.Rests : Placed.Later;
                 }
 
                 stopLoss = await SendAsync(alone, CancellationToken.None);
@@ -716,7 +1195,7 @@ internal sealed class AgentOrders(
                         takeProfit.ExchangeOrderId);
                 }
 
-                return true;
+                return Placed.Rests;
             }
 
             // Not known whether the exchange has it: it is asked about by what settles the
@@ -724,7 +1203,7 @@ internal sealed class AgentOrders(
             // that is being stopped.
             if (OrderStatuses.IsUnsettled(stopLoss.Status) || pace.Stopping)
             {
-                return false;
+                return Placed.Later;
             }
 
             // Refused: the exchange would refuse it again.
@@ -734,54 +1213,81 @@ internal sealed class AgentOrders(
             }
         }
 
-        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } open)
+        return Placed.Failed;
+    }
+
+    /// <summary>
+    /// Has the take-profit of an open position of the Futures market rest on the exchange,
+    /// beside its stop-loss, as an order of its own that only reduces the position (FR-BIN-F3).
+    /// It is placed at most twice: a second time when the first was not placed.
+    /// </summary>
+    /// <returns>
+    /// That it rests, or was executed. That it is left to what settles the orders: its outcome
+    /// is not known, it was not placed, the key of its user is not there, or what asked is being
+    /// stopped. The position has its stop-loss meanwhile. Or that it failed: the exchange
+    /// refused it, as it refuses one that the price has passed.
+    /// </returns>
+    private async Task<Placed> PlaceTakeProfitAsync(Position position, Guid? cycleId, Pace pace)
+    {
+        var live = await stored.LiveOrdersAsync(position.AgentId, CancellationToken.None);
+
+        if (live.FirstOrDefault(order => order.Purpose == OrderPurpose.TakeProfit) is { } there)
         {
-            return true;
+            // It rests already, or is under way.
+            return OrderStatuses.IsResting(there.Status) ? Placed.Rests : Placed.Later;
         }
 
-        // Protection that a plan moved goes back to where it was, and rests there as before.
-        if (previous is { } old && (old.StopLoss != open.StopLoss || old.TakeProfit != open.TakeProfit))
+        // Nothing more is begun for a cycle that is being stopped, and no row is written for an
+        // order that cannot be sent.
+        if (pace.Stopping
+            || (await keys.ExchangeKeyAsync(position.UserId, position.Mode, CancellationToken.None)).Outcome != KeyHandOverOutcome.Handed)
         {
-            logger.LogWarning(
-                "The stop-loss of the position of agent {AgentId} could not be placed at its new price, so it is placed at the old one again",
-                open.AgentId);
-
-            await stored.ProtectionToAsync(open.Id, old.StopLoss, old.TakeProfit, CancellationToken.None);
-
-            return await stored.PositionAsync(open.Id, CancellationToken.None) is not { ClosedAt: null } restored
-                || await ProtectAsync(restored, cycleId, pace, previous: null);
+            return Placed.Later;
         }
 
-        // The protective order cannot be placed: the position is closed at market at once, and
-        // its user is told (FR-RSK-7).
-        logger.LogWarning(
-            "The stop-loss of the position of agent {AgentId} could not be placed, so the position is closed at market", open.AgentId);
-
-        if (await CloseAtMarketAsync(open, ExitReason.ProtectionFailed, cycleId, pace))
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
-            await TellAsync(
-                open,
-                $"The stop-loss of the position in {open.Symbol} ({open.Mode}) could not be placed, so the position was closed at market.");
+            if (await stored.BeginTakeProfitAsync(position.Id, cycleId, CancellationToken.None) is not { } takeProfit)
+            {
+                // Closed meanwhile, its stop-loss no longer rests, or another is at it.
+                return Placed.Later;
+            }
 
-            return true;
+            takeProfit = await SendAsync(takeProfit, CancellationToken.None);
+            takeProfit = await FollowAsync(takeProfit, pace);
+
+            if (OrderStatuses.IsResting(takeProfit.Status))
+            {
+                logger.LogInformation(
+                    "The take-profit of the position of agent {AgentId} rests on the exchange as the order {ExchangeOrderId}",
+                    position.AgentId,
+                    takeProfit.ExchangeOrderId);
+
+                return Placed.Rests;
+            }
+
+            if (takeProfit.Status == OrderStatus.Filled)
+            {
+                // It closed the position, and the stop-loss is what it left behind.
+                await TakeOffLeftBehindAsync(position.AgentId);
+
+                return Placed.Rests;
+            }
+
+            if (OrderStatuses.IsUnsettled(takeProfit.Status) || pace.Stopping)
+            {
+                return Placed.Later;
+            }
+
+            // Refused: the exchange would refuse it again.
+            if (takeProfit.Status == OrderStatus.Rejected)
+            {
+                return Placed.Failed;
+            }
         }
 
-        // It is open with no stop-loss, and could not be closed. Its user is told once, an
-        // agent that runs waits for its user, and what settles the orders tries again.
-        if (await stored.AlertedAsync(open.Id, CancellationToken.None))
-        {
-            logger.LogError(
-                "The position of agent {AgentId} is open with no stop-loss, and could not be closed at market", open.AgentId);
-
-            await TellAsync(
-                open,
-                $"The stop-loss of the position in {open.Symbol} ({open.Mode}) could not be placed, and the position could not be " +
-                "closed at market either. It is open with no stop-loss. Close it with \"Close position now\", or at Binance.");
-
-            await agents.RequireAttentionAsync(open.UserId, open.AgentId, CancellationToken.None);
-        }
-
-        return false;
+        // Not placed at the second try. It is owed, and the position has its stop-loss.
+        return Placed.Later;
     }
 
     /// <summary>Settles the orders of an agent with the exchange. See <see cref="IPlanOrders.SettleAsync"/>.</summary>
@@ -832,18 +1338,24 @@ internal sealed class AgentOrders(
             return;
         }
 
-        // A take-profit that rests without its stop-loss protects nothing. It is taken off, or
-        // the exchange says what became of it, and the position gets its protection anew.
+        // What one order of a position of the Futures market left behind when the other closed
+        // the position is taken off: the exchange ends neither for the other (FR-BIN-F3).
+        await TakeOffLeftBehindAsync(agentId);
+
+        // A take-profit of a pair that rests without its stop-loss protects nothing. It is
+        // taken off, or the exchange says what became of it, and the position gets its
+        // protection anew.
         if (await stored.OpenPositionAsync(agentId, CancellationToken.None) is { } unprotected
             && await stored.LiveOrdersAsync(agentId, CancellationToken.None) is { Count: > 0 } left
-            && left.All(order => order.Purpose == OrderPurpose.TakeProfit && order.Status == OrderStatus.Open))
+            && left.All(order => order.Purpose == OrderPurpose.TakeProfit && order.Status == OrderStatus.Open && order.PairId is not null))
         {
             await TakeOffProtectionAsync(unprotected);
         }
 
-        // An open position that no order is under way for has its stop-loss, or gets it now.
+        // An open position that no order is under way for has its stop-loss, or gets it now,
+        // and on the Futures market its take-profit beside it.
         if (await stored.OpenPositionAsync(agentId, CancellationToken.None) is { } position
-            && (await stored.LiveOrdersAsync(agentId, CancellationToken.None)).Count == 0)
+            && Unprotected(position, await stored.LiveOrdersAsync(agentId, CancellationToken.None)))
         {
             await ProtectAsync(position, cycleId: null, pace, previous: null);
         }
@@ -875,11 +1387,14 @@ internal sealed class AgentOrders(
             return "TimeIsUp";
         }
 
-        // What was bought has no protection while the rest of the entry rests. A part that no
-        // order can be for is left to grow, or to the end of the entry.
+        // What was bought has no protection while the rest of the entry rests. On the Spot
+        // market a part that no order can be for is left to grow, or to the end of the entry.
+        // On the Futures market an order that only reduces a position is held to no least
+        // value, so any part is protected at once: it is leveraged, and has no stop until then.
         if (entry.Status == OrderStatus.PartiallyFilled
-            && await SymbolAsync(entry.Market, entry.Mode, entry.Symbol, CancellationToken.None) is { } symbol
-            && CanBeOrdered(symbol, entry.ExecutedQuantity, entry.AveragePrice ?? entry.Price ?? 0m))
+            && (entry.Market == Market.Futures
+                || (await SymbolAsync(entry.Market, entry.Mode, entry.Symbol, CancellationToken.None) is { } symbol
+                    && CanBeOrdered(symbol, entry.ExecutedQuantity, entry.AveragePrice ?? entry.Price ?? 0m))))
         {
             return "PartlyExecuted";
         }
@@ -1168,8 +1683,13 @@ internal sealed class AgentOrders(
                 }
 
                 // No entry is sent again, and no order of a pair alone. What protects or closes
-                // a position is, once.
-                if (order.Purpose != OrderPurpose.Entry && order.PairId is null && await stored.SendAgainAsync(order, CancellationToken.None))
+                // a position is, once, and only while the position is open: on the Futures
+                // market the other order of the position may have closed it meanwhile.
+                if (order.Purpose != OrderPurpose.Entry
+                    && order.PairId is null
+                    && order.PositionId is { } protects
+                    && await stored.PositionAsync(protects, CancellationToken.None) is { ClosedAt: null }
+                    && await stored.SendAgainAsync(order, CancellationToken.None))
                 {
                     logger.LogWarning(
                         "The exchange does not have the {OrderPurpose} of agent {AgentId}, which could no longer arrive, so it is sent once more",
@@ -1630,9 +2150,37 @@ internal sealed class AgentOrders(
     /// <summary>
     /// Whether the protection of a position is the pair of the Spot market: a stop-loss and a
     /// take-profit of which the exchange ends one when the other is triggered (FR-BIN-S2). On
-    /// the Futures market, and for a position that names no take-profit, it is the stop-loss alone.
+    /// the Futures market the two are orders of their own, and for a position that names no
+    /// take-profit it is the stop-loss alone.
     /// </summary>
     private static bool Pairs(Market market, decimal? takeProfit) => market == Market.Spot && takeProfit is not null;
+
+    /// <summary>
+    /// Whether the take-profit of a position is an order of its own, which rests beside the
+    /// stop-loss: on the Futures market, which has no pair (FR-BIN-F3).
+    /// </summary>
+    private static bool TakesProfitAlone(Market market, decimal? takeProfit) => market == Market.Futures && takeProfit is not null;
+
+    /// <summary>
+    /// Whether an open position lacks protection that can be placed now, from the orders of its
+    /// agent that are not over: it has no stop-loss, and nothing is under way but a take-profit
+    /// of its own, or its stop-loss rests and the take-profit that is an order of its own is
+    /// missing. While any other order of the agent is not over, nothing is placed beside it.
+    /// </summary>
+    private static bool Unprotected(Position position, IReadOnlyList<Order> live)
+    {
+        if (live.Any(order => order.PairId is not null
+            || order.PositionId != position.Id
+            || order.Purpose is not (OrderPurpose.StopLoss or OrderPurpose.TakeProfit)))
+        {
+            return false;
+        }
+
+        var takeProfit = live.Any(order => order.Purpose == OrderPurpose.TakeProfit);
+
+        return live.FirstOrDefault(order => order.Purpose == OrderPurpose.StopLoss) is not { } stopLoss
+            || (stopLoss.Status == OrderStatus.Open && !takeProfit && TakesProfitAlone(position.Market, position.TakeProfit));
+    }
 
     /// <summary>
     /// Whether an order can be for a quantity at a price: the exchange takes none below the
@@ -1660,6 +2208,10 @@ internal sealed class AgentOrders(
     private static ExchangeOrderType TypeOf(Order order) => order.Type switch
     {
         OrderType.Market => ExchangeOrderType.Market,
+
+        // A take-profit that is an order of its own is triggered on the side of a profit. One
+        // of a pair is an order of the list that the exchange holds, and is asked about as one.
+        OrderType.Stop when order is { Purpose: OrderPurpose.TakeProfit, PairId: null } => ExchangeOrderType.TakeProfit,
         OrderType.Stop => ExchangeOrderType.Stop,
         OrderType.Limit => ExchangeOrderType.Limit,
         _ => throw new ArgumentOutOfRangeException(nameof(order), order.Type, "The exchange has no such order."),
@@ -1670,6 +2222,19 @@ internal sealed class AgentOrders(
 
     /// <summary>The prices of the protection of a position: its stop-loss, and its take-profit when it names one.</summary>
     private readonly record struct Protection(decimal StopLoss, decimal? TakeProfit);
+
+    /// <summary>What became of placing an order that protects a position.</summary>
+    private enum Placed
+    {
+        /// <summary>It rests on the exchange, or the position needs it no more.</summary>
+        Rests,
+
+        /// <summary>It is left to what settles the orders.</summary>
+        Later,
+
+        /// <summary>It cannot be placed: the exchange refused it, or it was not placed at the second try.</summary>
+        Failed,
+    }
 
     /// <summary>The turn of one caller at the gate of an agent.</summary>
     private sealed class Turn(SemaphoreSlim gate) : IDisposable

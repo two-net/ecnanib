@@ -19,8 +19,10 @@ namespace Ecnanib.DecisionEngine;
 /// <para>
 /// <b>Its stop-loss is a price, and an order.</b> The price is here. The order that rests on the
 /// exchange at that price is a row of the <c>orders</c> table that names the position
-/// (FR-RSK-7). On the Spot market the take-profit is an order as well, of one pair with the
-/// stop-loss (FR-BIN-S2). On the Futures market it is a price only: no order is placed for it yet.
+/// (FR-RSK-7). The take-profit is an order as well: on the Spot market of one pair with the
+/// stop-loss (FR-BIN-S2), and on the Futures market an order of its own, which rests beside the
+/// stop-loss (FR-BIN-F3). A position whose take-profit could neither be placed nor be made up
+/// for by closing it says none.
 /// </para>
 /// <para>
 /// It says the mode, the market, and the symbol that the agent had when the position was

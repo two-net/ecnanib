@@ -54,16 +54,25 @@ public sealed class Notification(
 public enum NotificationType
 {
     /// <summary>
-    /// An order or the protection of a position failed: a stop-loss could not be placed, and the
-    /// position was closed at market, or could not be closed either (FR-RSK-7).
+    /// An order or the protection of a position failed: a stop-loss, or on the Futures market a
+    /// take-profit, could not be placed, and the position was closed at market, or could not be
+    /// closed either (FR-RSK-7, FR-BIN-F3).
     /// </summary>
     ProtectionFailure,
 
     /// <summary>
-    /// An entry was skipped: the account of its user does not hold what the plan needs
-    /// (FR-BIN-S3).
+    /// An entry was skipped: the account of its user does not hold what the plan needs, which
+    /// is the value of the entry on the Spot market and its margin on the Futures market
+    /// (FR-BIN-S3, FR-BIN-F6), or the exchange did not set the margin of the symbol (FR-BIN-F2).
     /// </summary>
     EntrySkipped,
+
+    /// <summary>
+    /// An agent waits for its user: something that only they can change keeps it from trading
+    /// (FR-NTF-1). It is raised when the account of its user at the exchange conflicts with how
+    /// the agent trades (FR-BIN-F2).
+    /// </summary>
+    AttentionRequired,
 }
 
 internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>

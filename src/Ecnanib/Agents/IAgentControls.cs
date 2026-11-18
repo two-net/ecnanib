@@ -112,13 +112,23 @@ public enum AgentControlOutcome
     /// or the model is gone (FR-TEAM-1, FR-KEY-10, FR-CAT-8). Nothing changed.
     /// </summary>
     RolesBlock,
+
+    /// <summary>
+    /// The account of the user at the exchange keeps the agent from running: on the Futures
+    /// market it is in a mode that conflicts with one-way mode and isolated margin, it holds a
+    /// position in the symbol that the agent did not open, or the exchange did not say
+    /// (FR-BIN-F2). Nothing changed.
+    /// </summary>
+    AccountConflicts,
 }
 
 /// <summary>What starting, pausing, or resuming an agent gave.</summary>
 /// <param name="Outcome">How it ended.</param>
 /// <param name="Block">What about the credential keeps the agent from running, when that is how it ended.</param>
 /// <param name="Roles">What about its team keeps the agent from running, role by role, when that is how it ended.</param>
-public sealed record AgentControlResult(AgentControlOutcome Outcome, StartBlock? Block = null, IReadOnlyList<RoleBlock>? Roles = null);
+/// <param name="Conflict">What about the account of its user at the exchange keeps the agent from running, when that is how it ended.</param>
+public sealed record AgentControlResult(
+    AgentControlOutcome Outcome, StartBlock? Block = null, IReadOnlyList<RoleBlock>? Roles = null, AccountConflict? Conflict = null);
 
 /// <summary>What happens to the open position of an agent that is stopped, as its user chooses (FR-AGT-11).</summary>
 public enum PositionAtStop

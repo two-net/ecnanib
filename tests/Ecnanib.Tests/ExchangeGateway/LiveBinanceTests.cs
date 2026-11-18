@@ -510,6 +510,193 @@ public class LiveBinanceTests
         }
     }
 
+    [Fact]
+    public async Task What_is_bought_on_the_Futures_market_of_the_test_environment_is_margined_and_protected_by_two_orders_and_closed_again()
+    {
+        // In the test environment only: no test places an order with real funds.
+        const TradingMode mode = TradingMode.Demo;
+        const int leverage = 2;
+
+        var (apiKey, secretKey) = GivenFor(mode);
+        using var application = OnTheNetwork();
+        var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
+        var data = application.Services.GetRequiredService<IExchangeMarketData>();
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+
+        var price = await data.GetPriceAsync(Market.Futures, mode, TrackedSymbol, TestContext.Current.CancellationToken);
+        var mark = await data.GetMarkPriceAsync(mode, TrackedSymbol, TestContext.Current.CancellationToken);
+        var symbols = await data.GetSymbolsAsync(Market.Futures, mode, TestContext.Current.CancellationToken);
+        var symbol = Assert.Single(symbols.Symbols, listed => listed.Symbol == TrackedSymbol);
+
+        // The symbol takes a stop and a take-profit, which is what an entry in it waits for
+        // on Futures (FR-BIN-F3).
+        Assert.True(symbol.StopOrders);
+        Assert.True(symbol.TakeProfitOrders);
+
+        // How the account stands: read, and nothing of it changed. An agent does not start in
+        // an account that is in another mode than one-way with one asset, or that holds a
+        // position in the symbol (FR-BIN-F2): then this test is skipped.
+        var account = await exchange.GetFuturesAccountAsync(BinanceCalls.User, mode, apiKey, secretKey, TrackedSymbol, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeCallOutcome.Succeeded, account.Outcome);
+        Assert.SkipWhen(
+            account.HedgeMode || account.MultiAssetsMargin || account.HoldsPosition,
+            $"The account of the test environment is in hedge mode or in Multi-Assets mode, or holds a position in {TrackedSymbol}.");
+
+        // Twice the least that an order can be worth. The wallet of the test environment
+        // covers its margin, or the entry would be skipped (FR-BIN-F6): then this test is.
+        var quantity = Math.Max(symbol.MinQuantity, Math.Ceiling(2m * symbol.MinValue / price.Price!.Value / symbol.QuantityStep) * symbol.QuantityStep);
+        var balances = await exchange.GetBalancesAsync(BinanceCalls.User, Market.Futures, mode, apiKey, secretKey, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeCallOutcome.Succeeded, balances.Outcome);
+        Assert.SkipUnless(
+            (balances.Balances.FirstOrDefault(balance => balance.Asset == symbol.QuoteAsset)?.Available ?? 0m) >= 1.05m * quantity * price.Price.Value / leverage,
+            $"The wallet of the test environment holds too little {symbol.QuoteAsset} for the margin of the least entry in {TrackedSymbol}.");
+
+        // The margin of the symbol and its leverage, before the entry (FR-BIN-F2): set, and
+        // set once more, which Binance answers with its word that nothing is to change. That
+        // is no refusal.
+        Assert.Equal(
+            ExchangeOrderOutcome.Answered,
+            await orders.SetIsolatedMarginAsync(BinanceCalls.User, mode, apiKey, secretKey, TrackedSymbol, leverage, TestContext.Current.CancellationToken));
+        Assert.Equal(
+            ExchangeOrderOutcome.Answered,
+            await orders.SetIsolatedMarginAsync(BinanceCalls.User, mode, apiKey, secretKey, TrackedSymbol, leverage, TestContext.Current.CancellationToken));
+
+        // The entry, at the market: executed at once, at a price that the answer says.
+        var bought = await orders.PlaceAsync(
+            BinanceCalls.User,
+            Market.Futures,
+            mode,
+            apiKey,
+            secretKey,
+            new ExchangeOrderRequest(
+                Guid.CreateVersion7().ToString("N"), TrackedSymbol, ExchangeOrderSide.Buy, ExchangeOrderType.Market, quantity, Price: null, Closes: false),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeOrderOutcome.Answered, bought.Outcome);
+        Assert.Equal((ExchangeOrderStatus.Filled, quantity, true), (bought.Order!.Status, bought.Order.ExecutedQuantity, bought.Order.IsOver));
+        Assert.NotNull(bought.Order.AveragePrice);
+
+        var stopLoss = new ExchangeOrderRef(Guid.CreateVersion7().ToString("N"), TrackedSymbol, ExchangeOrderType.Stop);
+        var takeProfit = new ExchangeOrderRef(Guid.CreateVersion7().ToString("N"), TrackedSymbol, ExchangeOrderType.TakeProfit);
+        var closed = false;
+
+        try
+        {
+            // The account holds the position now.
+            var holding = await exchange.GetFuturesAccountAsync(BinanceCalls.User, mode, apiKey, secretKey, TrackedSymbol, TestContext.Current.CancellationToken);
+
+            Assert.Equal((ExchangeCallOutcome.Succeeded, true), (holding.Outcome, holding.HoldsPosition));
+
+            // The protection: a stop-loss a tenth below the mark price, and a take-profit a
+            // tenth above it, each an order of its own that only reduces the position, and is
+            // triggered on the mark price (FR-BIN-F3).
+            var below = Math.Floor(mark.MarkPrice!.Value * 0.9m / symbol.PriceStep) * symbol.PriceStep;
+            var above = Math.Floor(mark.MarkPrice.Value * 1.1m / symbol.PriceStep) * symbol.PriceStep;
+
+            var stop = await orders.PlaceAsync(
+                BinanceCalls.User,
+                Market.Futures,
+                mode,
+                apiKey,
+                secretKey,
+                new ExchangeOrderRequest(stopLoss.ClientOrderId, TrackedSymbol, ExchangeOrderSide.Sell, ExchangeOrderType.Stop, quantity, below, Closes: true),
+                TestContext.Current.CancellationToken);
+            var profit = await orders.PlaceAsync(
+                BinanceCalls.User,
+                Market.Futures,
+                mode,
+                apiKey,
+                secretKey,
+                new ExchangeOrderRequest(takeProfit.ClientOrderId, TrackedSymbol, ExchangeOrderSide.Sell, ExchangeOrderType.TakeProfit, quantity, above, Closes: true),
+                TestContext.Current.CancellationToken);
+
+            // Both rest, and each is found by the identifier that it carries, where Binance
+            // keeps its conditional orders.
+            Assert.Equal(ExchangeOrderOutcome.Answered, stop.Outcome);
+            Assert.Equal(ExchangeOrderOutcome.Answered, profit.Outcome);
+            Assert.Equal((ExchangeOrderStatus.Open, 0m), (stop.Order!.Status, stop.Order.ExecutedQuantity));
+            Assert.Equal((ExchangeOrderStatus.Open, 0m), (profit.Order!.Status, profit.Order.ExecutedQuantity));
+            Assert.NotEqual(stop.Order.ExchangeOrderId, profit.Order.ExchangeOrderId);
+
+            foreach (var (which, order) in new[] { (stopLoss, stop.Order), (takeProfit, profit.Order) })
+            {
+                var found = await orders.FindAsync(BinanceCalls.User, Market.Futures, mode, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+                Assert.Equal(ExchangeOrderOutcome.Answered, found.Outcome);
+                Assert.Equal((ExchangeOrderStatus.Open, order.ExchangeOrderId), (found.Order!.Status, found.Order.ExchangeOrderId));
+            }
+
+            // The take-profit is taken off, and the stop-loss rests on: neither is the other's.
+            var taken = await orders.CancelAsync(BinanceCalls.User, Market.Futures, mode, apiKey, secretKey, takeProfit, TestContext.Current.CancellationToken);
+            var rests = await orders.FindAsync(BinanceCalls.User, Market.Futures, mode, apiKey, secretKey, stopLoss, TestContext.Current.CancellationToken);
+
+            Assert.Equal((ExchangeOrderOutcome.Answered, ExchangeOrderStatus.Canceled), (taken.Outcome, taken.Order!.Status));
+            Assert.Equal((ExchangeOrderOutcome.Answered, ExchangeOrderStatus.Open), (rests.Outcome, rests.Order!.Status));
+
+            // The position is closed at the market, by an order that only reduces it, while
+            // the stop-loss rests.
+            var sold = await orders.PlaceAsync(
+                BinanceCalls.User,
+                Market.Futures,
+                mode,
+                apiKey,
+                secretKey,
+                new ExchangeOrderRequest(
+                    Guid.CreateVersion7().ToString("N"), TrackedSymbol, ExchangeOrderSide.Sell, ExchangeOrderType.Market, quantity, Price: null, Closes: true),
+                TestContext.Current.CancellationToken);
+
+            closed = sold.Outcome == ExchangeOrderOutcome.Answered;
+
+            Assert.Equal(ExchangeOrderOutcome.Answered, sold.Outcome);
+            Assert.Equal((ExchangeOrderStatus.Filled, quantity), (sold.Order!.Status, sold.Order.ExecutedQuantity));
+
+            // What Binance does with an order that only reduces a position once the position
+            // is closed, its documentation does not say. Whatever it is, the order is known to
+            // Binance still, nothing of it is executed, and it is one that can be taken off:
+            // what places the orders takes it off itself, and counts on neither.
+            var left = await orders.FindAsync(BinanceCalls.User, Market.Futures, mode, apiKey, secretKey, stopLoss, TestContext.Current.CancellationToken);
+
+            Assert.Equal(ExchangeOrderOutcome.Answered, left.Outcome);
+            Assert.Equal(0m, left.Order!.ExecutedQuantity);
+            TestContext.Current.TestOutputHelper?.WriteLine(
+                $"With its position closed, Binance has the stop-loss that only reduces as {left.Order.Status}.");
+
+            if (!left.Order.IsOver)
+            {
+                var off = await orders.CancelAsync(BinanceCalls.User, Market.Futures, mode, apiKey, secretKey, stopLoss, TestContext.Current.CancellationToken);
+
+                Assert.Equal((ExchangeOrderOutcome.Answered, ExchangeOrderStatus.Canceled), (off.Outcome, off.Order!.Status));
+            }
+
+            // The account holds nothing in the symbol again.
+            var after = await exchange.GetFuturesAccountAsync(BinanceCalls.User, mode, apiKey, secretKey, TrackedSymbol, TestContext.Current.CancellationToken);
+
+            Assert.Equal((ExchangeCallOutcome.Succeeded, false), (after.Outcome, after.HoldsPosition));
+        }
+        finally
+        {
+            // Whatever the test found, nothing of it is left: both orders are taken off, and
+            // what was bought is sold again, by an order that opens nothing.
+            await orders.CancelAsync(BinanceCalls.User, Market.Futures, mode, apiKey, secretKey, takeProfit, CancellationToken.None);
+            await orders.CancelAsync(BinanceCalls.User, Market.Futures, mode, apiKey, secretKey, stopLoss, CancellationToken.None);
+
+            if (!closed)
+            {
+                await orders.PlaceAsync(
+                    BinanceCalls.User,
+                    Market.Futures,
+                    mode,
+                    apiKey,
+                    secretKey,
+                    new ExchangeOrderRequest(
+                        Guid.CreateVersion7().ToString("N"), TrackedSymbol, ExchangeOrderSide.Sell, ExchangeOrderType.Market, quantity, Price: null, Closes: true),
+                    CancellationToken.None);
+            }
+        }
+    }
+
     /// <summary>The credential that the run was given for an environment. Without both keys, the test is skipped.</summary>
     private static (string ApiKey, string SecretKey) GivenFor(TradingMode mode)
     {

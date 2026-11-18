@@ -547,6 +547,9 @@ internal sealed class StandInPlanOrders : IPlanOrders
 
     public Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken) =>
         Task.FromResult(PositionCloseOutcome.NothingOpen);
+
+    public Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken) =>
+        Task.FromResult<AccountConflict?>(null);
 }
 
 /// <summary>The record of a cycle, as <see cref="StandInCycleRecords"/> was handed it.</summary>

@@ -4,10 +4,11 @@ namespace Ecnanib.ExchangeGateway.Trading;
 
 /// <summary>
 /// The orders of the exchange, behind a common interface: placing one, asking what became of
-/// one, taking one off the exchange, and reading its executions, and the pair of a stop-loss and
-/// a take-profit of the Spot market, where the execution of one ends the other (FR-BIN-S2). Only
-/// the Decision Engine may use this namespace, after schema validation and the Risk Guard
-/// (NFR-SEC-6). See docs/orders.md.
+/// one, taking one off the exchange, and reading its executions, the pair of a stop-loss and a
+/// take-profit of the Spot market, where the execution of one ends the other (FR-BIN-S2), and
+/// the margin and the leverage of a symbol of the Futures market, which are set before an entry
+/// (FR-BIN-F2). Only the Decision Engine may use this namespace, after schema validation and the
+/// Risk Guard (NFR-SEC-6). See docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -28,7 +29,8 @@ namespace Ecnanib.ExchangeGateway.Trading;
 /// <para>
 /// A credential is taken with each call and is kept nowhere, as with
 /// <see cref="IExchangeAdapter"/>. No operation here moves funds between accounts or out of one
-/// (FR-BIN-9): an order trades in the account that the credential is of.
+/// (FR-BIN-9): an order trades in the account that the credential is of, and the margin of a
+/// symbol is a setting of that account.
 /// </para>
 /// </remarks>
 public interface IExchangeOrders
@@ -159,6 +161,36 @@ public interface IExchangeOrders
         string secretKey,
         ExchangePairRef pair,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Has the positions of a symbol of the Futures market use isolated margin, at a leverage,
+    /// in the account of the credential: the margin of a position is its own, and backs no
+    /// other (FR-BIN-F2). Both are settings of the symbol, and neither is one of the whole
+    /// account. It is asked before an entry, with the leverage that the Risk Guard computed. It
+    /// takes no market: only the Futures market has margin.
+    /// </summary>
+    /// <param name="userId">Whose call it is, for the limiter. It is not sent to the exchange.</param>
+    /// <param name="mode">The environment the credential is for.</param>
+    /// <param name="apiKey">The user's API key.</param>
+    /// <param name="secretKey">The secret key that belongs to it.</param>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="leverage">The leverage, as a whole number of 1 or more.</param>
+    /// <param name="cancellationToken">Cancels the wait before a call is sent, and nothing after that.</param>
+    /// <returns>
+    /// <see cref="ExchangeOrderOutcome.Answered"/> when the symbol has isolated margin and that
+    /// leverage: a symbol that had both already has them. <see cref="ExchangeOrderOutcome.Rejected"/>
+    /// when the exchange refused one of the two, which it does while the account has orders or
+    /// a position in the symbol that it would change the margin of. Every other end says that
+    /// it is not known how the symbol is margined: no entry is placed after it.
+    /// </returns>
+    Task<ExchangeOrderOutcome> SetIsolatedMarginAsync(
+        Guid userId,
+        TradingMode mode,
+        string apiKey,
+        string secretKey,
+        string symbol,
+        int leverage,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>What is known of the time that the exchange takes an order in.</summary>
@@ -196,6 +228,15 @@ public enum ExchangeOrderType
     Stop,
 
     /// <summary>
+    /// It rests on the exchange until the price reaches its trigger on the side of a profit, and
+    /// is then placed at the market: a sale at its trigger or above, and a purchase at its
+    /// trigger or below, where a stop is triggered the other way. It is the take-profit of a
+    /// position of the Futures market (FR-BIN-F3). On the Spot market the take-profit of a
+    /// position is one order of a pair.
+    /// </summary>
+    TakeProfit,
+
+    /// <summary>
     /// It is executed at its price or a better one, and what is not executed at once rests on
     /// the exchange until it is, or until it is taken off (FR-BIN-S2).
     /// </summary>
@@ -212,13 +253,14 @@ public enum ExchangeOrderType
 /// <param name="Type">The kind of order.</param>
 /// <param name="Quantity">How much of the asset that is traded it is for.</param>
 /// <param name="Price">
-/// The price that a stop is triggered at, or the price of a limit order. Null for an order at
-/// the market.
+/// The price that a stop or a take-profit is triggered at, or the price of a limit order. Null
+/// for an order at the market. On the Futures market a trigger is held against the mark price
+/// (FR-BIN-F3).
 /// </param>
 /// <param name="Closes">
-/// Whether the order only closes a position: a stop-loss, and an order that closes at the
-/// market. Where the exchange keeps positions, such an order opens nothing when the position is
-/// gone already.
+/// Whether the order only closes a position: a stop-loss, a take-profit, and an order that
+/// closes at the market. Where the exchange keeps positions, such an order opens nothing when
+/// the position is gone already.
 /// </param>
 public sealed record ExchangeOrderRequest(
     string ClientOrderId,

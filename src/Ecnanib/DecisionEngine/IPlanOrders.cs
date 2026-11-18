@@ -4,8 +4,8 @@ using Ecnanib.RiskGuard;
 namespace Ecnanib.DecisionEngine;
 
 /// <summary>
-/// The orders of a cycle (SRS 3.2, step 7): what places the entry and the protective order of a
-/// plan that the Risk Guard accepted, or does nothing, and what settles the orders of an agent
+/// The orders of a cycle (SRS 3.2, step 7): what places the entry and the protective orders of
+/// a plan that the Risk Guard accepted, or does nothing, and what settles the orders of an agent
 /// with the exchange. See docs/orders.md.
 /// </summary>
 /// <remarks>
@@ -18,7 +18,9 @@ namespace Ecnanib.DecisionEngine;
 /// <b>Every open position has a stop-loss that rests on the exchange</b> (FR-RSK-7). When the
 /// stop-loss cannot be placed after an entry is executed, the position is closed at market at
 /// once, and its user is told. On the Spot market the stop-loss rests as one pair with the
-/// take-profit, of which the exchange ends one when the other is triggered (FR-BIN-S2).
+/// take-profit, of which the exchange ends one when the other is triggered (FR-BIN-S2). On the
+/// Futures market the two are orders of their own, which only reduce the position and are
+/// triggered on the mark price (FR-BIN-F3).
 /// </para>
 /// <para>
 /// It is public so that a test can put a stand-in behind it, for cycles of agents that need no
@@ -30,9 +32,10 @@ public interface IPlanOrders
     /// <summary>
     /// Places the orders of a plan that the Risk Guard accepted: an entry with its protection,
     /// the close of the open position, both for a plan that reverses, or the protection at its
-    /// new prices. An entry is placed at the market, or on the Spot market at the price of the
-    /// plan, where it rests (FR-BIN-S2). What it places is made from the result, and from
-    /// nothing else (NFR-SEC-6): the quantity is the one that the Risk Guard computed (FR-RSK-5).
+    /// new prices. An entry is placed at the market, or at the price of the plan, where it rests
+    /// (FR-BIN-S2). What it places is made from the result, and from nothing else (NFR-SEC-6):
+    /// the quantity is the one that the Risk Guard computed, and so is the leverage that the
+    /// symbol is given on the Futures market before the entry (FR-RSK-5, FR-BIN-F2).
     /// </summary>
     /// <param name="cycle">The cycle whose plan it is.</param>
     /// <param name="accepted">What the Risk Guard accepted.</param>
@@ -66,4 +69,19 @@ public interface IPlanOrders
     /// <param name="cancellationToken">Canceled when what asked is stopped.</param>
     /// <returns>How it ended. An exchange that refuses or gives no answer is an outcome: this does not fail for it.</returns>
     Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// What in the account of an agent's user at the exchange stands in the way of the agent
+    /// (FR-BIN-F2): on the Futures market an agent trades one symbol in one-way mode, with
+    /// isolated margin, so an account in another mode, or one that holds a position in the
+    /// symbol which the agent did not open, is one that it does not trade in. It only reads,
+    /// with the key of the agent's user, which is handed to nothing else.
+    /// </summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>
+    /// What stands in the way, <see cref="AccountConflict.NotKnown"/> when the exchange did not
+    /// say, or null when nothing does: for an agent of the Spot market, nothing ever does.
+    /// </returns>
+    Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken);
 }

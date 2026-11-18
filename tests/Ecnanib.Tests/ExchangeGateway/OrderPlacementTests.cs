@@ -123,15 +123,15 @@ public class OrderPlacementTests
             spot.Query.Take(7));
 
         // On Futures Binance takes a stop with the calls of its conditional orders only, under
-        // a name of its own for the identifier.
+        // a name of its own for the identifier. It is triggered on the mark price (FR-BIN-F3).
         var futures = binance.System.Calls[1];
         Assert.Equal("POST /fapi/v1/algoOrder", $"{futures.Method} {futures.Address.AbsolutePath}");
         Assert.Equal(
             [
                 ("algoType", "CONDITIONAL"), ("symbol", MarketService.Symbol), ("side", "SELL"), ("type", "STOP_MARKET"), ("quantity", "0.01"),
-                ("triggerPrice", "59000.5"), ("clientAlgoId", "other-id_1.2:3/4"), ("reduceOnly", "true"),
+                ("triggerPrice", "59000.5"), ("workingType", "MARK_PRICE"), ("clientAlgoId", "other-id_1.2:3/4"), ("reduceOnly", "true"),
             ],
-            futures.Query.Take(8));
+            futures.Query.Take(9));
         Assert.All(binance.System.Calls, call => Assert.Null(call.Body));
 
         // Both rest, and nothing of either is executed.
@@ -140,6 +140,82 @@ public class OrderPlacementTests
             Assert.Equal(ExchangeOrderOutcome.Answered, result.Outcome);
             Assert.Equal((ExchangeOrderStatus.Open, 0m, null, false), (result.Order!.Status, result.Order.ExecutedQuantity, result.Order.AveragePrice, result.Order.IsOver));
         });
+    }
+
+    [Fact]
+    public async Task A_take_profit_of_the_Futures_market_is_a_conditional_order_that_only_reduces_and_is_triggered_on_the_mark_price()
+    {
+        var binance = new TradingBinance();
+        using var application = BinanceCalls.Behind(binance.System);
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
+        var takeProfit = StopLoss with { ClientOrderId = TakeProfitId, Type = ExchangeOrderType.TakeProfit, Price = 62000.5m };
+        var which = new ExchangeOrderRef(TakeProfitId, MarketService.Symbol, ExchangeOrderType.TakeProfit);
+
+        // The stop-loss rests first, and the take-profit beside it: two orders, each of its own.
+        await orders.PlaceAsync(BinanceCalls.User, Market.Futures, TradingMode.Demo, apiKey, secretKey, StopLoss, TestContext.Current.CancellationToken);
+        var placed = await orders.PlaceAsync(
+            BinanceCalls.User, Market.Futures, TradingMode.Demo, apiKey, secretKey, takeProfit, TestContext.Current.CancellationToken);
+
+        // Protection is a reduce-only stop-loss and a reduce-only take-profit resting on the
+        // exchange, triggered on the mark price (FR-BIN-F3).
+        var call = binance.System.Calls[1];
+        Assert.Equal("POST /fapi/v1/algoOrder", $"{call.Method} {call.Address.AbsolutePath}");
+        Assert.Null(call.Body);
+        Assert.Equal(
+            [
+                ("algoType", "CONDITIONAL"), ("symbol", MarketService.Symbol), ("side", "SELL"), ("type", "TAKE_PROFIT_MARKET"), ("quantity", "0.01"),
+                ("triggerPrice", "62000.5"), ("workingType", "MARK_PRICE"), ("clientAlgoId", TakeProfitId), ("reduceOnly", "true"),
+            ],
+            call.Query.Take(9));
+        Assert.Equal(ExchangeOrderOutcome.Answered, placed.Outcome);
+        Assert.Equal((ExchangeOrderStatus.Open, 0m, false), (placed.Order!.Status, placed.Order.ExecutedQuantity, placed.Order.IsOver));
+
+        // It is asked about where Binance keeps its conditional orders, by its own identifier.
+        // Asked at the call of the other orders, it would not be found while it rests.
+        var found = await orders.FindAsync(BinanceCalls.User, Market.Futures, TradingMode.Demo, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+
+        Assert.Equal("GET /fapi/v1/algoOrder", $"{binance.System.Calls[2].Method} {binance.System.Calls[2].Address.AbsolutePath}");
+        Assert.Equal(("clientAlgoId", TakeProfitId), binance.System.Calls[2].Query[0]);
+        Assert.Equal((ExchangeOrderOutcome.Answered, placed.Order.ExchangeOrderId), (found.Outcome, found.Order!.ExchangeOrderId));
+
+        // The exchange ends neither for the other: when the take-profit is executed, the
+        // stop-loss rests on, and is its caller's to take off.
+        binance.Execute(binance.TheTakeProfit());
+
+        var executed = await orders.FindAsync(BinanceCalls.User, Market.Futures, TradingMode.Demo, apiKey, secretKey, which, TestContext.Current.CancellationToken);
+        var stopLoss = await orders.FindAsync(
+            BinanceCalls.User, Market.Futures, TradingMode.Demo, apiKey, secretKey,
+            new ExchangeOrderRef(Id, MarketService.Symbol, ExchangeOrderType.Stop), TestContext.Current.CancellationToken);
+
+        Assert.Equal((ExchangeOrderStatus.Filled, 0.01m, 62000.5m), (executed.Order!.Status, executed.Order.ExecutedQuantity, executed.Order.AveragePrice));
+        Assert.Equal(ExchangeOrderStatus.Open, stopLoss.Order!.Status);
+
+        // And it is taken off there as well.
+        var takenOff = await orders.CancelAsync(
+            BinanceCalls.User, Market.Futures, TradingMode.Demo, apiKey, secretKey,
+            new ExchangeOrderRef(Id, MarketService.Symbol, ExchangeOrderType.Stop), TestContext.Current.CancellationToken);
+
+        Assert.Equal("DELETE /fapi/v1/algoOrder", $"{binance.System.Calls[^1].Method} {binance.System.Calls[^1].Address.AbsolutePath}");
+        Assert.Equal(ExchangeOrderStatus.Canceled, takenOff.Order!.Status);
+    }
+
+    [Fact]
+    public async Task A_take_profit_that_the_price_has_passed_is_refused_and_there_is_no_order()
+    {
+        var binance = new TradingBinance();
+        using var application = BinanceCalls.Behind(binance.System);
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var (apiKey, secretKey) = BinanceCalls.CredentialOf(TradingMode.Demo);
+
+        // The price of the symbol is 60000: a take-profit that sells at 59000.5 would be
+        // triggered at once, which Binance refuses.
+        var refused = await orders.PlaceAsync(
+            BinanceCalls.User, Market.Futures, TradingMode.Demo, apiKey, secretKey,
+            StopLoss with { Type = ExchangeOrderType.TakeProfit }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeOrderResult.Without(ExchangeOrderOutcome.Rejected), refused);
+        Assert.Empty(binance.Orders);
     }
 
     [Theory]

@@ -27,6 +27,12 @@ namespace Ecnanib.Agents;
 /// through <see cref="IAgentExposure"/>, after the transaction and never inside it: the request
 /// waits for the exchange, and would hold the lock for as long.
 /// </para>
+/// <para>
+/// An agent of the Futures market does not start, and is not resumed, while the account of its
+/// user at the exchange stands in its way (FR-BIN-F2). The exchange is asked through
+/// <see cref="IAgentExposure"/> as well, before the transaction and never inside it, and the
+/// agent is read again under the lock.
+/// </para>
 /// </remarks>
 internal sealed class AgentControls(
     IDbContextFactory<EcnanibDbContext> contexts,
@@ -205,6 +211,11 @@ internal sealed class AgentControls(
         var userId = SignedInUser.RequiredIdOf(request);
         var cancellationToken = request.RequestAborted;
 
+        // Before the transaction: the exchange is asked about the account of the user, for an
+        // agent of the Futures market that the control would have run. The agent is read again
+        // under the lock, and everything else that stands in its way is said first.
+        var asked = await AskAccountAsync(userId, agentId, control, confirmedForLive, cancellationToken);
+
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
@@ -289,6 +300,31 @@ internal sealed class AgentControls(
 
                 return new AgentControlResult(AgentControlOutcome.RolesBlock, Roles: blocked);
             }
+
+            // On the Futures market an agent trades in one-way mode, with isolated margin, in
+            // a symbol that the account holds no other position in. An account that conflicts
+            // with that is its user's to change: the service changes no setting of the whole
+            // account (FR-BIN-F2). An agent that was changed while the exchange was asked was
+            // asked about as another, so nothing is known of it as it is now.
+            if (agent.Market == Market.Futures)
+            {
+                var conflict = asked is { } about && about.Mode == agent.Mode && about.Market == agent.Market && about.Symbol == agent.Symbol
+                    ? about.Conflict
+                    : AccountConflict.NotKnown;
+
+                if (conflict is { } inTheWay)
+                {
+                    logger.LogInformation(
+                        "User {UserId} was refused the control {AgentControl} of agent {AgentId}: their Binance account for {TradingMode} stands in its way ({AccountConflict})",
+                        userId,
+                        control,
+                        agentId,
+                        agent.Mode,
+                        inTheWay);
+
+                    return new AgentControlResult(AgentControlOutcome.AccountConflicts, Conflict: inTheWay);
+                }
+            }
         }
 
         var now = clock.GetUtcNow();
@@ -311,6 +347,37 @@ internal sealed class AgentControls(
             cause);
 
         return new AgentControlResult(AgentControlOutcome.Done);
+    }
+
+    /// <summary>
+    /// Asks whatever keeps positions what in the account of the user at the exchange stands in
+    /// the way of an agent of the Futures market, where the control would have the agent run
+    /// (FR-BIN-F2). It holds no lock: the agent is as it is read here, and is read again under
+    /// the lock. Where the control changes nothing anyway, the exchange is asked nothing.
+    /// </summary>
+    /// <returns>What the agent was asked about as, with what stands in its way, or null when the exchange was not asked.</returns>
+    private async Task<(TradingMode Mode, Market Market, string Symbol, AccountConflict? Conflict)?> AskAccountAsync(
+        Guid userId, Guid agentId, AgentControl control, bool confirmedForLive, CancellationToken cancellationToken)
+    {
+        Agent? agent;
+
+        await using (var context = await contexts.CreateDbContextAsync(cancellationToken))
+        {
+            // Asked for by owner: an agent of another user is not found, like one that does not exist.
+            agent = await context.Set<Agent>()
+                .AsNoTracking()
+                .OwnedBy(userId)
+                .SingleOrDefaultAsync(agent => agent.Id == agentId, cancellationToken);
+        }
+
+        if (agent is not { Market: Market.Futures }
+            || AgentStates.After(agent.State, control) != AgentState.Running
+            || (agent.Mode == TradingMode.Live && !confirmedForLive))
+        {
+            return null;
+        }
+
+        return (agent.Mode, agent.Market, agent.Symbol, await exposures.AccountConflictAsync(agent, cancellationToken));
     }
 
     /// <summary>

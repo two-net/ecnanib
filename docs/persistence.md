@@ -10,7 +10,7 @@ The object-relational mapper is Entity Framework Core with the Npgsql provider. 
 |---|---|
 | Development | `docker compose up -d` starts PostgreSQL 18 with the database, user, and password that the tracked configuration file names. |
 | A deployment | An empty database and a role that owns it, named in `ConnectionStrings:EcnanibDbContext` of the deployment's configuration file. See [configuration.md](configuration.md). |
-| Tests | A PostgreSQL container that the tests start themselves, and that is removed when the run ends. They need Docker running, and nothing else. |
+| Tests | A PostgreSQL container that the tests start themselves, and that is removed when the run ends. They need Docker running, and nothing else. The container is given 512 megabytes of shared memory: PostgreSQL keeps the statistics of every database there, a database of a test stays until the run ends, and the databases of one run outgrow the 64 megabytes that a container has otherwise. |
 
 The application does not create the database, so its role needs no right to. It creates and changes the tables inside it.
 

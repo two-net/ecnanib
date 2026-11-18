@@ -19,36 +19,26 @@ public class PlanOrderTests
     private const string NotEntered = "No entry was placed for agent {AgentId} for the close at {ClosedAt}: {NoEntryReason}";
 
     [Fact]
-    public async Task A_short_position_is_entered_by_selling_and_protected_by_a_stop_loss_that_buys()
+    public async Task A_short_position_is_entered_by_selling_and_protected_by_a_stop_loss_and_a_take_profit_that_buy()
     {
         using var application = new OrdersApplication();
         var agent = await application.GiveAgentAsync(market: Market.Futures);
 
         await application.PlaceAsync(agent, GuardCases.OpenShort);
 
-        // The quantity is the one that the Risk Guard computed, and no other (FR-RSK-5).
+        // The quantity is the one that the Risk Guard computed, and no other (FR-RSK-5). The
+        // stop-loss above the price and the take-profit below it buy what was sold, and only
+        // reduce the position (FR-BIN-F1, FR-BIN-F3).
         Assert.Equal(
-            [(false, "SELL", 0.02m, null, false), (true, "BUY", 0.02m, (decimal?)61000m, true)],
-            application.Binance.Asked.Select(asked => (asked.Stop, asked.Side, asked.Quantity, asked.Trigger, asked.ReduceOnly)));
+            [
+                ("MARKET", "SELL", 0.02m, null, false),
+                ("STOP_MARKET", "BUY", 0.02m, (decimal?)61000m, true),
+                ("TAKE_PROFIT_MARKET", "BUY", 0.02m, 58000m, true),
+            ],
+            application.Binance.Asked.Select(asked => (asked.Type, asked.Side, asked.Quantity, asked.Trigger, asked.ReduceOnly)));
 
         var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
         Assert.Equal((PositionSide.Short, 61000m, (decimal?)58000m), (position.Side, position.StopLoss, position.TakeProfit));
-    }
-
-    [Fact]
-    public async Task A_plan_with_a_limit_entry_places_nothing_on_the_Futures_market_and_says_why()
-    {
-        using var application = new OrdersApplication();
-        var agent = await application.GiveAgentAsync(market: Market.Futures);
-
-        // An entry at a price rests until it is executed, and is protected from then on, which
-        // takes the orders that the Futures market has for it. They are not built. On the Spot
-        // market such an entry is placed: see LimitEntryTests.
-        await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures with { EntryPrice = 59900m });
-
-        Assert.Empty(application.Binance.Asked);
-        Assert.Empty(await application.OrdersOfAsync(agent.Id));
-        Assert.Equal("LimitEntry", Assert.Single(application.Application.Events(), said => said.Area == Area && said.Template == NotEntered).Text("NoEntryReason"));
     }
 
     [Fact]
@@ -138,12 +128,17 @@ public class PlanOrderTests
 
         await application.PlaceAsync(agent, GuardCases.Close with { Market = market });
 
-        // The stop-loss first: on Spot it holds what the close sells, and is taken off with the
-        // take-profit, as the one pair that they are. Then the close, for what the position
+        // The protection first: on Spot it holds what the close sells, and is taken off as the
+        // one pair that it is. On Futures the take-profit and the stop-loss are two orders, and
+        // each is taken off, the take-profit first. Then the close, for what the position
         // holds, as an order that only closes.
         var paths = market == Market.Spot
             ? new[] { "POST /api/v3/order", "POST /api/v3/orderList/oco", "DELETE /api/v3/orderList", "POST /api/v3/order" }
-            : ["POST /fapi/v1/order", "POST /fapi/v1/algoOrder", "DELETE /fapi/v1/algoOrder", "POST /fapi/v1/order"];
+            :
+            [
+                "POST /fapi/v1/order", "POST /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder",
+                "DELETE /fapi/v1/algoOrder", "DELETE /fapi/v1/algoOrder", "POST /fapi/v1/order",
+            ];
         Assert.Equal(paths, application.Binance.OrderCalls);
         Assert.All(application.Binance.Orders.Where(order => order.Asked.Stop), order => Assert.Equal("CANCELED", order.Status));
         Assert.Equal((false, "SELL", quantity, market == Market.Futures), Last(application.Binance.Asked));
@@ -152,14 +147,11 @@ public class PlanOrderTests
         Assert.Equal(ExitReason.TeamClose, position.ExitReason);
         Assert.NotNull(position.ClosedAt);
 
-        (OrderPurpose, OrderStatus, ExitReason?)[] protection = market == Market.Spot
-            ? [(OrderPurpose.StopLoss, OrderStatus.Canceled, null), (OrderPurpose.TakeProfit, OrderStatus.Canceled, null)]
-            : [(OrderPurpose.StopLoss, OrderStatus.Canceled, null)];
-
         Assert.Equal(
             [
                 (OrderPurpose.Entry, OrderStatus.Filled, null),
-                .. protection,
+                (OrderPurpose.StopLoss, OrderStatus.Canceled, null),
+                (OrderPurpose.TakeProfit, OrderStatus.Canceled, null),
                 (OrderPurpose.Close, OrderStatus.Filled, (ExitReason?)ExitReason.TeamClose),
             ],
             (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status, order.ExitReason)));
@@ -181,8 +173,10 @@ public class PlanOrderTests
         await application.PlaceAsync(agent, GuardCases.Close with { Market = Market.Futures });
 
         // Binance has no stop-loss to take off, and says what became of it: the position is
-        // closed already, and no order is placed that would open one on the other side.
-        Assert.Equal(2, application.Binance.Asked.Count);
+        // closed already, and no order is placed that would open one on the other side. The
+        // take-profit, which Binance left resting, is taken off.
+        Assert.Equal(3, application.Binance.Asked.Count);
+        Assert.Equal("CANCELED", application.Binance.TheTakeProfit().Status);
         Assert.Equal(ExitReason.StopLoss, Assert.Single(await application.PositionsOfAsync(agent.Id)).ExitReason);
     }
 
@@ -249,13 +243,14 @@ public class PlanOrderTests
         // The long position is closed, and then the short one is entered and protected.
         Assert.Equal(
             [
-                "POST /fapi/v1/order", "POST /fapi/v1/algoOrder",
-                "DELETE /fapi/v1/algoOrder", "POST /fapi/v1/order", "POST /fapi/v1/order", "POST /fapi/v1/algoOrder",
+                "POST /fapi/v1/order", "POST /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder",
+                "DELETE /fapi/v1/algoOrder", "DELETE /fapi/v1/algoOrder", "POST /fapi/v1/order",
+                "POST /fapi/v1/order", "POST /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder",
             ],
             application.Binance.OrderCalls);
         Assert.Equal(
-            [(false, "SELL", true), (false, "SELL", false), (true, "BUY", true)],
-            application.Binance.Asked.Skip(2).Select(asked => (asked.Stop, asked.Side, asked.ReduceOnly)));
+            [("MARKET", "SELL", true), ("MARKET", "SELL", false), ("STOP_MARKET", "BUY", true), ("TAKE_PROFIT_MARKET", "BUY", true)],
+            application.Binance.Asked.Skip(3).Select(asked => (asked.Type, asked.Side, asked.ReduceOnly)));
 
         var positions = await application.PositionsOfAsync(agent.Id);
         Assert.Equal(
@@ -284,7 +279,7 @@ public class PlanOrderTests
     }
 
     [Fact]
-    public async Task A_plan_to_adjust_protection_on_the_Futures_market_moves_the_stop_loss_and_keeps_the_take_profit_as_a_price()
+    public async Task A_plan_to_adjust_protection_on_the_Futures_market_moves_the_stop_loss_and_the_take_profit_each_as_its_own_order()
     {
         using var application = new OrdersApplication();
         var agent = await application.GiveAgentAsync(market: Market.Futures);
@@ -293,22 +288,31 @@ public class PlanOrderTests
         // The stop-loss moves up, which reduces the risk, and the take-profit moves as well.
         await application.PlaceAsync(agent, GuardCases.Adjust with { Market = Market.Futures, TakeProfit = 63000m });
 
-        // The stop-loss that rested is taken off, and one rests at the new price. No order is
-        // placed for the take-profit there: it is a price in the records.
+        // The stop-loss that rested is taken off, and one rests at the new price, while the
+        // take-profit rests on. Then the take-profit is taken off, and one rests at its new
+        // price, while the stop-loss rests: the two are orders of their own there (FR-BIN-F3).
         Assert.Equal(
-            ["POST /fapi/v1/order", "POST /fapi/v1/algoOrder", "DELETE /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder"],
+            [
+                "POST /fapi/v1/order", "POST /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder",
+                "DELETE /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder", "DELETE /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder",
+            ],
             application.Binance.OrderCalls);
         Assert.Equal(
-            [("CANCELED", (decimal?)59000m), ("NEW", 59800m)],
-            application.Binance.Orders.Where(order => order.Asked.Stop).Select(order => (order.Status, order.Asked.Trigger)));
+            [
+                ("STOP_MARKET", "CANCELED", (decimal?)59000m), ("TAKE_PROFIT_MARKET", "CANCELED", 62000m),
+                ("STOP_MARKET", "NEW", 59800m), ("TAKE_PROFIT_MARKET", "NEW", 63000m),
+            ],
+            application.Binance.Orders.Where(order => order.Asked.Stop).Select(order => (order.Type, order.Status, order.Asked.Trigger)));
 
         var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
         Assert.Equal((59800m, (decimal?)63000m, null), (position.StopLoss, position.TakeProfit, position.ClosedAt));
 
-        // What the agent holds says the stop-loss that rests, and no take-profit, for none rests.
+        // What the agent holds says the stop-loss and the take-profit that rest.
         var holds = await Assert.Single(application.Application.Holdings).OfAsync(agent, TestContext.Current.CancellationToken);
-        Assert.Equal(new PositionContext(PositionSide.Long, 60000m, 0.02m, 59800m, TakeProfit: null), holds.Position);
-        Assert.Equal([new OpenOrder(OpenOrderKind.StopLoss, OrderSide.Sell, 0.02m, 59800m)], holds.Orders);
+        Assert.Equal(new PositionContext(PositionSide.Long, 60000m, 0.02m, 59800m, TakeProfit: 63000m), holds.Position);
+        Assert.Equal(
+            [new OpenOrder(OpenOrderKind.StopLoss, OrderSide.Sell, 0.02m, 59800m), new OpenOrder(OpenOrderKind.TakeProfit, OrderSide.Sell, 0.02m, 63000m)],
+            holds.Orders);
     }
 
     [Fact]

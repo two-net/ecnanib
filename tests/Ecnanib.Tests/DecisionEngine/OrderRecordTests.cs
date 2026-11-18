@@ -139,13 +139,15 @@ public class OrderRecordTests
         await application.PlaceAsync(agent, GuardCases.OpenShort);
 
         // With a position: Agents is told so, and a cycle reads the position with the
-        // stop-loss that rests for it.
+        // stop-loss and the take-profit that rest for it.
         Assert.True(await HoldsAsync(exposure.HasOpenPositionOrOrdersAsync));
         Assert.True(await HoldsAsync(exposure.HasOpenPositionAsync));
 
         var holds = await holdings.OfAsync(agent, TestContext.Current.CancellationToken);
-        Assert.Equal(new PositionContext(PositionSide.Short, 60000m, 0.02m, 61000m, TakeProfit: null), holds.Position);
-        Assert.Equal([new OpenOrder(OpenOrderKind.StopLoss, OrderSide.Buy, 0.02m, 61000m)], holds.Orders);
+        Assert.Equal(new PositionContext(PositionSide.Short, 60000m, 0.02m, 61000m, TakeProfit: 58000m), holds.Position);
+        Assert.Equal(
+            [new OpenOrder(OpenOrderKind.StopLoss, OrderSide.Buy, 0.02m, 61000m), new OpenOrder(OpenOrderKind.TakeProfit, OrderSide.Buy, 0.02m, 58000m)],
+            holds.Orders);
         Assert.Equal((1000m, 1000m, 1000m), (holds.Equity, holds.EquityAtDayStart, holds.PeakEquity));
 
         // Closed: it holds nothing again, so its market and its symbol can be changed (FR-AGT-8).

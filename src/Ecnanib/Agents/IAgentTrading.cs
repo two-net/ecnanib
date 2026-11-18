@@ -5,7 +5,8 @@ namespace Ecnanib.Agents;
 /// <summary>
 /// What whatever places the orders of an agent asks of Agents: the state that the agent is in
 /// as an order of it is written, under the lock that its user's controls take, and that the
-/// agent wait for its user when its position is left without protection (FR-RSK-7). Agents
+/// agent wait for its user when its position is left without protection (FR-RSK-7), or when the
+/// account of its user at the exchange stands in the way of its entries (FR-BIN-F2). Agents
 /// places no order. See docs/agents.md and docs/orders.md.
 /// </summary>
 /// <remarks>
@@ -32,14 +33,20 @@ public interface IAgentTrading
     Task<AgentState?> StateUnderLockAsync(EcnanibDbContext context, Guid userId, Guid agentId, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Moves an agent that runs to Attention required, because its position is open with no
-    /// stop-loss on the exchange and could not be closed at market either. An agent in any other
+    /// Moves an agent that runs to Attention required: because its position is open with no
+    /// stop-loss on the exchange and could not be closed at market either, or because a setting
+    /// of its user's account at the exchange conflicts with how it trades. An agent in any other
     /// state stays as it is: one that its user paused or stopped is not made to look as if it
     /// could be resumed for this.
     /// </summary>
     /// <param name="userId">The user whose agent it is.</param>
     /// <param name="agentId">The agent.</param>
+    /// <param name="cause">
+    /// Why: <see cref="AgentStateCause.PositionUnprotected"/> or
+    /// <see cref="AgentStateCause.ExchangeSettingConflict"/>.
+    /// </param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Whether the agent was moved.</returns>
-    Task<bool> RequireAttentionAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+    /// <exception cref="ArgumentOutOfRangeException">The cause is none that what places the orders finds.</exception>
+    Task<bool> RequireAttentionAsync(Guid userId, Guid agentId, AgentStateCause cause, CancellationToken cancellationToken);
 }

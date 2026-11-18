@@ -6,7 +6,7 @@ A user starts, pauses, resumes, and stops an agent, and the agent follows the st
 
 A new agent is in Demo. Its user switches it to Live with a valid Live Binance key, a confirmation of the risk, and a fresh proof of who they are, and the switch is recorded in the audit trail (FR-AGT-7). Every page of an agent shows a Demo or Live badge, and every action that affects Live trading asks for confirmation (FR-UI-3). What an agent did in Demo stays labeled as Demo, and is never combined with what it does in Live (FR-BIN-11).
 
-Agents keeps the settings, the state, and the mode of agents, and the models of their roles. It runs no cycle and places no order. The Decision Engine starts a cycle for each agent that runs when a candle of its timeframe closes, and asks Agents which agents those are: see [cycles.md](cycles.md). A cycle that starts builds its data package and runs the team of its agent: each role is called with its model, on the key of the agent's user, and the cycle ends with the decision of the team: see [team.md](team.md). What goes on of its plan is checked by the Risk Guard, which holds it to the risk settings of the agent: see [risk-guard.md](risk-guard.md). The orders are not built, so nothing places an order. What an agent holds on the exchange is asked of whatever keeps positions and orders, which is not built: see "What an agent holds".
+Agents keeps the settings, the state, and the mode of agents, and the models of their roles. It runs no cycle and places no order. The Decision Engine starts a cycle for each agent that runs when a candle of its timeframe closes, and asks Agents which agents those are: see [cycles.md](cycles.md). A cycle that starts builds its data package and runs the team of its agent: each role is called with its model, on the key of the agent's user, and the cycle ends with the decision of the team: see [team.md](team.md). What goes on of its plan is checked by the Risk Guard, which holds it to the risk settings of the agent: see [risk-guard.md](risk-guard.md). The Decision Engine places the orders of what the Risk Guard accepted, and keeps the positions: see [orders.md](orders.md). What an agent holds on the exchange is asked of it, and so is what in the account of its user at Binance stands in the way of an agent of Futures (FR-BIN-F2): see "What an agent holds".
 
 The code is in `src/Ecnanib/Agents`, and the pages in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Agents`.
 
@@ -22,7 +22,7 @@ Whose rows a request reaches is in [ownership.md](ownership.md). The fair-use li
 | Symbol | The one symbol the agent trades. | One of `Binance:Symbols` that the chosen market has in the agent's environment (FR-AGT-6). See "The symbols". |
 | Timeframe | 15m, 1H, 4H, or 1D (FR-AGT-3). | One of the four, by its code. The form has no default: its user chooses. |
 | Team | The four roles that run the agent, each with a provider and one of its models (FR-AGT-5). | A model that can be selected, and that the user's own key can use. A role may wait for its model while the agent does not run. See "The team". |
-| Allocated capital | How much the agent may trade with, in the asset that its symbol is priced in. | A number above 0, with 8 decimal places at most. It is not held to the balance of the account: an entry that the balance does not cover is skipped when it is due (FR-BIN-S3, FR-BIN-F6). |
+| Allocated capital | How much the agent may trade with, in the asset that its symbol is priced in. | A number above 0, with 8 decimal places at most. It is not held to the balance of the account: an entry that the balance does not cover, or on Futures the margin of the wallet, is skipped when it is due (FR-BIN-S3, FR-BIN-F6). |
 | Risk settings | Risk per trade, minimum reward-to-risk ratio, leverage cap, liquidation buffer, daily loss limit, drawdown limit, and maximum entry distance. | Each within the hard bounds of `Trading:Aggressive`. See "The risk settings". |
 
 - **The settings are checked on the server,** by `IStoredAgents`, whatever a form offered or a browser checked. A form brings text, and `AgentRules.Read` says what is wrong with it, field by field. Everything that is wrong is said at once, each at its field, and what was entered stays in the form.
@@ -129,7 +129,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `Running` | Its user starts or resumes it. | Yes | Yes | Managed by the team | Yes |
 | `Paused` | Its user pauses it. | No | No | Stays open with its protective orders | Yes |
 | `Halted` | A loss limit of the Risk Guard is reached (FR-RSK-8). Nothing does this yet. | No | No | Closed by the system | Yes |
-| `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, the provider of a model of its team no longer offers the model, or its position is open with no stop-loss and could not be closed (FR-RSK-7). The other causes of the specification are not built. | No | No | Stays open with its protective orders, unless the cause says that it has none | Yes |
+| `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, the provider of a model of its team no longer offers the model, its position is open with no stop-loss and could not be closed (FR-RSK-7), or the account of its user at Binance conflicts with how an agent of Futures trades (FR-BIN-F2). The other causes of the specification are not built. | No | No | Stays open with its protective orders, unless the cause says that it has none | Yes |
 | `Stopped` | Its user stops it. | No | No | Closed or kept, as its user chose | No |
 
 - **Only a running agent runs cycles and opens positions.** `AgentStates.RunsCycles` and `AgentStates.TakesNewEntries` say so, for what runs a cycle and what places an entry to ask. What starts the cycles asks `IRunningAgents`, which goes by `AgentStates.RunsCycles`: when a candle closes, and again as the turn of a cycle comes. See "What other components ask of Agents".
@@ -159,6 +159,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 - **A form that is sent twice is answered as the first one was.** It finds the agent in the state that the control leads to, which is what was asked for, and records nothing again.
 - **A Binance key that is missing, is not valid, or lacks the permission of the agent's market blocks a start and a resume** (FR-KEY-5). `IKeyValidation.BlockForAsync` of Credentials says so, from what the last check of the key recorded, and the page shows the message of `KeyPages.Says`, which names the missing permission, with a link to the keys. It is asked under the lock that a change to a key takes, so the answer holds until the agent runs. Pausing and stopping ask nothing of the key.
 - **Another active agent for the same credential, market, and symbol blocks a start** (FR-AGT-9). An agent that is resumed is active already.
+- **An account at Binance that conflicts with how an agent of Futures trades blocks a start and a resume** (FR-BIN-F2). See "The account of Futures".
 - **An agent runs with its whole team, so a role that cannot work blocks a start and a resume** (FR-TEAM-1): a role that has no model, and a role whose model its user cannot select now, because the key of its provider is missing or not valid, the key cannot use the model, or the model can no longer be selected. `IKeyModels.BlockForAsync` of Credentials says so for the model of each role, under the same lock, and asks no provider. The page names each such role with what to do about it, and leads to the settings of the agent and to the keys. Pausing and stopping ask nothing of the team.
 - **A draft is not stopped:** it was never started. It is deleted.
 - **A stopped agent is started again.** Its market, symbol, and timeframe can be changed before, while it holds nothing.
@@ -182,6 +183,8 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `ExchangeKeyDeleted`, `ExchangeKeyInvalid` | The Binance key of its mode was deleted, or refused by Binance, while it ran. |
 | `AiKeyDeleted`, `AiKeyInvalid` | The key of an AI provider that a role of its team uses was deleted, or refused by the provider, while it ran. |
 | `ModelUnavailable` | The provider of a model that a role of its team was given no longer offers the model, while it ran. |
+| `PositionUnprotected` | Its position was open with no stop-loss on the exchange, and could not be closed at market either, while it ran (FR-RSK-7). |
+| `ExchangeSettingConflict` | The account of its user at Binance conflicted with how it trades when it was about to enter, while it ran: on Futures the account was in hedge mode or in Multi-Assets mode, or held a position in its symbol that the agent did not open (FR-BIN-F2). |
 
 - What changes the state of an agent adds the members of its causes when it is built.
 - **A change says the mode that the agent was in when it happened,** and keeps saying it when the agent is switched (FR-BIN-11). A switch of the mode is no change of the state, and has no cause: the audit trail has it. See "Demo is labeled as Demo".
@@ -201,6 +204,8 @@ public interface IAgentExposure
     Task<bool> HasOpenPositionAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken);
 
     Task<PositionCloseOutcome> ClosePositionAtMarketAsync(Guid agentId, CancellationToken cancellationToken);
+
+    Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken);
 }
 ```
 
@@ -209,6 +214,7 @@ public interface IAgentExposure
 | `HasOpenPositionOrOrdersAsync` | Of a stopped agent, before its market, symbol, or timeframe is changed and before it is deleted (FR-AGT-8). A draft never held anything, and an active agent is refused whatever it holds. |
 | `HasOpenPositionAsync` | Of every agent that is not a draft, for the pages, and under the lock when an agent is stopped or its position closed (FR-AGT-11, FR-AGT-12). |
 | `ClosePositionAtMarketAsync` | When its user closes the position of an agent by hand, or stops the agent and chooses to close it. It answers `Closed`, `NothingOpen`, or `Failed`. |
+| `AccountConflictAsync` | Before an agent of Futures is started or resumed: what in the account of its user at Binance stands in its way. See "The account of Futures". |
 
 - A question is asked with the context of whoever asks, inside its transaction where it has one. An implementation asks for the rows of the agent it is given, and commits nothing.
 - **A close is asked for after the transaction, and never inside it.** It waits for the exchange, and would hold the lock of the account for as long. Agents has recorded the request by then, and does not give it up when the browser goes away. What an implementation must not lose once it has taken the request is its own to keep.
@@ -217,6 +223,27 @@ public interface IAgentExposure
 - **An entry that rests is taken off when its agent no longer runs** (FR-BIN-S2). An agent that its user paused or stopped, or that waits for its user, opens no position, so what places the orders takes its entry off the exchange within a minute, whatever its user chose to do with a position. What the entry bought by then is a position, with its protective orders. See "An entry at a price" in [orders.md](orders.md).
 - **A close settles the orders of the agent first,** and then takes the stop-loss off the exchange and closes the position at the market. When the position cannot be closed, the stop-loss is placed again, and the answer is `Failed`. See "Closing a position" in [orders.md](orders.md).
 - Where nothing answers, no agent holds anything: nothing stands in the way of a change or a deletion, no user is asked what to do with a position, and no control that closes one is shown. The tests of Agents use a stand-in, `StandInExposure`.
+
+### The account of Futures
+
+Futures agents use isolated margin and one-way position mode. The system does not change account-wide settings: if the account is in a conflicting mode or already holds a position in the symbol, the agent does not start and the user is told what to change (FR-BIN-F2). `AgentAccountTests` holds it to the rules below.
+
+| `AccountConflict` | What stands in the way | What the page says to do |
+|---|---|---|
+| `HedgeMode` | The account keeps a long and a short position of a symbol apart, and an agent trades in one-way mode. | Switch the position mode to one-way at Binance. |
+| `MultiAssetsMode` | The account margins with more than one asset, in which Binance takes no isolated margin. | Switch the asset mode to single-asset at Binance. |
+| `PositionInSymbol` | The account holds a position in the symbol of the agent that the agent did not open. An agent trades its symbol alone. | Close the position at Binance. |
+| `NotKnown` | Binance did not say how the account is set. | Try again in a moment. |
+
+- **Agents asks whatever keeps positions and orders,** through `IAgentExposure.AccountConflictAsync`, with the agent as it is stored. Agents is handed no key of an exchange: the Decision Engine reads the account, with the key of the agent's user. See "The account of Futures" in [orders.md](orders.md).
+- **It is asked before the transaction that starts the agent, and never inside it.** It waits for Binance, and would hold the lock of the account for as long. The agent is read again under the lock: one whose mode, market, or symbol was changed meanwhile was asked about as another, and is answered as `NotKnown`.
+- **Binance is asked only where the control would have the agent run.** A control that is not offered in the state of the agent, a pause, and a start of an agent in Live that was not asked about once more ask it nothing. An agent on Spot is not asked about.
+- **Everything else that stands in the way is said first:** the key, another active agent, and the team. They are known without a call.
+- **A position in the symbol is the agent's own when its records hold one.** So an agent that was paused, or that waits for its user, with its position open is resumed. A stopped agent that kept its position stands in the way of another agent of the user in the same symbol.
+- **An account that could not be asked about starts nothing.** A failure never lets an agent run in an account that it was not checked against (NFR-REL-2).
+- **The service changes none of it.** The page says what to change at Binance, with `AgentPages.Says`, and the same form starts the agent once it is changed.
+- **An agent that runs meets the same question before each entry.** There it is what places the orders that asks: the entry is skipped, the user is told with a notification, and the agent moves to Attention required, with the cause `ExchangeSettingConflict`. Its user resumes it once the account is changed, and the resume asks again.
+- Nothing is recorded for a start that was refused, and the log names what stood in the way.
 
 ### What places the orders asks
 
@@ -227,14 +254,14 @@ public interface IAgentTrading
 {
     Task<AgentState?> StateUnderLockAsync(EcnanibDbContext context, Guid userId, Guid agentId, CancellationToken cancellationToken);
 
-    Task<bool> RequireAttentionAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+    Task<bool> RequireAttentionAsync(Guid userId, Guid agentId, AgentStateCause cause, CancellationToken cancellationToken);
 }
 ```
 
 | Member | What it does |
 |---|---|
 | `StateUnderLockAsync` | Says the state that the agent is in now, read under the lock of its account, inside the transaction that writes an order of the agent. The lock is the one that the controls of its user take. So an entry and a stop of the agent's user cannot cross: either the entry is written first, and the stop finds it and asks for the choice, or the agent is stopped first, and no entry is written (`AgentStates.TakesNewEntries`). It changes nothing. |
-| `RequireAttentionAsync` | Moves an agent that runs to Attention required, with the cause `PositionUnprotected`: its position is open with no stop-loss on the exchange, and could not be closed at market either (FR-RSK-7). An agent in any other state stays as it is: one that its user paused or stopped is not made to look as if it could be resumed for this. |
+| `RequireAttentionAsync` | Moves an agent that runs to Attention required, with the cause that it is given. `PositionUnprotected`: its position is open with no stop-loss on the exchange, and could not be closed at market either (FR-RSK-7). `ExchangeSettingConflict`: the account of its user at Binance conflicts with how it trades (FR-BIN-F2). It takes no other cause. An agent in any other state stays as it is: one that its user paused or stopped is not made to look as if it could be resumed for this. |
 
 - Both take the user and the agent by their ids, which are those of the agent's own row: they are asked by background work, where nobody is signed in. See [ownership.md](ownership.md).
 - **The move is the service's doing, and no action of a user.** The change of the state records it, and the audit trail does not. The user is told with a notification, which what places the orders raises: see [notifications.md](notifications.md).
@@ -423,7 +450,7 @@ The rows of an account go with it: `agents.user_id`, `agent_roles.user_id`, and 
 | The Catalog tells Agents | `IModelDependents` | That models are being marked unavailable: the agents that run with one move to `AttentionRequired` (FR-CAT-8). See "When a model goes". |
 | Accounts | `IFairUse.MayCreateAgentAsync` | Whether the user may create one more agent (FR-ACC-1, FR-ACC-7). |
 | Accounts | `AuditTrail.RecordAsync` | Recording what a user does to an agent (NFR-LOG-7). See "The audit trail". |
-| Whatever keeps positions and orders | `IAgentExposure` | What an agent holds, and closing its position. See "What an agent holds". |
+| Whatever keeps positions and orders | `IAgentExposure` | What an agent holds, closing its position, and what in the account of its user at Binance stands in the way of an agent of Futures. See "What an agent holds" and "The account of Futures". |
 
 ### What other components hold Agents to
 
@@ -528,6 +555,7 @@ User {UserId} moved agent {AgentId} from {PreviousAgentState} to {AgentState}: {
 User {UserId} stopped agent {AgentId}, which was {AgentState}: {AgentStateCause}
 User {UserId} was refused the control {AgentControl} of agent {AgentId}, which is {AgentState}
 User {UserId} was refused the control {AgentControl} of agent {AgentId}: the Binance key for {TradingMode} blocks it ({StartBlock})
+User {UserId} was refused the control {AgentControl} of agent {AgentId}: their Binance account for {TradingMode} stands in its way ({AccountConflict})
 User {UserId} was refused starting agent {AgentId}: another agent of theirs is active for the same market and symbol
 User {UserId} was refused the control {AgentControl} of agent {AgentId}: {RoleCount} of the roles of its team cannot work ({Roles})
 User {UserId} was refused stopping agent {AgentId}, which is {AgentState}
@@ -547,13 +575,12 @@ An event names a user and an agent by their ids, and never holds a name or a num
 ## Not built yet
 
 - Stopping the cycle of an agent that its user pauses or stops while the cycle runs. Whether an agent runs is asked when its cycle starts, and again, under the lock of its account, as its entry is written: no entry is placed for an agent that no longer runs.
-- The leverage that the Risk Guard computes, as a setting of the exchange (FR-BIN-F2). The quantity of an entry is the one that the Risk Guard computed: see "The size of an order" in [risk-guard.md](risk-guard.md). Agents keeps the settings, and holds them to the bounds when they are saved.
 - Holding a stored risk setting to bounds that the file is given later. An agent whose value is outside bounds that were narrowed since keeps it, and so does a copy of it. Its form shows the value, and is saved only once the value is within the bounds.
 - What halts an agent when a loss limit is reached, and what resumes it after a daily loss limit, on the next UTC day (FR-RSK-8). A halted agent is resumed and stopped by its user already.
-- The other causes of Attention required: a call that reports that a model does not exist (FR-CAT-8), an exchange setting that conflicts (FR-BIN-F2), and calls that fail repeatedly (NFR-REL-4). With the second comes refusing a start while the account is in a conflicting mode or holds a position in the symbol. The first takes an operation of Agents that a cycle can ask: what runs the team records such a call as `ModelNotFound`, and the cycle ends as its role says, but nothing moves the agent for it. See "Not built yet" in [team.md](team.md).
+- The other causes of Attention required: a call that reports that a model does not exist (FR-CAT-8), and calls that fail repeatedly (NFR-REL-4). The first takes an operation of Agents that a cycle can ask: what runs the team records such a call as `ModelNotFound`, and the cycle ends as its role says, but nothing moves the agent for it. See "Not built yet" in [team.md](team.md).
 - Moving an agent that runs when its user's key for a provider can no longer use a model of its team. Which models a key can use is recorded when its provider lists them: when a key is stored or replaced, and at each check. A list that comes to lack the model, and a key that is replaced, tell Agents nothing, and the list is written apart from the lock of the account, so a start may go by the list as it was a moment before. Such an agent is refused the next time it is started or resumed. Until then its calls of that model fail, and nothing moves it for them: see the item above. See "The models a key can use" in [credentials.md](credentials.md).
 - Moving an agent that runs when the configuration file stops allowing a model of its team. Such a model can no longer be selected, and the agent is not started or resumed with it, but nothing tells an agent that runs. See "Not built yet" in [catalog.md](catalog.md).
-- Telling the user that an agent was halted or needs attention (FR-NTF-1), and showing a change of state without a reload (FR-NTF-2). A user is told with a notification that a position could not be protected, which is when an agent comes to wait for them for that cause: see [notifications.md](notifications.md). Nothing tells them of the other causes.
+- Telling the user that an agent was halted or needs attention (FR-NTF-1), and showing a change of state without a reload (FR-NTF-2). A user is told with a notification that a position could not be protected, and that their account at Binance conflicts with how an agent trades, which is when an agent comes to wait for them for those causes: see [notifications.md](notifications.md). Nothing tells them of the other causes.
 - Recommending a team by measured strength, and applying it in one action (FR-TEAM-4), and reassigning the roles of an agent by strength on its own (FR-TEAM-10). The default mapping is the starting point until there is something to measure.
 - The results of an agent: its profit or loss, and the pages that show its positions and its orders (FR-RPT-2). The orders and the positions are stored, each with the mode it is of. What adds them up adds nothing up over both modes (FR-BIN-11): see "Demo is labeled as Demo".
 - A record of the risk confirmation of its own, with the version of the risk disclosure that was confirmed. The event of the switch in the audit trail stands for the confirmation.

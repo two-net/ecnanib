@@ -28,27 +28,44 @@ public class ProtectiveStopTests
 
         await application.PlaceAsync(agent, plan);
 
-        // Binance was asked twice: for the entry at the market, for the quantity that the Risk
-        // Guard computed, and then for the stop-loss at the price of the plan, for what was
-        // bought, which only closes the position. On Spot the stop-loss comes with the
-        // take-profit of the plan, as one pair that carries an identifier of its own.
+        // Binance was asked for the entry at the market, for the quantity that the Risk Guard
+        // computed, and then for the stop-loss at the price of the plan, for what was bought,
+        // which only closes the position. On Spot the stop-loss comes with the take-profit of
+        // the plan, as one pair that carries an identifier of its own. On Futures the
+        // take-profit is an order of its own, which is placed once the stop-loss rests, and
+        // both only reduce the position and are triggered on the mark price (FR-BIN-F3).
         var binance = application.Binance;
         var stopLoss = new AskedOrder(
             market, binance.Orders[1].Asked.ClientOrderId, Stop: true, "SELL", quantity, Trigger: 59000m, ReduceOnly: market == Market.Futures);
 
         Assert.Equal(
             [
-                new AskedOrder(market, binance.Orders[0].Asked.ClientOrderId, Stop: false, "BUY", quantity, Trigger: null, ReduceOnly: false),
-                market == Market.Spot
-                    ? stopLoss with
+                new AskedOrder(
+                    market, binance.Orders[0].Asked.ClientOrderId, Stop: false, "BUY", quantity, Trigger: null, ReduceOnly: false, Type: "MARKET"),
+                .. market == Market.Spot
+                    ? new[]
                     {
-                        TakeProfit = 62000m,
-                        TakeProfitId = binance.TheTakeProfit().Asked.ClientOrderId,
-                        PairId = binance.Orders[1].Asked.PairId,
+                        stopLoss with
+                        {
+                            TakeProfit = 62000m,
+                            TakeProfitId = binance.TheTakeProfit().Asked.ClientOrderId,
+                            PairId = binance.Orders[1].Asked.PairId,
+                        },
                     }
-                    : stopLoss,
+                    :
+                    [
+                        stopLoss with { Type = "STOP_MARKET", WorkingType = "MARK_PRICE" },
+                        stopLoss with
+                        {
+                            ClientOrderId = binance.TheTakeProfit().Asked.ClientOrderId,
+                            Trigger = 62000m,
+                            Type = "TAKE_PROFIT_MARKET",
+                            WorkingType = "MARK_PRICE",
+                        },
+                    ],
             ],
             binance.Asked);
+        Assert.Equal("NEW", binance.TheTakeProfit().Status);
         Assert.Equal("NEW", binance.The(stop: true).Status);
 
         // The position is open in the records, with the stop-loss and the take-profit of the plan.
@@ -59,18 +76,17 @@ public class ProtectiveStopTests
                 position.Market, position.Symbol));
 
         // And its orders: the entry that opened it, which is executed, and the stop-loss that
-        // rests, with the take-profit that rests beside it on Spot.
+        // rests, with the take-profit that rests beside it. Only on Spot the two are one pair.
         var orders = await application.OrdersOfAsync(agent.Id);
         Assert.Equal(
             [
                 (OrderPurpose.Entry, OrderType.Market, OrderSide.Buy, OrderStatus.Filled, (decimal?)null),
                 (OrderPurpose.StopLoss, OrderType.Stop, OrderSide.Sell, OrderStatus.Open, 59000m),
-                .. market == Market.Spot
-                    ? new[] { (OrderPurpose.TakeProfit, OrderType.Stop, OrderSide.Sell, OrderStatus.Open, (decimal?)62000m) }
-                    : [],
+                (OrderPurpose.TakeProfit, OrderType.Stop, OrderSide.Sell, OrderStatus.Open, 62000m),
             ],
             orders.Select(order => (order.Purpose, order.Type, order.Side, order.Status, order.Price)));
         Assert.All(orders, order => Assert.Equal(position.Id, order.PositionId));
+        Assert.All(orders.Skip(1), order => Assert.Equal(market == Market.Spot, order.PairId is not null));
 
         // The agent is settled: it gets its next cycle, and nobody was told anything.
         Assert.True(await Assert.Single(application.Application.Reconciliations).HasReconciledAsync(
@@ -258,10 +274,16 @@ public class ProtectiveStopTests
         Assert.Equal((OrderStatus.Filled, true), (stopLoss.Status, stopLoss.FillsRecorded));
         Assert.Equal(59000m, Assert.Single(await application.FillsOfAsync(stopLoss.Id)).Price);
 
+        // On Spot Binance ended the take-profit with it, as the pair that they are. On Futures
+        // the take-profit is an order of its own, which Binance leaves resting: it is taken
+        // off, so that it acts on no position that the agent opens later (FR-BIN-F3).
+        Assert.Equal(market == Market.Spot ? "EXPIRED" : "CANCELED", application.Binance.TheTakeProfit().Status);
+        Assert.DoesNotContain(await application.OrdersOfAsync(agent.Id), order => OrderStatuses.IsLive(order.Status));
+
         // Nothing is placed for a position that is closed, and nobody is told anything.
         await application.SettleAsync(agent.Id);
 
-        Assert.Equal(2, application.Binance.Asked.Count);
+        Assert.Equal(market == Market.Spot ? 2 : 3, application.Binance.Asked.Count);
         Assert.Empty(await application.NotificationsOfAsync(agent.UserId));
     }
 

@@ -267,6 +267,10 @@ public static class AgentPages
             "The stop-loss of the agent's position could not be placed, and the position could not be closed at market " +
             "either. The position is open with no stop-loss. The service keeps trying to protect or close it. Close it " +
             "with \"Close position now\", or at Binance, and resume the agent.",
+        AgentStateCause.ExchangeSettingConflict =>
+            "Your Binance Futures account conflicted with how the agent trades while the agent ran: it was in hedge mode " +
+            "or in Multi-Assets mode, or it held a position in the agent's symbol that the agent did not open. The " +
+            "notification of the agent says which. Change it at Binance, and resume the agent.",
         _ => throw new ArgumentOutOfRangeException(nameof(cause), cause, "The cause has no description."),
     };
 
@@ -275,6 +279,7 @@ public static class AgentPages
     {
         NotificationType.ProtectionFailure => "Order or protection failure",
         NotificationType.EntrySkipped => "Entry skipped",
+        NotificationType.AttentionRequired => "Agent needs attention",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "The type has no description."),
     };
 
@@ -330,6 +335,35 @@ public static class AgentPages
 
         return $"You have another active agent for {agent.Symbol} on {agent.Market} in {agent.Mode}. One Binance key runs one " +
             "active agent for each market and symbol. Stop the other one first.";
+    }
+
+    /// <summary>
+    /// What a page says when the account of the user at Binance keeps an agent of the Futures
+    /// market from running, with what to change there (FR-BIN-F2). The service changes no
+    /// setting of the whole account.
+    /// </summary>
+    public static string Says(AccountConflict conflict, AgentControl control, AgentView agent)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        var (again, done) = control == AgentControl.Resume ? ("resume the agent", "resumed") : ("start the agent", "started");
+
+        return conflict switch
+        {
+            AccountConflict.HedgeMode =>
+                "Your Binance Futures account is in hedge mode, and an agent trades in one-way mode. The service does not " +
+                $"change a setting of your whole account. Switch the position mode to one-way at Binance, and {again}.",
+            AccountConflict.MultiAssetsMode =>
+                "Your Binance Futures account is in Multi-Assets mode, in which Binance takes no isolated margin, and an " +
+                "agent trades with isolated margin. The service does not change a setting of your whole account. Switch " +
+                $"the asset mode to single-asset at Binance, and {again}.",
+            AccountConflict.PositionInSymbol =>
+                $"Your Binance Futures account for {agent.Mode} holds a position in {agent.Symbol} that this agent did not " +
+                $"open. An agent trades its symbol alone. Close the position at Binance, and {again}.",
+            AccountConflict.NotKnown =>
+                $"Binance did not say how your Futures account is set, so the agent was not {done}. Try again in a moment.",
+            _ => throw new ArgumentOutOfRangeException(nameof(conflict), conflict, "The conflict has no description."),
+        };
     }
 
     /// <summary>A state inside a sentence: <c>a draft</c>, <c>running</c>.</summary>

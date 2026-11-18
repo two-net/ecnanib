@@ -184,8 +184,9 @@ public enum OrderPurpose
 
     /// <summary>
     /// It rests on the exchange, and closes the position at a profit when the price reaches it.
-    /// It is one order of a pair with the stop-loss: the exchange ends the other when one of the
-    /// two is triggered (FR-BIN-S2).
+    /// On the Spot market it is one order of a pair with the stop-loss: the exchange ends the
+    /// other when one of the two is triggered (FR-BIN-S2). On the Futures market it is an order
+    /// of its own, which the exchange ends for nothing (FR-BIN-F3).
     /// </summary>
     TakeProfit,
 }

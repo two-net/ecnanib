@@ -79,6 +79,13 @@ public enum AgentStateCause
     /// closed at market either, while the agent ran (FR-RSK-7).
     /// </summary>
     PositionUnprotected,
+
+    /// <summary>
+    /// The account of the agent's user at the exchange conflicts with how the agent trades,
+    /// while the agent ran: on the Futures market it is in a mode that is not one-way mode with
+    /// one asset, or it holds a position in the symbol that the agent did not open (FR-BIN-F2).
+    /// </summary>
+    ExchangeSettingConflict,
 }
 
 /// <summary>What a user does to the state of an agent (FR-AGT-1).</summary>

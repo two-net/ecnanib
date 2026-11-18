@@ -168,6 +168,11 @@
                 _refused = AgentPages.RolesBlock(control);
                 _roles = roles;
                 break;
+
+            case AgentControlOutcome.AccountConflicts when result.Conflict is { } conflict:
+                // Says what to change at Binance, where the account stands in the way (FR-BIN-F2).
+                _refused = AgentPages.Says(conflict, control, _agent);
+                break;
         }
 
         // Nothing changed. The page is shown as the agent is now, with why.

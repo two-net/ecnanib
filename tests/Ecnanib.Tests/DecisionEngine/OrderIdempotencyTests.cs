@@ -79,10 +79,11 @@ public class OrderIdempotencyTests
         await application.PlaceAsync(agent, market == Market.Spot ? GuardCases.OpenLong : GuardCases.OpenLongOnFutures);
 
         // The entry was sent once. It was asked about by its identifier, found executed, and
-        // protected: the one other order that was sent is its stop-loss.
+        // protected: what else was sent is its stop-loss, with its take-profit, which is one
+        // call for the pair of the Spot market, and an order of its own on the Futures market.
         var entry = application.Binance.The(stop: false);
         Assert.Equal(
-            [(false, "BUY", quantity), (true, "SELL", quantity)],
+            [(false, "BUY", quantity), (true, "SELL", quantity), .. market == Market.Futures ? new[] { (true, "SELL", quantity) } : []],
             application.Binance.Asked.Select(asked => (asked.Stop, asked.Side, asked.Quantity)));
         Assert.Contains(entry.Asked.ClientOrderId, application.Binance.AskedAbout);
 
@@ -92,7 +93,7 @@ public class OrderIdempotencyTests
             [
                 (OrderPurpose.Entry, OrderStatus.Filled, 1),
                 (OrderPurpose.StopLoss, OrderStatus.Open, 1),
-                .. market == Market.Spot ? new[] { (OrderPurpose.TakeProfit, OrderStatus.Open, 1) } : [],
+                (OrderPurpose.TakeProfit, OrderStatus.Open, 1),
             ],
             (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status, order.Sends)));
     }
@@ -151,16 +152,21 @@ public class OrderIdempotencyTests
         using var application = new OrdersApplication();
         var agent = await application.GiveAgentAsync(market: Market.Futures);
 
-        application.Binance.Fate = asked => asked.Stop ? OrderFate.TakenUnsaid : OrderFate.Taken;
+        application.Binance.Fate = asked => asked.Type == "STOP_MARKET" ? OrderFate.TakenUnsaid : OrderFate.Taken;
 
         await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
 
-        // One entry, and one stop-loss, which was asked about and found resting.
+        // One entry, and one stop-loss, which was asked about and found resting. Only then
+        // the take-profit was placed beside it.
         var stopLoss = application.Binance.The(stop: true);
-        Assert.Equal([false, true], application.Binance.Asked.Select(asked => asked.Stop));
+        Assert.Equal(["MARKET", "STOP_MARKET", "TAKE_PROFIT_MARKET"], application.Binance.Asked.Select(asked => asked.Type));
         Assert.Equal([stopLoss.Asked.ClientOrderId], application.Binance.AskedAbout);
         Assert.Equal(
-            [(OrderPurpose.Entry, OrderStatus.Filled, 1), (OrderPurpose.StopLoss, OrderStatus.Open, 1)],
+            [
+                (OrderPurpose.Entry, OrderStatus.Filled, 1),
+                (OrderPurpose.StopLoss, OrderStatus.Open, 1),
+                (OrderPurpose.TakeProfit, OrderStatus.Open, 1),
+            ],
             (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status, order.Sends)));
         Assert.Empty(await application.NotificationsOfAsync(agent.UserId));
     }
@@ -173,21 +179,22 @@ public class OrderIdempotencyTests
 
         // The first call that places the stop-loss is lost. The second one is taken.
         var stops = 0;
-        application.Binance.Fate = asked => asked.Stop && ++stops == 1 ? OrderFate.Lost : OrderFate.Taken;
+        application.Binance.Fate = asked => asked.Type == "STOP_MARKET" && ++stops == 1 ? OrderFate.Lost : OrderFate.Taken;
 
         await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
 
         // The stop-loss was sent, asked about, and only then sent again: with the identifier
         // that it had, so that Binance would refuse it if it had the first one after all. The
-        // same holds for the pair of the Spot market: see ProtectivePairTests.
+        // same holds for the pair of the Spot market: see ProtectivePairTests. The take-profit
+        // is placed last, once the stop-loss rests.
         var stopLoss = Assert.Single(await application.OrdersOfAsync(agent.Id), order => order.Purpose == OrderPurpose.StopLoss);
         Assert.Equal(
-            ["POST /fapi/v1/order", "POST /fapi/v1/algoOrder", "GET /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder"],
+            ["POST /fapi/v1/order", "POST /fapi/v1/algoOrder", "GET /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder", "POST /fapi/v1/algoOrder"],
             application.Binance.OrderCalls);
         Assert.Equal([stopLoss.ClientOrderId], application.Binance.AskedAbout);
         Assert.Equal(
             [stopLoss.ClientOrderId, stopLoss.ClientOrderId],
-            application.Binance.Asked.Where(asked => asked.Stop).Select(asked => asked.ClientOrderId));
+            application.Binance.Asked.Where(asked => asked.Type == "STOP_MARKET").Select(asked => asked.ClientOrderId));
 
         // It rests, as the one stop-loss of the position, and nobody was told anything.
         Assert.Equal((OrderStatus.Open, 2), (stopLoss.Status, stopLoss.Sends));

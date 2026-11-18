@@ -60,6 +60,9 @@ internal static class AgentsRules
             "Asked by Agents, and answered by whatever keeps positions and orders. It is no operation on an agent.",
         ["IAgentExposure.HasOpenPositionAsync"] =
             "Asked by Agents, and answered by whatever keeps positions. It is no operation on an agent.",
+        ["IAgentExposure.AccountConflictAsync"] =
+            "Asked by Agents before an agent runs, and answered by whatever keeps positions, which reads the account of the " +
+            "user at the exchange. It is no operation on an agent, and changes nothing at the exchange.",
         ["IRunningAgents.OfTimeframesAsync"] =
             "Reads the agents of all users that run cycles, for what starts a cycle when a candle closes. It changes no agent.",
         ["IRunningAgents.FindAsync"] =
@@ -80,10 +83,12 @@ internal static class AgentsRules
     public static readonly IReadOnlyDictionary<string, string> ControlOperations = new Dictionary<string, string>
     {
         ["IAgentControls.StartAsync"] =
-            "Starts an agent. It asks what blocks the start as far as the key goes, and records the start in the audit trail.",
+            "Starts an agent. It asks what blocks the start as far as the key and the account at the exchange go, and records " +
+            "the start in the audit trail.",
         ["IAgentControls.PauseAsync"] = "Pauses an agent that runs, and records the pause in the audit trail.",
         ["IAgentControls.ResumeAsync"] =
-            "Resumes an agent, which is a start: it asks what blocks it as far as the key goes, and records it in the audit trail.",
+            "Resumes an agent, which is a start: it asks what blocks it as far as the key and the account at the exchange go, " +
+            "and records it in the audit trail.",
         ["IAgentControls.StopAsync"] =
             "Stops an agent, with what its user chose for its open position, and records the stop in the audit trail.",
         ["IAgentControls.ClosePositionAsync"] =
@@ -92,7 +97,8 @@ internal static class AgentsRules
             "Asked by Agents of whatever keeps positions, after Agents recorded the request of the user. Agents places no order.",
         ["IAgentTrading.RequireAttentionAsync"] =
             "Moves an agent that runs to Attention required, because its position is open with no stop-loss and could not be " +
-            "closed. It is the service's doing, and no action of a user: it starts nothing, and the change of the state records it.",
+            "closed, or because the account of its user at the exchange conflicts with how it trades. It is the service's " +
+            "doing, and no action of a user: it starts nothing, and the change of the state records it.",
     };
 
     /// <summary>

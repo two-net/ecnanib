@@ -20,6 +20,11 @@ internal static class PostgresServer
     private const string User = "app";
     private const string Password = "database-password";
 
+    // The shared memory of the container, in bytes. PostgreSQL keeps the statistics of every
+    // database there, and a database of a test stays until the process ends. A container has
+    // 64 megabytes of it unless it is given more, which the databases of one run outgrow.
+    private const long SharedMemory = 512L * 1024 * 1024;
+
     private static readonly Lazy<PostgreSqlContainer> Container = new(Start);
 
     private static readonly Lazy<TestDatabase> Shared = new(() =>
@@ -61,6 +66,7 @@ internal static class PostgresServer
 
             // Test classes run side by side, and each application keeps its own connections.
             .WithCommand("-c", "max_connections=300")
+            .WithCreateParameterModifier(parameters => (parameters.HostConfig ??= new()).ShmSize = SharedMemory)
 
             // The container library writes to the console, which some tests read.
             .WithLogger(NullLogger.Instance)

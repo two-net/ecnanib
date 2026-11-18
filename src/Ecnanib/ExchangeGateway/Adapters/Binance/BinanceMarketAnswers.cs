@@ -181,14 +181,15 @@ internal static class BinanceMarketAnswers
                 most,
                 value,
                 Takes(row, market == Market.Spot ? "STOP_LOSS" : "STOP_MARKET"),
-                TakesPairs(row, market))
+                TakesPairs(row, market),
+                Takes(row, market == Market.Spot ? "TAKE_PROFIT" : "TAKE_PROFIT_MARKET"))
             : null;
     }
 
     /// <summary>
     /// Whether a symbol takes a type of order, which the row says among the types of order that
     /// the symbol takes. A stop that is placed at the market when it is triggered is named
-    /// differently on the two markets. A row that names no types takes none.
+    /// differently on the two markets, and so is a take-profit. A row that names no types takes none.
     /// </summary>
     private static bool Takes(JsonElement row, string orderType)
     {

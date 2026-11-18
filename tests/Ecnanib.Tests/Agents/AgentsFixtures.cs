@@ -450,7 +450,7 @@ internal sealed class StandInMarketData : IExchangeMarketData
     public static ExchangeSymbols Listed(params string[] symbols) =>
         new(
             ExchangeCallOutcome.Succeeded,
-            [.. symbols.Select(symbol => new ExchangeSymbol(symbol, symbol[..^4], symbol[^4..], true, 0.01m, 0.001m, 0.001m, 1000m, 5m, StopOrders: true, PairOrders: true))],
+            [.. symbols.Select(symbol => new ExchangeSymbol(symbol, symbol[..^4], symbol[^4..], true, 0.01m, 0.001m, 0.001m, 1000m, 5m, StopOrders: true, PairOrders: true, TakeProfitOrders: true))],
             DateTimeOffset.UnixEpoch);
 
     /// <summary>A reading that failed: the exchange gave no answer.</summary>
@@ -488,6 +488,7 @@ internal sealed class StandInExposure : IAgentExposure
     private readonly ConcurrentDictionary<Guid, bool> _positions = new();
     private readonly ConcurrentDictionary<Guid, bool> _orders = new();
     private readonly ConcurrentQueue<Guid> _closes = new();
+    private readonly ConcurrentQueue<Agent> _accountsAsked = new();
 
     /// <summary>How closing the position of an agent ends: by default it is closed when there is one.</summary>
     public Func<Guid, PositionCloseOutcome>? CloseAnswer { get; set; }
@@ -497,6 +498,15 @@ internal sealed class StandInExposure : IAgentExposure
 
     /// <summary>The agents whose position it was asked to close, in order.</summary>
     public IReadOnlyList<Guid> Closes => [.. _closes];
+
+    /// <summary>
+    /// What in the account of its user at the exchange stands in the way of an agent, as the
+    /// test says it: nothing, unless a test says otherwise.
+    /// </summary>
+    public Func<Agent, AccountConflict?>? Conflict { get; set; }
+
+    /// <summary>The agents whose account it was asked about, each as it was asked about, in order.</summary>
+    public IReadOnlyList<Agent> AccountsAsked => [.. _accountsAsked];
 
     /// <summary>Says from now on that an agent has an open position.</summary>
     public void Holds(Guid agentId) => _positions[agentId] = true;
@@ -531,6 +541,13 @@ internal sealed class StandInExposure : IAgentExposure
         }
 
         return Task.FromResult(outcome);
+    }
+
+    public Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken)
+    {
+        _accountsAsked.Enqueue(agent);
+
+        return Task.FromResult(Conflict?.Invoke(agent));
     }
 }
 

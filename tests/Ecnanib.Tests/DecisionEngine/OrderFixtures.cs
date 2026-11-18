@@ -161,6 +161,8 @@ internal enum OrderFate
 /// <param name="TakeProfit">Of a pair: the price that its take-profit is triggered at.</param>
 /// <param name="TakeProfitId">Of a pair: the identifier that its take-profit carries.</param>
 /// <param name="PairId">Of a pair: the identifier that the pair carries.</param>
+/// <param name="Type">Binance's name of its type, such as <c>STOP_MARKET</c> or <c>TAKE_PROFIT_MARKET</c>. Null for a pair.</param>
+/// <param name="WorkingType">The price that a conditional order of the Futures market is triggered on, as it was asked for.</param>
 internal sealed record AskedOrder(
     Market Market,
     string ClientOrderId,
@@ -172,7 +174,13 @@ internal sealed record AskedOrder(
     decimal? Limit = null,
     decimal? TakeProfit = null,
     string? TakeProfitId = null,
-    string? PairId = null);
+    string? PairId = null,
+    string? Type = null,
+    string? WorkingType = null)
+{
+    /// <summary>Whether it is a take-profit that is an order of its own, as the Futures market has it.</summary>
+    public bool TakesProfit => Type is "TAKE_PROFIT_MARKET" or "TAKE_PROFIT" && PairId is null && Stop;
+}
 
 /// <summary>An order that a <see cref="TradingBinance"/> has.</summary>
 internal sealed class KeptOrder(long id, AskedOrder asked, string type)
@@ -185,7 +193,10 @@ internal sealed class KeptOrder(long id, AskedOrder asked, string type)
     /// </summary>
     public AskedOrder Asked { get; } = asked;
 
-    /// <summary>Binance's name of its type: <c>MARKET</c>, <c>LIMIT</c>, <c>STOP_LOSS</c>, <c>TAKE_PROFIT</c>, or <c>STOP_MARKET</c>.</summary>
+    /// <summary>
+    /// Binance's name of its type: <c>MARKET</c>, <c>LIMIT</c>, <c>STOP_LOSS</c>, <c>TAKE_PROFIT</c>, <c>STOP_MARKET</c>, or
+    /// <c>TAKE_PROFIT_MARKET</c>.
+    /// </summary>
     public string Type { get; } = type;
 
     /// <summary>Binance's word for its state: <c>NEW</c>, <c>PARTIALLY_FILLED</c>, <c>FILLED</c>, <c>CANCELED</c>, or <c>EXPIRED</c>.</summary>
@@ -204,8 +215,8 @@ internal sealed class KeptOrder(long id, AskedOrder asked, string type)
     /// <summary>The other order of its pair.</summary>
     public KeptOrder? Sibling { get; set; }
 
-    /// <summary>Whether it is the take-profit of a pair.</summary>
-    public bool TakeProfit => Type == "TAKE_PROFIT";
+    /// <summary>Whether it is a take-profit: the one of a pair, or the order of its own that the Futures market has.</summary>
+    public bool TakeProfit => Type is "TAKE_PROFIT" or "TAKE_PROFIT_MARKET";
 
     /// <summary>Whether it is with the exchange still.</summary>
     public bool Rests => Status is "NEW" or "PARTIALLY_FILLED";
@@ -222,13 +233,19 @@ internal sealed class KeptOrder(long id, AskedOrder asked, string type)
 /// it executed. A pair of the Spot market is two stops of one list: when one is executed the
 /// other ends, and taking one off takes both. A test says what becomes of a call that places an
 /// order with <see cref="Fate"/>, and of any other call with <see cref="Instead"/>. Every other
-/// call of the gateway is answered as <see cref="BinanceCalls.AnswerTo"/> answers it.
+/// call of the gateway is answered as <see cref="BinanceCalls.AnswerTo(string)"/> answers it.
+/// On the Futures market a stop and a take-profit are conditional orders of their own, which
+/// Binance keeps apart from the other orders: neither ends when the other is executed, and one
+/// whose trigger the price has passed is refused. The margin of a symbol is isolated once it
+/// was asked to be, and its leverage is the one that was last asked for.
 /// </summary>
 internal sealed class TradingBinance
 {
     private const string BaseAsset = "BTC";
     private const string PairPath = "/api/v3/orderList/oco";
     private const string PairCancelPath = "/api/v3/orderList";
+    private const string MarginPath = "/fapi/v1/marginType";
+    private const string LeveragePath = "/fapi/v1/leverage";
     private const long At = 1794735000250;
 
     private readonly Lock _gate = new();
@@ -266,7 +283,26 @@ internal sealed class TradingBinance
 
     /// <summary>The calls that placed an order or a pair, in the order they came: each as what it asked for.</summary>
     public IReadOnlyList<AskedOrder> Asked =>
-        [.. System.Calls.Where(call => call.Method == "POST").Select(call => AskedOf(call.Address))];
+        [
+            .. System.Calls
+                .Where(call => call.Method == "POST" && (IsOrderPath(call.Address.AbsolutePath) || call.Address.AbsolutePath == PairPath))
+                .Select(call => AskedOf(call.Address)),
+        ];
+
+    /// <summary>Whether the symbol has isolated margin in the account: it has once it was asked to have.</summary>
+    public bool Isolated { get; private set; }
+
+    /// <summary>The leverages that the symbol was asked to have, in the order they were asked for.</summary>
+    public IReadOnlyList<int> Leverages =>
+        [
+            .. System.Calls
+                .Where(call => call.Method == "POST" && call.Address.AbsolutePath == LeveragePath)
+                .Select(call => int.Parse(ParameterOf(call.Address, "leverage")!, CultureInfo.InvariantCulture)),
+        ];
+
+    /// <summary>The calls that set the margin of the symbol or placed an order or a pair, each as its path, in the order they came.</summary>
+    public IReadOnlyList<string> Changes =>
+        [.. System.Calls.Where(call => call.Method == "POST").Select(call => call.Address.AbsolutePath)];
 
     /// <summary>The calls that asked what became of an order, by the identifier each asked with, in the order they came.</summary>
     public IReadOnlyList<string> AskedAbout =>
@@ -350,9 +386,11 @@ internal sealed class TradingBinance
             {
                 ("POST", PairPath) => PlacePair(AskedOf(address)),
                 ("DELETE", PairCancelPath) => CancelPair(ParameterOf(address, "listClientOrderId")!),
+                ("POST", MarginPath) => Isolate(),
+                ("POST", LeveragePath) => Json(BinanceCalls.AnswerTo(request)),
                 ("POST", _) when IsOrderPath(path) => Place(AskedOf(address), ParameterOf(address, "type")!),
-                ("GET", _) when IsOrderPath(path) => Find(IdentifierOf(address)) is { } found ? Json(Body(found, full: false)) : NoSuchOrder(-2013),
-                ("DELETE", _) when IsOrderPath(path) => Cancel(IdentifierOf(address), market),
+                ("GET", _) when IsOrderPath(path) => Find(IdentifierOf(address), path) is { } found ? Json(Body(found, full: false)) : NoSuchOrder(-2013),
+                ("DELETE", _) when IsOrderPath(path) => Cancel(IdentifierOf(address), path),
                 ("GET", "/api/v3/myTrades" or "/fapi/v1/userTrades") => Json(Trades(ParameterOf(address, "orderId")!)),
                 _ => Json(BinanceCalls.AnswerTo(path)),
             });
@@ -369,11 +407,25 @@ internal sealed class TradingBinance
         }
 
         // An identifier that an order which rests has is taken.
-        if (Find(asked.ClientOrderId) is { Rests: true })
+        if (Find(asked.ClientOrderId, PathOf(asked)) is { Rests: true })
         {
             return asked.Market == Market.Spot
                 ? Error(HttpStatusCode.BadRequest, -2010, "Duplicate order sent.")
                 : Error(HttpStatusCode.BadRequest, -4116, "ClientOrderId is duplicated.");
+        }
+
+        // A conditional order of the Futures market whose trigger the price has passed would
+        // be triggered at once, and is refused: a stop that sells at or above the price, and a
+        // take-profit that sells at or below it, and the other way around for one that buys.
+        if (asked is { Market: Market.Futures, Stop: true, Trigger: { } trigger })
+        {
+            // A stop that sells and a take-profit that buys wait for the price to fall to their trigger.
+            var waitsForFall = (asked.Side == "SELL") != asked.TakesProfit;
+
+            if (waitsForFall ? Price <= trigger : Price >= trigger)
+            {
+                return Error(HttpStatusCode.BadRequest, -2021, "Order would immediately trigger.");
+            }
         }
 
         var kept = new KeptOrder(++_next, asked, type);
@@ -403,8 +455,8 @@ internal sealed class TradingBinance
         }
 
         // An identifier that an order or a pair which rests has is taken.
-        if (Find(asked.ClientOrderId) is { Rests: true }
-            || Find(asked.TakeProfitId!) is { Rests: true }
+        if (Find(asked.ClientOrderId, "/api/v3/order") is { Rests: true }
+            || Find(asked.TakeProfitId!, "/api/v3/order") is { Rests: true }
             || _orders.Any(order => order.Rests && order.Asked.PairId == asked.PairId))
         {
             return Error(HttpStatusCode.BadRequest, -2010, "Duplicate order sent.");
@@ -445,9 +497,25 @@ internal sealed class TradingBinance
         _ => null,
     };
 
-    private HttpResponseMessage Cancel(string identifier, Market market)
+    /// <summary>
+    /// Gives the symbol isolated margin. Binance answers a symbol that has it already with an
+    /// error of its own, which says that nothing is to change.
+    /// </summary>
+    private HttpResponseMessage Isolate()
     {
-        if (Find(identifier) is not { Rests: true } resting)
+        if (Isolated)
+        {
+            return Error(HttpStatusCode.BadRequest, -4046, "No need to change margin type.");
+        }
+
+        Isolated = true;
+
+        return Json(BinanceCalls.MarginSet);
+    }
+
+    private HttpResponseMessage Cancel(string identifier, string path)
+    {
+        if (Find(identifier, path) is not { Rests: true } resting)
         {
             return NoSuchOrder(-2011);
         }
@@ -460,7 +528,7 @@ internal sealed class TradingBinance
             other.Status = "CANCELED";
         }
 
-        return market == Market.Futures && resting.Asked.Stop
+        return resting.Asked is { Market: Market.Futures, Stop: true }
             ? Json($$"""{ "algoId": {{resting.Id}}, "clientAlgoId": "{{identifier}}", "code": "200", "msg": "success" }""")
             : Json(Body(resting, full: false));
     }
@@ -483,7 +551,20 @@ internal sealed class TradingBinance
         return Json(ListBody(orders.Single(order => !order.TakeProfit), orders.Single(order => order.TakeProfit), takenOffAs: $"off{++_next}"));
     }
 
-    private KeptOrder? Find(string identifier) => _orders.LastOrDefault(order => order.Asked.ClientOrderId == identifier);
+    /// <summary>
+    /// The order of an identifier, where the call asks for it: Binance keeps the conditional
+    /// orders of the Futures market apart, and has none of them at the call of the other orders.
+    /// </summary>
+    private KeptOrder? Find(string identifier, string path) =>
+        _orders.LastOrDefault(order => order.Asked.ClientOrderId == identifier && PathOf(order.Asked) == path);
+
+    /// <summary>The path of the calls that Binance takes an order with, and has it at.</summary>
+    private static string PathOf(AskedOrder asked) => asked switch
+    {
+        { Market: Market.Spot } => "/api/v3/order",
+        { Stop: true } => "/fapi/v1/algoOrder",
+        _ => "/fapi/v1/order",
+    };
 
     /// <summary>Has a quantity of an order executed at a price, in one execution, with a fee of a tenth of a percent.</summary>
     private void Fill(KeptOrder order, decimal quantity, decimal price, string feeAsset)
@@ -532,10 +613,10 @@ internal sealed class TradingBinance
                 : $$""", "actualOrderId": "", "actualPrice": "0.00000", "actualQty": "0" """;
 
             return $$"""
-                { "algoId": {{order.Id}}, "clientAlgoId": "{{asked.ClientOrderId}}", "algoType": "CONDITIONAL", "orderType": "STOP_MARKET",
+                { "algoId": {{order.Id}}, "clientAlgoId": "{{asked.ClientOrderId}}", "algoType": "CONDITIONAL", "orderType": "{{order.Type}}",
                   "symbol": "BTCUSDT", "side": "{{asked.Side}}", "positionSide": "BOTH", "timeInForce": "GTC",
                   "quantity": "{{Text(asked.Quantity)}}", "algoStatus": "{{status}}", "triggerPrice": "{{Text(asked.Trigger ?? 0m)}}",
-                  "price": "0.00000", "workingType": "CONTRACT_PRICE", "closePosition": false, "priceProtect": false,
+                  "price": "0.00000", "workingType": "{{asked.WorkingType ?? "CONTRACT_PRICE"}}", "closePosition": false, "priceProtect": false,
                   "reduceOnly": {{(asked.ReduceOnly ? "true" : "false")}}, "createTime": {{At}}, "updateTime": {{At}}{{became}} }
                 """;
         }
@@ -616,12 +697,14 @@ internal sealed class TradingBinance
         return new AskedOrder(
             path.StartsWith("/fapi/", StringComparison.Ordinal) ? Market.Futures : Market.Spot,
             IdentifierOf(address),
-            Stop: type is "STOP_LOSS" or "STOP_MARKET",
+            Stop: type is "STOP_LOSS" or "STOP_MARKET" or "TAKE_PROFIT" or "TAKE_PROFIT_MARKET",
             side,
             quantity,
             Amount(address, "stopPrice") ?? Amount(address, "triggerPrice"),
             ReduceOnly: ParameterOf(address, "reduceOnly") == "true",
-            Limit: type == "LIMIT" ? Amount(address, "price") : null);
+            Limit: type == "LIMIT" ? Amount(address, "price") : null,
+            Type: type,
+            WorkingType: ParameterOf(address, "workingType"));
     }
 
     /// <summary>The identifier that a call names its order by, under whichever name Binance takes it there.</summary>

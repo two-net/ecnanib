@@ -124,6 +124,13 @@ public sealed record ExchangeSymbols(ExchangeCallOutcome Outcome, IReadOnlyList<
 /// position is opened there in a symbol that takes none (FR-BIN-S2). The Futures market has no
 /// such pair, and a symbol that does not say is one that takes none.
 /// </param>
+/// <param name="TakeProfitOrders">
+/// Whether the exchange takes a take-profit in it as an order of its own: one that rests until
+/// the price reaches its trigger on the side of a profit, and is then placed at the market. It
+/// is what takes the profit of a position of the Futures market, beside its stop-loss, so no
+/// position is opened there in a symbol that takes none (FR-BIN-F3). A symbol that does not say
+/// is one that takes none.
+/// </param>
 public sealed record ExchangeSymbol(
     string Symbol,
     string BaseAsset,
@@ -135,7 +142,8 @@ public sealed record ExchangeSymbol(
     decimal MaxQuantity,
     decimal MinValue,
     bool StopOrders,
-    bool PairOrders);
+    bool PairOrders,
+    bool TakeProfitOrders);
 
 /// <summary>What reading the mark price of a symbol on the Futures market gave.</summary>
 /// <param name="Outcome">How the read ended.</param>
