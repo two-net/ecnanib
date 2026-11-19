@@ -134,6 +134,47 @@ internal sealed class BinanceCall(
         return SendAsync(endpoint, mode, userId, apiKey, secretKey, read, cancellationToken);
     }
 
+    /// <summary>
+    /// Makes a call that carries the API key of a credential and no signature, and says how it
+    /// ended: Binance takes the calls that begin and renew the account event feed of the Futures
+    /// market that way (FR-BIN-7). It is not given up by its caller once it is sent, as every
+    /// call that changes something.
+    /// </summary>
+    /// <param name="endpoint">The call.</param>
+    /// <param name="mode">The environment that the credential is for.</param>
+    /// <param name="userId">Whose call it is, for the limiter.</param>
+    /// <param name="apiKey">The user's API key, which is sent in a header.</param>
+    /// <param name="read">What the answer says, or null when it is not what Binance sends to this call.</param>
+    /// <param name="cancellationToken">Cancels the wait for a turn, before anything is sent.</param>
+    public Task<BinanceAnswer<T>> AskWithKeyAsync<T>(
+        BinanceEndpoint endpoint,
+        TradingMode mode,
+        Guid userId,
+        string apiKey,
+        Func<JsonElement, T?> read,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(apiKey);
+
+        if (userId == Guid.Empty)
+        {
+            throw new ArgumentException("A call that carries a credential is a user's, and says whose.", nameof(userId));
+        }
+
+        return SendAsync(endpoint, mode, userId, apiKey, secretKey: null, read, cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether an answer is how Binance answers a credential that it does not take: the status
+    /// 401, or one of its errors for an API key that it does not know, a signature that the
+    /// secret key did not make, or a key that may not do this from here.
+    /// </summary>
+    public static bool Refuses(int? status, int? code) =>
+        status == (int)HttpStatusCode.Unauthorized || (code is { } error && Refusals.Contains(error));
+
+    /// <summary>Whether an error of Binance says that the time of a call was outside of what it takes.</summary>
+    public static bool RefusesTime(int? code) => code == TimeRefused;
+
     private async Task<BinanceAnswer<T>> SendAsync<T>(
         BinanceEndpoint endpoint,
         TradingMode mode,
@@ -357,7 +398,7 @@ internal sealed class BinanceCall(
                 : null;
 
     /// <summary>The signature of a query: its HMAC-SHA256 under the secret key, in hexadecimal.</summary>
-    private static string Sign(string query, string secretKey)
+    public static string Sign(string query, string secretKey)
     {
         var key = Encoding.UTF8.GetBytes(secretKey);
 

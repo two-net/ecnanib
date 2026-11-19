@@ -7,6 +7,7 @@ using Ecnanib.Shared;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
+using Ecnanib.Tests.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.ExchangeGateway;
@@ -300,10 +301,17 @@ internal static class BinanceCalls
         return LeverageSet(int.Parse(asked["leverage=".Length..], CultureInfo.InvariantCulture));
     }
 
+    /// <summary>The key that names the stream of the events of an account of the Futures market, as the tests' Binance gives it.</summary>
+    public const string StreamKey = "pqia91ma19a5s61cv6a81va65sdf19v8a65a1a5s61cv6a81va65sdf19v8a65a1";
+
+    /// <summary>What Binance answers the calls that begin and renew the account event feed of the Futures market with.</summary>
+    public const string Stream = $$"""{ "listenKey": "{{StreamKey}}" }""";
+
     /// <summary>What Binance answers a call to a path with.</summary>
     public static string AnswerTo(string path) => path switch
     {
         "/api/v3/time" or "/fapi/v1/time" => Time,
+        "/fapi/v1/listenKey" => Stream,
         "/api/v3/account" => SpotAccount,
         "/fapi/v3/balance" => FuturesBalances,
         "/fapi/v1/accountConfig" => FuturesAccountSettings,
@@ -402,13 +410,15 @@ internal static class BinanceCalls
     /// Whether the application reads Binance's clocks on its schedule. It does in a test of the
     /// watch on the clock, on a database of the test's own, where its application runs the jobs.
     /// </param>
+    /// <param name="file">Further changes to the configuration file, such as the address of an account event feed.</param>
     public static LoggedApplication Behind(
         StandInSystem binance,
         bool debug = false,
         TimeProvider? clock = null,
         int? share = null,
         TestDatabase? database = null,
-        bool watchesClock = false)
+        bool watchesClock = false,
+        Func<SettingsJson, SettingsJson>? file = null)
     {
         var settings = LoggedApplication.Settings();
         if (debug)
@@ -420,6 +430,8 @@ internal static class BinanceCalls
         {
             settings = settings.With("Binance:LimitSharePercent", percent);
         }
+
+        settings = file?.Invoke(settings) ?? settings;
 
         return binance.Behind(
             ExchangeGatewayModule.HttpClientName,

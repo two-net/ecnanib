@@ -63,6 +63,11 @@ public class SettingsFileTests
         Assert.Equal(new Uri("https://spot-demo.example"), settings.Binance.BaseUrl(Market.Spot, TradingMode.Demo));
         Assert.Equal(new Uri("https://futures-live.example"), settings.Binance.BaseUrl(Market.Futures, TradingMode.Live));
         Assert.Equal(new Uri("https://futures-demo.example"), settings.Binance.BaseUrl(Market.Futures, TradingMode.Demo));
+
+        // The file of the tests names no address of an account event feed: there is none then.
+        Assert.All(
+            new[] { (Market.Spot, TradingMode.Live), (Market.Spot, TradingMode.Demo), (Market.Futures, TradingMode.Live), (Market.Futures, TradingMode.Demo) },
+            account => Assert.Null(settings.Binance.FeedUrl(account.Item1, account.Item2)));
         Assert.Equal(["BTCUSDT", "SOLUSDT"], settings.Binance.Symbols);
         Assert.Equal([IPAddress.Parse("203.0.113.7")], settings.Binance.OutboundIps);
         Assert.Equal(60, settings.Binance.LimitSharePercent);
@@ -193,6 +198,13 @@ public class SettingsFileTests
         { "AiProviders:Claude:Deny", "[\"*-preview\", \"claude-\\t*\"]", "AiProviders:Claude:Deny:1" },
         { "AiProviders:Grok:LiveSearch", "[\"grok-*\", \"GROK-*\"]", "AiProviders:Grok:LiveSearch" },
         { "Binance:Spot:Demo", "{}", "Binance:Spot:Demo:BaseUrl" },
+        // The address of an account event feed is that of a WebSocket (FR-BIN-7).
+        { "Binance:Spot:Demo:FeedUrl", "\"https://spot-demo.example\"", "Binance:Spot:Demo:FeedUrl" },
+        { "Binance:Futures:Live:FeedUrl", "\"feed.example/private\"", "Binance:Futures:Live:FeedUrl" },
+
+        // What is sent to a feed may hold a credential: it is reached over TLS, but for one on this machine.
+        { "Binance:Spot:Live:FeedUrl", "\"ws://feed.example/ws-api/v3\"", "Binance:Spot:Live:FeedUrl" },
+        { "Binance:Futures:Demo:FeedUrl", "7", "Binance:Futures:Demo:FeedUrl" },
         { "Binance:Symbols", "[]", "Binance:Symbols" },
         { "Binance:Symbols", "[\"btcusdt\"]", "Binance:Symbols:0" },
         { "Binance:OutboundIps", "[\"300.1.1.1\"]", "Binance:OutboundIps:0" },
@@ -334,6 +346,23 @@ public class SettingsFileTests
         Assert.DoesNotContain("email-password", printed);
         Assert.DoesNotContain("claude-catalog-key", printed);
         Assert.DoesNotContain(SettingsJson.MasterKey, printed);
+    }
+
+    [Fact]
+    public void The_address_of_an_account_event_feed_is_read_where_the_file_names_one()
+    {
+        // Each market has one in each environment, or none: where the file names none, or leaves
+        // it empty, the account of a user is not followed there, and is reconciled on the
+        // schedule alone (FR-BIN-7).
+        var settings = Load(SettingsJson.Valid()
+            .With("Binance:Spot:Demo:FeedUrl", "wss://spot-demo-feed.example:443/ws-api/v3")
+            .With("Binance:Futures:Demo:FeedUrl", "ws://127.0.0.1:8123/private")
+            .With("Binance:Futures:Live:FeedUrl", ""));
+
+        Assert.Equal(new Uri("wss://spot-demo-feed.example:443/ws-api/v3"), settings.Binance.FeedUrl(Market.Spot, TradingMode.Demo));
+        Assert.Equal(new Uri("ws://127.0.0.1:8123/private"), settings.Binance.FeedUrl(Market.Futures, TradingMode.Demo));
+        Assert.Null(settings.Binance.FeedUrl(Market.Futures, TradingMode.Live));
+        Assert.Null(settings.Binance.FeedUrl(Market.Spot, TradingMode.Live));
     }
 
     [Fact]

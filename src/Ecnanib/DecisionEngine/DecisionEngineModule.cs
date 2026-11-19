@@ -47,6 +47,22 @@ public static class DecisionEngineModule
         // a cycle could not finish, and what was under way when the application stopped.
         services.AddBackgroundJob<OrderSettlingJob>();
 
+        // Reconciles the agents with the exchange, which is the source of truth, as the
+        // background work starts and at the time between reconciliations: what the account of
+        // an agent's user holds is held against the records, which are corrected, so what a
+        // user does at the exchange by hand is in them (FR-BIN-7, FR-BIN-8). What starts a
+        // cycle asks whether its agent was reconciled since this instance took up the work
+        // (NFR-REL-3).
+        services.AddSingleton<AccountReconciliation>();
+        services.AddSingleton<IReconciliation, ReconciledSinceStart>();
+        services.AddBackgroundJob<ReconciliationJob>();
+
+        // Follows the account event feed of the exchange, where it has one: an agent is
+        // reconciled at once when something changes in the account of its user (FR-BIN-7). An
+        // event is a signal: what the records say is what the exchange answers when it is asked.
+        services.AddSingleton<AccountFeed>();
+        services.AddBackgroundJob<AccountFeedJob>();
+
         // Watches the positions of the Futures market, as the background work starts and at
         // the time between reconciliations: the margin of every open position is checked, and
         // its user is told when it approaches liquidation (FR-BIN-F5), and what a position

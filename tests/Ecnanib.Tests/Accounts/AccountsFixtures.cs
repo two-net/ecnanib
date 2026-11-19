@@ -90,6 +90,10 @@ internal sealed class AccountsApplication : IDisposable
     /// <param name="host">Further changes to the host, such as a request handler of the test's own.</param>
     /// <param name="runsCycles">Whether the application starts the cycles of the agents that run, which only a test of the cycles wants.</param>
     /// <param name="settlesOrders">Whether the application settles the orders of agents with the exchange on its schedule, which only a test of that wants.</param>
+    /// <param name="reconciles">
+    /// Whether the application reconciles the agents with the exchange on its schedule, and holds
+    /// a cycle back for an agent that it has not reconciled since it started, which only a test of that wants.
+    /// </param>
     public AccountsApplication(
         bool registrationOpen = true,
         TestClock? clock = null,
@@ -97,7 +101,8 @@ internal sealed class AccountsApplication : IDisposable
         Func<SettingsJson, SettingsJson>? settings = null,
         Action<IWebHostBuilder>? host = null,
         bool runsCycles = false,
-        bool settlesOrders = false)
+        bool settlesOrders = false,
+        bool reconciles = false)
     {
         Database = database ?? PostgresServer.CreateDatabase();
 
@@ -129,7 +134,8 @@ internal sealed class AccountsApplication : IDisposable
             },
             Database,
             runsCycles: runsCycles,
-            settlesOrders: settlesOrders);
+            settlesOrders: settlesOrders,
+            reconciles: reconciles);
     }
 
     public TestDatabase Database { get; }
@@ -243,6 +249,37 @@ internal sealed class AccountsApplication : IDisposable
         PositionWatch.RunAsync(
             new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
             cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>
+    /// Runs the job that reconciles the agents with the exchange, now, as the scheduler does at
+    /// the time between reconciliations. A test runs it itself to have a run at a moment of its
+    /// choosing.
+    /// </summary>
+    public Task ReconcileAgentsAsync(CancellationToken? cancellationToken = null) =>
+        Reconciliation.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>
+    /// The job that reconciles the agents with the exchange: the one that the scheduler runs, in
+    /// an application that reconciles on its schedule, and otherwise the one that only a test runs.
+    /// </summary>
+    public IBackgroundJob Reconciliation =>
+        _application.Services.GetKeyedService<IBackgroundJob>(EcnanibApplicationFactory.ReconciliationKey)
+            ?? _application.Services.GetServices<IBackgroundJob>().Single(job => job.Name == "reconciliation");
+
+    /// <summary>
+    /// Runs the job that follows the account event feed of the exchange, now, as the scheduler
+    /// does every minute. A test runs it itself: the scheduler of no application of the tests does.
+    /// </summary>
+    public Task FollowFeedAsync(CancellationToken? cancellationToken = null) =>
+        AccountFeed.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that follows the account event feed of the exchange, which only a test runs.</summary>
+    public IBackgroundJob AccountFeed =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.AccountFeedKey);
 
     /// <summary>The job that watches the positions of the Futures market, which only a test runs.</summary>
     public IBackgroundJob PositionWatch =>

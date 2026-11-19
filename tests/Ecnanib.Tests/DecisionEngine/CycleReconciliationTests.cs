@@ -8,9 +8,9 @@ namespace Ecnanib.Tests.DecisionEngine;
 
 /// <summary>
 /// After a restart the system reconciles first, and a cycle starts only then (FR-CYC-8).
-/// Reconciliation is not built: whatever reconciles answers through
-/// <see cref="IReconciliation"/>, and an agent that is not reconciled yet gets no cycle. See
-/// "After a restart" in docs/cycles.md.
+/// Whatever reconciles answers through <see cref="IReconciliation"/>, and an agent that is not
+/// reconciled yet gets no cycle. What answers for an agent that holds something from before the
+/// start is in <see cref="ReconciliationJobTests"/>. See "After a restart" in docs/cycles.md.
 /// </summary>
 public class CycleReconciliationTests
 {
@@ -53,7 +53,7 @@ public class CycleReconciliationTests
     [Fact]
     public async Task With_nothing_that_reconciles_every_agent_gets_its_cycle()
     {
-        // As the application is: reconciliation is not built, and nothing is registered.
+        // As the application of a test of the cycles is: nothing that reconciles is registered.
         using var application = new CyclesApplication(Quarter);
         var agent = application.Agents!.Give(Guid.NewGuid());
 
@@ -68,10 +68,10 @@ public class CycleReconciliationTests
         using var application = new EcnanibApplicationFactory();
         using var model = ModelOnly.Context();
 
-        // Positions and orders are not built yet, so nothing is stored that could differ from
-        // the exchange, and nothing reconciles: every agent gets its cycle. As soon as a table
-        // holds them, a cycle that starts before its agent is reconciled would decide on
-        // records that the exchange no longer agrees with, after a restart of all times.
+        // Positions and orders are stored, so something is stored that could differ from the
+        // exchange: a cycle that starts before its agent is reconciled would decide on records
+        // that the exchange no longer agrees with, after a restart of all times. What settles
+        // the orders answers, and so does what reconciles the agents, outside the tests.
         var stored = AgentsRules.TablesOfPositionsOrOrders(model.Model);
         var answers = application.Services.GetServices<IReconciliation>().Any();
 

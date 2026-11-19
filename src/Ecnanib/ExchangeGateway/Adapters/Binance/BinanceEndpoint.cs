@@ -14,7 +14,8 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// Most of them read. The ones that do not place an order, or take one off the exchange
 /// (FR-BIN-6): they are the calls of the orders, at the end of the list, and each says its
 /// method. Two more set how a symbol of the Futures market is margined in the account of a
-/// credential: isolated, and at a leverage (FR-BIN-F2). None withdraws, deposits, or transfers
+/// credential: isolated, and at a leverage (FR-BIN-F2). And two begin and renew the account
+/// event feed of the Futures market (FR-BIN-7). None withdraws, deposits, or transfers
 /// funds, between the Spot and the Futures wallet of a user included (FR-BIN-9): Binance keeps
 /// those calls in its wallet API, under <c>sapi</c>, of which the gateway makes one call, which
 /// reads the permissions of a key.
@@ -172,6 +173,28 @@ internal sealed class BinanceEndpoint
     private static readonly BinanceEndpoint FuturesLeverage =
         new(Market.Futures, "fapi/v1/leverage", BinanceLimit.Futures, weight: 1, method: HttpMethod.Post);
 
+    /// <summary>
+    /// Begins the account event feed of the Futures market for the account of a credential
+    /// (FR-BIN-7): Binance answers with a key that names the stream of the account's events,
+    /// which is read at another address, and with the same key while one is valid. It takes the
+    /// API key alone, with no signature and no parameter. It places nothing, and moves nothing.
+    /// </summary>
+    public static readonly BinanceEndpoint FuturesFeedStart =
+        new(Market.Futures, "fapi/v1/listenKey", BinanceLimit.Futures, weight: 1, method: HttpMethod.Post);
+
+    /// <summary>Renews that feed: Binance ends one that is not renewed within an hour. It takes the API key alone as well.</summary>
+    public static readonly BinanceEndpoint FuturesFeedKeep =
+        new(Market.Futures, "fapi/v1/listenKey", BinanceLimit.Futures, weight: 1, method: HttpMethod.Put);
+
+    /// <summary>
+    /// What the account event feed of the Spot market costs of the limit on requests when it is
+    /// begun: the connection to Binance's WebSocket API, which Binance counts as 2, and the one
+    /// request that is sent on it, which subscribes to the events of the account, as 2 more.
+    /// It is no call of <see cref="BinanceCall"/>: <see cref="BinanceFeed"/> opens the
+    /// connection, and asks the limiter for room with this.
+    /// </summary>
+    public static readonly BinanceEndpoint SpotFeed = new(Market.Spot, "ws-api/v3", BinanceLimit.Spot, weight: 4, reportsUsage: false);
+
     /// <summary>Every call, which is how the limiter knows the heaviest of each limit.</summary>
     public static readonly IReadOnlyList<BinanceEndpoint> All =
     [
@@ -179,7 +202,7 @@ internal sealed class BinanceEndpoint
         SpotCandles, FuturesCandles, SpotPrice, FuturesPrice, SpotSymbols, FuturesSymbols, FuturesMarkPrice, FuturesOpenInterest,
         SpotOrder, SpotOrderStatus, SpotOrderCancel, SpotTrades, SpotPair, SpotPairCancel,
         FuturesOrder, FuturesOrderStatus, FuturesOrderCancel, FuturesStop, FuturesStopStatus, FuturesStopCancel, FuturesTrades,
-        FuturesMarginType, FuturesLeverage,
+        FuturesMarginType, FuturesLeverage, FuturesFeedStart, FuturesFeedKeep, SpotFeed,
     ];
 
     /// <summary>The clock of a market.</summary>
@@ -471,7 +494,10 @@ internal sealed class BinanceEndpoint
     /// </summary>
     public HttpMethod Method { get; }
 
-    /// <summary>Whether the call changes something at the exchange: it places an order, takes one off, or sets the margin of a symbol.</summary>
+    /// <summary>
+    /// Whether the call changes something at the exchange: it places an order, takes one off,
+    /// sets the margin of a symbol, or begins or renews the account event feed.
+    /// </summary>
     public bool Changes => Method != HttpMethod.Get;
 
     /// <summary>The market whose address of the configuration file serves the call.</summary>

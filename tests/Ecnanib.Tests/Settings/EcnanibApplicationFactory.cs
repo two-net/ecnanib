@@ -39,12 +39,36 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string PositionWatchKey = "position-watch";
 
+    // The job of the Decision Engine that reconciles the agents with the exchange, named in the same way.
+    private const string Reconciliation = "Ecnanib.DecisionEngine.ReconciliationJob";
+
+    // What says whether an agent was reconciled since the application took up the background work.
+    private const string ReconciledSinceStart = "Ecnanib.DecisionEngine.ReconciledSinceStart";
+
+    /// <summary>
+    /// The key under which the job that reconciles the agents with the exchange is kept in an
+    /// application whose scheduler does not run it: a test runs it from there itself, at a
+    /// moment of its choosing.
+    /// </summary>
+    public const string ReconciliationKey = "reconciliation";
+
+    // The job of the Decision Engine that follows the account event feed of the exchange, named in the same way.
+    private const string AccountFeed = "Ecnanib.DecisionEngine.AccountFeedJob";
+
+    /// <summary>
+    /// The key under which the job that follows the account event feed is kept: the scheduler of
+    /// no application of the tests runs it, and a test runs it from there itself, at a moment of
+    /// its choosing.
+    /// </summary>
+    public const string AccountFeedKey = "account-feed";
+
     private SettingsDirectory? _ownDirectory;
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
     private readonly bool _watchesBinanceClock;
     private readonly bool _runsCycles;
     private readonly bool _settlesOrders;
+    private readonly bool _reconciles;
 
     /// <summary>
     /// Where a test's client sends its requests. Over TLS, as a browser does: the application
@@ -78,18 +102,27 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// a Binance to ask. Without it the job is still there, under <see cref="OrderSettlingKey"/>,
     /// for a test to run itself.
     /// </param>
+    /// <param name="reconciles">
+    /// Whether the application reconciles the agents with the exchange on its schedule, as it
+    /// does outside the tests, and holds a cycle back for an agent that it has not reconciled
+    /// since it started. Only a test of that says so, and gives the application a Binance to
+    /// ask. Without it the job is still there, under <see cref="ReconciliationKey"/>, for a test
+    /// to run itself.
+    /// </param>
     internal EcnanibApplicationFactory(
         SettingsDirectory contentRoot,
         Action<IWebHostBuilder>? configure = null,
         bool watchesBinanceClock = false,
         bool runsCycles = false,
-        bool settlesOrders = false)
+        bool settlesOrders = false,
+        bool reconciles = false)
     {
         _contentRoot = contentRoot.Path;
         _configure = configure;
         _watchesBinanceClock = watchesBinanceClock;
         _runsCycles = runsCycles;
         _settlesOrders = settlesOrders;
+        _reconciles = reconciles;
         ClientOptions.BaseAddress = Address;
     }
 
@@ -156,6 +189,38 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
 
             services.Remove(watching);
             services.AddKeyedSingleton(typeof(IBackgroundJob), PositionWatchKey, watching.ImplementationType!);
+
+            // The job that follows the account event feed runs every minute, for most of its
+            // minute, and has the gateway open a connection for every account in which an agent
+            // holds something. The file of the tests names no address of a feed, so it would
+            // open none, but it would still be a run of a minute in every application. So no
+            // application of a test runs it on a schedule: a test that is about what a run does
+            // finds it by its key, and runs it itself.
+            var following = services.Single(job =>
+                job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == AccountFeed);
+
+            services.Remove(following);
+            services.AddKeyedSingleton(typeof(IBackgroundJob), AccountFeedKey, following.ImplementationType!);
+
+            // The job that reconciles the agents with the exchange is due as the background
+            // work starts when an agent holds anything, and then every few minutes: it asks
+            // the exchange about every order that is not over, and about what the account of
+            // each agent holds. And a cycle waits for an agent that holds something from before
+            // the application started until that job has reconciled it. Many tests give a user
+            // orders and positions for a reason of their own, and start an application over
+            // them. So the application of a test is without the job on its schedule, and
+            // without what holds a cycle back for it, unless the test is about them. The job
+            // is kept under a key, for a test that runs it itself.
+            if (!_reconciles)
+            {
+                var reconciling = services.Single(job =>
+                    job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == Reconciliation);
+
+                services.Remove(reconciling);
+                services.AddKeyedSingleton(typeof(IBackgroundJob), ReconciliationKey, reconciling.ImplementationType!);
+
+                services.Remove(services.Single(gate => gate.ImplementationType?.FullName == ReconciledSinceStart));
+            }
         });
 
         _configure?.Invoke(builder);

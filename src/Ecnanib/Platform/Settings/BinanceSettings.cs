@@ -4,8 +4,8 @@ using Ecnanib.Shared;
 namespace Ecnanib.Platform.Settings;
 
 /// <summary>The <c>Binance</c> section: endpoints, symbols, and the service-wide request budget.</summary>
-/// <param name="Spot">The Spot endpoints.</param>
-/// <param name="Futures">The USDⓈ-margined perpetual Futures endpoints.</param>
+/// <param name="Spot">The Spot endpoints, each with the address of its account event feed where it has one.</param>
+/// <param name="Futures">The USDⓈ-margined perpetual Futures endpoints, each with the address of its account event feed where it has one.</param>
 /// <param name="Symbols">The symbols an agent may trade (FR-AGT-6).</param>
 /// <param name="OutboundIps">The fixed addresses the service calls Binance from, shown to users for IP-restricted keys.</param>
 /// <param name="LimitSharePercent">The share of Binance's request limit the service allows itself (FR-BIN-4): from 2 to 100.</param>
@@ -63,6 +63,28 @@ public sealed record BinanceSettings(
         };
     }
 
+    /// <summary>
+    /// The address of the account event feed of a market in a trading mode, or null where the
+    /// file names none: the account of a user is not followed there, and is reconciled on the
+    /// schedule alone (FR-BIN-7).
+    /// </summary>
+    public Uri? FeedUrl(Market market, TradingMode mode)
+    {
+        var endpoints = market switch
+        {
+            Market.Spot => Spot,
+            Market.Futures => Futures,
+            _ => throw new ArgumentOutOfRangeException(nameof(market), market, null),
+        };
+
+        return mode switch
+        {
+            TradingMode.Live => endpoints.Live.FeedUrl,
+            TradingMode.Demo => endpoints.Demo.FeedUrl,
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
+        };
+    }
+
     internal static BinanceSettings Read(SettingsReader file)
     {
         const string symbolsKey = "Binance:Symbols";
@@ -115,9 +137,15 @@ public sealed record BinanceMarketSettings(BinanceEndpointSettings Live, Binance
 {
     internal static BinanceMarketSettings Read(SettingsReader file, string key) =>
         new(
-            new BinanceEndpointSettings(file.Url($"{key}:Live:BaseUrl")),
-            new BinanceEndpointSettings(file.Url($"{key}:Demo:BaseUrl")));
+            new BinanceEndpointSettings(file.Url($"{key}:Live:BaseUrl"), file.OptionalSocketUrl($"{key}:Live:FeedUrl")),
+            new BinanceEndpointSettings(file.Url($"{key}:Demo:BaseUrl"), file.OptionalSocketUrl($"{key}:Demo:FeedUrl")));
 }
 
 /// <summary>One Binance endpoint.</summary>
-public sealed record BinanceEndpointSettings(Uri BaseUrl);
+/// <param name="BaseUrl">The address that its calls go to.</param>
+/// <param name="FeedUrl">
+/// The address of its account event feed, a WebSocket that is reached over TLS, or null where
+/// the file names none (FR-BIN-7). On the Spot market it is the address of Binance's WebSocket API, and on the
+/// Futures market the address that its user data streams are under.
+/// </param>
+public sealed record BinanceEndpointSettings(Uri BaseUrl, Uri? FeedUrl = null);

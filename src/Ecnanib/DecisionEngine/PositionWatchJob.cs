@@ -13,9 +13,10 @@ namespace Ecnanib.DecisionEngine;
 /// <remarks>
 /// <para>
 /// It is apart from what settles the orders, which every cycle asks first and which is to be
-/// quick: this reads the exchange for every open position, and places nothing. What reconciles
-/// everything that an account holds with the records, when it is built, has the positions of an
-/// account at hand, and takes this up (FR-BIN-7).
+/// quick: this reads the exchange for every open position, and places nothing. It is apart from
+/// what reconciles the agents as well, which runs at the same time between two runs and
+/// corrects the records (FR-BIN-7): this corrects nothing. Each reads the position of an
+/// account in a symbol for itself.
 /// </para>
 /// <para>
 /// <b>A run reads the funding of so many positions and no more.</b> A funding time comes for

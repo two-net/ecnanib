@@ -255,6 +255,7 @@ internal sealed class TradingBinance
 
     private readonly Lock _gate = new();
     private readonly List<KeptOrder> _orders = [];
+    private readonly Dictionary<Market, decimal> _byHand = [];
     private long _next = 5000;
 
     public TradingBinance() => System = new StandInSystem(Answer);
@@ -380,6 +381,97 @@ internal sealed class TradingBinance
         }
     }
 
+    /// <summary>
+    /// What the account holds of BTC on a market: what the orders that Binance executed add up
+    /// to, with what its user did by hand. On the Futures market it is the position of the
+    /// account in the symbol, above zero for a long one and below zero for a short one. On the
+    /// Spot market it is what was bought, less what was sold and the fees that were taken in it.
+    /// </summary>
+    public decimal Holds(Market market)
+    {
+        lock (_gate)
+        {
+            return HoldsOf(market);
+        }
+    }
+
+    /// <summary>
+    /// Has the account hold so much of BTC on a market, as when its user buys or sells at
+    /// Binance by hand, with no order of the application: nothing for a position that they
+    /// closed there, and less or more for one that they reduced or added to.
+    /// </summary>
+    public void HoldByHand(Market market, decimal quantity)
+    {
+        lock (_gate)
+        {
+            _byHand[market] = _byHand.GetValueOrDefault(market) + quantity - HoldsOf(market);
+        }
+    }
+
+    /// <summary>The price that Binance says the position of the Futures market was entered at, where a test says another than <see cref="Price"/>.</summary>
+    public decimal? EnteredAt { get; set; }
+
+    /// <summary>
+    /// Whether an order is held to what the account holds, as Binance holds it: a sale on the
+    /// Spot market that the account does not cover is refused, and so is an order at the market
+    /// that only reduces a position where the account holds none. It is, behind the application
+    /// of a test of the orders, whose account holds what its orders add up to. A test of the
+    /// gateway alone places orders in an account that it says nothing of.
+    /// </summary>
+    public bool HoldsOrdersToTheAccount { get; set; }
+
+    /// <summary>
+    /// The position of the account in the symbol on the Futures market, as Binance says it with
+    /// its prices: what <see cref="Holds"/> says, at <see cref="Price"/>, with no liquidation
+    /// price, which Binance names none of for a position that it cannot liquidate.
+    /// </summary>
+    public ExchangeFuturesPosition Position() => Holds(Market.Futures) is var held && held != 0m
+        ? new ExchangeFuturesPosition(ExchangeCallOutcome.Succeeded, held, EnteredAt ?? Price, Price, LiquidationPrice: null)
+        : ExchangeFuturesPosition.Without(ExchangeCallOutcome.Succeeded);
+
+    /// <summary>
+    /// What the account holds on the Spot market, as Binance says it: more USDT than a plan of
+    /// the tests needs, and the BTC that <see cref="Holds"/> says, of which the orders that
+    /// rest and sell hold theirs.
+    /// </summary>
+    public ExchangeBalances Balances()
+    {
+        lock (_gate)
+        {
+            var held = HoldsOf(Market.Spot);
+
+            if (held <= 0m)
+            {
+                return StandInProviders.Funded;
+            }
+
+            return new ExchangeBalances(
+                ExchangeCallOutcome.Succeeded,
+                [.. StandInProviders.Funded.Balances, new ExchangeBalance(BaseAsset, held, Math.Max(held - Locked(), 0m))]);
+        }
+    }
+
+    /// <summary>
+    /// Whether an order sells more on the Spot market than the account has free of what it
+    /// sells: Binance refuses such an order. An account that its user sold from by hand does
+    /// not cover what an agent bought any more.
+    /// </summary>
+    private bool Uncovered(AskedOrder asked) =>
+        HoldsOrdersToTheAccount && asked is { Market: Market.Spot, Side: "SELL" } && asked.Quantity > HoldsOf(Market.Spot) - Locked();
+
+    /// <summary>What the orders that rest and sell on the Spot market hold of BTC. The two orders of a pair hold the same coins, once.</summary>
+    private decimal Locked() =>
+        _orders
+            .Where(order => order is { Rests: true, Asked: { Market: Market.Spot, Side: "SELL" } } && !(order.TakeProfit && order.ListId is not null))
+            .Sum(order => order.Asked.Quantity - order.Executed);
+
+    private decimal HoldsOf(Market market) =>
+        _orders
+            .Where(order => order.Asked.Market == market)
+            .Sum(order => (order.Asked.Side == "BUY" ? order.Executed : -order.Executed)
+                - (market == Market.Spot ? order.Trades.Where(trade => trade.FeeAsset == BaseAsset).Sum(trade => trade.Fee) : 0m))
+        + _byHand.GetValueOrDefault(market);
+
     private Task<HttpResponseMessage> Answer(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (Instead?.Invoke(request) is { } other)
@@ -425,6 +517,11 @@ internal sealed class TradingBinance
                 : Error(HttpStatusCode.BadRequest, -4116, "ClientOrderId is duplicated.");
         }
 
+        if (Uncovered(asked))
+        {
+            return Error(HttpStatusCode.BadRequest, -2010, "Account has insufficient balance for requested action.");
+        }
+
         // A conditional order of the Futures market whose trigger the price has passed would
         // be triggered at once, and is refused: a stop that sells at or above the price, and a
         // take-profit that sells at or below it, and the other way around for one that buys.
@@ -437,6 +534,13 @@ internal sealed class TradingBinance
             {
                 return Error(HttpStatusCode.BadRequest, -2021, "Order would immediately trigger.");
             }
+        }
+
+        // An order at the market that only reduces a position is refused where the account
+        // holds none: there is nothing for it to reduce.
+        if (HoldsOrdersToTheAccount && asked is { Market: Market.Futures, ReduceOnly: true } && type == "MARKET" && HoldsOf(Market.Futures) == 0m)
+        {
+            return Error(HttpStatusCode.BadRequest, -2022, "ReduceOnly Order is rejected.");
         }
 
         var kept = new KeptOrder(++_next, asked, type);
@@ -471,6 +575,11 @@ internal sealed class TradingBinance
             || _orders.Any(order => order.Rests && order.Asked.PairId == asked.PairId))
         {
             return Error(HttpStatusCode.BadRequest, -2010, "Duplicate order sent.");
+        }
+
+        if (Uncovered(asked))
+        {
+            return Error(HttpStatusCode.BadRequest, -2010, "Account has insufficient balance for requested action.");
         }
 
         // A pair that sells is taken while the price is between its two triggers.
@@ -751,6 +860,135 @@ internal sealed class TradingBinance
 }
 
 /// <summary>
+/// Stands for the account event feed of the gateway: it has a feed on both markets of the test
+/// environment, follows every account that it is asked to, unless the test says otherwise, keeps
+/// what it was asked, and says the changes that the test has it say.
+/// </summary>
+internal sealed class StandInFeed : IExchangeAccountFeed
+{
+    private readonly Lock _gate = new();
+    private readonly List<ExchangeAccountChange> _said = [];
+    private readonly List<AskedFeed> _followed = [];
+    private readonly List<(Guid UserId, Market Market, TradingMode Mode)> _kept = [];
+    private readonly Dictionary<(Guid UserId, Market Market, TradingMode Mode), ExchangeFeedState> _states = [];
+
+    /// <summary>Where the exchange has a feed.</summary>
+    public HashSet<(Market Market, TradingMode Mode)> Available { get; } = [(Market.Spot, TradingMode.Demo), (Market.Futures, TradingMode.Demo)];
+
+    /// <summary>How following an account ends, when it is not that the account is followed.</summary>
+    public Func<AskedFeed, ExchangeFeedOutcome>? Outcome { get; set; }
+
+    /// <summary>Every time it was asked to follow an account, with the credential that it was handed, in order.</summary>
+    public IReadOnlyList<AskedFeed> Followed
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _followed];
+            }
+        }
+    }
+
+    /// <summary>Every time it was told that the feed of an account is still wanted, in order.</summary>
+    public IReadOnlyList<(Guid UserId, Market Market, TradingMode Mode)> Kept
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _kept];
+            }
+        }
+    }
+
+    /// <summary>How many times it was asked for what the feeds said.</summary>
+    public int Taken { get; private set; }
+
+    /// <summary>Has a feed say that something changed in an account.</summary>
+    public void Say(Guid userId, Market market, string? symbol, TradingMode mode = TradingMode.Demo)
+    {
+        lock (_gate)
+        {
+            _said.Add(new ExchangeAccountChange(userId, market, mode, symbol));
+        }
+    }
+
+    /// <summary>Has the feed of an account stand as the test says: one whose renewal is due, or one that has ended.</summary>
+    public void Stands(Guid userId, Market market, ExchangeFeedState state, TradingMode mode = TradingMode.Demo)
+    {
+        lock (_gate)
+        {
+            _states[(userId, market, mode)] = state;
+        }
+    }
+
+    public bool IsAvailable(Market market, TradingMode mode) => Available.Contains((market, mode));
+
+    public ExchangeFeedState StateOf(Guid userId, Market market, TradingMode mode)
+    {
+        lock (_gate)
+        {
+            return _states.GetValueOrDefault((userId, market, mode), ExchangeFeedState.NotFollowed);
+        }
+    }
+
+    public Task<ExchangeFeedOutcome> FollowAsync(
+        Guid userId, Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken)
+    {
+        var asked = new AskedFeed(userId, market, mode, apiKey, secretKey);
+        var outcome = Outcome?.Invoke(asked) ?? ExchangeFeedOutcome.Following;
+
+        lock (_gate)
+        {
+            _followed.Add(asked);
+
+            if (outcome == ExchangeFeedOutcome.Following)
+            {
+                _states[(userId, market, mode)] = ExchangeFeedState.Followed;
+            }
+        }
+
+        return Task.FromResult(outcome);
+    }
+
+    public void Keep(Guid userId, Market market, TradingMode mode)
+    {
+        lock (_gate)
+        {
+            _kept.Add((userId, market, mode));
+        }
+    }
+
+    public async Task<IReadOnlyList<ExchangeAccountChange>> TakeAsync(TimeSpan wait, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            Taken++;
+
+            if (_said.Count > 0)
+            {
+                ExchangeAccountChange[] taken = [.. _said.Distinct()];
+                _said.Clear();
+
+                return taken;
+            }
+        }
+
+        // None: it waits for a moment of real time, whatever the clock of the test shows.
+        if (wait > TimeSpan.Zero)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(5), cancellationToken);
+        }
+
+        return [];
+    }
+}
+
+/// <summary>One time that a <see cref="StandInFeed"/> was asked to follow an account.</summary>
+internal sealed record AskedFeed(Guid UserId, Market Market, TradingMode Mode, string ApiKey, string SecretKey);
+
+/// <summary>
 /// Stands for the watch on the clock of the exchange: new entries are paused where the test says
 /// so, and nowhere else. The application of a test reads no clock of Binance, so its own watch
 /// would pause them everywhere.
@@ -855,7 +1093,20 @@ internal sealed class OrdersApplication : IDisposable
     /// </param>
     /// <param name="database">A database that an earlier application of the test has used.</param>
     /// <param name="binance">The Binance that an earlier application of the test has used, with the orders that it has.</param>
-    public OrdersApplication(bool settlesOrders = false, TestDatabase? database = null, TradingBinance? binance = null)
+    /// <param name="reconciles">
+    /// Whether the scheduler of the application runs the job that reconciles the agents with the
+    /// exchange, as it does outside the tests, and a cycle waits for an agent that the
+    /// application has not reconciled since it started. Without it a test runs the job itself.
+    /// </param>
+    /// <param name="runsCycles">Whether the application starts the cycles of the agents that run, which only a test of the cycles wants.</param>
+    /// <param name="feed">What stands for the account event feed of the gateway, for a test of what follows it.</param>
+    public OrdersApplication(
+        bool settlesOrders = false,
+        TestDatabase? database = null,
+        TradingBinance? binance = null,
+        bool reconciles = false,
+        bool runsCycles = false,
+        StandInFeed? feed = null)
     {
         Binance = binance ?? new TradingBinance();
         Application = new AccountsApplication(
@@ -866,6 +1117,11 @@ internal sealed class OrdersApplication : IDisposable
                 services.AddHttpClient(ExchangeGatewayModule.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Binance.System);
                 services.AddSingleton<IExchangeClock>(Entries);
 
+                if (feed is not null)
+                {
+                    services.AddSingleton<IExchangeAccountFeed>(feed);
+                }
+
                 // The market data of the gateway, with the funding times of the test before it.
                 var registered = services.Last(service => service.ServiceType == typeof(IExchangeMarketData));
                 var gateway = registered.ImplementationType!;
@@ -875,7 +1131,16 @@ internal sealed class OrdersApplication : IDisposable
                 services.AddSingleton<IExchangeMarketData>(
                     provider => FundingTimes.Before((IExchangeMarketData)provider.GetRequiredService(gateway)));
             }),
-            settlesOrders: settlesOrders);
+            settlesOrders: settlesOrders,
+            reconciles: reconciles,
+            runsCycles: runsCycles);
+
+        // What the account holds is what the orders that this Binance executed add up to, with
+        // what its user did there by hand, unless a test says otherwise, and an order is held
+        // to it, as Binance holds it.
+        Binance.HoldsOrdersToTheAccount = true;
+        Application.Providers.FuturesPosition = _ => Binance.Position();
+        Application.Providers.Balances = (market, _) => market == Market.Spot ? Binance.Balances() : StandInProviders.Funded;
     }
 
     public AccountsApplication Application { get; }
@@ -937,6 +1202,31 @@ internal sealed class OrdersApplication : IDisposable
 
     /// <summary>Settles the orders of an agent with the exchange, and moves the clock on while that waits.</summary>
     public Task SettleAsync(Guid agentId) => WhileTimePassesAsync(Orders.SettleAsync(agentId, CancellationToken.None));
+
+    /// <summary>
+    /// Reconciles an agent with the exchange, as the job that the scheduler runs at the time
+    /// between reconciliations does, and moves the clock on while that waits.
+    /// </summary>
+    /// <returns>Whether the agent is reconciled.</returns>
+    public async Task<bool> ReconcileAsync(Guid agentId)
+    {
+        var reconciling = Orders.ReconcileAsync(agentId, CancellationToken.None);
+        await WhileTimePassesAsync(reconciling);
+
+        return await reconciling;
+    }
+
+    /// <summary>
+    /// Runs the job that reconciles the agents with the exchange, as the scheduler does at the
+    /// time between reconciliations, and moves the clock on while that waits.
+    /// </summary>
+    public Task ReconcileAllAsync() => WhileTimePassesAsync(Application.ReconcileAgentsAsync());
+
+    /// <summary>
+    /// Runs the job that follows the account event feed, as the scheduler does every minute, and
+    /// moves the clock on while it listens: a run is over when its time is up.
+    /// </summary>
+    public Task FollowFeedAsync() => WhileTimePassesAsync(Application.FollowFeedAsync());
 
     /// <summary>Closes the position of an agent at market, as for its user, and moves the clock on while that waits.</summary>
     public async Task<PositionCloseOutcome> CloseAsync(Guid agentId)

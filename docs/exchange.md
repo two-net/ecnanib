@@ -2,7 +2,7 @@
 
 Every call to Binance goes through the Exchange Gateway: one adapter behind a common interface (SRS 3.1, NFR-ARC-3). Binance is the only exchange. The gateway reaches its Spot market and its USDⓈ-margined perpetual Futures market, each on the real exchange and in Binance's test environment, with Binance's official public APIs, at the four addresses of the configuration file (FR-BIN-1, FR-BIN-2).
 
-A call that needs a credential is signed with the user's own, for the environment that is asked. The gateway places orders, each with the identifier that its caller gave it, and says of each call whether there is an order, so that none is sent twice (FR-BIN-6). On Futures it reads how an account stands, and sets the margin type and the leverage of a symbol, which are no settings of the whole account (FR-BIN-F2). It reads the position that an account holds there with its margin, and the funding that the account received and paid, and it adds no margin to a position (FR-BIN-F4, FR-BIN-F5). It has no operation that withdraws, deposits, or transfers funds (FR-BIN-9). Every call passes one limiter, for all users, because Binance counts its limits on requests against the address of the service (FR-BIN-4). The clock of the service is held against Binance's, and new entries pause while it is off (FR-BIN-5). Market data is read once and shared by all who need it, and is held in memory for a short time and nowhere else (FR-BIN-3, NFR-DAT-6). Every call is logged with its duration, its outcome, and the request weight that Binance reports (NFR-LOG-5).
+A call that needs a credential is signed with the user's own, for the environment that is asked. The gateway places orders, each with the identifier that its caller gave it, and says of each call whether there is an order, so that none is sent twice (FR-BIN-6). On Futures it reads how an account stands, and sets the margin type and the leverage of a symbol, which are no settings of the whole account (FR-BIN-F2). It reads the position that an account holds there with its margin, and the funding that the account received and paid, and it adds no margin to a position (FR-BIN-F4, FR-BIN-F5). It has no operation that withdraws, deposits, or transfers funds (FR-BIN-9). Every call passes one limiter, for all users, because Binance counts its limits on requests against the address of the service (FR-BIN-4). The clock of the service is held against Binance's, and new entries pause while it is off (FR-BIN-5). Market data is read once and shared by all who need it, and is held in memory for a short time and nowhere else (FR-BIN-3, NFR-DAT-6). Where Binance has an account event feed, the gateway follows the account of a credential on it, and says when something changed there (FR-BIN-7). Every call is logged with its duration, its outcome, and the request weight that Binance reports (NFR-LOG-5).
 
 The code is in `src/Ecnanib/ExchangeGateway`. The rules below are enforced by tests in `tests/Ecnanib.Tests/ExchangeGateway` and `tests/Ecnanib.Tests/Architecture`.
 
@@ -62,7 +62,7 @@ public sealed record ExchangeFunding(string TransactionId, decimal Amount, strin
 
 An operation ends with an error in two cases, neither of which is Binance's doing: the caller cancelled, or what it was given is no call, which is one without a key or without a user, or for a market or an environment that does not exist. Everything else is an outcome.
 
-Candles, prices, and the rules of the symbols are not read through this interface, where a call is made once for whoever makes it. They have an interface of their own, `IExchangeMarketData`, behind which a read is shared: see "Market data".
+Candles, prices, and the rules of the symbols are not read through this interface, where a call is made once for whoever makes it. They have an interface of their own, `IExchangeMarketData`, behind which a read is shared: see "Market data". The account event feed has one as well, `IExchangeAccountFeed`, behind which a connection stays open: see "The account event feed".
 
 ## Markets and environments
 
@@ -80,7 +80,7 @@ Candles, prices, and the rules of the symbols are not read through this interfac
 
 ## The calls
 
-These are all the calls that the gateway makes. Each is a `GET`, but for the calls that place an order or take one off the exchange, which are in the second table, and the two that set the margin of a symbol, which are in the third.
+These are all the calls that the gateway makes. Each is a `GET`, but for the calls that place an order or take one off the exchange, which are in the second table, the two that set the margin of a symbol, which are in the third, and the two of the account event feed, which are in the fourth.
 
 | What | Call | Signed | Weight |
 |---|---|---|---|
@@ -126,11 +126,20 @@ The calls that set the margin of a symbol of Futures in the account of a credent
 | Gives the symbol isolated margin | `POST /fapi/v1/marginType?marginType=ISOLATED` | 1 |
 | Sets the leverage of the symbol | `POST /fapi/v1/leverage` | 1 |
 
+The calls of the account event feed of Futures, each with the API key in its header, and with no signature and no parameter:
+
+| What | Call | Weight |
+|---|---|---|
+| Begins the stream of the events of the account, and names it | `POST /fapi/v1/listenKey` | 1 |
+| Renews that stream | `PUT /fapi/v1/listenKey` | 1 |
+
+On Spot the feed is no call: it is a connection to Binance's WebSocket API, which Binance counts as 2 of the limit of Spot, and one request on it, which it counts as 2 more. The limiter counts both: see "The account event feed".
+
 | Rule | Detail |
 |---|---|
 | **The list is in one place.** | `Adapters/Binance/BinanceEndpoint.cs` has one value for each call: the market whose address serves it, its method, its path, its query, its weight, and the limit that Binance counts it against. Nothing outside that class can make one. |
 | **Every parameter is in the query,** also of a call that is no `GET`. | Binance takes them there. No call has a body, and the log of outbound calls leaves the query out. |
-| **Every call passes one place.** | `Adapters/Binance/BinanceCall.cs` makes the exchange: the limiter, the address, the signature, the time limit, and what the answer means. It takes a `BinanceEndpoint` and nothing else. `NoFundMovementTests` fails when another type of the gateway takes a client from the host's factory or sends with one. |
+| **Every call passes one place.** | `Adapters/Binance/BinanceCall.cs` makes the exchange: the limiter, the address, the signature, the time limit, and what the answer means. It takes a `BinanceEndpoint` and nothing else. `NoFundMovementTests` fails when another type of the gateway takes a client from the host's factory or sends with one. The connection of an account event feed is no call, and one type opens it: see "The account event feed". |
 | **A parameter of a caller is percent-encoded,** which Binance requires. | The calls of the market data take a symbol, and the candles the length of a candle. `BinanceEndpoint` makes such a call from the one of the list that it is, so what a caller gives is one value of one parameter, whatever it is. A query that a call always has, such as `omitZeroBalances=true`, is a part of its call. |
 | The candles of Futures cost 2 for what is asked. | Binance counts them by the rows that are asked for: 1 below 100, 2 below 500, 5 up to 1,000. A read asks for 499, which is the most that cost 2: see "Market data". |
 | **The time limit is 15 seconds,** on the application's clock. | It covers the sending and the reading of the answer, and not the wait for a turn at the limiter before them. A call that runs into it ends as `TimedOut`. |
@@ -440,6 +449,76 @@ The current funding rate and the next funding time are included in the data pack
 - **It is the heaviest call of the gateway,** at 30 of request weight. What reads the funding of a position reads it when it is due, and for so many positions in a run: see "Funding" in [orders.md](orders.md).
 - Binance keeps the income of an account for three months.
 
+## The account event feed
+
+Order and position changes are tracked through the exchange's account event feed where available (FR-BIN-7). Binance says what changes in an account on a connection that stays open, as it happens: an order that was executed or taken off, and what the account holds. The gateway follows the account of a credential on it, and says of every event which symbol it is about. `Adapters/Binance/BinanceFeed.cs` is that, and `AccountFeedTests` holds it to the rules below, against a server of the test's in Binance's place.
+
+```csharp
+public interface IExchangeAccountFeed
+{
+    bool IsAvailable(Market market, TradingMode mode);
+
+    ExchangeFeedState StateOf(Guid userId, Market market, TradingMode mode);
+
+    Task<ExchangeFeedOutcome> FollowAsync(
+        Guid userId, Market market, TradingMode mode, string apiKey, string secretKey, CancellationToken cancellationToken);
+
+    void Keep(Guid userId, Market market, TradingMode mode);
+
+    Task<IReadOnlyList<ExchangeAccountChange>> TakeAsync(TimeSpan wait, CancellationToken cancellationToken);
+}
+
+public sealed record ExchangeAccountChange(Guid UserId, Market Market, TradingMode Mode, string? Symbol);
+```
+
+| Setting | In the tracked file | |
+|---|---|---|
+| `Binance:Spot:Live:FeedUrl` | `wss://ws-api.binance.com:443/ws-api/v3` | Binance's WebSocket API of Spot, on the real exchange. |
+| `Binance:Spot:Demo:FeedUrl` | `wss://demo-ws-api.binance.com:443/ws-api/v3` | The same, in its test environment. |
+| `Binance:Futures:Live:FeedUrl` | `wss://fstream.binance.com/private` | The address that the user data streams of Futures are under, on the real exchange. |
+| `Binance:Futures:Demo:FeedUrl` | `wss://demo-fstream.binance.com/private` | The same, in its test environment. |
+
+| Rule | Detail |
+|---|---|
+| **A feed is there where the file names its address.** | `IsAvailable` says so for a market in an environment. Where the file names none, or leaves it empty, no account is followed there, and `FollowAsync` ends as `NotAvailable`: the records of an agent are then reconciled on the schedule alone. That is "where available". |
+| **An event is a signal, and no record.** | A change says that something of a symbol changed in the account of a user, on a market in an environment, and nothing of what: no status, no quantity, and no price of an event leaves the gateway. What keeps the orders and the positions asks Binance what changed, with the calls that read, and writes what those say: see "The account event feed" in [orders.md](orders.md). So an event that is missed, late, or not what Binance's documentation shows changes when Binance is asked, and nothing else. |
+| **It only reads.** | Following an account places no order, and moves nothing (FR-BIN-9). See "No funds are moved". |
+| **The credential comes with the call, and is kept nowhere** (FR-KEY-9). | It is needed when an account begins to be followed, and again when Binance wants the feed renewed: `StateOf` says `RenewalDue` then. The bytes that the secret key was read into are cleared. The key that names a stream of Futures is in the address that the connection was opened with, and nowhere else. |
+| **A feed that nobody asks for is closed.** | Whoever follows an account says so again and again, with `Keep`. A feed that nobody kept for `ExchangeFeedTimes.IdleAfter`, which is 3 minutes, is closed. So an instance of the application that no longer does the background work follows nothing after that: see [background-work.md](background-work.md). |
+| **A change is said once until it is taken.** | `TakeAsync` gives the changes that the feeds said since they were last taken, each once however often it was said, and waits for one when there is none. One execution is several events at Binance. |
+| **A feed that begins or ends is a change of everything in its account.** | `Symbol` is empty then. What happened in the account before it was followed, and while a feed ended, was not heard. So is an event of a kind that says a change and does not say its symbol where it is looked for, and a message that does not read. |
+| **A feed that ends is no error.** | Binance closes every connection after a day, a connection breaks, and Binance ends a stream that was not renewed. The account is no longer followed, `StateOf` says so, and it is followed again when it is asked for, with the credential. |
+| **It follows in memory, for one process.** | As the limiter counts. Nothing of a feed is written to the database. |
+
+### On each market
+
+| | Spot | Futures |
+|---|---|---|
+| The feed | Binance's WebSocket API. Binance took the REST calls that named a stream of an account of Spot out of service in February 2026. | A user data stream, which a call begins and names. |
+| To follow an account | One request on the connection, `userDataStream.subscribe.signature`, with the API key, the time, and their signature under the secret key (HMAC-SHA256), as a signed call has it. Binance takes it with any kind of key, and with no login before it. | `POST /fapi/v1/listenKey`, which carries the API key alone. Binance answers with the key of the stream, and with the same key while one is valid. The stream is read at `<FeedUrl>/ws/<key>`. |
+| To renew it | Nothing. | `PUT /fapi/v1/listenKey`, half an hour after the stream was begun or renewed (`BinanceFeed.RenewEvery`): Binance ends one that is not renewed within an hour. |
+| An event that says a change, with its symbol | `executionReport` and `listStatus`, each with `s`, inside `event`. | `ORDER_TRADE_UPDATE` and `ALGO_UPDATE`, each with `o.s`, `TRADE_LITE`, with `s`, and `ACCOUNT_UPDATE`, with `s` of each position of `a.P`, or `a.S`. |
+| An event that ends the feed | `eventStreamTerminated` | `listenKeyExpired` |
+| What says nothing here | What the account has of an asset (`outboundAccountPosition`, `balanceUpdate`), and anything else. | A margin call, a change of the leverage of a symbol, a change of the wallet alone, and anything else. |
+
+| Rule | Detail |
+|---|---|
+| **A connection sends one thing at most.** | The request that subscribes, on Spot, and nothing on Futures. Binance's WebSocket API takes orders as well, with other requests: `BinanceFeedConnection`, which is the one type of the gateway that opens a WebSocket, has no way to send one. `NoFundMovementTests` holds what is sent on a feed to that one request, and the WebSocket to that one type. So a feed is no second way to an order beside the calls of the orders (NFR-SEC-6). |
+| **Opening a feed costs of the limit on requests,** so it passes the limiter (FR-BIN-4). | The call that begins a stream of Futures passes it as every call does. The connection of Spot and its request are counted as 4 of the limit of Spot. A connection that Binance refuses with its signal of too many, 429 or 418, tells the limiter, which then sends no call on that limit for a while. |
+| **No more than 20 feeds are opened in a minute,** for all users. | `BinanceFeed.MostOpenedAMinute`. Binance limits how many connections an address opens, 300 in five minutes on Spot, and a start of the application would open one for every account at once. `FollowAsync` ends as `NotNow` for the rest, which are opened with the next minutes. |
+| **A connection is made within 5 seconds,** or not at all. | `BinanceFeed.ConnectsWithin`. It is less than the time limit of a call: an address that does not answer keeps whoever follows the accounts from listening to the feeds that are open. On Spot, Binance's answer to the request has the time limit of a call, 15 seconds. |
+| **A request that Binance refuses for its time tells the watch on the clock.** | Its error `-1021`, as with a call: see "The clock". |
+
+`ExchangeFeedOutcome` says how following an account ended:
+
+| Outcome | When |
+|---|---|
+| `Following` | The account is followed. Only this says so. |
+| `NotAvailable` | The file names no address of a feed for the market in the environment. |
+| `KeyRefused` | Binance answered as it answers a wrong credential: see "Outcomes". The credential is checked again. |
+| `NotNow` | The limit on requests has no room, Binance signalled that it has had too many, or enough feeds were opened in the minute. It is asked again later. |
+| `Failed` | Anything else: no connection, a fault of Binance, or an answer that is not what it sends. |
+
 ## Market data
 
 Market data is candles, prices, and the rules of the symbols, and on Futures also the mark price, the funding rate, and the open interest. It is fetched once per symbol and timeframe and shared by all agents that need it (FR-BIN-3): every read costs of the one budget that all users spend, so a read for each agent would be what uses it up (risk R2). `Adapters/Binance/BinanceMarketData.cs` reads it, and `MarketDataTests`, `MarketDataSharingTests`, and `CandleCacheTests` hold it to the rules below, on a clock that the tests move.
@@ -545,8 +624,9 @@ Ecnanib never withdraws, deposits, or transfers funds, between the Spot and the 
 
 | Rule | Detail |
 |---|---|
-| **The gateway has no such operation.** | `IExchangeAdapter` has the six above, and each reads. `IExchangeMarketData` has five, and each reads, with a call of Binance's public API, which takes no credential and so can move nothing. `IExchangeOrders` has seven: an order, and a pair of them, buys or sells in the account that the credential is of, and moves nothing out of it, into it, or between its wallets, and the margin of a symbol is a setting of that account. |
-| **It can send Binance nothing but the calls of the list.** | See "The calls". `NoFundMovementTests` asks the gateway for everything it does, in each market and each environment, and holds what was sent to the three lists. It fails for an operation of any of the three interfaces that it does not ask, so an operation that is added is held to the lists too. |
+| **The gateway has no such operation.** | `IExchangeAdapter` has the six above, and each reads. `IExchangeMarketData` has five, and each reads, with a call of Binance's public API, which takes no credential and so can move nothing. `IExchangeOrders` has seven: an order, and a pair of them, buys or sells in the account that the credential is of, and moves nothing out of it, into it, or between its wallets, and the margin of a symbol is a setting of that account. `IExchangeAccountFeed` has five, which follow the events of an account, and only read. |
+| **It can send Binance nothing but the calls of the list.** | See "The calls". `NoFundMovementTests` asks the gateway for everything it does, in each market and each environment, and holds what was sent to the four lists. It fails for an operation of any of the four interfaces that it does not ask, so an operation that is added is held to the lists too. |
+| **A call of the account event feed names nothing.** | Each of the two carries the API key in its header, and no parameter at all: no order, no asset, no amount, and no address. On a connection of a feed the gateway sends the one request that subscribes to the events of an account, on Spot, and nothing on Futures: `NoFundMovementTests` holds it to that. |
 | **Binance keeps the calls that move funds apart.** | Withdrawals, the addresses of deposits, and transfers between wallets are in its wallet API, under `/sapi`. The gateway makes one call there, which reads what a key may do. |
 | A call about an order names one order, and nothing to move. | Each call that is no `GET` and is about an order carries the identifier of its order, or of its pair. None carries an amount of an asset to send, or an address to send it to. |
 | **A call that sets the margin of a symbol names the symbol, and what it is to have.** | The margin type, or the leverage, and nothing else: no asset, no amount, and no address. `NoFundMovementTests` holds the two calls to those parameters. Binance has a call that adds margin to a position of isolated margin, or takes it out, which moves funds within the wallet of Futures: the gateway does not make it, and the service never adds margin on its own (FR-BIN-F5). `NoFundMovementTests` names that call, `/fapi/v1/positionMargin`, as one that is never sent, and holds what is sent about the margin of a position to two calls that read: its positions, and its income. |
@@ -586,6 +666,18 @@ Binance has counted 4350 of request weight on Spot Live, which is more than the 
 - **`Signal`** is `Throttled` for the status 429 and `Banned` for 418, and `HoldSeconds` is for how long nothing is sent. `Limit` is the name of the limit, as in "The limiter".
 - **That Binance has counted more is said once,** when it begins, and not with every answer while it lasts.
 
+The account event feed is no call of a client of the host's factory, so the log of outbound calls does not have its connections. The gateway says them itself, under `Ecnanib.ExchangeGateway.Adapters.Binance.BinanceFeed`:
+
+```
+The account event feed of user {UserId} on {Market} {Environment} is followed, at {Host}, after {DurationMs} ms
+The account event feed of user {UserId} on {Market} {Environment} could not be followed, at {Host}: {ExchangeFeedOutcome}
+The account event feed of user {UserId} on {Market} {Environment} ended, at {Host}: {FeedEnd}
+Binance answered the subscription to the account event feed on {Market} {Environment} with its error {BinanceCode}
+```
+
+- **An event names the user, the market, the environment, and the host,** and nothing else of the address: the key of a stream of Futures is in its path. No event holds a key, and none holds anything that Binance said of an account. The two calls of the feed of Futures are in the log of outbound calls, as every call is, and the key of a stream that Binance answers with is masked where that log writes a body, at the debug level: see "Masking" in [logging.md](logging.md).
+- **`FeedEnd`** is `Closed`, when Binance closed the connection, `Expired`, when it said that the stream is over, `NotKept`, when nobody asked for the feed any more, `Stopped`, with the application, and `Broken`, which is a warning. A feed that could not be followed is a warning as well.
+
 The watch on the clock says what it reads, under `Ecnanib.ExchangeGateway.Adapters.Binance.BinanceClock`:
 
 ```
@@ -609,7 +701,7 @@ ECNANIB_LIVE_BINANCE_DEMO_KEY=... ECNANIB_LIVE_BINANCE_DEMO_SECRET=... \
   dotnet test --solution Ecnanib.slnx --filter-class "*LiveBinanceTests"
 ```
 
-The variables are `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_KEY` and `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_SECRET`, with `DEMO` or `LIVE`. Give them for one environment or for both. For each that has both, these calls are made, at the addresses of the tracked configuration file. Every one of them reads, and costs request weight only, but for the last four, which place orders in the test environment. No order is placed on the real exchange, and the margin of a symbol is set in the test environment only. Two of the four place orders far from the price, and take them off again. The last two buy a little at the market, on Spot and on Futures, and sell it again: they are the ones that are executed, with the funds of the test environment, which are none, and each is skipped when the account there does not cover it. The one of Futures is skipped as well when the account there is one that an agent would not start in:
+The variables are `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_KEY` and `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_SECRET`, with `DEMO` or `LIVE`. Give them for one environment or for both. For each that has both, these calls are made, at the addresses of the tracked configuration file. Every one of them reads, and costs request weight only, but for the last five, which place orders in the test environment. No order is placed on the real exchange, and the margin of a symbol is set in the test environment only. Two of the five place orders far from the price, and take them off again, and so does the one of the account event feed, which is the last row. The two before that buy a little at the market, on Spot and on Futures, and sell it again: they are the ones that are executed, with the funds of the test environment, which are none, and each is skipped when the account there does not cover it. The one of Futures is skipped as well when the account there is one that an agent would not start in:
 
 | Call | What it must end as |
 |---|---|
@@ -627,6 +719,8 @@ The variables are `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_KEY` and `ECNANIB_LIVE_BIN
 | An order at a price of `BTCUSDT` on Spot of the test environment, which buys a tenth below the price: placed, asked about, and taken off. | `Answered` as an order that rests, the same order when it is asked about, and `Canceled` when it is taken off, with nothing executed. |
 | What an entry of an agent on Spot does, in the test environment: the least of `BTCUSDT` that orders can be for is bought at the market, a pair is placed for what the account holds of it, a tenth below and a tenth above the price, each of its orders is asked about, the pair is taken off, taken off once more, one of its orders is asked about again, and what was bought is sold at the market. | The purchase `Filled`, with its executions and their fees. The pair `Answered`, with both orders resting, and each found by its own identifier. Both `Canceled` when the pair is taken off, each under the number that it had. `NotFound` when it is taken off once more, and `Canceled` when one is asked about after that. The sale `Filled`. |
 | What an entry of an agent on Futures does, in the test environment: how the account stands is read, `BTCUSDT` is given isolated margin and a leverage of 2, and given both once more, a little is bought at the market, the position is read with its margin, a stop-loss and a take-profit that only reduce the position are placed a tenth below and a tenth above the mark price, each is asked about, the take-profit is taken off, the position is closed at the market while the stop-loss rests, the stop-loss is asked about and taken off where it still rests, and the account is read again. | The account `Succeeded`, in one-way mode with one asset and no position in the symbol, or the test is skipped. The margin `Answered`, both times. The purchase `Filled`, at a price, after which the account holds a position, which is read with its margin: what was bought, its prices, and a liquidation price below the mark price. Both orders `Answered` and resting, each found by its own identifier. The take-profit `Canceled`, and the stop-loss resting still. The close `Filled`. The stop-loss known to Binance with nothing executed, whatever Binance made of it, which the run writes out. No position after that. |
+
+| The account event feed of each market of the test environment: the account is followed, a stop of `BTCUSDT` is placed a tenth above the price, and taken off. | `Following`. A change of everything in the account as the feed begins, and a change of `BTCUSDT` when the stop is placed, and again when it is taken off, each within 20 seconds. |
 
 The market data needs no credential. It is asked under the same condition all the same, so that no run reaches Binance that was not meant to.
 
@@ -656,6 +750,10 @@ Run it when a call is added or changed, and when Binance changes its API. These 
 - That the test environment of Futures serves `/fapi/v1/income`, and what a row of funding looks like there. Binance's documentation shows a row of another kind, and none of funding.
 - When Binance writes what a position received or paid at a funding time, that the time of the row is the funding time itself, and that an answer of 1000 rows holds the oldest of the time that was asked for. What reads the funding of a position takes all three for granted: see "Funding" in [orders.md](orders.md). The run holds a row to a whole hour where the account has one, and settles the other two only for an account that held a position over a funding time.
 - That `/fapi/v3/positionRisk` says `entryPrice`, `markPrice`, and `liquidationPrice` for a position of isolated margin, and writes a liquidation price of `0` where it names none. The run that buys on Futures reads the position that it opened.
+- That the test environment of Futures serves its user data streams under `wss://demo-fstream.binance.com/private`, at `/ws/<key>`. Binance's documentation names that host as the address of the WebSockets of its test environment, and the path `/private` for the real exchange alone, where the addresses without it were taken out of service in April 2026. A feed that cannot be followed is a warning in the log, and the account is reconciled on the schedule.
+- That Binance takes `userDataStream.subscribe.signature` with a key of the kind that a user creates by default, and with no login before it, in its test environment as on the real exchange. Its changelog of August 2025 says so, and the description of the request names no kind of key.
+- Where the events of the feeds say their symbol. Binance's documentation shows `s` for `executionReport`, `listStatus`, and `TRADE_LITE`, and the object `o` of `ORDER_TRADE_UPDATE` and of `ALGO_UPDATE` and the positions `P` of `ACCOUNT_UPDATE` without their fields. An event that does not say its symbol where the gateway looks is taken as one about everything of the account, so what follows is a question more, and no change that is missed.
+- What Binance counts a connection of a user data stream of Futures as, and how many it lets an address open. Its documentation says neither.
 - That Binance begins the next candle as one closes, also when nothing trades. Its documentation does not say when. Where it begins a candle late, the candle before it is given late, and never early: see "Candles".
 
 The calls of the market data were asked of Binance itself on 16 November 2026, on both markets, on the real exchange and in the test environment. Each ended as the table says. The run and what Binance answered beside it also showed what its documentation leaves open:
@@ -676,5 +774,8 @@ The calls of the market data were asked of Binance itself on 16 November 2026, o
 - A page that asks for prices, and a data package that holds one. What has the Risk Guard check the plan of a cycle asks for the price that the symbol last traded at, and for the rules of its symbol, which it holds the plan to (FR-RSK-4): see "The facts" in [risk-guard.md](risk-guard.md). What starts the cycles asks for the candles of an agent's own timeframe through each close, and the data package of each cycle for the candles of the higher timeframes, and on Futures for the mark price, the funding rate, and the open interest (FR-CYC-2): see "The data package" in [cycles.md](cycles.md). An agent's timeframe is one of four, `Timeframe` in `Shared`: `CandleInterval` has a member of the same name for each, which `CandleIntervals.Of` gives, and the week as well, for context alone.
 - Prices that change on a screen within two seconds (FR-NTF-2). A price is read when it is asked for, and counts for a second: a screen that asked every second for every symbol would spend much of the budget.
 - Reading the limits of "The limiter" from `exchangeInfo`, which the gateway now calls for the symbols.
-- The feed of account events, and reconciliation (FR-BIN-7, FR-BIN-8).
+- Listing the orders that rest in an account, and the positions of an account in all its symbols. What reconciles an agent asks about each order that has a row, by its identifier, and about the position of the account in the symbol of the agent (FR-BIN-7, FR-BIN-8): see "Reconciling" in [orders.md](orders.md).
+- The account event feed for market data, and anything of an event but which symbol it is about. An event is a signal, and what changed is asked.
+- A count of the connections that the account event feeds hold, for the operator status screen (FR-OPS-2).
+- Noticing a connection of a feed that is dead without saying so before the network does. Binance asks every connection whether it is still there, and the gateway answers, but it does not ask Binance. Until the connection breaks, what changes in the account is found by the reconciliation that runs on a schedule.
 - Breakers for repeated failures of Binance (NFR-REL-4). That a read of market data which failed is not made again for 5 seconds is none.

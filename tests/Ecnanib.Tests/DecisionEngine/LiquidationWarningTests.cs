@@ -49,11 +49,14 @@ public class LiquidationWarningTests
         Assert.Empty(await application.NotificationsOfAsync(ada.UserId));
         Assert.DoesNotContain(application.Application.Events(), said => said.Area == Area && said.Level != "Debug");
 
-        // One that is closed has no margin to check.
+        // One that is closed has no margin to check. What closes it for its user asks once what
+        // the account holds, before it sends an order.
         Assert.Equal(PositionCloseOutcome.Closed, await application.CloseAsync(ada.Id));
+        Assert.Equal(3, providers.FuturesPositionsAsked.Count);
+
         await application.WatchAsync();
 
-        Assert.Equal(2, providers.FuturesPositionsAsked.Count);
+        Assert.Equal(3, providers.FuturesPositionsAsked.Count);
     }
 
     [Theory]

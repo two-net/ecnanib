@@ -188,6 +188,29 @@ internal sealed class SettingsReader
         return new Uri("about:blank");
     }
 
+    /// <summary>
+    /// An absolute address of a WebSocket that is reached over TLS, <c>wss</c>, which may be
+    /// left out or left empty: there is none then. What is sent to it may hold a credential, so
+    /// <c>ws</c> is taken for an address of this machine alone.
+    /// </summary>
+    public Uri? OptionalSocketUrl(string key)
+    {
+        if (OptionalText(key) is not { } text)
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(text, UriKind.Absolute, out var url)
+            && (url.Scheme == Uri.UriSchemeWss || (url.Scheme == Uri.UriSchemeWs && url.IsLoopback)))
+        {
+            return url;
+        }
+
+        Problem(key, "must be an absolute wss address, or be left empty");
+
+        return null;
+    }
+
     public string EmailAddress(string key)
     {
         var text = Text(key);

@@ -545,6 +545,8 @@ internal sealed class StandInPlanOrders : IPlanOrders
         return Task.CompletedTask;
     }
 
+    public Task<bool> ReconcileAsync(Guid agentId, CancellationToken cancellationToken) => Task.FromResult(true);
+
     public Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken) =>
         Task.FromResult(PositionCloseOutcome.NothingOpen);
 

@@ -60,6 +60,24 @@ public interface IPlanOrders
     Task SettleAsync(Guid agentId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reconciles an agent with the exchange, which is the source of truth (FR-BIN-7, FR-BIN-8):
+    /// settles its orders, as <see cref="SettleAsync"/> does, and holds its open position
+    /// against what the account of its user holds. A position that the account no longer holds
+    /// is closed in the records, and one of which it holds less, or more, is written as the
+    /// account holds it, with its protection placed anew where that is for less than is held.
+    /// So what its user does at the exchange by hand is in the records. Every mismatch is said
+    /// in the log and to the user of the agent.
+    /// </summary>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="cancellationToken">Canceled when what asked is stopped. Nothing is begun after that, and nothing is corrected.</param>
+    /// <returns>
+    /// Whether the agent is reconciled: the exchange said what became of each of its orders,
+    /// its account holds its position as the records say now, and nothing of it is left to
+    /// settle. An exchange that gives no answer is no error: the agent is not reconciled yet.
+    /// </returns>
+    Task<bool> ReconcileAsync(Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Closes the open position of an agent at market, for its user (FR-AGT-11, FR-AGT-12): the
     /// stop-loss is taken off the exchange, and the position is closed. When it cannot be
     /// closed, the stop-loss is placed again. An entry at a price that still rests is taken off

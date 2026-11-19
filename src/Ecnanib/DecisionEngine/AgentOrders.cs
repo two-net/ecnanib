@@ -77,6 +77,20 @@ namespace Ecnanib.DecisionEngine;
 /// Risk Guard computed, which are settings of the symbol, and only then the entry is placed.
 /// </para>
 /// <para>
+/// <b>The exchange is the source of truth for what an agent holds</b> (FR-BIN-7, FR-BIN-8). What
+/// reconciles an agent asks about each of its orders, and then holds its open position against
+/// what the account of its user holds: on the Futures market the position of the account in the
+/// symbol, and on the Spot market what the account has of the asset, once nothing that the
+/// agent placed holds it any more. A position that the account no longer holds is closed in the
+/// records, and one of which it holds less, or more, is written as the account holds it. The
+/// same is asked before a position is given up on because its protection cannot be placed, so
+/// that a position which its user closed at the exchange is never closed at market, or said to
+/// be unprotected. The records are corrected only when the exchange has said the same twice,
+/// with the orders of the agent asked about in between, each resting as before: an order of the
+/// agent that was executed a moment ago explains the account, and is no mismatch. Every
+/// mismatch is said in the log and to the user of the agent.
+/// </para>
+/// <para>
 /// <b>What it does for one agent it does one after the other:</b> a cycle, what settles the
 /// orders, and a close of the agent's user take turns. What another instance of the application
 /// does at the same moment is kept apart by the rows: see <see cref="StoredOrders"/>.
@@ -178,6 +192,19 @@ internal sealed class AgentOrders(
         await SettleAsync(agentId, new Pace(cancellationToken, clock));
     }
 
+    public async Task<bool> ReconcileAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        using var turn = await EnterAsync(agentId, cancellationToken);
+
+        var pass = new Pass(compares: true);
+
+        await SettleAsync(agentId, new Pace(cancellationToken, clock), pass);
+
+        // Reconciled: the exchange said what became of each order, what the account holds was
+        // held against the position, and nothing of the agent is left to settle.
+        return pass.Reconciled && await stored.IsSettledAsync(agentId, CancellationToken.None);
+    }
+
     public async Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken)
     {
         using var turn = await EnterAsync(agentId, cancellationToken);
@@ -186,8 +213,10 @@ internal sealed class AgentOrders(
         {
             var pace = new Pace(cancellationToken, clock);
 
-            // First what the exchange has to say: the stop-loss may have been executed already.
-            await SettleAsync(agentId, pace);
+            // First what the exchange has to say: the stop-loss may have been executed already,
+            // and the account may no longer hold the position at all, which its user is then
+            // told, and not that it could not be closed.
+            await SettleAsync(agentId, pace, new Pass(compares: true));
 
             // An entry that still rests would open a position after this: it is taken off. What
             // was executed of it by then is a position, which is closed below.
@@ -1041,6 +1070,20 @@ internal sealed class AgentOrders(
                 || await ProtectAsync(restored, cycleId, pace, previous: null);
         }
 
+        // Before the position is given up on, what the account holds of it is asked (FR-BIN-7,
+        // FR-BIN-8): one that its user closed or sold at the exchange is one that no order can
+        // protect. It is corrected in the records, and neither closed at market nor said to be
+        // unprotected. What is left of it is protected as it is held now. It is asked while
+        // what still rests for the position rests: a stop-loss beside a take-profit that the
+        // exchange refused is not taken off for the time that the account is asked twice.
+        var held = await HoldAgainstAccountAsync(open, pace);
+
+        if (held == Held.Corrected)
+        {
+            return await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } corrected
+                || await ProtectAsync(corrected, cycleId, pace, previous: null);
+        }
+
         // What still rests for the position is taken off before it is closed: an order that
         // closes is not begun beside one that rests. When it cannot be taken off, the position
         // is as it was, and what settles the orders tries again.
@@ -1071,6 +1114,7 @@ internal sealed class AgentOrders(
         {
             await TellAsync(
                 open,
+                NotificationType.ProtectionFailure,
                 $"The {what} of the position in {open.Symbol} ({open.Mode}) could not be placed, so the position was closed at market.");
 
             return true;
@@ -1093,6 +1137,7 @@ internal sealed class AgentOrders(
 
             await TellAsync(
                 left,
+                NotificationType.ProtectionFailure,
                 $"The take-profit of the position in {left.Symbol} ({left.Mode}) could not be placed, and the position could not be " +
                 "closed at market either. It is open with its stop-loss, and with no take-profit. Close it with \"Close position " +
                 "now\", or at Binance.");
@@ -1100,9 +1145,21 @@ internal sealed class AgentOrders(
             return true;
         }
 
-        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null })
+        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } unclosed)
         {
             return true;
+        }
+
+        // The exchange took neither the protection nor the close. Where it did not say before
+        // what the account holds, it is asked once more before anybody is alarmed, once what
+        // an order did a moment ago is in what the exchange says of the account: an order that
+        // closed a part of the position is such an order.
+        if (held != Held.AsRecorded
+            && await pace.UntilAsync(clock.GetUtcNow() + ExchangeOrderTimes.FinalAfter)
+            && await HoldAgainstAccountAsync(unclosed, pace) == Held.Corrected)
+        {
+            return await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } corrected
+                || await ProtectAsync(corrected, cycleId, pace, previous: null);
         }
 
         // It is open with no stop-loss, and could not be closed. Its user is told once, an
@@ -1114,6 +1171,7 @@ internal sealed class AgentOrders(
 
             await TellAsync(
                 open,
+                NotificationType.ProtectionFailure,
                 $"The {what} of the position in {open.Symbol} ({open.Mode}) could not be placed, and the position could not be " +
                 "closed at market either. It is open with no stop-loss. Close it with \"Close position now\", or at Binance.");
 
@@ -1290,9 +1348,14 @@ internal sealed class AgentOrders(
         return Placed.Later;
     }
 
-    /// <summary>Settles the orders of an agent with the exchange. See <see cref="IPlanOrders.SettleAsync"/>.</summary>
-    private async Task SettleAsync(Guid agentId, Pace pace)
+    /// <summary>
+    /// Settles the orders of an agent with the exchange. See <see cref="IPlanOrders.SettleAsync"/>.
+    /// A pass that compares also holds the open position of the agent against what the account
+    /// of its user holds, and says what it found: see <see cref="IPlanOrders.ReconcileAsync"/>.
+    /// </summary>
+    private async Task SettleAsync(Guid agentId, Pace pace, Pass? asked = null)
     {
+        var pass = asked ?? new Pass(compares: false);
         var pairs = new HashSet<Guid>();
         var takenOff = false;
 
@@ -1301,12 +1364,16 @@ internal sealed class AgentOrders(
         {
             if (pace.Stopping)
             {
+                pass.Unanswered = true;
+
                 return;
             }
 
             // Being sent now, by another instance of the application: it is that one's.
             if (order.Status == OrderStatus.Sending && clock.GetUtcNow() < order.UpdatedAt + OnItsWay)
             {
+                pass.Unanswered = true;
+
                 return;
             }
 
@@ -1315,25 +1382,58 @@ internal sealed class AgentOrders(
             {
                 if (pairs.Add(pairId) && await stored.PairAsync(pairId, CancellationToken.None) is { } pair)
                 {
-                    await AskPairAsync(pair);
+                    await AskPairAsync(pair, pass);
+
+                    // Both rested, and neither does any more, with nothing of either executed:
+                    // the pair was taken off at the exchange, and by nothing of the service.
+                    if (await stored.PairAsync(pairId, CancellationToken.None) is { } now
+                        && pair.Both.Zip(now.Both).All(both => TakenOffElsewhere(both.First, both.Second)))
+                    {
+                        pass.TakenOff.AddRange(now.Both);
+                    }
                 }
 
                 continue;
             }
 
-            var asked = await AskAsync(order);
+            var heard = await AskAsync(order, pass);
+
+            if (TakenOffElsewhere(order, heard))
+            {
+                pass.TakenOff.Add(heard);
+            }
 
             // An entry that still rests, and is not to rest any longer (FR-BIN-S2).
-            if (asked.Purpose == OrderPurpose.Entry && OrderStatuses.IsResting(asked.Status) && await DueAsync(asked) is { } why)
+            if (heard.Purpose == OrderPurpose.Entry && OrderStatuses.IsResting(heard.Status) && await DueAsync(heard) is { } why)
             {
-                await TakeOffEntryAsync(asked, why);
+                await TakeOffEntryAsync(heard, why);
                 takenOff = true;
             }
         }
 
+        // What the account holds is held against the open position (FR-BIN-7, FR-BIN-8), once
+        // the exchange has said what became of every order: on the Futures market, where the
+        // account has one position in the symbol, which is the agent's. On the Spot market the
+        // orders that protect a position hold what it holds, so there is nothing to compare
+        // while they rest: see ProtectAsync for when they do not.
+        if (pass.Compares && await stored.OpenPositionAsync(agentId, CancellationToken.None) is { Market: Market.Futures } compared)
+        {
+            // A position whose stop-loss does not rest is protected first, below, and held
+            // against the account with the next pass: an account that differs is asked a second
+            // time, a while later, and no position waits that long for its stop-loss. What
+            // protects it asks the account itself before it gives the position up.
+            var protects = (await stored.LiveOrdersAsync(agentId, CancellationToken.None)).Any(order =>
+                order.Purpose == OrderPurpose.StopLoss && order.PositionId == compared.Id && order.Status == OrderStatus.Open);
+
+            pass.Verdict = pass.Unanswered || pace.Stopping || !protects
+                ? Held.NotSaid
+                : await HoldAgainstAccountAsync(compared, pace, pass);
+        }
+
         // What an entry that was taken off has bought is protected also when what asked is
-        // being stopped: no entry is left without protection (NFR-REL-5).
-        if (pace.Stopping && !takenOff)
+        // being stopped: no entry is left without protection (NFR-REL-5). So is a position
+        // whose protection was taken off to be placed anew for all that the account holds.
+        if (pace.Stopping && !takenOff && !pass.TookProtectionOff)
         {
             return;
         }
@@ -1358,6 +1458,28 @@ internal sealed class AgentOrders(
             && Unprotected(position, await stored.LiveOrdersAsync(agentId, CancellationToken.None)))
         {
             await ProtectAsync(position, cycleId: null, pace, previous: null);
+        }
+
+        // An order that protected the position and no longer rested at the exchange, with
+        // nothing of it executed, is a mismatch too (FR-BIN-7): the records said that it rests.
+        // It is said once the position has its protection again, which is what follows from it.
+        if (pass.TakenOff.Count > 0
+            && await stored.OpenPositionAsync(agentId, CancellationToken.None) is { } protectedAgain
+            && pass.TakenOff.All(gone => gone.PositionId == protectedAgain.Id))
+        {
+            var what = (pass.TakenOff.Any(order => order.Purpose == OrderPurpose.StopLoss),
+                    pass.TakenOff.Any(order => order.Purpose == OrderPurpose.TakeProfit)) switch
+                {
+                    (true, true) => "The stop-loss and the take-profit",
+                    (true, false) => "The stop-loss",
+                    _ => "The take-profit",
+                };
+
+            await MismatchAsync(
+                protectedAgain,
+                Mismatch.ProtectionTakenOff,
+                $"{what} of the position in {protectedAgain.Symbol} ({protectedAgain.Mode}) no longer rested at Binance, with nothing " +
+                "of it executed, where the records said that it rests. The position is open, so the service places its protection again.");
         }
 
         // The executions of the orders that are over, where they are not stored yet.
@@ -1643,7 +1765,14 @@ internal sealed class AgentOrders(
     /// An order of a pair is never sent alone: see <see cref="AskPairAsync"/>.
     /// </summary>
     /// <returns>The order as it is stored after that.</returns>
-    private async Task<Order> AskAsync(Order order) => await HeardAsync(order, await FindAsync(order));
+    private async Task<Order> AskAsync(Order order, Pass? pass = null)
+    {
+        var said = await FindAsync(order);
+
+        pass?.Heard(said);
+
+        return await HeardAsync(order, said);
+    }
 
     /// <summary>Writes what the exchange said when it was asked about an order, and does what follows from it.</summary>
     /// <param name="order">The order that was asked about.</param>
@@ -1729,10 +1858,13 @@ internal sealed class AgentOrders(
     /// unprotected when the pair ends, and a second pair would be placed for what the agent no
     /// longer holds, which could sell what else the account holds (FR-BIN-S3).
     /// </remarks>
-    private async Task AskPairAsync(OrderPair pair)
+    private async Task AskPairAsync(OrderPair pair, Pass? pass = null)
     {
         if (pair.Both.All(order => OrderStatuses.IsUnsettled(order.Status)))
         {
+            // Not known whether the exchange has it: what it holds for the agent is not known either.
+            pass?.Heard(null);
+
             await AskUnsaidPairAsync(pair);
 
             return;
@@ -1744,7 +1876,10 @@ internal sealed class AgentOrders(
         {
             if (OrderStatuses.IsLive(order.Status))
             {
-                heard.Add((order, await FindAsync(order)));
+                var said = await FindAsync(order);
+
+                pass?.Heard(said);
+                heard.Add((order, said));
             }
         }
 
@@ -2062,6 +2197,350 @@ internal sealed class AgentOrders(
             now.Status,
             now.ExchangeOrderId);
 
+    /// <summary>
+    /// Holds an open position against what the account of its user holds, as the exchange says
+    /// it, and corrects the records where the two differ (FR-BIN-7, FR-BIN-8). The exchange is
+    /// the source of truth, and it is believed only once it is certain what it said.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Closing the records of a position that is open would take its stop-loss off the exchange.
+    /// So nothing is compared while an order of the agent could explain what the account says:
+    /// while the position is newer than an order takes to arrive, while an order of the agent
+    /// was executed that recently, and while anything is under way but the orders that protect
+    /// the position, each resting with nothing executed.
+    /// </para>
+    /// <para>
+    /// And an account that differs is asked a second time, no sooner than an order takes to
+    /// arrive after the first. In between every order of the agent is asked about, and each
+    /// must answer that it rests as it did. Only the same difference twice is a mismatch. An
+    /// account that cannot be read says nothing, and stops nothing that protects a position.
+    /// </para>
+    /// </remarks>
+    /// <param name="position">The position, which is open.</param>
+    /// <param name="pace">Whether what asks is being stopped: then nothing is waited for, and nothing is corrected.</param>
+    /// <param name="pass">The pass that asks, which is told when the protection of the position was taken off, or null.</param>
+    /// <returns>What the comparison came to.</returns>
+    private async Task<Held> HoldAgainstAccountAsync(Position position, Pace pace, Pass? pass = null)
+    {
+        var now = clock.GetUtcNow();
+
+        if (now < position.OpenedAt + ExchangeOrderTimes.FinalAfter
+            || await stored.ExecutedSinceAsync(position.AgentId, now - ExchangeOrderTimes.FinalAfter, CancellationToken.None))
+        {
+            return Held.NotSaid;
+        }
+
+        var live = await stored.LiveOrdersAsync(position.AgentId, CancellationToken.None);
+
+        if (!live.All(order => RestsUntouched(order, position)))
+        {
+            return Held.NotSaid;
+        }
+
+        if (await AccountHoldsAsync(position) is not { } first)
+        {
+            return Held.NotSaid;
+        }
+
+        if (first.Quantity == position.Quantity)
+        {
+            return Held.AsRecorded;
+        }
+
+        logger.LogInformation(
+            "The account of agent {AgentId} does not hold in {Symbol} what the records say, as the exchange says it: it is asked " +
+            "once more before the records are corrected",
+            position.AgentId,
+            position.Symbol);
+
+        // What an order did a moment ago is in what the exchange says of the order by then.
+        if (!await pace.UntilAsync(clock.GetUtcNow() + ExchangeOrderTimes.FinalAfter))
+        {
+            return Held.NotSaid;
+        }
+
+        var asked = await stored.LiveOrdersAsync(position.AgentId, CancellationToken.None);
+
+        if (asked.Count != live.Count || !await RestAsBeforeAsync(asked))
+        {
+            return Held.NotSaid;
+        }
+
+        // The rows as they are after the exchange was asked: a write names them as they are.
+        var resting = await stored.LiveOrdersAsync(position.AgentId, CancellationToken.None);
+
+        if (await stored.PositionAsync(position.Id, CancellationToken.None) is not { ClosedAt: null } still
+            || still.Quantity != position.Quantity
+            || resting.Count != asked.Count
+            || !resting.All(order => RestsUntouched(order, still)))
+        {
+            return Held.NotSaid;
+        }
+
+        if (await AccountHoldsAsync(still) is not { } second || second.Quantity != first.Quantity)
+        {
+            return Held.NotSaid;
+        }
+
+        // Nothing is corrected for what is being stopped: taking the protection of a position
+        // off is nothing to begin as the application stops.
+        if (pace.Stopping)
+        {
+            return Held.NotSaid;
+        }
+
+        return await CorrectAsync(still, resting, second, pass);
+    }
+
+    /// <summary>
+    /// Writes a position as the account of its user holds it, and says the mismatch in the log
+    /// and to its user. A position that the account holds more of has its protection taken off
+    /// first, and is written only once that is gone: what protects it anew is for all of it.
+    /// </summary>
+    /// <returns>That the records were corrected, or that nothing was written: something of the agent moved meanwhile.</returns>
+    private async Task<Held> CorrectAsync(Position position, IReadOnlyList<Order> resting, AccountHolds holds, Pass? pass)
+    {
+        var spot = position.Market == Market.Spot;
+        var side = position.Side == PositionSide.Long ? "long" : "short";
+        var said = Written(position.Quantity);
+
+        if (holds.Quantity <= 0m)
+        {
+            if (!await stored.ClosedAtExchangeAsync(position, resting, holds.Beside, CancellationToken.None))
+            {
+                return Held.NotSaid;
+            }
+
+            await MismatchAsync(
+                position,
+                Mismatch.PositionClosed,
+                spot
+                    ? $"Your Binance account no longer holds what the position in {position.Symbol} ({position.Mode}) held: it was " +
+                      "sold or moved at Binance, and by no order of the agent. The records of the agent now say that the position is closed."
+                    : $"Your Binance account no longer holds the {side} position in {position.Symbol} ({position.Mode}): it was closed " +
+                      "at Binance, and by no order of the agent. The records of the agent now say that it is closed, and what still " +
+                      "rests of its stop-loss and its take-profit is taken off the exchange.");
+
+            return Held.Corrected;
+        }
+
+        if (holds.Quantity < position.Quantity)
+        {
+            if (!await stored.HeldAsync(position, holds.Quantity, holds.EntryPrice, resting, holds.Beside, CancellationToken.None))
+            {
+                return Held.NotSaid;
+            }
+
+            await MismatchAsync(
+                position,
+                Mismatch.PositionReduced,
+                spot
+                    ? $"Your Binance account holds less than the position in {position.Symbol} ({position.Mode}) held: " +
+                      $"{Written(holds.Quantity)} can be ordered of it, where the records of the agent said {said}. The rest was sold " +
+                      $"or moved at Binance, and by no order of the agent. The records now say {Written(holds.Quantity)}."
+                    : $"Your Binance account holds {Written(holds.Quantity)} in the {side} position in {position.Symbol} " +
+                      $"({position.Mode}), where the records of the agent said {said}: it was reduced at Binance, and by no order of " +
+                      $"the agent. The records now say {Written(holds.Quantity)}.");
+
+            return Held.Corrected;
+        }
+
+        // More than the records said. What protects the position is for what the records said,
+        // so it is taken off, and placed anew by whoever asked, for all that is held: the pass
+        // is told, so that it protects the position whatever becomes of the write.
+        if (resting.Count > 0)
+        {
+            if (pass is not null)
+            {
+                pass.TookProtectionOff = true;
+            }
+
+            if (!await TakeOffProtectionAsync(position))
+            {
+                return Held.NotSaid;
+            }
+        }
+
+        if (!await stored.HeldAsync(position, holds.Quantity, holds.EntryPrice, live: [], holds.Beside, CancellationToken.None))
+        {
+            return Held.NotSaid;
+        }
+
+        await MismatchAsync(
+            position,
+            Mismatch.PositionGrown,
+            $"Your Binance account holds {Written(holds.Quantity)} in the {side} position in {position.Symbol} ({position.Mode}), " +
+            $"where the records of the agent said {said}: it was added to at Binance, and by no order of the agent. The records now " +
+            $"say {Written(holds.Quantity)}, the agent manages all of it, and its stop-loss and its take-profit are placed anew for all of it.");
+
+        return Held.Corrected;
+    }
+
+    /// <summary>
+    /// What the account of a position's user holds of the position, as the exchange says it, or
+    /// null when it did not say, or what it said cannot be told apart from what else the account
+    /// holds.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// On the Futures market an account in one-way mode has one position in a symbol, and a
+    /// user has one agent that holds one there: what the account holds on the side of the
+    /// position is the position, and nothing where it holds the other side.
+    /// </para>
+    /// <para>
+    /// On the Spot market there are no positions: the account has so much of the asset that the
+    /// position holds, with what orders hold of it, and less what the other open positions of
+    /// the user hold of the same asset. An account that has at least what the position holds
+    /// holds the position, whatever else it has. One that has less holds what an order can
+    /// still be for, and nothing of it otherwise (FR-BIN-S3).
+    /// </para>
+    /// </remarks>
+    private async Task<AccountHolds?> AccountHoldsAsync(Position position)
+    {
+        var key = await keys.ExchangeKeyAsync(position.UserId, position.Mode, CancellationToken.None);
+
+        if (key.Outcome != KeyHandOverOutcome.Handed)
+        {
+            return null;
+        }
+
+        if (position.Market == Market.Futures)
+        {
+            var read = await account.GetFuturesPositionAsync(
+                position.UserId, position.Mode, key.ApiKey!, key.SecretKey!, position.Symbol, CancellationToken.None);
+
+            if (read.Outcome != ExchangeCallOutcome.Succeeded)
+            {
+                await NotReadAsync(position, read.Outcome);
+
+                return null;
+            }
+
+            var held = position.Side == PositionSide.Long ? read.Quantity : -read.Quantity;
+
+            return held > 0m ? new AccountHolds(held, read.EntryPrice, Beside: null) : new AccountHolds(0m, null, Beside: null);
+        }
+
+        // The assets of the symbols, which the gateway reads once for everyone (FR-BIN-3).
+        var listing = await market.GetSymbolsAsync(position.Market, position.Mode, CancellationToken.None);
+
+        if (listing.Outcome != ExchangeCallOutcome.Succeeded
+            || listing.Symbols.FirstOrDefault(listed => listed.Symbol == position.Symbol) is not { } symbol)
+        {
+            return null;
+        }
+
+        // What the other open positions of the user hold of the same asset is not this one's.
+        // They are kept as they were read: the records are corrected only while they still
+        // hold that, for two positions that share an asset are compared against each other.
+        var elsewhere = 0m;
+        var beside = new List<(Guid Id, decimal Quantity)>();
+
+        foreach (var other in await stored.OpenPositionsAsync(position.UserId, position.Mode, position.Market, CancellationToken.None))
+        {
+            if (other.Id == position.Id)
+            {
+                continue;
+            }
+
+            beside.Add((other.Id, other.Quantity));
+
+            if (listing.Symbols.FirstOrDefault(listed => listed.Symbol == other.Symbol) is not { } its)
+            {
+                // Of which asset it is, is not known: what the account has cannot be told apart.
+                return null;
+            }
+
+            if (its.BaseAsset == symbol.BaseAsset)
+            {
+                elsewhere += other.Quantity;
+            }
+        }
+
+        var balances = await account.GetBalancesAsync(
+            position.UserId, position.Market, position.Mode, key.ApiKey!, key.SecretKey!, CancellationToken.None);
+
+        if (balances.Outcome != ExchangeCallOutcome.Succeeded)
+        {
+            await NotReadAsync(position, balances.Outcome);
+
+            return null;
+        }
+
+        // With what orders hold of it: an order that was taken off a moment ago may not have
+        // let go of it yet, and that is no sale.
+        var has = (balances.Balances.FirstOrDefault(balance => balance.Asset == symbol.BaseAsset)?.Total ?? 0m) - elsewhere;
+
+        if (has >= position.Quantity)
+        {
+            return new AccountHolds(position.Quantity, null, beside);
+        }
+
+        var left = Math.Max(has, 0m);
+
+        if (symbol.QuantityStep > 0m)
+        {
+            left = Math.Floor(left / symbol.QuantityStep) * symbol.QuantityStep;
+        }
+
+        // What is left is a position while an order can be for it, at what the symbol trades at now.
+        var price = await market.GetPriceAsync(position.Market, position.Mode, position.Symbol, CancellationToken.None);
+        var last = price is { Outcome: ExchangeCallOutcome.Succeeded, Price: { } traded } ? traded : position.EntryPrice;
+
+        return new AccountHolds(CanBeOrdered(symbol, left, last) ? left : 0m, null, beside);
+    }
+
+    /// <summary>Says that the account of a position could not be read, and has a credential that the exchange refused checked again.</summary>
+    private async Task NotReadAsync(Position position, ExchangeCallOutcome outcome)
+    {
+        logger.LogWarning(
+            "What the account of agent {AgentId} holds in {Symbol} could not be read: {ExchangeCallOutcome}",
+            position.AgentId,
+            position.Symbol,
+            outcome);
+
+        if (outcome == ExchangeCallOutcome.AuthenticationFailed)
+        {
+            await RecheckKeyAsync(position.UserId, position.Mode);
+        }
+    }
+
+    /// <summary>
+    /// Asks the exchange about each order of an agent that is not over, writes what it said, and
+    /// says whether each answered that it rests as the records say: under the number that it
+    /// had, with nothing of it executed. An order that did not answer says nothing, and one
+    /// that the exchange triggered or executed is what explains the account.
+    /// </summary>
+    private async Task<bool> RestAsBeforeAsync(IReadOnlyList<Order> live)
+    {
+        var all = true;
+
+        foreach (var order in live)
+        {
+            var said = await FindAsync(order);
+
+            await HeardAsync(order, said);
+
+            all &= said is { Outcome: ExchangeOrderOutcome.Answered, Order: { Status: ExchangeOrderStatus.Open, ExecutedQuantity: 0m } there }
+                && (order.ExchangeOrderId is null || order.ExchangeOrderId == there.ExchangeOrderId);
+        }
+
+        return all;
+    }
+
+    /// <summary>Says a mismatch between the records of an agent and the exchange, in the log and to the user of the agent (FR-BIN-7).</summary>
+    private async Task MismatchAsync(Position position, Mismatch mismatch, string content)
+    {
+        logger.LogWarning(
+            "The records of agent {AgentId} in {Symbol} did not match the exchange: {Mismatch}. They were corrected",
+            position.AgentId,
+            position.Symbol,
+            mismatch);
+
+        await TellAsync(position, NotificationType.ReconciliationMismatch, content);
+    }
+
     /// <summary>Asks the exchange about an order, or gives nothing when the key of its user is not there.</summary>
     private async Task<ExchangeOrderResult?> FindAsync(Order order)
     {
@@ -2121,12 +2600,11 @@ internal sealed class AgentOrders(
     }
 
     /// <summary>Tells the user of a position what became of it. That it could not be told is said, and stops nothing.</summary>
-    private async Task TellAsync(Position position, string content)
+    private async Task TellAsync(Position position, NotificationType type, string content)
     {
         try
         {
-            await notifications.RaiseAsync(
-                position.UserId, NotificationType.ProtectionFailure, position.AgentId, content, CancellationToken.None);
+            await notifications.RaiseAsync(position.UserId, type, position.AgentId, content, CancellationToken.None);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
@@ -2220,8 +2698,113 @@ internal sealed class AgentOrders(
     private static Fill RowOf(Order order, ExchangeFill fill) => new(
         Guid.CreateVersion7(), order.Id, order.UserId, fill.TradeId, fill.Price, fill.Quantity, fill.Fee, fill.FeeAsset, fill.At);
 
+    /// <summary>
+    /// Whether an order protects a position and rests as it was placed: a stop-loss or a
+    /// take-profit of its own, of no pair, with nothing of it executed. While every order of an
+    /// agent that is not over is such an order, nothing of the agent is under way that could
+    /// change what its account holds.
+    /// </summary>
+    private static bool RestsUntouched(Order order, Position position) =>
+        order.Purpose is OrderPurpose.StopLoss or OrderPurpose.TakeProfit
+        && order.PairId is null
+        && order.PositionId == position.Id
+        && order.Status == OrderStatus.Open
+        && order.ExecutedQuantity == 0m;
+
+    /// <summary>
+    /// Whether an order that protected a position rested, as the records said, and was found
+    /// over with nothing of it executed, when the exchange was asked about it: taken off at the
+    /// exchange, and by nothing that asked just now.
+    /// </summary>
+    private static bool TakenOffElsewhere(Order before, Order after) =>
+        before.Purpose is OrderPurpose.StopLoss or OrderPurpose.TakeProfit
+        && before.Status == OrderStatus.Open
+        && after.Status is OrderStatus.Canceled or OrderStatus.Expired
+        && after.ExecutedQuantity == 0m;
+
     /// <summary>The prices of the protection of a position: its stop-loss, and its take-profit when it names one.</summary>
     private readonly record struct Protection(decimal StopLoss, decimal? TakeProfit);
+
+    /// <summary>
+    /// What the account of a user holds of a position, as the exchange says it.
+    /// </summary>
+    /// <param name="Quantity">How much, on the side of the position: nothing where the account holds none of it, or the other side.</param>
+    /// <param name="EntryPrice">The average price that it was entered at, where the exchange says one.</param>
+    /// <param name="Beside">
+    /// The other open positions of the user that share what the account holds with this one, on
+    /// the Spot market, each with what it held when the account was read: what this one holds
+    /// was worked out against them. Null where a position shares nothing, on the Futures market.
+    /// </param>
+    private readonly record struct AccountHolds(decimal Quantity, decimal? EntryPrice, IReadOnlyList<(Guid Id, decimal Quantity)>? Beside);
+
+    /// <summary>What holding a position against the account of its user came to.</summary>
+    private enum Held
+    {
+        /// <summary>There was nothing to hold against the account: no open position, or one that its orders hold.</summary>
+        NothingToCompare,
+
+        /// <summary>The account holds the position as the records say.</summary>
+        AsRecorded,
+
+        /// <summary>The account held it otherwise, twice, and the records were corrected.</summary>
+        Corrected,
+
+        /// <summary>
+        /// The exchange did not say, or it is not certain what it said: an order of the agent may
+        /// explain the account, the account was not read, or it said something else the second time.
+        /// </summary>
+        NotSaid,
+    }
+
+    /// <summary>How the records of an agent differed from the exchange, as the log says it.</summary>
+    private enum Mismatch
+    {
+        /// <summary>The account no longer held the position.</summary>
+        PositionClosed,
+
+        /// <summary>The account held less of the position.</summary>
+        PositionReduced,
+
+        /// <summary>The account held more of the position.</summary>
+        PositionGrown,
+
+        /// <summary>An order that protected the position no longer rested at the exchange, with nothing of it executed.</summary>
+        ProtectionTakenOff,
+    }
+
+    /// <summary>
+    /// What one pass over the orders of an agent is asked beside settling them, and what it found.
+    /// </summary>
+    /// <param name="compares">Whether the open position of the agent is held against what the account of its user holds.</param>
+    private sealed class Pass(bool compares)
+    {
+        public bool Compares => compares;
+
+        /// <summary>Whether the exchange did not say what became of an order of the agent, or the pass was cut short.</summary>
+        public bool Unanswered { get; set; }
+
+        /// <summary>What holding the position against the account came to.</summary>
+        public Held Verdict { get; set; } = Held.NothingToCompare;
+
+        /// <summary>The orders that protected the position and were found taken off at the exchange.</summary>
+        public List<Order> TakenOff { get; } = [];
+
+        /// <summary>
+        /// Whether the pass took the protection of the position off itself, to place it anew for
+        /// all that the account holds: the position is protected before the pass ends, whatever
+        /// else becomes of it.
+        /// </summary>
+        public bool TookProtectionOff { get; set; }
+
+        /// <summary>
+        /// Whether the agent is reconciled, as far as this pass says: the exchange answered for
+        /// every order, and the account holds the position as the records say now.
+        /// </summary>
+        public bool Reconciled => !Unanswered && Verdict != Held.NotSaid;
+
+        /// <summary>Takes how a question about an order ended: only an answer of the exchange about the order is one.</summary>
+        public void Heard(ExchangeOrderResult? said) => Unanswered |= said?.Outcome != ExchangeOrderOutcome.Answered;
+    }
 
     /// <summary>What became of placing an order that protects a position.</summary>
     private enum Placed

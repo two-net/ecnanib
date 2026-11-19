@@ -130,8 +130,9 @@ internal sealed class StoredHoldings(IDbContextFactory<EcnanibDbContext> context
 /// it. That is what keeps a restart from placing an order twice.
 /// </para>
 /// <para>
-/// It answers from the rows, at once. What settles the orders is a job of its own, and what
-/// compares everything that an account holds with the records is not built.
+/// It answers from the rows, at once. What settles the orders is a job of its own, and so is
+/// what holds the records against what the account holds, which answers beside this: see
+/// <see cref="ReconciledSinceStart"/>.
 /// </para>
 /// </remarks>
 internal sealed class OrderReconciliation(StoredOrders stored) : IReconciliation

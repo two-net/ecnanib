@@ -41,6 +41,14 @@ public class TrackedFileTests
         Assert.Equal(new Uri("https://demo-api.binance.com"), settings.Binance.BaseUrl(Market.Spot, TradingMode.Demo));
         Assert.Equal(new Uri("https://fapi.binance.com"), settings.Binance.BaseUrl(Market.Futures, TradingMode.Live));
         Assert.Equal(new Uri("https://demo-fapi.binance.com"), settings.Binance.BaseUrl(Market.Futures, TradingMode.Demo));
+
+        // Binance's own addresses of its account event feeds, each reached over TLS (FR-BIN-7):
+        // its WebSocket API on the Spot market, and the address that its user data streams are
+        // under on the Futures market.
+        Assert.Equal(new Uri("wss://ws-api.binance.com:443/ws-api/v3"), settings.Binance.FeedUrl(Market.Spot, TradingMode.Live));
+        Assert.Equal(new Uri("wss://demo-ws-api.binance.com:443/ws-api/v3"), settings.Binance.FeedUrl(Market.Spot, TradingMode.Demo));
+        Assert.Equal(new Uri("wss://fstream.binance.com/private"), settings.Binance.FeedUrl(Market.Futures, TradingMode.Live));
+        Assert.Equal(new Uri("wss://demo-fstream.binance.com/private"), settings.Binance.FeedUrl(Market.Futures, TradingMode.Demo));
         Assert.Equal(70, settings.Binance.LimitSharePercent);
         Assert.Equal(5, settings.Binance.ReconcileMinutes);
 

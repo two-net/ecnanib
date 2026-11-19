@@ -12,10 +12,12 @@ namespace Ecnanib.DecisionEngine;
 /// What settles the orders answers here: an agent that has an order of which it is not known
 /// whether the exchange has it, or an open position without a stop-loss that rests, is not
 /// reconciled, and gets no cycle until that is settled. So a restart places no order twice
-/// (NFR-REL-3). See "Settling" in docs/orders.md. What compares everything that an account
-/// holds with the records, at the start and on a schedule, is not built: it answers here as
-/// well, when it is, and an agent passes when every one that answers says so. Where nothing
-/// answers, every agent passes.
+/// (NFR-REL-3). See "Settling" in docs/orders.md. What holds the records of an agent against
+/// what the account of its user holds, at the start and on a schedule (FR-BIN-7), answers here
+/// as well: an agent that holds something from before this instance took up the background
+/// work is not reconciled until the exchange was asked about it. See "Reconciling" in
+/// docs/orders.md. An agent passes when every one that answers says so. Where nothing answers,
+/// every agent passes.
 /// </para>
 /// <para>
 /// It is asked for one agent, as the turn of its cycle comes, and answers at once. An agent that

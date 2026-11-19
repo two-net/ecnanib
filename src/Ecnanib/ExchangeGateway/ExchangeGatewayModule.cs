@@ -43,6 +43,14 @@ public static class ExchangeGatewayModule
         services.AddSingleton<IExchangeClock>(provider => provider.GetRequiredService<BinanceClock>());
         services.AddBackgroundJob<BinanceClockJob>();
 
+        // The account event feed: Binance says what changes in the account of a user as it
+        // happens, where the configuration file names the address of the feed (FR-BIN-7). It is
+        // one object, which holds the connections in memory, as the limiter counts. It follows
+        // an account when it is asked to, with the credential that comes with the call, so it
+        // has no job: what keeps the orders and the positions asks, and takes the changes.
+        services.AddSingleton<BinanceFeed>();
+        services.AddSingleton<IExchangeAccountFeed>(provider => provider.GetRequiredService<BinanceFeed>());
+
         // The market data, which is read once and shared by all who need it, because every read
         // costs of the one budget (FR-BIN-3). It is one object, which holds what was read in
         // memory for as long as it counts, and nothing in the database (NFR-DAT-6). It reads

@@ -136,6 +136,14 @@ public enum ExitReason
 
     /// <summary>Its take-profit was executed (FR-BIN-S2).</summary>
     TakeProfit,
+
+    /// <summary>
+    /// The account of its user no longer held it, as the exchange said when it was asked: it
+    /// was closed at the exchange, by its user or by the exchange, and by no order of the agent
+    /// (FR-BIN-7, FR-BIN-8). An order of the agent that is found executed later says the reason
+    /// in its place.
+    /// </summary>
+    ClosedAtExchange,
 }
 
 internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>

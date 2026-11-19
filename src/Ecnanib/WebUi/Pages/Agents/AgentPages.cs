@@ -281,6 +281,7 @@ public static class AgentPages
         NotificationType.EntrySkipped => "Entry skipped",
         NotificationType.AttentionRequired => "Agent needs attention",
         NotificationType.LiquidationWarning => "Liquidation warning",
+        NotificationType.ReconciliationMismatch => "Reconciliation mismatch",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "The type has no description."),
     };
 

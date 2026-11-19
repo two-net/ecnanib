@@ -37,6 +37,12 @@ namespace Ecnanib.Tests.ExchangeGateway;
 /// (FR-BIN-S2).
 /// </para>
 /// <para>
+/// One test follows the account event feed of each market in the test environment, places a stop
+/// far from the price, and takes it off: it settles that Binance serves the feeds at the
+/// addresses of the tracked file, takes the subscription of the Spot market with the credential
+/// alone, and names the symbol of an event where the gateway looks for it (FR-BIN-7).
+/// </para>
+/// <para>
 /// They also settle what Binance's documentation leaves open: that one credential of the test
 /// environment works at the addresses of both its markets, how each address answers a
 /// credential that it does not know, and under which name an answer says what Binance has
@@ -374,6 +380,96 @@ public class LiveBinanceTests
 
         Assert.Equal(ExchangeOrderOutcome.Answered, after.Outcome);
         Assert.Equal((ExchangeOrderStatus.Canceled, 0m), (after.Order!.Status, after.Order.ExecutedQuantity));
+    }
+
+    [Theory]
+    [InlineData(Market.Spot)]
+    [InlineData(Market.Futures)]
+    public async Task The_account_event_feed_of_the_test_environment_says_when_an_order_of_the_account_changes(Market market)
+    {
+        // In the test environment only: no test places an order with real funds.
+        const TradingMode mode = TradingMode.Demo;
+
+        var (apiKey, secretKey) = GivenFor(mode);
+        using var application = OnTheNetwork();
+        var data = application.Services.GetRequiredService<IExchangeMarketData>();
+        var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var feed = application.Services.GetRequiredService<IExchangeAccountFeed>();
+
+        // The tracked file names the address of the feed of each market in each environment.
+        Assert.True(feed.IsAvailable(market, mode));
+
+        // Binance takes the account to be followed with the credential alone: on the Spot
+        // market with one signed request on its WebSocket API, and on the Futures market with
+        // a stream that the API key begins, which is read under the address of the file.
+        Assert.Equal(
+            ExchangeFeedOutcome.Following,
+            await feed.FollowAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken));
+        Assert.Equal(ExchangeFeedState.Followed, feed.StateOf(BinanceCalls.User, market, mode));
+
+        // That the feed began is a change of everything in the account.
+        Assert.Equal(new ExchangeAccountChange(BinanceCalls.User, market, mode, Symbol: null), await SaidAsync(feed));
+
+        var price = await data.GetPriceAsync(market, mode, TrackedSymbol, TestContext.Current.CancellationToken);
+        var symbols = await data.GetSymbolsAsync(market, mode, TestContext.Current.CancellationToken);
+        var symbol = Assert.Single(symbols.Symbols, listed => listed.Symbol == TrackedSymbol);
+
+        // A stop that buys a tenth above the price, as in the test of the stops: it rests, and
+        // opens nothing. On the Futures market it is a conditional order.
+        var trigger = Math.Floor(price.Price!.Value * 1.1m / symbol.PriceStep) * symbol.PriceStep;
+        var quantity = Math.Max(symbol.MinQuantity, Math.Ceiling(2m * symbol.MinValue / trigger / symbol.QuantityStep) * symbol.QuantityStep);
+        var id = Guid.CreateVersion7().ToString("N");
+        var which = new ExchangeOrderRef(id, TrackedSymbol, ExchangeOrderType.Stop);
+
+        var placed = await orders.PlaceAsync(
+            BinanceCalls.User,
+            market,
+            mode,
+            apiKey,
+            secretKey,
+            new ExchangeOrderRequest(id, TrackedSymbol, ExchangeOrderSide.Buy, ExchangeOrderType.Stop, quantity, trigger, Closes: false),
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            Assert.Equal(ExchangeOrderOutcome.Answered, placed.Outcome);
+
+            // The feed says that something of the symbol changed in the account, and says which
+            // symbol: the event of an order names it where the gateway looks for it.
+            Assert.Equal(new ExchangeAccountChange(BinanceCalls.User, market, mode, TrackedSymbol), await SaidAsync(feed));
+        }
+        finally
+        {
+            // Taken off whatever the test found, so that nothing of it rests at Binance.
+            await orders.CancelAsync(BinanceCalls.User, market, mode, apiKey, secretKey, which, CancellationToken.None);
+        }
+
+        // And it says so again when the order is taken off.
+        Assert.Equal(new ExchangeAccountChange(BinanceCalls.User, market, mode, TrackedSymbol), await SaidAsync(feed));
+
+        // The account is followed still, on the connection that it was.
+        Assert.Equal(ExchangeFeedState.Followed, feed.StateOf(BinanceCalls.User, market, mode));
+
+        // The first change that the feed says within a few seconds. What it said more of the
+        // same moment is taken with it, and is the same change.
+        static async Task<ExchangeAccountChange> SaidAsync(IExchangeAccountFeed feed)
+        {
+            var began = System.Diagnostics.Stopwatch.GetTimestamp();
+
+            while (System.Diagnostics.Stopwatch.GetElapsedTime(began) < TimeSpan.FromSeconds(20))
+            {
+                var said = await feed.TakeAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+                if (said.Count > 0)
+                {
+                    return Assert.Single(said.Distinct());
+                }
+            }
+
+            Assert.Fail("The feed said nothing within 20 seconds.");
+
+            return null!;
+        }
     }
 
     [Fact]

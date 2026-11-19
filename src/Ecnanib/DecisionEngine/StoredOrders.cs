@@ -191,6 +191,134 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
     }
 
     /// <summary>
+    /// The agents of all users that hold something which is reconciled with the exchange, in the
+    /// order of their ids: one with an open position, and one with an order that is not over
+    /// (FR-BIN-7). An agent that holds neither has nothing that an account could differ from.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> ToReconcileAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await Holding(context).OrderBy(id => id).ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The accounts in which an agent holds something, of all users, each once: an account is
+    /// that of a user on a market in an environment. They are the accounts whose event feed is
+    /// followed (FR-BIN-7): what changes in another is nothing that the records could differ from.
+    /// </summary>
+    public async Task<IReadOnlyList<HeldAccount>> AccountsHoldingAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        var ofOrders = context.Set<Order>()
+            .AsNoTracking()
+            .Where(order => OrderStatuses.Live.Contains(order.Status))
+            .Select(order => new { order.UserId, order.Mode, order.Market });
+
+        var ofPositions = context.Set<Position>()
+            .AsNoTracking()
+            .Where(position => position.ClosedAt == null)
+            .Select(position => new { position.UserId, position.Mode, position.Market });
+
+        var accounts = await ofOrders.Union(ofPositions).ToListAsync(cancellationToken);
+
+        return
+        [
+            .. accounts
+                .Select(account => new HeldAccount(account.UserId, account.Mode, account.Market))
+                .OrderBy(account => account.UserId)
+                .ThenBy(account => account.Mode)
+                .ThenBy(account => account.Market),
+        ];
+    }
+
+    /// <summary>
+    /// The agents that hold something in an account, in the order of their ids: an open position
+    /// or an order that is not over, of a user on a market in an environment, in one symbol, or
+    /// in any when none is named.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> HoldingAsync(
+        Guid userId, TradingMode mode, Market market, string? symbol, CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        var ofOrders = context.Set<Order>()
+            .AsNoTracking()
+            .Where(order => OrderStatuses.Live.Contains(order.Status)
+                && order.UserId == userId
+                && order.Mode == mode
+                && order.Market == market
+                && (symbol == null || order.Symbol == symbol))
+            .Select(order => order.AgentId);
+
+        var ofPositions = context.Set<Position>()
+            .AsNoTracking()
+            .Where(position => position.ClosedAt == null
+                && position.UserId == userId
+                && position.Mode == mode
+                && position.Market == market
+                && (symbol == null || position.Symbol == symbol))
+            .Select(position => position.AgentId);
+
+        return await ofOrders.Union(ofPositions).OrderBy(id => id).ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether an agent holds something that was there before a moment: an open position that
+    /// was opened before it, or an order that is not over and was written before it. What an
+    /// agent came to hold later is what the application placed since, and saw placed.
+    /// </summary>
+    public async Task<bool> HeldBeforeAsync(Guid agentId, DateTimeOffset moment, CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await context.Set<Position>()
+                .AsNoTracking()
+                .AnyAsync(position => position.AgentId == agentId && position.ClosedAt == null && position.OpenedAt < moment, cancellationToken)
+            || await context.Set<Order>()
+                .AsNoTracking()
+                .AnyAsync(
+                    order => order.AgentId == agentId && OrderStatuses.Live.Contains(order.Status) && order.CreatedAt < moment,
+                    cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether an order of an agent that is over was executed, in full or in part, and came to
+    /// be over since a moment. What it did to what the account holds may not be in what the
+    /// exchange says of the account yet.
+    /// </summary>
+    public async Task<bool> ExecutedSinceAsync(Guid agentId, DateTimeOffset moment, CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await context.Set<Order>()
+            .AsNoTracking()
+            .AnyAsync(
+                order => order.AgentId == agentId
+                    && order.ExecutedQuantity > 0m
+                    && !OrderStatuses.Live.Contains(order.Status)
+                    && order.UpdatedAt >= moment,
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// The open positions of a user on a market in an environment, of all their agents, in the
+    /// order of their ids. On the Spot market they share what the account holds of an asset.
+    /// </summary>
+    public async Task<IReadOnlyList<Position>> OpenPositionsAsync(
+        Guid userId, TradingMode mode, Market market, CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await context.Set<Position>()
+            .AsNoTracking()
+            .Where(position => position.UserId == userId && position.Mode == mode && position.Market == market && position.ClosedAt == null)
+            .OrderBy(position => position.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// The orders of an agent that protected a position which is closed, and that are not over:
     /// the stop-loss of a position of the Futures market whose take-profit was executed, or the
     /// other way around. The exchange holds the two apart there, and ends neither for the other.
@@ -620,6 +748,15 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
                             .SetProperty(position => position.ExitReason, reason),
                         cancellationToken);
             }
+
+            // A position that was closed because its account no longer held it, of which an
+            // order is now found executed: that order is what closed it, and says why.
+            if (more > 0m && reason is not null)
+            {
+                await context.Set<Position>()
+                    .Where(position => position.Id == positionId && position.ExitReason == DecisionEngine.ExitReason.ClosedAtExchange)
+                    .ExecuteUpdateAsync(row => row.SetProperty(position => position.ExitReason, reason), cancellationToken);
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -946,6 +1083,114 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
             .ExecuteUpdateAsync(row => row.SetProperty(position => position.AlertedAt, (DateTimeOffset?)null), cancellationToken);
     }
 
+    /// <summary>
+    /// Writes that an open position is closed because the account of its user no longer holds
+    /// it, as the exchange said when it was asked (FR-BIN-7, FR-BIN-8). The exchange is the
+    /// source of truth: no order of the agent closed it, so no order says why.
+    /// </summary>
+    /// <remarks>
+    /// It is written under the lock of the account, and only when the position and the orders of
+    /// its agent that are not over still are as they were read, which is as the exchange was
+    /// asked about them: an order that another began or saw executed meanwhile is what explains
+    /// the account, and then nothing is written.
+    /// </remarks>
+    /// <param name="position">The position, as it was read.</param>
+    /// <param name="live">The orders of its agent that are not over, as they were read.</param>
+    /// <param name="beside">
+    /// The other open positions of the user that what the account holds was shared out among,
+    /// each with what it held when the account was read, or null where the position shares
+    /// nothing. Nothing is written when one of them holds something else by now: two positions
+    /// that share an asset are worked out against each other, and the second of two that are
+    /// corrected at the same moment is worked out anew.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether it was written.</returns>
+    public async Task<bool> ClosedAtExchangeAsync(
+        Position position, IReadOnlyList<Order> live, IReadOnlyList<(Guid Id, decimal Quantity)>? beside, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(position);
+        ArgumentNullException.ThrowIfNull(live);
+
+        var now = clock.GetUtcNow();
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        if (!await AsReadAsync(context, position, live, beside, cancellationToken))
+        {
+            return false;
+        }
+
+        // What writes that an order was executed takes no lock of the account: the row is
+        // written only while it still holds what it held.
+        var written = await context.Set<Position>()
+            .Where(row => row.Id == position.Id && row.ClosedAt == null && row.Quantity == position.Quantity)
+            .ExecuteUpdateAsync(
+                row => row
+                    .SetProperty(stored => stored.ClosedAt, (DateTimeOffset?)now)
+                    .SetProperty(stored => stored.ExitReason, (ExitReason?)ExitReason.ClosedAtExchange),
+                cancellationToken);
+
+        if (written != 1)
+        {
+            return false;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Writes what an open position holds, as the exchange said that the account of its user
+    /// holds it (FR-BIN-7, FR-BIN-8): less than the records said, or more. It is written as
+    /// <see cref="ClosedAtExchangeAsync"/> writes, under the same conditions.
+    /// </summary>
+    /// <param name="position">The position, as it was read.</param>
+    /// <param name="quantity">What it holds, which is more than nothing: a position that holds nothing is closed.</param>
+    /// <param name="entryPrice">The average price that it was entered at, as the exchange says it, or null where the exchange says none.</param>
+    /// <param name="live">The orders of its agent that are not over, as they were read.</param>
+    /// <param name="beside">The other open positions of the user that share what the account holds, as they were read, or null.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether it was written.</returns>
+    public async Task<bool> HeldAsync(
+        Position position,
+        decimal quantity,
+        decimal? entryPrice,
+        IReadOnlyList<Order> live,
+        IReadOnlyList<(Guid Id, decimal Quantity)>? beside,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(position);
+        ArgumentNullException.ThrowIfNull(live);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(quantity);
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        if (!await AsReadAsync(context, position, live, beside, cancellationToken))
+        {
+            return false;
+        }
+
+        var written = await context.Set<Position>()
+            .Where(row => row.Id == position.Id && row.ClosedAt == null && row.Quantity == position.Quantity)
+            .ExecuteUpdateAsync(
+                row => row
+                    .SetProperty(stored => stored.Quantity, quantity)
+                    .SetProperty(stored => stored.EntryPrice, entryPrice ?? position.EntryPrice),
+                cancellationToken);
+
+        if (written != 1)
+        {
+            return false;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return true;
+    }
+
     /// <summary>One position, as it is stored now, or null when there is none of that id.</summary>
     public async Task<Position?> PositionAsync(Guid positionId, CancellationToken cancellationToken)
     {
@@ -1065,6 +1310,66 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
     }
 
     /// <summary>
+    /// Whether a position and the orders of its agent that are not over still are as they were
+    /// read, under the lock of the account: the position is open and holds what it held, and the
+    /// orders are those that were read, each as far as it was, with nothing more executed. And
+    /// the other open positions of the user, where what the account holds was shared out among
+    /// them, are those that were read, each holding what it held: the lock is of the account,
+    /// so of all of them. The context holds a transaction.
+    /// </summary>
+    private async Task<bool> AsReadAsync(
+        EcnanibDbContext context,
+        Position position,
+        IReadOnlyList<Order> live,
+        IReadOnlyList<(Guid Id, decimal Quantity)>? beside,
+        CancellationToken cancellationToken)
+    {
+        if (await UnderLockAsync(context, position.Id, cancellationToken) is not { } now || now.Quantity != position.Quantity)
+        {
+            return false;
+        }
+
+        var orders = await LiveOrdersAsync(context, position.AgentId, cancellationToken);
+
+        if (orders.Count != live.Count
+            || !orders.Zip(live).All(both =>
+                both.First.Id == both.Second.Id
+                && both.First.Status == both.Second.Status
+                && both.First.ExecutedQuantity == both.Second.ExecutedQuantity))
+        {
+            return false;
+        }
+
+        if (beside is null)
+        {
+            return true;
+        }
+
+        var others = await context.Set<Position>()
+            .AsNoTracking()
+            .Where(row => row.UserId == position.UserId
+                && row.Mode == position.Mode
+                && row.Market == position.Market
+                && row.ClosedAt == null
+                && row.Id != position.Id)
+            .OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.Quantity })
+            .ToListAsync(cancellationToken);
+
+        return others.Count == beside.Count
+            && others.Zip(beside.OrderBy(other => other.Id)).All(both =>
+                both.First.Id == both.Second.Id && both.First.Quantity == both.Second.Quantity);
+    }
+
+    /// <summary>The agents that hold an open position, or an order that is not over.</summary>
+    private static IQueryable<Guid> Holding(EcnanibDbContext context) =>
+        context.Set<Order>()
+            .AsNoTracking()
+            .Where(order => OrderStatuses.Live.Contains(order.Status))
+            .Select(order => order.AgentId)
+            .Union(context.Set<Position>().AsNoTracking().Where(position => position.ClosedAt == null).Select(position => position.AgentId));
+
+    /// <summary>
     /// The orders that protected a position which is closed, are of no pair, and are not over.
     /// The two orders of a pair are the exchange's to end, as one list.
     /// </summary>
@@ -1141,6 +1446,12 @@ internal sealed record OrderPair(Order StopLoss, Order TakeProfit)
     /// <summary>Both, the stop-loss first.</summary>
     public IReadOnlyList<Order> Both => [StopLoss, TakeProfit];
 }
+
+/// <summary>The account of a user on a market in an environment, in which an agent of theirs holds something.</summary>
+/// <param name="UserId">Whose account.</param>
+/// <param name="Mode">The environment.</param>
+/// <param name="Market">The market.</param>
+internal sealed record HeldAccount(Guid UserId, TradingMode Mode, Market Market);
 
 /// <summary>Why no entry was begun for an agent.</summary>
 public enum EntryRefusal

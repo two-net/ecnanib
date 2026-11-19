@@ -130,7 +130,8 @@ internal sealed class PositionWatch(
     /// <summary>
     /// Checks the margin of an open position, and tells its user when it approaches liquidation
     /// (FR-BIN-F5). Nothing is corrected here: a position that the account does not hold as the
-    /// records say is said, and left to reconciliation.
+    /// records say is said, and left to what reconciles the agent, which corrects the records
+    /// (FR-BIN-7): see <see cref="IPlanOrders.ReconcileAsync"/>.
     /// </summary>
     /// <returns>
     /// Whether the position is one to go on with: the exchange took the key, and the account
@@ -162,7 +163,7 @@ internal sealed class PositionWatch(
         {
             // Most often a position that its stop-loss or its take-profit closed a moment ago,
             // which what settles the orders sees with its next run. Whatever it is, it is left
-            // to that, and to reconciliation.
+            // to that, and to what reconciles the agent, which corrects the records.
             logger.LogInformation(
                 "The account of agent {AgentId} does not hold the {PositionSide} position in {Symbol} that the records say, as the exchange says it: its margin is not checked, and its funding is not read",
                 position.AgentId,

@@ -80,6 +80,13 @@ public enum NotificationType
     /// (FR-BIN-F5). The service adds no margin to a position, so its user is told.
     /// </summary>
     LiquidationWarning,
+
+    /// <summary>
+    /// The records of an agent did not match what the exchange says, and were corrected: the
+    /// account of its user no longer holds the position, or holds less or more of it, or an
+    /// order that protected it no longer rested at the exchange (FR-BIN-7, FR-BIN-8).
+    /// </summary>
+    ReconciliationMismatch,
 }
 
 internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>

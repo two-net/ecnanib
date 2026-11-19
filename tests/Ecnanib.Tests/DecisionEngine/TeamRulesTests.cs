@@ -147,18 +147,19 @@ public class TeamRulesTests
         Assert.Equal(["Ecnanib.DecisionEngine.RoleRuns"], reading);
 
         // The Binance credential of a user is handed to what places the orders of their agent,
-        // and to what watches the position of their agent on the Futures market, which only
-        // reads the exchange (FR-BIN-F4, FR-BIN-F5): with each call, and it is read by those two
-        // alone. Pinned, so that another shows in a review as what it is: one more that is
-        // handed a credential.
+        // to what watches the position of their agent on the Futures market, which only reads
+        // the exchange (FR-BIN-F4, FR-BIN-F5), and to what has the gateway follow the account
+        // event feed of their account, which only reads as well (FR-BIN-7): with each call, and
+        // it is read by those three alone. Pinned, so that another shows in a review as what it
+        // is: one more that is handed a credential.
         Assert.Equal(
-            ["Ecnanib.DecisionEngine.AgentOrders", "Ecnanib.DecisionEngine.PositionWatch"],
+            ["Ecnanib.DecisionEngine.AccountFeed", "Ecnanib.DecisionEngine.AgentOrders", "Ecnanib.DecisionEngine.PositionWatch"],
             DependencyChecker.FindCallersOf(Application, "Ecnanib.Credentials.IKeyHandOver::ExchangeKeyAsync")
                 .Select(caller => caller.Split('+')[0])
                 .Distinct()
                 .Order(StringComparer.Ordinal));
         Assert.Equal(
-            ["Ecnanib.DecisionEngine.AgentOrders", "Ecnanib.DecisionEngine.PositionWatch"],
+            ["Ecnanib.DecisionEngine.AccountFeed", "Ecnanib.DecisionEngine.AgentOrders", "Ecnanib.DecisionEngine.PositionWatch"],
             new[] { "get_ApiKey", "get_SecretKey" }
                 .SelectMany(key => DependencyChecker.FindCallersOf(Application, $"Ecnanib.Credentials.HandedExchangeKey::{key}"))
                 .Select(caller => caller.Split('+')[0])

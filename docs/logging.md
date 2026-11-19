@@ -118,6 +118,7 @@ What the rules cannot recognise is a secret that is not in the configuration fil
 - Keep a secret in a `Secret`, and call `Reveal()` only where it is used.
 - If a secret must be named in an event, name it for what it is, such as `{ApiKey}`. It is then masked.
 - Never log request headers.
+- Never log the address of a connection that names what it is in its path. The key of a stream of Binance's account event feed is in the path of the address that the stream is read at: the gateway logs the host alone. The answer that names the key is a body of an outbound call, which is written at the debug level, where the rule by shape masks it: `"listenKey": "..."`.
 
 `SecretMask.Holds` says whether a text holds a secret beyond doubt: by value, and by the key formats of the AI providers and signed tokens, without the rules that go by a word beside a value. It is asked where a finding refuses something, and masks nothing: what composes a prompt asks it, so that no prompt holds a secret (FR-PRM-9). See [prompts.md](prompts.md).
 

@@ -643,8 +643,8 @@ The outline below shows what the single configuration file contains. Key names a
   },
   "CatalogSync": { "IntervalHours": 24, "MissedSyncsBeforeUnavailable": 2 },
   "Binance": {
-    "Spot": { "Live": { "BaseUrl": "" }, "Demo": { "BaseUrl": "" } },
-    "Futures": { "Live": { "BaseUrl": "" }, "Demo": { "BaseUrl": "" } },
+    "Spot": { "Live": { "BaseUrl": "", "FeedUrl": "" }, "Demo": { "BaseUrl": "", "FeedUrl": "" } },
+    "Futures": { "Live": { "BaseUrl": "", "FeedUrl": "" }, "Demo": { "BaseUrl": "", "FeedUrl": "" } },
     "Symbols": [],
     "OutboundIps": [],
     "LimitSharePercent": 70,

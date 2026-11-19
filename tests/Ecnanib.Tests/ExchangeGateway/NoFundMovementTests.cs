@@ -1,9 +1,11 @@
+using System.Text.Json;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.ExchangeGateway.Trading;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Architecture;
 using Ecnanib.Tests.DecisionEngine;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Ecnanib.Tests.ExchangeGateway;
 
@@ -11,9 +13,10 @@ namespace Ecnanib.Tests.ExchangeGateway;
 /// Ecnanib never withdraws, deposits, or transfers funds, between the Spot and the Futures wallet
 /// of a user included (FR-BIN-9). The gateway has no operation that does: everything it can send
 /// to Binance is a short list of calls that read, of calls about orders, which trade in the
-/// account that the credential is of, and of two calls that set how a symbol of the Futures
-/// market is margined in that account, and every call it makes passes one place. Binance is the
-/// only exchange behind it (FR-BIN-1).
+/// account that the credential is of, of two calls that set how a symbol of the Futures market
+/// is margined in that account, and of two that begin and renew its account event feed, and
+/// every call it makes passes one place. On a feed it sends the one request that subscribes, and
+/// nothing else. Binance is the only exchange behind it (FR-BIN-1).
 /// </summary>
 public class NoFundMovementTests
 {
@@ -79,6 +82,32 @@ public class NoFundMovementTests
         "POST /fapi/v1/marginType",
     ];
 
+    // What the gateway sends to Binance to follow the account event feed of the Futures market
+    // (FR-BIN-7): a call that begins the stream of the events of the account of an API key, and
+    // one that renews it. Each carries the API key alone, and no parameter: it names no order,
+    // no asset, no amount, and no address. On the Spot market the feed is Binance's WebSocket
+    // API, and no call.
+    private static readonly string[] Feed =
+    [
+        "POST /fapi/v1/listenKey",
+        "PUT /fapi/v1/listenKey",
+    ];
+
+    // The one request that the gateway ever sends on a connection of a feed: it subscribes to
+    // the events of an account, on the Spot market. Binance's WebSocket API takes orders as
+    // well, with other requests, which the gateway has no way to send.
+    private const string Subscribes = "userDataStream.subscribe.signature";
+
+    // The same of the account event feed, which only reads.
+    private static readonly string[] FeedOperations =
+    [
+        nameof(IExchangeAccountFeed.FollowAsync),
+        nameof(IExchangeAccountFeed.IsAvailable),
+        nameof(IExchangeAccountFeed.Keep),
+        nameof(IExchangeAccountFeed.StateOf),
+        nameof(IExchangeAccountFeed.TakeAsync),
+    ];
+
     // The operations of the gateway, which the first test asks one by one. An operation that is
     // added is asked there too, so that what it sends is held to the list.
     private static readonly string[] Operations =
@@ -125,15 +154,25 @@ public class NoFundMovementTests
         Assert.Equal(
             MarketDataOperations, typeof(IExchangeMarketData).GetMembers().Select(member => member.Name).Order(StringComparer.Ordinal));
         Assert.Equal(OrderOperations, typeof(IExchangeOrders).GetMembers().Select(member => member.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(FeedOperations, typeof(IExchangeAccountFeed).GetMembers().Select(member => member.Name).Order(StringComparer.Ordinal));
 
         // A Binance that keeps orders, and answers every other call with what its
-        // documentation gives for it.
+        // documentation gives for it, and a server of the test's in place of Binance's account
+        // event feeds, on each market in each environment. The clock is the test's, so that the
+        // renewal of a feed comes when the test says.
         var trading = new TradingBinance();
         var binance = trading.System;
-        using var application = BinanceCalls.Behind(binance);
+        using var feeds = new FeedServer();
+        var clock = new FakeTimeProvider(BinanceCalls.Now);
+        using var application = BinanceCalls.Behind(
+            binance,
+            clock: clock,
+            file: file => BinanceCalls.Pairs.Aggregate(
+                file, (settings, pair) => settings.With($"Binance:{pair.Market}:{pair.Mode}:FeedUrl", feeds.At($"{pair.Market}-{pair.Mode}"))));
         var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
         var marketData = application.Services.GetRequiredService<IExchangeMarketData>();
         var orders = application.Services.GetRequiredService<IExchangeOrders>();
+        var feed = application.Services.GetRequiredService<IExchangeAccountFeed>();
 
         foreach (var mode in new[] { TradingMode.Live, TradingMode.Demo })
         {
@@ -196,21 +235,84 @@ public class NoFundMovementTests
                 BinanceCalls.User, mode, apiKey, secretKey, MarketService.Symbol, BinanceCalls.Now.AddDays(-1), BinanceCalls.Now,
                 TestContext.Current.CancellationToken);
             await orders.SetIsolatedMarginAsync(BinanceCalls.User, mode, apiKey, secretKey, MarketService.Symbol, 3, TestContext.Current.CancellationToken);
+
+            // The account event feed: the account is followed on each market, and said to be
+            // still wanted.
+            foreach (var market in new[] { Market.Spot, Market.Futures })
+            {
+                Assert.True(feed.IsAvailable(market, mode));
+                Assert.Equal(
+                    ExchangeFeedOutcome.Following,
+                    await feed.FollowAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken));
+                feed.Keep(BinanceCalls.User, market, mode);
+            }
         }
 
-        // All of the three lists, and nothing that is not on them.
+        // Half an hour later the feed of the Futures market is renewed, with the credential again.
+        for (var minute = 0; minute < 30; minute++)
+        {
+            clock.Advance(TimeSpan.FromMinutes(1));
+
+            foreach (var (market, mode) in BinanceCalls.Pairs)
+            {
+                feed.Keep(BinanceCalls.User, market, mode);
+            }
+        }
+
+        foreach (var (market, mode) in BinanceCalls.Pairs)
+        {
+            var (apiKey, secretKey) = BinanceCalls.CredentialOf(mode);
+
+            Assert.Equal(market == Market.Futures ? ExchangeFeedState.RenewalDue : ExchangeFeedState.Followed, feed.StateOf(BinanceCalls.User, market, mode));
+            Assert.Equal(
+                ExchangeFeedOutcome.Following,
+                await feed.FollowAsync(BinanceCalls.User, market, mode, apiKey, secretKey, TestContext.Current.CancellationToken));
+        }
+
+        await feed.TakeAsync(TimeSpan.Zero, TestContext.Current.CancellationToken);
+
+        // All of the four lists, and nothing that is not on them.
         Assert.Equal(
-            Reads.Concat(Orders).Concat(Settings).Order(StringComparer.Ordinal),
+            Reads.Concat(Orders).Concat(Settings).Concat(Feed).Order(StringComparer.Ordinal),
             binance.Calls.Select(call => $"{call.Method} {call.Address.AbsolutePath}").Distinct().Order(StringComparer.Ordinal));
 
-        // A call that is no GET is one about an order, or one of the two that set the margin of
-        // a symbol. Each call about an order names one order, or one pair of them, by its
-        // identifier: it carries no amount of an asset to move, and no address to move it to.
+        // A call that is no GET is one about an order, one of the two that set the margin of a
+        // symbol, or one of the two of the account event feed. Each call about an order names
+        // one order, or one pair of them, by its identifier: it carries no amount of an asset
+        // to move, and no address to move it to.
         Assert.All(
-            binance.Calls.Where(call => call.Method != "GET" && !Settings.Contains($"{call.Method} {call.Address.AbsolutePath}")),
+            binance.Calls.Where(call => call.Method != "GET"
+                && !Settings.Contains($"{call.Method} {call.Address.AbsolutePath}")
+                && !Feed.Contains($"{call.Method} {call.Address.AbsolutePath}")),
             call => Assert.Contains(
                 call.Query,
                 parameter => parameter.Name is "newClientOrderId" or "origClientOrderId" or "clientAlgoId" or "listClientOrderId"));
+
+        // A call of the account event feed carries the API key in its header, and nothing at
+        // all in its address: it has nothing to name an order, an asset, or an address with.
+        var feedCalls = binance.Calls.Where(call => Feed.Contains($"{call.Method} {call.Address.AbsolutePath}")).ToList();
+        Assert.Equal(4, feedCalls.Count);
+        Assert.All(feedCalls, call => Assert.Empty(call.Query));
+
+        // On a connection of a feed the gateway sends one request, which subscribes to the
+        // events of an account, on the Spot market, and nothing on the Futures market. So a
+        // feed is no way to an order, and none to move funds.
+        Assert.Equal(4, feeds.Sessions.Count);
+        Assert.All(feeds.Sessions, session =>
+        {
+            if (session.Path.StartsWith("/Futures-", StringComparison.Ordinal))
+            {
+                Assert.Empty(session.Received);
+
+                return;
+            }
+
+            using var request = JsonDocument.Parse(Assert.Single(session.Received));
+            Assert.Equal(Subscribes, request.RootElement.GetProperty("method").GetString());
+            Assert.Equal(
+                ["apiKey", "signature", "timestamp"],
+                request.RootElement.GetProperty("params").EnumerateObject().Select(parameter => parameter.Name));
+        });
 
         // Each of the two settings names the symbol and what the symbol is to have, and nothing
         // else: no asset, no amount, and no address.
@@ -287,5 +389,19 @@ public class NoFundMovementTests
         // The rule finds the call itself, so it would find another.
         Assert.NotEmpty(users);
         Assert.All(users, caller => Assert.StartsWith(TheCall, caller));
+
+        // The account event feed is read on a WebSocket, which one type of the gateway opens:
+        // the connection of a feed, which sends the one request that subscribes, and has no way
+        // to send anything else (FR-BIN-7).
+        const string TheConnection = "Ecnanib.ExchangeGateway.Adapters.Binance.BinanceFeedConnection";
+
+        var sockets = new[] { "System.Net.WebSockets.ClientWebSocket::", "System.Net.WebSockets.WebSocket::" }
+            .SelectMany(method => DependencyChecker.FindCallersOf(typeof(Program).Assembly, method))
+            .Where(caller => caller.StartsWith("Ecnanib.", StringComparison.Ordinal))
+            .Distinct()
+            .ToList();
+
+        Assert.NotEmpty(sockets);
+        Assert.All(sockets, caller => Assert.StartsWith(TheConnection, caller));
     }
 }

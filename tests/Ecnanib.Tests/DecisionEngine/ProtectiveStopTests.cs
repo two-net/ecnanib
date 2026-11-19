@@ -242,9 +242,12 @@ public class ProtectiveStopTests
 
         await application.SettleAsync(agent.Id);
 
-        // Its user is told, and the agent stays paused: it is not made to look as if it could
-        // be resumed for this.
-        Assert.Single(await application.NotificationsOfAsync(agent.UserId));
+        // Its user is told that the position is open with no stop-loss, and that the stop-loss
+        // no longer rested at Binance, which the records said it did (FR-BIN-7). The agent
+        // stays paused: it is not made to look as if it could be resumed for this.
+        Assert.Equal(
+            [NotificationType.ProtectionFailure, NotificationType.ReconciliationMismatch],
+            (await application.NotificationsOfAsync(agent.UserId)).Select(told => told.Type).Order());
         Assert.Equal(AgentState.Paused, (await application.AgentAsync(agent.Id)).State);
     }
 

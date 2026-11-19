@@ -37,16 +37,22 @@ internal sealed class LoggedApplication : IDisposable
     /// Whether the application settles the orders of agents with the exchange on its schedule,
     /// which only a test of that wants: see <see cref="EcnanibApplicationFactory"/>.
     /// </param>
+    /// <param name="reconciles">
+    /// Whether the application reconciles the agents with the exchange on its schedule, and
+    /// holds a cycle back for an agent that it has not reconciled since it started, which only
+    /// a test of that wants: see <see cref="EcnanibApplicationFactory"/>.
+    /// </param>
     public LoggedApplication(
         SettingsJson settings,
         Action<IWebHostBuilder>? configure = null,
         TestDatabase? database = null,
         bool watchesBinanceClock = false,
         bool runsCycles = false,
-        bool settlesOrders = false)
+        bool settlesOrders = false,
+        bool reconciles = false)
     {
         ContentRoot = new SettingsDirectory(settings.OnDatabase(database ?? PostgresServer.SharedDatabase));
-        _application = new EcnanibApplicationFactory(ContentRoot, configure, watchesBinanceClock, runsCycles, settlesOrders);
+        _application = new EcnanibApplicationFactory(ContentRoot, configure, watchesBinanceClock, runsCycles, settlesOrders, reconciles);
     }
 
     /// <summary>A valid file that logs from the information level up, to the console and to a file.</summary>
