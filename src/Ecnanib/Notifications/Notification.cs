@@ -73,6 +73,13 @@ public enum NotificationType
     /// the agent trades (FR-BIN-F2).
     /// </summary>
     AttentionRequired,
+
+    /// <summary>
+    /// A position of the Futures market approaches liquidation: little of the way from the price
+    /// that it was entered at to the price that the exchange liquidates it at is left
+    /// (FR-BIN-F5). The service adds no margin to a position, so its user is told.
+    /// </summary>
+    LiquidationWarning,
 }
 
 internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>

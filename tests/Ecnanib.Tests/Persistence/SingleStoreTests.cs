@@ -46,7 +46,7 @@ public class SingleStoreTests
             [
                 "agent_roles", "agent_state_changes", "agents", "ai_credentials", "ai_models", "ai_providers",
                 "audit_events", "background_jobs", "catalog_sync_runs", "decision_cycles", "exchange_credentials", "fills",
-                "legal_acceptances", "notifications", "orders", "pending_sign_ins", "positions", "prompt_templates",
+                "fundings", "legal_acceptances", "notifications", "orders", "pending_sign_ins", "positions", "prompt_templates",
                 "risk_check_rules", "risk_checks", "role_outputs", "roles", "sessions", "two_factor_recovery_codes", "users",
             ],
             modelTables.Order(StringComparer.Ordinal));

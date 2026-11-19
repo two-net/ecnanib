@@ -6,9 +6,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Ecnanib.DecisionEngine;
 
 /// <summary>
-/// Keeps the orders, the executions, and the positions of agents: every read of them, and every
-/// write. It calls no exchange, and knows nothing of one: what places the orders tells it what
-/// the exchange said. See "The record of an order" in docs/orders.md.
+/// Keeps the orders, the executions, and the positions of agents, with the funding of the
+/// positions: every read of them, and every write. It calls no exchange, and knows nothing of
+/// one: what places the orders, and what watches the positions, tell it what the exchange said.
+/// See "The record of an order" in docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -35,6 +36,13 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
 {
     /// <summary>For how long the executions of an order that is over are still asked for, when they could not be read.</summary>
     public static readonly TimeSpan FillsWithin = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// For how long the funding of a position that is closed is still asked for, when it could
+    /// not be read. A closed position that still says when its funding is read next after that
+    /// is one whose funding is not all stored.
+    /// </summary>
+    public static readonly TimeSpan FundingWithin = TimeSpan.FromDays(1);
 
     // The millisecond of the id that was handed out last.
     private static long _lastMillisecond;
@@ -668,7 +676,11 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
             now,
             closedAt: null,
             exitReason: null,
-            alertedAt: null);
+            alertedAt: null,
+
+            // A position of the Futures market receives and pays funding, which is read for the
+            // first time soon after it is opened (FR-BIN-F4). One of the Spot market has none.
+            fundingDueAt: entry.Market == Market.Futures ? now : null);
 
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
@@ -752,6 +764,126 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
         context.AddRange(fills.Where(fill => !stored.Contains(fill.TradeId)));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The positions of the Futures market, of all users, that are watched, in the order of
+    /// their ids: every open one, whose margin is checked (FR-BIN-F5), and every one that was
+    /// closed not long ago and whose funding is not all read yet (FR-BIN-F4).
+    /// </summary>
+    public async Task<IReadOnlyList<Position>> ToWatchAsync(CancellationToken cancellationToken)
+    {
+        var since = clock.GetUtcNow() - FundingWithin;
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await context.Set<Position>()
+            .AsNoTracking()
+            .Where(position => position.Market == Market.Futures
+                && (position.ClosedAt == null || (position.FundingDueAt != null && position.ClosedAt >= since)))
+            .OrderBy(position => position.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The time that the funding of a position is asked for now: from the newest of its funding
+    /// that is stored, which is asked for again and stored once, and to this moment, or to when
+    /// the position was closed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A position with no funding yet is asked about from when its entry was begun, which is
+    /// before anything of it was executed. When the position was opened is when the application
+    /// saw that: an entry at a price may have been executed, and have paid funding, a while
+    /// before.
+    /// </para>
+    /// <para>
+    /// A closed position is asked about up to the last execution of the orders that closed it,
+    /// by the clock of the exchange, where the executions are stored. When the position was
+    /// closed is when the application saw that, which for a stop-loss may be minutes later: the
+    /// account may hold the symbol for another agent of its user by then, and that one's
+    /// funding is not this position's.
+    /// </para>
+    /// </remarks>
+    /// <returns>The first and the last moment, both included. The last is before the first when there is nothing to ask for.</returns>
+    public async Task<(DateTimeOffset From, DateTimeOffset To)> FundingWindowAsync(Position position, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(position);
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        var orders = context.Set<Order>().AsNoTracking().Where(order => order.PositionId == position.Id);
+
+        var from = await context.Set<Funding>()
+                .AsNoTracking()
+                .Where(funding => funding.PositionId == position.Id)
+                .MaxAsync(funding => (DateTimeOffset?)funding.At, cancellationToken)
+            ?? await orders
+                .Where(order => order.Purpose == OrderPurpose.Entry)
+                .MinAsync(order => (DateTimeOffset?)order.CreatedAt, cancellationToken)
+            ?? position.OpenedAt;
+
+        if (position.ClosedAt is not { } closedAt)
+        {
+            return (from, clock.GetUtcNow());
+        }
+
+        var closing = orders.Where(order => order.Purpose != OrderPurpose.Entry).Select(order => order.Id);
+
+        var executed = await context.Set<Fill>()
+            .AsNoTracking()
+            .Where(fill => closing.Contains(fill.OrderId))
+            .MaxAsync(fill => (DateTimeOffset?)fill.At, cancellationToken);
+
+        return (from, executed ?? closedAt);
+    }
+
+    /// <summary>
+    /// Stores the funding of a position that is not stored yet, and writes when its funding is
+    /// read next, both or neither: when the position still says the time that it said as it was
+    /// read. So of two that read the funding of a position, one writes.
+    /// </summary>
+    /// <param name="position">The position, as it was read.</param>
+    /// <param name="fundings">What the exchange said that it received and paid.</param>
+    /// <param name="dueAt">When its funding is read next, or null when all of it is read.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>How many rows were stored, or null when nothing was written: the row of the position has moved on.</returns>
+    public async Task<int?> RecordFundingAsync(
+        Position position, IReadOnlyList<Funding> fundings, DateTimeOffset? dueAt, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(position);
+        ArgumentNullException.ThrowIfNull(fundings);
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        // The row of the position is locked by the write, so two that store its funding store
+        // it one after the other, and the second finds that the row has moved on.
+        var written = await context.Set<Position>()
+            .Where(row => row.Id == position.Id && row.FundingDueAt == position.FundingDueAt)
+            .ExecuteUpdateAsync(row => row.SetProperty(stored => stored.FundingDueAt, dueAt), cancellationToken);
+
+        if (written == 0)
+        {
+            return null;
+        }
+
+        var stored = await context.Set<Funding>()
+            .AsNoTracking()
+            .Where(funding => funding.PositionId == position.Id)
+            .Select(funding => funding.TransactionId)
+            .ToListAsync(cancellationToken);
+
+        var added = fundings
+            .Where(funding => !stored.Contains(funding.TransactionId))
+            .DistinctBy(funding => funding.TransactionId)
+            .ToList();
+
+        context.AddRange(added);
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return added.Count;
     }
 
     /// <summary>Writes the price of the stop-loss of an open position.</summary>

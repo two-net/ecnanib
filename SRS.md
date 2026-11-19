@@ -670,7 +670,8 @@ The outline below shows what the single configuration file contains. Key names a
     },
     "StaleSeconds": { "15m": 120, "1H": 300, "4H": 600, "1D": 900 },
     "Cycles": { "MaxPerProvider": 250, "MaxPerKey": 4 },
-    "DataPackage": { "Candles": 200, "ContextCandles": 50 }
+    "DataPackage": { "Candles": 200, "ContextCandles": 50 },
+    "LiquidationWarningPercent": 20
   },
   "Experience": {
     "LessonsPerPrompt": 5,

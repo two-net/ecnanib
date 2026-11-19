@@ -224,7 +224,15 @@ internal static class StoredKeyRows
     public static async Task GiveKeysAsync(this AccountsApplication application, Guid userId, DateTimeOffset savedAt)
     {
         await application.GiveAiKeyAsync(userId, "claude", savedAt, accessibleModels: null);
+        await application.GiveExchangeKeyAsync(userId, savedAt);
+    }
 
+    /// <summary>
+    /// Gives a user a Binance credential for Demo, stored as the application stores it, and valid
+    /// as of the moment it was stored. Nobody is signed in for it, and nothing is recorded.
+    /// </summary>
+    public static async Task GiveExchangeKeyAsync(this AccountsApplication application, Guid userId, DateTimeOffset savedAt)
+    {
         var exchangeId = Guid.CreateVersion7();
         var apiKey = Keys.Of(userId.ToString("N"), "demo");
         var exchange = application.Secrets.Encrypt(
@@ -293,6 +301,20 @@ internal static class StoredKeyRows
 /// <param name="SecretKey">The secret key of a Binance credential, and null for an AI provider.</param>
 internal sealed record AskedKey(string About, string Key, string? SecretKey = null);
 
+/// <summary>One time that <see cref="StandInProviders"/> was asked about the position of an account in a symbol of the Futures market.</summary>
+/// <param name="UserId">Whose account.</param>
+/// <param name="Mode">The environment.</param>
+/// <param name="Symbol">The symbol.</param>
+internal sealed record AskedPosition(Guid UserId, TradingMode Mode, string Symbol);
+
+/// <summary>One time that <see cref="StandInProviders"/> was asked about the funding of an account in a symbol of the Futures market.</summary>
+/// <param name="UserId">Whose account.</param>
+/// <param name="Mode">The environment.</param>
+/// <param name="Symbol">The symbol.</param>
+/// <param name="From">The first moment that was asked for.</param>
+/// <param name="To">The last moment that was asked for.</param>
+internal sealed record AskedFunding(Guid UserId, TradingMode Mode, string Symbol, DateTimeOffset From, DateTimeOffset To);
+
 /// <summary>
 /// Stands for the AI providers and for Binance, where the application asks them about a key
 /// (FR-KEY-3): it keeps what it was asked, and answers as the test says. Unless a test says
@@ -319,9 +341,20 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
     public static readonly ExchangeFuturesAccount OneWay =
         new(ExchangeCallOutcome.Succeeded, HedgeMode: false, MultiAssetsMargin: false, HoldsPosition: false);
 
+    /// <summary>
+    /// The position that an account of the tests holds in a symbol of the Futures market unless
+    /// a test says otherwise: none.
+    /// </summary>
+    public static readonly ExchangeFuturesPosition NoPosition = ExchangeFuturesPosition.Without(ExchangeCallOutcome.Succeeded);
+
+    /// <summary>What an account of the tests received and paid as funding unless a test says otherwise: nothing.</summary>
+    public static readonly ExchangeFundings NoFunding = new(ExchangeCallOutcome.Succeeded, [], More: false);
+
     private readonly ConcurrentQueue<AskedKey> _asked = new();
     private readonly ConcurrentQueue<(Market Market, TradingMode Mode)> _balancesAsked = new();
     private readonly ConcurrentQueue<(TradingMode Mode, string Symbol)> _accountsAsked = new();
+    private readonly ConcurrentQueue<AskedPosition> _positionsAsked = new();
+    private readonly ConcurrentQueue<AskedFunding> _fundingAsked = new();
 
     /// <summary>Every time it was asked, in order.</summary>
     public IReadOnlyList<AskedKey> Asked => [.. _asked];
@@ -337,6 +370,18 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
 
     /// <summary>Every time it was asked how an account stands on the Futures market, in order.</summary>
     public IReadOnlyList<(TradingMode Mode, string Symbol)> FuturesAccountsAsked => [.. _accountsAsked];
+
+    /// <summary>What Binance says of the position of an account in a symbol of the Futures market, with its margin, or how asking ends.</summary>
+    public Func<AskedPosition, ExchangeFuturesPosition> FuturesPosition { get; set; } = _ => NoPosition;
+
+    /// <summary>Every time it was asked about the position of an account in a symbol of the Futures market, in order.</summary>
+    public IReadOnlyList<AskedPosition> FuturesPositionsAsked => [.. _positionsAsked];
+
+    /// <summary>What Binance says that an account received and paid as funding in a symbol, in the time that is asked for, or how asking ends.</summary>
+    public Func<AskedFunding, ExchangeFundings> Funding { get; set; } = _ => NoFunding;
+
+    /// <summary>Every time it was asked about the funding of an account, in order.</summary>
+    public IReadOnlyList<AskedFunding> FundingAsked => [.. _fundingAsked];
 
     /// <summary>What an AI provider, named by its code, says about a key.</summary>
     public Func<string, string, KeyVerdict> AiAnswer { get; set; } = (_, _) => KeyVerdict.Accepted;
@@ -385,6 +430,31 @@ internal sealed class StandInProviders : IAiKeyChecks, IExchangeAdapter
         _accountsAsked.Enqueue((mode, symbol));
 
         return Task.FromResult(FuturesAccount(mode, symbol));
+    }
+
+    public Task<ExchangeFuturesPosition> GetFuturesPositionAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, string symbol, CancellationToken cancellationToken)
+    {
+        var asked = new AskedPosition(userId, mode, symbol);
+        _positionsAsked.Enqueue(asked);
+
+        return Task.FromResult(FuturesPosition(asked));
+    }
+
+    public Task<ExchangeFundings> GetFundingAsync(
+        Guid userId,
+        TradingMode mode,
+        string apiKey,
+        string secretKey,
+        string symbol,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        var asked = new AskedFunding(userId, mode, symbol, from, to);
+        _fundingAsked.Enqueue(asked);
+
+        return Task.FromResult(Funding(asked));
     }
 
     private async Task MeanwhileAsync()

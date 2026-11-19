@@ -10,9 +10,11 @@ Spot agents are long-only: they buy the base asset with the quote asset and sell
 
 Futures agents trade USDⓈ-margined perpetual contracts and can be long or short (FR-BIN-F1). They use isolated margin and one-way position mode. The system sets margin type and leverage for the agent's symbol before entry, and does not change account-wide settings: if the account is in a conflicting mode or already holds a position in the symbol, the agent does not start and the user is told what to change (FR-BIN-F2). Protection is a reduce-only stop-loss and a reduce-only take-profit resting on the exchange, triggered on the mark price (FR-BIN-F3). An entry is skipped, and the user notified, when the Futures wallet lacks the margin the plan needs (FR-BIN-F6).
 
-What is built is step 7 of the decision cycle, on both markets. Both have an entry at the market, an entry at a price, which rests, a stop-loss that rests, and an order that closes a position at the market. Spot has the pair of a stop-loss and a take-profit. Futures has a take-profit that is an order of its own, the margin and the leverage of the symbol, which are set before an entry, and the trigger on the mark price. With them a plan opens a position, closes it, reverses it, and moves its protection, and a user closes a position by hand.
+The current funding rate and the next funding time are included in the data package, and funding paid or received is recorded per position (FR-BIN-F4). The system checks the margin state of open positions at each reconciliation and alerts the user when a position approaches liquidation. It never adds margin on its own (FR-BIN-F5).
 
-What places the orders is in `src/Ecnanib/DecisionEngine`: `IPlanOrders`, `AgentOrders`, `StoredOrders`, `Order`, `Fill`, `Position`, `AgentPositions.cs`, and `OrderSettlingJob`. The orders of the exchange are in `src/Ecnanib/ExchangeGateway/Trading`, and Binance's in `BinanceOrders`. The rules below are enforced by `OrderIdempotencyTests`, `ProtectiveStopTests`, `ProtectivePairTests`, `LimitEntryTests`, `SpotEntryTests`, `FuturesEntryTests`, `FuturesProtectionTests`, `PlanOrderTests`, `OrderSettlingTests`, and `OrderRecordTests` of `tests/Ecnanib.Tests/DecisionEngine`, and by `OrderPlacementTests` and `FuturesAccountTests` of `tests/Ecnanib.Tests/ExchangeGateway`.
+What is built is step 7 of the decision cycle, on both markets. Both have an entry at the market, an entry at a price, which rests, a stop-loss that rests, and an order that closes a position at the market. Spot has the pair of a stop-loss and a take-profit. Futures has a take-profit that is an order of its own, the margin and the leverage of the symbol, which are set before an entry, and the trigger on the mark price. With them a plan opens a position, closes it, reverses it, and moves its protection, and a user closes a position by hand. The positions of Futures are watched while they are open: their margin is checked, their user is told when one approaches liquidation, and what each received and paid as funding is stored.
+
+What places the orders is in `src/Ecnanib/DecisionEngine`: `IPlanOrders`, `AgentOrders`, `StoredOrders`, `Order`, `Fill`, `Position`, `AgentPositions.cs`, and `OrderSettlingJob`. What watches the positions is there as well: `PositionWatch`, `PositionWatchJob`, and `Funding`. The orders of the exchange are in `src/Ecnanib/ExchangeGateway/Trading`, and Binance's in `BinanceOrders`. The rules below are enforced by `OrderIdempotencyTests`, `ProtectiveStopTests`, `ProtectivePairTests`, `LimitEntryTests`, `SpotEntryTests`, `FuturesEntryTests`, `FuturesProtectionTests`, `PlanOrderTests`, `OrderSettlingTests`, `OrderRecordTests`, `FundingRecordTests`, `LiquidationWarningTests`, and `PositionWatchJobTests` of `tests/Ecnanib.Tests/DecisionEngine`, and by `OrderPlacementTests`, `FuturesAccountTests`, `FuturesPositionTests`, and `FundingReadTests` of `tests/Ecnanib.Tests/ExchangeGateway`.
 
 The calls that the gateway makes for an order are in [exchange.md](exchange.md). What the Risk Guard accepts, and the size of an order, is in [risk-guard.md](risk-guard.md). What a cycle does before it comes to its orders is in [team.md](team.md) and [cycles.md](cycles.md). What Agents asks about a position, and the states of an agent, is in [agents.md](agents.md), the key that an order is placed with in [credentials.md](credentials.md), and what a user is told in [notifications.md](notifications.md).
 
@@ -270,6 +272,61 @@ Two closes of the same position at the same moment send one order: the second fi
 | **No agent waits for another** | The agents are settled a few at a time, each on its own. One that cannot be settled, because its key is gone or refused, keeps no other waiting. |
 | **A refused key is checked again** | When Binance answers a call about an order as it answers a wrong credential, `IKeyValidation.RevalidateExchangeKeyAsync` is asked. The check decides whether the key is invalid (FR-KEY-3). |
 
+## Watching the positions of Futures
+
+`PositionWatchJob`, named `position-watch`, watches the positions of Futures: every open one, and every one that was closed within a day and whose funding is not all read. It is apart from what settles the orders, which every cycle asks first and which is to be quick: this reads the exchange for every open position, and places nothing.
+
+| Rule | Detail |
+|---|---|
+| **It runs at the time between reconciliations** | Every `Binance:ReconcileMinutes`, which is 5 in the tracked file, and as the background work starts when there is a position to watch: a position may have come near its liquidation price while the application was down. What reconciles everything that an account holds with the records, when it is built, has the positions of an account at hand, and takes this up (FR-BIN-7). |
+| **It only reads the exchange** | `PositionWatch` is handed `IExchangeAdapter`, which reads, and the market data. It is handed nothing of `ExchangeGateway.Trading`, which places orders and sets the margin of a symbol: `AgentOrders` is the one type that is, which `RiskGuardRulesTests` holds to. |
+| **A stored key is asked for with each position** | `IKeyHandOver.ExchangeKeyAsync`, as for an order: it is handed to the gateway with the calls of that position, and kept nowhere (FR-KEY-9). `PositionWatch` is the second type that is handed a Binance credential, beside `AgentOrders`: `TeamRulesTests` pins the two. Without a key nothing is asked, and what was not read is read when there is one. |
+| **A refused key is checked again** | When Binance answers a read as it answers a wrong credential, `IKeyValidation.RevalidateExchangeKeyAsync` is asked, as in "Settling", and nothing more is asked with that key in the run. |
+| **No position waits for another** | The positions are watched a few at a time, each on its own. One that cannot be read keeps no other waiting, and is read with the next run. |
+| **Whatever state its agent is in** | A position is watched while it is open: whether its agent runs, is paused, waits for its user, or was stopped with its position kept. |
+
+### The margin of a position
+
+| Rule | Detail |
+|---|---|
+| **The margin of every open position is checked with every run** | `IExchangeAdapter.GetFuturesPositionAsync` reads the position that the account holds in the symbol: what it holds, the price that it was entered at, the mark price, and the price that Binance liquidates it at, which is where its margin runs out. It is one call for each position, of 5 of request weight. |
+| **A position approaches liquidation when little of the way to its liquidation price is left** | The way is from the price that the position was entered at to the price that Binance liquidates it at. What is left of it is from the mark price to the liquidation price. The position approaches liquidation when what is left is no more than `Trading:LiquidationWarningPercent` of the way: a fifth, in the tracked file. All three prices are Binance's, of one answer. |
+| **A stop-loss that works closes the position first** | With the tracked settings. The liquidation buffer of an agent is 1.5 at the least, so its stop-loss is no further from the entry than two thirds of the way that the Risk Guard estimated, which is about seven tenths of the way to the price that Binance liquidates at, with a leverage of 10. Both bounds are of the configuration file: a lower buffer or a higher leverage cap brings a stop-loss nearer to the warning. So a warning says that something is not as it was planned: the stop-loss was taken off or was not executed, or the margin of the position was changed at Binance. |
+| **A mark price that has reached the liquidation price approaches it** | And so does a position whose liquidation price is not on the losing side of its entry, where there is no such way. |
+| **The user is told, once in an hour for an agent** | With a notification of the type `LiquidationWarning`, which names the symbol and the mode, the mark price, the liquidation price, and how far the two are apart, in percent of the mark price. It says that no margin is added, and what the user can do: close or reduce the position, or add margin to it at Binance. The check itself says it in the log with every run. See [notifications.md](notifications.md). |
+| **No margin is added, and nothing else is done** | The service never adds margin on its own (FR-BIN-F5): the gateway has no call for it. The agent stays in its state, the position and its protection stay as they are, and the team of the agent decides at its next cycle what becomes of the position. |
+| **A position without a liquidation price has nothing to approach** | Binance names none for a position that it cannot liquidate, such as a long one without leverage. |
+| **What the account does not hold as the records say is said, and not corrected** | An account that holds nothing in the symbol, or a position on the other side, where the records say an open position. Most often its stop-loss or its take-profit closed it a moment ago, which what settles the orders sees with its next run. It is said in the log, nobody is told, and the funding of the position is not read with that run: see "Funding". Correcting the records comes with reconciliation (FR-BIN-7, FR-BIN-8). |
+| **A margin that cannot be read is read with the next run** | It is a warning in the log. Nobody is told that a position approaches liquidation because the exchange did not answer. |
+
+### Funding
+
+The funding rate and the next funding time of the data package are in "The data package" of [cycles.md](cycles.md). This is the record of what a position received and paid.
+
+| Rule | Detail |
+|---|---|
+| **What a position received and paid is stored row by row** | Each as a row of `fundings` that names the position: the number that Binance gave it, the amount, which is above zero when the position received it and below zero when it paid, the asset, and the funding time. It is what Binance says, as the fee of an execution is. Nothing adds the rows up: the results of a position are not built. |
+| **It is read when it is due, and not with every run** | `IExchangeAdapter.GetFundingAsync` is the heaviest call that the service makes, at 30 of request weight. A position of Futures is due 5 minutes after it was opened, then 5 minutes after each funding time, and once more 5 minutes after it was closed. `positions.funding_due_at` says when: the time that the position was opened at first, and then the next funding time. |
+| **The next funding time is the one that the mark price says** | `IExchangeMarketData.GetMarkPriceAsync`, which the gateway reads once for everyone (FR-BIN-3). Without one that is ahead, the funding of an open position is not read: the read did not succeed, the time that it gave has passed, or the symbol is no longer in `Binance:Symbols`. Such a position is read with a later run, and at the latest when it is closed. |
+| **It is asked for from the newest row that is stored** | Which Binance says again, and which is stored once: the number that Binance gave it is unique for the position. So what Binance wrote later than a read is read the next time. A position with no row yet is asked about from when its entry was begun, which is before anything of it was executed: `positions.opened_at` is when the application saw the execution, and an entry at a price may have paid funding before that. |
+| **A closed position is asked about up to the execution that closed it** | The newest execution of its orders that are no entry, by the clock of Binance, where the executions are stored, and otherwise `positions.closed_at`. A stop-loss is seen executed up to a few minutes after it was: by then the account may hold the symbol for another agent of its user, whose funding is not this position's. What Binance answers outside the time that was asked for is not stored. |
+| **A position that the account no longer holds is not asked about until its close is seen** | The check of the margin comes first. Where Binance says that the account does not hold the position that the records say is open, its funding is not read with that run: up to now is not up to when it was closed. |
+| **The read after the close is the last** | `funding_due_at` is empty from then on, and the position is not watched any more. It is empty for a position of Spot from the start, which has no funding. |
+| **A read that does not succeed changes nothing** | The position stays due, and the next run reads again. It is a warning in the log. |
+| **An answer of 1000 rows may not be all** | That is the most that Binance gives. The rows are stored, the position stays due, and the next run reads on from the newest of them. It is a warning in the log. |
+| **A run reads the funding of 20 positions at most** | A funding time comes for every position at once, and all of them in one run would take the part of Binance's limit on requests that the orders and the cycles need. The rest are read with the next runs. A run goes on where the one before stopped, so positions whose funding cannot be read keep no other waiting. |
+| **A closed position that still says a time is one whose funding is not all stored** | Its funding is asked for until a day after it was closed, as the executions of an order are. After that it is not asked for any more, and `funding_due_at` stays as it is. Binance keeps the income of an account for three months. |
+
+What it costs of Binance's limit on requests: 5 for each open position of Futures with each run, and 30 for a position once after it was opened, once for each funding time while it is open, and once after it was closed.
+
+Three things are taken for granted about Binance that its documentation does not say. No test settles them: each needs a position that is held over a funding time.
+
+| Taken for granted | What follows when it is not so |
+|---|---|
+| Binance has written what a position received or paid within 5 minutes of the funding time. | The row of an open position is read after the next funding time. A position that was closed within those minutes lacks the row. |
+| The time of a row is the funding time itself, and not when Binance wrote it. | A row of a position that was closed just after a funding time would be dated after the execution that closed it, and would not be stored. `LiveBinanceTests` holds every row that the account of its run has to a whole hour. |
+| An answer of 1000 rows holds the oldest of the time that was asked for. | The rows that it left out would be older than the newest that is stored, and would not be asked for again. Only a position whose funding was not read for more than a month comes to 1000 rows. |
+
 ## What an agent holds
 
 The Decision Engine keeps the positions and the orders, so it answers those that waited for them.
@@ -292,13 +349,14 @@ The Decision Engine keeps the positions and the orders, so it answers those that
 
 ## The record of an order
 
-The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrderPairs` the columns `pair_id` and `cancel_after` of `orders`. Each row carries its owner along: an order and a position to their agent, with `(agent_id, user_id)`, and an execution to its order, with `(order_id, user_id)`. They go with the agent when it is deleted, and with the account. See [ownership.md](ownership.md).
+The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrderPairs` the columns `pair_id` and `cancel_after` of `orders`. `AddFundings` adds the table `fundings` and the column `funding_due_at` of `positions`, which it sets for the positions of Futures that are open then, so that their funding is read from when they were opened. Each row carries its owner along: an order and a position to their agent, with `(agent_id, user_id)`, an execution to its order, with `(order_id, user_id)`, and what a position received and paid as funding to the position, with `(position_id, user_id)`. They go with the agent when it is deleted, and with the account. See [ownership.md](ownership.md).
 
 | Table | Columns |
 |---|---|
 | `orders` | `id`, `agent_id`, `user_id`, `mode`, `market`, `symbol`, `cycle_id`, `position_id`, `client_order_id`, `exchange_order_id`, `purpose`, `type`, `side`, `price`, `stop_loss`, `take_profit`, `quantity`, `status`, `executed_quantity`, `average_price`, `exit_reason`, `sends`, `fills_recorded`, `created_at`, `updated_at`, `checked_at`, `pair_id`, `cancel_after` |
 | `fills` | `id`, `order_id`, `user_id`, `trade_id`, `price`, `quantity`, `fee`, `fee_asset`, `at` |
-| `positions` | `id`, `agent_id`, `user_id`, `mode`, `market`, `symbol`, `side`, `entry_price`, `quantity`, `stop_loss`, `take_profit`, `opened_at`, `closed_at`, `exit_reason`, `alerted_at` |
+| `positions` | `id`, `agent_id`, `user_id`, `mode`, `market`, `symbol`, `side`, `entry_price`, `quantity`, `stop_loss`, `take_profit`, `opened_at`, `closed_at`, `exit_reason`, `alerted_at`, `funding_due_at` |
+| `fundings` | `id`, `position_id`, `user_id`, `transaction_id`, `amount`, `asset`, `at` |
 
 | Column | What it holds |
 |---|---|
@@ -319,6 +377,10 @@ The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrde
 | `positions.stop_loss`, `take_profit` | Prices. The order of the stop-loss is a row of `orders`, and so is the order of the take-profit. |
 | `positions.exit_reason` | `StopLoss`, `TakeProfit`, `TeamClose`, `UserClose`, or `ProtectionFailed`. |
 | `positions.alerted_at` | When its user was told that it is open with no stop-loss and could not be closed. |
+| `positions.funding_due_at` | When its funding is read next: see "Funding". Empty for a position of Spot, and for a closed position whose funding is all read. |
+| `fundings.transaction_id` | The number that Binance gave what the position received or paid. It is stored once for a position. |
+| `fundings.amount`, `asset` | How much, above zero when the position received it and below zero when it paid, in the asset that Binance says. |
+| `fundings.at` | The funding time, by the clock of Binance. |
 
 The rows are not in the export of a user's data: a user exports their trades as CSV (FR-RPT-4), which is not built. See [accounts.md](accounts.md).
 
@@ -353,9 +415,29 @@ The position of agent {AgentId} could not be closed at market, so it is open wit
 | **The calls themselves** | Each call to Binance is in the log of outbound calls, with its duration and its outcome, and the number of an error of Binance under the gateway. See [exchange.md](exchange.md). |
 | **The job** | `The orders of {Agents} agents are settled with the exchange`, under `Ecnanib.DecisionEngine.OrderSettlingJob`, when there are some. An agent that cannot be settled for an error of the application is said once, as an error. |
 
+What watches the positions writes under `Ecnanib.DecisionEngine.PositionWatch`. Its events name the agent and the symbol. No event holds a key, a price, or an amount: one about the margin says how much of the way from the entry to the liquidation price is left, in percent of that way, which is what the check goes by.
+
+```
+The position of agent {AgentId} in {Symbol} approaches liquidation: {WayLeftPercent} percent of the way from its entry to its liquidation price is left
+The margin of the position of agent {AgentId} in {Symbol} was checked: {WayLeftPercent} percent of the way from its entry to its liquidation price is left
+The margin of the position of agent {AgentId} in {Symbol} was checked: the exchange names no liquidation price
+The margin of the position of agent {AgentId} in {Symbol} could not be read: {ExchangeCallOutcome}
+The account of agent {AgentId} does not hold the {PositionSide} position in {Symbol} that the records say, as the exchange says it: its margin is not checked, and its funding is not read
+{Fundings} rows of funding were stored for the position of agent {AgentId} in {Symbol}
+The funding of the position of agent {AgentId} in {Symbol} could not be read: {ExchangeCallOutcome}
+The funding of the position of agent {AgentId} in {Symbol} is more than one answer of the exchange holds: the rest is read with the next run
+```
+
+| Note | Detail |
+|---|---|
+| **Levels** | A position that approaches liquidation is a warning, with every run that finds it. A check that finds nothing is at the debug level. What could not be read is a warning, and so is funding that one answer did not hold. An account that does not hold what the records say is information: it is most often a position that was closed a moment ago. Funding that was stored is information as well: it says how many rows, and not what they hold. |
+| **The job** | `{Positions} positions of the Futures market are watched, and the funding of {FundingReads} of them is read`, under `Ecnanib.DecisionEngine.PositionWatchJob`, when there are some. A position that cannot be watched for an error of the application is said once, as an error. |
+
 ## Testing
 
 The tests run the application on a database of their own, with a Binance that keeps orders behind the gateway (`TradingBinance` in `OrderFixtures.cs`): it takes an order, answers what became of it, takes it off, and lists its executions, in the form that Binance's documentation gives. An order at a price rests there until the test has it executed, in full or in part. A pair is two stops of one list: it is taken while the price is between its two triggers, when one is executed the other ends, and taking one off takes both. On Futures a stop and a take-profit are conditional orders of their own, which it has at the calls of those orders only: one whose trigger the price has passed is refused, and neither ends when the other is executed. The symbol has isolated margin there once it was asked to have, after which that call is answered with Binance's error that nothing is to change, and the leverage that was last asked for. A test says what becomes of a call that places an order or a pair: taken, taken with an answer that never comes, lost, refused, or answered with a fault. What the account holds, and how it stands on Futures, is what the test says: more than a plan of the tests needs, in one-way mode, with one asset, and with no position in the symbol, unless it says otherwise. The clock is the test's, so a test moves it on while the application waits for a moment of it.
+
+The job that watches the positions runs in no application of the tests on a schedule: a test runs it itself, with `OrdersApplication.WatchAsync`. The position that the account holds with its margin, and what it received and paid as funding, are what the test says (`StandInProviders.FuturesPosition` and `Funding`): no position and no funding, unless it says otherwise. The next funding time is the test's as well (`StandInFundingTimes` in `OrderFixtures.cs`): the gateway holds a mark price that it read for a second of real time, whatever the clock of a test shows.
 
 | Requirement | Tests |
 |---|---|
@@ -373,18 +455,24 @@ The tests run the application on a database of their own, with a Binance that ke
 | It changes no account-wide setting, and an account that conflicts gets no entry and no start | `FuturesEntryTests`, `AgentAccountTests` of `tests/Ecnanib.Tests/Agents`, and `NoFundMovementTests` for what the gateway can send |
 | Protection is a reduce-only stop-loss and a reduce-only take-profit, triggered on the mark price | `FuturesProtectionTests`, `ProtectiveStopTests`, `PlanOrderTests`, and `OrderPlacementTests` for the calls |
 | An entry that the margin of the Futures wallet does not cover is skipped, and the user is notified | `FuturesEntryTests` |
+| The current funding rate and the next funding time are included in the data package | `DataPackageTests` and `CycleDataPackageTests`, and `MarketDataTests` for the call |
+| Funding paid or received is recorded per position | `FundingRecordTests`, `OrderRecordTests` for whose the rows are, and `FundingReadTests` for the call |
+| The margin state of open positions is checked at each reconciliation, and the user is alerted when a position approaches liquidation | `LiquidationWarningTests`, `PositionWatchJobTests`, `FuturesPositionTests` for the call, and `NotificationTests` for what the user sees |
+| The system never adds margin on its own | `LiquidationWarningTests`, `NoFundMovementTests` for what the gateway can send, and `RiskGuardRulesTests` for what may use the calls that change anything |
 
 A check against Binance's own test environment is in `LiveBinanceTests`: see "Checking against Binance itself" in [exchange.md](exchange.md).
 
 ## Not built yet
 
 - Protection that Binance places by itself when an entry at a price is executed. The pair is placed by the service, within a minute of the execution, and later when the service is down then: until it is, what the entry bought has no stop-loss. Binance has a list of three orders for it, which places a pair when its entry is executed in full. Its documentation does not say how the quantity of that pair is held to what the account has once the fee of the purchase is taken in the asset, so it is not used.
-- Funding paid or received, as a record of a position (FR-BIN-F4), and the margin state of an open position, with a warning when it approaches liquidation (FR-BIN-F5). The service adds no margin to a position.
+- One read of the margin for each account, and not for each position. The positions of an account come in one answer of the same weight, which what reconciles an account reads anyway (FR-BIN-7).
+- The funding of a position that could not be read within a day of its close. The position says so: see "Funding".
 - Finding a mode of the account that its user changes while a position is open. The account of Futures is read before an entry and before an agent runs, and not in between. Binance takes no change of the position mode while the account has a position or an order.
 - Comparing the position that an account of Futures holds in a symbol with the records of the agent. A position there is taken for the agent's own while its records hold one, and for one that the agent did not open while they hold none. It comes with reconciliation (FR-BIN-7, FR-BIN-8).
 - The leverage brackets of a symbol, by which Binance allows less leverage for a larger position. A leverage that Binance refuses for that gets no entry, and its user is told: see "The margin of Futures".
 - The account event feed and reconciliation (FR-BIN-7, FR-BIN-8). Until then a stop-loss or a take-profit that was executed shows in the records when it is next asked about, and an entry at a price within a minute. What a user does at Binance by hand is not detected, but for a stop-loss or a pair that they take off: a position that its user sold at Binance is given a new pair, which Binance refuses when the account does not hold what it sells.
-- The results of a position: its profit and loss, its fees, its funding, and its result in R (FR-BIN-10). The equity of an agent, and with it the loss limits (FR-RSK-8), still go by the allocated capital.
+- The results of a position: its profit and loss, the sums of its fees and of its funding, and its result in R (FR-BIN-10). The fees and the funding are stored row by row. The equity of an agent, and with it the loss limits (FR-RSK-8), still go by the allocated capital.
+- The funding and the margin of a position on the page of its agent (FR-RPT-2).
 - The orders of a cycle in its record and its timeline (FR-CYC-10). Why a plan placed nothing is in the log only.
 - The count of the orders that an account places, which Binance limits beside the request weight. A protective order has no turn before other calls at the limiter: one that is held back was not sent, and is settled within a minute.
 - A close by hand that is told its user as closed, or failed, by a notification (FR-NTF-1). The page that asked says so.

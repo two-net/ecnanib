@@ -112,6 +112,62 @@ public class LiveBinanceTests
 
     [Theory]
     [MemberData(nameof(Environments))]
+    public async Task The_position_of_an_account_in_a_symbol_of_the_Futures_market_is_read_with_the_credential_of_its_environment(TradingMode mode)
+    {
+        var (apiKey, secretKey) = GivenFor(mode);
+        using var application = OnTheNetwork();
+        var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
+
+        var position = await exchange.GetFuturesPositionAsync(
+            BinanceCalls.User, mode, apiKey, secretKey, TrackedSymbol, TestContext.Current.CancellationToken);
+
+        // Binance took the signature, and what it sent reads: as no position, or as one with
+        // its prices, whichever the account of the run holds. Nothing of the account is changed.
+        Assert.Equal(ExchangeCallOutcome.Succeeded, position.Outcome);
+
+        if (position.Holds)
+        {
+            Assert.True(position.EntryPrice > 0m);
+            Assert.True(position.MarkPrice > 0m);
+            Assert.True(position.LiquidationPrice is null or > 0m);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Environments))]
+    public async Task The_funding_of_an_account_in_a_symbol_of_the_Futures_market_is_read_with_the_credential_of_its_environment(TradingMode mode)
+    {
+        var (apiKey, secretKey) = GivenFor(mode);
+        using var application = OnTheNetwork();
+        var exchange = application.Services.GetRequiredService<IExchangeAdapter>();
+
+        // The last thirty days, of the three months that Binance keeps the income of an account for.
+        var to = DateTimeOffset.UtcNow;
+        var from = to.AddDays(-30);
+
+        var funding = await exchange.GetFundingAsync(
+            BinanceCalls.User, mode, apiKey, secretKey, TrackedSymbol, from, to, TestContext.Current.CancellationToken);
+
+        // Binance took the signature, and what it sent reads as funding, of the time that was
+        // asked for, each row with a number of its own: none, where the account of the run held
+        // no position in the symbol at a funding time.
+        Assert.Equal(ExchangeCallOutcome.Succeeded, funding.Outcome);
+        Assert.Equal(funding.Fundings.Count, funding.Fundings.Select(row => row.TransactionId).Distinct(StringComparer.Ordinal).Count());
+        Assert.All(funding.Fundings, row =>
+        {
+            Assert.InRange(row.At, from.AddSeconds(-1), to.AddSeconds(1));
+            Assert.False(string.IsNullOrWhiteSpace(row.Asset));
+            Assert.NotEqual(0m, row.Amount);
+
+            // What a position received or paid is written at its funding time, which is a whole
+            // hour, and not when Binance came to write it: what reads the funding of a position
+            // that was closed goes by that. See "Funding" in docs/orders.md.
+            Assert.Equal((0, 0), (row.At.Minute, row.At.Second));
+        });
+    }
+
+    [Theory]
+    [MemberData(nameof(Environments))]
     public async Task Binance_takes_the_credential_and_says_what_it_may_do(TradingMode mode)
     {
         var (apiKey, secretKey) = GivenFor(mode);
@@ -588,6 +644,16 @@ public class LiveBinanceTests
             var holding = await exchange.GetFuturesAccountAsync(BinanceCalls.User, mode, apiKey, secretKey, TrackedSymbol, TestContext.Current.CancellationToken);
 
             Assert.Equal((ExchangeCallOutcome.Succeeded, true), (holding.Outcome, holding.HoldsPosition));
+
+            // And says how its margin stands: what it holds, what it was entered at, the mark
+            // price, and the price that Binance liquidates it at, which at a leverage of 2 is
+            // below the mark price of a long position, and above nothing (FR-BIN-F5).
+            var held = await exchange.GetFuturesPositionAsync(BinanceCalls.User, mode, apiKey, secretKey, TrackedSymbol, TestContext.Current.CancellationToken);
+
+            Assert.Equal((ExchangeCallOutcome.Succeeded, quantity), (held.Outcome, held.Quantity));
+            Assert.True(held.EntryPrice > 0m);
+            Assert.True(held.MarkPrice > 0m);
+            Assert.InRange(held.LiquidationPrice!.Value, 0.01m, held.MarkPrice!.Value);
 
             // The protection: a stop-loss a tenth below the mark price, and a take-profit a
             // tenth above it, each an order of its own that only reduces the position, and is

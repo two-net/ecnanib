@@ -833,6 +833,51 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("fills", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.DecisionEngine.Funding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Asset")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("asset");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<Guid>("PositionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("position_id");
+
+                    b.Property<string>("TransactionId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("transaction_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_fundings");
+
+                    b.HasIndex("PositionId", "TransactionId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_fundings_position_id_transaction_id");
+
+                    b.HasIndex("PositionId", "UserId")
+                        .HasDatabaseName("ix_fundings_position_id_user_id");
+
+                    b.ToTable("fundings", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.DecisionEngine.Order", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1005,6 +1050,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("exit_reason");
 
+                    b.Property<DateTimeOffset?>("FundingDueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("funding_due_at");
+
                     b.Property<string>("Market")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1048,10 +1097,17 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_positions");
 
+                    b.HasAlternateKey("Id", "UserId")
+                        .HasName("ak_positions_id_user_id");
+
                     b.HasIndex("AgentId")
                         .IsUnique()
                         .HasDatabaseName("ix_positions_agent_id")
                         .HasFilter("closed_at IS NULL");
+
+                    b.HasIndex("FundingDueAt")
+                        .HasDatabaseName("ix_positions_funding_due_at")
+                        .HasFilter("funding_due_at IS NOT NULL");
 
                     b.HasIndex("AgentId", "UserId", "OpenedAt")
                         .HasDatabaseName("ix_positions_agent_id_user_id_opened_at");
@@ -1841,6 +1897,17 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_fills_order_order_id_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.DecisionEngine.Funding", b =>
+                {
+                    b.HasOne("Ecnanib.DecisionEngine.Position", null)
+                        .WithMany()
+                        .HasForeignKey("PositionId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_fundings_positions_position_id_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.DecisionEngine.Order", b =>

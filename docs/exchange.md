@@ -2,7 +2,7 @@
 
 Every call to Binance goes through the Exchange Gateway: one adapter behind a common interface (SRS 3.1, NFR-ARC-3). Binance is the only exchange. The gateway reaches its Spot market and its USDⓈ-margined perpetual Futures market, each on the real exchange and in Binance's test environment, with Binance's official public APIs, at the four addresses of the configuration file (FR-BIN-1, FR-BIN-2).
 
-A call that needs a credential is signed with the user's own, for the environment that is asked. The gateway places orders, each with the identifier that its caller gave it, and says of each call whether there is an order, so that none is sent twice (FR-BIN-6). On Futures it reads how an account stands, and sets the margin type and the leverage of a symbol, which are no settings of the whole account (FR-BIN-F2). It has no operation that withdraws, deposits, or transfers funds (FR-BIN-9). Every call passes one limiter, for all users, because Binance counts its limits on requests against the address of the service (FR-BIN-4). The clock of the service is held against Binance's, and new entries pause while it is off (FR-BIN-5). Market data is read once and shared by all who need it, and is held in memory for a short time and nowhere else (FR-BIN-3, NFR-DAT-6). Every call is logged with its duration, its outcome, and the request weight that Binance reports (NFR-LOG-5).
+A call that needs a credential is signed with the user's own, for the environment that is asked. The gateway places orders, each with the identifier that its caller gave it, and says of each call whether there is an order, so that none is sent twice (FR-BIN-6). On Futures it reads how an account stands, and sets the margin type and the leverage of a symbol, which are no settings of the whole account (FR-BIN-F2). It reads the position that an account holds there with its margin, and the funding that the account received and paid, and it adds no margin to a position (FR-BIN-F4, FR-BIN-F5). It has no operation that withdraws, deposits, or transfers funds (FR-BIN-9). Every call passes one limiter, for all users, because Binance counts its limits on requests against the address of the service (FR-BIN-4). The clock of the service is held against Binance's, and new entries pause while it is off (FR-BIN-5). Market data is read once and shared by all who need it, and is held in memory for a short time and nowhere else (FR-BIN-3, NFR-DAT-6). Every call is logged with its duration, its outcome, and the request weight that Binance reports (NFR-LOG-5).
 
 The code is in `src/Ecnanib/ExchangeGateway`. The rules below are enforced by tests in `tests/Ecnanib.Tests/ExchangeGateway` and `tests/Ecnanib.Tests/Architecture`.
 
@@ -23,6 +23,13 @@ public interface IExchangeAdapter
 
     Task<ExchangeFuturesAccount> GetFuturesAccountAsync(
         Guid userId, TradingMode mode, string apiKey, string secretKey, string symbol, CancellationToken cancellationToken);
+
+    Task<ExchangeFuturesPosition> GetFuturesPositionAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, string symbol, CancellationToken cancellationToken);
+
+    Task<ExchangeFundings> GetFundingAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, string symbol,
+        DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken);
 }
 
 public sealed record ExchangeTime(ExchangeCallOutcome Outcome, DateTimeOffset? ServerTime);
@@ -32,14 +39,22 @@ public sealed record ExchangeBalances(ExchangeCallOutcome Outcome, IReadOnlyList
 public sealed record ExchangeBalance(string Asset, decimal Total, decimal Available);
 
 public sealed record ExchangeFuturesAccount(ExchangeCallOutcome Outcome, bool HedgeMode, bool MultiAssetsMargin, bool HoldsPosition);
+
+public sealed record ExchangeFuturesPosition(
+    ExchangeCallOutcome Outcome, decimal Quantity, decimal? EntryPrice, decimal? MarkPrice, decimal? LiquidationPrice);
+
+public sealed record ExchangeFundings(ExchangeCallOutcome Outcome, IReadOnlyList<ExchangeFunding> Fundings, bool More);
+
+public sealed record ExchangeFunding(string TransactionId, decimal Amount, string Asset, DateTimeOffset At);
 ```
 
 | Rule | Detail |
 |---|---|
 | **A caller names a market and an environment, and nothing of Binance.** | `Market` is `Spot` or `Futures`, and `TradingMode` is `Demo` or `Live`. The adapter is private to the gateway, and so are the paths, the parameters, and the errors of Binance. What a call gives is a type of the gateway. |
-| **Every operation of this interface reads.** | The clock of a market, what a credential may do, what an account holds, and how an account stands on Futures. The orders have an interface of their own, and so has what sets the margin of a symbol: see "The orders" and "No funds are moved". |
+| **Every operation of this interface reads.** | The clock of a market, what a credential may do, what an account holds, how an account stands on Futures, the position that it holds in a symbol there with its margin, and the funding that it received and paid. The orders have an interface of their own, and so has what sets the margin of a symbol: see "The orders" and "No funds are moved". |
 | **What an account holds is asked before an entry.** | `AgentOrders` of the Decision Engine asks `GetBalancesAsync` for the asset that the symbol of an entry is priced in, and skips an entry that the account does not cover: its value on Spot (FR-BIN-S3), and its margin in the wallet of Futures (FR-BIN-F6). See "The quote balance" and "The margin of Futures" in [orders.md](orders.md). |
 | **How an account stands on Futures is asked before an entry there, and before an agent runs.** | `GetFuturesAccountAsync`: see "The account of Futures". |
+| **The position of an account on Futures and its funding are asked while an agent holds a position there.** | `PositionWatch` of the Decision Engine asks `GetFuturesPositionAsync` for the margin of every open position, every few minutes, and `GetFundingAsync` for what a position received and paid, after each funding time. See "The position of an account, and its margin" and "The funding of an account", and "Watching the positions of Futures" in [orders.md](orders.md). |
 | **The credential comes with the call.** | See "The credential". |
 | **A call with a credential says whose it is.** | `userId` is the user that the credential belongs to. It is for the limiter, which gives the users whose calls wait their turns, and it is not sent to Binance. An empty one is no call. See "The limiter". |
 | **A call is made once.** | The gateway does not call again after a failure. Whether a call is made again is its caller's to decide. |
@@ -75,7 +90,8 @@ These are all the calls that the gateway makes. Each is a `GET`, but for the cal
 | The account of Spot: what it holds, and whether it may trade | `/api/v3/account?omitZeroBalances=true` | Yes | 20 |
 | The settings of the account of Futures: whether it may trade, in the test environment, and the two modes of the whole account | `/fapi/v1/accountConfig` | Yes | 5 |
 | What the wallet of Futures holds | `/fapi/v3/balance` | Yes | 5 |
-| The positions of the account of Futures in a symbol | `/fapi/v3/positionRisk?symbol=…` | Yes | 5 |
+| The positions of the account of Futures in a symbol: whether it holds one, and how the margin of one stands | `/fapi/v3/positionRisk?symbol=…` | Yes | 5 |
+| The funding that the account of Futures received and paid in a symbol, between two moments | `/fapi/v1/income?incomeType=FUNDING_FEE&symbol=…&startTime=…&endTime=…&limit=1000` | Yes | 30 |
 | The candles of a symbol on Spot | `/api/v3/klines?symbol=…&interval=…&limit=499` | No | 2 |
 | The candles of a symbol on Futures | `/fapi/v1/klines?symbol=…&interval=…&limit=499` | No | 2 |
 | The price of a symbol on Spot | `/api/v3/ticker/price?symbol=…` | No | 2 |
@@ -144,12 +160,12 @@ Binance counts its limits on requests against the address that the calls come fr
 
 - **A limit is a request weight in a minute.** Each call costs its weight of the limit that it is counted against: see "The calls".
 - **Each limit is counted on its own,** and in each environment on its own. That makes five budgets: Spot and Futures in both environments, and the permissions of a key on the real exchange, which is the only one that has the call. Binance's wallet API counts each of its calls apart from the others.
-- **`Binance:LimitSharePercent` is the part of each limit that the service allows itself.** The rest is left for what the limiter cannot see.
+- **`Binance:LimitSharePercent` is the part of each limit that the service allows itself.** The rest is left for what the limiter cannot see. It is 2 at the least: the part must hold the heaviest call of its limit, or that call would never pass, and the read of funding on Futures weighs 30, where a hundredth of that limit is 24.
 - The numbers are in `BinanceLimit`, beside the weights, and are what Binance documents. Its documentation gives them as what `exchangeInfo` answers, and says nothing of its test environment, which is taken to count as the real exchange does.
 
 | Rule | Detail |
 |---|---|
-| **Any sixty seconds carry at most the part.** | A fifth of what a minute allows may go at once, and the rest flows in evenly: at 70 percent, 336 of the Futures limit at once and 22.4 more in each second. So there is soon room again after a burst, and no minute is spent in its first second. Binance does not document whether its minute is one of the clock or the last sixty seconds, and this holds for both. |
+| **Any sixty seconds carry at most the part.** | A fifth of what a minute allows may go at once, or the heaviest call of the limit where that is more, and the rest flows in evenly: at 70 percent, 336 of the Futures limit at once and 22.4 more in each second. So there is soon room again after a burst, and no minute is spent in its first second. Binance does not document whether its minute is one of the clock or the last sixty seconds, and this holds for both. |
 | **A call that finds no room waits for its turn,** for 10 seconds at most. | Then it ends as `RateLimited`, and was not sent. It ends at once when the limiter already knows that its turn cannot come in time. A caller that cancels meanwhile gets the error of a cancelled call. |
 | **A call is signed when it is sent.** | Not when it began to wait: Binance takes a signed call for five seconds after the time that it carries. The time limit of 15 seconds starts there as well. |
 | **Calls that wait take turns, user by user.** | One call of each user after the other, so the burst of one user leaves the call of another one call behind, and not a burst behind. A call without a credential, such as a read of the clock or of market data, is the service's own, and the service takes turns as one more user. The order is strict: a light call does not pass a heavy one whose turn it is. |
@@ -384,6 +400,46 @@ Futures agents use isolated margin and one-way position mode. The system sets ma
 | **A leverage is a whole number of 1 or more.** | Anything else is an error of the caller, and nothing is sent. |
 | Neither moves funds. | Each names the symbol and what the symbol is to have, and nothing else. The margin of a position is taken from the wallet of Futures by the order that opens it. The gateway has no call that adds margin to a position: see "No funds are moved". |
 
+## The position of an account, and its margin
+
+The system checks the margin state of open positions at each reconciliation and alerts the user when a position approaches liquidation. It never adds margin on its own (FR-BIN-F5). The gateway reads the position, and has nothing that adds margin. `FuturesPositionTests` holds it to the rules below.
+
+`GetFuturesPositionAsync` reads the position that the account of a credential holds in one symbol, with one call: its positions in the symbol, which is the second of the two calls of "The account of Futures".
+
+| | Read from | |
+|---|---|---|
+| `Quantity` | `positionAmt` of the row of the symbol that holds something | How much the position holds: above zero for a long position, and below zero for a short one. Zero when no row of the symbol holds anything: the account has no position in it. |
+| `EntryPrice` | `entryPrice` | The average price that the position was entered at. |
+| `MarkPrice` | `markPrice` | The mark price of the symbol, which a liquidation goes by. |
+| `LiquidationPrice` | `liquidationPrice` | The mark price at which Binance liquidates the position, which is where the margin of the position no longer covers what it must keep. Binance writes nothing, as `0`, where it names none: that is no price. |
+
+- **It only reads.** Binance has a call that adds margin to a position, or takes margin out of one: the gateway does not make it. See "No funds are moved".
+- **A position has its prices, or it is not read.** A row that holds something and lacks its entry price, its mark price, or its liquidation price is `Failed`, as is a list with a row that does not read: a position is never taken for one that is far from liquidation because the answer did not say.
+- **How the margin stands is said by the prices.** The liquidation price is Binance's own word of where the margin of the position runs out, with the maintenance margin in it. The amounts of the margin are in the same answer, and are not read: nothing goes by them.
+- **Two rows of a symbol that hold something are no one position.** In hedge mode an account can hold a long and a short position in a symbol. That is `Failed`: the service trades in one-way mode.
+- **A result says a position when the read succeeded, and never otherwise.**
+
+## The funding of an account
+
+The current funding rate and the next funding time are included in the data package, and funding paid or received is recorded per position (FR-BIN-F4). The rate and the next funding time come with the mark price: see "Market data". This is what an account received and paid. `FundingReadTests` holds it to the rules below.
+
+`GetFundingAsync` reads the funding that the account of a credential received and paid in one symbol between two moments, both of them included, with one call: the rows of its income that are funding.
+
+| | Read from | |
+|---|---|---|
+| `TransactionId` | `tranId` | The number that Binance gave the row, which is unique among the funding of an account. Binance writes it as a number, which is kept digit for digit. |
+| `Amount` | `income` | How much: above zero when the account received it, and below zero when it paid. |
+| `Asset` | `asset` | The asset that it was received or paid in. |
+| `At` | `time` | When, by the clock of Binance. |
+| `More` | | Whether the answer has 1000 rows, which is the most that Binance gives: there may be more of the time that was asked for. |
+
+- **It only reads,** as every call of the income of an account does.
+- **The rows are said oldest first,** whatever order Binance gave them in, and those of one moment in the order of their numbers.
+- **A list is whole or it is not a list.** A row that does not read, that is no funding, or that is of another symbol than the one that was asked for makes the answer `Failed`: a part of a list would make the rest look as if it had not been paid.
+- **A time that ends before it begins is an error of the caller,** and nothing is sent. One moment is a time.
+- **It is the heaviest call of the gateway,** at 30 of request weight. What reads the funding of a position reads it when it is due, and for so many positions in a run: see "Funding" in [orders.md](orders.md).
+- Binance keeps the income of an account for three months.
+
 ## Market data
 
 Market data is candles, prices, and the rules of the symbols, and on Futures also the mark price, the funding rate, and the open interest. It is fetched once per symbol and timeframe and shared by all agents that need it (FR-BIN-3): every read costs of the one budget that all users spend, so a read for each agent would be what uses it up (risk R2). `Adapters/Binance/BinanceMarketData.cs` reads it, and `MarketDataTests`, `MarketDataSharingTests`, and `CandleCacheTests` hold it to the rules below, on a clock that the tests move.
@@ -489,11 +545,11 @@ Ecnanib never withdraws, deposits, or transfers funds, between the Spot and the 
 
 | Rule | Detail |
 |---|---|
-| **The gateway has no such operation.** | `IExchangeAdapter` has the four above, and each reads. `IExchangeMarketData` has five, and each reads, with a call of Binance's public API, which takes no credential and so can move nothing. `IExchangeOrders` has seven: an order, and a pair of them, buys or sells in the account that the credential is of, and moves nothing out of it, into it, or between its wallets, and the margin of a symbol is a setting of that account. |
+| **The gateway has no such operation.** | `IExchangeAdapter` has the six above, and each reads. `IExchangeMarketData` has five, and each reads, with a call of Binance's public API, which takes no credential and so can move nothing. `IExchangeOrders` has seven: an order, and a pair of them, buys or sells in the account that the credential is of, and moves nothing out of it, into it, or between its wallets, and the margin of a symbol is a setting of that account. |
 | **It can send Binance nothing but the calls of the list.** | See "The calls". `NoFundMovementTests` asks the gateway for everything it does, in each market and each environment, and holds what was sent to the three lists. It fails for an operation of any of the three interfaces that it does not ask, so an operation that is added is held to the lists too. |
 | **Binance keeps the calls that move funds apart.** | Withdrawals, the addresses of deposits, and transfers between wallets are in its wallet API, under `/sapi`. The gateway makes one call there, which reads what a key may do. |
 | A call about an order names one order, and nothing to move. | Each call that is no `GET` and is about an order carries the identifier of its order, or of its pair. None carries an amount of an asset to send, or an address to send it to. |
-| **A call that sets the margin of a symbol names the symbol, and what it is to have.** | The margin type, or the leverage, and nothing else: no asset, no amount, and no address. `NoFundMovementTests` holds the two calls to those parameters. Binance has a call that adds margin to a position of isolated margin, or takes it out, which moves funds within the wallet of Futures: the gateway does not make it, and the service never adds margin on its own (FR-BIN-F5). |
+| **A call that sets the margin of a symbol names the symbol, and what it is to have.** | The margin type, or the leverage, and nothing else: no asset, no amount, and no address. `NoFundMovementTests` holds the two calls to those parameters. Binance has a call that adds margin to a position of isolated margin, or takes it out, which moves funds within the wallet of Futures: the gateway does not make it, and the service never adds margin on its own (FR-BIN-F5). `NoFundMovementTests` names that call, `/fapi/v1/positionMargin`, as one that is never sent, and holds what is sent about the margin of a position to two calls that read: its positions, and its income. |
 
 ## The log
 
@@ -565,10 +621,12 @@ The variables are `ECNANIB_LIVE_BINANCE_<ENVIRONMENT>_KEY` and `ECNANIB_LIVE_BIN
 | The candles of `BTCUSDT` on each market, of each length. | `Succeeded`, with candles of that length in the order of their time, the newest closed within its length of now, and for 2 of request weight each. |
 | The price of `BTCUSDT` and the symbols of each market. | `Succeeded`, with a price, and with `BTCUSDT` among the symbols, with its rules. |
 | The mark price and the open interest of `BTCUSDT` on Futures. | `Succeeded`, with a funding rate, and a next funding that is ahead. |
+| The position of the account in `BTCUSDT` on Futures, with the credential that was given. | `Succeeded`: no position, or one with its prices, whichever the account holds. |
+| The funding that the account received and paid in `BTCUSDT` on Futures in the last thirty days. | `Succeeded`: none, or rows of that time, each with a number of its own, and each at a whole hour, which a funding time of Binance is. |
 | A stop of `BTCUSDT` on each market of the test environment, which buys a tenth above the price: asked about before it is placed, placed, asked about, taken off, taken off once more, and asked about again. | `NotFound`, then `Answered` as an order that rests, the same order when it is asked about, `Canceled` when it is taken off, `NotFound` when it is taken off once more, and `Canceled` when it is asked about after that. |
 | An order at a price of `BTCUSDT` on Spot of the test environment, which buys a tenth below the price: placed, asked about, and taken off. | `Answered` as an order that rests, the same order when it is asked about, and `Canceled` when it is taken off, with nothing executed. |
 | What an entry of an agent on Spot does, in the test environment: the least of `BTCUSDT` that orders can be for is bought at the market, a pair is placed for what the account holds of it, a tenth below and a tenth above the price, each of its orders is asked about, the pair is taken off, taken off once more, one of its orders is asked about again, and what was bought is sold at the market. | The purchase `Filled`, with its executions and their fees. The pair `Answered`, with both orders resting, and each found by its own identifier. Both `Canceled` when the pair is taken off, each under the number that it had. `NotFound` when it is taken off once more, and `Canceled` when one is asked about after that. The sale `Filled`. |
-| What an entry of an agent on Futures does, in the test environment: how the account stands is read, `BTCUSDT` is given isolated margin and a leverage of 2, and given both once more, a little is bought at the market, a stop-loss and a take-profit that only reduce the position are placed a tenth below and a tenth above the mark price, each is asked about, the take-profit is taken off, the position is closed at the market while the stop-loss rests, the stop-loss is asked about and taken off where it still rests, and the account is read again. | The account `Succeeded`, in one-way mode with one asset and no position in the symbol, or the test is skipped. The margin `Answered`, both times. The purchase `Filled`, at a price, after which the account holds a position. Both orders `Answered` and resting, each found by its own identifier. The take-profit `Canceled`, and the stop-loss resting still. The close `Filled`. The stop-loss known to Binance with nothing executed, whatever Binance made of it, which the run writes out. No position after that. |
+| What an entry of an agent on Futures does, in the test environment: how the account stands is read, `BTCUSDT` is given isolated margin and a leverage of 2, and given both once more, a little is bought at the market, the position is read with its margin, a stop-loss and a take-profit that only reduce the position are placed a tenth below and a tenth above the mark price, each is asked about, the take-profit is taken off, the position is closed at the market while the stop-loss rests, the stop-loss is asked about and taken off where it still rests, and the account is read again. | The account `Succeeded`, in one-way mode with one asset and no position in the symbol, or the test is skipped. The margin `Answered`, both times. The purchase `Filled`, at a price, after which the account holds a position, which is read with its margin: what was bought, its prices, and a liquidation price below the mark price. Both orders `Answered` and resting, each found by its own identifier. The take-profit `Canceled`, and the stop-loss resting still. The close `Filled`. The stop-loss known to Binance with nothing executed, whatever Binance made of it, which the run writes out. No position after that. |
 
 The market data needs no credential. It is asked under the same condition all the same, so that no run reaches Binance that was not meant to.
 
@@ -595,6 +653,9 @@ Run it when a call is added or changed, and when Binance changes its API. These 
 - That the test environment of Spot takes an order at a price and the pair, and that Binance reports the orders of a pair that it takes off under `origClientOrderId`. Binance documents the calls for the real exchange, and says that its test environment has the same features. The run above shows them, and no run has been made yet.
 - What Binance answers when it is asked to take off a pair that is over. The gateway takes `-2011` and `-2013` for its word that there is none, and what places the orders asks about both orders whatever the answer is.
 - What becomes of the other order of a pair when one is triggered. Binance's documentation says that it ends, as cancelled "because the other order of the pair started working", and does not say which of its states that is. The gateway reads both `CANCELED` and `EXPIRED` as an order that is over, and what places the orders goes by neither. No run triggers an order.
+- That the test environment of Futures serves `/fapi/v1/income`, and what a row of funding looks like there. Binance's documentation shows a row of another kind, and none of funding.
+- When Binance writes what a position received or paid at a funding time, that the time of the row is the funding time itself, and that an answer of 1000 rows holds the oldest of the time that was asked for. What reads the funding of a position takes all three for granted: see "Funding" in [orders.md](orders.md). The run holds a row to a whole hour where the account has one, and settles the other two only for an account that held a position over a funding time.
+- That `/fapi/v3/positionRisk` says `entryPrice`, `markPrice`, and `liquidationPrice` for a position of isolated margin, and writes a liquidation price of `0` where it names none. The run that buys on Futures reads the position that it opened.
 - That Binance begins the next candle as one closes, also when nothing trades. Its documentation does not say when. Where it begins a candle late, the candle before it is given late, and never early: see "Candles".
 
 The calls of the market data were asked of Binance itself on 16 November 2026, on both markets, on the real exchange and in the test environment. Each ended as the table says. The run and what Binance answered beside it also showed what its documentation leaves open:
@@ -610,7 +671,7 @@ The calls of the market data were asked of Binance itself on 16 November 2026, o
 - The operator status screen, which shows what `IExchangeLimits` and `IExchangeClock` say (FR-OPS-2).
 - The limit on the orders of an account, which Binance counts for each account and not for the address. An order that Binance answers with its signal of too many ends as `NotSent`, as any call does. A protective order has no turn before other calls at the limiter either.
 - The leverage brackets of a symbol of Futures, `/fapi/v1/leverageBracket`, by which Binance allows less leverage for a larger position. A leverage that Binance refuses ends as `Rejected`.
-- The margin state of an open position, and its funding (FR-BIN-F4, FR-BIN-F5). The positions of an account are read for whether it holds one in a symbol, and for nothing else.
+- The positions of an account in all its symbols, in one read. The margin of each open position is read with a call of its own, in its symbol. See "Not built yet" in [orders.md](orders.md).
 - The list of three orders of Spot, in which Binance places a pair by itself when an entry at a price is executed. See "Not built yet" in [orders.md](orders.md).
 - A page that asks for prices, and a data package that holds one. What has the Risk Guard check the plan of a cycle asks for the price that the symbol last traded at, and for the rules of its symbol, which it holds the plan to (FR-RSK-4): see "The facts" in [risk-guard.md](risk-guard.md). What starts the cycles asks for the candles of an agent's own timeframe through each close, and the data package of each cycle for the candles of the higher timeframes, and on Futures for the mark price, the funding rate, and the open interest (FR-CYC-2): see "The data package" in [cycles.md](cycles.md). An agent's timeframe is one of four, `Timeframe` in `Shared`: `CandleInterval` has a member of the same name for each, which `CandleIntervals.Of` gives, and the week as well, for context alone.
 - Prices that change on a screen within two seconds (FR-NTF-2). A price is read when it is asked for, and counts for a second: a screen that asked every second for every symbol would spend much of the budget.

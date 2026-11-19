@@ -12,10 +12,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Ecnanib.Tests.DecisionEngine;
 
 /// <summary>
-/// The orders, the executions, and the positions of agents, as they are stored: whose they are,
-/// what an agent can have of them at a time, and what they answer to those that ask what an
-/// agent holds (FR-AGT-8, FR-AGT-11, FR-CYC-2, FR-CYC-5, NFR-DAT-9). See "The record of an order"
-/// in docs/orders.md.
+/// The orders, the executions, and the positions of agents, with what the positions received and
+/// paid as funding, as they are stored: whose they are, what an agent can have of them at a
+/// time, and what they answer to those that ask what an agent holds (FR-AGT-8, FR-AGT-11,
+/// FR-CYC-2, FR-CYC-5, NFR-DAT-9). See "The record of an order" in docs/orders.md.
 /// </summary>
 public class OrderRecordTests
 {
@@ -25,7 +25,7 @@ public class OrderRecordTests
     private static readonly DateTimeOffset Morning = new(2026, 11, 17, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    [ProvesOwnershipOf("orders", "fills", "positions")]
+    [ProvesOwnershipOf("orders", "fills", "positions", "fundings")]
     public async Task The_orders_of_an_agent_are_of_the_user_of_the_agent_and_of_no_other()
     {
         using var application = new AccountsApplication(clock: new TestClock(Morning));
@@ -54,15 +54,25 @@ public class OrderRecordTests
         Assert.Empty(
             await context.Set<Order>().OwnedBy(ada.Id).Where(order => order.AgentId == graces).ToListAsync(TestContext.Current.CancellationToken));
         Assert.Single(await context.Set<Fill>().OwnedBy(ada.Id).ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            [adasPosition],
+            await context.Set<Funding>().OwnedBy(ada.Id).Select(funding => funding.PositionId).ToListAsync(TestContext.Current.CancellationToken));
 
-        // The owner of an order and of a position is the owner of its agent, and the owner of
-        // an execution the owner of its order: the database holds to each, whatever wrote the row.
+        // The owner of an order and of a position is the owner of its agent, the owner of an
+        // execution the owner of its order, and the owner of what a position received and paid
+        // as funding the owner of the position: the database holds to each, whatever wrote the row.
         var gracesOrder = await context.Set<Order>().AsNoTracking().FirstAsync(order => order.AgentId == graces, TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(application, OrderOf(graces, ada.Id, OrderStatus.Filled)));
         await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(application, PositionOf(graces, ada.Id, closed: true)));
         await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
             application, new Fill(Guid.CreateVersion7(), gracesOrder.Id, ada.Id, "9100", 100_000m, 0.01m, 0.5m, "USDT", Morning)));
+        await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
+            application, new Funding(Guid.CreateVersion7(), gracesPosition, ada.Id, "8100", -0.1m, "USDT", Morning)));
+
+        // What a position received or paid at a funding time is stored once for it.
+        await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
+            application, new Funding(Guid.CreateVersion7(), adasPosition, ada.Id, "8001", -0.1m, "USDT", Morning)));
 
         Assert.Equal(before, application.RowsOf(grace.Id));
         Assert.Single(application.RowsOf(ada.Id)["positions"]);
@@ -81,10 +91,14 @@ public class OrderRecordTests
         await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
         await context.Set<Agent>().Where(agent => agent.Id == deleted).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
 
-        // Its positions, its orders, and their executions are gone, and those of the other agent stay.
+        // Its positions, with their funding, its orders, and their executions are gone, and
+        // those of the other agent stay.
         Assert.Equal([keptPosition], await context.Set<Position>().Select(position => position.Id).ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(2, await context.Set<Order>().CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, await context.Set<Fill>().CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            [keptPosition],
+            await context.Set<Funding>().Select(funding => funding.PositionId).ToListAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -228,5 +242,5 @@ public class OrderRecordTests
 
     private static Position PositionOf(Guid agentId, Guid userId, bool closed) => new(
         Guid.CreateVersion7(), agentId, userId, TradingMode.Demo, Market.Spot, "BTCUSDT", PositionSide.Long, 60000m, 0.01m, 59000m, 62000m,
-        Morning, closed ? Morning.AddHours(1) : null, closed ? ExitReason.StopLoss : null, alertedAt: null);
+        Morning, closed ? Morning.AddHours(1) : null, closed ? ExitReason.StopLoss : null, alertedAt: null, fundingDueAt: null);
 }

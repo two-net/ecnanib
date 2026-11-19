@@ -29,6 +29,16 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string OrderSettlingKey = "order-settling";
 
+    // The job of the Decision Engine that watches the positions of the Futures market, named in the same way.
+    private const string PositionWatch = "Ecnanib.DecisionEngine.PositionWatchJob";
+
+    /// <summary>
+    /// The key under which the job that watches the positions of the Futures market is kept: the
+    /// scheduler of no application of the tests runs it, and a test runs it from there itself, at
+    /// a moment of its choosing.
+    /// </summary>
+    public const string PositionWatchKey = "position-watch";
+
     private SettingsDirectory? _ownDirectory;
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
@@ -134,6 +144,18 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
                 // run of the schedule beside it.
                 services.AddKeyedSingleton(typeof(IBackgroundJob), OrderSettlingKey, settling.ImplementationType!);
             }
+
+            // The job that watches the positions of the Futures market is due as the background
+            // work starts when there is one, and then every few minutes: it asks the exchange
+            // about the margin of every open position, and about its funding. Many tests give a
+            // user a position for a reason of their own, and count the calls that their Binance
+            // was sent. So no application of a test runs this job on a schedule: a test that is
+            // about what a run does finds it by its key, and runs it itself.
+            var watching = services.Single(job =>
+                job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == PositionWatch);
+
+            services.Remove(watching);
+            services.AddKeyedSingleton(typeof(IBackgroundJob), PositionWatchKey, watching.ImplementationType!);
         });
 
         _configure?.Invoke(builder);

@@ -24,7 +24,7 @@ internal static class StoredOrderRows
     /// <summary>
     /// Gives an agent of a user the orders of a position that is over, stored as the application
     /// stores them: an entry that was executed, with its one execution, the position that it
-    /// opened, and the stop-loss that closed it. Everything is over, so the agent holds nothing,
+    /// opened, what the position paid as funding, and the stop-loss that closed it. Everything is over, so the agent holds nothing,
     /// and nothing is left to settle. It is for a test that is about something else, and needs a
     /// row in every table that holds rows of users.
     /// </summary>
@@ -51,7 +51,8 @@ internal static class StoredOrderRows
             openedAt: at,
             closedAt: at.AddMinutes(30),
             ExitReason.StopLoss,
-            alertedAt: null);
+            alertedAt: null,
+            fundingDueAt: null);
 
         var entryId = Guid.CreateVersion7();
         var entry = new Order(
@@ -124,6 +125,10 @@ internal static class StoredOrderRows
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         context.Add(new Fill(Guid.CreateVersion7(), entryId, userId, tradeId: "9001", 100_000m, 0.01m, fee: 0.5m, feeAsset: "USDT", at));
+
+        // What the position paid as funding while it was open, as the exchange says it of a
+        // position of the Futures market. It is a row of the user in one more table.
+        context.Add(new Funding(Guid.CreateVersion7(), position.Id, userId, transactionId: "8001", amount: -0.1m, asset: "USDT", at.AddMinutes(10)));
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         return position.Id;
@@ -262,6 +267,12 @@ internal sealed class TradingBinance
 
     /// <summary>The asset that Binance takes its fee in. On the Spot market it may be the asset that is bought.</summary>
     public string FeeAsset { get; set; } = "USDT";
+
+    /// <summary>
+    /// When Binance says that the executions of its orders were, where it lists them: a moment
+    /// of its own clock, which a test sets when it is about that moment.
+    /// </summary>
+    public DateTimeOffset ExecutedAt { get; set; } = DateTimeOffset.FromUnixTimeMilliseconds(At);
 
     /// <summary>What becomes of a call that places an order, or a pair, when it is not taken and answered.</summary>
     public Func<AskedOrder, OrderFate>? Fate { get; set; }
@@ -665,7 +676,7 @@ internal sealed class TradingBinance
                 $$"""
                 { "symbol": "BTCUSDT", "id": {{trade.TradeId}}, "orderId": {{orderId}}, "price": "{{Text(order.Price)}}", "qty": "{{Text(trade.Quantity)}}",
                   "quoteQty": "{{Text(trade.Quantity * order.Price)}}", "commission": "{{Text(trade.Fee)}}", "commissionAsset": "{{trade.FeeAsset}}",
-                  "time": {{At}}, "isBuyer": true, "isMaker": false }
+                  "time": {{ExecutedAt.ToUnixTimeMilliseconds()}}, "isBuyer": true, "isMaker": false }
                 """)) + "]";
     }
 
@@ -755,6 +766,80 @@ internal sealed class StandInEntries : IExchangeClock
 }
 
 /// <summary>
+/// The position of BTCUSDT that an account holds on the Futures market, as the exchange says it
+/// with its prices: the one that the plans of the tests open, entered at 60000 for 0.02.
+/// </summary>
+internal static class HeldPositions
+{
+    /// <summary>A long position, at a mark price, with the price that the exchange liquidates it at, or with none.</summary>
+    public static ExchangeFuturesPosition Long(decimal mark, decimal? liquidation = 50000m) =>
+        new(ExchangeCallOutcome.Succeeded, 0.02m, EntryPrice: 60000m, mark, liquidation);
+
+    /// <summary>A short position, at a mark price, with the price that the exchange liquidates it at, or with none.</summary>
+    public static ExchangeFuturesPosition Short(decimal mark, decimal? liquidation = 70000m) =>
+        new(ExchangeCallOutcome.Succeeded, -0.02m, EntryPrice: 60000m, mark, liquidation);
+}
+
+/// <summary>
+/// Stands before the market data of the gateway, for the mark price of a symbol alone, once a
+/// test says when the next funding is: everything else, and the mark price until then, is the
+/// gateway's own. The gateway holds a mark price that it read for a second of real time, whatever
+/// the clock of a test shows, so a test that moves its clock over a funding time would be told
+/// the funding time that has passed.
+/// </summary>
+internal sealed class StandInFundingTimes : IExchangeMarketData
+{
+    private IExchangeMarketData? _gateway;
+    private int _asked;
+
+    /// <summary>When the next funding is, as the exchange says it with the mark price, or null where the gateway's own answer is given.</summary>
+    public DateTimeOffset? Next { get; set; }
+
+    /// <summary>How a read of the mark price ends, once <see cref="Next"/> is said.</summary>
+    public ExchangeCallOutcome Outcome { get; set; } = ExchangeCallOutcome.Succeeded;
+
+    /// <summary>How many times the mark price was asked for.</summary>
+    public int Asked => Volatile.Read(ref _asked);
+
+    /// <summary>Puts it before the market data of the gateway.</summary>
+    public StandInFundingTimes Before(IExchangeMarketData gateway)
+    {
+        _gateway = gateway;
+
+        return this;
+    }
+
+    public Task<ExchangeMarkPrice> GetMarkPriceAsync(TradingMode mode, string symbol, CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _asked);
+
+        if (Next is not { } next)
+        {
+            return Gateway.GetMarkPriceAsync(mode, symbol, cancellationToken);
+        }
+
+        return Task.FromResult(Outcome == ExchangeCallOutcome.Succeeded
+            ? new ExchangeMarkPrice(Outcome, 60000m, 0.0001m, next, DateTimeOffset.UtcNow)
+            : new ExchangeMarkPrice(Outcome, null, null, null, null));
+    }
+
+    public Task<ExchangeCandles> GetCandlesAsync(
+        Market market, TradingMode mode, string symbol, CandleInterval interval, CancellationToken cancellationToken) =>
+        Gateway.GetCandlesAsync(market, mode, symbol, interval, cancellationToken);
+
+    public Task<ExchangePrice> GetPriceAsync(Market market, TradingMode mode, string symbol, CancellationToken cancellationToken) =>
+        Gateway.GetPriceAsync(market, mode, symbol, cancellationToken);
+
+    public Task<ExchangeSymbols> GetSymbolsAsync(Market market, TradingMode mode, CancellationToken cancellationToken) =>
+        Gateway.GetSymbolsAsync(market, mode, cancellationToken);
+
+    public Task<ExchangeOpenInterest> GetOpenInterestAsync(TradingMode mode, string symbol, CancellationToken cancellationToken) =>
+        Gateway.GetOpenInterestAsync(mode, symbol, cancellationToken);
+
+    private IExchangeMarketData Gateway => _gateway ?? throw new InvalidOperationException("It stands before the market data of an application.");
+}
+
+/// <summary>
 /// The application with a <see cref="TradingBinance"/> behind the gateway, on a database of the
 /// test's own and a clock that only the test moves, for a test of the orders: a user with a
 /// Binance credential and an agent that runs, and what places and settles the orders of it.
@@ -780,6 +865,15 @@ internal sealed class OrdersApplication : IDisposable
             {
                 services.AddHttpClient(ExchangeGatewayModule.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Binance.System);
                 services.AddSingleton<IExchangeClock>(Entries);
+
+                // The market data of the gateway, with the funding times of the test before it.
+                var registered = services.Last(service => service.ServiceType == typeof(IExchangeMarketData));
+                var gateway = registered.ImplementationType!;
+
+                services.Remove(registered);
+                services.AddSingleton(gateway);
+                services.AddSingleton<IExchangeMarketData>(
+                    provider => FundingTimes.Before((IExchangeMarketData)provider.GetRequiredService(gateway)));
             }),
             settlesOrders: settlesOrders);
     }
@@ -791,6 +885,9 @@ internal sealed class OrdersApplication : IDisposable
     public TradingBinance Binance { get; }
 
     public StandInEntries Entries { get; } = new();
+
+    /// <summary>When the next funding is, where a test says it: the mark price is the gateway's own until then.</summary>
+    public StandInFundingTimes FundingTimes { get; } = new();
 
     public IPlanOrders Orders => Application.PlanOrders;
 
@@ -904,6 +1001,25 @@ internal sealed class OrdersApplication : IDisposable
         await using var context = await Application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
         return await context.Set<Fill>().AsNoTracking().Where(fill => fill.OrderId == orderId).ToListAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Watches the positions of the Futures market, as the job that the scheduler runs at the
+    /// time between reconciliations does, at the moment that the clock shows.
+    /// </summary>
+    public Task WatchAsync() => Application.WatchPositionsAsync();
+
+    /// <summary>What is stored of what a position received and paid as funding, oldest first.</summary>
+    public async Task<IReadOnlyList<Funding>> FundingsOfAsync(Guid positionId)
+    {
+        await using var context = await Application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        return await context.Set<Funding>()
+            .AsNoTracking()
+            .Where(funding => funding.PositionId == positionId)
+            .OrderBy(funding => funding.At)
+            .ThenBy(funding => funding.TransactionId)
+            .ToListAsync(TestContext.Current.CancellationToken);
     }
 
     /// <summary>The notifications of a user as they are stored, in the order they were raised in.</summary>

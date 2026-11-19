@@ -4,22 +4,41 @@ namespace Ecnanib.Platform.Settings;
 
 /// <summary>
 /// The <c>Trading</c> section: the default team, the Aggressive profile, the stale limits, how
-/// many cycles run at once, and how many candles the data package of a cycle holds.
+/// many cycles run at once, how many candles the data package of a cycle holds, and when a
+/// position of the Futures market approaches liquidation.
 /// </summary>
+/// <param name="DefaultRoles">The provider that fills each role on a new agent.</param>
+/// <param name="Aggressive">The one trading profile.</param>
+/// <param name="StaleSeconds">The stale limit of each timeframe.</param>
+/// <param name="Cycles">How many cycles run at once.</param>
+/// <param name="DataPackage">How many candles the data package of a cycle holds.</param>
+/// <param name="LiquidationWarningPercent">
+/// The share of the way from the price that a position of the Futures market was entered at to
+/// the price that the exchange liquidates it at, in percent, from 1 to 99: the user of the
+/// position is told that it approaches liquidation when no more than that is left between the
+/// mark price and the liquidation price (FR-BIN-F5).
+/// </param>
 public sealed record TradingSettings(
     DefaultRolesSettings DefaultRoles,
     AggressiveSettings Aggressive,
     StaleSecondsSettings StaleSeconds,
     CycleSettings Cycles,
-    DataPackageSettings DataPackage)
+    DataPackageSettings DataPackage,
+    int LiquidationWarningPercent)
 {
+    // No way is left at nothing, and all of it at a hundred: neither is a warning.
+    private const int LeastLiquidationWarningPercent = 1;
+    private const int MostLiquidationWarningPercent = 99;
+
     internal static TradingSettings Read(SettingsReader file, AiProvidersSettings aiProviders) =>
         new(
             DefaultRolesSettings.Read(file, aiProviders),
             AggressiveSettings.Read(file),
             StaleSecondsSettings.Read(file),
             CycleSettings.Read(file),
-            DataPackageSettings.Read(file));
+            DataPackageSettings.Read(file),
+            file.WholeNumber(
+                "Trading:LiquidationWarningPercent", minimum: LeastLiquidationWarningPercent, maximum: MostLiquidationWarningPercent));
 }
 
 /// <summary>The provider that fills each of the four roles on a new agent (FR-TEAM-3).</summary>

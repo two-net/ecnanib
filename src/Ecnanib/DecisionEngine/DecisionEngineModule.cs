@@ -47,6 +47,14 @@ public static class DecisionEngineModule
         // a cycle could not finish, and what was under way when the application stopped.
         services.AddBackgroundJob<OrderSettlingJob>();
 
+        // Watches the positions of the Futures market, as the background work starts and at
+        // the time between reconciliations: the margin of every open position is checked, and
+        // its user is told when it approaches liquidation (FR-BIN-F5), and what a position
+        // received and paid as funding is read and stored (FR-BIN-F4). It only reads the
+        // exchange: it places no order, and adds no margin.
+        services.AddSingleton<PositionWatch>();
+        services.AddBackgroundJob<PositionWatchJob>();
+
         // What has the Risk Guard check what goes on of a plan: it gathers the facts that the
         // fixed rules are asked of, and keeps the outcome of every rule for the record of the
         // cycle (FR-RSK-4, FR-RSK-9). It calls no model. What keeps the global halt registers

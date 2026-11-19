@@ -8,8 +8,10 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// Binance, behind the common interface: Spot and USDⓈ-margined perpetual Futures, each on the
 /// real exchange and in Binance's test environment, at the addresses of the configuration file
 /// (FR-BIN-1, FR-BIN-2). It reads the clock of a market, asks about a credential, reads what an
-/// account holds, and reads how an account stands on the Futures market (FR-BIN-F2). It has no
-/// operation that moves funds (FR-BIN-9). See docs/exchange.md.
+/// account holds, reads how an account stands on the Futures market (FR-BIN-F2), and reads the
+/// position of an account there with its margin, and the funding that the account received and
+/// paid (FR-BIN-F4, FR-BIN-F5). It has no operation that moves funds (FR-BIN-9), and none that
+/// adds margin to a position. See docs/exchange.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -105,6 +107,57 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
         return positions.Value is { } holds
             ? new ExchangeFuturesAccount(positions.Outcome, modes.Hedge, modes.MultiAssets, holds)
             : ExchangeFuturesAccount.Without(positions.Outcome);
+    }
+
+    /// <summary>
+    /// Reads the position that the account of a credential holds in one symbol of the Futures
+    /// market, with its mark price and the price that Binance liquidates it at: the positions of
+    /// the account in the symbol, which is one call.
+    /// </summary>
+    public async Task<ExchangeFuturesPosition> GetFuturesPositionAsync(
+        Guid userId, TradingMode mode, string apiKey, string secretKey, string symbol, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(apiKey);
+        ArgumentNullException.ThrowIfNull(secretKey);
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        var answer = await call.AskSignedAsync(
+            BinanceEndpoint.PositionsOf(symbol), mode, userId, apiKey, secretKey, rows => PositionIn(rows, symbol), cancellationToken);
+
+        return answer.Value ?? ExchangeFuturesPosition.Without(answer.Outcome);
+    }
+
+    /// <summary>
+    /// Reads the funding that the account of a credential received and paid in one symbol of
+    /// the Futures market between two moments: the rows of its income that are funding, which is
+    /// one call. Binance gives a thousand rows at most, so an answer of a thousand may not be
+    /// all of it.
+    /// </summary>
+    public async Task<ExchangeFundings> GetFundingAsync(
+        Guid userId,
+        TradingMode mode,
+        string apiKey,
+        string secretKey,
+        string symbol,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(apiKey);
+        ArgumentNullException.ThrowIfNull(secretKey);
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        if (to < from)
+        {
+            throw new ArgumentException("The last moment that is asked for is before the first.", nameof(to));
+        }
+
+        var answer = await call.AskSignedAsync(
+            BinanceEndpoint.FundingOf(symbol, from, to), mode, userId, apiKey, secretKey, rows => FundingIn(rows, symbol), cancellationToken);
+
+        return answer.Value is { } fundings
+            ? new ExchangeFundings(answer.Outcome, fundings, More: fundings.Count >= BinanceEndpoint.FundingRows)
+            : ExchangeFundings.Without(answer.Outcome);
     }
 
     private async Task<ExchangeKeyCheck> CheckLiveKeyAsync(
@@ -238,6 +291,119 @@ internal sealed class BinanceAdapter(BinanceCall call) : IExchangeAdapter
 
         return holds;
     }
+
+    /// <summary>
+    /// The position that the positions of an account say in a symbol, with how its margin
+    /// stands, or null when the answer is not their list, a row of it does not read, or two
+    /// rows of the symbol hold something: in hedge mode a symbol has a row for each side, and
+    /// two that hold are no one position. A list in which no row of the symbol holds anything
+    /// says that the account holds no position in it.
+    /// </summary>
+    private static ExchangeFuturesPosition? PositionIn(JsonElement answer, string symbol)
+    {
+        if (answer.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        ExchangeFuturesPosition? position = null;
+
+        foreach (var row in answer.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object
+                || !row.TryGetProperty("symbol", out var name)
+                || name.ValueKind != JsonValueKind.String
+                || Amount(row, "positionAmt") is not { } amount)
+            {
+                return null;
+            }
+
+            if (!name.ValueEquals(symbol) || amount == 0m)
+            {
+                continue;
+            }
+
+            // The prices of a position are above nothing. Binance writes a liquidation price of
+            // nothing where a position has none.
+            if (position is not null
+                || Amount(row, "entryPrice") is not { } entryPrice
+                || entryPrice <= 0m
+                || Amount(row, "markPrice") is not { } markPrice
+                || markPrice <= 0m
+                || Amount(row, "liquidationPrice") is not { } liquidationPrice
+                || liquidationPrice < 0m)
+            {
+                return null;
+            }
+
+            position = new ExchangeFuturesPosition(
+                ExchangeCallOutcome.Succeeded, amount, entryPrice, markPrice, liquidationPrice == 0m ? null : liquidationPrice);
+        }
+
+        return position ?? ExchangeFuturesPosition.Without(ExchangeCallOutcome.Succeeded);
+    }
+
+    /// <summary>
+    /// The funding of a list of income, oldest first, or null when the answer is not that list,
+    /// or a row of it does not read or is not funding in the symbol that was asked for: a part
+    /// of a list would make the rest look as if it had not been paid.
+    /// </summary>
+    private static List<ExchangeFunding>? FundingIn(JsonElement answer, string symbol)
+    {
+        if (answer.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var fundings = new List<ExchangeFunding>();
+
+        foreach (var row in answer.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object
+                || !row.TryGetProperty("symbol", out var name)
+                || name.ValueKind != JsonValueKind.String
+                || !name.ValueEquals(symbol)
+                || !row.TryGetProperty("incomeType", out var type)
+                || type.ValueKind != JsonValueKind.String
+                || !type.ValueEquals("FUNDING_FEE")
+                || Amount(row, "income") is not { } amount
+                || !row.TryGetProperty("asset", out var assetName)
+                || assetName.ValueKind != JsonValueKind.String
+                || assetName.GetString() is not { Length: > 0 } asset
+                || !row.TryGetProperty("time", out var time)
+                || Moment(time) is not { } at
+                || !row.TryGetProperty("tranId", out var number)
+                || TransactionId(number) is not { } transactionId)
+            {
+                return null;
+            }
+
+            fundings.Add(new ExchangeFunding(transactionId, amount, asset, at));
+        }
+
+        // Oldest first, whatever order Binance gave them in, and those of one moment by their number.
+        return [.. fundings.OrderBy(funding => funding.At).ThenBy(funding => funding.TransactionId, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// The number that Binance gave a row of income, as text, or null when the row has none.
+    /// Binance writes it as a number, which is kept digit for digit.
+    /// </summary>
+    private static string? TransactionId(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Number when value.TryGetInt64(out _) => value.GetRawText(),
+        JsonValueKind.String when value.GetString() is { Length: > 0 } text => text,
+        _ => null,
+    };
+
+    /// <summary>The time that a count of milliseconds names, or null when it is none.</summary>
+    private static DateTimeOffset? Moment(JsonElement value) =>
+        value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt64(out var milliseconds)
+            && milliseconds >= EarliestTime
+            && milliseconds <= LatestTime
+                ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)
+                : null;
 
     /// <summary>What the account of the Spot market holds, or null when the answer is not that account.</summary>
     private static List<ExchangeBalance>? SpotBalances(JsonElement answer) =>

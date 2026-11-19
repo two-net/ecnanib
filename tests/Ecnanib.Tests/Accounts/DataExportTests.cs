@@ -78,6 +78,9 @@ internal static class ExportRules
         ["positions"] =
             "The positions of a user's agents, each from when it was opened to when it was closed. They are exported as " +
             "the trades of the user (FR-RPT-4), which is not built.",
+        ["fundings"] =
+            "What those positions received and paid as funding on the Futures market: amounts, assets, and times. They " +
+            "are exported with the trades that they belong to (FR-RPT-4), which is not built.",
     };
 }
 

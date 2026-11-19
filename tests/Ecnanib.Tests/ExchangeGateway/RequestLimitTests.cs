@@ -223,17 +223,22 @@ public class RequestLimitTests
     [Fact]
     public async Task A_call_whose_turn_cannot_come_within_ten_seconds_is_not_sent_and_ends_at_once()
     {
-        // A hundredth of Binance's limit: a read of the balances, and then one in sixteen seconds.
-        using var service = new Service(share: 1);
+        // Two hundredths of Binance's limit, the least that the configuration file takes: 48
+        // in a minute. What may go at once is the heaviest call of the market, the read of
+        // funding at 30, which is six reads of the balances, and then one in seventeen seconds.
+        using var service = new Service(share: 2);
 
-        Assert.Equal(ExchangeCallOutcome.Succeeded, (await service.BalancesAsync(1)).Outcome);
+        for (var read = 0; read < 6; read++)
+        {
+            Assert.Equal(ExchangeCallOutcome.Succeeded, (await service.BalancesAsync(1)).Outcome);
+        }
 
         // No time passes: the limiter knows already.
         var held = await service.BalancesAsync(1);
 
         Assert.Equal(ExchangeCallOutcome.RateLimited, held.Outcome);
         Assert.Empty(held.Balances);
-        Assert.Single(service.Arrivals);
+        Assert.Equal(6, service.Arrivals.Count);
         Assert.Equal(0, service.UsageOf("Futures", TradingMode.Live).Waiting);
 
         // It is in no log of outbound calls, which has what was sent. The gateway says it.
@@ -244,7 +249,7 @@ public class RequestLimitTests
         Assert.Equal("Live", said.Text("Environment"));
 
         // The same call passes when there is room for it again.
-        await service.AdvanceAsync(16);
+        await service.AdvanceAsync(17);
 
         Assert.Equal(ExchangeCallOutcome.Succeeded, (await service.BalancesAsync(1)).Outcome);
     }

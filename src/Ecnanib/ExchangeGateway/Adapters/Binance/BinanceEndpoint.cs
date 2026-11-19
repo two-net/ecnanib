@@ -36,6 +36,12 @@ internal sealed class BinanceEndpoint
     /// </summary>
     public const int CandleRows = ExchangeCandles.Most + 1;
 
+    /// <summary>
+    /// The rows that a read of funding asks for, which is the most that Binance gives in one
+    /// answer. An answer of so many may not be all of what was asked for.
+    /// </summary>
+    public const int FundingRows = 1000;
+
     /// <summary>The clock of the Spot market.</summary>
     public static readonly BinanceEndpoint SpotTime = new(Market.Spot, "api/v3/time", BinanceLimit.Spot, weight: 1);
 
@@ -100,6 +106,13 @@ internal sealed class BinanceEndpoint
     private static readonly BinanceEndpoint FuturesPositions =
         new(Market.Futures, "fapi/v3/positionRisk", BinanceLimit.Futures, weight: 5);
 
+    // What the account of the Futures market was paid as funding, and what it paid: the rows of
+    // its income that are funding, in one symbol and between two moments (FR-BIN-F4). It only
+    // reads. It is the heaviest call of the market: the part of Binance's limit that the service
+    // allows itself must hold it, which is why Binance:LimitSharePercent starts at 2.
+    private static readonly BinanceEndpoint FuturesFunding =
+        new(Market.Futures, "fapi/v1/income", BinanceLimit.Futures, weight: 30, "incomeType=FUNDING_FEE");
+
     // The calls of the orders. Each takes the order of its caller, so each is made with one of
     // the methods below. The weights are what Binance documents: placing an order on the Futures
     // market costs nothing of the limit on requests, and is counted by the order.
@@ -162,7 +175,7 @@ internal sealed class BinanceEndpoint
     /// <summary>Every call, which is how the limiter knows the heaviest of each limit.</summary>
     public static readonly IReadOnlyList<BinanceEndpoint> All =
     [
-        SpotTime, FuturesTime, KeyPermissions, SpotAccount, FuturesAccountSettings, FuturesBalances, FuturesPositions,
+        SpotTime, FuturesTime, KeyPermissions, SpotAccount, FuturesAccountSettings, FuturesBalances, FuturesPositions, FuturesFunding,
         SpotCandles, FuturesCandles, SpotPrice, FuturesPrice, SpotSymbols, FuturesSymbols, FuturesMarkPrice, FuturesOpenInterest,
         SpotOrder, SpotOrderStatus, SpotOrderCancel, SpotTrades, SpotPair, SpotPairCancel,
         FuturesOrder, FuturesOrderStatus, FuturesOrderCancel, FuturesStop, FuturesStopStatus, FuturesStopCancel, FuturesTrades,
@@ -228,6 +241,21 @@ internal sealed class BinanceEndpoint
 
     /// <summary>The positions that the account of a credential holds in a symbol of the Futures market.</summary>
     public static BinanceEndpoint PositionsOf(string symbol) => FuturesPositions.With(("symbol", symbol));
+
+    /// <summary>
+    /// The funding that the account of a credential received and paid in a symbol of the Futures
+    /// market between two moments, both of them included: <see cref="FundingRows"/> rows of it at
+    /// most, which is the most that Binance gives in one answer.
+    /// </summary>
+    /// <param name="symbol">The symbol.</param>
+    /// <param name="from">The first moment that is asked for.</param>
+    /// <param name="to">The last moment that is asked for.</param>
+    public static BinanceEndpoint FundingOf(string symbol, DateTimeOffset from, DateTimeOffset to) =>
+        FuturesFunding.With(
+            ("symbol", symbol),
+            ("startTime", from.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)),
+            ("endTime", to.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)),
+            ("limit", FundingRows.ToString(CultureInfo.InvariantCulture)));
 
     /// <summary>
     /// Has the positions of a symbol of the Futures market use margin of their own in the

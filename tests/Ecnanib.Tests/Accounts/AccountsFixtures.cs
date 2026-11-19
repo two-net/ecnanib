@@ -234,6 +234,20 @@ internal sealed class AccountsApplication : IDisposable
         _application.Services.GetKeyedService<IBackgroundJob>(EcnanibApplicationFactory.OrderSettlingKey)
             ?? _application.Services.GetServices<IBackgroundJob>().Single(job => job.Name == "order-settling");
 
+    /// <summary>
+    /// Runs the job that watches the positions of the Futures market, now, as the scheduler does
+    /// at the time between reconciliations. A test runs it itself to have a run at a moment of
+    /// its choosing: the scheduler of no application of the tests runs it.
+    /// </summary>
+    public Task WatchPositionsAsync(CancellationToken? cancellationToken = null) =>
+        PositionWatch.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that watches the positions of the Futures market, which only a test runs.</summary>
+    public IBackgroundJob PositionWatch =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.PositionWatchKey);
+
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 
     public IFairUse FairUse => _application.Services.GetRequiredService<IFairUse>();

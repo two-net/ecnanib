@@ -8,7 +8,7 @@ namespace Ecnanib.Platform.Settings;
 /// <param name="Futures">The USDⓈ-margined perpetual Futures endpoints.</param>
 /// <param name="Symbols">The symbols an agent may trade (FR-AGT-6).</param>
 /// <param name="OutboundIps">The fixed addresses the service calls Binance from, shown to users for IP-restricted keys.</param>
-/// <param name="LimitSharePercent">The share of Binance's request limit the service allows itself (FR-BIN-4).</param>
+/// <param name="LimitSharePercent">The share of Binance's request limit the service allows itself (FR-BIN-4): from 2 to 100.</param>
 /// <param name="ReconcileMinutes">The time between reconciliations with the exchange.</param>
 /// <param name="ClockCheckSeconds">
 /// The time between two readings of Binance's clocks, which the clock of the service is held
@@ -28,6 +28,11 @@ public sealed record BinanceSettings(
     int ClockCheckSeconds,
     int ClockToleranceMilliseconds)
 {
+    // The share must hold the heaviest call that the service makes, or that call would never
+    // pass. That is the read of funding on the Futures market, which Binance counts as 30 of the
+    // 2400 that it allows there in a minute: a hundredth of that is 24, and two hundredths are 48.
+    private const int LeastLimitSharePercent = 2;
+
     // A reading of a clock can take 25 seconds: the longest that a call waits for its turn at
     // the limiter, and the longest that Binance may take to answer. A reading is over before
     // the next one is due.
@@ -73,7 +78,7 @@ public sealed record BinanceSettings(
 
         var outboundIps = file.List(outboundIpsKey).Select(file.IpAddress).ToList();
 
-        var limitSharePercent = file.WholeNumber("Binance:LimitSharePercent", minimum: 1, maximum: 100);
+        var limitSharePercent = file.WholeNumber("Binance:LimitSharePercent", minimum: LeastLimitSharePercent, maximum: 100);
         var reconcileMinutes = file.WholeNumber("Binance:ReconcileMinutes");
 
         var clockCheckSeconds = file.WholeNumber(

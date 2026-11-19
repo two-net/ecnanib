@@ -5,10 +5,12 @@ namespace Ecnanib.Notifications;
 /// (FR-NTF-1). See docs/notifications.md.
 /// </summary>
 /// <remarks>
-/// What is built is what two events need: a failure of the protection of a position, which its
-/// user is alerted to (FR-RSK-7), and an entry that is skipped because the account does not hold
-/// what the plan needs (FR-BIN-S3). The list of all notifications of a user, marking one as
-/// read, the other events, and email for critical events are not built.
+/// What is built is what four events need: a failure of the protection of a position, which its
+/// user is alerted to (FR-RSK-7), an entry that is skipped because the account does not hold
+/// what the plan needs (FR-BIN-S3, FR-BIN-F6), an agent that waits for its user because the
+/// account at the exchange conflicts with how it trades (FR-BIN-F2), and a position of the
+/// Futures market that approaches liquidation (FR-BIN-F5). The list of all notifications of a
+/// user, marking one as read, the other events, and email for critical events are not built.
 /// </remarks>
 public interface INotifications
 {

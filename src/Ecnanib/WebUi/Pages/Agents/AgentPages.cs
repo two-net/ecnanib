@@ -280,6 +280,7 @@ public static class AgentPages
         NotificationType.ProtectionFailure => "Order or protection failure",
         NotificationType.EntrySkipped => "Entry skipped",
         NotificationType.AttentionRequired => "Agent needs attention",
+        NotificationType.LiquidationWarning => "Liquidation warning",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "The type has no description."),
     };
 

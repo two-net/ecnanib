@@ -97,6 +97,21 @@ internal static class BinanceCalls
           "nextFundingTime": 1794758400000, "time": 1794735000003 }
         """;
 
+    /// <summary>
+    /// What an account of the Futures market paid and received as funding in a symbol, as Binance
+    /// lists its income, oldest first: it paid at midnight, and received at the funding time
+    /// after it, eight hours later.
+    /// </summary>
+    public const string Funding =
+        """
+        [
+          { "symbol": "BTCUSDT", "incomeType": "FUNDING_FEE", "income": "-0.37500000", "asset": "USDT", "info": "FUNDING_FEE",
+            "time": 1794700800000, "tranId": 9689322392, "tradeId": "" },
+          { "symbol": "BTCUSDT", "incomeType": "FUNDING_FEE", "income": "0.01250000", "asset": "USDT", "info": "FUNDING_FEE",
+            "time": 1794729600000, "tranId": 9689322418, "tradeId": "" }
+        ]
+        """;
+
     /// <summary>The open interest of a symbol of the Futures market.</summary>
     public const string OpenInterest = """{ "openInterest": "10659.509", "symbol": "BTCUSDT", "time": 1794735000011 }""";
 
@@ -256,10 +271,11 @@ internal static class BinanceCalls
     /// <param name="amount">How much the position holds: above zero for a long one, and below it for a short one.</param>
     /// <param name="symbol">The symbol.</param>
     /// <param name="side">Binance's name of the side of the row: <c>BOTH</c> in one-way mode.</param>
-    public static string PositionOf(string amount, string symbol = "BTCUSDT", string side = "BOTH") =>
+    /// <param name="liquidationPrice">The price that Binance liquidates the position at: nothing where it names none.</param>
+    public static string PositionOf(string amount, string symbol = "BTCUSDT", string side = "BOTH", string liquidationPrice = "0") =>
         $$"""
         { "symbol": "{{symbol}}", "positionSide": "{{side}}", "positionAmt": "{{amount}}", "entryPrice": "104250.0",
-          "breakEvenPrice": "104302.1", "markPrice": "104250.64871234", "unRealizedProfit": "0.01946136", "liquidationPrice": "0",
+          "breakEvenPrice": "104302.1", "markPrice": "104250.64871234", "unRealizedProfit": "0.01946136", "liquidationPrice": "{{liquidationPrice}}",
           "isolatedMargin": "0", "notional": "3127.51946136", "marginAsset": "USDT", "isolatedWallet": "0",
           "initialMargin": "156.37597306", "maintMargin": "12.51007784", "positionInitialMargin": "156.37597306",
           "openOrderInitialMargin": "0", "adl": 2, "bidNotional": "0", "askNotional": "0", "updateTime": 1720736417660 }
@@ -292,6 +308,7 @@ internal static class BinanceCalls
         "/fapi/v3/balance" => FuturesBalances,
         "/fapi/v1/accountConfig" => FuturesAccountSettings,
         "/fapi/v3/positionRisk" => NoPositions,
+        "/fapi/v1/income" => Funding,
         "/fapi/v1/marginType" => MarginSet,
         "/sapi/v1/account/apiRestrictions" => Restrictions,
 

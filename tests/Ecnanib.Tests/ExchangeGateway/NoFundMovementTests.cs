@@ -21,7 +21,9 @@ public class NoFundMovementTests
     // environment. Binance keeps the calls that move funds in its wallet API, under sapi:
     // withdrawals, the addresses of deposits, and transfers between wallets. The one call that
     // the gateway makes there reads what a key may do. The calls of the market data are of
-    // Binance's public API, which takes no credential and so can move nothing.
+    // Binance's public API, which takes no credential and so can move nothing. The income of an
+    // account of the Futures market is read for the funding that it received and paid, and the
+    // positions of an account for how their margin stands (FR-BIN-F4, FR-BIN-F5).
     private static readonly string[] Reads =
     [
         "GET /api/v3/account",
@@ -31,6 +33,7 @@ public class NoFundMovementTests
         "GET /api/v3/time",
         "GET /fapi/v1/accountConfig",
         "GET /fapi/v1/exchangeInfo",
+        "GET /fapi/v1/income",
         "GET /fapi/v1/klines",
         "GET /fapi/v1/openInterest",
         "GET /fapi/v1/premiumIndex",
@@ -82,9 +85,16 @@ public class NoFundMovementTests
     [
         nameof(IExchangeAdapter.CheckKeyAsync),
         nameof(IExchangeAdapter.GetBalancesAsync),
+        nameof(IExchangeAdapter.GetFundingAsync),
         nameof(IExchangeAdapter.GetFuturesAccountAsync),
+        nameof(IExchangeAdapter.GetFuturesPositionAsync),
         nameof(IExchangeAdapter.GetServerTimeAsync),
     ];
+
+    // The call of Binance that adds margin to a position of isolated margin, or takes margin out
+    // of one: it moves funds between the wallet of the Futures market and a position. The
+    // gateway does not make it, so the service never adds margin on its own (FR-BIN-F5).
+    private const string PositionMargin = "/fapi/v1/positionMargin";
 
     // The same of the market data, which the gateway reads for everyone.
     private static readonly string[] MarketDataOperations =
@@ -177,8 +187,14 @@ public class NoFundMovementTests
             await marketData.GetMarkPriceAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
             await marketData.GetOpenInterestAsync(mode, MarketService.Symbol, TestContext.Current.CancellationToken);
 
-            // The Futures market alone: how the account stands, and the margin of a symbol.
+            // The Futures market alone: how the account stands, the position that it holds in a
+            // symbol with its margin, the funding that it received and paid, and the margin of
+            // a symbol.
             await exchange.GetFuturesAccountAsync(BinanceCalls.User, mode, apiKey, secretKey, MarketService.Symbol, TestContext.Current.CancellationToken);
+            await exchange.GetFuturesPositionAsync(BinanceCalls.User, mode, apiKey, secretKey, MarketService.Symbol, TestContext.Current.CancellationToken);
+            await exchange.GetFundingAsync(
+                BinanceCalls.User, mode, apiKey, secretKey, MarketService.Symbol, BinanceCalls.Now.AddDays(-1), BinanceCalls.Now,
+                TestContext.Current.CancellationToken);
             await orders.SetIsolatedMarginAsync(BinanceCalls.User, mode, apiKey, secretKey, MarketService.Symbol, 3, TestContext.Current.CancellationToken);
         }
 
@@ -208,6 +224,13 @@ public class NoFundMovementTests
 
         // Every call sends nothing but its address: a call about an order as well.
         Assert.All(binance.Calls, call => Assert.Null(call.Body));
+
+        // No call adds margin to a position, or takes margin out of one: the position of an
+        // account and its funding are read, and that is all that is done about its margin.
+        Assert.DoesNotContain(binance.Calls, call => call.Address.AbsolutePath == PositionMargin);
+        Assert.All(
+            binance.Calls.Where(call => call.Address.AbsolutePath is "/fapi/v3/positionRisk" or "/fapi/v1/income"),
+            call => Assert.Equal("GET", call.Method));
 
         // The wallet API is asked on the real exchange only, at the address of its Spot market.
         Assert.All(

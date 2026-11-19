@@ -88,10 +88,12 @@ internal static class PersonalDataRules
         ["orders.exchange_order_id"] = "The number that Binance gave the order.",
         ["fills.trade_id"] = "The number that Binance gave the execution of an order.",
         ["fills.fee_asset"] = "The asset that Binance took the fee of an execution in, as Binance names it, such as BNB.",
+        ["fundings.transaction_id"] = "The number that Binance gave what a position received or paid at a funding time.",
+        ["fundings.asset"] = "The asset that a position received or paid funding in, as Binance names it, such as USDT.",
         ["positions.symbol"] = "A symbol of Binance that the configuration file lists: the one of the agent when the position was opened.",
         ["notifications.content"] =
             "What the service tells the user about an agent, in the service's own words: what happened to a position, " +
-            "with its symbol and its mode. Nothing that a user typed is in it, and no secret (FR-NTF-1). It is in the export.",
+            "or how it stands, with its symbol and its mode. Nothing that a user typed is in it, and no secret (FR-NTF-1). It is in the export.",
     };
 
     /// <summary>Every column that is listed, in any of the three lists.</summary>

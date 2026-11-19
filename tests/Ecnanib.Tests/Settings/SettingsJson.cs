@@ -91,7 +91,8 @@ internal sealed class SettingsJson
             },
             "StaleSeconds": { "15m": 100, "1H": 200, "4H": 400, "1D": 800 },
             "Cycles": { "MaxPerProvider": 40, "MaxPerKey": 3 },
-            "DataPackage": { "Candles": 120, "ContextCandles": 30 }
+            "DataPackage": { "Candles": 120, "ContextCandles": 30 },
+            "LiquidationWarningPercent": 25
           },
           "Experience": {
             "LessonsPerPrompt": 4,

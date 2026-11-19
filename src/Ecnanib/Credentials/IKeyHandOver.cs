@@ -23,7 +23,9 @@ namespace Ecnanib.Credentials;
 /// </para>
 /// <para>
 /// What places an order for an agent asks for the Binance credential of the agent's user the
-/// same way, as it makes the call, and hands it to the Exchange Gateway with that call.
+/// same way, as it makes the call, and hands it to the Exchange Gateway with that call. So does
+/// what watches the position of an agent on the Futures market, for the calls that read the
+/// margin of the position and its funding, which change nothing at the exchange.
 /// </para>
 /// </remarks>
 public interface IKeyHandOver
@@ -34,7 +36,10 @@ public interface IKeyHandOver
     /// <param name="cancellationToken">Cancels the question.</param>
     Task<HandedKey> AiKeyAsync(Guid userId, AiProviderCode provider, CancellationToken cancellationToken);
 
-    /// <summary>The Binance credential of a user for an environment, for one call about an order.</summary>
+    /// <summary>
+    /// The Binance credential of a user for an environment, for one call about an order, or for
+    /// the calls that read a position of the user's agent.
+    /// </summary>
     /// <remarks>
     /// It is handed over whatever the last check of the credential found: an order that closes a
     /// position is tried in any state, so that risk can always be reduced, and Binance says

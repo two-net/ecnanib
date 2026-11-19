@@ -90,6 +90,7 @@ public class SettingsFileTests
         Assert.Equal(new StaleSecondsSettings(100, 200, 400, 800), settings.Trading.StaleSeconds);
         Assert.Equal(new CycleSettings(MaxPerProvider: 40, MaxPerKey: 3), settings.Trading.Cycles);
         Assert.Equal(new DataPackageSettings(Candles: 120, ContextCandles: 30), settings.Trading.DataPackage);
+        Assert.Equal(25, settings.Trading.LiquidationWarningPercent);
 
         Assert.Equal(new ExperienceSettings(4, 15, 25, new ExperienceBoardSettings(6, 60)), settings.Experience);
         Assert.Equal(new RetentionSettings(30, 180, 45, 365), settings.Retention);
@@ -131,6 +132,10 @@ public class SettingsFileTests
         { "Security:SessionIdleMinutes", "0", "Security:SessionIdleMinutes" },
         { "AiProviders:Claude:TimeoutSeconds", "601", "AiProviders:Claude:TimeoutSeconds" },
         { "Binance:LimitSharePercent", "101", "Binance:LimitSharePercent" },
+
+        // A hundredth of Binance's limit on requests does not hold the heaviest call that the
+        // service makes, the read of funding on the Futures market, which would never pass.
+        { "Binance:LimitSharePercent", "1", "Binance:LimitSharePercent" },
         { "Binance:ClockCheckSeconds", "29", "Binance:ClockCheckSeconds" },
         { "Binance:ClockCheckSeconds", "3601", "Binance:ClockCheckSeconds" },
         { "Binance:ClockToleranceMilliseconds", "0", "Binance:ClockToleranceMilliseconds" },
@@ -209,6 +214,15 @@ public class SettingsFileTests
         { "Trading:DataPackage:ContextCandles", "0", "Trading:DataPackage:ContextCandles" },
         { "Trading:DataPackage:ContextCandles", "499", "Trading:DataPackage:ContextCandles" },
         { "Trading:DataPackage:ContextCandles", "\"30\"", "Trading:DataPackage:ContextCandles" },
+
+        // How much of the way to its liquidation price a position of the Futures market has
+        // left when its user is told (FR-BIN-F5): a share of the way, which is some of it and
+        // not all of it.
+        { "Trading:LiquidationWarningPercent", "null", "Trading:LiquidationWarningPercent" },
+        { "Trading:LiquidationWarningPercent", "0", "Trading:LiquidationWarningPercent" },
+        { "Trading:LiquidationWarningPercent", "100", "Trading:LiquidationWarningPercent" },
+        { "Trading:LiquidationWarningPercent", "12.5", "Trading:LiquidationWarningPercent" },
+        { "Trading:LiquidationWarningPercent", "\"25\"", "Trading:LiquidationWarningPercent" },
 
         // How often the account entry points may be tried (NFR-SEC-4).
         { "Limits:SignIn", "null", "Limits:SignIn" },

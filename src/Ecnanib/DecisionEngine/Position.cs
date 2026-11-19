@@ -31,7 +31,13 @@ namespace Ecnanib.DecisionEngine;
 /// docs/ownership.md.
 /// </para>
 /// <para>
-/// Its result, its fees, its funding, and its result in R are not stored yet.
+/// <b>What it received and paid as funding</b> on the Futures market is rows of the
+/// <c>fundings</c> table that name it (FR-BIN-F4), as its fees are those of the executions of
+/// its orders. The position says when its funding is read next, and says nothing there once all
+/// of it is read. See "Funding" in docs/orders.md.
+/// </para>
+/// <para>
+/// Its result, the sums of its fees and of its funding, and its result in R are not stored yet.
 /// </para>
 /// </remarks>
 /// <param name="id">Assigned by the application.</param>
@@ -52,6 +58,13 @@ namespace Ecnanib.DecisionEngine;
 /// When its user was told that it is open with no stop-loss and could not be closed, or null
 /// when that never happened. It is said once for each time that it comes to that.
 /// </param>
+/// <param name="fundingDueAt">
+/// When its funding is read next: when it was opened, until its funding is read for the first
+/// time, and then the next funding time that the exchange said. It is null when there is
+/// nothing more to read: for a position of the Spot market, which has no funding, and for a
+/// closed position whose funding was read after it was closed. So a closed position that says
+/// a time here is one whose funding is not all stored.
+/// </param>
 public sealed class Position(
     Guid id,
     Guid agentId,
@@ -67,7 +80,8 @@ public sealed class Position(
     DateTimeOffset openedAt,
     DateTimeOffset? closedAt,
     ExitReason? exitReason,
-    DateTimeOffset? alertedAt) : IUserOwned
+    DateTimeOffset? alertedAt,
+    DateTimeOffset? fundingDueAt) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -98,6 +112,8 @@ public sealed class Position(
     public ExitReason? ExitReason { get; } = exitReason;
 
     public DateTimeOffset? AlertedAt { get; } = alertedAt;
+
+    public DateTimeOffset? FundingDueAt { get; } = fundingDueAt;
 
     /// <summary>The side of an order that closes or protects the position: it sells what a long position holds, and buys back what a short one sold.</summary>
     public OrderSide ClosingSide => Side == PositionSide.Long ? OrderSide.Sell : OrderSide.Buy;
@@ -145,9 +161,19 @@ internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>
         builder.Property(position => position.ClosedAt);
         builder.Property(position => position.ExitReason);
         builder.Property(position => position.AlertedAt);
+        builder.Property(position => position.FundingDueAt);
 
         // An agent holds one position at most (FR-CYC-5).
         builder.HasIndex(position => position.AgentId).IsUnique().HasFilter("closed_at IS NULL");
+
+        // The positions whose funding is still to be read, which what watches the positions
+        // asks for with every run: few of all the positions that there ever were.
+        builder.HasIndex(position => position.FundingDueAt).HasFilter("funding_due_at IS NOT NULL");
+
+        // A position is found by its id together with its owner as well. What it received and
+        // paid as funding hangs on it by both, and so carries its owner along. See
+        // docs/ownership.md.
+        builder.HasAlternateKey(position => new { position.Id, position.UserId });
 
         // The positions of one agent of a user, in the order they were opened in. It is also
         // the index of the key below.

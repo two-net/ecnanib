@@ -67,6 +67,12 @@ public class TrackedFileTests
         // The data package holds the most recent 200 closed candles of the agent's timeframe
         // (FR-CYC-2), and 50 of each higher timeframe for context.
         Assert.Equal(new DataPackageSettings(Candles: 200, ContextCandles: 50), settings.Trading.DataPackage);
+
+        // The user of a position of the Futures market is told that it approaches liquidation
+        // when a fifth of the way from its entry to its liquidation price is left (FR-BIN-F5).
+        // A stop-loss that the least liquidation buffer above allows is no further than about
+        // seven tenths of that way, so one that works closes the position first.
+        Assert.Equal(20, settings.Trading.LiquidationWarningPercent);
         Assert.Equal(new ExperienceSettings(5, 20, 20, new ExperienceBoardSettings(MinUsers: 5, MinTrades: 50)), settings.Experience);
         Assert.Equal(new RetentionSettings(90, 365, 90, 730), settings.Retention);
         Assert.Equal(
