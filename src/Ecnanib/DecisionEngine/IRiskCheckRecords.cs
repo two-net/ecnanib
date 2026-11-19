@@ -29,6 +29,7 @@ public interface IRiskCheckRecords
 public sealed record RiskCheckHistory(int Total, IReadOnlyList<RiskCheckView> Checks);
 
 /// <summary>One check of the Risk Guard, as its user reads it.</summary>
+/// <param name="CycleId">The cycle that the check was made in, whose timeline shows it beside the calls of the roles (FR-CYC-10).</param>
 /// <param name="ClosedAt">The close of the candle that the cycle of the check was for.</param>
 /// <param name="Mode">The mode that the agent was in then, which stays as it was when the agent is switched (FR-BIN-11).</param>
 /// <param name="Sequence">Which check of its cycle: 1, or 2 for the close of a reverse that was rejected.</param>
@@ -42,6 +43,7 @@ public sealed record RiskCheckHistory(int Total, IReadOnlyList<RiskCheckView> Ch
 /// <param name="Leverage">The leverage of that order: 1 on Spot. Null where the quantity is.</param>
 /// <param name="Rules">The outcome of every rule that the check stored, in the order of <see cref="GuardRule"/>.</param>
 public sealed record RiskCheckView(
+    Guid CycleId,
     DateTimeOffset ClosedAt,
     TradingMode Mode,
     int Sequence,
@@ -77,7 +79,31 @@ internal sealed class RiskCheckRecords(IDbContextFactory<EcnanibDbContext> conte
             .Take(Shown)
             .ToListAsync(cancellationToken);
 
-        var ids = latest.Select(found => found.Check.Id).ToList();
+        return new RiskCheckHistory(
+            total,
+            await RiskCheckViews.OfAsync(
+                context, userId, [.. latest.Select(found => (found.Check, found.ClosedAt, found.Mode))], cancellationToken));
+    }
+}
+
+/// <summary>
+/// Makes the checks of the Risk Guard as a user reads them, each with the outcome of every rule:
+/// for the page of the risk checks of an agent, and for the timeline of a cycle.
+/// </summary>
+internal static class RiskCheckViews
+{
+    /// <summary>The checks as a user reads them, in the order they are given in.</summary>
+    /// <param name="context">The context that the checks were read with.</param>
+    /// <param name="userId">The user whose checks they are: the rules are asked for by owner as well.</param>
+    /// <param name="checks">The checks, each with the close and the mode of its cycle.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    public static async Task<IReadOnlyList<RiskCheckView>> OfAsync(
+        EcnanibDbContext context,
+        Guid userId,
+        IReadOnlyList<(RiskCheck Check, DateTimeOffset ClosedAt, TradingMode Mode)> checks,
+        CancellationToken cancellationToken)
+    {
+        var ids = checks.Select(found => found.Check.Id).ToList();
         var rules = await context.Set<RiskCheckRule>()
             .AsNoTracking()
             .OwnedBy(userId)
@@ -88,23 +114,23 @@ internal sealed class RiskCheckRecords(IDbContextFactory<EcnanibDbContext> conte
         // are shown in the order of the rules.
         var byCheck = rules.ToLookup(rule => rule.CheckId);
 
-        return new RiskCheckHistory(
-            total,
-            [
-                .. latest.Select(found => new RiskCheckView(
-                    found.ClosedAt,
-                    found.Mode,
-                    found.Check.Sequence,
-                    found.Check.Action,
-                    found.Check.CheckedAt,
-                    found.Check.Verdict,
-                    found.Check.Quantity,
-                    found.Check.Leverage,
-                    [
-                        .. byCheck[found.Check.Id]
-                            .OrderBy(rule => rule.Rule)
-                            .Select(rule => new RuleResult(rule.Rule, rule.Outcome, rule.Measured, rule.Threshold)),
-                    ])),
-            ]);
+        return
+        [
+            .. checks.Select(found => new RiskCheckView(
+                found.Check.CycleId,
+                found.ClosedAt,
+                found.Mode,
+                found.Check.Sequence,
+                found.Check.Action,
+                found.Check.CheckedAt,
+                found.Check.Verdict,
+                found.Check.Quantity,
+                found.Check.Leverage,
+                [
+                    .. byCheck[found.Check.Id]
+                        .OrderBy(rule => rule.Rule)
+                        .Select(rule => new RuleResult(rule.Rule, rule.Outcome, rule.Measured, rule.Threshold)),
+                ])),
+        ];
     }
 }

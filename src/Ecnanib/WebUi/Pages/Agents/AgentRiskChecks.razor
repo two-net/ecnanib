@@ -57,36 +57,14 @@
             candle that closed at @PageTimes.At(check.ClosedAt). @RiskCheckPages.Explain(check)
         </p>
 
-        @* The size that the check computed for the order of a plan that opens a position (FR-RSK-5). *@
-        @if (RiskCheckPages.Sized(check) is { } sized)
-        {
-            <p class="guard-size">@sized</p>
-        }
+        @* The size that the check computed, and every rule with its outcome and why. *@
+        <RiskCheckRules Check="@check" LabelledBy="@heading" />
 
-        @* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
-        <div class="agents risk-check-rules" role="region" aria-labelledby="@heading" tabindex="0">
-            <table>
-                <caption>The rules of the check</caption>
-                <thead>
-                    <tr>
-                        <th scope="col">Rule</th>
-                        <th scope="col">Outcome</th>
-                        <th scope="col">Why</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var rule in check.Rules)
-                    {
-                        <tr>
-                            <th scope="row">@RiskCheckPages.NameOf(rule.Rule)</th>
-                            <td><span class="rule-outcome rule-@(rule.Outcome.ToString().ToLowerInvariant())">@RiskCheckPages.Describe(rule.Outcome)</span></td>
-                            <td>@RiskCheckPages.Says(rule, check.Action)</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+        @* The cycle that the check was made in, with what its team was given and answered (FR-CYC-10). *@
+        <p><a href="@WebUiModule.AgentCyclePath(_agent.Id, check.CycleId)">@CyclePages.TimelineOfCheckLink</a></p>
     }
+
+    <p><a href="@WebUiModule.AgentCyclesPath(_agent.Id)">@CyclePages.Link</a></p>
 
     <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
 

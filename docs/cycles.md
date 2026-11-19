@@ -160,7 +160,7 @@ public sealed record CycleStart(
 - **The token is canceled** when the application stops, when it stops being the instance that runs the background work, and 45 seconds before the next close. The cycle then ends soon, by letting `OperationCanceledException` out, and leaves no entry without its protection (NFR-REL-5).
 - An error that leaves `RunAsync` ends the cycle with no decision.
 - **The registered implementation builds the data package of the cycle, and runs the team of the agent.** `TeamCycle` asks `IDataPackages` for the package, hands each role its part of it, and ends with the decision of the team: see [team.md](team.md). A cycle whose role gave no valid result ends without an error: it returns, and is counted as ended. It changes nothing of when a cycle starts.
-- **A cycle that started is recorded when it ends,** however it ends: see "The record of a cycle" in [team.md](team.md).
+- **A cycle that started is recorded when it ends,** however it ends, as a complete record, which its user views as a timeline (FR-CYC-10): see "The record of a cycle" and "The timeline" in [team.md](team.md).
 - The interfaces are public so that a test can put a stand-in behind them: the tests see no internal type.
 
 ## The data package
@@ -215,7 +215,7 @@ public sealed record FuturesData(decimal MarkPrice, decimal FundingRate, DateTim
 | **A read that does not succeed gives no package.** | `BuildAsync` throws `DataPackageException`, which says which part the exchange did not give and how the read ended, and nothing of the agent. It leaves the cycle as an error, so the cycle ends as failed, with no decision. Nothing is asked again for that close: the gateway shares a read that failed for some seconds, and the next close starts the next cycle. An open position stays as it is, with its protective orders. |
 | **A package is built from candles through its close, and from no others.** | A cycle is handed them: see "The candle of the close". `BuildAsync` refuses candles that come one short, or none, with an error. |
 | **A package says nothing of whose agent it is** (FR-PRM-9). | It has no id and no name. `Agent` is the context of the agent as a prompt states it, made by `AgentContext.Of` from the settings of the agent. |
-| **Nothing of a package is stored.** | It is built for one cycle, and lives as long as the cycle. The database is not a market-data warehouse (NFR-DAT-6). The record of a cycle keeps nothing of it: the summary that it will keep is not built (FR-CYC-10). |
+| **Nothing of a package is stored but its summary.** | It is built for one cycle, and lives as long as the cycle. The database is not a market-data warehouse (NFR-DAT-6). The record of the cycle keeps a summary of it (FR-CYC-10): what the agent was and held, its limits, and for each series how many candles it had, the latest of them, and the indicators at its close. No other candle is kept. See "The summary of the data package" in [team.md](team.md). |
 
 ### The indicators
 
@@ -482,9 +482,8 @@ A limit is held to through what the stand-in counted while the cycles were held,
 - Waiting for a candle of a higher timeframe that came one short. The candles of the agent's own timeframe cover the same time.
 - The price that a symbol last traded at, in a package. A package has the close of the latest candle, and on Futures the mark price. What has the Risk Guard check a plan asks for the price then, and holds an entry to its distance from it (FR-RSK-4): see "The facts" in [risk-guard.md](risk-guard.md).
 - Taking out of a report what a prompt never holds, so that the rest of it can be read. A report that holds it is rejected whole.
-- The summary of the data package that the record of a cycle keeps (FR-CYC-10). A package leaves one event in the log.
 - A start that waits for reconciliation before it schedules anything (NFR-REL-3). The agents are reconciled as the background work starts, beside the other jobs, and an agent that is not reconciled gets no cycle: nothing is placed for it before. The other jobs do not wait.
-- Recording a cycle that never started: one that was skipped, or whose agent no longer ran (FR-CYC-10). It leaves its events in the log. A cycle that started is recorded, with the calls of its roles.
+- Recording a cycle that never started: one that was skipped, or whose agent no longer ran. A cycle is one run of a team, and such a one ran none: it leaves its events in the log, and is on no page. A cycle that started is recorded as a complete record, however it ends (FR-CYC-10).
 - A test cycle that a user runs for an agent (FR-CYC-12). The queue is of one run of the job, so a cycle that starts outside a run takes none of its places.
 - Limits on calls. The places are of cycles: a cycle is two calls with one key while the two analysts work.
 - Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A provider that is slow holds back the cycles that need it, and nothing pauses its calls.

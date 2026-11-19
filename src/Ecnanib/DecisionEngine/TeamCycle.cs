@@ -58,9 +58,11 @@ namespace Ecnanib.DecisionEngine;
 /// what was placed is in the records of the orders, under the id of the cycle.
 /// </para>
 /// <para>
-/// <b>A cycle is recorded once, when it ends, however it ends</b> (FR-TEAM-8, FR-RSK-9). One
-/// object runs the cycles of every agent, at the same time, so everything of a cycle is local
-/// to its run.
+/// <b>A cycle is recorded once, when it ends, however it ends</b> (FR-TEAM-8, FR-RSK-9), as a
+/// complete record: the summary of its data package, every call of a role, the checks of the
+/// Risk Guard, and its outcome, with why it placed no entry where it placed none (FR-CYC-10).
+/// Its orders are rows of their own, under its id. One object runs the cycles of every agent,
+/// at the same time, so everything of a cycle is local to its run.
 /// </para>
 /// </remarks>
 internal sealed class TeamCycle(
@@ -103,7 +105,8 @@ internal sealed class TeamCycle(
             // else goes on to the orders (NFR-SEC-6).
             if (accepted is not null)
             {
-                await orders.PlaceAsync(cycle, accepted, cancellationToken);
+                // Why a plan to open a position placed no entry is kept for the record (FR-CYC-10).
+                kept.Keep(await orders.PlaceAsync(cycle, accepted, cancellationToken));
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -156,6 +159,10 @@ internal sealed class TeamCycle(
         }
 
         var package = await packages.BuildAsync(cycle, cancellationToken);
+
+        // The record of the cycle keeps a summary of what its team decided on, however the
+        // cycle ends from here (FR-CYC-10). It keeps no candles (NFR-DAT-6).
+        kept.Keep(DataPackageSummary.Of(package, clock.GetUtcNow()));
 
         // Step 3: the two analysts, at the same time. Each is given its own inputs, and neither
         // reads what the other answers.
@@ -303,14 +310,24 @@ internal sealed class TeamCycle(
     }
 
     /// <summary>
-    /// Records the cycle with the calls of its roles and the checks of the Risk Guard. The cycle
-    /// may have been stopped, so the write has a time limit of its own, and not the token of the
-    /// cycle.
+    /// Records the cycle with the summary of its data package, the calls of its roles, the
+    /// checks of the Risk Guard, and why it placed no entry (FR-CYC-10). The cycle may have been
+    /// stopped, so the write has a time limit of its own, and not the token of the cycle.
     /// </summary>
     private async Task RecordAsync(CycleStart cycle, CycleCalls kept, DateTimeOffset startedAt, CycleOutcome outcome)
     {
         var agent = cycle.Agent;
-        var record = new DecisionCycle(cycle.CycleId, agent.Id, agent.UserId, agent.Mode, cycle.ClosedAt, startedAt, clock.GetUtcNow(), outcome);
+        var record = new DecisionCycle(
+            cycle.CycleId,
+            agent.Id,
+            agent.UserId,
+            agent.Mode,
+            cycle.ClosedAt,
+            startedAt,
+            clock.GetUtcNow(),
+            outcome,
+            kept.Package?.ToJson(),
+            kept.NoEntry);
 
         using var limit = new CancellationTokenSource(RecordsWithin, clock);
 

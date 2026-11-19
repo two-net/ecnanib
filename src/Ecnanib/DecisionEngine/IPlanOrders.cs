@@ -44,8 +44,12 @@ public interface IPlanOrders
     /// by then is still protected: its stop-loss is placed once, and the rest is left to what
     /// settles the orders (NFR-REL-5).
     /// </param>
+    /// <returns>
+    /// Why no entry was placed, for a plan that opens a position, or null: the entry was placed,
+    /// or the plan opens nothing. The record of the cycle keeps it (FR-CYC-10).
+    /// </returns>
     /// <exception cref="ArgumentException">The result is of a plan that the Risk Guard rejected.</exception>
-    Task PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken);
+    Task<NoEntryReason?> PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken);
 
     /// <summary>
     /// Settles the orders of an agent with the exchange, as far as the exchange says: an order
@@ -114,4 +118,64 @@ public interface IPlanOrders
     /// say, or null when nothing does: for an agent of the Spot market, nothing ever does.
     /// </returns>
     Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Why no entry was placed for a plan to open a position that the Risk Guard accepted. A member
+/// is stored by its name, and logged by it, so renaming one changes stored data and needs a
+/// migration. See "When no entry is placed" in docs/orders.md.
+/// </summary>
+public enum NoEntryReason
+{
+    /// <summary>The entry sells, on the Spot market: an agent there buys, and sells what it bought to exit (FR-BIN-S1).</summary>
+    SpotLongOnly,
+
+    /// <summary>The check computed no quantity above zero for the order, or the plan has no stop-loss.</summary>
+    NoSizeOrStopLoss,
+
+    /// <summary>New entries are paused for the market and the environment: the clock of the service is not near the exchange's (FR-BIN-5).</summary>
+    EntriesPaused,
+
+    /// <summary>The symbol takes no stop, or the exchange did not say its rules: no position is opened where no stop-loss can rest.</summary>
+    NoStopOrders,
+
+    /// <summary>The symbol takes no pair of a stop-loss and a take-profit, on the Spot market (FR-BIN-S2).</summary>
+    NoPairOrders,
+
+    /// <summary>The symbol takes no take-profit as an order of its own, on the Futures market (FR-BIN-F3).</summary>
+    NoTakeProfitOrders,
+
+    /// <summary>The agent no longer opens positions: its user paused or stopped it, or it waits for its user.</summary>
+    NotRunning,
+
+    /// <summary>The agent holds a position already, or has an order that is not over.</summary>
+    Holding,
+
+    /// <summary>How the account stands on the Futures market could not be read (NFR-REL-2).</summary>
+    AccountUnknown,
+
+    /// <summary>The account on the Futures market conflicts with how the agent trades (FR-BIN-F2).</summary>
+    AccountConflict,
+
+    /// <summary>The account holds less of the asset that the symbol is priced in than the entry needs, on the Spot market (FR-BIN-S3).</summary>
+    QuoteBalance,
+
+    /// <summary>The wallet of the Futures market has less available than the margin of the entry (FR-BIN-F6).</summary>
+    Margin,
+
+    /// <summary>What the account holds could not be read (NFR-REL-2).</summary>
+    BalanceUnknown,
+
+    /// <summary>The exchange refused to give the symbol isolated margin, or the leverage of the order, on the Futures market.</summary>
+    MarginRefused,
+
+    /// <summary>It is not known whether the symbol has isolated margin and the leverage of the order (FR-RSK-6).</summary>
+    MarginNotSet,
+
+    /// <summary>
+    /// The plan reverses, and what it opens was not begun: the agent held no position any more,
+    /// its position could not be closed, or the cycle was being stopped once it was. An agent
+    /// holds one position (FR-CYC-5).
+    /// </summary>
+    ReverseNotCompleted,
 }

@@ -138,7 +138,7 @@ internal sealed class AgentOrders(
     // One gate for each agent that an order was placed or settled for.
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _gates = new();
 
-    public async Task PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken)
+    public async Task<NoEntryReason?> PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(cycle);
         ArgumentNullException.ThrowIfNull(accepted);
@@ -156,16 +156,15 @@ internal sealed class AgentOrders(
         switch (accepted.Case.Action)
         {
             case GuardedAction.OpenLong:
-                await OpenAsync(cycle, accepted, OrderSide.Buy, pace);
-                break;
+                return await OpenAsync(cycle, accepted, OrderSide.Buy, pace);
 
             case GuardedAction.OpenShort:
-                await OpenAsync(cycle, accepted, OrderSide.Sell, pace);
-                break;
+                return await OpenAsync(cycle, accepted, OrderSide.Sell, pace);
 
             case GuardedAction.Close:
                 await CloseForPlanAsync(cycle, pace);
-                break;
+
+                return null;
 
             case GuardedAction.Reverse:
                 // What it opens is on the other side of what it closes, and is opened only when
@@ -174,14 +173,17 @@ internal sealed class AgentOrders(
                     && await CloseForPlanAsync(cycle, pace) == PositionCloseOutcome.Closed
                     && !pace.Stopping)
                 {
-                    await OpenAsync(cycle, accepted, held.Side == PositionSide.Long ? OrderSide.Sell : OrderSide.Buy, pace, closedJustNow: true);
+                    return await OpenAsync(cycle, accepted, held.Side == PositionSide.Long ? OrderSide.Sell : OrderSide.Buy, pace, closedJustNow: true);
                 }
 
-                break;
+                // What became of the close is said where it was tried. The record of the cycle
+                // says that the other side was not opened.
+                return NoEntryReason.ReverseNotCompleted;
 
             case GuardedAction.AdjustProtection:
                 await AdjustAsync(cycle, accepted, pace);
-                break;
+
+                return null;
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(accepted), accepted.Case.Action, "No orders follow from such a plan.");
@@ -279,7 +281,7 @@ internal sealed class AgentOrders(
     /// <param name="side">Whether the entry buys or sells.</param>
     /// <param name="pace">Whether the cycle is being stopped.</param>
     /// <param name="closedJustNow">Whether the plan closed a position of the agent a moment ago, as one that reverses does.</param>
-    private async Task OpenAsync(CycleStart cycle, GuardResult accepted, OrderSide side, Pace pace, bool closedJustNow = false)
+    private async Task<NoEntryReason?> OpenAsync(CycleStart cycle, GuardResult accepted, OrderSide side, Pace pace, bool closedJustNow = false)
     {
         var agent = cycle.Agent;
         var plan = accepted.Case;
@@ -289,67 +291,51 @@ internal sealed class AgentOrders(
         {
             // An agent of the Spot market buys, and sells what it bought to exit: it does not
             // borrow or short (FR-BIN-S1). A sale that opens would sell what else the account holds.
-            NotEntered(cycle, "SpotLongOnly");
-
-            return;
+            return NotEntered(cycle, NoEntryReason.SpotLongOnly);
         }
 
         if (accepted.Size is not { Quantity: > 0m } size || plan.StopLoss is not { } stopLoss)
         {
             // The Risk Guard accepts no plan that opens a position without both.
-            NotEntered(cycle, "NoSizeOrStopLoss");
-
-            return;
+            return NotEntered(cycle, NoEntryReason.NoSizeOrStopLoss);
         }
 
         // The watch on the clock pauses nothing by itself: what places an entry asks (FR-BIN-5).
         if (entries.EntriesPaused(agent.Market, agent.Mode))
         {
-            NotEntered(cycle, "EntriesPaused");
-
-            return;
+            return NotEntered(cycle, NoEntryReason.EntriesPaused);
         }
 
         // No position is opened where no stop-loss can rest (FR-RSK-7).
         if (await SymbolAsync(agent.Market, agent.Mode, agent.Symbol, pace.Token) is not { StopOrders: true } symbol)
         {
-            NotEntered(cycle, "NoStopOrders");
-
-            return;
+            return NotEntered(cycle, NoEntryReason.NoStopOrders);
         }
 
         // Nor on the Spot market where the pair of its stop-loss and its take-profit cannot (FR-BIN-S2).
         if (spot && plan.TakeProfit is not null && !symbol.PairOrders)
         {
-            NotEntered(cycle, "NoPairOrders");
-
-            return;
+            return NotEntered(cycle, NoEntryReason.NoPairOrders);
         }
 
         // Nor on the Futures market where no take-profit can rest beside the stop-loss (FR-BIN-F3).
         if (!spot && plan.TakeProfit is not null && !symbol.TakeProfitOrders)
         {
-            NotEntered(cycle, "NoTakeProfitOrders");
-
-            return;
+            return NotEntered(cycle, NoEntryReason.NoTakeProfitOrders);
         }
 
         // An agent that no longer opens positions, or holds one, is told so, and not that its
         // account is short. It is asked again as the row of the entry is written.
         if (await stored.EntryRefusalAsync(agent, pace.Token) is { } early)
         {
-            NotEntered(cycle, early.ToString());
-
-            return;
+            return NotEntered(cycle, Refused(early));
         }
 
         // The account of the Futures market is one that the agent can trade in as it trades:
         // in one-way mode, with isolated margin, and with no position in the symbol (FR-BIN-F2).
         if (!spot && await AccountInTheWayAsync(agent, closedJustNow, pace.Token) is { } inTheWay)
         {
-            NotEntered(cycle, inTheWay);
-
-            return;
+            return NotEntered(cycle, inTheWay);
         }
 
         // What the entry needs of the asset that the symbol is priced in: its value on the
@@ -361,17 +347,13 @@ internal sealed class AgentOrders(
 
         if (await ShortAsync(agent, needs, leverage, rechecksKey: true, pace.Token) is { } shortOf)
         {
-            NotEntered(cycle, shortOf);
-
-            return;
+            return NotEntered(cycle, shortOf);
         }
 
         // The margin of the symbol, and its leverage, are set before the entry (FR-BIN-F2).
         if (!spot && await MarginNotSetAsync(agent, leverage, pace.Token) is { } notSet)
         {
-            NotEntered(cycle, notSet);
-
-            return;
+            return NotEntered(cycle, notSet);
         }
 
         var (entry, refusal) = await stored.BeginEntryAsync(
@@ -389,9 +371,7 @@ internal sealed class AgentOrders(
 
         if (entry is null)
         {
-            NotEntered(cycle, refusal.ToString()!);
-
-            return;
+            return NotEntered(cycle, Refused(refusal));
         }
 
         // Until it is sent, the entry is the cycle's to stop. From then on it is followed.
@@ -418,6 +398,9 @@ internal sealed class AgentOrders(
             // price moved: the exchange refuses an entry that the account cannot pay for.
             await ShortAsync(agent, needs, leverage, rechecksKey: false, CancellationToken.None);
         }
+
+        // The entry was begun: what became of it is in its row.
+        return null;
     }
 
     public async Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken)
@@ -492,7 +475,7 @@ internal sealed class AgentOrders(
     /// </param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Why no entry is placed, or null when nothing of the account stands in its way.</returns>
-    private async Task<string?> AccountInTheWayAsync(Agent agent, bool closedJustNow, CancellationToken cancellationToken)
+    private async Task<NoEntryReason?> AccountInTheWayAsync(Agent agent, bool closedJustNow, CancellationToken cancellationToken)
     {
         if ((await keys.ExchangeKeyAsync(agent.UserId, agent.Mode, CancellationToken.None)).Outcome != KeyHandOverOutcome.Handed)
         {
@@ -511,7 +494,7 @@ internal sealed class AgentOrders(
         {
             // It is not known that anything is to change: a failure leads to no entry (NFR-REL-2).
             // A position that is still there is found by the next entry.
-            return "AccountUnknown";
+            return NoEntryReason.AccountUnknown;
         }
 
         var toChange = conflict switch
@@ -541,7 +524,7 @@ internal sealed class AgentOrders(
 
         await agents.RequireAttentionAsync(agent.UserId, agent.Id, AgentStateCause.ExchangeSettingConflict, CancellationToken.None);
 
-        return "AccountConflict";
+        return NoEntryReason.AccountConflict;
     }
 
     /// <summary>
@@ -551,7 +534,7 @@ internal sealed class AgentOrders(
     /// whole account. An entry is placed only once the exchange has said that both are set.
     /// </summary>
     /// <returns>Why no entry is placed, or null when both are set.</returns>
-    private async Task<string?> MarginNotSetAsync(Agent agent, int leverage, CancellationToken cancellationToken)
+    private async Task<NoEntryReason?> MarginNotSetAsync(Agent agent, int leverage, CancellationToken cancellationToken)
     {
         var key = await keys.ExchangeKeyAsync(agent.UserId, agent.Mode, CancellationToken.None);
 
@@ -572,7 +555,7 @@ internal sealed class AgentOrders(
             case ExchangeOrderOutcome.KeyRefused:
                 await RecheckKeyAsync(agent.UserId, agent.Mode);
 
-                return "MarginNotSet";
+                return NoEntryReason.MarginNotSet;
 
             // The exchange refused the setting, which it does while the account has orders or a
             // position in the symbol that the setting would change the margin of.
@@ -583,11 +566,11 @@ internal sealed class AgentOrders(
                     $"{leverage} for {agent.Symbol}. It does not change the margin of a symbol while the account has open orders or a " +
                     "position in it: cancel or close them at Binance. This is said once in a day for an agent.");
 
-                return "MarginRefused";
+                return NoEntryReason.MarginRefused;
 
             // It is not known how the symbol is margined: a failure leads to no entry (NFR-REL-2).
             default:
-                return "MarginNotSet";
+                return NoEntryReason.MarginNotSet;
         }
     }
 
@@ -607,7 +590,7 @@ internal sealed class AgentOrders(
     /// <param name="rechecksKey">Whether a credential that the exchange refuses is checked again.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Why no entry is placed, or null when the account covers it.</returns>
-    private async Task<string?> ShortAsync(Agent agent, decimal? needs, int leverage, bool rechecksKey, CancellationToken cancellationToken)
+    private async Task<NoEntryReason?> ShortAsync(Agent agent, decimal? needs, int leverage, bool rechecksKey, CancellationToken cancellationToken)
     {
         var key = await keys.ExchangeKeyAsync(agent.UserId, agent.Mode, CancellationToken.None);
 
@@ -619,7 +602,7 @@ internal sealed class AgentOrders(
 
         if (needs is not { } amount)
         {
-            return "BalanceUnknown";
+            return NoEntryReason.BalanceUnknown;
         }
 
         var read = await account.GetBalancesAsync(agent.UserId, agent.Market, agent.Mode, key.ApiKey!, key.SecretKey!, cancellationToken);
@@ -631,7 +614,7 @@ internal sealed class AgentOrders(
                 await RecheckKeyAsync(agent.UserId, agent.Mode);
             }
 
-            return "BalanceUnknown";
+            return NoEntryReason.BalanceUnknown;
         }
 
         // An asset that is not among the balances is one that the account holds none of.
@@ -649,7 +632,7 @@ internal sealed class AgentOrders(
                 $"An entry in {agent.Symbol} ({agent.Mode}) was skipped: it needs {Written(amount)} {agent.QuoteAsset}, and the account " +
                 $"has {Written(free)} {agent.QuoteAsset} free. This is said once in a day for an agent.");
 
-            return "QuoteBalance";
+            return NoEntryReason.QuoteBalance;
         }
 
         await SkippedAsync(
@@ -658,7 +641,7 @@ internal sealed class AgentOrders(
             $"leverage of {leverage}, and the Futures wallet has {Written(free)} {agent.QuoteAsset} available. This is said once in a " +
             "day for an agent.");
 
-        return "Margin";
+        return NoEntryReason.Margin;
     }
 
     /// <summary>
@@ -2678,9 +2661,22 @@ internal sealed class AgentOrders(
         }
     }
 
-    private void NotEntered(CycleStart cycle, string why) =>
+    /// <summary>Says once why no entry is placed, and hands the reason back for the record of the cycle (FR-CYC-10).</summary>
+    private NoEntryReason NotEntered(CycleStart cycle, NoEntryReason why)
+    {
         logger.LogInformation(
             "No entry was placed for agent {AgentId} for the close at {ClosedAt}: {NoEntryReason}", cycle.Agent.Id, cycle.ClosedAt, why);
+
+        return why;
+    }
+
+    /// <summary>Why no entry was begun, as the record of a cycle says it.</summary>
+    private static NoEntryReason Refused(EntryRefusal? refusal) => refusal switch
+    {
+        EntryRefusal.NotRunning => NoEntryReason.NotRunning,
+        EntryRefusal.Holding => NoEntryReason.Holding,
+        _ => throw new ArgumentOutOfRangeException(nameof(refusal), refusal, "No entry was begun, and nothing says why."),
+    };
 
     private async Task<IDisposable> EnterAsync(Guid agentId, CancellationToken cancellationToken)
     {

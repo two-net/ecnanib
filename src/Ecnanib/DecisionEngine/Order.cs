@@ -319,6 +319,10 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         // index of the key below.
         builder.HasIndex(order => new { order.AgentId, order.UserId, order.CreatedAt });
 
+        // The orders that a cycle placed, which its record shows beside its calls and its
+        // checks (FR-CYC-10). An order that no cycle placed names none.
+        builder.HasIndex(order => order.CycleId);
+
         // The executions of an order point at it with its owner.
         builder.HasAlternateKey(order => new { order.Id, order.UserId });
 

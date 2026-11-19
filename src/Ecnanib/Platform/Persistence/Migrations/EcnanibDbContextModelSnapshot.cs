@@ -746,6 +746,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("closed_at");
 
+                    b.Property<string>("DataPackage")
+                        .HasColumnType("text")
+                        .HasColumnName("data_package");
+
                     b.Property<DateTimeOffset>("EndedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("ended_at");
@@ -754,6 +758,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("mode");
+
+                    b.Property<string>("NoEntry")
+                        .HasColumnType("text")
+                        .HasColumnName("no_entry");
 
                     b.Property<string>("Outcome")
                         .IsRequired()
@@ -1105,6 +1113,9 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.HasIndex("ClientOrderId")
                         .IsUnique()
                         .HasDatabaseName("ix_orders_client_order_id");
+
+                    b.HasIndex("CycleId")
+                        .HasDatabaseName("ix_orders_cycle_id");
 
                     b.HasIndex("PositionId")
                         .HasDatabaseName("ix_orders_position_id");

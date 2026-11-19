@@ -6,6 +6,7 @@ using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Credentials;
+using Ecnanib.Tests.DecisionEngine;
 using Ecnanib.WebUi.Pages.Agents;
 using Microsoft.AspNetCore.Components;
 
@@ -38,6 +39,13 @@ public class AgentModeBadgeTests
         var inLive = await application.GiveAgentAsync(
             user.Id, Morning, name: "In Live", state: AgentState.Stopped, symbol: "SOLUSDT", mode: TradingMode.Live);
 
+        // Each has a cycle, in the mode that it is in: the timeline of a cycle is a page of its agent.
+        var cycles = new Dictionary<Guid, Guid>
+        {
+            [inDemo] = await application.GiveCycleAsync(user.Id, inDemo, Morning, orders: false),
+            [inLive] = await application.GiveCycleAsync(user.Id, inLive, Morning, orders: false),
+        };
+
         // Every page of the agents, by its route: a page that is added later is among them, and
         // fails here until it shows the badge.
         var routes = typeof(AgentPages).Assembly.GetTypes()
@@ -64,6 +72,7 @@ public class AgentModeBadgeTests
             {
                 var path = route
                     .Replace("{Id:guid}", agent.ToString(), StringComparison.Ordinal)
+                    .Replace("{CycleId:guid}", cycles[agent].ToString(), StringComparison.Ordinal)
                     .Replace("{Control}", "start", StringComparison.Ordinal);
 
                 Assert.False(

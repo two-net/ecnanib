@@ -78,6 +78,19 @@ public static class WebUiModule
     /// </summary>
     public static string AgentRiskChecksPath(Guid agentId) => $"{AgentPath(agentId)}/risk-checks";
 
+    /// <summary>
+    /// The path of the page of the cycles of an agent: each cycle that was recorded, with how it
+    /// ended (FR-CYC-10).
+    /// </summary>
+    public static string AgentCyclesPath(Guid agentId) => $"{AgentPath(agentId)}/cycles";
+
+    /// <summary>
+    /// The path of the page of one cycle of an agent, as a timeline: the summary of its data
+    /// package, every role's output, the Risk Guard results, its orders, and its outcome
+    /// (FR-CYC-10). The cycle is named by its id.
+    /// </summary>
+    public static string AgentCyclePath(Guid agentId, Guid cycleId) => $"{AgentCyclesPath(agentId)}/{cycleId}";
+
     /// <summary>The path of the page a user stops an agent on, and chooses what happens to its open position (FR-AGT-11).</summary>
     public static string StopAgentPath(Guid agentId) => $"{AgentPath(agentId)}/stop";
 

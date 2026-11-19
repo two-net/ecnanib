@@ -8,9 +8,9 @@ Allowed actions on Spot are open long, hold, close, and adjust protection. Futur
 
 Models cannot place orders or call internal functions. The only path from a model's output to an order is schema validation, then the Risk Guard, then the Exchange Gateway (NFR-SEC-6).
 
-What is built is steps 3 to 5 of the decision cycle: the calls of the four roles, the validation of what each answers, what a plan may do, what the review of the Risk Manager does to a plan, what the stale limit does to a decision, and the record of a cycle with the calls of its roles. What goes on of a plan is checked by the Risk Guard, which is in [risk-guard.md](risk-guard.md), and what the Risk Guard accepted is handed to what places the orders, which is in [orders.md](orders.md).
+What is built is steps 3 to 5 of the decision cycle: the calls of the four roles, the validation of what each answers, what a plan may do, what the review of the Risk Manager does to a plan, what the stale limit does to a decision, the record of a cycle, which is complete, and the timeline that shows it to its user (FR-CYC-10). What goes on of a plan is checked by the Risk Guard, which is in [risk-guard.md](risk-guard.md), and what the Risk Guard accepted is handed to what places the orders, which is in [orders.md](orders.md).
 
-The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Team` and `Role`, and in `RiskManagerReviewTests`, `PlanRuleTests`, and `StaleDecisionTests`.
+The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Team` and `Role`, and in `RiskManagerReviewTests`, `PlanRuleTests`, `StaleDecisionTests`, `CycleRecordTests`, and `CycleTimelinePageTests`.
 
 What starts a cycle, and the data package that it builds, are in [cycles.md](cycles.md). The templates of the roles and what composes a prompt are in [prompts.md](prompts.md). How a model is called is in [ai-providers.md](ai-providers.md), and how a stored key is handed to a call in [credentials.md](credentials.md). Who chooses the model of a role is in [agents.md](agents.md).
 
@@ -26,7 +26,7 @@ What starts a cycle, and the data package that it builds, are in [cycles.md](cyc
 | 5 | **The Risk Manager is called when the Strategist is over,** with its plan, for a plan that opens a position and whose decision is not stale by then. |
 | 6 | **The Risk Guard checks what goes on of the plan,** when the team has decided, and calls no model: see [risk-guard.md](risk-guard.md). It computes the size of the order that the plan opens, from the risk fraction that the Risk Manager left it (FR-RSK-5). |
 | 7 | **What the Risk Guard accepted is handed to `IPlanOrders`,** and nothing else is: it places the entry and the stop-loss, closes the position, or moves its stop-loss, or does nothing. See [orders.md](orders.md). |
-| 8 | The cycle is recorded, with the calls of its roles. |
+| 8 | The cycle is recorded, as a complete record: the summary of its data package, the calls of its roles, the checks of the Risk Guard, and its outcome, with why it placed no entry where it placed none. See "The record of a cycle". |
 
 | Rule | Detail |
 |---|---|
@@ -305,12 +305,20 @@ A role is called twice at most: `RoleRuns.Attempts`. **What becomes of the cycle
 | `Halted` | A loss limit of the agent was reached as the cycle began: the agent is halted, and its position is closed (FR-RSK-8). Its team was not called, and decided nothing. See "Halting an agent" in [risk-guard.md](risk-guard.md). |
 
 - **What goes on, goes on to the Risk Guard,** which checks it against the fixed rules (FR-RSK-3). **The outcome of a cycle stays the decision of its team:** a plan that the Risk Manager approved ends its cycle as `Approved`, also when the Risk Guard rejected it. What the Risk Guard made of the plan is in the record beside it: see [risk-guard.md](risk-guard.md).
-- **The outcome stays the decision of the team whatever becomes of the orders** as well. What was placed is in the rows of the orders, under the id of the cycle: see "The record of an order" in [orders.md](orders.md). A cycle that is stopped once its team has decided keeps the decision, and one whose orders fail with an error is recorded with it too.
+- **The outcome stays the decision of the team whatever becomes of the orders** as well. What was placed is in the rows of the orders, under the id of the cycle: see "The record of an order" in [orders.md](orders.md). Why no entry was placed for a plan that the Risk Guard accepted is in the record of the cycle, beside its outcome: see "The record of a cycle". A cycle that is stopped once its team has decided keeps the decision, and one whose orders fail with an error is recorded with it too.
 - An error that ends a cycle leaves `RunAsync`, as before, and the job logs it once and counts the cycle as failed: see "What a cycle is handed" in [cycles.md](cycles.md).
 
 ## The record of a cycle
 
-**Each role call records the provider, model, prompt template version, latency, token usage, structured result, and validation outcome** (FR-TEAM-8).
+**Each cycle is stored as a complete record: data package summary, every role output, Risk Guard results, orders, and final outcome** (FR-CYC-10). **Each role call records the provider, model, prompt template version, latency, token usage, structured result, and validation outcome** (FR-TEAM-8).
+
+| Part of the record | Where it is |
+|---|---|
+| The data package summary | `decision_cycles.data_package`: see "The summary of the data package". |
+| Every role output | `role_outputs`, a row for each call. |
+| The Risk Guard results | `risk_checks` and `risk_check_rules`: see "The record of a check" in [risk-guard.md](risk-guard.md). |
+| The orders | `orders`, under the id of the cycle: see "The record of an order" in [orders.md](orders.md). Why no entry was placed is `decision_cycles.no_entry`. |
+| The final outcome | `decision_cycles.outcome`: see "The outcome of a cycle". |
 
 ```csharp
 public interface ICycleRecords
@@ -326,6 +334,10 @@ public interface ICycleRecords
 | Rule | Detail |
 |---|---|
 | **A cycle is recorded once, when it ends, however it ends.** | With a decision, with none, with an error, or stopped. The cycle, the calls of its roles, and the checks of the Risk Guard are stored in one transaction: all of them or none. The checks are in `risk_checks` and `risk_check_rules`: see "The record of a check" in [risk-guard.md](risk-guard.md). |
+| **A cycle that ends with no decision or no order is still recorded, with its outcome.** | A plan that holds, a veto, a stale decision, a role that gave no valid result, an error, a stop, and a loss limit that halted the agent each leave a row of `decision_cycles` that says so, with whatever calls were made by then. `CycleRecordTests` holds the cycles to it. |
+| **The summary of the data package is kept from the moment that the package is built.** | `TeamCycle` hands it to what the cycle keeps before any role is called, so a cycle that ends later with no decision, with an error, or stopped is recorded with it. A cycle that ends before its package is built has none: one whose market data the exchange did not give, one whose team is not whole, and one whose agent a loss limit halted. |
+| **The orders of a cycle are rows of their own, which name the cycle.** | An order is written before it is sent, which is before its cycle is recorded, so `orders.cycle_id` points at no row. The record of a cycle is read with the orders that carry its id. |
+| **Why no entry was placed is kept with the cycle.** | `IPlanOrders.PlaceAsync` answers with a member of `NoEntryReason` when a plan to open a position that the Risk Guard accepted led to no entry, and `TeamCycle` records it as `no_entry`. See "When no entry is placed" in [orders.md](orders.md). The outcome of the cycle stays the decision of its team. |
 | **A call that is made once more is a row of its own.** | `attempt` is 1 or 2. |
 | **A call that was under way when the cycle was stopped is recorded,** as `Canceled`. | The provider may have charged for it. |
 | **The write has a time limit of its own:** 5 seconds, `TeamCycle.RecordsWithin`. | A cycle that is stopped has its token canceled, and the run that started it waits for it. |
@@ -334,7 +346,7 @@ public interface ICycleRecords
 
 | Table | Columns |
 |---|---|
-| `decision_cycles` | `id`, `agent_id`, `user_id`, `mode`, `closed_at`, `started_at`, `ended_at`, `outcome`. Indexed by `(agent_id, user_id, closed_at)`. |
+| `decision_cycles` | `id`, `agent_id`, `user_id`, `mode`, `closed_at`, `started_at`, `ended_at`, `outcome`, `data_package`, `no_entry`. Indexed by `(agent_id, user_id, closed_at)`. |
 | `role_outputs` | `id`, `cycle_id`, `user_id`, `role`, `attempt`, `model_id`, `role_template_id`, `market_template_id`, `timeframe_template_id`, `profile_template_id`, `called_at`, `latency_ms`, `input_tokens`, `output_tokens`, `live_searches`, `outcome`, `validation`, `rejection`, `result`. One row for each `(cycle_id, user_id, role, attempt)`. |
 
 | Column | What it holds |
@@ -342,6 +354,8 @@ public interface ICycleRecords
 | `decision_cycles.id` | The id of the cycle, which what starts the cycles assigned, and which everything logged for the cycle carries. |
 | `decision_cycles.mode` | The mode that the agent was in, as the name of a member of `TradingMode`. It stays as it was written when the agent is switched (FR-BIN-11). |
 | `decision_cycles.outcome` | The name of a member of `CycleOutcome`. |
+| `decision_cycles.data_package` | The summary of the data package of the cycle, as one line of JSON that the service wrote. Null for a cycle that ended before its package was built, and for one that was recorded before a summary was kept. |
+| `decision_cycles.no_entry` | Why no entry was placed for a plan to open a position that the Risk Guard accepted, as the name of a member of `NoEntryReason`. Null for a cycle that placed its entry, and for one whose plan opened nothing or did not go on. |
 | `role_outputs.model_id` | The model of the catalog that was called. A model is of one provider and is never deleted, so the row says the provider and the model for good. |
 | The four `_template_id` | The versions of the templates that the prompt of the call was composed from: the instructions of the role, and the modules of the market, the timeframe, and the profile. A version is never changed (FR-PRM-6). See "What a role output records" in [prompts.md](prompts.md). |
 | `latency_ms` | How long the call took, as the gateway measured it, in whole milliseconds. |
@@ -354,9 +368,92 @@ public interface ICycleRecords
 
 - **The rows are their user's:** `DecisionCycle` and `RoleOutput` implement `IUserOwned`. The Decision Engine may not use Accounts, so a row carries its owner along to the row that it hangs on: `(agent_id, user_id)` points at `agents (id, user_id)`, and `(cycle_id, user_id)` at `decision_cycles (id, user_id)`. The database holds the owners to being the same. See [ownership.md](ownership.md).
 - **The record of a cycle goes with its agent,** and with the account: an agent is deleted only while it is a draft, or is stopped with nothing open.
-- **They hold no prompt, no key, and no personal data.** A model is sent nothing that says who the user is (FR-PRM-9). `PersonalDataRules` lists `rejection` and `result` with what they hold.
+- **They hold no prompt, no key, and no personal data.** A model is sent nothing that says who the user is (FR-PRM-9), and the summary of a data package holds what a prompt holds. `PersonalDataRules` lists `data_package`, `rejection`, and `result` with what they hold.
 - **They are not in the export of a user's data.** A user exports their trades and decisions as CSV (FR-RPT-4), which is not built. `ExportRules` lists both tables with that.
 - A table of role outputs points at the versions of the templates: `PromptRulesTests` holds every such table to it.
+
+The migration `AddCycleRecord` adds `data_package` and `no_entry`, and the index of `orders` that finds the orders of a cycle. It gave the cycles that were stored then neither: nothing kept a summary before it, and why no entry was placed was in the log alone.
+
+### The summary of the data package
+
+```csharp
+public sealed record DataPackageSummary(
+    DateTimeOffset BuiltAt, Market Market, Timeframe Timeframe, string Symbol, string QuoteAsset, decimal Equity,
+    PositionContext? Position, AgentRisk Limits, IReadOnlyList<SeriesSummary> Series, IReadOnlyList<OpenOrder> Orders, FuturesData? Futures)
+{
+    public static DataPackageSummary Of(DataPackage package, DateTimeOffset builtAt);
+    public string ToJson();
+    public static DataPackageSummary? Read(string? stored);
+}
+
+public sealed record SeriesSummary(string Timeframe, int Candles, int ComputedFrom, CandleSummary? Latest, IndicatorValues Indicators);
+
+public sealed record CandleSummary(DateTimeOffset ClosedAt, decimal Open, decimal High, decimal Low, decimal Close, decimal Volume);
+```
+
+| Rule | Detail |
+|---|---|
+| **It is what the team decided on, without the candles.** | The agent as its prompt stated it: its market, its timeframe, its symbol, its equity, its position, and its limits. For the agent's own timeframe and for each higher one: how many candles the package held, how many the indicators were computed from, the latest candle, and the indicators at its close. The orders that rested on the exchange, and on Futures the mark price, the funding, and the open interest. And when the package was built. |
+| **It keeps one candle of each series, and no more.** | The database is not a market-data warehouse (NFR-DAT-6). A package of 200 candles is a summary of a few hundred characters for each series. |
+| **It is one line of JSON, which the service writes.** | A number has every digit that it has, a time is in UTC, and a member of a fixed set is written by its name. No model wrote any of it. |
+| **It says nothing of whose agent it is** (FR-PRM-9). | It has no id and no name, as a data package has none. |
+| **What does not read as a summary is none.** | `Read` answers null for a row that keeps none, and for text that nothing of the application wrote. The timeline then says that the cycle kept no summary. |
+| It is made of values alone. | A series is named by the code of its length, `1H` or `1W`, and not by a type of the Exchange Gateway, so what runs the team keeps it and uses nothing of the exchange: see "What a model cannot do". |
+
+## The timeline
+
+**The user can view a cycle as a timeline** (FR-CYC-10). Two pages show the cycles of an agent to its user, and `IRecordedCycles` reads them:
+
+```csharp
+public interface IRecordedCycles
+{
+    Task<CycleHistory> LatestAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+
+    Task<CycleRecord?> FindAsync(Guid userId, Guid agentId, Guid cycleId, CancellationToken cancellationToken);
+}
+
+public sealed record CycleRecord(
+    Guid Id, DateTimeOffset ClosedAt, TradingMode Mode, DateTimeOffset StartedAt, DateTimeOffset EndedAt, CycleOutcome Outcome,
+    DataPackageSummary? DataPackage, IReadOnlyList<RoleCallView> Calls, IReadOnlyList<RiskCheckView> Checks,
+    IReadOnlyList<CycleOrderView> Orders, NoEntryReason? NoEntry);
+```
+
+| Page | What it is |
+|---|---|
+| `/agents/<id>/cycles` | The cycles of the agent, latest close first: for each the close of its candle, the mode that the agent was in, its outcome in words with what that means, how long it ran, and the way to its timeline. |
+| `/agents/<id>/cycles/<cycle>` | One cycle as a timeline: its entries one under another, in the order they happened, each with its time to the second and how long after the close of the candle that was. |
+
+**The entries of a timeline:**
+
+| Entry | What it says |
+|---|---|
+| The candle closed | Which candle the cycle was for. |
+| The cycle started | When its turn came. |
+| Data package | The summary: what the agent was and held, its limits, a table with the latest candle and the indicators of each timeframe, the open orders, and what Futures adds. A cycle that kept none says why. |
+| A role, once for each call | The model and its provider, how the call ended, the structured result field by field with its rationale, how long it took, the tokens, the live searches, and the versions of the four templates of its prompt. A call that was made once more is an entry of its own. |
+| Risk Guard, once for each check | The verdict, the size that was computed, and every rule with its outcome and why, as on the page of the risk checks: see "The page" in [risk-guard.md](risk-guard.md). |
+| An order, once for each | What it does, what has become of it by now, how much of it is executed, and the identifiers that it carries at Binance. |
+| No order | For a cycle that placed none: that nothing of a plan went on, that the Risk Guard rejected the plan, or why no entry was placed. |
+| The cycle ended | The outcome, with what it means, and how long the cycle ran. |
+
+| Rule | Detail |
+|---|---|
+| **The entries stand in the order they happened.** | By their times. What happened at the same moment stands in the order of a cycle: the package, the calls, the checks, and the orders. The two analysts are called at the same moment, and stand in the order of the roles. |
+| **A cycle that ended with no decision or no order is shown like any other,** with its outcome. | The list has every cycle that was recorded, whatever its outcome. Its timeline has the entries of what happened, and says where a package or an order would stand why there is none. Such an entry says no time of its own. |
+| **Everything is explained in plain language** (NFR-USA-2). | `CyclePages` has a word or two and a sentence for every `CycleOutcome`, every way that a call ends, every `RejectionRule`, every `NoEntryReason`, and every status of an order. An outcome is said as words, and does not rely on a colour. |
+| **A structured result is shown field by field.** | A field of the schema of a role is named in words: `riskFraction` is "Risk fraction", and is said as a percentage of the agent's equity beside the number. A rejected answer is shown as well, with why it was rejected: it may hold a field that no schema defines, which is shown under the name that the model gave it. |
+| **What a model wrote is text on the page.** | A rationale, an event of a sentiment report, and a field of a rejected answer are written as text, like everything else on a page, and are never markup of it. A report that a search fed is untrusted content (FR-PRM-8). |
+| **The mark of a sentiment report is the service's** (FR-CYC-3). | The entry of a valid report says whether it counts as resting on live data, from the searches that its call ran, beside what the model itself says. |
+| **A call says the versions of its templates, and not their texts.** | By kind, subject, and number: a version is never changed (FR-PRM-6). The page of the prompts shows the texts that an agent uses now. |
+| **An order is shown as it is now.** | Its row changes after its cycle ended: a stop-loss that rested is executed later. An order that was placed for the position by what settles the orders names no cycle, and is on no timeline. |
+| **The latest 50 cycles are listed.** | `RecordedCycles.Shown`. The page says so when there are more. |
+| **A cycle says the mode it ran in,** as a badge (FR-BIN-11). | The badge of the mode that the agent is in now is under the heading, as on every page of an agent (FR-UI-3). |
+| **The cycles of an agent of another user are not found.** | The pages ask `IStoredAgents` for the agent of the user who is signed in, and answer "not found" as for an agent that does not exist. `IRecordedCycles` asks for every part of a record by owner as well, and a cycle of another agent of the same user is not found under this one. |
+| The Decision Engine may not use Accounts. | So a page hands `IRecordedCycles` the user who is signed in, by id. |
+| **The parts of a record are read as they were at one moment.** | They are rows of four tables, and an order of the cycle may be written to meanwhile: `FindAsync` reads in a snapshot. See "Reads that agree" in [persistence.md](persistence.md). |
+| **The pages have no form.** | A user reads the record of a cycle, and changes none. |
+
+The page of the state of an agent leads to the list, and so does the page of its risk checks, which leads from each check to the timeline of its cycle.
 
 ## What a model cannot do
 
@@ -410,7 +507,8 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 
 - **An order is held to through what a call was made with,** and not through waiting for something not to happen: the prompt of the Strategist holds what both analysts answered, and the prompt of the Risk Manager the plan.
 - `TeamRecordTests` runs cycles of agents of the database through the gateway itself, with the stored keys of their users, and with a stand-in for the providers: `CyclesApplication` with `providers`.
-- `TeamAnswers` has a valid answer of each role, and `StoredCycleRows.GiveCycleAsync` gives an agent the record of a cycle without one that runs.
+- `TeamAnswers` has a valid answer of each role, and `StoredCycleRows.GiveCycleAsync` gives an agent the record of a cycle without one that runs: with the summary of a data package, which `CycleSummaries.Of` makes, a call of each role, a check, and its orders, unless the test says that it placed none.
+- `StandInPlanOrders.NoEntry` is what placing the orders of a plan answers, for a cycle whose entry is skipped.
 - **A plan is read for an agent.** `PlanAgents.On` is an agent on a market, with the position that it holds or with none, and `PlanAgents.For` is one that may have the plan of an answer, whatever its action. A cycle whose agent holds a position is given `PlanAgents.Holding`, which is a `StandInHoldings`: see "Testing" in [cycles.md](cycles.md).
 - **A decision is made stale by moving the clock while a call is held.** `StandInModels.Hold` holds the call of the Strategist or of the Risk Manager, the test sets the clock to when the role answers, and lets the call go. The limits are those of the file of the tests: 100 seconds for 15m, 200 for 1H, 400 for 4H, and 800 for 1D.
 - `LiveProviderTests` sends the schema of each role to the providers themselves, and reads what they answer with `IRoleResults`. It is skipped unless a key and a model are given: see "Checking against the real providers" in [ai-providers.md](ai-providers.md).
@@ -421,7 +519,9 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 - Recalling lessons for the Strategist and the Risk Manager (FR-EXP-7). Both are given none.
 - Moving an agent to Attention required when a call reports that its model does not exist (FR-CAT-8). The call is recorded as `ModelNotFound`, and the cycle ends as its role says. The catalog marks a model that its provider no longer lists, which moves the agents that run with it: see "When a model goes" in [agents.md](agents.md).
 - Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A call that ends as `Failed` is not made again, and the next close calls again.
-- The summary of the data package in the record of a cycle, its orders beside its calls and its checks, and the timeline that shows them (FR-CYC-10). The orders of a cycle are stored under its id, and nothing shows them yet. Recording a cycle that never started.
+- Recording a cycle that never started: one that was skipped, or whose agent no longer ran. It is no run of a team, and leaves its events in the log: see "Not built yet" in [cycles.md](cycles.md).
+- The decision timeline on the agent detail screen (FR-RPT-2), a timeline that follows a cycle while it runs (FR-NTF-2), and the cycles before the latest 50. A cycle is shown once it is recorded, on a page of its own.
+- Why a plan that closes a position or adjusts its protection placed no order, in the record of its cycle. The record says why no entry was placed, and the log says the rest.
 - Exporting decisions as CSV (FR-RPT-4), and showing AI usage from the recorded tokens (FR-RPT-3, FR-KEY-11).
 - Retention of the records: decision records are kept 365 days and role transcripts 90 (NFR-DAT-5). `Retention` has the settings, and nothing deletes yet.
 - Telling a model why its first answer was rejected. The call that is made once more has the same prompt.

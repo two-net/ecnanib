@@ -1,0 +1,117 @@
+@page "/agents/{Id:guid}/cycles"
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.DecisionEngine
+@inject IStoredAgents Agents
+@inject IRecordedCycles Cycles
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page lists the cycles
+    that were recorded for an agent of the user, latest close first: for each the close of the
+    candle that it was for, the mode that the agent was in then, how it ended, in words, and how
+    long it took (FR-CYC-10). A cycle that made no decision, or placed no order, is among them.
+    Each leads to its timeline. The page has no form. The badge of the mode is under the heading,
+    and each cycle says the mode it ran in (FR-UI-3, FR-BIN-11).
+*@
+
+@if (_agent is not null && _history is not null)
+{
+    <PageTitle>Cycles of the agent @_agent.Name</PageTitle>
+
+    <h1 id="cycles-heading">Cycles of the agent @_agent.Name</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
+    <p>@CyclePages.Explained</p>
+
+    @if (_history.Cycles.Count == 0)
+    {
+        <p>@CyclePages.NoneYet</p>
+    }
+    else
+    {
+        @if (_history.Total > _history.Cycles.Count)
+        {
+            <p>The latest @_history.Cycles.Count of @_history.Total cycles, latest first.</p>
+        }
+        else
+        {
+            <p>Every cycle of the agent, latest first.</p>
+        }
+
+        @* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
+        <div class="agents agent-cycles" role="region" aria-labelledby="cycles-heading" tabindex="0">
+            <table>
+                <caption>The cycles of the agent</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Candle close</th>
+                        <th scope="col">Mode</th>
+                        <th scope="col">Outcome</th>
+                        <th scope="col">What it means</th>
+                        <th scope="col">Took</th>
+                        <th scope="col">Record</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var cycle in _history.Cycles)
+                    {
+                        <tr>
+                            <th scope="row">@PageTimes.At(cycle.ClosedAt)</th>
+                            <td><ModeBadge Mode="@cycle.Mode" /></td>
+                            <td><span class="cycle-outcome cycle-@(cycle.Outcome.ToString().ToLowerInvariant())">@CyclePages.Describe(cycle.Outcome)</span></td>
+                            <td>@CyclePages.Explain(cycle.Outcome)</td>
+                            <td>@CyclePages.Seconds(cycle.EndedAt - cycle.StartedAt)</td>
+                            <td><a href="@WebUiModule.AgentCyclePath(_agent.Id, cycle.Id)">@CyclePages.TimelineLink</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+
+    <p><a href="@WebUiModule.AgentRiskChecksPath(_agent.Id)">@RiskCheckPages.Link</a></p>
+
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+
+    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+}
+
+@code {
+    private AgentView? _agent;
+    private CycleHistory? _history;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist: a user reads the cycles of
+        // their own agents.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // The Decision Engine may not use Accounts, so it is handed the user who is signed in,
+        // and asks for the cycles of that user alone.
+        _history = await Cycles.LatestAsync(SignedInUser.RequiredIdOf(request), _agent.Id, request.RequestAborted);
+    }
+}

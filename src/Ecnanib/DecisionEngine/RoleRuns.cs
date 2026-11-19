@@ -277,9 +277,10 @@ internal sealed record RoleRun<T>(RoleCall Call, AiCallResult? Answer, RoleResul
     where T : class;
 
 /// <summary>
-/// What one cycle keeps of the calls of its roles, until it is recorded: each call, in the order
-/// the calls ended in, the checks of the Risk Guard, and the checks of keys that the cycle
-/// started. Two roles are called at the same time, so it is written to under a lock.
+/// What one cycle keeps until it is recorded: the summary of its data package, each call of its
+/// roles, in the order the calls ended in, the checks of the Risk Guard, why it placed no entry,
+/// and the checks of keys that the cycle started. Two roles are called at the same time, so it
+/// is written to under a lock.
 /// </summary>
 internal sealed class CycleCalls
 {
@@ -288,6 +289,8 @@ internal sealed class CycleCalls
     private readonly List<RiskCheckRecord> _guarded = [];
     private readonly HashSet<AiProviderCode> _checked = [];
     private readonly List<Task> _checks = [];
+    private DataPackageSummary? _package;
+    private NoEntryReason? _noEntry;
 
     /// <summary>The calls of the cycle so far, in the order they ended in.</summary>
     public IReadOnlyList<RoleOutput> Outputs
@@ -310,6 +313,54 @@ internal sealed class CycleCalls
             {
                 return [.. _guarded];
             }
+        }
+    }
+
+    /// <summary>
+    /// The summary of the data package that the team of the cycle decided on (FR-CYC-10), or
+    /// null while none is built: a cycle that ends before it has none.
+    /// </summary>
+    public DataPackageSummary? Package
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _package;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Why the cycle placed no entry for a plan to open a position that the Risk Guard accepted,
+    /// or null: it placed one, or its plan opened nothing.
+    /// </summary>
+    public NoEntryReason? NoEntry
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _noEntry;
+            }
+        }
+    }
+
+    /// <summary>Keeps the summary of the data package of the cycle.</summary>
+    public void Keep(DataPackageSummary package)
+    {
+        lock (_gate)
+        {
+            _package = package;
+        }
+    }
+
+    /// <summary>Keeps what placing the orders of the cycle said of its entry.</summary>
+    public void Keep(NoEntryReason? noEntry)
+    {
+        lock (_gate)
+        {
+            _noEntry = noEntry;
         }
     }
 

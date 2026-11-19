@@ -1343,16 +1343,21 @@ internal sealed class OrdersApplication : IDisposable
     /// Places the orders of a plan that the Risk Guard accepts, as a cycle of the agent does,
     /// and moves the clock on while that waits for a moment of it.
     /// </summary>
-    public Task PlaceAsync(Agent agent, GuardCase plan, CancellationToken? stopping = null) =>
+    /// <returns>Why no entry was placed, as the record of the cycle keeps it, or null.</returns>
+    public Task<NoEntryReason?> PlaceAsync(Agent agent, GuardCase plan, CancellationToken? stopping = null) =>
         PlaceAsync(CycleOf(agent), plan, stopping);
 
     /// <summary>The same, for a cycle that the test made.</summary>
-    public Task PlaceAsync(CycleStart cycle, GuardCase plan, CancellationToken? stopping = null)
+    public async Task<NoEntryReason?> PlaceAsync(CycleStart cycle, GuardCase plan, CancellationToken? stopping = null)
     {
         var accepted = GuardCheck.Of(plan);
         Assert.True(accepted.IsAccepted, "The plan of the test is one that the Risk Guard accepts.");
 
-        return WhileTimePassesAsync(Orders.PlaceAsync(cycle, accepted, stopping ?? CancellationToken.None));
+        var placing = Orders.PlaceAsync(cycle, accepted, stopping ?? CancellationToken.None);
+
+        await WhileTimePassesAsync(placing);
+
+        return await placing;
     }
 
     /// <summary>Settles the orders of an agent with the exchange, and moves the clock on while that waits.</summary>

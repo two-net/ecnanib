@@ -340,5 +340,5 @@ Whether users may edit prompts, or add instructions of their own for an agent, i
 - Keeping addresses and ids out of a lesson that a model wrote, before it is handed over. A prompt that would hold one is refused, and the cycle that asked for it makes no decision.
 - Keeping a lesson from posing as a part of the prompt, with a line that reads as a heading. The instructions say which parts are data. A report and a plan are each written as one line, and cannot.
 - Saying in the Privacy Policy what goes to AI providers (NFR-SEC-8). Its text is a draft: see "Legal documents" in [accounts.md](accounts.md). The pages of the keys and the page of an agent's prompts say it.
-- Showing the earlier versions of a template. The page shows what an agent uses now. What a past call was told is shown with the decision record, which points at the versions it used (FR-CYC-10).
+- Showing the text of an earlier version of a template. The page shows what an agent uses now. The timeline of a cycle says which versions each of its calls used, by kind, subject, and number (FR-CYC-10), and not their texts: see "The timeline" in [team.md](team.md).
 - Prompts that a user edits, or instructions that a user adds for an agent (Q5).

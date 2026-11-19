@@ -5,8 +5,9 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// Records a cycle, the calls of its roles (FR-TEAM-8), and the checks of the Risk Guard
-/// (FR-RSK-9). See "The record of a cycle" in docs/team.md and "The record of a check" in
-/// docs/risk-guard.md.
+/// (FR-RSK-9): with the summary of its data package and its outcome, which the cycle carries,
+/// and with its orders, which are rows of their own under its id, a complete record (FR-CYC-10).
+/// See "The record of a cycle" in docs/team.md and "The record of a check" in docs/risk-guard.md.
 /// </summary>
 /// <remarks>
 /// It is public so that a test can put a stand-in behind it, for cycles of agents that need no
@@ -18,7 +19,7 @@ public interface ICycleRecords
     /// Stores a cycle with the calls of its roles and the checks of the Risk Guard, all of them
     /// or none: a cycle is recorded once, when it ends.
     /// </summary>
-    /// <param name="cycle">The cycle, with how it ended.</param>
+    /// <param name="cycle">The cycle, with how it ended, the summary of its data package, and why it placed no entry where it placed none.</param>
     /// <param name="outputs">The calls of its roles, in the order they were made. Empty when none was made.</param>
     /// <param name="checks">
     /// What the Risk Guard made of what went on of the plan, in the order of the checks, each

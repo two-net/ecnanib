@@ -29,7 +29,7 @@ The calls that the gateway makes for an order are in [exchange.md](exchange.md).
 ```csharp
 public interface IPlanOrders
 {
-    Task PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken);
+    Task<NoEntryReason?> PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken);
     Task SettleAsync(Guid agentId, CancellationToken cancellationToken);
     Task<bool> ReconcileAsync(Guid agentId, CancellationToken cancellationToken);
     Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken);
@@ -61,11 +61,12 @@ An order that is not an entry only closes a position. The gateway sends it to Fu
 
 ### When no entry is placed
 
-Each is said in the log, with its reason, and leaves no order behind. They are asked in this order, and the first that holds is the reason.
+Each is said in the log, with its reason, and leaves no order behind. The reason is a member of `NoEntryReason`, which `PlaceAsync` answers with, and the record of the cycle keeps it, so the timeline of the cycle says why its plan placed no entry (FR-CYC-10): see "The record of a cycle" in [team.md](team.md). They are asked in this order, and the first that holds is the reason.
 
 | Reason | When |
 |---|---|
 | `SpotLongOnly` | The entry sells, on Spot. An agent there buys, and sells what it bought to exit (FR-BIN-S1). A plan that shorts on Spot is refused when it is read: see "What a plan may do" in [team.md](team.md). What places the orders holds to it as well, for a sale that opens would sell what else the account holds. |
+| `NoSizeOrStopLoss` | The result of the Risk Guard has no quantity above zero for the order, or its plan no stop-loss. The Risk Guard accepts no plan that opens a position without both, so this holds for a result that nothing of the application made. |
 | `EntriesPaused` | `IExchangeClock.EntriesPaused` says so for the market and the environment of the agent: the clock of the service is not near Binance's, or was not read (FR-BIN-5). |
 | `NoStopOrders` | The symbol takes no stop, or the exchange did not say its rules. No position is opened where no stop-loss can rest. See "Symbols" in [exchange.md](exchange.md). |
 | `NoPairOrders` | The symbol takes no pair of a stop-loss and a take-profit, on Spot. No position is opened there whose protection cannot rest as a pair (FR-BIN-S2). |
@@ -80,7 +81,9 @@ Each is said in the log, with its reason, and leaves no order behind. They are a
 | `MarginRefused` | Binance refused to give the symbol isolated margin, or the leverage of the order, on Futures. Its user is told. See "The margin of Futures". |
 | `MarginNotSet` | It is not known whether the symbol has isolated margin and the leverage of the order: a call did not say. No entry is placed at a leverage that the Risk Guard did not check (FR-RSK-6). |
 
-An entry whose user has no Binance key for the mode is not sent either, and its row says `NotPlaced`.
+An entry whose user has no Binance key for the mode is not sent either, and its row says `NotPlaced`: the record of its cycle has the order, and no reason.
+
+**A reverse that does not get to its entry answers `ReverseNotCompleted`.** What it opens is opened only when what it closes is closed: the agent held no position any more, its position could not be closed, or the cycle was being stopped once it was. What became of the close is said in the log where it was tried, and no event of an entry is written: the record of the cycle says that the other side was not opened.
 
 ### The quote balance
 
@@ -565,7 +568,7 @@ The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrde
 | Column | What it holds |
 |---|---|
 | `orders.mode`, `market`, `symbol` | Those of the agent when the order was placed. What an agent did in Demo is Demo for good (FR-BIN-11), and an order is asked about where it was placed. |
-| `orders.cycle_id` | The cycle that placed it, or nothing for an order that no cycle placed. It points at no row: a cycle is recorded when it ends, which is after its orders. |
+| `orders.cycle_id` | The cycle that placed it, or nothing for an order that no cycle placed. It points at no row: a cycle is recorded when it ends, which is after its orders. It is indexed, by the migration `AddCycleRecord`, for the record of a cycle, which is read with its orders (FR-CYC-10). |
 | `orders.purpose` | `Entry`, `StopLoss`, `TakeProfit`, or `Close`. |
 | `orders.type` | `Market`, `Stop`, or `Limit`. A take-profit is a `Stop`, as a stop-loss is: its purpose says which of the two it is, and so which way its trigger is held against the price. |
 | `orders.price` | The price that a stop is triggered at, or the price of an entry at a price. |
@@ -735,6 +738,6 @@ A check against Binance's own test environment is in `LiveBinanceTests`: see "Ch
 - Thinning the equity of an agent over time to one row for a day after 90 days (NFR-DAT-5). Nothing deletes yet.
 - The equity of an agent that is not evaluated: one that its user paused or stopped, and that holds nothing, has no new row until it runs again.
 - The funding and the margin of a position on the page of its agent (FR-RPT-2).
-- The orders of a cycle in its record and its timeline (FR-CYC-10). Why a plan placed nothing is in the log only.
+- Why a plan that closes a position or adjusts its protection placed no order, in the record of its cycle. The record of a cycle has its orders and why no entry was placed (FR-CYC-10): see "The timeline" in [team.md](team.md). That a position was gone before its close was due is in the log only.
 - The count of the orders that an account places, which Binance limits beside the request weight. A protective order has no turn before other calls at the limiter: one that is held back was not sent, and is settled within a minute.
 - A close by hand that is told its user as closed, or failed, by a notification (FR-NTF-1). The page that asked says so.

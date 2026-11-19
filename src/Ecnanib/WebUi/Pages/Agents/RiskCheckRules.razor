@@ -1,0 +1,49 @@
+@using Ecnanib.DecisionEngine
+
+@*
+    What a check of the Risk Guard computed and asked, as a page shows it: the size of the order
+    of a plan that opens a position (FR-RSK-5), and every rule with its outcome and why, in plain
+    language and with the numbers (FR-RSK-9, NFR-USA-2). The page of the risk checks of an agent
+    shows it for each check, and the timeline of a cycle for the checks of that cycle (FR-CYC-10).
+    An outcome is said as words, and does not rely on a colour. The texts are in RiskCheckPages.
+*@
+
+@* The size that the check computed for the order of a plan that opens a position (FR-RSK-5). *@
+@if (RiskCheckPages.Sized(Check) is { } sized)
+{
+    <p class="guard-size">@sized</p>
+}
+
+@* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
+<div class="agents risk-check-rules" role="region" aria-labelledby="@LabelledBy" tabindex="0">
+    <table>
+        <caption>The rules of the check</caption>
+        <thead>
+            <tr>
+                <th scope="col">Rule</th>
+                <th scope="col">Outcome</th>
+                <th scope="col">Why</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var rule in Check.Rules)
+            {
+                <tr>
+                    <th scope="row">@RiskCheckPages.NameOf(rule.Rule)</th>
+                    <td><span class="rule-outcome rule-@(rule.Outcome.ToString().ToLowerInvariant())">@RiskCheckPages.Describe(rule.Outcome)</span></td>
+                    <td>@RiskCheckPages.Says(rule, Check.Action)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    /// <summary>The check.</summary>
+    [Parameter, EditorRequired]
+    public RiskCheckView Check { get; set; } = null!;
+
+    /// <summary>The id of the heading that names the check, which the table is read out under.</summary>
+    [Parameter, EditorRequired]
+    public string LabelledBy { get; set; } = string.Empty;
+}

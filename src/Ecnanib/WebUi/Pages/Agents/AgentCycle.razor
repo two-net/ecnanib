@@ -1,0 +1,360 @@
+@page "/agents/{Id:guid}/cycles/{CycleId:guid}"
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.DecisionEngine
+@using Ecnanib.Shared
+@inject IStoredAgents Agents
+@inject IRecordedCycles Cycles
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page shows one cycle of an
+    agent of the user as a timeline (FR-CYC-10): the close of its candle, its start, the summary of
+    its data package, every call of a role with what it answered, what the Risk Guard made of the
+    plan with the outcome of every rule, the orders that the cycle placed, or why it placed none,
+    and how it ended. Each entry says when it happened, to the second, and everything is explained
+    in plain language (NFR-USA-2). An outcome is said as words, and does not rely on a colour. The
+    page has no form: a user reads the record of a cycle, and changes none. The badge of the mode
+    of the agent is under the heading, and the cycle says the mode it ran in (FR-UI-3, FR-BIN-11).
+*@
+
+@if (_agent is not null && _cycle is not null)
+{
+    <PageTitle>Cycle of the agent @_agent.Name</PageTitle>
+
+    <h1>Cycle of the agent @_agent.Name</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
+    <p>
+        The cycle for the candle that closed at @PageTimes.At(_cycle.ClosedAt), in <ModeBadge Mode="@_cycle.Mode" />. Outcome:
+        <strong class="cycle-outcome cycle-@(_cycle.Outcome.ToString().ToLowerInvariant())">@CyclePages.Describe(_cycle.Outcome)</strong>.
+        @CyclePages.Explain(_cycle.Outcome)
+    </p>
+
+    <p>@CyclePages.TimelineExplained</p>
+
+    @* It is a list also where its look hides the numbers: a screen reader says how many entries it has. *@
+    <ol class="timeline" role="list">
+        @foreach (var entry in _entries)
+        {
+            <li class="timeline-entry timeline-@entry.Kind">
+                @if (entry.Timed)
+                {
+                    <p class="timeline-time">@PageTimes.AtSecond(entry.At), @CyclePages.After(_cycle.ClosedAt, entry.At)</p>
+                }
+
+                @switch (entry.What)
+                {
+                    case Closed:
+                        <h2>The candle closed</h2>
+
+                        <p>
+                            @(_cycle.DataPackage is { } closed
+                                ? $"The {closed.Timeframe.Code()} candle of {closed.Symbol} closed."
+                                : "The candle that the cycle is for closed.")
+                            A cycle starts when a candle of the agent's timeframe closes, and decides on closed candles only.
+                        </p>
+
+                        break;
+
+                    case Started:
+                        <h2>The cycle started</h2>
+
+                        <p>
+                            The turn of the cycle came. Before the team is called, the orders of the agent are settled with the
+                            exchange, and its loss limits are evaluated.
+                        </p>
+
+                        break;
+
+                    case DataPackageSummary package:
+                        <h2 id="package-heading">Data package</h2>
+
+                        <p>@CyclePages.PackageExplained</p>
+
+                        <p class="package-agent">@CyclePages.Says(package)</p>
+
+                        <p class="package-limits">@CyclePages.Limits(package)</p>
+
+                        @* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
+                        <div class="agents package-series" role="region" aria-labelledby="package-heading" tabindex="0">
+                            <table>
+                                <caption>The candles and the indicators of the data package</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">At the latest close</th>
+                                        @foreach (var series in package.Series)
+                                        {
+                                            <th scope="col">@series.Timeframe candles</th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var (name, value) in Measures)
+                                    {
+                                        <tr>
+                                            <th scope="row">@name</th>
+                                            @foreach (var series in package.Series)
+                                            {
+                                                <td>@value(series)</td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        @if (package.Orders.Count == 0)
+                        {
+                            <p class="package-orders">Open orders: none.</p>
+                        }
+                        else
+                        {
+                            <p class="package-orders">Open orders:</p>
+
+                            <ul>
+                                @foreach (var resting in package.Orders)
+                                {
+                                    <li>@CyclePages.Says(resting)</li>
+                                }
+                            </ul>
+                        }
+
+                        @if (package.Futures is { } futures)
+                        {
+                            <p class="package-futures">@CyclePages.Says(futures)</p>
+                        }
+
+                        break;
+
+                    case NoPackage:
+                        <h2>Data package</h2>
+
+                        <p>@CyclePages.NoPackage(_cycle.Outcome)</p>
+
+                        break;
+
+                    case RoleCallView call:
+                        <h2>@CyclePages.Title(call)</h2>
+
+                        <p>@AgentPages.Describe(call.Role).Job Model: @CyclePages.Model(call).</p>
+
+                        <p>
+                            <strong class="call-outcome">@CyclePages.Describe(call.Outcome, call.Validation)</strong>.
+                            @CyclePages.Says(call)
+                        </p>
+
+                        @if (CyclePages.Fields(call.Result) is { Count: > 0 } fields)
+                        {
+                            <dl class="role-result">
+                                @foreach (var field in fields)
+                                {
+                                    <dt>@field.Name</dt>
+
+                                    @foreach (var written in field.Values)
+                                    {
+                                        <dd>@written</dd>
+                                    }
+                                }
+                            </dl>
+                        }
+
+                        @if (CyclePages.Mark(call) is { } mark)
+                        {
+                            <p class="sentiment-mark">@mark</p>
+                        }
+
+                        <p class="call-usage">@CyclePages.Usage(call)</p>
+
+                        @if (call.Templates.Count > 0)
+                        {
+                            <p class="call-templates">Its prompt was composed from @string.Join(", ", call.Templates.Select(CyclePages.Says)).</p>
+                        }
+
+                        break;
+
+                    case RiskCheckView check:
+                        var heading = $"check-{entry.Number}-heading";
+
+                        <h2 id="@heading">Risk Guard: @RiskCheckPages.Describe(check.Action)</h2>
+
+                        <p>
+                            <strong class="guard-verdict">@RiskCheckPages.Describe(check.Verdict)</strong>.
+                            @RiskCheckPages.Explain(check)
+                        </p>
+
+                        <RiskCheckRules Check="@check" LabelledBy="@heading" />
+
+                        break;
+
+                    case CycleOrderView order:
+                        <h2>@CyclePages.Describe(order.Purpose)</h2>
+
+                        <p>@CyclePages.Says(order)</p>
+
+                        <p>
+                            <strong class="order-status">@CyclePages.Describe(order.Status)</strong>, as it is now.
+                            @CyclePages.Became(order)
+                        </p>
+
+                        <p class="order-ids">
+                            @(order.ExchangeOrderId is { } number
+                                ? $"It carries the identifier {order.ClientOrderId} at Binance, which knows it as the order {number}."
+                                : $"It carries the identifier {order.ClientOrderId}. Binance has said no order number for it.")
+                        </p>
+
+                        break;
+
+                    case NoOrder:
+                        <h2>No order</h2>
+
+                        <p class="no-order">@CyclePages.NoOrder(_cycle)</p>
+
+                        break;
+
+                    case Ended:
+                        <h2>The cycle ended: @CyclePages.Describe(_cycle.Outcome)</h2>
+
+                        <p>@CyclePages.Explain(_cycle.Outcome) The cycle ran for @CyclePages.Seconds(_cycle.EndedAt - _cycle.StartedAt).</p>
+
+                        break;
+                }
+            </li>
+        }
+    </ol>
+
+    <p><a href="@WebUiModule.AgentCyclesPath(_agent.Id)">@CyclePages.Link</a></p>
+
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+
+    <p><a href="@WebUiModule.AgentRiskChecksPath(_agent.Id)">@RiskCheckPages.Link</a></p>
+
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+
+    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+}
+
+@code {
+    // What the table of a data package says of each series, row by row: the candles that the
+    // package held, the latest of them, and the indicators at its close.
+    private static readonly (string Name, Func<SeriesSummary, string> Value)[] Measures =
+    [
+        ("Closed candles in the package", series => AgentPages.Number(series.Candles)),
+        ("Through", series => series.Latest is { } latest ? PageTimes.At(latest.ClosedAt) : "no closed candle yet"),
+        ("Open", series => CyclePages.Value(series.Latest?.Open)),
+        ("High", series => CyclePages.Value(series.Latest?.High)),
+        ("Low", series => CyclePages.Value(series.Latest?.Low)),
+        ("Close", series => CyclePages.Value(series.Latest?.Close)),
+        ("Volume", series => CyclePages.Value(series.Latest?.Volume)),
+        ("Candles that the indicators were computed from", series => AgentPages.Number(series.ComputedFrom)),
+        ("SMA20", series => CyclePages.Indicator(series.Indicators.Sma20)),
+        ("SMA50", series => CyclePages.Indicator(series.Indicators.Sma50)),
+        ("SMA200", series => CyclePages.Indicator(series.Indicators.Sma200)),
+        ("EMA20", series => CyclePages.Indicator(series.Indicators.Ema20)),
+        ("EMA50", series => CyclePages.Indicator(series.Indicators.Ema50)),
+        ("RSI14", series => CyclePages.Indicator(series.Indicators.Rsi14)),
+        ("ATR14", series => CyclePages.Indicator(series.Indicators.Atr14)),
+        ("Average volume of 20 candles", series => CyclePages.Indicator(series.Indicators.VolumeAverage20)),
+    ];
+
+    private AgentView? _agent;
+    private CycleRecord? _cycle;
+    private IReadOnlyList<Entry> _entries = [];
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [Parameter]
+    public Guid CycleId { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // The Decision Engine may not use Accounts, so it is handed the user who is signed in,
+        // and asks for the cycle of that user and of this agent alone. A cycle of another agent
+        // is not found here either.
+        _cycle = await Cycles.FindAsync(SignedInUser.RequiredIdOf(request), _agent.Id, CycleId, request.RequestAborted);
+
+        if (_cycle is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        _entries = EntriesOf(_cycle);
+    }
+
+    /// <summary>
+    /// The entries of the timeline of a cycle, in the order they happened. What happened at the
+    /// same moment stands in the order of a cycle: its package, the calls of its roles, the
+    /// checks of the Risk Guard, and its orders.
+    /// </summary>
+    private static IReadOnlyList<Entry> EntriesOf(CycleRecord cycle)
+    {
+        var entries = new List<Entry>
+        {
+            new(cycle.ClosedAt, 0, "close", Timed: true, new Closed()),
+            new(cycle.StartedAt, 1, "start", Timed: true, new Started()),
+
+            // A cycle that kept no summary says so where its package would stand, at no time of its own.
+            cycle.DataPackage is { } package
+                ? new(package.BuiltAt, 2, "package", Timed: true, package)
+                : new(cycle.StartedAt, 2, "package", Timed: false, new NoPackage()),
+        };
+
+        entries.AddRange(cycle.Calls.Select(call => new Entry(call.CalledAt, 3, "call", Timed: true, call)));
+        entries.AddRange(cycle.Checks.Select(check => new Entry(check.CheckedAt, 4, "check", Timed: true, check, check.Sequence)));
+        entries.AddRange(cycle.Orders.Select(order => new Entry(order.CreatedAt, 5, "order", Timed: true, order)));
+
+        if (cycle.Orders.Count == 0)
+        {
+            // Why no order was placed, before the end of the cycle, at no time of its own.
+            entries.Add(new Entry(cycle.EndedAt, 6, "no-order", Timed: false, new NoOrder()));
+        }
+
+        entries.Add(new Entry(cycle.EndedAt, 7, "end", Timed: true, new Ended()));
+
+        // A stable sort: the calls, the checks, and the orders keep the order they came in.
+        return [.. entries.OrderBy(entry => entry.At).ThenBy(entry => entry.Rank)];
+    }
+
+    /// <summary>One entry of the timeline.</summary>
+    /// <param name="At">When it happened, or where it stands.</param>
+    /// <param name="Rank">Where it stands among what happened at the same moment.</param>
+    /// <param name="Kind">What kind of entry it is, as the look of the page names it.</param>
+    /// <param name="Timed">Whether it happened at a moment of its own, which the entry says.</param>
+    /// <param name="What">What happened.</param>
+    /// <param name="Number">Which of its kind it is, where the page names it by a number.</param>
+    private sealed record Entry(DateTimeOffset At, int Rank, string Kind, bool Timed, object What, int Number = 0);
+
+    private sealed record Closed;
+
+    private sealed record Started;
+
+    private sealed record NoPackage;
+
+    private sealed record NoOrder;
+
+    private sealed record Ended;
+}

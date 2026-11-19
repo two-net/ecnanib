@@ -178,6 +178,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What reads the checks of the Risk Guard that were stored for an agent.</summary>
     public IRiskCheckRecords RiskCheckRecords => _application.Services.GetRequiredService<IRiskCheckRecords>();
 
+    /// <summary>What reads the cycles that were recorded for an agent, each as a complete record.</summary>
+    public IRecordedCycles RecordedCycles => _application.Services.GetRequiredService<IRecordedCycles>();
+
     /// <summary>What validates the answer of a role.</summary>
     public IRoleResults RoleResults => _application.Services.GetRequiredService<IRoleResults>();
 

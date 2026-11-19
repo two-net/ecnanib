@@ -273,6 +273,57 @@ code {
     opacity: 0.75;
 }
 
+/* The cycles of one agent: a close, a mode, an outcome with what it means, and a link. */
+.agent-cycles table {
+    min-width: 46rem;
+}
+
+/* How a cycle ended, how a call of a role ended, and what became of an order (FR-CYC-10). Each is
+   said as words, so none relies on a colour. */
+.cycle-outcome, .call-outcome, .order-status {
+    white-space: nowrap;
+}
+
+/* The timeline of one cycle: its entries one under another, in the order they happened, along a
+   line at the side. Each entry says its time first, in lighter text, and then what happened. */
+.timeline {
+    list-style: none;
+    margin: 0 0 1.5rem;
+    padding: 0;
+    border-inline-start: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+
+.timeline-entry {
+    padding: 0 0 1.25rem 1rem;
+}
+
+    .timeline-entry h2 {
+        margin: 0 0 0.5rem;
+        font-size: 1.125rem;
+    }
+
+    .timeline-entry .timeline-time {
+        margin: 0;
+        font-size: 0.875em;
+        opacity: 0.8;
+    }
+
+    /* The summary of a data package: a few columns of numbers, which need less room than the list. */
+    .timeline-entry .package-series table {
+        min-width: 30rem;
+    }
+
+    /* The structured result of a role: the name of each field, and its value under it. What a
+       model wrote may be long, and may hold no place to break a line. */
+    .timeline-entry .role-result dt {
+        font-weight: 600;
+    }
+
+    .timeline-entry .role-result dd {
+        margin: 0 0 0.25rem 1rem;
+        overflow-wrap: anywhere;
+    }
+
 /* The form of an agent: a choice fills its field as an input does, the button that shows the
    symbols of a market sits under the choice of the market, and the risk settings are one group. */
 .field > select {

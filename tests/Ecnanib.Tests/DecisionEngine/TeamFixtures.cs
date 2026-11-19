@@ -195,15 +195,25 @@ internal static class StoredCycleRows
     /// check, with the outcome of every rule. And the cycle placed its orders, for a position
     /// that is over by now: see <see cref="StoredOrderRows.GiveOrdersAsync"/>. It is for a test
     /// that is about something else, and needs a row in every table that holds rows of users.
-    /// The agent has a team, as <c>GiveAgentAsync</c> gives it one.
+    /// The agent has a team, as <c>GiveAgentAsync</c> gives it one. The cycle keeps the summary
+    /// of a data package: see <see cref="CycleSummaries.Of"/>.
     /// </summary>
+    /// <param name="application">The application.</param>
+    /// <param name="userId">The user.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="closedAt">The close that the cycle was for.</param>
+    /// <param name="outcome">How the cycle ended.</param>
+    /// <param name="orders">Whether the cycle placed orders. A test of a cycle that placed none says so.</param>
+    /// <param name="noEntry">Why the cycle placed no entry, where the test says that it placed none.</param>
     /// <returns>The id of the cycle.</returns>
     public static async Task<Guid> GiveCycleAsync(
         this AccountsApplication application,
         Guid userId,
         Guid agentId,
         DateTimeOffset closedAt,
-        CycleOutcome outcome = CycleOutcome.Approved)
+        CycleOutcome outcome = CycleOutcome.Approved,
+        bool orders = true,
+        NoEntryReason? noEntry = null)
     {
         await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
@@ -216,7 +226,16 @@ internal static class StoredCycleRows
 
         var cycleId = Guid.CreateVersion7();
         var cycle = new DecisionCycle(
-            cycleId, agentId, userId, agent.Mode, closedAt, closedAt.AddSeconds(2), closedAt.AddSeconds(40), outcome);
+            cycleId,
+            agentId,
+            userId,
+            agent.Mode,
+            closedAt,
+            closedAt.AddSeconds(2),
+            closedAt.AddSeconds(40),
+            outcome,
+            CycleSummaries.Of(agent, closedAt).ToJson(),
+            noEntry);
 
         RoleOutput[] outputs =
         [
@@ -250,10 +269,51 @@ internal static class StoredCycleRows
         await application.CycleRecords.StoreAsync(
             cycle, outputs, [GuardedCycles.Check(cycleId, userId, closedAt.AddSeconds(39))], TestContext.Current.CancellationToken);
 
-        await application.GiveOrdersAsync(userId, agentId, cycleId, closedAt.AddSeconds(40));
+        if (orders)
+        {
+            // Written as the check was over, and before the cycle ended: a cycle is recorded after its orders.
+            await application.GiveOrdersAsync(userId, agentId, cycleId, closedAt.AddSeconds(39));
+        }
 
         return cycleId;
     }
+}
+
+/// <summary>The summary of a data package, as the record of a cycle keeps it, for a test that needs a cycle to have one.</summary>
+internal static class CycleSummaries
+{
+    /// <summary>
+    /// The summary of the data package of a cycle of a stored agent: the candles of its own
+    /// timeframe and of the week, each with its latest candle and its indicators, and on Futures
+    /// the mark price, the funding, and the open interest. The week has too few candles for an
+    /// average of 200. It was built 3 seconds after the close.
+    /// </summary>
+    public static DataPackageSummary Of(Agent agent, DateTimeOffset closedAt, PositionContext? position = null, params OpenOrder[] orders) =>
+        new(
+            closedAt.AddSeconds(3),
+            agent.Market,
+            agent.Timeframe,
+            agent.Symbol,
+            agent.QuoteAsset,
+            agent.AllocatedCapital,
+            position,
+            AgentContext.Of(agent, agent.AllocatedCapital, position).Limits,
+            [
+                new SeriesSummary(
+                    agent.Timeframe.Code(),
+                    Candles: 120,
+                    ComputedFrom: 498,
+                    new CandleSummary(closedAt, 60900m, 61420m, 60880.25m, 61310m, 1842.337m),
+                    new IndicatorValues(61122.48m, 60310.9m, 59876.12m, 61190.33m, 60402.71m, 58.2m, 512.75m, 1930.11m)),
+                new SeriesSummary(
+                    "1W",
+                    Candles: 30,
+                    ComputedFrom: 61,
+                    new CandleSummary(closedAt, 58000m, 61420m, 57500.75m, 61310m, 9500.125m),
+                    new IndicatorValues(52110.4m, 47020.15m, null, 53340.92m, 48811.07m, 63.41m, 4120.6m, 8930.25m)),
+            ],
+            orders,
+            agent.Market == Market.Futures ? new FuturesData(61888.1m, 0.0001m, closedAt.AddHours(6), 82450.5m) : null);
 }
 
 /// <summary>What the team writes to the log, and the areas it writes under.</summary>
@@ -531,11 +591,14 @@ internal sealed class StandInPlanOrders : IPlanOrders
     /// <summary>The error that placing the orders of a plan ends with, when the test gives it one.</summary>
     public Exception? Fails { get; set; }
 
-    public Task PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken)
+    /// <summary>Why no entry is placed for a plan that is handed over, when the test says that none is.</summary>
+    public NoEntryReason? NoEntry { get; set; }
+
+    public Task<NoEntryReason?> PlaceAsync(CycleStart cycle, GuardResult accepted, CancellationToken cancellationToken)
     {
         _placed.Enqueue((cycle.Agent.Id, cycle.CycleId, accepted));
 
-        return Fails is { } error ? Task.FromException(error) : Task.CompletedTask;
+        return Fails is { } error ? Task.FromException<NoEntryReason?>(error) : Task.FromResult(NoEntry);
     }
 
     public Task SettleAsync(Guid agentId, CancellationToken cancellationToken)

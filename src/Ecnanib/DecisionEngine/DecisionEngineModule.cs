@@ -148,6 +148,11 @@ public static class DecisionEngineModule
         // once, when it ends (FR-TEAM-8, FR-RSK-9).
         services.AddSingleton<ICycleRecords, CycleRecords>();
 
+        // The recorded cycles of an agent, as its user reads them: each as a complete record,
+        // with the summary of its data package, the calls of its roles, the checks of the Risk
+        // Guard, and its orders, which a page shows as a timeline (FR-CYC-10). It only reads.
+        services.AddSingleton<IRecordedCycles, RecordedCycles>();
+
         return services;
     }
 }

@@ -349,7 +349,7 @@ The migration that added `quantity` and `leverage` gave the checks that were sto
 
 ## The page
 
-`/agents/<id>/risk-checks` shows a user the checks of an agent of theirs, so that they see exactly why a plan was accepted or rejected (FR-RSK-9). The page of the state of the agent leads to it.
+`/agents/<id>/risk-checks` shows a user the checks of an agent of theirs, so that they see exactly why a plan was accepted or rejected (FR-RSK-9). The page of the state of the agent leads to it. The timeline of a cycle shows the checks of that cycle in the same way, beside the calls of its roles and its orders (FR-CYC-10): see "The timeline" in [team.md](team.md).
 
 ```csharp
 public interface IRiskCheckRecords
@@ -365,6 +365,7 @@ public interface IRiskCheckRecords
 | **A check of a plan that opens a position says the size that was computed** (FR-RSK-5). | Under its verdict: the quantity, and on Futures the leverage, with what they follow from, and that the system computed them and no model chose them. `RiskCheckPages.Sized` has the sentences, also for an order that came to no quantity, and for one whose size could not be computed. A check of a plan that opens nothing says nothing of a size. |
 | **Whether a check was made on Futures is told from the check itself.** | It is, where the liquidation buffer was asked. The market of an agent can be changed while it is stopped, and its earlier checks stay as they were made. |
 | **The latest 20 checks, latest close first.** | The page says so when there are more. The two checks of a reverse stand in their order. |
+| **A check leads to the timeline of its cycle.** | `RiskCheckView.CycleId` names the cycle. The size and the rules of a check are the component `RiskCheckRules`, which both pages show, with the texts of `RiskCheckPages`. |
 | **A check says the mode it was made in,** as a badge beside its verdict (FR-BIN-11). | The badge of the mode that the agent is in now is under the heading, as on every page of an agent (FR-UI-3). |
 | **The checks of an agent of another user are not found.** | The page asks `IStoredAgents` for the agent of the user who is signed in, and answers "not found" as for an agent that does not exist. `IRiskCheckRecords` asks for the checks by owner as well. |
 | The Decision Engine may not use Accounts. | So the page hands `IRiskCheckRecords` the user who is signed in, by id. |
@@ -424,5 +425,5 @@ The exchange did not give {Missing} for the Risk Guard to check the plan of agen
 - The maintenance margin in the liquidation estimate. A position that approaches the price that Binance liquidates it at, which has the maintenance margin in it, is said to its user while it is open (FR-BIN-F5): see "The margin of a position" in [orders.md](orders.md).
 - Checking a close that a user asks for: "Close position now", and the close of an agent that is stopped (FR-AGT-11, FR-AGT-12). Such a close has no cycle, so its check has no row to hang on. It is placed without a check: it opens nothing, and takes no result of the Risk Guard. See "Closing a position" in [orders.md](orders.md).
 - The rules of a market order, `MARKET_LOT_SIZE`, and whether the exchange takes a close below the least value. The least and the most quantity that an entry is held to are those of `LOT_SIZE`, for an entry at the market as well.
-- The timeline that shows a cycle with its calls and its checks (FR-CYC-10), the agent detail screen (FR-RPT-2), and the export of decisions as CSV (FR-RPT-4). The page of the risk checks is where a user reads them until then.
+- The agent detail screen (FR-RPT-2), and the export of decisions as CSV (FR-RPT-4). The page of the risk checks and the timeline of a cycle are where a user reads the checks until then.
 - Retention: decision records are kept 365 days (NFR-DAT-5), and nothing deletes yet.

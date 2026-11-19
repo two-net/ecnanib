@@ -56,8 +56,9 @@ internal static class ExportRules
         // What the teams of a user's agents decided, cycle by cycle. The Decision Engine keeps
         // the rows, and may not use Accounts, which declares what an export is made of.
         ["decision_cycles"] =
-            "The cycles of a user's agents, one row for each candle close of each agent. A user exports their trades and " +
-            "decisions as CSV (FR-RPT-4), which is not built, and reads them on the pages of the agent.",
+            "The cycles of a user's agents, one row for each candle close of each agent, with the summary of the data package " +
+            "that its team decided on. A user exports their trades and decisions as CSV (FR-RPT-4), which is not built, and " +
+            "reads each cycle as a timeline on the pages of the agent (FR-CYC-10).",
         ["role_outputs"] =
             "What the models of a user's agents answered, call by call. They hold no personal data, and are exported with " +
             "the decisions that they belong to (FR-RPT-4), which is not built.",

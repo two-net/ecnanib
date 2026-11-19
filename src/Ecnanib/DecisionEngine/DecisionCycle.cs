@@ -8,8 +8,9 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// One cycle of an agent, as a row of the <c>decision_cycles</c> table: which agent, for which
-/// candle close, when it started and ended, and how it ended. The calls of the roles of the
-/// cycle hang on it: see <see cref="RoleOutput"/>. See "The record of a cycle" in docs/team.md.
+/// candle close, when it started and ended, how it ended, and the summary of the data package
+/// that its team decided on (FR-CYC-10). The calls of the roles of the cycle hang on it: see
+/// <see cref="RoleOutput"/>. See "The record of a cycle" in docs/team.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -35,6 +36,14 @@ namespace Ecnanib.DecisionEngine;
 /// <param name="startedAt">When the cycle started: when its turn came.</param>
 /// <param name="endedAt">When the cycle ended.</param>
 /// <param name="outcome">How it ended.</param>
+/// <param name="dataPackage">
+/// The summary of the data package of the cycle, as <see cref="DataPackageSummary.ToJson"/>
+/// writes it: one line of JSON. Null for a cycle that ended before its package was built.
+/// </param>
+/// <param name="noEntry">
+/// Why the cycle placed no entry for a plan to open a position that the Risk Guard accepted.
+/// Null for a cycle that placed its entry, and for one whose plan opened nothing.
+/// </param>
 public sealed class DecisionCycle(
     Guid id,
     Guid agentId,
@@ -43,7 +52,9 @@ public sealed class DecisionCycle(
     DateTimeOffset closedAt,
     DateTimeOffset startedAt,
     DateTimeOffset endedAt,
-    CycleOutcome outcome) : IUserOwned
+    CycleOutcome outcome,
+    string? dataPackage = null,
+    NoEntryReason? noEntry = null) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -60,6 +71,10 @@ public sealed class DecisionCycle(
     public DateTimeOffset EndedAt { get; } = endedAt;
 
     public CycleOutcome Outcome { get; } = outcome;
+
+    public string? DataPackage { get; } = dataPackage;
+
+    public NoEntryReason? NoEntry { get; } = noEntry;
 }
 
 internal sealed class DecisionCycleConfiguration : IEntityTypeConfiguration<DecisionCycle>
@@ -78,6 +93,8 @@ internal sealed class DecisionCycleConfiguration : IEntityTypeConfiguration<Deci
         builder.Property(cycle => cycle.StartedAt);
         builder.Property(cycle => cycle.EndedAt);
         builder.Property(cycle => cycle.Outcome);
+        builder.Property(cycle => cycle.DataPackage);
+        builder.Property(cycle => cycle.NoEntry);
 
         // The cycles of one agent of a user, in the order of their closes. It is also the index
         // of the key below.
