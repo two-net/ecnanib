@@ -298,8 +298,10 @@ public class AgentControlTests
         await application.GiveKeysAsync(user.Id, Morning);
         await client.SignInAsync(Ada);
 
-        // Nothing halts an agent yet, and only a key that goes makes one require attention, so
-        // the test stores the agents in the state. One is resumed, and the other stopped.
+        // A loss limit halts an agent, and a key that goes makes one require attention: the
+        // test stores the agents in the state, as it was left when they were created. One is
+        // resumed, and the other stopped. An agent that its daily loss limit halted is resumed
+        // from the next UTC day: see AgentHaltTests.
         var resumed = await application.GiveAgentAsync(user.Id, Morning, name: "Resumed", state: state);
         var stopped = await application.GiveAgentAsync(user.Id, Morning, name: "Stopped", state: state, symbol: "SOLUSDT");
 

@@ -225,6 +225,15 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>Everything that says whether an agent is reconciled with the exchange.</summary>
     public IEnumerable<IReconciliation> Reconciliations => _application.Services.GetServices<IReconciliation>();
 
+    /// <summary>What evaluates the loss limits of an agent, closes its position, and halts it (FR-RSK-8).</summary>
+    public ILossLimits LossLimits => _application.Services.GetRequiredService<ILossLimits>();
+
+    /// <summary>What halts an agent that reached a loss limit, and resumes one when the day of its daily loss limit is over.</summary>
+    public IAgentHalts AgentHalts => _application.Services.GetRequiredService<IAgentHalts>();
+
+    /// <summary>What a cycle does once it has started, as the application has it.</summary>
+    public IDecisionCycle Cycle => _application.Services.GetRequiredService<IDecisionCycle>();
+
     /// <summary>
     /// Runs the job that settles the orders with the exchange, now, as the scheduler does every
     /// minute. A test runs it itself to have a run at a moment of its choosing.

@@ -124,6 +124,21 @@ They do not make `EcnanibDbContext` the only possible way in. Registering anothe
 
 A database error is logged once, by whoever handles the exception. The mapper's own error events would log it a second time, so they are written at the `Debug` level. The tracked configuration file sets `Microsoft.EntityFrameworkCore` to `Warning`; set it to `Information` to see every SQL statement. See [logging.md](logging.md).
 
+### Reads that agree
+
+Each statement of a transaction sees what was committed before the statement began. So two statements can stand on either side of a write of another transaction: a sum that is read first and a row that is read second may count the same thing twice, or not at all. Where several reads must agree with each other, they are made in a snapshot:
+
+```csharp
+await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+await using var snapshot = await context.BeginSnapshotAsync(cancellationToken);
+```
+
+`BeginSnapshotAsync` of `Snapshots` begins a transaction in which every statement reads the database as it was when the first of them began. It is in `Platform`, which alone may use `System.Data`: a component does not name an isolation level of its own.
+
+- **It is for reading.** A snapshot that writes may be refused by the database when another transaction wrote the same row meanwhile. What writes takes the lock that guards its rows, in a transaction of its own.
+- **It holds no lock that keeps a writer waiting,** and is disposed of when the reads are over.
+- What works out the equity of an agent reads this way: an order that is executed writes its row and its position at once, and must be counted once. See "The equity of an agent" in [orders.md](orders.md).
+
 ## Migrations
 
 Migrations are generated from the model, not written by hand, and are versioned with the code in `src/Ecnanib/Platform/Persistence/Migrations`. The tool is pinned in `dotnet-tools.json`. Restore it once after cloning:

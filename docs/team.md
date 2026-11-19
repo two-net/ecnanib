@@ -302,6 +302,7 @@ A role is called twice at most: `RoleRuns.Attempts`. **What becomes of the cycle
 | `NoDecision` | A role other than the Sentiment Analyst gave no valid result. A plan that does what a plan may not do is none. |
 | `Failed` | An error ended the cycle: its data package could not be built, its team is not whole, a prompt was refused, or its record could not be stored. |
 | `Stopped` | The cycle was stopped: with the application, or because the next close was near. |
+| `Halted` | A loss limit of the agent was reached as the cycle began: the agent is halted, and its position is closed (FR-RSK-8). Its team was not called, and decided nothing. See "Halting an agent" in [risk-guard.md](risk-guard.md). |
 
 - **What goes on, goes on to the Risk Guard,** which checks it against the fixed rules (FR-RSK-3). **The outcome of a cycle stays the decision of its team:** a plan that the Risk Manager approved ends its cycle as `Approved`, also when the Risk Guard rejected it. What the Risk Guard made of the plan is in the record beside it: see [risk-guard.md](risk-guard.md).
 - **The outcome stays the decision of the team whatever becomes of the orders** as well. What was placed is in the rows of the orders, under the id of the cycle: see "The record of an order" in [orders.md](orders.md). A cycle that is stopped once its team has decided keeps the decision, and one whose orders fail with an error is recorded with it too.
@@ -378,6 +379,7 @@ The team of agent {AgentId} decided for the close at {ClosedAt}: {CycleOutcome},
 The cycle of agent {AgentId} for the close at {ClosedAt} ended with no decision and no new entry: the {Role} gave no valid result
 The decision of agent {AgentId} for the close at {ClosedAt} is stale: it completed {CompletedAfterSeconds} s after the close, and the stale limit of {Timeframe} is {StaleSeconds} s. Its plan to {PlanAction} opens no position, and what goes on is {GoesOn}
 The cycle of agent {AgentId} for the close at {ClosedAt} continues with sentiment marked unavailable
+The cycle of agent {AgentId} for the close at {ClosedAt} ended before its team was called: a loss limit halted the agent
 The record of the cycle of agent {AgentId} for the close at {ClosedAt} could not be stored ({CycleOutcome})
 The {Role} of agent {AgentId} gave no valid result for the close at {ClosedAt}
 The result of the {Role} of agent {AgentId} was rejected on attempt {Attempt}: {RejectedField} is {RejectionRule}
@@ -389,7 +391,7 @@ The key of user {UserId} for the AI provider {Provider} could not be checked aga
 | Level | Event |
 |---|---|
 | `Information` | The decision of the team, and a key that was checked again. |
-| `Warning` | A result that was rejected, a role that gave no valid result, a role that is not called, sentiment that is unavailable, a cycle with no decision, and a decision that is stale. |
+| `Warning` | A result that was rejected, a role that gave no valid result, a role that is not called, sentiment that is unavailable, a cycle with no decision, a decision that is stale, and a cycle that ended because a loss limit halted its agent. |
 | `Error` | A record that could not be stored, and a key that could not be checked again, each with the error. |
 
 An event names a field of a schema and a rule, an action, and an outcome, and a stale decision says how late it was and what of its plan goes on: `Close`, or `nothing`. It never holds a price, a fraction, or anything that a model wrote. What the gateway logs of each call is in "AI calls" in [logging.md](logging.md).

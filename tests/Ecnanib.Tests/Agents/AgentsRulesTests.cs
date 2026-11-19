@@ -49,8 +49,10 @@ public class AgentsRulesTests
     {
         // Pinned, so that a control that is added shows in a review as what it is: one more
         // thing that the service does with the money of a user. What other components ask of
-        // an agent that can run is asked from here on: their tests find these. The last two
-        // switch the mode of an agent, and the first of them puts real money at stake.
+        // an agent that can run is asked from here on: their tests find these. Two switch the
+        // mode of an agent, and the first of them puts real money at stake. Three are the
+        // service's doing, and no action of a user: an agent is halted when it reaches a loss
+        // limit, runs again when the day of its daily loss limit is over, and waits for its user.
         Assert.Equal(
             [
                 "IAgentControls.ClosePositionAsync",
@@ -59,6 +61,8 @@ public class AgentsRulesTests
                 "IAgentControls.StartAsync",
                 "IAgentControls.StopAsync",
                 "IAgentExposure.ClosePositionAtMarketAsync",
+                "IAgentHalts.EndDailyHaltsAsync",
+                "IAgentHalts.HaltAsync",
                 "IAgentModes.SwitchToDemoAsync",
                 "IAgentModes.SwitchToLiveAsync",
                 "IAgentTrading.RequireAttentionAsync",

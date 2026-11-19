@@ -2,7 +2,7 @@
 
 A user creates, changes, copies, and deletes agents, and no user has two agents of one name (FR-AGT-1). An agent has a name, a mode, a market, a symbol, a timeframe, a team, allocated capital, and risk settings within the hard bounds of the configuration file (FR-AGT-2, FR-RSK-2). The symbol is one of the configuration file that the chosen market has (FR-AGT-6). The team is four roles, and its user gives each role a provider and a specific model of the catalog (FR-AGT-5, FR-TEAM-1). A user whose email address is not verified creates no agent, and no user has more agents than the fair-use limit allows (FR-ACC-1, FR-ACC-7).
 
-A user starts, pauses, resumes, and stops an agent, and the agent follows the states of the specification (FR-AGT-1, SRS 3.3). Every change of its state is recorded with its cause and its time, and shown (FR-AGT-10). A user who stops an agent that has an open position chooses whether the position is closed at market or kept with its protective orders (FR-AGT-11), and can close the position of an agent at any time (FR-AGT-12).
+A user starts, pauses, resumes, and stops an agent, and the agent follows the states of the specification (FR-AGT-1, SRS 3.3). Every change of its state is recorded with its cause and its time, and shown (FR-AGT-10). An agent that reaches a loss limit is halted: until the next UTC day for its daily loss limit, and until its user resumes it for its drawdown limit (FR-RSK-8). A user who stops an agent that has an open position chooses whether the position is closed at market or kept with its protective orders (FR-AGT-11), and can close the position of an agent at any time (FR-AGT-12).
 
 A new agent is in Demo. Its user switches it to Live with a valid Live Binance key, a confirmation of the risk, and a fresh proof of who they are, and the switch is recorded in the audit trail (FR-AGT-7). Every page of an agent shows a Demo or Live badge, and every action that affects Live trading asks for confirmation (FR-UI-3). What an agent did in Demo stays labeled as Demo, and is never combined with what it does in Live (FR-BIN-11).
 
@@ -126,9 +126,9 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | State | Entered when | Cycles run | New entries | Open position | Active |
 |---|---|---|---|---|---|
 | `Draft` | The agent is created. | No | No | None | No |
-| `Running` | Its user starts or resumes it. | Yes | Yes | Managed by the team | Yes |
+| `Running` | Its user starts or resumes it, or the service resumes it when the UTC day in which its daily loss limit halted it is over (FR-RSK-8). | Yes | Yes | Managed by the team | Yes |
 | `Paused` | Its user pauses it. | No | No | Stays open with its protective orders | Yes |
-| `Halted` | A loss limit of the Risk Guard is reached (FR-RSK-8). Nothing does this yet. | No | No | Closed by the system | Yes |
+| `Halted` | A loss limit of the Risk Guard is reached while it runs: its daily loss limit, or its drawdown limit (FR-RSK-8). See "Halting an agent". | No | No | Closed by the system | Yes |
 | `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, the provider of a model of its team no longer offers the model, its position is open with no stop-loss and could not be closed (FR-RSK-7), or the account of its user at Binance conflicts with how an agent of Futures trades (FR-BIN-F2). The other causes of the specification are not built. | No | No | Stays open with its protective orders, unless the cause says that it has none | Yes |
 | `Stopped` | Its user stops it. | No | No | Closed or kept, as its user chose | No |
 
@@ -163,7 +163,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 - **An agent runs with its whole team, so a role that cannot work blocks a start and a resume** (FR-TEAM-1): a role that has no model, and a role whose model its user cannot select now, because the key of its provider is missing or not valid, the key cannot use the model, or the model can no longer be selected. `IKeyModels.BlockForAsync` of Credentials says so for the model of each role, under the same lock, and asks no provider. The page names each such role with what to do about it, and leads to the settings of the agent and to the keys. Pausing and stopping ask nothing of the team.
 - **A draft is not stopped:** it was never started. It is deleted.
 - **A stopped agent is started again.** Its market, symbol, and timeframe can be changed before, while it holds nothing.
-- A halted agent is resumed by its user. What halts an agent says with its cause when the agent may be resumed, when it is built: a daily loss limit halts until the next UTC day (FR-RSK-8).
+- **A halted agent is resumed by its user, and its cause says from when.** One that its drawdown limit halted is resumed at any time. One that its daily loss limit halted is halted until the next UTC day (FR-RSK-8): a resume before it changes nothing, and neither does a start once its user has stopped it, and the page says until when. The service resumes it then. See "Halting an agent".
 - **A control of an agent in Live asks once more** (FR-UI-3). Starting, pausing, and resuming an agent in Demo are one press, and none takes a proof of who the user is in either mode: the switch to Live took it. See "Asking once more in Live".
 
 ### The changes of a state
@@ -185,6 +185,9 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `ModelUnavailable` | The provider of a model that a role of its team was given no longer offers the model, while it ran. |
 | `PositionUnprotected` | Its position was open with no stop-loss on the exchange, and could not be closed at market either, while it ran (FR-RSK-7). |
 | `ExchangeSettingConflict` | The account of its user at Binance conflicted with how it trades when it was about to enter, while it ran: on Futures the account was in hedge mode or in Multi-Assets mode, or held a position in its symbol that the agent did not open (FR-BIN-F2). |
+| `DailyLossLimitReached` | Its loss in the UTC day reached its daily loss limit, while it ran: the service closes its position, and halts it until the next UTC day (FR-RSK-8). |
+| `DrawdownLimitReached` | Its equity fell from its peak by its drawdown limit, while it ran: the service closes its position, and halts it until its user resumes it (FR-RSK-8). |
+| `DailyLossHaltEnded` | The UTC day in which its daily loss limit halted it was over, and the service resumed it (FR-RSK-8). |
 
 - What changes the state of an agent adds the members of its causes when it is built.
 - **A change says the mode that the agent was in when it happened,** and keeps saying it when the agent is switched (FR-BIN-11). A switch of the mode is no change of the state, and has no cause: the audit trail has it. See "Demo is labeled as Demo".
@@ -266,6 +269,42 @@ public interface IAgentTrading
 - Both take the user and the agent by their ids, which are those of the agent's own row: they are asked by background work, where nobody is signed in. See [ownership.md](ownership.md).
 - **The move is the service's doing, and no action of a user.** The change of the state records it, and the audit trail does not. The user is told with a notification, which what places the orders raises: see [notifications.md](notifications.md).
 - The page of the state says of such an agent that its position is open with no stop-loss, that the service keeps trying to protect or close it, and how to close it by hand.
+
+### Halting an agent
+
+When an agent's loss for the UTC day reaches the daily loss limit, the system closes its position and halts it until the next UTC day. When its drawdown from peak equity reaches the drawdown limit, the system closes its position and halts it until the user resumes it (FR-RSK-8). The Decision Engine works out the equity of an agent, says when a limit is reached with the rule of the Risk Guard, and closes the position: see "Halting an agent" in [risk-guard.md](risk-guard.md). It asks Agents three things for it, through `IAgentHalts`. `AgentHaltTests` holds Agents to the rules below.
+
+```csharp
+public interface IAgentHalts
+{
+    Task<Agent?> FindAsync(Guid agentId, CancellationToken cancellationToken);
+
+    Task<bool> HaltAsync(
+        EcnanibDbContext context, Guid userId, Guid agentId, AgentStateCause cause, DateTimeOffset at, CancellationToken cancellationToken);
+
+    Task<int> EndDailyHaltsAsync(CancellationToken cancellationToken);
+}
+```
+
+| Member | What it does |
+|---|---|
+| `FindAsync` | Says one agent as it is stored, in whatever state it is: a position is reconciled whether its agent runs or not, and what watches the loss limits is handed the agent of each. It only reads, across users, as `IRunningAgents` does. |
+| `HaltAsync` | Moves an agent that runs to `Halted`, with the cause `DailyLossLimitReached` or `DrawdownLimitReached`, and with the moment that the limit was found reached at as the time. It is asked inside the transaction of what watches the loss limits, which writes what the limit is counted from with it, and locks the row of the account for the rest of that transaction. It takes no other cause, and an agent in any other state stays as it is. |
+| `EndDailyHaltsAsync` | Resumes every agent, of all users, that its daily loss limit halted on an earlier UTC day: it moves to `Running`, with the cause `DailyLossHaltEnded`. |
+
+| Rule | Detail |
+|---|---|
+| **Only an agent that runs is halted.** | One that its user paused or stopped, or that waits for its user, keeps its position with its protective orders (SRS 3.3), and is not made to look as if a loss limit had closed it. Its loss limits are found reached once it runs again, before its team is called. |
+| **A halt is recorded with its cause and its time, and shown** (FR-AGT-10). | As every change of a state is: in the row of the agent and in `agent_state_changes`, with the mode that the agent is in. The page of its state says the state, since when, why, and for a daily loss limit until when. |
+| **A daily halt ends when the next UTC day begins.** | `AgentStates.HaltEnds` says when: midnight, UTC, after the moment that the agent was halted at. No other halt ends by itself. |
+| **Its user does not have it run before.** | `ResumeAsync` answers `HaltedForTheDay`, with when the day begins, and nothing changes: neither AI output nor a user action bypasses the Risk Guard (FR-RSK-3). It is said before anything else that a resume asks, and the exchange is asked nothing for it. The agent is stopped at any time. |
+| **Stopping it and starting it again is no way around the halt.** | `StartAsync` answers the same for an agent that its daily loss limit halted in this UTC day, whatever state it is in by now and whatever its user changed of its settings meanwhile. It goes by the changes of the state of the agent, in the mode that the agent is in: the latest with the cause `DailyLossLimitReached` says the day. |
+| **The service resumes it with the first candle that closes on the next UTC day.** | What starts the cycles asks `EndDailyHaltsAsync` before it reads the agents that run, at every close. So the agent has its cycle of the close of midnight, which evaluates its loss limits before its team is called: see "When a cycle starts" in [cycles.md](cycles.md). |
+| **It is resumed when what a resume asks without the exchange allows it.** | A valid Binance key that may trade on its market (FR-KEY-5), and a team that can work (FR-TEAM-1), each asked under the lock of its account, of the agent as it is then. Otherwise it stays halted, the log says what keeps it, and it is asked about again with the next close. Its user resumes it from that day on. |
+| **Nobody is asked once more for an agent in Live.** | The halt ends as the requirement says it does: it is the service that resumes the agent, and no user. |
+| **The account of its user at Binance is not asked about.** | That waits for Binance. An agent that runs meets the question before each entry, where an account that conflicts moves it to Attention required: see "The account of Futures". |
+| **An agent that its drawdown limit halted is resumed by its user, at any time.** | Its drawdown is counted anew from then on. Resumed on the day of the loss, it may be halted again by its daily loss limit: see "Halting an agent" in [risk-guard.md](risk-guard.md). |
+| **What the service does is no action of a user.** | A halt, and the resume after a daily halt, are recorded as changes of the state, and not in the audit trail. Its user is told of a halt with a notification, which what watches the loss limits raises: see [notifications.md](notifications.md). |
 
 ### Stopping an agent that has an open position
 
@@ -379,7 +418,7 @@ In Live an agent trades with real money, so `SwitchToLiveAsync` asks for more. I
 **What an agent did is stored with the mode it did it in, row by row, and is never read through the mode that the agent is in now** (FR-BIN-11). So what an agent did in Demo stays Demo after it is switched to Live, and is not combined with what it does there.
 
 - **A change of the state says its mode:** `agent_state_changes.mode`, written by `AgentStateChanges.MoveAsync` with the mode that the agent is in under the lock. The page of the state shows it for each change, as a badge, and the export has it.
-- **An order and a position say their mode:** `orders.mode` and `positions.mode`, written with the mode that the agent had when the order was placed, and kept when the agent is switched. See "The record of an order" in [orders.md](orders.md). No profit or loss is stored yet. `AgentsRulesTests` fails for a table that has rows of an agent and no column `mode`, unless `AgentsRules.AgentRowsWithoutMode` lists it with why nothing in it is a result.
+- **An order and a position say their mode:** `orders.mode` and `positions.mode`, written with the mode that the agent had when the order was placed, and kept when the agent is switched. See "The record of an order" in [orders.md](orders.md). So does what the loss limits of an agent are counted from: `equity_marks.mode`, and the equity of an agent is that of its positions in the mode that it is in, and of no other. `AgentsRulesTests` fails for a table that has rows of an agent and no column `mode`, unless `AgentsRules.AgentRowsWithoutMode` lists it with why nothing in it is a result.
 - **Nothing is added up over both modes.** What counts the agents of a user counts them whatever their mode: the fair-use limit, and whether an account has an active agent. Neither is a result.
 
 ## Creating, changing, copying, and deleting
@@ -408,7 +447,7 @@ The pages are rendered on the server for each request, and none is interactive. 
 | `/agents` | The agents of the user, oldest first: name, mode as its badge, market, symbol, timeframe, capital, and state. It says how many agents the user has of how many an account can have, and leads to the form unless the user may create none. Each agent has a link to the page of its state, a button that copies it, and a link to the page that deletes it, and an agent that has an open position has "Close position now". Under the table it says what each state means. |
 | `/agents/new` | The form that creates an agent. Each role has a choice of its provider, which starts from the default mapping, and a choice of its model. It says that a model which searches live may add provider charges. See "The team". |
 | `/agents/<id>` | The same form, with the settings of the agent and the models of its roles. It says the state, and leads to the page of the state, to the page of the prompts, and to the page that switches the mode. For an agent in Live it asks once more before a change to the capital, to a risk setting, or to the model of a role is stored. |
-| `/agents/<id>/state` | What the service has to tell the user about the agent and they have not read, when there is something: see [notifications.md](notifications.md). The state of the agent, since when, what it means, and why the agent is in it. The buttons that start, pause, and resume the agent, each in the states that it is offered in, a link to the page that stops it, and "Close position now" when it has an open position. An agent that was not started or resumed because of its team is told which roles stand in the way. For an agent in Live, links to the page that asks once more stand in place of the three buttons. A link to the page that switches the mode, or when the mode can be switched. The changes of its state, latest first, each with its mode. A link to the page of the prompts, and one to the page of the risk checks. |
+| `/agents/<id>/state` | What the service has to tell the user about the agent and they have not read, when there is something: see [notifications.md](notifications.md). The state of the agent, since when, what it means, and why the agent is in it, and for an agent that its daily loss limit halted until when it is halted. The buttons that start, pause, and resume the agent, each in the states that it is offered in, a link to the page that stops it, and "Close position now" when it has an open position. An agent that was not started or resumed because of its team is told which roles stand in the way. For an agent in Live, links to the page that asks once more stand in place of the three buttons. A link to the page that switches the mode, or when the mode can be switched. The changes of its state, latest first, each with its mode. A link to the page of the prompts, and one to the page of the risk checks. |
 | `/agents/<id>/risk-checks` | What the Risk Guard made of the plans of the agent: each check with its verdict, and every rule with its outcome and why, in plain language (FR-RSK-9). It has no form. See "The page" in [risk-guard.md](risk-guard.md). |
 | `/agents/<id>/prompts` | The prompt templates that the agent uses now: the instructions of each role, and the modules of its market, its timeframe, and the profile, each with its version. It has no form: a user reads the prompts, and cannot edit them (FR-PRM-7). It says what an AI provider is sent with them, under whose key, and under whose terms (NFR-SEC-8). See [prompts.md](prompts.md). |
 | `/agents/<id>/confirm/<control>` | The page that asks once more before the agent is started, paused, or resumed: `start`, `pause`, or `resume`. Another name is no page. |
@@ -433,6 +472,7 @@ The pages are rendered on the server for each request, and none is interactive. 
 | The Decision Engine, when a candle closes | `IRunningAgents.OfTimeframesAsync` | The agents that run cycles and work on a timeframe of which a candle closed, of every user, in the order of their ids, each with the roles of its team that have a model (FR-CYC-1). |
 | The Decision Engine, as the turn of a cycle comes | `IRunningAgents.FindAsync` | The agent as it is stored then, with its roles, when it still runs cycles, and nothing otherwise: an agent that was paused, stopped, or deleted while its cycle waited gets none. |
 | The Decision Engine, which keeps the record of the cycles | The foreign key `(agent_id, user_id)` of `decision_cycles` | Nothing is asked. The record of the cycles of an agent hangs on its row, and goes with it when the agent is deleted: see "The record of a cycle" in [team.md](team.md). |
+| The Decision Engine, which watches the loss limits | `IAgentHalts` | An agent in whatever state it is, that an agent which reached a loss limit is halted, and that the agents which their daily loss limit halted on an earlier UTC day run again (FR-RSK-8). See "Halting an agent". |
 
 **`IRunningAgents` is for background work, and reads the agents of every user.** A job has no user who is signed in: each agent says whose it is, and what is done for it is done for that user. No page and no endpoint asks it. Which states run cycles is `AgentStates.RunsCycles`, and `RunningAgents` names no state of its own. It only reads. See "What is not asked for by owner" in [ownership.md](ownership.md).
 
@@ -459,7 +499,7 @@ Other components declared interfaces for Agents before it could do what they are
 | List | What is in it |
 |---|---|
 | `SettingsOperations` | What keeps the settings of agents, or only reads or answers. |
-| `ControlOperations` | What does more with an agent: starting, pausing, resuming, and stopping it, and closing its position. |
+| `ControlOperations` | What does more with an agent: starting, pausing, resuming, and stopping it, and closing its position. And what the service does to its state: it has the agent wait for its user, halts it for a loss limit, and resumes it after a daily halt. |
 | `ModeOperations` | What switches the mode of an agent: to Live, and back to Demo. |
 
 A method that is added is in none of them, and fails `AgentsRulesTests` until someone lists it, and so decides what it is.
@@ -564,24 +604,29 @@ The position of agent {AgentId} could not be closed at market, as user {UserId} 
 Agent {AgentId} of user {UserId} requires attention with the change to the Binance key for {TradingMode}: {AgentStateCause}
 Agent {AgentId} of user {UserId} requires attention with the change to the key for the AI provider {Provider}: {AgentStateCause}
 Agent {AgentId} of user {UserId} requires attention: the AI provider {Provider} no longer offers a model of its team
+Agent {AgentId} of user {UserId} is halted: {AgentStateCause}
+Agent {AgentId} of user {UserId} runs again: the UTC day in which its daily loss limit halted it is over
+Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: the Binance key for {TradingMode} blocks it ({StartBlock})
+Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: {RoleCount} of the roles of its team cannot work ({Roles})
+The halt of agent {AgentId} of user {UserId} for its daily loss limit could not be ended
+User {UserId} was refused the control {AgentControl} of agent {AgentId}: its daily loss limit halted it until the next UTC day
 User {UserId} switched agent {AgentId} from {PreviousTradingMode} to {TradingMode}
 User {UserId} was refused switching agent {AgentId} to {TradingMode}: {ModeSwitchOutcome}
 User {UserId} could not change agent {AgentId}: it was switched to {TradingMode} meanwhile
 User {UserId} could not copy agent {AgentId}: the exchange did not say which symbols {Market} has in {TradingMode}
 ```
 
-An event names a user and an agent by their ids, and never holds a name or a number of the settings. What keeps a team from working is said by the names of the roles and of what is wrong with each. A position that could not be closed is a warning. The event of an agent that requires attention is written inside the transaction that changes the key, or that marks the model, and stands for a change that is stored with it.
+An event names a user and an agent by their ids, and never holds a name or a number of the settings. What keeps a team from working is said by the names of the roles and of what is wrong with each. A position that could not be closed is a warning. The event of an agent that requires attention is written inside the transaction that changes the key, or that marks the model, and stands for a change that is stored with it. So is the event of an agent that is halted, which is a warning, inside the transaction of what watches the loss limits. An agent that runs again after a daily halt, and one that stays halted, are information, and a halt that could not be ended for an error of the application is an error, said once for the agent.
 
 ## Not built yet
 
 - Stopping the cycle of an agent that its user pauses or stops while the cycle runs. Whether an agent runs is asked when its cycle starts, and again, under the lock of its account, as its entry is written: no entry is placed for an agent that no longer runs.
 - Holding a stored risk setting to bounds that the file is given later. An agent whose value is outside bounds that were narrowed since keeps it, and so does a copy of it. Its form shows the value, and is saved only once the value is within the bounds.
-- What halts an agent when a loss limit is reached, and what resumes it after a daily loss limit, on the next UTC day (FR-RSK-8). A halted agent is resumed and stopped by its user already.
 - The other causes of Attention required: a call that reports that a model does not exist (FR-CAT-8), and calls that fail repeatedly (NFR-REL-4). The first takes an operation of Agents that a cycle can ask: what runs the team records such a call as `ModelNotFound`, and the cycle ends as its role says, but nothing moves the agent for it. See "Not built yet" in [team.md](team.md).
 - Moving an agent that runs when its user's key for a provider can no longer use a model of its team. Which models a key can use is recorded when its provider lists them: when a key is stored or replaced, and at each check. A list that comes to lack the model, and a key that is replaced, tell Agents nothing, and the list is written apart from the lock of the account, so a start may go by the list as it was a moment before. Such an agent is refused the next time it is started or resumed. Until then its calls of that model fail, and nothing moves it for them: see the item above. See "The models a key can use" in [credentials.md](credentials.md).
 - Moving an agent that runs when the configuration file stops allowing a model of its team. Such a model can no longer be selected, and the agent is not started or resumed with it, but nothing tells an agent that runs. See "Not built yet" in [catalog.md](catalog.md).
-- Telling the user that an agent was halted or needs attention (FR-NTF-1), and showing a change of state without a reload (FR-NTF-2). A user is told with a notification that a position could not be protected, and that their account at Binance conflicts with how an agent trades, which is when an agent comes to wait for them for those causes: see [notifications.md](notifications.md). Nothing tells them of the other causes.
+- Telling the user that an agent needs attention for every cause (FR-NTF-1), and showing a change of state without a reload (FR-NTF-2). A user is told with a notification that an agent was halted, that a position could not be protected, and that their account at Binance conflicts with how an agent trades, which is when an agent comes to wait for them for those causes: see [notifications.md](notifications.md). Nothing tells them of the other causes of Attention required, and nothing tells them that a daily halt has ended, or that an agent stays halted after it because its key or its team keeps it.
 - Recommending a team by measured strength, and applying it in one action (FR-TEAM-4), and reassigning the roles of an agent by strength on its own (FR-TEAM-10). The default mapping is the starting point until there is something to measure.
-- The results of an agent: its profit or loss, and the pages that show its positions and its orders (FR-RPT-2). The orders and the positions are stored, each with the mode it is of. What adds them up adds nothing up over both modes (FR-BIN-11): see "Demo is labeled as Demo".
+- The results of an agent on its pages: its profit or loss, its equity, and the pages that show its positions and its orders (FR-RPT-2). The orders and the positions are stored, each with the mode it is of, and the equity of an agent is worked out from them for the Risk Guard: see "The equity of an agent" in [orders.md](orders.md). It adds nothing up over both modes (FR-BIN-11): see "Demo is labeled as Demo".
 - A record of the risk confirmation of its own, with the version of the risk disclosure that was confirmed. The event of the switch in the audit trail stands for the confirmation.
 - The agent detail screen (FR-RPT-2), and the times of an agent in the local time of its user. The page of the state of an agent is where its position, its trades, and its decisions will be shown.

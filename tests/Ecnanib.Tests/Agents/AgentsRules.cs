@@ -69,6 +69,9 @@ internal static class AgentsRules
             "Reads one agent when it runs cycles, for what starts its cycle when the turn of the cycle comes. It changes no agent.",
         ["IAgentTrading.StateUnderLockAsync"] =
             "Reads the state of one agent under the lock of its account, for what writes an order of the agent. It changes no agent.",
+        ["IAgentHalts.FindAsync"] =
+            "Reads one agent in whatever state it is, for what watches its loss limits when its account is reconciled. It " +
+            "changes no agent.",
     };
 
     /// <summary>
@@ -99,6 +102,13 @@ internal static class AgentsRules
             "Moves an agent that runs to Attention required, because its position is open with no stop-loss and could not be " +
             "closed, or because the account of its user at the exchange conflicts with how it trades. It is the service's " +
             "doing, and no action of a user: it starts nothing, and the change of the state records it.",
+        ["IAgentHalts.HaltAsync"] =
+            "Moves an agent that runs to Halted, because it reached its daily loss limit or its drawdown limit. It is the " +
+            "service's doing, and no action of a user: it starts nothing, and the change of the state records it.",
+        ["IAgentHalts.EndDailyHaltsAsync"] =
+            "Resumes the agents that their daily loss limit halted on an earlier UTC day, which is a start: it asks what " +
+            "blocks it as far as the key and the team go. It is the service's doing, and no action of a user: the change " +
+            "of the state records it, and the audit trail does not.",
     };
 
     /// <summary>

@@ -780,6 +780,54 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("decision_cycles", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.DecisionEngine.EquityMark", b =>
+                {
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Mode")
+                        .HasColumnType("text")
+                        .HasColumnName("mode");
+
+                    b.Property<string>("Asset")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("asset");
+
+                    b.Property<decimal>("Capital")
+                        .HasColumnType("numeric")
+                        .HasColumnName("capital");
+
+                    b.Property<DateTimeOffset>("DayBeganAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("day_began_at");
+
+                    b.Property<decimal>("PeakResult")
+                        .HasColumnType("numeric")
+                        .HasColumnName("peak_result");
+
+                    b.Property<decimal>("ResultAtDayStart")
+                        .HasColumnType("numeric")
+                        .HasColumnName("result_at_day_start");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("AgentId", "Mode")
+                        .HasName("pk_equity_marks");
+
+                    b.HasIndex("AgentId", "UserId")
+                        .HasDatabaseName("ix_equity_marks_agent_id_user_id");
+
+                    b.ToTable("equity_marks", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.DecisionEngine.Fill", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1886,6 +1934,17 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_decision_cycles_agents_agent_id_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.DecisionEngine.EquityMark", b =>
+                {
+                    b.HasOne("Ecnanib.Agents.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_equity_marks_agents_agent_id_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.DecisionEngine.Fill", b =>

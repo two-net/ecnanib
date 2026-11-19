@@ -4,6 +4,7 @@ using Ecnanib.Agents;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.Platform.Persistence;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
@@ -149,6 +150,7 @@ internal sealed class CyclesApplication : IDisposable
                 if (Agents is not null)
                 {
                     services.AddSingleton<IRunningAgents>(Agents);
+                    services.AddSingleton<IAgentHalts>(Agents);
                 }
 
                 if (reconciliation is not null)
@@ -529,7 +531,13 @@ internal sealed record AskedCandles(Market Market, TradingMode Mode, string Symb
 /// their rows: it says the agents that the test gave it, each with a team, and no longer says an
 /// agent that the test stopped.
 /// </summary>
-internal sealed class StandInRunningAgents : IRunningAgents
+/// <remarks>
+/// It stands for what halts an agent as well (FR-RSK-8): agents that have no rows have no state
+/// that could change, so none of them is halted, and none was halted on an earlier day. So the
+/// job that starts the cycles asks the database nothing before it reads the agents, as it reads
+/// these.
+/// </remarks>
+internal sealed class StandInRunningAgents : IRunningAgents, IAgentHalts
 {
     private static readonly DateTimeOffset First = new(2026, 11, 1, 0, 0, 0, TimeSpan.Zero);
 
@@ -613,6 +621,15 @@ internal sealed class StandInRunningAgents : IRunningAgents
 
     public Task<RunningAgent?> FindAsync(Guid agentId, CancellationToken cancellationToken) =>
         Task.FromResult(_agents.GetValueOrDefault(agentId));
+
+    Task<Agent?> IAgentHalts.FindAsync(Guid agentId, CancellationToken cancellationToken) =>
+        Task.FromResult(_agents.GetValueOrDefault(agentId)?.Agent);
+
+    public Task<bool> HaltAsync(
+        EcnanibDbContext context, Guid userId, Guid agentId, AgentStateCause cause, DateTimeOffset at, CancellationToken cancellationToken) =>
+        Task.FromResult(false);
+
+    public Task<int> EndDailyHaltsAsync(CancellationToken cancellationToken) => Task.FromResult(0);
 }
 
 /// <summary>

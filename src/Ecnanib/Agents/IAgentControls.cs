@@ -120,6 +120,14 @@ public enum AgentControlOutcome
     /// (FR-BIN-F2). Nothing changed.
     /// </summary>
     AccountConflicts,
+
+    /// <summary>
+    /// The daily loss limit of the agent halted it, and the UTC day in which it did is not over:
+    /// the agent is halted until the next UTC day, and does not run before it (FR-RSK-8). It is
+    /// neither resumed, nor started again once its user has stopped it.
+    /// <see cref="AgentControlResult.HaltEnds"/> says when that day begins. Nothing changed.
+    /// </summary>
+    HaltedForTheDay,
 }
 
 /// <summary>What starting, pausing, or resuming an agent gave.</summary>
@@ -127,8 +135,13 @@ public enum AgentControlOutcome
 /// <param name="Block">What about the credential keeps the agent from running, when that is how it ended.</param>
 /// <param name="Roles">What about its team keeps the agent from running, role by role, when that is how it ended.</param>
 /// <param name="Conflict">What about the account of its user at the exchange keeps the agent from running, when that is how it ended.</param>
+/// <param name="HaltEnds">When the UTC day after its daily loss limit halted the agent begins, when that is how it ended.</param>
 public sealed record AgentControlResult(
-    AgentControlOutcome Outcome, StartBlock? Block = null, IReadOnlyList<RoleBlock>? Roles = null, AccountConflict? Conflict = null);
+    AgentControlOutcome Outcome,
+    StartBlock? Block = null,
+    IReadOnlyList<RoleBlock>? Roles = null,
+    AccountConflict? Conflict = null,
+    DateTimeOffset? HaltEnds = null);
 
 /// <summary>What happens to the open position of an agent that is stopped, as its user chooses (FR-AGT-11).</summary>
 public enum PositionAtStop

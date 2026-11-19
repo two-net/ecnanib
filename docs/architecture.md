@@ -179,7 +179,7 @@ A new agent is in Demo. Its user switches it to Live with a valid Live Binance k
 
 Agents places no order. A user who stops an agent that has an open position chooses whether it is closed at market or kept with its protective orders, and can close the position of an agent at any time, in whatever state the agent is (FR-AGT-11, FR-AGT-12). Agents records the request and asks whatever keeps positions, through `IAgentExposure`, which the Decision Engine answers. What places the orders asks Agents in turn, through `IAgentTrading`: for the state of an agent under the lock of its account, as an order of it is written, so that an entry and a stop of its user cannot cross, and to have an agent that runs wait for its user when its position is left with no stop-loss (FR-RSK-7), or when the account of its user at the exchange conflicts with how it trades (FR-BIN-F2).
 
-Agents says whether an agent of a user is active, for Accounts to ask before it deletes an account, and hands over the agents, the models of their roles, and the changes of their states for the export of a user's data. What a user does to an agent is recorded in the audit trail: a change to a risk setting, a start, a pause, a resume, a stop, a manual close, and a switch of its mode. Agents says which agents run, of every user, for what starts their cycles. Not built yet: what halts an agent, and recommending a team by measured strength. See [agents.md](agents.md).
+Agents says whether an agent of a user is active, for Accounts to ask before it deletes an account, and hands over the agents, the models of their roles, and the changes of their states for the export of a user's data. What a user does to an agent is recorded in the audit trail: a change to a risk setting, a start, a pause, a resume, a stop, a manual close, and a switch of its mode. Agents says which agents run, of every user, for what starts their cycles. An agent that reaches a loss limit is halted (FR-RSK-8): what watches the loss limits asks Agents, through `IAgentHalts`, to halt an agent that runs, and to resume the agents that their daily loss limit halted once the UTC day of the halt is over, which Agents does when their key and their team allow it. Its user does not resume such an agent before that day. Not built yet: recommending a team by measured strength. See [agents.md](agents.md).
 
 ## Cycles
 
@@ -209,7 +209,9 @@ The positions of Futures are watched while they are open, by a job that runs at 
 
 The exchange is the source of truth for what an agent holds (FR-BIN-7, FR-BIN-8). A job reconciles every agent that holds something, as the background work starts and every few minutes: it asks about each of its orders, and holds its open position against what the account of its user holds. A position that the account no longer holds is closed in the records, and one of which it holds less, or more, is written as the account holds it, so what a user does at Binance by hand is in the records. The records are corrected only once Binance has said the same twice, with the orders of the agent asked about in between, and every mismatch is said in the log and told to the user with a notification. Another job has the gateway follow the account event feed of the accounts in which an agent holds something, and reconciles an agent at once when its account says a change. After a start, an agent that holds something from before gets no cycle until it was reconciled (NFR-REL-3).
 
-Not built yet: the results of a position, and the executions of what was done at the exchange by hand. See [orders.md](orders.md).
+The equity of an agent is its allocated capital plus its net profit or loss to date (FR-RSK-5, FR-RSK-8): `AgentResults` works it out from the rows, as what the positions of the agent made by the orders that closed them, less the fees of its executions, with its funding, and with what its open position would make at the price now, which is the mark price on Futures. The rows are read in one snapshot, so that an order that is executed meanwhile is counted once.
+
+Not built yet: the results of a position as a record of its own, the equity of an agent over time, and the executions of what was done at the exchange by hand, which count as closed at the entry price until then. See [orders.md](orders.md).
 
 ## Risk Guard
 
@@ -221,7 +223,9 @@ The check computes the size of the order that a plan opens, and no model chooses
 
 Every check stores the outcome of every rule, with its cycle, in `risk_checks` and `risk_check_rules`, and the quantity and the leverage that it computed, and a user reads the checks of an agent on a page of the agent, each rule with why it held or did not (FR-RSK-9). Neither AI output nor a user action bypasses the check: only the check makes a result, only the Decision Engine says its facts, and it has no switch.
 
-Not built yet: the global halt of an Operator, and what closes a position and halts an agent when a loss limit is reached. See [risk-guard.md](risk-guard.md).
+When an agent's loss for the UTC day reaches its daily loss limit, or its drawdown from its peak equity reaches its drawdown limit, its position is closed and it is halted: until the next UTC day, or until its user resumes it (FR-RSK-8). `LossLimits` of the Risk Guard says when a limit is reached, for the rule that rejects an entry and for what halts an agent alike. `LossLimitWatch` of the Decision Engine evaluates the limits at every cycle, before the team is called, and at every reconciliation: in one transaction under the lock of the account it keeps what the limits are counted from, in `equity_marks`, and has Agents halt an agent that runs. Then it tells its user with a notification, and has the position closed by what places the orders. Only an agent that runs is halted, and an equity that is not known halts nothing.
+
+Not built yet: the global halt of an Operator. See [risk-guard.md](risk-guard.md).
 
 ## Prompts
 

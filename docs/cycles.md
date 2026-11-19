@@ -31,6 +31,7 @@ The Decision Engine has one job, `decision-cycles`, in `DecisionCyclesJob`. It r
 
 | Rule | Detail |
 |---|---|
+| **An agent whose daily halt is over runs again first** (FR-RSK-8). | Before the agents are read, `IAgentHalts.EndDailyHaltsAsync` of Agents resumes every agent that its daily loss limit halted on an earlier UTC day. So such an agent has its cycle of the first close of the day, which is the close of midnight for every timeframe. An error there is said once in the log, and keeps no cycle from starting. See "Halting an agent" in [agents.md](agents.md). |
 | **Only an agent that runs gets a cycle** (SRS 3.3). | `IRunningAgents.OfTimeframesAsync` of Agents says which agents run on a timeframe that closed, of every user. It goes by `AgentStates.RunsCycles`, which is where the table of the states is. A draft, and an agent that is paused, halted, stopped, or requires attention, gets none. |
 | **It is asked again as the turn of a cycle comes.** | An agent is paused or stopped by its user at any moment, also while its cycle waits in the queue. `IRunningAgents.FindAsync` reads the agent again then: one that no longer runs gets no cycle, and neither does one that was stopped, given another market, symbol, or timeframe, and started again meanwhile. |
 | **A cycle is for the agent as it is stored when its turn comes.** | Its settings and the models of its roles are those of that moment: a change applies from the agent's next cycle (FR-AGT-8). |
@@ -242,7 +243,7 @@ public sealed record FuturesData(decimal MarkPrice, decimal FundingRate, DateTim
 
 ### What an agent holds
 
-What a package says of the position and the orders of an agent comes through `IAgentHoldings`, which the Decision Engine declares, and which what keeps the positions and the orders answers: `StoredHoldings`, from its rows. See "What an agent holds" in [orders.md](orders.md). No result of an agent is stored yet.
+What a package says of the position and the orders of an agent comes through `IAgentHoldings`, which the Decision Engine declares, and which what keeps the positions and the orders answers: `StoredHoldings`, from its rows. See "What an agent holds" in [orders.md](orders.md).
 
 ```csharp
 public interface IAgentHoldings
@@ -251,7 +252,12 @@ public interface IAgentHoldings
 }
 
 public sealed record AgentHoldings(
-    decimal Equity, PositionContext? Position, IReadOnlyList<OpenOrder> Orders, decimal EquityAtDayStart, decimal PeakEquity);
+    decimal Equity,
+    PositionContext? Position,
+    IReadOnlyList<OpenOrder> Orders,
+    decimal EquityAtDayStart,
+    decimal PeakEquity,
+    bool Valued = true);
 
 public sealed record OpenOrder(OpenOrderKind Kind, OrderSide Side, decimal Quantity, decimal Price);
 ```
@@ -259,10 +265,12 @@ public sealed record OpenOrder(OpenOrderKind Kind, OrderSide Side, decimal Quant
 | Rule | Detail |
 |---|---|
 | **The orders of the agent are settled before its package is built.** | `TeamCycle` asks `IPlanOrders.SettleAsync` first: a stop-loss may have been executed since the last cycle, and then the agent holds no position any more. |
+| **Its loss limits are evaluated next, before any model is called** (FR-RSK-8). | `TeamCycle` asks `ILossLimits.EvaluateAsync`. An agent that has reached its daily loss limit or its drawdown limit is halted, and its position is closed: its cycle builds no package and calls no model, and ends as `Halted`. See "Halting an agent" in [risk-guard.md](risk-guard.md). |
 | **An agent that has placed nothing holds nothing.** | No position and no orders, and its equity is the capital that its user allocated to it. `AgentHoldings.NothingYet` is that, and it is what an agent holds where nothing answers. |
 | **The stop-loss of a position is said when an order for it rests on the exchange.** | The price alone protects nothing. The same holds for its take-profit: an order rests for one on both markets, as one pair with the stop-loss on Spot, and as an order of its own on Futures. |
-| The equity is the allocated capital plus the net profit or loss to date. | In the asset that the symbol is priced in, with unrealized profit and loss. No result is stored yet, so it is the allocated capital still: see "Not built yet". |
-| **The equity as the UTC day began, and the peak equity, are what the loss limits are counted from.** | No prompt states them: the Risk Guard holds a plan that opens a position to the daily loss limit and to the drawdown limit (FR-RSK-4). Until something keeps results, both are the allocated capital: the agent has lost nothing. See "The loss limits" in [risk-guard.md](risk-guard.md). |
+| **The equity is the allocated capital plus the net profit or loss to date.** | In the asset that the symbol is priced in, with unrealized profit and loss: what the positions of the agent made and lost, less the fees, with their funding, and with what its open position would make at the price now. See "The equity of an agent" in [orders.md](orders.md). |
+| **The equity as the UTC day began, and the peak equity, are what the loss limits are counted from.** | No prompt states them: the Risk Guard holds a plan that opens a position to the daily loss limit and to the drawdown limit (FR-RSK-4), and what watches the loss limits halts an agent by them (FR-RSK-8). See "The loss limits" in [risk-guard.md](risk-guard.md). |
+| **An equity that is not known gives no package.** | Where the exchange did not say the price that the open position is valued at, `Valued` is false, and `Equity` is without what that position would make. So it is where an order that closed a part of a position says no price that it was executed at yet. No prompt states an equity that is a guess: the package is not built, as for any read that did not succeed, and the cycle makes no decision. On Futures the price of the open position is the mark price, which the package needs itself. |
 | An agent has one position at most. | `PositionContext` is the position as a prompt states it, with the prices of its stop-loss and its take-profit. The plan of the Strategist is held to it: a plan opens a position only for an agent that has none, and moves a stop-loss only to where it reduces risk (FR-CYC-5, FR-CYC-6). See "What a plan may do" in [team.md](team.md). |
 | **An order is one that rests on the exchange.** | An entry that has not filled, a stop-loss, or a take-profit: `OpenOrderKind`. `Price` is the price of a limit entry, or the price that a protective order is triggered at. |
 | It is asked for one agent, as its package is built, and again as the Risk Guard checks its plan, and only reads. | What it answers has no id and no name, as a prompt has none. The implementation that was registered last answers, as a service is found. |
@@ -423,6 +431,7 @@ The candles of {Symbol} on {Market} in {TradingMode} could not be asked for ({Ti
 {CycleCount} cycles of the close at {ClosedAt} could not start within {StartsWithinMinutes} minutes of it, and are skipped
 {CycleCount} cycles of the close at {ClosedAt} still run {EndsBeforeSeconds} seconds before the next close, and are stopped
 The cycles of the close at {ClosedAt} could not start within {StartsWithinMinutes} minutes of it, so none starts
+The agents that their daily loss limit halted on an earlier UTC day could not be resumed at the close at {ClosedAt}
 The cycles of the close at {ClosedAt} are over after {DurationMs} ms: {Ended} ended within {TargetSeconds} seconds of the close and {EndedLate} later, {Failed} failed, {OutOfTime} were stopped before the next close, {TooLate} could not start in time, {WithoutCandle} had no candle, {NotReconciled} were not reconciled, {NotRunning} no longer ran, and {Stopped} were stopped with the application
 ```
 
@@ -438,7 +447,7 @@ What runs the team of a cycle logs under `Ecnanib.DecisionEngine.TeamCycle` and 
 |---|---|
 | `Information` | The cycles that are due, the start and the end of a cycle, a data package that was built, an agent that gets no cycle, a cycle that was stopped with the application, and the summary of a close. |
 | `Warning` | A candle that the exchange did not give in time, cycles that could not start in time, cycles that were stopped before the next close, and the summary of a close of which more than one in twenty cycles did not end within 90 seconds. |
-| `Error` | A cycle that failed, a cycle that could not start, and candles that could not be asked for, each with the error. A cycle whose data package could not be built is one that failed: its error says which part of the market data the exchange did not give, and how the read ended. |
+| `Error` | A cycle that failed, a cycle that could not start, candles that could not be asked for, and agents whose daily halt could not be ended before the cycles of a close, each with the error. A cycle whose data package could not be built is one that failed: its error says which part of the market data the exchange did not give, and how the read ended. |
 
 An event names a user and an agent by their ids, and never holds the name of an agent, a price, or a setting. What the scheduler logs about the job is in [background-work.md](background-work.md): a run that began, ended, failed, or was stopped, and a boundary that was skipped.
 
@@ -469,7 +478,6 @@ A limit is held to through what the stand-in counted while the cycles were held,
 ## Not built yet
 
 - The orders that only one market has: see "Not built yet" in [orders.md](orders.md).
-- The results of an agent, which what answers `IAgentHoldings` would say. Until then a package says that the equity of an agent is its allocated capital, also for an agent that has gained or lost.
 - Asking again for market data that a read did not give. A cycle whose package cannot be built makes no decision, and the next close starts the next one.
 - Waiting for a candle of a higher timeframe that came one short. The candles of the agent's own timeframe cover the same time.
 - The price that a symbol last traded at, in a package. A package has the close of the latest candle, and on Futures the mark price. What has the Risk Guard check a plan asks for the price then, and holds an entry to its distance from it (FR-RSK-4): see "The facts" in [risk-guard.md](risk-guard.md).

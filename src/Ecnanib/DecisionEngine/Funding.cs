@@ -14,7 +14,8 @@ namespace Ecnanib.DecisionEngine;
 /// It is what the exchange said, and is stored once for its position: the number that the
 /// exchange gave it is unique among the funding of an account. The funding of a position is its
 /// rows together, as the fees of a position are the fees of its executions: nothing adds them up
-/// here.
+/// here. What works out the equity of an agent adds them up, each time that it is asked for
+/// it: see <see cref="AgentResults"/>.
 /// </para>
 /// <para>
 /// It carries its owner along to the position that it hangs on: <c>(position_id, user_id)</c>

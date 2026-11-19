@@ -173,6 +173,11 @@
                 // Says what to change at Binance, where the account stands in the way (FR-BIN-F2).
                 _refused = AgentPages.Says(conflict, control, _agent);
                 break;
+
+            case AgentControlOutcome.HaltedForTheDay when result.HaltEnds is { } ends:
+                // Its daily loss limit halted the agent until the next UTC day (FR-RSK-8).
+                _refused = AgentPages.HaltedForTheDay(control, ends);
+                break;
         }
 
         // Nothing changed. The page is shown as the agent is now, with why.

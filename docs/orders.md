@@ -16,7 +16,7 @@ Order and position changes are tracked through the exchange's account event feed
 
 What is built is step 7 of the decision cycle, on both markets. Both have an entry at the market, an entry at a price, which rests, a stop-loss that rests, and an order that closes a position at the market. Spot has the pair of a stop-loss and a take-profit. Futures has a take-profit that is an order of its own, the margin and the leverage of the symbol, which are set before an entry, and the trigger on the mark price. With them a plan opens a position, closes it, reverses it, and moves its protection, and a user closes a position by hand. The positions of Futures are watched while they are open: their margin is checked, their user is told when one approaches liquidation, and what each received and paid as funding is stored. The agents are reconciled with the exchange, as the application starts, every few minutes, and at once when the account event feed says that something changed in an account: what the account holds is held against the records, the records are corrected, and the user of the agent is told what did not match.
 
-What places the orders is in `src/Ecnanib/DecisionEngine`: `IPlanOrders`, `AgentOrders`, `StoredOrders`, `Order`, `Fill`, `Position`, `AgentPositions.cs`, and `OrderSettlingJob`. What watches the positions is there as well: `PositionWatch`, `PositionWatchJob`, and `Funding`. So is what reconciles: `AccountReconciliation`, `ReconciliationJob`, `AccountFeed`, and `AccountFeedJob`. The orders of the exchange are in `src/Ecnanib/ExchangeGateway/Trading`, and Binance's in `BinanceOrders`. The rules below are enforced by `OrderIdempotencyTests`, `ProtectiveStopTests`, `ProtectivePairTests`, `LimitEntryTests`, `SpotEntryTests`, `FuturesEntryTests`, `FuturesProtectionTests`, `PlanOrderTests`, `OrderSettlingTests`, `OrderRecordTests`, `FundingRecordTests`, `LiquidationWarningTests`, `PositionWatchJobTests`, `ReconciliationTests`, `ReconciliationJobTests`, and `AccountFeedJobTests` of `tests/Ecnanib.Tests/DecisionEngine`, and by `OrderPlacementTests`, `FuturesAccountTests`, `FuturesPositionTests`, `FundingReadTests`, and `AccountFeedTests` of `tests/Ecnanib.Tests/ExchangeGateway`.
+What places the orders is in `src/Ecnanib/DecisionEngine`: `IPlanOrders`, `AgentOrders`, `StoredOrders`, `Order`, `Fill`, `Position`, `AgentPositions.cs`, and `OrderSettlingJob`. What works out the equity of an agent from them is `AgentResults`, with `EquityMark`. What watches the positions is there as well: `PositionWatch`, `PositionWatchJob`, and `Funding`. So is what reconciles: `AccountReconciliation`, `ReconciliationJob`, `AccountFeed`, and `AccountFeedJob`. The orders of the exchange are in `src/Ecnanib/ExchangeGateway/Trading`, and Binance's in `BinanceOrders`. The rules below are enforced by `OrderIdempotencyTests`, `ProtectiveStopTests`, `ProtectivePairTests`, `LimitEntryTests`, `SpotEntryTests`, `FuturesEntryTests`, `FuturesProtectionTests`, `PlanOrderTests`, `OrderSettlingTests`, `OrderRecordTests`, `FundingRecordTests`, `LiquidationWarningTests`, `PositionWatchJobTests`, `ReconciliationTests`, `ReconciliationJobTests`, and `AccountFeedJobTests` of `tests/Ecnanib.Tests/DecisionEngine`, and by `OrderPlacementTests`, `FuturesAccountTests`, `FuturesPositionTests`, `FundingReadTests`, and `AccountFeedTests` of `tests/Ecnanib.Tests/ExchangeGateway`.
 
 The calls that the gateway makes for an order are in [exchange.md](exchange.md). What the Risk Guard accepts, and the size of an order, is in [risk-guard.md](risk-guard.md). What a cycle does before it comes to its orders is in [team.md](team.md) and [cycles.md](cycles.md). What Agents asks about a position, and the states of an agent, is in [agents.md](agents.md), the key that an order is placed with in [credentials.md](credentials.md), and what a user is told in [notifications.md](notifications.md).
 
@@ -31,6 +31,7 @@ public interface IPlanOrders
     Task SettleAsync(Guid agentId, CancellationToken cancellationToken);
     Task<bool> ReconcileAsync(Guid agentId, CancellationToken cancellationToken);
     Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken);
+    Task<PositionCloseOutcome> CloseForLossLimitAsync(Guid agentId, CancellationToken cancellationToken);
     Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken);
 }
 ```
@@ -41,7 +42,7 @@ public interface IPlanOrders
 | **One type uses the orders of the gateway** | `AgentOrders`. A test pins it, so another shows in a review as one more way to an order. |
 | **The orders of the agent are settled first** | Before the team is run, `TeamCycle` asks `SettleAsync`: a stop-loss or a take-profit may have been executed since the last cycle, an entry at a price of the cycle before is taken off the exchange, and the team decides on what the agent holds now. See "Settling" and "An entry at a price". |
 | **The outcome of a cycle is the decision of its team** | Whatever becomes of the orders. What was placed is in the rows of the orders, under the id of the cycle. A cycle whose orders fail with an error is recorded with its decision, and the error is said once. |
-| **What settles and what closes for a user take no result** | They open nothing, so that risk can always be reduced (FR-RSK-4, FR-AGT-12). |
+| **What settles, what closes for a user, and what closes for a loss limit take no result** | They open nothing, so that risk can always be reduced (FR-RSK-4, FR-AGT-12, FR-RSK-8). |
 | **What reconciles settles, and then holds the position against the account** | `ReconcileAsync` does what `SettleAsync` does, and holds the open position of the agent against what the account of its user holds, which is the source of truth (FR-BIN-7, FR-BIN-8). It opens nothing either: the one thing that it places is the protection of a position that it found unprotected, or holding more than its protection is for. See "Reconciling". |
 | **What reads the account for Agents places nothing** | `AccountConflictAsync` says what in the account of an agent's user stands in the way of the agent, before the agent is started or resumed: see "The account of Futures". It only reads. |
 
@@ -237,7 +238,7 @@ On Futures each price moves its own order. The stop-loss is moved first, as abov
 
 ## Closing a position
 
-For a plan that closes or reverses, for the user of an agent (FR-AGT-11, FR-AGT-12), and for a position whose stop-loss cannot be placed.
+For a plan that closes or reverses, for the user of an agent (FR-AGT-11, FR-AGT-12), for an agent that reached a loss limit and is halted (FR-RSK-8), and for a position whose stop-loss cannot be placed.
 
 | Step | Rule |
 |---|---|
@@ -247,7 +248,7 @@ For a plan that closes or reverses, for the user of an agent (FR-AGT-11, FR-AGT-
 
 Between step 1 and step 2 the position has no stop-loss. That cannot be avoided on Spot.
 
-`CloseAtMarketAsync` settles the orders of the agent first, and on Futures asks what the account holds of its position, as a reconciliation does: a position that its user closed at Binance already is written as closed, and is not closed a second time. Then it takes an entry that rests off the exchange, and answers with an outcome, and never with an error:
+`CloseAtMarketAsync` settles the orders of the agent first, and on Futures asks what the account holds of its position, as a reconciliation does: a position that its user closed at Binance already is written as closed, and is not closed a second time. Then it takes an entry that rests off the exchange, and answers with an outcome, and never with an error. `CloseForLossLimitAsync` is the same close, for an agent that what watches the loss limits has halted: the position that it closes says `LossLimit` as how it ended, where the close of a user says `UserClose`. It is asked again with a later evaluation of the loss limits while the agent holds anything, and not within two minutes of a close that failed: see "Halting an agent" in [risk-guard.md](risk-guard.md).
 
 | Outcome | When |
 |---|---|
@@ -291,6 +292,7 @@ Order and position changes are tracked by reconciliation at startup and every 5 
 | **No agent waits for another** | The agents are reconciled a few at a time, each on its own. One that cannot be reconciled, because its key is gone or Binance does not answer for it, keeps no other waiting. It is tried once more before the run ends, `ReconciliationJob.Again` later, which is 15 seconds: a call that the limiter held back is often answered then. After that it is tried with the next run. |
 | **Whatever state its agent is in** | A position is reconciled while it is open: whether its agent runs, is paused, waits for its user, or was stopped with its position kept. |
 | **A refused key is checked again** | As in "Settling". |
+| **Every reconciliation evaluates the loss limits of its agent** (FR-RSK-8) | `AccountReconciliation.ReconcileAsync` asks `ILossLimits.EvaluateAsync` once the exchange was asked, whatever it answered, for the job and for the account event feed alike: an agent that runs and has reached its daily loss limit or its drawdown limit is halted, and its position is closed. A position of a halted agent that is open still is closed again. See "Halting an agent" in [risk-guard.md](risk-guard.md). What cannot be evaluated is an error in the log, and the agent is reconciled all the same. |
 
 ### What the account holds
 
@@ -330,7 +332,7 @@ Closing the records of a position that is open would take its stop-loss off the 
 | Rule | Detail |
 |---|---|
 | **Every mismatch is logged and shown** | It is a warning in the log, which names the agent, the symbol, and which mismatch it was. And its user is told, with a notification of the type `ReconciliationMismatch`, which says what Binance holds, what the records said, and what they say now: see [notifications.md](notifications.md). It is on the page of the agent. |
-| **The state of the agent stays** | A running agent runs on, and its team decides anew at its next cycle. An agent that its user paused or stopped stays so. |
+| **The state of the agent stays** | A running agent runs on, and its team decides anew at its next cycle. An agent that its user paused or stopped stays so. A mismatch halts no agent: what halts one is a loss limit, which is evaluated after the records were corrected. |
 | **An order of the agent that turns out to have closed the position says why** | A position that was closed as `ClosedAtExchange`, of which an order of the agent is found executed later, has the exit reason of that order from then on: `StopLoss`, `TakeProfit`, or that of its close. |
 | **What the account holds that no agent placed is left alone** | Orders that its user placed by hand, and what the account holds of an asset beside a position. A position of Futures in the symbol of an agent that holds none is found before an entry, where it stands in the way: see "The account of Futures". |
 | **Whether its user or Binance closed a position is not told apart** | A liquidation is a position that the account no longer holds, as one that was closed by hand is. The notification says that no order of the agent closed it. |
@@ -388,7 +390,7 @@ The funding rate and the next funding time of the data package are in "The data 
 
 | Rule | Detail |
 |---|---|
-| **What a position received and paid is stored row by row** | Each as a row of `fundings` that names the position: the number that Binance gave it, the amount, which is above zero when the position received it and below zero when it paid, the asset, and the funding time. It is what Binance says, as the fee of an execution is. Nothing adds the rows up: the results of a position are not built. |
+| **What a position received and paid is stored row by row** | Each as a row of `fundings` that names the position: the number that Binance gave it, the amount, which is above zero when the position received it and below zero when it paid, the asset, and the funding time. It is what Binance says, as the fee of an execution is. The rows are added up in the equity of the agent: see "The equity of an agent". The results of a position as a record of its own are not built. |
 | **It is read when it is due, and not with every run** | `IExchangeAdapter.GetFundingAsync` is the heaviest call that the service makes, at 30 of request weight. A position of Futures is due 5 minutes after it was opened, then 5 minutes after each funding time, and once more 5 minutes after it was closed. `positions.funding_due_at` says when: the time that the position was opened at first, and then the next funding time. |
 | **The next funding time is the one that the mark price says** | `IExchangeMarketData.GetMarkPriceAsync`, which the gateway reads once for everyone (FR-BIN-3). Without one that is ahead, the funding of an open position is not read: the read did not succeed, the time that it gave has passed, or the symbol is no longer in `Binance:Symbols`. Such a position is read with a later run, and at the latest when it is closed. |
 | **It is asked for from the newest row that is stored** | Which Binance says again, and which is stored once: the number that Binance gave it is unique for the position. So what Binance wrote later than a read is read the next time. A position with no row yet is asked about from when its entry was begun, which is before anything of it was executed: `positions.opened_at` is when the application saw the execution, and an entry at a price may have paid funding before that. |
@@ -417,8 +419,49 @@ The Decision Engine keeps the positions and the orders, so it answers those that
 | Interface | Answer |
 |---|---|
 | `IAgentExposure` of Agents | An agent has an open position or orders while it has a position without a time of closing, or an order that is not over. It has an open position, as far as stopping it goes, also while an entry of it is not over: such an entry may open one. `ClosePositionAtMarketAsync` is `IPlanOrders.CloseAtMarketAsync`, and `AccountConflictAsync` is `IPlanOrders.AccountConflictAsync`: see "The account of Futures". See [agents.md](agents.md). |
-| `IAgentHoldings` | The open position, with the prices of the stop-loss and of the take-profit that rest for it, and the orders that rest: an entry that has not filled, a stop-loss, and a take-profit. A take-profit is said when an order rests for it, on either market. The equity is the capital that the user allocated: no result is stored yet. See "What an agent holds" in [cycles.md](cycles.md). |
+| `IAgentHoldings` | The open position, with the prices of the stop-loss and of the take-profit that rest for it, and the orders that rest: an entry that has not filled, a stop-loss, and a take-profit. A take-profit is said when an order rests for it, on either market. The equity of the agent, its equity as the UTC day began, and its peak equity: see "The equity of an agent", and "What an agent holds" in [cycles.md](cycles.md). |
 | `IReconciliation` | Whether the agent is settled, and whether it was reconciled since the application took up the background work, where it holds something from before. See "Settling" and "Reconciling". |
+
+## The equity of an agent
+
+Agent equity is the capital the user allocated to an agent, plus the agent's net profit or loss to date. The loss limits of an agent include unrealized profit and loss (FR-RSK-8), the Risk Guard computes the size of an order from the equity (FR-RSK-5), and a prompt states it (FR-CYC-2). `AgentResults` works the result of an agent out from the rows, and `AgentResultTests` holds it to the rules below.
+
+| Part of the result | From |
+|---|---|
+| What its positions made and lost | For each order that closed a position or a part of one, a stop-loss, a take-profit, or a close: what was executed of it, times how far its average price is from the price that the position was entered at, in the direction of the position. |
+| Less the fees | The fee of every execution of its orders, also of an entry that opened nothing. A fee in the asset that the symbol is priced in is what it is. A fee in the asset that is traded, which a purchase on Spot may be charged in, is worth what its execution paid for it: the position holds that much less, so it is counted once. |
+| With the funding | What its positions received, less what they paid, in the asset that the symbol is priced in. |
+| With what the open position would make now | Its quantity, times how far the price now is from the price that it was entered at, in its direction. |
+
+| Rule | Detail |
+|---|---|
+| **A position of Futures is valued at the mark price, and one of Spot at the price that the symbol last traded at.** | `IExchangeMarketData.GetMarkPriceAsync` and `GetPriceAsync`, which the gateway reads once for everyone (FR-BIN-3). The mark price is what Binance values a position of Futures at, and what its stop-loss is triggered on (FR-BIN-F3). |
+| **The price is asked only for a position that is open.** | An agent that holds none is valued by its rows alone. |
+| **A price that cannot be read is an equity that is not known.** | It is said, as a warning in the log, and never guessed: no agent is halted on it, no plan opens a position on it, and no prompt states it. See "The loss limits" in [risk-guard.md](risk-guard.md). So is an order that closed a part of a position and says no price that it was executed at. |
+| **Each amount is rounded to 12 decimal places as it is added up.** | `AgentResults.Places`. An average price is a quotient, which is stored with as many decimal places as a number can have, and the product of two such numbers has more places than the application can read. What is rounded away is far below anything that is traded. |
+| **An order of which Binance said no average price is counted by its executions.** | Once they are stored, and add up to what was executed of it. Until then what it closed is not known, and neither is the equity. |
+| **The reads agree with each other.** | A stop-loss that is executed writes its order and its position at once, and may do so between two reads: a sum that is read first and a position that is read second would count it twice, or not at all. So the rows are read in one snapshot: see "Reads that agree" in [persistence.md](persistence.md). The price is read after it. |
+| **It is the result of the mode that the agent is in.** | What an agent did in Demo is never combined with what it does in Live (FR-BIN-11): the positions, the orders, and the funding of the other mode are not counted. |
+| **It is in the asset that the symbol of the agent is priced in.** | A position in a symbol that is priced in another asset, which an agent has from before its symbol was changed, is not counted. Which asset a symbol is priced in is told from how its name ends: the rows of a position say its symbol, and not its assets. The marks of an agent say the asset that they are in, and start anew when the agent is given a symbol that is priced in another. |
+| **The fee of an execution is counted once its execution is stored.** | The executions of an order are read when the order is over: with the entry of Spot, and otherwise when the orders of the agent are next settled, which is within a minute. See "Settling". |
+| **It only reads, and is handed no key.** | The prices are those of the market. |
+
+The log, under `Ecnanib.DecisionEngine.AgentResults`, both as warnings:
+
+```
+The position of agent {AgentId} in {Symbol} could not be valued, so the equity of the agent is not known: the exchange did not give its price ({ExchangeCallOutcome})
+The result of agent {AgentId} is not known: an order that closed a part of a position of it says no price that it was executed at, and its executions are not stored
+```
+
+`equity_marks` keeps what the loss limits are counted from, for an agent in a mode: see "The record of an order".
+
+**What is not counted yet,** until the results of a position are kept (FR-BIN-10): see "Not built yet".
+
+| Not counted | What follows |
+|---|---|
+| What was closed or reduced at Binance by no order of the agent: by its user, or by a liquidation | It has no execution, so it counts as closed at the price that it was entered at. A loss that was made there is in no loss limit. A profit that the position had by then is no longer in the equity: the equity falls by it, from a day's start and a peak that had it in them, which may reach a loss limit. |
+| What a part of a position made before a reconciliation gave the position another entry price | An order that closed a part of it earlier is counted against the entry price that the position has now. |
+| A fee in an asset that is neither of the two of the symbol, such as BNB | Nothing here says what that asset is worth. |
 
 ## One after the other
 
@@ -432,7 +475,7 @@ The Decision Engine keeps the positions and the orders, so it answers those that
 
 ## The record of an order
 
-The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrderPairs` the columns `pair_id` and `cancel_after` of `orders`. `AddFundings` adds the table `fundings` and the column `funding_due_at` of `positions`, which it sets for the positions of Futures that are open then, so that their funding is read from when they were opened. Each row carries its owner along: an order and a position to their agent, with `(agent_id, user_id)`, an execution to its order, with `(order_id, user_id)`, and what a position received and paid as funding to the position, with `(position_id, user_id)`. They go with the agent when it is deleted, and with the account. See [ownership.md](ownership.md).
+The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrderPairs` the columns `pair_id` and `cancel_after` of `orders`. `AddFundings` adds the table `fundings` and the column `funding_due_at` of `positions`, which it sets for the positions of Futures that are open then, so that their funding is read from when they were opened. `AddEquityMarks` adds the table `equity_marks`, with no row: an agent has one from the first time that its loss limits are evaluated. Each row carries its owner along: an order and a position to their agent, with `(agent_id, user_id)`, an execution to its order, with `(order_id, user_id)`, what a position received and paid as funding to the position, with `(position_id, user_id)`, and what the loss limits of an agent are counted from to the agent, with `(agent_id, user_id)`. They go with the agent when it is deleted, and with the account. See [ownership.md](ownership.md).
 
 | Table | Columns |
 |---|---|
@@ -440,6 +483,7 @@ The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrde
 | `fills` | `id`, `order_id`, `user_id`, `trade_id`, `price`, `quantity`, `fee`, `fee_asset`, `at` |
 | `positions` | `id`, `agent_id`, `user_id`, `mode`, `market`, `symbol`, `side`, `entry_price`, `quantity`, `stop_loss`, `take_profit`, `opened_at`, `closed_at`, `exit_reason`, `alerted_at`, `funding_due_at` |
 | `fundings` | `id`, `position_id`, `user_id`, `transaction_id`, `amount`, `asset`, `at` |
+| `equity_marks` | `agent_id`, `mode`, `user_id`, `asset`, `capital`, `day_began_at`, `result_at_day_start`, `peak_result`, `updated_at`. One row for each `(agent_id, mode)`. |
 
 | Column | What it holds |
 |---|---|
@@ -458,13 +502,17 @@ The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrde
 | `fills.fee`, `fee_asset` | The fee of an execution, in the asset that Binance took it in. |
 | `positions.quantity` | What the position holds: what an order that protects or closes it is for. |
 | `positions.stop_loss`, `take_profit` | Prices. The order of the stop-loss is a row of `orders`, and so is the order of the take-profit. |
-| `positions.exit_reason` | `StopLoss`, `TakeProfit`, `TeamClose`, `UserClose`, `ProtectionFailed`, or `ClosedAtExchange`: the account no longer held the position, and no order of the agent closed it. See "What is corrected". |
+| `positions.exit_reason` | `StopLoss`, `TakeProfit`, `TeamClose`, `UserClose`, `ProtectionFailed`, `LossLimit`: its agent reached its daily loss limit or its drawdown limit, and the service closed it (FR-RSK-8), or `ClosedAtExchange`: the account no longer held the position, and no order of the agent closed it. See "What is corrected". |
 | `positions.quantity`, `entry_price` | Also what Binance says that the account holds of a position, and the price that it says the position was entered at, once the two were found to differ from the records. |
 | `positions.alerted_at` | When its user was told that it is open with no stop-loss and could not be closed. |
 | `positions.funding_due_at` | When its funding is read next: see "Funding". Empty for a position of Spot, and for a closed position whose funding is all read. |
 | `fundings.transaction_id` | The number that Binance gave what the position received or paid. It is stored once for a position. |
 | `fundings.amount`, `asset` | How much, above zero when the position received it and below zero when it paid, in the asset that Binance says. |
 | `fundings.at` | The funding time, by the clock of Binance. |
+| `equity_marks.mode` | The mode that the result is of: an agent has a row for each mode that its loss limits were evaluated in (FR-BIN-11). |
+| `equity_marks.asset`, `capital` | The asset that the result is in, and the capital that the agent was allocated, as both were when the row was last written: marks of another asset are no marks of the agent as it is now, and marks of another capital are worked out anew for the capital of now. See "The loss limits" in [risk-guard.md](risk-guard.md). |
+| `equity_marks.day_began_at`, `result_at_day_start` | The start of a UTC day, and the result of the agent as that day began: as it was when it was first worked out in the day. Its loss of the day is counted from it. |
+| `equity_marks.peak_result` | The highest that the result of the agent has been, since it began or since its drawdown limit last halted it. Its drawdown is counted from it. Both are results, with no capital in them: the capital of the agent is added when they are read. |
 
 The rows are not in the export of a user's data: a user exports their trades as CSV (FR-RPT-4), which is not built. See [accounts.md](accounts.md).
 
@@ -498,11 +546,11 @@ The records of agent {AgentId} in {Symbol} did not match the exchange: {Mismatch
 | **Levels** | A change of an order and a position that is opened or closed are information. A stop-loss or a take-profit that cannot be placed is a warning, and so is an entry that bought less than an order can be for. A position that is left open with no stop-loss is an error. A mismatch that was corrected is a warning, and so is an account that could not be read. That an account is asked once more is information. |
 | **Which mismatch** | `Mismatch` is `PositionClosed`, `PositionReduced`, `PositionGrown`, or `ProtectionTakenOff`: see "What is corrected". No event says what the account holds, or what the records said. |
 | **Why no entry was placed** | `NoEntryReason` is one of "When no entry is placed". No event says an amount of the wallet, or the leverage of an order. |
-| **Why an entry was taken off** | `EntryTakenOffReason` is `TimeIsUp`, `PartlyExecuted`, `NotRunning`, or `UserClose`: see "An entry at a price". |
+| **Why an entry was taken off** | `EntryTakenOffReason` is `TimeIsUp`, `PartlyExecuted`, `NotRunning`, `UserClose`, or `LossLimit`: see "An entry at a price". The entry of an agent that a loss limit halted is taken off as `NotRunning` by what settles its orders, which the close for the loss limit asks first. |
 | **A pair that is sent once more** | Is said with the event of an order that is, with `Pair` as its `OrderPurpose`. |
 | **The calls themselves** | Each call to Binance is in the log of outbound calls, with its duration and its outcome, and the number of an error of Binance under the gateway. See [exchange.md](exchange.md). |
 | **The job** | `The orders of {Agents} agents are settled with the exchange`, under `Ecnanib.DecisionEngine.OrderSettlingJob`, when there are some. An agent that cannot be settled for an error of the application is said once, as an error. |
-| **The jobs that reconcile** | `{Agents} agents were reconciled with the exchange, and {NotReconciled} were not: those are tried again with the next run`, under `Ecnanib.DecisionEngine.ReconciliationJob`, when an agent holds something. `The account event feed said {Changes} changes, and agents were reconciled {Reconciliations} times for them`, under `Ecnanib.DecisionEngine.AccountFeedJob`, for a run in which a feed said one. An agent that cannot be reconciled for an error of the application is said once, as an error. What the gateway says of a feed is in "The log" of [exchange.md](exchange.md). |
+| **The jobs that reconcile** | `{Agents} agents were reconciled with the exchange, and {NotReconciled} were not: those are tried again with the next run`, under `Ecnanib.DecisionEngine.ReconciliationJob`, when an agent holds something. `The account event feed said {Changes} changes, and agents were reconciled {Reconciliations} times for them`, under `Ecnanib.DecisionEngine.AccountFeedJob`, for a run in which a feed said one. An agent that cannot be reconciled for an error of the application is said once, as an error. So is one whose loss limits could not be evaluated as it was reconciled, under `Ecnanib.DecisionEngine.AccountReconciliation`: `The loss limits of agent {AgentId} could not be evaluated as it was reconciled`. What the gateway says of a feed is in "The log" of [exchange.md](exchange.md). |
 
 What watches the positions writes under `Ecnanib.DecisionEngine.PositionWatch`. Its events name the agent and the symbol. No event holds a key, a price, or an amount: one about the margin says how much of the way from the entry to the liquidation price is left, in percent of that way, which is what the check goes by.
 
@@ -524,11 +572,11 @@ The funding of the position of agent {AgentId} in {Symbol} is more than one answ
 
 ## Testing
 
-The tests run the application on a database of their own, with a Binance that keeps orders behind the gateway (`TradingBinance` in `OrderFixtures.cs`): it takes an order, answers what became of it, takes it off, and lists its executions, in the form that Binance's documentation gives. An order at a price rests there until the test has it executed, in full or in part. A pair is two stops of one list: it is taken while the price is between its two triggers, when one is executed the other ends, and taking one off takes both. On Futures a stop and a take-profit are conditional orders of their own, which it has at the calls of those orders only: one whose trigger the price has passed is refused, and neither ends when the other is executed. The symbol has isolated margin there once it was asked to have, after which that call is answered with Binance's error that nothing is to change, and the leverage that was last asked for. A test says what becomes of a call that places an order or a pair: taken, taken with an answer that never comes, lost, refused, or answered with a fault. How the account stands on Futures is what the test says: in one-way mode, with one asset, and with no position in the symbol, unless it says otherwise. What the account holds is what the orders that this Binance executed add up to, with more USDT than a plan of the tests needs (`TradingBinance.Holds`, `Position`, and `Balances`): the position of the account in the symbol on Futures, and what it has of BTC on Spot. A test has its user buy or sell at Binance by hand with `HoldByHand`, which no order of the application did. So this Binance refuses a sale on Spot that the account does not cover, and an order at the market that only reduces a position where the account holds none. The clock is the test's, so a test moves it on while the application waits for a moment of it.
+The tests run the application on a database of their own, with a Binance that keeps orders behind the gateway (`TradingBinance` in `OrderFixtures.cs`): it takes an order, answers what became of it, takes it off, and lists its executions, in the form that Binance's documentation gives. An order at a price rests there until the test has it executed, in full or in part. A pair is two stops of one list: it is taken while the price is between its two triggers, when one is executed the other ends, and taking one off takes both. On Futures a stop and a take-profit are conditional orders of their own, which it has at the calls of those orders only: one whose trigger the price has passed is refused, and neither ends when the other is executed. The symbol has isolated margin there once it was asked to have, after which that call is answered with Binance's error that nothing is to change, and the leverage that was last asked for. A test says what becomes of a call that places an order or a pair: taken, taken with an answer that never comes, lost, refused, or answered with a fault. How the account stands on Futures is what the test says: in one-way mode, with one asset, and with no position in the symbol, unless it says otherwise. What the account holds is what the orders that this Binance executed add up to, with more USDT than a plan of the tests needs (`TradingBinance.Holds`, `Position`, and `Balances`): the position of the account in the symbol on Futures, and what it has of BTC on Spot. A test has its user buy or sell at Binance by hand with `HoldByHand`, which no order of the application did. So this Binance refuses a sale on Spot that the account does not cover, and an order at the market that only reduces a position where the account holds none. The clock is the test's, so a test moves it on while the application waits for a moment of it. The price that a symbol last traded at, and its mark price, are the price of this Binance as well, which is what its orders at the market are executed at (`StandInFundingTimes` in `OrderFixtures.cs`): so a position is worth what it was entered at until a test moves the price, and the equity of its agent follows from what the test did.
 
 The job that watches the positions runs in no application of the tests on a schedule: a test runs it itself, with `OrdersApplication.WatchAsync`. What the account received and paid as funding is what the test says (`StandInProviders.Funding`): none, unless it says otherwise. A test of the margin says the position of the account with its prices itself (`StandInProviders.FuturesPosition`, `HeldPositions`).
 
-The job that reconciles runs in no application of the tests on a schedule either, unless the test says that its application reconciles, and neither does what holds a cycle back for an agent that was not reconciled since the start: a test runs the job itself, with `OrdersApplication.ReconcileAllAsync`, or reconciles one agent with `ReconcileAsync`. The job that follows the account event feed runs in none: a test runs it with `FollowFeedAsync`, with a `StandInFeed` in place of the feed of the gateway, which follows every account that it is asked to and says the changes that the test has it say. The next funding time is the test's as well (`StandInFundingTimes` in `OrderFixtures.cs`): the gateway holds a mark price that it read for a second of real time, whatever the clock of a test shows.
+The job that reconciles runs in no application of the tests on a schedule either, unless the test says that its application reconciles, and neither does what holds a cycle back for an agent that was not reconciled since the start: a test runs the job itself, with `OrdersApplication.ReconcileAllAsync`, or reconciles one agent with `ReconcileAsync`. The job that follows the account event feed runs in none: a test runs it with `FollowFeedAsync`, with a `StandInFeed` in place of the feed of the gateway, which follows every account that it is asked to and says the changes that the test has it say. The next funding time is the test's as well (`StandInFundingTimes` in `OrderFixtures.cs`): the gateway holds a mark price that it read for a second of real time, whatever the clock of a test shows. A test of an equity that is not known has the read of a price fail there (`Prices`).
 
 | Requirement | Tests |
 |---|---|
@@ -552,6 +600,8 @@ The job that reconciles runs in no application of the tests on a schedule either
 | The system never adds margin on its own | `LiquidationWarningTests`, `NoFundMovementTests` for what the gateway can send, and `RiskGuardRulesTests` for what may use the calls that change anything |
 | Order and position changes are tracked through the exchange's account event feed where available | `AccountFeedJobTests`, and `AccountFeedTests` for the gateway |
 | Reconciliation runs at startup and every 5 minutes | `ReconciliationJobTests` |
+| Agent equity is the allocated capital plus the net profit or loss to date, with unrealized profit and loss | `AgentResultTests`, and `EquityMarkTests` for the equity as the UTC day began and the peak |
+| A position is closed and its agent halted when a loss limit is reached | `LossLimitHaltTests`: see "Halting an agent" in [risk-guard.md](risk-guard.md) |
 | On any mismatch the exchange is treated as the source of truth: records are corrected, and the mismatch is logged and shown | `ReconciliationTests`, and `NotificationTests` for what the user sees |
 | Actions the user takes directly on Binance are detected by reconciliation and reflected in the agent's records | `ReconciliationTests`: a position that was closed, reduced, added to, or reversed by hand, a stop-loss that was taken off, and what was sold on Spot |
 
@@ -563,11 +613,12 @@ A check against Binance's own test environment is in `LiveBinanceTests`: see "Ch
 - One read of the positions of an account for everything that asks. The margin of a position is read for each position, and what reconciles reads the position again, at the same time between two runs. The positions of an account come in one answer of the same weight.
 - The funding of a position that could not be read within a day of its close. The position says so: see "Funding".
 - Finding a mode of the account that its user changes while a position is open. The account of Futures is read before an entry and before an agent runs, and not in between. Binance takes no change of the position mode while the account has a position or an order.
-- The executions of what was done at Binance by hand. A position that its user closed, reduced, or added to there is corrected in the records, and the orders that did it have no row, so their executions, their prices, and their fees are not stored. The results of such a position need them (FR-BIN-10).
+- The executions of what was done at Binance by hand. A position that its user closed, reduced, or added to there is corrected in the records, and the orders that did it have no row, so their executions, their prices, and their fees are not stored. The results of such a position need them (FR-BIN-10). Until then what was closed there counts as closed at the price that the position was entered at, in the equity of its agent and in its loss limits: see "The equity of an agent".
 - Telling a liquidation from a position that was closed by hand. Both are a position that the account no longer holds, and end as `ClosedAtExchange`.
 - Orders in the account of a user that no agent placed. They are not listed, and so not compared: what reconciles asks about the orders that have a row.
 - The leverage brackets of a symbol, by which Binance allows less leverage for a larger position. A leverage that Binance refuses for that gets no entry, and its user is told: see "The margin of Futures".
-- The results of a position: its profit and loss, the sums of its fees and of its funding, and its result in R (FR-BIN-10). The fees and the funding are stored row by row. The equity of an agent, and with it the loss limits (FR-RSK-8), still go by the allocated capital.
+- The results of a position as a record of its own: its profit and loss, the sums of its fees and of its funding, and its result in R (FR-BIN-10). The fees and the funding are stored row by row, and the equity of an agent is worked out from the rows each time that it is asked for: see "The equity of an agent", with what it does not count yet.
+- The equity of an agent over time (FR-RPT-2). What is kept is the result as the UTC day began and the peak, for the loss limits.
 - The funding and the margin of a position on the page of its agent (FR-RPT-2).
 - The orders of a cycle in its record and its timeline (FR-CYC-10). Why a plan placed nothing is in the log only.
 - The count of the orders that an account places, which Binance limits beside the request weight. A protective order has no turn before other calls at the limiter: one that is held back was not sent, and is settled within a minute.

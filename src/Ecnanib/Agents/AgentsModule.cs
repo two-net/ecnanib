@@ -44,6 +44,11 @@ public static class AgentsModule
         // left without protection (FR-RSK-7).
         services.AddSingleton<IAgentTrading, AgentTrading>();
 
+        // What whatever watches the loss limits of an agent asks: that an agent which reached
+        // one be halted, and that an agent which its daily loss limit halted run again when the
+        // next UTC day begins (FR-RSK-8).
+        services.AddSingleton<IAgentHalts, AgentHalts>();
+
         // What Accounts asks before it deletes an account: whether an agent of the user is
         // active (FR-ACC-9).
         services.AddSingleton<IAgentActivity, AgentActivity>();

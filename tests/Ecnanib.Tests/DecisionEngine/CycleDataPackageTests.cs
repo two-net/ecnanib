@@ -158,6 +158,7 @@ public class CycleDataPackageTests
             {
                 services.AddSingleton<TimeProvider>(clock);
                 services.AddSingleton<IRunningAgents>(agents);
+                services.AddSingleton<IAgentHalts>(agents);
 
                 // The teams of the agents, which need no rows: this is about what they read.
                 new StandInTeam().Behind(services);

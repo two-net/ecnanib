@@ -550,6 +550,9 @@ internal sealed class StandInPlanOrders : IPlanOrders
     public Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken) =>
         Task.FromResult(PositionCloseOutcome.NothingOpen);
 
+    public Task<PositionCloseOutcome> CloseForLossLimitAsync(Guid agentId, CancellationToken cancellationToken) =>
+        Task.FromResult(PositionCloseOutcome.NothingOpen);
+
     public Task<AccountConflict?> AccountConflictAsync(Agent agent, CancellationToken cancellationToken) =>
         Task.FromResult<AccountConflict?>(null);
 }

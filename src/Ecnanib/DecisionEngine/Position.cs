@@ -37,7 +37,10 @@ namespace Ecnanib.DecisionEngine;
 /// of it is read. See "Funding" in docs/orders.md.
 /// </para>
 /// <para>
-/// Its result, the sums of its fees and of its funding, and its result in R are not stored yet.
+/// Its result, the sums of its fees and of its funding, and its result in R are not stored yet:
+/// what the positions of an agent made and lost is worked out from their orders, their
+/// executions, and their funding when the equity of the agent is asked for
+/// (<see cref="AgentResults"/>).
 /// </para>
 /// </remarks>
 /// <param name="id">Assigned by the application.</param>
@@ -144,6 +147,12 @@ public enum ExitReason
     /// in its place.
     /// </summary>
     ClosedAtExchange,
+
+    /// <summary>
+    /// Its agent reached a loss limit, its daily loss limit or its drawdown limit, so the
+    /// service closed it at market, and halted the agent (FR-RSK-8).
+    /// </summary>
+    LossLimit,
 }
 
 internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>

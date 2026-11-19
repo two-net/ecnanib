@@ -622,6 +622,35 @@ public class RiskGuardCycleTests
     }
 
     [Fact]
+    public async Task Of_a_reverse_of_an_agent_whose_equity_is_not_known_the_close_alone_goes_on()
+    {
+        var holdings = PlanAgents.Holding(PlanAgents.Long);
+
+        using var cycles = new CyclesApplication(Quarter, buildsPackages: true, holdings: holdings);
+        var agent = cycles.Agents!.Give(Guid.NewGuid(), market: Market.Futures);
+
+        cycles.Models.Says(Role.Strategist, Reverse);
+
+        // By the time the plan is checked, the exchange does not say the price that the open
+        // position is valued at: what the agent has lost in the day, and from its peak, is not
+        // known (FR-RSK-8).
+        cycles.Market!.AsThePriceIsRead = () => holdings.Holds = holdings.Holds with { Valued = false };
+
+        await cycles.RunAsync(Quarter).Within();
+
+        var record = cycles.Records.Of(agent);
+
+        // What the reverse opens is rejected: the loss limits are not known to hold, and
+        // nothing is opened on a guess. Its close reduces risk, and goes on.
+        Assert.Equal(
+            [(1, PlanAction.Reverse, GuardVerdict.Rejected), (2, PlanAction.Close, GuardVerdict.Accepted)],
+            record.Checks.Select(check => (check.Check.Sequence, check.Check.Action, check.Check.Verdict)));
+        Assert.Empty(RulesThat(record.Checks[0], RuleOutcome.Failed));
+        Assert.Equal([GuardRule.DailyLossLimit, GuardRule.DrawdownLimit], RulesThat(record.Checks[0], RuleOutcome.Unknown));
+        Assert.Equal(GuardedAction.Close, Assert.Single(cycles.Team!.Orders.Placed).Accepted.Case.Action);
+    }
+
+    [Fact]
     public async Task Of_a_reverse_whose_position_is_gone_nothing_goes_on()
     {
         var holdings = PlanAgents.Holding(PlanAgents.Long);

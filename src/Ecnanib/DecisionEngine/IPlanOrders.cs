@@ -89,6 +89,18 @@ public interface IPlanOrders
     Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Closes the open position of an agent at market, because the agent reached a loss limit
+    /// and is halted (FR-RSK-8): as <see cref="CloseAtMarketAsync"/> does it for its user, with
+    /// the reason that the position then says. An entry that still rests is taken off the
+    /// exchange as well: a halted agent opens nothing. It opens nothing itself, and takes no
+    /// result of the Risk Guard: it only reduces risk.
+    /// </summary>
+    /// <param name="agentId">The agent, which what watches the loss limits has halted.</param>
+    /// <param name="cancellationToken">Canceled when what asked is stopped.</param>
+    /// <returns>How it ended. An exchange that refuses or gives no answer is an outcome: this does not fail for it.</returns>
+    Task<PositionCloseOutcome> CloseForLossLimitAsync(Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// What in the account of an agent's user at the exchange stands in the way of the agent
     /// (FR-BIN-F2): on the Futures market an agent trades one symbol in one-way mode, with
     /// isolated margin, so an account in another mode, or one that holds a position in the

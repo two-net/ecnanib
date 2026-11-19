@@ -25,7 +25,7 @@ public class OrderRecordTests
     private static readonly DateTimeOffset Morning = new(2026, 11, 17, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    [ProvesOwnershipOf("orders", "fills", "positions", "fundings")]
+    [ProvesOwnershipOf("orders", "fills", "positions", "fundings", "equity_marks")]
     public async Task The_orders_of_an_agent_are_of_the_user_of_the_agent_and_of_no_other()
     {
         using var application = new AccountsApplication(clock: new TestClock(Morning));
@@ -57,10 +57,15 @@ public class OrderRecordTests
         Assert.Equal(
             [adasPosition],
             await context.Set<Funding>().OwnedBy(ada.Id).Select(funding => funding.PositionId).ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            [adas],
+            await context.Set<EquityMark>().OwnedBy(ada.Id).Select(mark => mark.AgentId).ToListAsync(TestContext.Current.CancellationToken));
 
         // The owner of an order and of a position is the owner of its agent, the owner of an
-        // execution the owner of its order, and the owner of what a position received and paid
-        // as funding the owner of the position: the database holds to each, whatever wrote the row.
+        // execution the owner of its order, the owner of what a position received and paid as
+        // funding the owner of the position, and the owner of what the loss limits of an agent
+        // are counted from the owner of the agent: the database holds to each, whatever wrote
+        // the row.
         var gracesOrder = await context.Set<Order>().AsNoTracking().FirstAsync(order => order.AgentId == graces, TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(application, OrderOf(graces, ada.Id, OrderStatus.Filled)));
@@ -69,6 +74,9 @@ public class OrderRecordTests
             application, new Fill(Guid.CreateVersion7(), gracesOrder.Id, ada.Id, "9100", 100_000m, 0.01m, 0.5m, "USDT", Morning)));
         await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
             application, new Funding(Guid.CreateVersion7(), gracesPosition, ada.Id, "8100", -0.1m, "USDT", Morning)));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
+            application, new EquityMark(graces, ada.Id, TradingMode.Live, "USDT", 1000m, Morning.AddHours(-9), 0m, 0m, Morning)));
 
         // What a position received or paid at a funding time is stored once for it.
         await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
@@ -99,6 +107,9 @@ public class OrderRecordTests
         Assert.Equal(
             [keptPosition],
             await context.Set<Funding>().Select(funding => funding.PositionId).ToListAsync(TestContext.Current.CancellationToken));
+
+        // So is what its loss limits were counted from.
+        Assert.Equal([kept], await context.Set<EquityMark>().Select(mark => mark.AgentId).ToListAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]

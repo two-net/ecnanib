@@ -81,6 +81,10 @@ internal static class ExportRules
         ["fundings"] =
             "What those positions received and paid as funding on the Futures market: amounts, assets, and times. They " +
             "are exported with the trades that they belong to (FR-RPT-4), which is not built.",
+        ["equity_marks"] =
+            "What the loss limits of a user's agents are counted from: two amounts and two times for an agent in a mode, " +
+            "worked out from the trades of the agent. They hold no personal data, and the equity of an agent over time is " +
+            "exported with its trades (FR-RPT-4), which is not built.",
     };
 }
 

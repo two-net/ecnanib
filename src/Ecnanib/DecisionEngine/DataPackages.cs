@@ -81,6 +81,16 @@ internal sealed class DataPackages(
         var futures = onFutures ? FuturesOf(await markPrice!, await openInterest!) : null;
         var holds = await held;
 
+        if (!holds.Valued)
+        {
+            // The exchange did not say a price that the equity of the agent is worked out from:
+            // the one that its open position is valued at, or the one that an order which
+            // closed a part of a position was executed at. So its equity is not known, and no
+            // prompt states one that is a guess. On the Futures market the first is the mark
+            // price, which the package itself needs.
+            throw new DataPackageException("a price that the equity of the agent is worked out from", ExchangeCallOutcome.Failed);
+        }
+
         var candles = SeriesOf(CandleIntervals.Of(agent.Timeframe), own, settings.DataPackage.Candles);
         var package = new DataPackage(
             cycle.ClosedAt,

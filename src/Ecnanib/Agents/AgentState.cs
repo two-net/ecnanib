@@ -7,8 +7,10 @@ namespace Ecnanib.Agents;
 /// <remarks>
 /// An agent is created in <see cref="Draft"/>. Its user starts, pauses, resumes, and stops it
 /// (FR-AGT-1), and the service moves it to <see cref="AttentionRequired"/> when a key it runs
-/// with goes, or a model of its team does. Which control leads where is in <see cref="AgentStates.After"/>. Nothing moves an
-/// agent to <see cref="Halted"/> yet: what watches the loss limits does, when it is built.
+/// with goes, or a model of its team does. Which control leads where is in <see cref="AgentStates.After"/>. What watches
+/// the loss limits moves an agent that runs to <see cref="Halted"/> when one is reached, and the
+/// service resumes an agent that its daily loss limit halted when the next UTC day begins
+/// (FR-RSK-8): see <see cref="IAgentHalts"/>.
 /// </remarks>
 public enum AgentState
 {
@@ -21,7 +23,7 @@ public enum AgentState
     /// <summary>The user paused the agent. An open position stays open with its protective orders.</summary>
     Paused,
 
-    /// <summary>A loss limit of the Risk Guard was reached (FR-RSK-8).</summary>
+    /// <summary>A loss limit of the Risk Guard was reached, and the service closes the position of the agent (FR-RSK-8).</summary>
     Halted,
 
     /// <summary>A key is invalid, a model is unavailable, an exchange setting conflicts, or calls fail repeatedly.</summary>
@@ -86,6 +88,24 @@ public enum AgentStateCause
     /// one asset, or it holds a position in the symbol that the agent did not open (FR-BIN-F2).
     /// </summary>
     ExchangeSettingConflict,
+
+    /// <summary>
+    /// The loss of the agent in the UTC day reached its daily loss limit while the agent ran:
+    /// the service closes its position, and halts it until the next UTC day (FR-RSK-8).
+    /// </summary>
+    DailyLossLimitReached,
+
+    /// <summary>
+    /// The equity of the agent fell from its peak by its drawdown limit while the agent ran:
+    /// the service closes its position, and halts it until its user resumes it (FR-RSK-8).
+    /// </summary>
+    DrawdownLimitReached,
+
+    /// <summary>
+    /// The UTC day in which the daily loss limit of the agent halted it was over, and the
+    /// service resumed the agent (FR-RSK-8).
+    /// </summary>
+    DailyLossHaltEnded,
 }
 
 /// <summary>What a user does to the state of an agent (FR-AGT-1).</summary>
@@ -161,6 +181,27 @@ public static class AgentStates
             AgentState.Stopped,
         _ => null,
     };
+
+    /// <summary>
+    /// When the halt of an agent ends by itself, or null when it does not: an agent that its
+    /// daily loss limit halted is halted until the next UTC day (FR-RSK-8), which begins at
+    /// midnight, UTC, after the moment that it was halted at. Until then its user does not
+    /// resume it either. An agent that its drawdown limit halted is halted until its user
+    /// resumes it, at any time, and an agent in another state is not halted.
+    /// </summary>
+    /// <param name="state">The state of the agent.</param>
+    /// <param name="cause">Why it is in that state.</param>
+    /// <param name="since">Since when.</param>
+    public static DateTimeOffset? HaltEnds(AgentState state, AgentStateCause cause, DateTimeOffset since) =>
+        state == AgentState.Halted && cause == AgentStateCause.DailyLossLimitReached ? DayAfter(since) : null;
+
+    /// <summary>
+    /// When the UTC day after a moment begins: midnight, UTC. An agent that its daily loss limit
+    /// halted at that moment does not run before it, whatever its user does: also not when they
+    /// stop the agent and start it again (FR-RSK-8).
+    /// </summary>
+    /// <param name="moment">The moment, with whatever offset it is written.</param>
+    public static DateTimeOffset DayAfter(DateTimeOffset moment) => new DateTimeOffset(moment.UtcDateTime.Date, TimeSpan.Zero).AddDays(1);
 
     /// <summary>The state that a control leaves an agent in, wherever it is offered.</summary>
     public static AgentState LeadsTo(AgentControl control) => control switch

@@ -205,7 +205,17 @@ internal sealed class AgentOrders(
         return pass.Reconciled && await stored.IsSettledAsync(agentId, CancellationToken.None);
     }
 
-    public async Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken)
+    public Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, CancellationToken cancellationToken) =>
+        CloseAtMarketAsync(agentId, ExitReason.UserClose, cancellationToken);
+
+    public Task<PositionCloseOutcome> CloseForLossLimitAsync(Guid agentId, CancellationToken cancellationToken) =>
+        CloseAtMarketAsync(agentId, ExitReason.LossLimit, cancellationToken);
+
+    /// <summary>
+    /// Closes the open position of an agent at market, for a reason that is no plan of a cycle:
+    /// its user asked for it, or the agent reached a loss limit (FR-AGT-11, FR-AGT-12, FR-RSK-8).
+    /// </summary>
+    private async Task<PositionCloseOutcome> CloseAtMarketAsync(Guid agentId, ExitReason reason, CancellationToken cancellationToken)
     {
         using var turn = await EnterAsync(agentId, cancellationToken);
 
@@ -224,7 +234,7 @@ internal sealed class AgentOrders(
             {
                 if (entry.Purpose == OrderPurpose.Entry && OrderStatuses.IsResting(entry.Status))
                 {
-                    await TakeOffEntryAsync(entry, "UserClose");
+                    await TakeOffEntryAsync(entry, reason.ToString());
                 }
             }
 
@@ -236,13 +246,20 @@ internal sealed class AgentOrders(
                 return live.Any(order => order.Purpose == OrderPurpose.Entry) ? PositionCloseOutcome.Failed : PositionCloseOutcome.NothingOpen;
             }
 
-            return await CloseAsync(position, ExitReason.UserClose, cycleId: null, pace);
+            return await CloseAsync(position, reason, cycleId: null, pace);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
             // Whoever asked is answered with an outcome, and not with an error. What is left
             // undone is in the rows, for what settles the orders.
-            logger.LogError(error, "The position of agent {AgentId} could not be closed at market for its user", agentId);
+            if (reason == ExitReason.LossLimit)
+            {
+                logger.LogError(error, "The position of agent {AgentId} could not be closed at market for its loss limit", agentId);
+            }
+            else
+            {
+                logger.LogError(error, "The position of agent {AgentId} could not be closed at market for its user", agentId);
+            }
 
             return PositionCloseOutcome.Failed;
         }

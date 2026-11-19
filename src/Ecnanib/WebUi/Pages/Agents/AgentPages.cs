@@ -229,7 +229,7 @@ public static class AgentPages
             "You paused the agent. It runs no cycle and opens no position. An open position stays open with its stop-loss " +
             "and take-profit orders.",
         AgentState.Halted =>
-            "A loss limit was reached, and the agent's position was closed. It runs no cycle and opens no position.",
+            "A loss limit was reached, and the service closes the agent's position. It runs no cycle and opens no position.",
         AgentState.AttentionRequired =>
             "Something that the agent needs is missing or failing, and it waits for you. It runs no cycle and opens no " +
             "position. An open position stays open with its stop-loss order, unless the reason says that it has none.",
@@ -271,8 +271,38 @@ public static class AgentPages
             "Your Binance Futures account conflicted with how the agent trades while the agent ran: it was in hedge mode " +
             "or in Multi-Assets mode, or it held a position in the agent's symbol that the agent did not open. The " +
             "notification of the agent says which. Change it at Binance, and resume the agent.",
+        AgentStateCause.DailyLossLimitReached =>
+            "The agent's loss in the UTC day reached its daily loss limit, with what its open position had lost by then. " +
+            "The service closes its position, and resumes the agent when the next UTC day begins.",
+        AgentStateCause.DrawdownLimitReached =>
+            "The agent's equity fell from its peak by its drawdown limit, with what its open position had lost by then. " +
+            "The service closes its position. The agent stays halted until you resume it, and its drawdown is counted " +
+            "anew from then on.",
+        AgentStateCause.DailyLossHaltEnded =>
+            "The UTC day in which the agent reached its daily loss limit was over, so the service resumed it.",
         _ => throw new ArgumentOutOfRangeException(nameof(cause), cause, "The cause has no description."),
     };
+
+    /// <summary>
+    /// What the page of the state says about when the halt of an agent ends, for an agent that
+    /// its daily loss limit halted (FR-RSK-8).
+    /// </summary>
+    /// <param name="ends">When the next UTC day begins: <see cref="AgentStates.HaltEnds"/>.</param>
+    public static string HaltEnds(DateTimeOffset ends) =>
+        $"The agent is halted until {PageTimes.At(ends)}, and cannot be resumed before. From then on the service resumes it " +
+        "with the first candle that closes, when your Binance key and its team allow it, and you can resume it yourself.";
+
+    /// <summary>
+    /// What a page says when an agent is not resumed, or not started again after its user
+    /// stopped it, because its daily loss limit halted it for the day (FR-RSK-8).
+    /// </summary>
+    /// <param name="control">The control that was refused.</param>
+    /// <param name="ends">When the next UTC day begins: <see cref="AgentControlResult.HaltEnds"/>.</param>
+    public static string HaltedForTheDay(AgentControl control, DateTimeOffset ends) => control == AgentControl.Resume
+        ? $"The agent was not resumed: it reached its daily loss limit, and is halted until {PageTimes.At(ends)}. The service " +
+          "resumes it then."
+        : $"The agent was not started: it reached its daily loss limit in this UTC day, and does not run before {PageTimes.At(ends)}. " +
+          "Start it from then on.";
 
     /// <summary>What a notification is about, as its user reads it (FR-NTF-1).</summary>
     public static string Describe(NotificationType type) => type switch
@@ -282,6 +312,7 @@ public static class AgentPages
         NotificationType.AttentionRequired => "Agent needs attention",
         NotificationType.LiquidationWarning => "Liquidation warning",
         NotificationType.ReconciliationMismatch => "Reconciliation mismatch",
+        NotificationType.AgentHalted => "Agent halted",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "The type has no description."),
     };
 

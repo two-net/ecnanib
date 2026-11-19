@@ -8,7 +8,8 @@ namespace Ecnanib.DecisionEngine;
 /// <remarks>
 /// It is the decision of the team, and stays that: a plan "goes on" to the Risk Guard, which
 /// checks it against the fixed rules before any order (FR-RSK-3). What the Risk Guard made of it
-/// is in the checks of the cycle, beside this: see <see cref="RiskCheck"/>.
+/// is in the checks of the cycle, beside this: see <see cref="RiskCheck"/>. A cycle whose team
+/// decided nothing says why: an error, a stop, or a loss limit that halted the agent first.
 /// </remarks>
 public enum CycleOutcome
 {
@@ -48,6 +49,13 @@ public enum CycleOutcome
 
     /// <summary>The cycle was stopped: with the application, or because the next close was near.</summary>
     Stopped,
+
+    /// <summary>
+    /// A loss limit of the agent was reached as the cycle began, so the agent is halted and its
+    /// position is closed (FR-RSK-8): its team was not called, and decided nothing. See
+    /// <see cref="ILossLimits"/>.
+    /// </summary>
+    Halted,
 }
 
 /// <summary>What the team of an agent decided in a cycle.</summary>

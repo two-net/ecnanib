@@ -87,6 +87,13 @@ public enum NotificationType
     /// order that protected it no longer rested at the exchange (FR-BIN-7, FR-BIN-8).
     /// </summary>
     ReconciliationMismatch,
+
+    /// <summary>
+    /// An agent was halted: its loss in the UTC day reached its daily loss limit, or its equity
+    /// fell from its peak by its drawdown limit, and the service closes its position (FR-RSK-8,
+    /// FR-NTF-1).
+    /// </summary>
+    AgentHalted,
 }
 
 internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>

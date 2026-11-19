@@ -9,13 +9,16 @@ namespace Ecnanib.DecisionEngine;
 /// </summary>
 /// <remarks>
 /// <para>
-/// What keeps the positions and the orders answers here, from its rows: see docs/orders.md. No
-/// result of an agent is stored yet, so its equity is still the capital that its user allocated
-/// to it. Where nothing answers, an agent holds nothing.
+/// What keeps the positions and the orders answers here, from its rows: see docs/orders.md. The
+/// equity of an agent is the capital that its user allocated to it, plus what its positions
+/// made and lost, with what its open position would make now. Where nothing answers, an agent
+/// holds nothing.
 /// </para>
 /// <para>
-/// It is asked for one agent, as its data package is built, and only reads. What it answers is
-/// what a prompt says of the agent, so it holds no id and no name (FR-PRM-9).
+/// It is asked for one agent, as its data package is built, and again as the Risk Guard checks
+/// its plan, and only reads. What it answers is what a prompt says of the agent, so it holds no
+/// id and no name (FR-PRM-9). What closes the position of an agent and halts it when a loss
+/// limit is reached does not ask here: see <see cref="ILossLimits"/>.
 /// </para>
 /// </remarks>
 public interface IAgentHoldings
@@ -44,12 +47,18 @@ public interface IAgentHoldings
 /// The highest that its equity has been, which its drawdown is counted from: the Risk Guard
 /// holds a plan that opens a position to the drawdown limit (FR-RSK-4).
 /// </param>
+/// <param name="Valued">
+/// Whether the equity is known. It is not where the exchange did not say the price that the open
+/// position is valued at: <paramref name="Equity"/> is then without what that position would
+/// make, and no plan opens a position on it, for the loss limits are not known to hold.
+/// </param>
 public sealed record AgentHoldings(
     decimal Equity,
     PositionContext? Position,
     IReadOnlyList<OpenOrder> Orders,
     decimal EquityAtDayStart,
-    decimal PeakEquity)
+    decimal PeakEquity,
+    bool Valued = true)
 {
     /// <summary>
     /// What an agent holds while nothing keeps positions and orders: nothing, with the capital

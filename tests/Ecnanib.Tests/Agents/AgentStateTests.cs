@@ -104,6 +104,9 @@ public class AgentStateTests
                 "ModelUnavailable",
                 "PositionUnprotected",
                 "ExchangeSettingConflict",
+                "DailyLossLimitReached",
+                "DrawdownLimitReached",
+                "DailyLossHaltEnded",
             ],
             Enum.GetNames<AgentStateCause>());
     }
@@ -130,7 +133,11 @@ public class AgentStateTests
         Assert.Contains("runs no cycle and trades nothing", AgentPages.Explain(AgentState.Draft));
         Assert.Contains("manages the open one", AgentPages.Explain(AgentState.Running));
         Assert.Contains("stays open with its stop-loss and take-profit orders", AgentPages.Explain(AgentState.Paused));
-        Assert.Contains("position was closed", AgentPages.Explain(AgentState.Halted));
+        // The service closes the position of a halted agent, and says so: it does not say that
+        // the position is closed already, which it is once the exchange has executed the close.
+        Assert.Contains("the service closes the agent's position", AgentPages.Explain(AgentState.Halted));
+        Assert.Contains("resumes the agent when the next UTC day begins", AgentPages.Says(AgentStateCause.DailyLossLimitReached));
+        Assert.Contains("stays halted until you resume it", AgentPages.Says(AgentStateCause.DrawdownLimitReached));
         // An agent that waits for its user because its position has no stop-loss says so with
         // its cause, so the state does not promise one (FR-RSK-7).
         Assert.Contains(

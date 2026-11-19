@@ -72,15 +72,22 @@ internal sealed class AgentExposure(IPlanOrders orders) : IAgentExposure
 /// order of its own on the Futures market.
 /// </para>
 /// <para>
-/// The equity of an agent is still the capital that its user allocated to it: no result of a
-/// position is stored yet.
+/// <b>The equity of an agent is the capital that its user allocated to it, plus its net profit or
+/// loss to date,</b> with what its open position would make now: <see cref="AgentResults"/> works
+/// the result out from the rows. Its equity as the UTC day began and its peak equity are the
+/// capital as it is now plus the marks that are stored for the agent, as what watches the loss
+/// limits would write them now: see <see cref="EquityMarks.At"/>. It writes none of them.
 /// </para>
 /// </remarks>
-internal sealed class StoredHoldings(IDbContextFactory<EcnanibDbContext> contexts) : IAgentHoldings
+internal sealed class StoredHoldings(IDbContextFactory<EcnanibDbContext> contexts, AgentResults results, TimeProvider clock)
+    : IAgentHoldings
 {
     public async Task<AgentHoldings> OfAsync(Agent agent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(agent);
+
+        var result = await results.OfAsync(agent, cancellationToken);
+        var (_, atDayStart, peak) = EquityMarks.At(result.Marks, result.Net, agent.AllocatedCapital, agent.QuoteAsset, clock.GetUtcNow());
 
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
 
@@ -95,7 +102,7 @@ internal sealed class StoredHoldings(IDbContextFactory<EcnanibDbContext> context
         var takeProfit = resting.FirstOrDefault(order => order.Purpose == OrderPurpose.TakeProfit && order.PositionId == position?.Id);
 
         return new AgentHoldings(
-            agent.AllocatedCapital,
+            agent.AllocatedCapital + result.Net,
             position is null
                 ? null
                 : new PositionContext(position.Side, position.EntryPrice, position.Quantity, stopLoss?.Price, takeProfit?.Price),
@@ -111,8 +118,9 @@ internal sealed class StoredHoldings(IDbContextFactory<EcnanibDbContext> context
                     order.Quantity - order.ExecutedQuantity,
                     order.Price!.Value)),
             ],
-            EquityAtDayStart: agent.AllocatedCapital,
-            PeakEquity: agent.AllocatedCapital);
+            EquityAtDayStart: agent.AllocatedCapital + atDayStart,
+            PeakEquity: agent.AllocatedCapital + peak,
+            Valued: result.Valued);
     }
 }
 

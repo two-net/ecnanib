@@ -6,11 +6,13 @@ The Risk Guard rejects a plan to open a position unless all of these hold: a sto
 
 Models do not choose quantity or leverage. The system computes quantity from the approved risk fraction, the agent's equity, and the stop distance. On Spot, position value is capped at the agent's equity. On Futures, the system uses the lowest leverage setting that fits the position's margin within the agent's equity, up to the leverage cap, and reduces quantity if the cap would be exceeded (FR-RSK-5).
 
+When an agent's loss for the UTC day reaches the daily loss limit, the system closes its position and halts it until the next UTC day. When its drawdown from peak equity reaches the drawdown limit, the system closes its position and halts it until the user resumes it. Both limits include unrealized profit and loss and are evaluated at every cycle and every reconciliation (FR-RSK-8).
+
 Each Risk Guard check stores the outcome of every rule, so a user can see exactly why a plan was accepted or rejected (FR-RSK-9).
 
-What is built is step 6 of the decision cycle (SRS 3.2): the rules, what computes the size of an order, what gathers the facts that both are asked of, the record of each check, and the page that shows a user the checks of an agent. What the Risk Guard accepted is handed to what places the orders: see [orders.md](orders.md).
+What is built is step 6 of the decision cycle (SRS 3.2): the rules, what computes the size of an order, what gathers the facts that both are asked of, the record of each check, and the page that shows a user the checks of an agent. What the Risk Guard accepted is handed to what places the orders: see [orders.md](orders.md). And what watches the loss limits of an agent, closes its position, and halts it: see "Halting an agent".
 
-The rules and the sizing are in `src/Ecnanib/RiskGuard`, as `GuardCheck` and `OrderSizing`, and what asks them for a cycle in `src/Ecnanib/DecisionEngine`: `PlanChecks`, `RiskCheck`, and `IRiskCheckRecords`. The page is in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/RiskGuard`, and in `RiskGuardCycleTests`, `RiskCheckRecordTests`, and `RiskCheckPageTests` of `tests/Ecnanib.Tests/DecisionEngine`.
+The rules and the sizing are in `src/Ecnanib/RiskGuard`, as `GuardCheck`, `OrderSizing`, and `LossLimits`, and what asks them in `src/Ecnanib/DecisionEngine`: `PlanChecks`, `RiskCheck`, and `IRiskCheckRecords` for a cycle, and `LossLimitWatch` for the loss limits. The page is in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by tests in `tests/Ecnanib.Tests/RiskGuard`, and in `RiskGuardCycleTests`, `RiskCheckRecordTests`, `RiskCheckPageTests`, `LossLimitHaltTests`, and `EquityMarkTests` of `tests/Ecnanib.Tests/DecisionEngine`.
 
 What the team of an agent decides, and what goes on of its plan, is in [team.md](team.md). What an agent holds is in [cycles.md](cycles.md), the price and the rules of a symbol in [exchange.md](exchange.md), the risk settings of an agent in [agents.md](agents.md), and whether a Binance key lets an agent trade in [credentials.md](credentials.md).
 
@@ -28,7 +30,7 @@ What the team of an agent decides, and what goes on of its plan, is in [team.md]
 
 | Rule | Detail |
 |---|---|
-| **The Risk Guard is rules only.** | `Ecnanib.RiskGuard` may use `Shared` and `Platform`, and no other component: see [architecture.md](architecture.md). `GuardCheck.Of` is one function of a `GuardCase`, which is the plan and the facts. It reads nothing, stores nothing, and has no service. |
+| **The Risk Guard is rules only.** | `Ecnanib.RiskGuard` may use `Shared` and `Platform`, and no other component: see [architecture.md](architecture.md). `GuardCheck.Of` is one function of a `GuardCase`, which is the plan and the facts. It reads nothing, stores nothing, and has no service. `LossLimits` is functions of the equity of an agent and of what its loss is counted from, in the same way. |
 | **The Decision Engine gathers the facts.** | `PlanChecks`, as the plan is checked: see "The facts". |
 | **The Risk Guard computes the size of the order.** | As it checks a plan that opens a position, from the plan and the facts: see "The size of an order". Nothing hands it one. |
 | **Every plan that goes on is checked.** | `TeamCycle` has one place where a plan goes on, and hands it over there. A plan that does not go on goes nowhere. |
@@ -157,7 +159,7 @@ With a price of 60000, a quantity step of 0.001, an equity of 1000, and a risk f
 |---|---|---|
 | The current price | `IExchangeMarketData.GetPriceAsync` | The price that the symbol last traded at, on the agent's market in its environment. A read counts for a second, and is shared: see "Market data" in [exchange.md](exchange.md). |
 | The rules of the symbol | `IExchangeMarketData.GetSymbolsAsync` | The price step, the quantity step, the least and the most quantity, the least value, and whether the exchange takes orders in it. A read counts for an hour. |
-| What the agent holds | `IAgentHoldings.OfAsync` | Asked again: its position, with its side, its quantity, and the stop-loss that rests, its equity, its equity as the UTC day began, and its peak equity. See "The loss limits". |
+| What the agent holds | `IAgentHoldings.OfAsync` | Asked again: its position, with its side, its quantity, and the stop-loss that rests, its equity, its equity as the UTC day began, its peak equity, and whether the equity is known. See "The loss limits". |
 | Whether the key lets it trade | `IKeyValidation.BlockForAsync` | From what the last check of the key recorded. Binance is asked nothing. See "Permitted". |
 | Whether a halt is on | `IGlobalHalt.IsOnAsync` | See "The global halt". |
 | The limits | The agent of the cycle | Its settings as they were stored when the turn of the cycle came: a change applies from the agent's next cycle (FR-AGT-8). The risk per trade and the leverage cap are among them, for the size of the order. |
@@ -205,8 +207,86 @@ public interface IGlobalHalt
 
 **The daily loss limit and drawdown limit are not reached** (FR-RSK-4). The rules count from what `IAgentHoldings` says of an agent: its equity now, with unrealized profit and loss, its equity as the UTC day began, and its peak equity.
 
-- **Nothing keeps the results of an agent yet,** so `AgentHoldings.NothingYet` says that an agent has lost nothing in the day and is at its peak: its equity is its allocated capital. What keeps positions says all three when it is built, and `DataPackageTests` has the test that waits for it.
-- **The rules reject an entry. They close no position and halt no agent** (FR-RSK-8): see "Not built yet".
+`LossLimits` of the Risk Guard is the one definition of when a limit is reached. The rule that rejects an entry asks it, and so does what halts an agent: see "Halting an agent".
+
+```csharp
+public static class LossLimits
+{
+    public static bool IsReached(decimal equity, decimal from, decimal limitPercent);
+
+    public static LossLimit? Reached(
+        decimal equity, decimal equityAtDayStart, decimal peakEquity, decimal dailyLossPercent, decimal drawdownPercent);
+}
+```
+
+| Rule | Detail |
+|---|---|
+| **A loss limit is reached at the limit.** | `(from - equity) * 100 >= limitPercent * from`: a loss of exactly the limit has reached it, and nothing is divided to decide. |
+| **A loss that is counted from nothing is not known.** | An equity as the day began, or a peak, that is not above zero is nothing that a share can be taken of. The rule answers `Unknown`, which opens nothing, and nothing is halted for it. |
+| **The drawdown limit is said before the daily loss limit.** | `Reached` names one limit. Where both are reached, it is the drawdown limit: it halts the agent for longer. |
+| **The equity is the agent's own.** | Its allocated capital, plus what its positions made and lost, less the fees, with its funding, and with what its open position would make at the price now: see "The equity of an agent" in [orders.md](orders.md). |
+| **The equity as the UTC day began is the first that is worked out in the day.** | The close of midnight, UTC, starts a cycle of every agent that runs, which evaluates its loss limits first, and a position that is held is reconciled within the time between reconciliations. So it is the equity as the day began. |
+| **The peak is the highest equity that was seen.** | The capital of the agent at least, for an agent begins with its capital: an agent that has lost its drawdown limit of its capital by the time that its limits are first evaluated has reached the limit. It starts anew when the drawdown limit halts the agent: see "Halting an agent". |
+| **Both are kept as results, and no equities.** | `equity_marks` has the profit or loss of the agent as the day began, and at its peak, for the agent in a mode, with the capital that they were worked out under and the asset that they are in. |
+| **A capital that its user changes reaches no limit by itself, and takes an agent out of none.** | What the agent has lost of its equity in the day, and from its peak, is the same share after the change as before it: `EquityMarks.Under` works the marks out anew for the capital as it is now, and they are stored with it. A loss of 10.6 of 1000 is 1.06 percent, and stays 1.06 percent of a capital of 200, where the amount alone would be 5.3 percent. Where a share cannot be taken, because an equity is not above zero, the marks stay the amounts that they are. |
+| **An agent that is given a symbol which is priced in another asset starts anew.** | Its result in that asset is nothing yet, and what was kept in the other asset says nothing of it: its marks are those of an agent that has no row. |
+| **An equity that is not known opens nothing.** | Where the exchange did not say the price that the open position is valued at, `AgentHoldings.Valued` says so. `PlanChecks` then hands both rules nothing to count from, and they answer `Unknown`: of a reverse, the close alone goes on. No data package is built for such a cycle either: see "What an agent holds" in [cycles.md](cycles.md). |
+| **What only reads writes nothing.** | `IAgentHoldings.OfAsync` says the marks as what watches the loss limits would write them now: a day that has just begun has lost nothing, and an equity above the peak is the peak. Only the watch writes them. |
+
+## Halting an agent
+
+When an agent's loss for the UTC day reaches the daily loss limit, the system closes its position and halts it until the next UTC day. When its drawdown from peak equity reaches the drawdown limit, the system closes its position and halts it until the user resumes it (FR-RSK-8). `LossLimitWatch` of the Decision Engine does it, behind `ILossLimits`:
+
+```csharp
+public interface ILossLimits
+{
+    Task<LossLimitVerdict> EvaluateAsync(Agent agent, CancellationToken cancellationToken);
+}
+```
+
+`LossLimitVerdict` is `Within`, `NotKnown`, or `Halted`. `LossLimitHaltTests` holds it to the rules below.
+
+**Both limits are evaluated at every cycle and every reconciliation:**
+
+| When | Where | What follows |
+|---|---|---|
+| Every cycle | `TeamCycle`, once the orders of the agent are settled, and before its data package is built | A cycle whose agent is halted calls no model. It ends as `Halted`, and is recorded so: see "The outcome of a cycle" in [team.md](team.md). |
+| Every reconciliation | `AccountReconciliation.ReconcileAsync`, once the exchange was asked, whatever it answered | The job that reconciles and what follows the account event feed both reconcile through it: see "Reconciling" in [orders.md](orders.md). What cannot be evaluated is an error in the log, and takes nothing from the reconciliation. |
+
+An agent that holds nothing is not reconciled, and has nothing whose price could move: what it lost is found by its next cycle, before its team is called.
+
+| Rule | Detail |
+|---|---|
+| **One evaluation is one transaction, under the lock of the account.** | The state of the agent is read (`IAgentTrading.StateUnderLockAsync`), what the limits are counted from is written, and the agent is halted (`IAgentHalts.HaltAsync`), all or none. The lock is the one that the controls of its user take, so a halt and a pause cannot cross, and two evaluations of one agent happen one after the other. |
+| **Nothing of the exchange is asked inside it.** | The result of the agent and the price of its position are read before the transaction, and the position is closed after it. |
+| **One moment for the whole evaluation, under the lock.** | The time is read once, when the lock is held: it says which UTC day the loss is counted in, and since when the agent is halted. So a halt is later than the change of the state that held the lock before it, and an agent that was resumed as a new day began is evaluated in that day, and not for the loss of the day before. |
+| **Only an agent that runs is halted.** | One that its user paused or stopped, or that waits for its user, keeps its position with its protective orders (SRS 3.3). What it lost is counted all the same, so its limits are found reached when it runs again, before its team is called. |
+| **The agent is halted first, and its position is closed after.** | As a stop of its user does it. So a position that could not be closed is that of a halted agent, which opens nothing more, with its stop-loss. |
+| **The position of a halted agent is closed again with a later evaluation,** until the agent holds nothing. | `IPlanOrders.CloseForLossLimitAsync`: see "Closing a position" in [orders.md](orders.md). An entry of the agent that still rests is taken off the exchange with it. A close that fails is a warning in the log, and its user is told once in an hour, with a notification of the type `ProtectionFailure`, unless they were told of another failure of its protection in that hour. |
+| **A close that failed is not asked for again at once.** | Not within `LossLimitWatch.CloseAgainAfter`, which is 2 minutes. A close that fails takes the protection of the position off and places it again, which the account event feed says as a change, and a change is a reconciliation, which evaluates: without the wait a close that Binance keeps refusing would start the next one. The time between two reconciliations is longer, so each of those closes again. It is remembered in memory: an application that starts closes at once. |
+| **Once an agent is halted, what follows is not given up.** | The halt is committed, its user is told, and its position is closed, also when what asked is being stopped. What is left undone then is in the rows, and the next evaluation closes again. |
+| **At a drawdown halt the peak starts anew,** at the equity that reached the limit. | Its user resumes such an agent, and its drawdown is counted from there. It would be halted again at its first cycle otherwise. |
+| **A daily halt ends when the next UTC day begins.** | Agents resumes the agent with the first candle that closes then, and refuses a resume of its user before: see "Halting an agent" in [agents.md](agents.md). A day that has begun has lost nothing, so the agent is not halted again for the loss of the day before. |
+| **An agent that its user resumes on the day of the loss may be halted again.** | A fall that reached the drawdown limit in one day has reached the daily loss limit as well. Its user resumes the agent, and its next evaluation halts it until the next UTC day. |
+| **An equity that is not known halts nothing.** | Where the exchange did not say the price that the open position is valued at, nothing is written and no agent is halted. The stop-loss of the position rests on the exchange, and the next evaluation asks again. |
+| **Its user is told** (FR-NTF-1). | With a notification of the type `AgentHalted`, which says the equity, what the loss is counted from, the limit, and when the agent runs again: see [notifications.md](notifications.md). The page of the state of the agent says its state, the cause, and the time (FR-AGT-10). |
+| **It places no order itself, and is handed no key.** | The close is asked of what places the orders, as the close of a user is. `RiskGuardRulesTests` and `TeamRulesTests` pin which types use the orders of the gateway and which are handed a Binance credential, and the watch is among neither. |
+
+On Demo the prices are those of Binance's test environment, which move as they do there: a position is closed and its agent halted for what they say.
+
+### The log of the watch
+
+Under `Ecnanib.DecisionEngine.LossLimitWatch`. An event says the limit and the loss in percent, and never an amount.
+
+```
+Agent {AgentId} reached its {LossLimit} limit, with a loss of {LossPercent} percent: it is halted, and its position is closed at market
+The loss limits of agent {AgentId} are not evaluated: its equity is not known. They are evaluated again the next time
+The loss limits of agent {AgentId} are not evaluated: its equity is beyond what can be worked out with
+The position of agent {AgentId}, which is halted, was closed at market: {PositionCloseOutcome}
+The position of agent {AgentId}, which is halted, could not be closed at market. It is open as it was, and is closed again with a later evaluation
+```
+
+A limit that was reached and a position that could not be closed are warnings. `LossLimit` is `DailyLoss` or `Drawdown`. An agent that has reached a limit and does not run is said at the debug level, with every evaluation, and so is a close that is not asked for again yet.
 
 ## A reverse that is rejected
 
@@ -321,6 +401,10 @@ The exchange did not give {Missing} for the Risk Guard to check the plan of agen
 | `StandInKeyChecks` | What about the Binance key of every user keeps an agent from trading. |
 | `StandInHalt` | Whether a global halt is on: `CyclesApplication` takes one. |
 
+`LossLimitTests` asks `LossLimits` with no application: a loss at the limit, a little short of it, and counted from nothing, which limit is said when both are reached, and that the rule which rejects an entry and what halts an agent agree on every equity.
+
+`LossLimitHaltTests` halts agents as the application does, on the Binance of the tests of the orders: see "Testing" in [orders.md](orders.md). A test moves the price of that Binance, which is what a position is valued at, and runs the job that reconciles, has the account event feed say a change, or runs a cycle. The loss limits of an agent are evaluated for the first time by its first cycle, before anything of it is placed, so the agent of a test is evaluated once before it trades. `EquityMarkTests` shows what the limits are counted from, across a UTC midnight, a change of the capital, and the two modes, and `AgentResultTests` the equity itself.
+
 - `RecordedCycle.Checks` is the checks that a cycle was recorded with, and `GuardedCycles.Check` a check as it is stored, for a test that needs a cycle to have one. `StoredCycleRows.GiveCycleAsync` gives a cycle the check of a plan that was accepted.
 - `RiskCheckRecordTests` stores and reads checks in the database, and runs a cycle through the gateway and the stored keys once.
 - **`RiskGuardCycleTests` shows entries that are accepted in a cycle,** each with the quantity and the leverage that its check stored: on Spot and on Futures, with a risk fraction that the Risk Manager reduced, capped at the equity, and reduced to the leverage cap. The agent of those tests risks 1.5 percent a trade at most, and has a leverage cap of 4.
@@ -330,7 +414,10 @@ The exchange did not give {Missing} for the Risk Guard to check the plan of agen
 - The leverage brackets of a symbol, by which Binance allows less leverage for a larger position. They are not read. A leverage that Binance refuses to set gets no entry: see "The margin of Futures" in [orders.md](orders.md).
 - Bringing the prices of a plan onto the price step of its symbol. A model is not told the step, and a plan with a price off it is rejected. What makes an order from a plan decides whether to round, and which way.
 - The global halt of an Operator (FR-OPS-3), which answers `IGlobalHalt`.
-- Closing the position of an agent and halting it when a loss limit is reached, at every cycle and every reconciliation (FR-RSK-8), and the equity of an agent as the day began and at its peak, which what keeps the results of an agent says.
+- The equity of an agent over time, which its equity curve is drawn from (FR-RPT-2): what is kept for the loss limits is the result as the UTC day began and the peak, and no more.
+- A day that began while the application did not run: its start is the equity at the first evaluation after the application started, and what was lost in the day before that is not counted in it.
+- What a position made or lost when it was closed at Binance by no order of the agent, by its user or by a liquidation. It has no execution, so it counts as closed at the price that it was entered at: a loss that was made there is in no loss limit, and a profit that the position had is no longer in the equity, which falls by it and may reach a limit. See "The equity of an agent" in [orders.md](orders.md).
+- Telling a user by email that an agent was halted (FR-NTF-3).
 - The maintenance margin in the liquidation estimate. A position that approaches the price that Binance liquidates it at, which has the maintenance margin in it, is said to its user while it is open (FR-BIN-F5): see "The margin of a position" in [orders.md](orders.md).
 - Checking a close that a user asks for: "Close position now", and the close of an agent that is stopped (FR-AGT-11, FR-AGT-12). Such a close has no cycle, so its check has no row to hang on. It is placed without a check: it opens nothing, and takes no result of the Risk Guard. See "Closing a position" in [orders.md](orders.md).
 - The rules of a market order, `MARKET_LOT_SIZE`, and whether the exchange takes a close below the least value. The least and the most quantity that an entry is held to are those of `LOT_SIZE`, for an entry at the market as well.

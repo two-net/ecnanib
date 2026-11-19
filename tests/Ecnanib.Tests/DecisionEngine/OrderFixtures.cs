@@ -129,6 +129,24 @@ internal static class StoredOrderRows
         // What the position paid as funding while it was open, as the exchange says it of a
         // position of the Futures market. It is a row of the user in one more table.
         context.Add(new Funding(Guid.CreateVersion7(), position.Id, userId, transactionId: "8001", amount: -0.1m, asset: "USDT", at.AddMinutes(10)));
+
+        // What the loss limits of the agent are counted from, as what watches them stores it
+        // for an agent in a mode: one more table with a row of the user. An agent that is given
+        // orders a second time has it already.
+        if (!await context.Set<EquityMark>().AnyAsync(mark => mark.AgentId == agentId && mark.Mode == agent.Mode, TestContext.Current.CancellationToken))
+        {
+            context.Add(new EquityMark(
+                agentId,
+                userId,
+                agent.Mode,
+                agent.QuoteAsset,
+                agent.AllocatedCapital,
+                dayBeganAt: new DateTimeOffset(at.UtcDateTime.Date, TimeSpan.Zero),
+                resultAtDayStart: 0m,
+                peakResult: 0m,
+                updatedAt: at));
+        }
+
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         return position.Id;
@@ -1019,15 +1037,28 @@ internal static class HeldPositions
 }
 
 /// <summary>
-/// Stands before the market data of the gateway, for the mark price of a symbol alone, once a
-/// test says when the next funding is: everything else, and the mark price until then, is the
-/// gateway's own. The gateway holds a mark price that it read for a second of real time, whatever
-/// the clock of a test shows, so a test that moves its clock over a funding time would be told
-/// the funding time that has passed.
+/// Stands before the market data of the gateway, for the prices that a position is valued at, and
+/// for the next funding time once a test says when that is: everything else is the gateway's own.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>The price of a symbol is the price of the Binance of the test,</b> which is the price that
+/// its orders at the market are executed at: both as the price that the symbol last traded at and
+/// as the mark price. So a position is worth what it was entered at until the test moves the
+/// price, and the equity of its agent follows from what the test did. The gateway holds a price
+/// that it read for a second of real time, whatever the test does meanwhile.
+/// </para>
+/// <para>
+/// The gateway holds a mark price that it read for a second of real time as well, whatever the
+/// clock of a test shows, so a test that moves its clock over a funding time would be told the
+/// funding time that has passed: once a test says when the next funding is, the mark price is
+/// answered here in whole.
+/// </para>
+/// </remarks>
 internal sealed class StandInFundingTimes : IExchangeMarketData
 {
     private IExchangeMarketData? _gateway;
+    private Func<decimal>? _price;
     private int _asked;
 
     /// <summary>When the next funding is, as the exchange says it with the mark price, or null where the gateway's own answer is given.</summary>
@@ -1035,6 +1066,13 @@ internal sealed class StandInFundingTimes : IExchangeMarketData
 
     /// <summary>How a read of the mark price ends, once <see cref="Next"/> is said.</summary>
     public ExchangeCallOutcome Outcome { get; set; } = ExchangeCallOutcome.Succeeded;
+
+    /// <summary>
+    /// How a read of the price that a position is valued at ends: of the price that the symbol
+    /// last traded at, and of the mark price. A test of an equity that is not known says that it
+    /// does not succeed.
+    /// </summary>
+    public ExchangeCallOutcome Prices { get; set; } = ExchangeCallOutcome.Succeeded;
 
     /// <summary>How many times the mark price was asked for.</summary>
     public int Asked => Volatile.Read(ref _asked);
@@ -1047,26 +1085,53 @@ internal sealed class StandInFundingTimes : IExchangeMarketData
         return this;
     }
 
-    public Task<ExchangeMarkPrice> GetMarkPriceAsync(TradingMode mode, string symbol, CancellationToken cancellationToken)
+    /// <summary>Says where the price of a symbol comes from: the Binance of the test.</summary>
+    public StandInFundingTimes PricedBy(Func<decimal> price)
+    {
+        _price = price;
+
+        return this;
+    }
+
+    public async Task<ExchangeMarkPrice> GetMarkPriceAsync(TradingMode mode, string symbol, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _asked);
 
-        if (Next is not { } next)
+        if (Prices != ExchangeCallOutcome.Succeeded)
         {
-            return Gateway.GetMarkPriceAsync(mode, symbol, cancellationToken);
+            return new ExchangeMarkPrice(Prices, null, null, null, null);
         }
 
-        return Task.FromResult(Outcome == ExchangeCallOutcome.Succeeded
-            ? new ExchangeMarkPrice(Outcome, 60000m, 0.0001m, next, DateTimeOffset.UtcNow)
-            : new ExchangeMarkPrice(Outcome, null, null, null, null));
+        if (Next is not { } next)
+        {
+            // The funding of the gateway's own answer, at the price of the Binance of the test.
+            var read = await Gateway.GetMarkPriceAsync(mode, symbol, cancellationToken);
+
+            return read.Outcome == ExchangeCallOutcome.Succeeded && _price is { } priced
+                ? new ExchangeMarkPrice(read.Outcome, priced(), read.FundingRate, read.NextFundingAt, read.ReadAt)
+                : read;
+        }
+
+        return Outcome == ExchangeCallOutcome.Succeeded
+            ? new ExchangeMarkPrice(Outcome, _price?.Invoke() ?? 60000m, 0.0001m, next, DateTimeOffset.UtcNow)
+            : new ExchangeMarkPrice(Outcome, null, null, null, null);
     }
 
     public Task<ExchangeCandles> GetCandlesAsync(
         Market market, TradingMode mode, string symbol, CandleInterval interval, CancellationToken cancellationToken) =>
         Gateway.GetCandlesAsync(market, mode, symbol, interval, cancellationToken);
 
-    public Task<ExchangePrice> GetPriceAsync(Market market, TradingMode mode, string symbol, CancellationToken cancellationToken) =>
-        Gateway.GetPriceAsync(market, mode, symbol, cancellationToken);
+    public Task<ExchangePrice> GetPriceAsync(Market market, TradingMode mode, string symbol, CancellationToken cancellationToken)
+    {
+        if (_price is not { } priced)
+        {
+            return Gateway.GetPriceAsync(market, mode, symbol, cancellationToken);
+        }
+
+        return Task.FromResult(Prices == ExchangeCallOutcome.Succeeded
+            ? new ExchangePrice(Prices, priced(), DateTimeOffset.UtcNow)
+            : new ExchangePrice(Prices, null, null));
+    }
 
     public Task<ExchangeSymbols> GetSymbolsAsync(Market market, TradingMode mode, CancellationToken cancellationToken) =>
         Gateway.GetSymbolsAsync(market, mode, cancellationToken);
@@ -1122,7 +1187,8 @@ internal sealed class OrdersApplication : IDisposable
                     services.AddSingleton<IExchangeAccountFeed>(feed);
                 }
 
-                // The market data of the gateway, with the funding times of the test before it.
+                // The market data of the gateway, with the prices and the funding times of the
+                // test before it.
                 var registered = services.Last(service => service.ServiceType == typeof(IExchangeMarketData));
                 var gateway = registered.ImplementationType!;
 
@@ -1139,6 +1205,7 @@ internal sealed class OrdersApplication : IDisposable
         // what its user did there by hand, unless a test says otherwise, and an order is held
         // to it, as Binance holds it.
         Binance.HoldsOrdersToTheAccount = true;
+        FundingTimes.PricedBy(() => Binance.Price);
         Application.Providers.FuturesPosition = _ => Binance.Position();
         Application.Providers.Balances = (market, _) => market == Market.Spot ? Binance.Balances() : StandInProviders.Funded;
     }
@@ -1151,7 +1218,10 @@ internal sealed class OrdersApplication : IDisposable
 
     public StandInEntries Entries { get; } = new();
 
-    /// <summary>When the next funding is, where a test says it: the mark price is the gateway's own until then.</summary>
+    /// <summary>
+    /// The prices that a position is valued at, which are the price of <see cref="Binance"/>, and
+    /// when the next funding is, where a test says it.
+    /// </summary>
     public StandInFundingTimes FundingTimes { get; } = new();
 
     public IPlanOrders Orders => Application.PlanOrders;

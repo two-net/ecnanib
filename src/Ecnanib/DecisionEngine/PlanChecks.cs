@@ -232,8 +232,13 @@ internal sealed class PlanChecks(
                 ? new GuardedPosition(held.Side == PositionSide.Long ? TradeSide.Long : TradeSide.Short, held.Quantity, held.StopLoss)
                 : null,
             facts.Holds.Equity,
-            facts.Holds.EquityAtDayStart,
-            facts.Holds.PeakEquity,
+
+            // An equity that is not known, because the exchange did not say the price that the
+            // open position is valued at, has lost an amount that is not known: the loss limits
+            // are counted from nothing then, which the rules answer as not known. So such a
+            // plan opens no position, and what only reduces risk goes on.
+            facts.Holds.Valued ? facts.Holds.EquityAtDayStart : 0m,
+            facts.Holds.Valued ? facts.Holds.PeakEquity : 0m,
             SinceClose: facts.CheckedAt - cycle.ClosedAt,
             StaleLimit: settings.StaleSeconds.Of(agent.Timeframe),
 

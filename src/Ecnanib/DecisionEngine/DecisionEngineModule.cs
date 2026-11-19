@@ -40,8 +40,19 @@ public static class DecisionEngineModule
         // its agent holds, and what starts a cycle asks whether the orders of its agent are
         // settled, so that a restart places no order twice (NFR-REL-3).
         services.AddSingleton<IAgentExposure, AgentExposure>();
+
+        // The result of an agent, from the rows of its positions, its orders, its executions,
+        // and its funding, with what its open position would make now: its equity is its
+        // allocated capital plus that (FR-RSK-5, FR-RSK-8).
+        services.AddSingleton<AgentResults>();
         services.AddSingleton<IAgentHoldings, StoredHoldings>();
         services.AddSingleton<IReconciliation, OrderReconciliation>();
+
+        // What watches the loss limits of an agent, at every cycle and every reconciliation:
+        // when its loss for the UTC day reaches its daily loss limit, or its drawdown from its
+        // peak equity reaches its drawdown limit, its position is closed and it is halted
+        // (FR-RSK-8). The Risk Guard says when a limit is reached, and Agents halts the agent.
+        services.AddSingleton<ILossLimits, LossLimitWatch>();
 
         // Settles the orders every minute, for the agents that have something to settle: what
         // a cycle could not finish, and what was under way when the application stopped.

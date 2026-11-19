@@ -305,7 +305,8 @@ public class DataPackageTests
     [Fact]
     public async Task While_nothing_keeps_positions_and_orders_an_agent_holds_none_and_its_equity_is_its_allocated_capital()
     {
-        // As the application is: positions and orders are not built, and nothing is registered.
+        // An agent that has no rows: it has placed nothing, so it holds nothing and has made
+        // and lost nothing.
         using var application = new PackagesApplication(Monday);
         var agent = PackageAgents.On(Market.Spot, Timeframe.OneDay, allocatedCapital: 2500m);
 
@@ -324,10 +325,11 @@ public class DataPackageTests
         using var application = new EcnanibApplicationFactory();
         using var model = ModelOnly.Context();
 
-        // Positions and orders are not built yet, and no result of an agent is stored: a package
-        // says that the agent holds nothing, and that its equity is its allocated capital. As
-        // soon as a table holds them, a package that still said so would have the team decide
-        // as if the agent had no position, while it has one.
+        // Where nothing keeps positions and orders, a package says that the agent holds nothing,
+        // and that its equity is its allocated capital. As soon as a table holds them, a package
+        // that still said so would have the team decide as if the agent had no position, while
+        // it has one. They are kept now, and what keeps them answers: with the position, the
+        // orders, and the equity of the agent, which is its capital plus its result (FR-RSK-8).
         var stored = AgentsRules.TablesOfPositionsOrOrders(model.Model);
         var answers = application.Services.GetServices<IAgentHoldings>().Any();
 
@@ -383,6 +385,30 @@ public class DataPackageTests
         market.Candles = null;
         market.MarkPriceOutcome = ExchangeCallOutcome.Succeeded;
         market.OpenInterestOutcome = ExchangeCallOutcome.Succeeded;
+
+        Assert.NotNull(await application.BuildAsync(agent, Quarter));
+    }
+
+    [Fact]
+    public async Task An_equity_that_is_not_known_gives_no_package()
+    {
+        // The exchange did not say the price that the open position of the agent is valued at:
+        // what keeps the positions says that its equity is not known (FR-RSK-8).
+        var position = new PositionContext(PositionSide.Long, EntryPrice: 61000m, Quantity: 0.015m, StopLoss: 59500m, TakeProfit: 64000m);
+        var holdings = new StandInHoldings(
+            new AgentHoldings(Equity: 1000m, position, Orders: [], EquityAtDayStart: 1000m, PeakEquity: 1000m, Valued: false));
+
+        using var application = new PackagesApplication(Quarter, holdings);
+        var agent = PackageAgents.On(Market.Spot, Timeframe.FifteenMinutes);
+
+        // No prompt states an equity that is a guess: the cycle makes no decision, and the
+        // position stays as it is, with its protective orders.
+        var refused = await Assert.ThrowsAsync<DataPackageException>(() => application.BuildAsync(agent, Quarter));
+
+        Assert.Equal("a price that the equity of the agent is worked out from", refused.Missing);
+
+        // Once it is known again, so is a package built.
+        holdings.Holds = holdings.Holds with { Valued = true };
 
         Assert.NotNull(await application.BuildAsync(agent, Quarter));
     }

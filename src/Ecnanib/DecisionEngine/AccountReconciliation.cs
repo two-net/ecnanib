@@ -20,8 +20,21 @@ namespace Ecnanib.DecisionEngine;
 /// It places nothing itself, and reads no exchange: <see cref="IPlanOrders.ReconcileAsync"/>
 /// does, for one agent, one after the other with everything else that is done for the agent.
 /// </para>
+/// <para>
+/// <b>Every reconciliation evaluates the loss limits of its agent</b> (FR-RSK-8), once the
+/// exchange was asked: <see cref="ILossLimits"/> closes the position of an agent that has reached
+/// its daily loss limit or its drawdown limit, and halts it. So a loss that builds between two
+/// cycles is found within the time between two reconciliations, and at once where the account
+/// event feed says a change.
+/// </para>
 /// </remarks>
-internal sealed class AccountReconciliation(IPlanOrders orders, StoredOrders stored, TimeProvider clock)
+internal sealed class AccountReconciliation(
+    IPlanOrders orders,
+    StoredOrders stored,
+    ILossLimits limits,
+    IAgentHalts agents,
+    TimeProvider clock,
+    ILogger<AccountReconciliation> logger)
 {
     private readonly ConcurrentDictionary<Guid, DateTimeOffset> _reconciled = new();
 
@@ -51,7 +64,13 @@ internal sealed class AccountReconciliation(IPlanOrders orders, StoredOrders sto
         // As of when the exchange began to be asked: what the agent comes to hold later is not in it.
         var asked = clock.GetUtcNow();
 
-        if (!await orders.ReconcileAsync(agentId, cancellationToken))
+        var reconciled = await orders.ReconcileAsync(agentId, cancellationToken);
+
+        // The loss limits of the agent are evaluated at every reconciliation (FR-RSK-8): on
+        // the records as they are now, corrected or not, and at the price as it is now.
+        await EvaluateAsync(agentId, cancellationToken);
+
+        if (!reconciled)
         {
             return false;
         }
@@ -59,6 +78,28 @@ internal sealed class AccountReconciliation(IPlanOrders orders, StoredOrders sto
         _reconciled.AddOrUpdate(agentId, asked, (_, before) => asked > before ? asked : before);
 
         return true;
+    }
+
+    /// <summary>
+    /// Has the loss limits of an agent evaluated: an agent that runs and has reached one is
+    /// halted, and its position is closed (FR-RSK-8). What cannot be evaluated is said once, as
+    /// an error, and takes nothing from the reconciliation: the next one evaluates again.
+    /// </summary>
+    private async Task EvaluateAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // The agent as it is stored now, in whatever state: a position is reconciled
+            // whether its agent runs or not, and only an agent that runs is halted.
+            if (await agents.FindAsync(agentId, cancellationToken) is { } agent)
+            {
+                await limits.EvaluateAsync(agent, cancellationToken);
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            logger.LogError(error, "The loss limits of agent {AgentId} could not be evaluated as it was reconciled", agentId);
+        }
     }
 
     /// <summary>

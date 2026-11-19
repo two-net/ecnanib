@@ -75,6 +75,12 @@
 
     <p>@AgentPages.Says(_agent.StateCause)</p>
 
+    @if (AgentStates.HaltEnds(_agent.State, _agent.StateCause, _agent.StateChangedAt) is { } ends)
+    {
+        @* A daily loss limit halts until the next UTC day (FR-RSK-8): the page says when that is. *@
+        <p>@AgentPages.HaltEnds(ends)</p>
+    }
+
     <h2>Controls</h2>
 
     @foreach (var control in Moves)
@@ -280,6 +286,11 @@
             case AgentControlOutcome.AccountConflicts when result.Conflict is { } conflict:
                 // Says what to change at Binance, where the account stands in the way (FR-BIN-F2).
                 _refused = AgentPages.Says(conflict, control, _agent);
+                break;
+
+            case AgentControlOutcome.HaltedForTheDay when result.HaltEnds is { } ends:
+                // Its daily loss limit halted the agent until the next UTC day (FR-RSK-8).
+                _refused = AgentPages.HaltedForTheDay(control, ends);
                 break;
         }
 

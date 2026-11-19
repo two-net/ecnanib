@@ -243,6 +243,21 @@ internal sealed class AgentControls(
             return new AgentControlResult(AgentControlOutcome.NotOffered);
         }
 
+        if (await HaltedUntilAsync(context, agent, control, cancellationToken) is { } ends)
+        {
+            // Its daily loss limit halted the agent until the next UTC day (FR-RSK-8): neither
+            // AI output nor a user action bypasses the Risk Guard (FR-RSK-3). Said before
+            // anything else that the control asks: nothing that its user does now would have
+            // it run, also not stopping it and starting it again.
+            logger.LogInformation(
+                "User {UserId} was refused the control {AgentControl} of agent {AgentId}: its daily loss limit halted it until the next UTC day",
+                userId,
+                control,
+                agentId);
+
+            return new AgentControlResult(AgentControlOutcome.HaltedForTheDay, HaltEnds: ends);
+        }
+
         if (agent.Mode == TradingMode.Live && !confirmedForLive)
         {
             // The control would act on an agent that trades with real money, and its user was
@@ -360,6 +375,7 @@ internal sealed class AgentControls(
         Guid userId, Guid agentId, AgentControl control, bool confirmedForLive, CancellationToken cancellationToken)
     {
         Agent? agent;
+        DateTimeOffset? haltedUntil = null;
 
         await using (var context = await contexts.CreateDbContextAsync(cancellationToken))
         {
@@ -368,16 +384,63 @@ internal sealed class AgentControls(
                 .AsNoTracking()
                 .OwnedBy(userId)
                 .SingleOrDefaultAsync(agent => agent.Id == agentId, cancellationToken);
+
+            if (agent is { Market: Market.Futures } && AgentStates.After(agent.State, control) == AgentState.Running)
+            {
+                haltedUntil = await HaltedUntilAsync(context, agent, control, cancellationToken);
+            }
         }
 
         if (agent is not { Market: Market.Futures }
             || AgentStates.After(agent.State, control) != AgentState.Running
+            || haltedUntil is not null
             || (agent.Mode == TradingMode.Live && !confirmedForLive))
         {
             return null;
         }
 
         return (agent.Mode, agent.Market, agent.Symbol, await exposures.AccountConflictAsync(agent, cancellationToken));
+    }
+
+    /// <summary>
+    /// Until when an agent does not run because its daily loss limit halted it, where a control
+    /// would have it run before then, or null: such an agent is halted until the next UTC day
+    /// (FR-RSK-8).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It goes by the changes of the state of the agent, and not by the state that it is in:
+    /// an agent that its user stopped after the halt is not started again before that day
+    /// either. So stopping a halted agent and starting it is no way around the halt, whatever
+    /// its user changed of its settings meanwhile.
+    /// </para>
+    /// <para>
+    /// The halt is that of the mode that the agent is in: what it lost in Demo is no loss of
+    /// its day in Live (FR-BIN-11). An agent is stopped at any time, and one that its drawdown
+    /// limit halted is resumed at any time.
+    /// </para>
+    /// </remarks>
+    private async Task<DateTimeOffset?> HaltedUntilAsync(
+        EcnanibDbContext context, Agent agent, AgentControl control, CancellationToken cancellationToken)
+    {
+        if (AgentStates.LeadsTo(control) != AgentState.Running)
+        {
+            return null;
+        }
+
+        // The latest time that its daily loss limit halted it, asked for by owner.
+        var halts = await context.Set<AgentStateChange>()
+            .AsNoTracking()
+            .OwnedBy(agent.UserId)
+            .Where(change => change.AgentId == agent.Id
+                && change.Mode == agent.Mode
+                && change.Cause == AgentStateCause.DailyLossLimitReached)
+            .OrderByDescending(change => change.ChangedAt)
+            .Select(change => change.ChangedAt)
+            .Take(1)
+            .ToListAsync(cancellationToken);
+
+        return halts.Count == 1 && AgentStates.DayAfter(halts[0]) is var ends && clock.GetUtcNow() < ends ? ends : null;
     }
 
     /// <summary>

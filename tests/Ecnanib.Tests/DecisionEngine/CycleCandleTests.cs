@@ -145,6 +145,7 @@ public class CycleCandleTests
                 services.AddSingleton<TimeProvider>(clock);
                 services.AddSingleton<IDecisionCycle>(cycles);
                 services.AddSingleton<IRunningAgents>(agents);
+                services.AddSingleton<IAgentHalts>(agents);
             },
             runsCycles: true);
 

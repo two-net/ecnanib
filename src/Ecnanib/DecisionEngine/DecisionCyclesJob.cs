@@ -34,6 +34,7 @@ namespace Ecnanib.DecisionEngine;
 /// </remarks>
 internal sealed class DecisionCyclesJob(
     IRunningAgents agents,
+    IAgentHalts halts,
     ClosedCandles candles,
     IDecisionCycle work,
     IEnumerable<IReconciliation> reconciliations,
@@ -85,6 +86,20 @@ internal sealed class DecisionCyclesJob(
         ArgumentNullException.ThrowIfNull(run);
 
         var closedAt = run.ScheduledFor;
+
+        // An agent that its daily loss limit halted is halted until the next UTC day (FR-RSK-8).
+        // The first close of that day resumes it, before the agents that run are read: so it
+        // has its cycle of this close, which evaluates its loss limits before its team is
+        // called. Whatever keeps one agent halted keeps no cycle of another from starting.
+        try
+        {
+            await halts.EndDailyHaltsAsync(cancellationToken);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            logger.LogError(
+                error, "The agents that their daily loss limit halted on an earlier UTC day could not be resumed at the close at {ClosedAt}", closedAt);
+        }
 
         // The scheduler starts a run that is late for its boundary, as long as the following one
         // has not passed, and leaves it to the job whether it is too late to act.

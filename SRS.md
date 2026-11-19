@@ -208,7 +208,7 @@ All components run inside one application with one database (section 5.1).
 | State | Entered when | Cycles run | New entries | Open position |
 |---|---|---|---|---|
 | Draft | The agent is created and not yet started. | No | No | None |
-| Running | The user starts or resumes the agent. | Yes | Yes | Managed by the team |
+| Running | The user starts or resumes the agent, or the system resumes it on the UTC day after a daily loss halt (FR-RSK-8). | Yes | Yes | Managed by the team |
 | Paused | The user pauses the agent. | No | No | Stays open with its protective orders |
 | Halted | A Risk Guard loss limit is reached (FR-RSK-8). | No | No | Closed by the system when the limit is reached |
 | Attention required | A key is invalid, a model is unavailable, an exchange setting conflicts, or calls fail repeatedly. | No | No | Stays open with its protective orders |

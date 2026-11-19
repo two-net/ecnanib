@@ -76,8 +76,8 @@ public static class GuardCheck
                 GuardRule.MinimumValue => MinimumValue(facts),
                 GuardRule.HeldPosition => HeldPosition(facts),
                 GuardRule.ProtectionTightens => ProtectionTightens(facts),
-                GuardRule.DailyLossLimit => LossLimit(rule, facts, facts.Case.EquityAtDayStart, facts.Case.Limits.DailyLossPercent),
-                GuardRule.DrawdownLimit => LossLimit(rule, facts, facts.Case.PeakEquity, facts.Case.Limits.DrawdownPercent),
+                GuardRule.DailyLossLimit => WithinLossLimit(rule, facts, facts.Case.EquityAtDayStart, facts.Case.Limits.DailyLossPercent),
+                GuardRule.DrawdownLimit => WithinLossLimit(rule, facts, facts.Case.PeakEquity, facts.Case.Limits.DrawdownPercent),
                 GuardRule.NotStale => NotStale(facts),
                 GuardRule.ModePermitted => Flag(rule, facts, facts.Case.ModePermitted),
                 GuardRule.MarketPermitted => Flag(rule, facts, facts.Case.MarketPermitted),
@@ -336,22 +336,25 @@ public static class GuardCheck
         return Held(Rule, position.Side == TradeSide.Long ? moved >= resting : moved <= resting, moved, resting);
     }
 
-    private static RuleResult LossLimit(GuardRule rule, Facts facts, decimal from, decimal limit)
+    private static RuleResult WithinLossLimit(GuardRule rule, Facts facts, decimal from, decimal limit)
     {
         if (!facts.Opens)
         {
             return NotApplied(rule);
         }
 
-        if (from <= 0m)
+        if (!LossLimits.IsKnown(from))
         {
             return Unknown(rule, measured: null, limit);
         }
 
-        var loss = from - facts.Case.Equity;
-
-        // A loss that is at the limit has reached it.
-        return Held(rule, loss * 100m < limit * from, Measure(Math.Max(loss, 0m) * 100m / from), limit);
+        // A loss that is at the limit has reached it. What halts an agent asks the same of the
+        // same numbers (FR-RSK-8), so an agent that is not halted yet opens nothing either.
+        return Held(
+            rule,
+            !LossLimits.IsReached(facts.Case.Equity, from, limit),
+            Measure(LossLimits.LossPercent(facts.Case.Equity, from)),
+            limit);
     }
 
     private static RuleResult NotStale(Facts facts)

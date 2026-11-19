@@ -48,6 +48,12 @@ namespace Ecnanib.DecisionEngine;
 /// stop-loss may have been executed since the last cycle.
 /// </para>
 /// <para>
+/// <b>The loss limits of the agent are evaluated before its team is called</b> (FR-RSK-8), once
+/// its orders are settled: <see cref="ILossLimits"/> closes the position of an agent that has
+/// reached its daily loss limit or its drawdown limit, and halts it. Such a cycle calls no
+/// model, and ends as <see cref="CycleOutcome.Halted"/>.
+/// </para>
+/// <para>
 /// <b>The outcome of a cycle is the decision of its team,</b> whatever becomes of its orders:
 /// what was placed is in the records of the orders, under the id of the cycle.
 /// </para>
@@ -63,6 +69,7 @@ internal sealed class TeamCycle(
     RoleRuns roles,
     PlanChecks checks,
     IPlanOrders orders,
+    ILossLimits limits,
     ICycleRecords records,
     TradingSettings settings,
     TimeProvider clock,
@@ -134,6 +141,19 @@ internal sealed class TeamCycle(
         // What the exchange says of the agent's orders first, so that the data package says
         // what the agent holds now.
         await orders.SettleAsync(cycle.Agent.Id, cancellationToken);
+
+        // The loss limits of the agent are evaluated at every cycle (FR-RSK-8), on what the
+        // exchange has just said of its orders, and before any model is called: an agent that
+        // has reached one is halted, its position is closed, and its team decides nothing.
+        if (await limits.EvaluateAsync(cycle.Agent, cancellationToken) == LossLimitVerdict.Halted)
+        {
+            logger.LogWarning(
+                "The cycle of agent {AgentId} for the close at {ClosedAt} ended before its team was called: a loss limit halted the agent",
+                cycle.Agent.Id,
+                cycle.ClosedAt);
+
+            return (CycleOutcome.Halted, null);
+        }
 
         var package = await packages.BuildAsync(cycle, cancellationToken);
 
