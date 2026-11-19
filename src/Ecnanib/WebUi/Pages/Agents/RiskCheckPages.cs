@@ -57,6 +57,16 @@ public static class RiskCheckPages
 
         var opens = check.Action is PlanAction.OpenLong or PlanAction.OpenShort or PlanAction.Reverse;
 
+        if (check is { Kind: CycleKind.Test, Verdict: GuardVerdict.Accepted })
+        {
+            // What the Risk Guard accepted of a test cycle goes on to nothing (FR-CYC-12).
+            return check is { Action: PlanAction.Close, Sequence: > 1 }
+                ? "This is the close of a plan to reverse, of which what it would open was rejected. Closing reduces risk, so " +
+                  "the close would go on by itself. The check is of a test cycle, which places no order."
+                : "Every rule that this plan is held to holds, so it would go on to the orders. The check is of a test cycle, " +
+                  "which places no order.";
+        }
+
         return (check.Verdict, check.Action, check.Sequence) switch
         {
             (GuardVerdict.Accepted, PlanAction.Close, > 1) =>
@@ -147,9 +157,16 @@ public static class RiskCheckPages
     /// <summary>Why a rule held or did not, in plain language, with the numbers that the check stored.</summary>
     /// <param name="result">The outcome of the rule.</param>
     /// <param name="action">What the plan that was checked does.</param>
-    public static string Says(RuleResult result, PlanAction action)
+    /// <param name="kind">
+    /// What started the cycle of the check: the stale limit of a test cycle counts from the
+    /// moment that it was run, and not from the close of its candle (FR-CYC-12).
+    /// </param>
+    public static string Says(RuleResult result, PlanAction action, CycleKind kind = CycleKind.Scheduled)
     {
         ArgumentNullException.ThrowIfNull(result);
+
+        // What the seconds of the stale limit are counted from.
+        var since = kind == CycleKind.Test ? "the test cycle was run" : "the candle closed";
 
         if (result.Outcome == RuleOutcome.NotApplied)
         {
@@ -249,9 +266,9 @@ public static class RiskCheckPages
             (GuardRule.DrawdownLimit, _) => "The peak equity of the agent is not known.",
 
             (GuardRule.NotStale, RuleOutcome.Passed) =>
-                $"The plan was checked {measured} seconds after the candle closed. The stale limit of the agent's timeframe is {threshold} seconds.",
+                $"The plan was checked {measured} seconds after {since}. The stale limit of the agent's timeframe is {threshold} seconds.",
             (GuardRule.NotStale, _) =>
-                $"The plan was checked {measured} seconds after the candle closed, which is later than the stale limit of the agent's " +
+                $"The plan was checked {measured} seconds after {since}, which is later than the stale limit of the agent's " +
                 $"timeframe, {threshold} seconds. A decision that is stale opens no position.",
 
             (GuardRule.ModePermitted, RuleOutcome.Passed) => "You have a valid Binance key for the environment that the agent trades in.",

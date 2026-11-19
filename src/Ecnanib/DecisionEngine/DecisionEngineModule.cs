@@ -121,6 +121,11 @@ public static class DecisionEngineModule
         // queues the cycles of a close with the limits of the configuration file (FR-CYC-11).
         services.AddBackgroundJob<DecisionCyclesJob>();
 
+        // Runs a test cycle of an agent for its user, on demand: it produces a full decision
+        // record, which its kind tells apart, and places no orders (FR-CYC-12). It runs inside
+        // the request that asked, outside the queue of a close, one for a user at a time.
+        services.AddSingleton<ITestCycles, TestCycles>();
+
         // The templates as a prompt takes them and as a user reads them. It only reads: a
         // template arrives with a migration (NFR-DAT-10).
         services.AddSingleton<IPromptTemplates, PromptTemplates>();

@@ -273,9 +273,24 @@ code {
     opacity: 0.75;
 }
 
-/* The cycles of one agent: a close, a mode, an outcome with what it means, and a link. */
+/* The cycles of one agent: a close, a kind, a mode, an outcome with what it means, and a link. */
 .agent-cycles table {
-    min-width: 46rem;
+    min-width: 50rem;
+}
+
+/* What started a cycle: the close of a candle, or its user, who ran it as a test (FR-CYC-12).
+   It is said as a word, so it does not rely on its look. A test cycle stands out by its weight. */
+.cycle-kind {
+    white-space: nowrap;
+}
+
+.cycle-kind-test {
+    font-weight: 600;
+}
+
+p.cycle-kind {
+    white-space: normal;
+    font-weight: 400;
 }
 
 /* How a cycle ended, how a call of a role ended, and what became of an order (FR-CYC-10). Each is

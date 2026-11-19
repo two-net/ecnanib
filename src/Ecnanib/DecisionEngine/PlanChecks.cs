@@ -239,7 +239,10 @@ internal sealed class PlanChecks(
             // plan opens no position, and what only reduces risk goes on.
             facts.Holds.Valued ? facts.Holds.EquityAtDayStart : 0m,
             facts.Holds.Valued ? facts.Holds.PeakEquity : 0m,
-            SinceClose: facts.CheckedAt - cycle.ClosedAt,
+
+            // Counted from the close of the candle, and for a test cycle from the moment that
+            // its user ran it, as where the team decides: see CycleStart.StaleFrom.
+            SinceClose: facts.CheckedAt - cycle.StaleFrom,
             StaleLimit: settings.StaleSeconds.Of(agent.Timeframe),
 
             // The mode is permitted with a valid key for the environment, and the market when

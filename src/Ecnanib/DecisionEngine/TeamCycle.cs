@@ -64,6 +64,14 @@ namespace Ecnanib.DecisionEngine;
 /// Its orders are rows of their own, under its id. One object runs the cycles of every agent,
 /// at the same time, so everything of a cycle is local to its run.
 /// </para>
+/// <para>
+/// <b>A test cycle, which its user runs, places no order</b> (FR-CYC-12). It builds its data
+/// package, runs its team, and has the Risk Guard check what goes on, as any cycle does, and is
+/// recorded as one, with its kind. What the Risk Guard accepted is handed to nothing. It settles
+/// no order and evaluates no loss limit either, so nothing changes at the exchange, and no
+/// loss limit halts its agent for it. Its stale limit counts from the moment that it was run.
+/// See "A test cycle" in docs/cycles.md.
+/// </para>
 /// </remarks>
 internal sealed class TeamCycle(
     IDataPackages packages,
@@ -102,8 +110,9 @@ internal sealed class TeamCycle(
             decided = true;
 
             // Step 7: what the Risk Guard accepted is what an order is made from, and nothing
-            // else goes on to the orders (NFR-SEC-6).
-            if (accepted is not null)
+            // else goes on to the orders (NFR-SEC-6). Of a test cycle nothing goes on to them
+            // at all: it places no order (FR-CYC-12).
+            if (accepted is not null && !cycle.IsTest)
             {
                 // Why a plan to open a position placed no entry is kept for the record (FR-CYC-10).
                 kept.Keep(await orders.PlaceAsync(cycle, accepted, cancellationToken));
@@ -141,21 +150,29 @@ internal sealed class TeamCycle(
                 ?? throw new InvalidOperationException(
                     $"The {role} of the agent has no model, so its team cannot be run. An agent runs with its whole team (FR-TEAM-1)."));
 
-        // What the exchange says of the agent's orders first, so that the data package says
-        // what the agent holds now.
-        await orders.SettleAsync(cycle.Agent.Id, cancellationToken);
-
-        // The loss limits of the agent are evaluated at every cycle (FR-RSK-8), on what the
-        // exchange has just said of its orders, and before any model is called: an agent that
-        // has reached one is halted, its position is closed, and its team decides nothing.
-        if (await limits.EvaluateAsync(cycle.Agent, cancellationToken) == LossLimitVerdict.Halted)
+        // A test cycle changes nothing at the exchange, and halts no agent (FR-CYC-12).
+        // Settling takes an entry that rests off the exchange, and places the protection that
+        // a position lacks, and a loss limit that is reached halts the agent and closes its
+        // position: both are left to the cycles that a candle close starts, and to the jobs.
+        // Its team decides on what the records of the agent say it holds.
+        if (!cycle.IsTest)
         {
-            logger.LogWarning(
-                "The cycle of agent {AgentId} for the close at {ClosedAt} ended before its team was called: a loss limit halted the agent",
-                cycle.Agent.Id,
-                cycle.ClosedAt);
+            // What the exchange says of the agent's orders first, so that the data package says
+            // what the agent holds now.
+            await orders.SettleAsync(cycle.Agent.Id, cancellationToken);
 
-            return (CycleOutcome.Halted, null);
+            // The loss limits of the agent are evaluated at every cycle (FR-RSK-8), on what the
+            // exchange has just said of its orders, and before any model is called: an agent that
+            // has reached one is halted, its position is closed, and its team decides nothing.
+            if (await limits.EvaluateAsync(cycle.Agent, cancellationToken) == LossLimitVerdict.Halted)
+            {
+                logger.LogWarning(
+                    "The cycle of agent {AgentId} for the close at {ClosedAt} ended before its team was called: a loss limit halted the agent",
+                    cycle.Agent.Id,
+                    cycle.ClosedAt);
+
+                return (CycleOutcome.Halted, null);
+            }
         }
 
         var package = await packages.BuildAsync(cycle, cancellationToken);
@@ -274,22 +291,25 @@ internal sealed class TeamCycle(
 
     /// <summary>
     /// Whether a decision that completes now is stale: later than the stale limit of the agent's
-    /// timeframe after the close that the cycle is for (FR-CYC-9).
+    /// timeframe after the close that the cycle is for (FR-CYC-9). For a test cycle the limit
+    /// counts from the moment that its user ran it: see <see cref="CycleStart.StaleFrom"/>.
     /// </summary>
     private bool IsStale(CycleStart cycle) =>
-        StaleLimit.IsStale(cycle.ClosedAt, clock.GetUtcNow(), settings.StaleSeconds.Of(cycle.Agent.Timeframe));
+        StaleLimit.IsStale(cycle.StaleFrom, clock.GetUtcNow(), settings.StaleSeconds.Of(cycle.Agent.Timeframe));
 
     /// <summary>What becomes of a plan that opens a position when its decision is stale, which is said as a warning.</summary>
     private TeamDecision Stale(CycleStart cycle, TradePlan plan)
     {
         var decision = StaleLimit.Of(plan);
 
+        // For a test cycle, the seconds are those since its user ran it, which is what its
+        // stale limit counts from.
         logger.LogWarning(
             "The decision of agent {AgentId} for the close at {ClosedAt} is stale: it completed {CompletedAfterSeconds} s after the close, " +
             "and the stale limit of {Timeframe} is {StaleSeconds} s. Its plan to {PlanAction} opens no position, and what goes on is {GoesOn}",
             cycle.Agent.Id,
             cycle.ClosedAt,
-            Math.Round((clock.GetUtcNow() - cycle.ClosedAt).TotalSeconds, 1),
+            Math.Round((clock.GetUtcNow() - cycle.StaleFrom).TotalSeconds, 1),
             cycle.Agent.Timeframe.Code(),
             settings.StaleSeconds.Of(cycle.Agent.Timeframe).TotalSeconds,
             plan.Action,
@@ -327,7 +347,10 @@ internal sealed class TeamCycle(
             clock.GetUtcNow(),
             outcome,
             kept.Package?.ToJson(),
-            kept.NoEntry);
+            kept.NoEntry,
+
+            // What started it: the record of a test cycle is told apart by it (FR-CYC-12).
+            cycle.IsTest ? CycleKind.Test : CycleKind.Scheduled);
 
         using var limit = new CancellationTokenSource(RecordsWithin, clock);
 

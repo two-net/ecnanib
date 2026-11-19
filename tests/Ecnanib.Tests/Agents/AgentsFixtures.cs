@@ -222,6 +222,12 @@ internal static class AgentBrowser
     /// <summary>The page that closes its open position.</summary>
     public static string ClosePositionPage(Guid agentId) => $"/agents/{agentId}/close-position";
 
+    /// <summary>The page that runs a test cycle of an agent.</summary>
+    public static string TestCyclePage(Guid agentId) => $"/agents/{agentId}/test-cycle";
+
+    /// <summary>The form that runs a test cycle of one.</summary>
+    public const string TestCycleForm = "run-agent-test-cycle";
+
     /// <summary>The page that switches an agent to Live.</summary>
     public static string SwitchToLivePage(Guid agentId) => $"/agents/{agentId}/live";
 
@@ -379,6 +385,10 @@ internal static class AgentBrowser
     /// <summary>Presses the button of the page that closes the open position of an agent.</summary>
     public static Task<(string Path, string Page)> ClosePositionAsync(this HttpClient client, Guid agentId) =>
         client.SubmitAsync(ClosePositionPage(agentId), ClosePositionForm);
+
+    /// <summary>Presses the button of the page that runs a test cycle of an agent, and follows where the answer leads.</summary>
+    public static Task<(string Path, string Page)> RunTestCycleAsync(this HttpClient client, Guid agentId) =>
+        client.SubmitAsync(TestCyclePage(agentId), TestCycleForm);
 
     /// <summary>
     /// Ticks the box that confirms the risk on the page that switches an agent to Live, presses

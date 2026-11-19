@@ -48,6 +48,8 @@ services.AddBackgroundJob<CatalogSyncJob>();
 
 That is all. The platform's scheduler runs every registered job; a component starts no hosted service of its own for scheduled work, because that would run on every instance, without the lock.
 
+**What a user asks for is no job.** A test cycle of an agent runs inside the request that asked for it, on whichever instance serves the request, and returns when it has ended: it places no order, and what it stores is its own record, so it needs no lock of the background work (FR-CYC-12). See "A test cycle" in [cycles.md](cycles.md).
+
 The jobs that the application has so far:
 
 | Job | Component | Schedule | What a run does |

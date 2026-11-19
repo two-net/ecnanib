@@ -39,6 +39,10 @@ public static class AgentsModule
         // whether an agent still runs when the turn of its cycle comes (FR-CYC-1).
         services.AddSingleton<IRunningAgents, RunningAgents>();
 
+        // What runs a test cycle asks for the agent of its user, in whatever state, with its
+        // team and with what keeps the team from working (FR-CYC-12).
+        services.AddSingleton<IAgentTeams, AgentTeams>();
+
         // What whatever places the orders of an agent asks: whether the agent may still open a
         // position, as the entry is written, and that it wait for its user when its position is
         // left without protection (FR-RSK-7).

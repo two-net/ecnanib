@@ -148,6 +148,13 @@ internal sealed class AgentOrders(
             throw new ArgumentException("Orders are placed for a plan that the Risk Guard accepted, and for no other.", nameof(accepted));
         }
 
+        if (cycle.IsTest)
+        {
+            // What runs a test cycle hands its plan to nothing. Asked here once more, where an
+            // order is made, so that no test cycle places one whatever calls this (FR-CYC-12).
+            throw new ArgumentException("A test cycle places no order.", nameof(cycle));
+        }
+
         var agent = cycle.Agent;
         var pace = new Pace(cancellationToken, clock);
 

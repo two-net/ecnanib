@@ -1,0 +1,161 @@
+@page "/agents/{Id:guid}/test-cycle"
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.DecisionEngine
+@using Ecnanib.Shared
+@inject IStoredAgents Agents
+@inject ITestCycles Tests
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page runs a test cycle of
+    an agent of the user: one cycle, on demand, in whatever state the agent is, that produces a
+    full decision record and places no orders (FR-CYC-12). It says what a test cycle is, that it
+    places no order, and what it costs, before its button: the models of the roles are called on
+    the user's own keys. The form waits for the cycle, and leads to its timeline when it has
+    ended and is recorded. What kept a test cycle from running is said here, with what to do
+    about it. A test cycle affects no trading, so the page asks nothing once more for an agent in
+    Live (FR-UI-3): it says that nothing is placed in the real account either. The badge of the
+    mode is under the heading.
+*@
+
+@if (_agent is not null)
+{
+    <PageTitle>Test cycle of the agent @_agent.Name</PageTitle>
+
+    <h1>Test cycle of the agent @_agent.Name</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
+    @if (_refused is not null)
+    {
+        <p class="form-error" role="alert">@_refused</p>
+
+        @if (_roles is not null)
+        {
+            @* Each role that keeps the team from working, with what to do about it (FR-TEAM-1). *@
+            <ul class="agent-role-blocks">
+                @foreach (var role in _roles)
+                {
+                    <li>@AgentPages.Says(role)</li>
+                }
+            </ul>
+
+            <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+
+            @if (_roles.Any(role => AgentPages.IsAboutAKey(role.Problem)))
+            {
+                <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
+            }
+        }
+    }
+
+    <p>@CyclePages.TestExplained</p>
+
+    <p><strong>@CyclePages.TestPlacesNoOrder</strong></p>
+
+    @if (_agent.Mode == TradingMode.Live)
+    {
+        <p>The agent is in Live. A test cycle places no order in your real Binance account either.</p>
+    }
+
+    <p>@CyclePages.TestCosts</p>
+
+    <p>@CyclePages.TestStaleLimit</p>
+
+    <p>The agent is <strong>@AgentPages.Describe(_agent.State)</strong>, and a test cycle does not start it.</p>
+
+    <form method="post" @formname="@AgentPages.TestCycleForm" @onsubmit="RunAsync">
+        <AntiforgeryToken />
+
+        <p>@CyclePages.TestTakes</p>
+
+        <button type="submit">@CyclePages.TestLink</button>
+    </form>
+
+    <p><a href="@WebUiModule.AgentCyclesPath(_agent.Id)">@CyclePages.Link</a></p>
+
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+
+    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+}
+
+@code {
+    private AgentView? _agent;
+    private IReadOnlyList<RoleBlock>? _roles;
+    private string? _refused;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+        }
+    }
+
+    private async Task RunAsync()
+    {
+        if (HttpContext is not { } request || _agent is null)
+        {
+            return;
+        }
+
+        // The Decision Engine may not use Accounts, so it is handed the user who is signed in,
+        // and runs a test cycle of an agent of that user alone. It returns when the cycle has
+        // ended: a cycle that has started is not given up when the browser goes away.
+        var result = await Tests.RunAsync(SignedInUser.RequiredIdOf(request), Id, request.RequestAborted);
+
+        switch (result.Outcome)
+        {
+            case TestCycleOutcome.Recorded when result.CycleId is { } cycle:
+                // The timeline of the test cycle, by a request that changes nothing: a reload
+                // of it sends no form again, and runs no second cycle.
+                Navigation.NavigateTo(WebUiModule.AgentCyclePath(Id, cycle));
+
+                return;
+
+            case TestCycleOutcome.NotFound:
+                // The agent was deleted, on another browser, since the page was shown.
+                _agent = null;
+                Navigation.NotFound();
+
+                return;
+
+            case TestCycleOutcome.RolesBlock when result.Roles is { } roles:
+                // Names each role that has no model, or whose model its user cannot select now.
+                _refused = CyclePages.TestRolesBlock;
+                _roles = roles;
+                break;
+
+            case TestCycleOutcome.AlreadyRunning:
+                _refused = CyclePages.TestAlreadyRunning;
+                break;
+
+            case TestCycleOutcome.NoCandles:
+                _refused = CyclePages.TestNoCandles;
+                break;
+
+            default:
+                _refused = CyclePages.TestNotRecorded;
+                break;
+        }
+    }
+}

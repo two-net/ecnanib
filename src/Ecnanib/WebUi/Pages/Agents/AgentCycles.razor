@@ -12,8 +12,10 @@
     that were recorded for an agent of the user, latest close first: for each the close of the
     candle that it was for, the mode that the agent was in then, how it ended, in words, and how
     long it took (FR-CYC-10). A cycle that made no decision, or placed no order, is among them.
-    Each leads to its timeline. The page has no form. The badge of the mode is under the heading,
-    and each cycle says the mode it ran in (FR-UI-3, FR-BIN-11).
+    Each says what started it: a test cycle, which its user ran, is told apart from the cycles
+    that a candle close started (FR-CYC-12). Each leads to its timeline. The page has no form: a
+    test cycle is run on a page of its own, which this one leads to. The badge of the mode is
+    under the heading, and each cycle says the mode it ran in (FR-UI-3, FR-BIN-11).
 *@
 
 @if (_agent is not null && _history is not null)
@@ -25,6 +27,8 @@
     <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     <p>@CyclePages.Explained</p>
+
+    <p>@CyclePages.TestsListed <a href="@WebUiModule.AgentTestCyclePath(_agent.Id)">@CyclePages.TestLink</a></p>
 
     @if (_history.Cycles.Count == 0)
     {
@@ -48,6 +52,7 @@
                 <thead>
                     <tr>
                         <th scope="col">Candle close</th>
+                        <th scope="col">Kind</th>
                         <th scope="col">Mode</th>
                         <th scope="col">Outcome</th>
                         <th scope="col">What it means</th>
@@ -60,9 +65,10 @@
                     {
                         <tr>
                             <th scope="row">@PageTimes.At(cycle.ClosedAt)</th>
+                            <td><span class="cycle-kind cycle-kind-@(cycle.Kind.ToString().ToLowerInvariant())">@CyclePages.Describe(cycle.Kind)</span></td>
                             <td><ModeBadge Mode="@cycle.Mode" /></td>
                             <td><span class="cycle-outcome cycle-@(cycle.Outcome.ToString().ToLowerInvariant())">@CyclePages.Describe(cycle.Outcome)</span></td>
-                            <td>@CyclePages.Explain(cycle.Outcome)</td>
+                            <td>@CyclePages.Explain(cycle.Outcome, cycle.Kind)</td>
                             <td>@CyclePages.Seconds(cycle.EndedAt - cycle.StartedAt)</td>
                             <td><a href="@WebUiModule.AgentCyclePath(_agent.Id, cycle.Id)">@CyclePages.TimelineLink</a></td>
                         </tr>

@@ -50,6 +50,79 @@ public static class CyclePages
     /// <summary>What an indicator says when its series had too few candles for it.</summary>
     public const string NotAvailable = "not available";
 
+    /// <summary>What leads to the page that runs a test cycle of an agent, and what its button says (FR-CYC-12).</summary>
+    public const string TestLink = "Run a test cycle";
+
+    /// <summary>What the list of the cycles says of test cycles, beside what a cycle is.</summary>
+    public const string TestsListed =
+        "A test cycle, which you run yourself at any time, is recorded in the same way and is listed here as a test. It places no orders.";
+
+    /// <summary>What a test cycle is, in plain language (FR-CYC-12).</summary>
+    public const string TestExplained =
+        "A test cycle runs the team of the agent once, now, on the latest closed candle of its timeframe, in whatever state the " +
+        "agent is, so that you see what the team would decide. It is recorded as every cycle is, and marked as a test: with a " +
+        "summary of the data that the team decided on, what each role answered, what the Risk Guard made of the plan, and the " +
+        "outcome.";
+
+    /// <summary>That a test cycle places no order, and changes nothing.</summary>
+    public const string TestPlacesNoOrder =
+        "A test cycle places no order, whatever its team decides and whatever the Risk Guard makes of the plan. It settles no " +
+        "order with Binance, moves no stop-loss, closes no position, and evaluates no loss limit, so it halts nothing: " +
+        "nothing changes at Binance.";
+
+    /// <summary>What a test cycle costs its user (FR-KEY-1, FR-CYC-3).</summary>
+    public const string TestCosts =
+        "It calls the model of each role on your own keys, as every cycle does, so your providers charge you for the calls. The " +
+        "Sentiment Analyst searches live where its model can, which may add charges of its provider. A key that a provider " +
+        "refuses in a call is checked again, as after every such call, and is marked as not valid when it is refused again.";
+
+    /// <summary>How long a test cycle takes, and what the page does meanwhile.</summary>
+    public const string TestTakes =
+        "It takes a minute or two, and this page waits for it: it then shows the test cycle as a timeline. One test cycle of " +
+        "yours runs at a time. It is not given up when you leave this page: it is on the list of the cycles of the agent once " +
+        "it has ended.";
+
+    /// <summary>What the stale limit of a test cycle counts from (FR-CYC-9).</summary>
+    public const string TestStaleLimit =
+        "A decision that completes later than the stale limit of the agent's timeframe opens no position. A cycle that a candle " +
+        "close starts counts the limit from that close. A test cycle is run at any time, so it counts the limit from the moment " +
+        "you run it.";
+
+    /// <summary>What the page says when the team of the agent keeps a test cycle from running (FR-TEAM-1).</summary>
+    public const string TestRolesBlock =
+        "No test cycle was run, and no model was called: a cycle runs once every role of the agent's team has a model that your " +
+        "keys can use.";
+
+    /// <summary>What the page says when a test cycle of the user runs already.</summary>
+    public const string TestAlreadyRunning =
+        "No test cycle was started: a test cycle of yours is running already, and one runs at a time. It is on the list of the " +
+        "cycles of its agent once it has ended.";
+
+    /// <summary>What the page says when the exchange did not give the candles of a test cycle.</summary>
+    public const string TestNoCandles =
+        "No test cycle was run, and no model was called: Binance did not give the candles of the agent's symbol. Try again in a moment.";
+
+    /// <summary>What the page says when an error or a stop ended a test cycle and no record of it was found.</summary>
+    public const string TestNotRecorded =
+        "The test cycle ended early, and no record of it was found, so there is nothing to show of it here. If it was stored " +
+        "after all, it is on the list of the cycles of the agent. Otherwise, try again.";
+
+    /// <summary>What the timeline of a test cycle says under its heading.</summary>
+    public const string TestCycleRan = "You ran this cycle as a test. It placed no orders, whatever its team decided.";
+
+    /// <summary>What the timeline of a test cycle says where the cycle started.</summary>
+    public const string TestStarted =
+        "You ran the test cycle. A test cycle settles no order with the exchange and evaluates no loss limit: nothing changes " +
+        "at the exchange, and nothing halts the agent. Its team decides on what the records of the agent say it holds.";
+
+    /// <summary>What started a cycle, in a word.</summary>
+    public static string Describe(CycleKind kind) => kind switch
+    {
+        CycleKind.Scheduled => "Scheduled",
+        CycleKind.Test => "Test",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "No such kind."),
+    };
+
     /// <summary>How a cycle ended, in a word or two.</summary>
     public static string Describe(CycleOutcome outcome) => outcome switch
     {
@@ -98,9 +171,33 @@ public static class CyclePages
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "No such outcome."),
     };
 
+    /// <summary>
+    /// What the outcome of a cycle means, in plain language, for a cycle of a kind: a test cycle
+    /// is stopped for other reasons than a cycle that a candle close starts, and counts its stale
+    /// limit from another moment (FR-CYC-12).
+    /// </summary>
+    public static string Explain(CycleOutcome outcome, CycleKind kind) => (kind, outcome) switch
+    {
+        (CycleKind.Test, CycleOutcome.Stale) =>
+            "The decision was complete later than the stale limit of the agent's timeframe, counted from the moment the test " +
+            "cycle was run, so it opens no position. Of a plan to reverse, the close alone went on to the Risk Guard, because " +
+            "closing reduces risk.",
+        (CycleKind.Test, CycleOutcome.Stopped) =>
+            "The test cycle was stopped before its team had decided: the service was stopping, or the test cycle ran longer " +
+            "than a test cycle may. No decision was made.",
+        _ => Explain(outcome),
+    };
+
     /// <summary>How long after the close of its candle something happened: <c>2.5 seconds after the candle closed</c>.</summary>
     public static string After(DateTimeOffset closedAt, DateTimeOffset at) =>
         at <= closedAt ? "as the candle closed" : $"{Seconds(at - closedAt)} after the candle closed";
+
+    /// <summary>
+    /// How long after its start something happened in a test cycle, which is run at any time
+    /// after the close of its candle: <c>2.5 seconds after the test cycle started</c>.
+    /// </summary>
+    public static string AfterStart(DateTimeOffset startedAt, DateTimeOffset at) =>
+        at <= startedAt ? "as the test cycle started" : $"{Seconds(at - startedAt)} after the test cycle started";
 
     /// <summary>A length of time in seconds, to a tenth: <c>1.5 seconds</c>.</summary>
     public static string Seconds(TimeSpan length)
@@ -484,6 +581,24 @@ public static class CyclePages
     public static string NoOrder(CycleRecord cycle)
     {
         ArgumentNullException.ThrowIfNull(cycle);
+
+        if (cycle.Kind == CycleKind.Test)
+        {
+            // A test cycle places none, whatever became of its plan: it says what a cycle that
+            // a candle close starts would have done with the same plan (FR-CYC-12).
+            if (cycle.Checks.Count == 0)
+            {
+                return cycle.Outcome is CycleOutcome.Approved or CycleOutcome.Reduced or CycleOutcome.Unreviewed or CycleOutcome.Stale
+                    ? "A test cycle places no order. This one ended before the Risk Guard had checked its plan."
+                    : "A test cycle places no order. Nothing of a plan went on to the Risk Guard either.";
+            }
+
+            return cycle.Checks.Any(check => check.Verdict == RiskGuard.GuardVerdict.Accepted)
+                ? "A test cycle places no order. The Risk Guard accepted the plan: in a cycle that a candle close starts, it " +
+                  "would have gone on to the orders."
+                : "A test cycle places no order. The Risk Guard rejected the plan: a cycle that a candle close starts would " +
+                  "have placed none either.";
+        }
 
         if (cycle.NoEntry is { } reason)
         {

@@ -23,6 +23,7 @@ using Ecnanib.WebUi;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 using Ecnanib.ExchangeGateway.Trading;
 
@@ -236,6 +237,16 @@ internal sealed class AccountsApplication : IDisposable
 
     /// <summary>What a cycle does once it has started, as the application has it.</summary>
     public IDecisionCycle Cycle => _application.Services.GetRequiredService<IDecisionCycle>();
+
+    /// <summary>What runs a test cycle of an agent for its user, which places no orders (FR-CYC-12).</summary>
+    public ITestCycles TestCycles => _application.Services.GetRequiredService<ITestCycles>();
+
+    /// <summary>
+    /// Asks the application to stop, as the host is asked to, and does not wait for it: what the
+    /// application is doing is told to end at once, and the application stops beside the test,
+    /// which reads what became of what it was doing.
+    /// </summary>
+    public void BeginStopping() => _application.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
 
     /// <summary>
     /// Runs the job that settles the orders with the exchange, now, as the scheduler does every

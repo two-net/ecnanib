@@ -42,6 +42,10 @@ public sealed record RiskCheckHistory(int Total, IReadOnlyList<RiskCheckView> Ch
 /// </param>
 /// <param name="Leverage">The leverage of that order: 1 on Spot. Null where the quantity is.</param>
 /// <param name="Rules">The outcome of every rule that the check stored, in the order of <see cref="GuardRule"/>.</param>
+/// <param name="Kind">
+/// What started the cycle of the check. A check of a test cycle led to no order, whatever its
+/// verdict, and its stale limit counted from the moment that the cycle was run (FR-CYC-12).
+/// </param>
 public sealed record RiskCheckView(
     Guid CycleId,
     DateTimeOffset ClosedAt,
@@ -52,7 +56,8 @@ public sealed record RiskCheckView(
     GuardVerdict Verdict,
     decimal? Quantity,
     int? Leverage,
-    IReadOnlyList<RuleResult> Rules);
+    IReadOnlyList<RuleResult> Rules,
+    CycleKind Kind = CycleKind.Scheduled);
 
 /// <summary>Reads the stored checks of an agent, of the user that it is asked for.</summary>
 internal sealed class RiskCheckRecords(IDbContextFactory<EcnanibDbContext> contexts) : IRiskCheckRecords
@@ -70,11 +75,15 @@ internal sealed class RiskCheckRecords(IDbContextFactory<EcnanibDbContext> conte
             from check in context.Set<RiskCheck>().AsNoTracking().OwnedBy(userId)
             join cycle in context.Set<DecisionCycle>().AsNoTracking().OwnedBy(userId) on check.CycleId equals cycle.Id
             where cycle.AgentId == agentId
-            select new { Check = check, cycle.ClosedAt, cycle.Mode };
+            select new { Check = check, cycle.ClosedAt, cycle.Mode, cycle.Kind, cycle.StartedAt };
 
         var total = await ofAgent.CountAsync(cancellationToken);
         var latest = await ofAgent
             .OrderByDescending(found => found.ClosedAt)
+
+            // A test cycle is for a close that another cycle may be for as well: the checks of
+            // one cycle stay together, the cycle that started last first, as the cycles are listed.
+            .ThenByDescending(found => found.StartedAt)
             .ThenBy(found => found.Check.Sequence)
             .Take(Shown)
             .ToListAsync(cancellationToken);
@@ -82,7 +91,7 @@ internal sealed class RiskCheckRecords(IDbContextFactory<EcnanibDbContext> conte
         return new RiskCheckHistory(
             total,
             await RiskCheckViews.OfAsync(
-                context, userId, [.. latest.Select(found => (found.Check, found.ClosedAt, found.Mode))], cancellationToken));
+                context, userId, [.. latest.Select(found => (found.Check, found.ClosedAt, found.Mode, found.Kind))], cancellationToken));
     }
 }
 
@@ -95,12 +104,12 @@ internal static class RiskCheckViews
     /// <summary>The checks as a user reads them, in the order they are given in.</summary>
     /// <param name="context">The context that the checks were read with.</param>
     /// <param name="userId">The user whose checks they are: the rules are asked for by owner as well.</param>
-    /// <param name="checks">The checks, each with the close and the mode of its cycle.</param>
+    /// <param name="checks">The checks, each with the close, the mode, and the kind of its cycle.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     public static async Task<IReadOnlyList<RiskCheckView>> OfAsync(
         EcnanibDbContext context,
         Guid userId,
-        IReadOnlyList<(RiskCheck Check, DateTimeOffset ClosedAt, TradingMode Mode)> checks,
+        IReadOnlyList<(RiskCheck Check, DateTimeOffset ClosedAt, TradingMode Mode, CycleKind Kind)> checks,
         CancellationToken cancellationToken)
     {
         var ids = checks.Select(found => found.Check.Id).ToList();
@@ -130,7 +139,8 @@ internal static class RiskCheckViews
                     .. byCheck[found.Check.Id]
                         .OrderBy(rule => rule.Rule)
                         .Select(rule => new RuleResult(rule.Rule, rule.Outcome, rule.Measured, rule.Threshold)),
-                ])),
+                ],
+                found.Kind)),
         ];
     }
 }

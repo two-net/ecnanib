@@ -34,6 +34,7 @@ What starts a cycle, and the data package that it builds, are in [cycles.md](cyc
 | **The Risk Manager is called for a plan that opens a position, and for no other.** | Open long, open short, and reverse: `PlanReview.Reviews`. A plan that holds changes nothing, and a plan that closes a position or adjusts protection reduces risk. Neither is handed to the Risk Manager, so nothing that its model answers, and no call of it that fails, stands in the way of reducing risk (FR-TEAM-7). Such a cycle is three calls, on the user's own keys. |
 | **A plan that is stale before it is reviewed is not reviewed.** | It opens no position whatever a review says (FR-CYC-9), so no model is called, and paid, to review it. See "The stale limit". |
 | **A cycle is two calls at once at most.** | The two analysts. The places that a cycle takes in the queue are of cycles, and not of calls: see "The queue" in [cycles.md](cycles.md). |
+| **A test cycle leaves out what changes anything** (FR-CYC-12). | A cycle that its user runs settles no order in step 2, evaluates no loss limit, and hands nothing to `IPlanOrders` in step 7. Everything between is the same, and so is its record. See "A test cycle" in [cycles.md](cycles.md). |
 | One object runs the cycles of every agent. | `TeamCycle` holds nothing of a cycle: everything of a cycle is local to its run. |
 
 ## What a role is given
@@ -234,6 +235,7 @@ public static class StaleLimit
 | Rule | Detail |
 |---|---|
 | **The limit counts from the close of the candle** that the cycle is for. | It is the one of the agent's timeframe in `Trading:StaleSeconds`, which `StaleSecondsSettings.Of` gives: in the tracked file 120 seconds for 15m, 300 for 1H, 600 for 4H, and 900 for 1D (SRS Appendix B). |
+| **For a test cycle it counts from the moment that the cycle is run** (FR-CYC-12). | A test cycle is run at any time, hours after the close of its candle. `CycleStart.StaleFrom` is what the limit counts from: the close, or for a test cycle `TestedAt`. See "A test cycle" in [cycles.md](cycles.md). |
 | **A decision is stale when it completes later than the limit.** | One that completes at the limit itself is in time: `StaleLimit.IsStale`. |
 | **A decision completes with the last answer that it takes.** | It is asked twice. When the plan of the Strategist is read: a plan that opens a position and is stale by then is not reviewed. And when the review of the Risk Manager is read: a plan that would go on, and is stale by then, opens nothing. |
 | **Only a plan that opens a position is held to it.** | Open long, open short, and reverse. A plan that holds, closes a position, or adjusts protection goes on as it would in time. An adjustment moves the stop-loss only in the direction that reduces risk, so nothing that is late adds risk. |
@@ -301,8 +303,8 @@ A role is called twice at most: `RoleRuns.Attempts`. **What becomes of the cycle
 | `Stale` | The plan opens a position, and the decision completed later than the stale limit of the agent's timeframe: no position is opened. Of a reverse, the close goes on. |
 | `NoDecision` | A role other than the Sentiment Analyst gave no valid result. A plan that does what a plan may not do is none. |
 | `Failed` | An error ended the cycle: its data package could not be built, its team is not whole, a prompt was refused, or its record could not be stored. |
-| `Stopped` | The cycle was stopped: with the application, or because the next close was near. |
-| `Halted` | A loss limit of the agent was reached as the cycle began: the agent is halted, and its position is closed (FR-RSK-8). Its team was not called, and decided nothing. See "Halting an agent" in [risk-guard.md](risk-guard.md). |
+| `Stopped` | The cycle was stopped: with the application, or because the next close was near. A test cycle is stopped with the application, and when it runs longer than a test cycle may. |
+| `Halted` | A loss limit of the agent was reached as the cycle began: the agent is halted, and its position is closed (FR-RSK-8). Its team was not called, and decided nothing. See "Halting an agent" in [risk-guard.md](risk-guard.md). A test cycle evaluates no loss limit, and never ends so. |
 
 - **What goes on, goes on to the Risk Guard,** which checks it against the fixed rules (FR-RSK-3). **The outcome of a cycle stays the decision of its team:** a plan that the Risk Manager approved ends its cycle as `Approved`, also when the Risk Guard rejected it. What the Risk Guard made of the plan is in the record beside it: see [risk-guard.md](risk-guard.md).
 - **The outcome stays the decision of the team whatever becomes of the orders** as well. What was placed is in the rows of the orders, under the id of the cycle: see "The record of an order" in [orders.md](orders.md). Why no entry was placed for a plan that the Risk Guard accepted is in the record of the cycle, beside its outcome: see "The record of a cycle". A cycle that is stopped once its team has decided keeps the decision, and one whose orders fail with an error is recorded with it too.
@@ -319,6 +321,7 @@ A role is called twice at most: `RoleRuns.Attempts`. **What becomes of the cycle
 | The Risk Guard results | `risk_checks` and `risk_check_rules`: see "The record of a check" in [risk-guard.md](risk-guard.md). |
 | The orders | `orders`, under the id of the cycle: see "The record of an order" in [orders.md](orders.md). Why no entry was placed is `decision_cycles.no_entry`. |
 | The final outcome | `decision_cycles.outcome`: see "The outcome of a cycle". |
+| What started the cycle | `decision_cycles.kind`: `Scheduled` for a cycle that a candle close started, and `Test` for one that its user ran (FR-CYC-12). |
 
 ```csharp
 public interface ICycleRecords
@@ -343,10 +346,11 @@ public interface ICycleRecords
 | **The write has a time limit of its own:** 5 seconds, `TeamCycle.RecordsWithin`. | A cycle that is stopped has its token canceled, and the run that started it waits for it. |
 | **A cycle whose record cannot be stored has failed.** | Unless it is ending with an error of its own, or is being stopped: that is then what the job is told, and the log says beside it that the record could not be stored. |
 | A cycle that never started leaves no row. | One that was skipped, or whose agent no longer ran. See "Not built yet" in [cycles.md](cycles.md). |
+| **A test cycle is recorded as every cycle is, and is told apart by its kind** (FR-CYC-12). | It has the summary of its data package, the calls of its roles, and the checks of the Risk Guard, in the same tables. It has no orders: no row of `orders` names it, and its `no_entry` is null, because nothing was handed over to be placed. `CycleKind` is `Scheduled` or `Test`, stored by its name. |
 
 | Table | Columns |
 |---|---|
-| `decision_cycles` | `id`, `agent_id`, `user_id`, `mode`, `closed_at`, `started_at`, `ended_at`, `outcome`, `data_package`, `no_entry`. Indexed by `(agent_id, user_id, closed_at)`. |
+| `decision_cycles` | `id`, `agent_id`, `user_id`, `mode`, `closed_at`, `started_at`, `ended_at`, `outcome`, `data_package`, `no_entry`, `kind`. Indexed by `(agent_id, user_id, closed_at)`. |
 | `role_outputs` | `id`, `cycle_id`, `user_id`, `role`, `attempt`, `model_id`, `role_template_id`, `market_template_id`, `timeframe_template_id`, `profile_template_id`, `called_at`, `latency_ms`, `input_tokens`, `output_tokens`, `live_searches`, `outcome`, `validation`, `rejection`, `result`. One row for each `(cycle_id, user_id, role, attempt)`. |
 
 | Column | What it holds |
@@ -356,6 +360,8 @@ public interface ICycleRecords
 | `decision_cycles.outcome` | The name of a member of `CycleOutcome`. |
 | `decision_cycles.data_package` | The summary of the data package of the cycle, as one line of JSON that the service wrote. Null for a cycle that ended before its package was built, and for one that was recorded before a summary was kept. |
 | `decision_cycles.no_entry` | Why no entry was placed for a plan to open a position that the Risk Guard accepted, as the name of a member of `NoEntryReason`. Null for a cycle that placed its entry, and for one whose plan opened nothing or did not go on. |
+| `decision_cycles.kind` | What started the cycle, as the name of a member of `CycleKind`: `Scheduled`, or `Test` for a test cycle. |
+| `decision_cycles.closed_at`, `started_at` | For a cycle that a candle close started, the cycle started seconds after the close. A test cycle is for the latest candle that had closed when it was run, so its start may be hours after its close. |
 | `role_outputs.model_id` | The model of the catalog that was called. A model is of one provider and is never deleted, so the row says the provider and the model for good. |
 | The four `_template_id` | The versions of the templates that the prompt of the call was composed from: the instructions of the role, and the modules of the market, the timeframe, and the profile. A version is never changed (FR-PRM-6). See "What a role output records" in [prompts.md](prompts.md). |
 | `latency_ms` | How long the call took, as the gateway measured it, in whole milliseconds. |
@@ -373,6 +379,8 @@ public interface ICycleRecords
 - A table of role outputs points at the versions of the templates: `PromptRulesTests` holds every such table to it.
 
 The migration `AddCycleRecord` adds `data_package` and `no_entry`, and the index of `orders` that finds the orders of a cycle. It gave the cycles that were stored then neither: nothing kept a summary before it, and why no entry was placed was in the log alone.
+
+The migration `AddCycleKind` adds `kind`. It gave every cycle that was stored then `Scheduled`: until then nothing but the close of a candle started a cycle.
 
 ### The summary of the data package
 
@@ -415,12 +423,12 @@ public interface IRecordedCycles
 public sealed record CycleRecord(
     Guid Id, DateTimeOffset ClosedAt, TradingMode Mode, DateTimeOffset StartedAt, DateTimeOffset EndedAt, CycleOutcome Outcome,
     DataPackageSummary? DataPackage, IReadOnlyList<RoleCallView> Calls, IReadOnlyList<RiskCheckView> Checks,
-    IReadOnlyList<CycleOrderView> Orders, NoEntryReason? NoEntry);
+    IReadOnlyList<CycleOrderView> Orders, NoEntryReason? NoEntry, CycleKind Kind = CycleKind.Scheduled);
 ```
 
 | Page | What it is |
 |---|---|
-| `/agents/<id>/cycles` | The cycles of the agent, latest close first: for each the close of its candle, the mode that the agent was in, its outcome in words with what that means, how long it ran, and the way to its timeline. |
+| `/agents/<id>/cycles` | The cycles of the agent, latest close first: for each the close of its candle, what started it, the mode that the agent was in, its outcome in words with what that means, how long it ran, and the way to its timeline. |
 | `/agents/<id>/cycles/<cycle>` | One cycle as a timeline: its entries one under another, in the order they happened, each with its time to the second and how long after the close of the candle that was. |
 
 **The entries of a timeline:**
@@ -451,7 +459,9 @@ public sealed record CycleRecord(
 | **The cycles of an agent of another user are not found.** | The pages ask `IStoredAgents` for the agent of the user who is signed in, and answer "not found" as for an agent that does not exist. `IRecordedCycles` asks for every part of a record by owner as well, and a cycle of another agent of the same user is not found under this one. |
 | The Decision Engine may not use Accounts. | So a page hands `IRecordedCycles` the user who is signed in, by id. |
 | **The parts of a record are read as they were at one moment.** | They are rows of four tables, and an order of the cycle may be written to meanwhile: `FindAsync` reads in a snapshot. See "Reads that agree" in [persistence.md](persistence.md). |
-| **The pages have no form.** | A user reads the record of a cycle, and changes none. |
+| **A test cycle is told apart on every page that shows it** (FR-CYC-12). | The list says of each cycle what started it, as a word: `Scheduled` or `Test`. The timeline of a test cycle says under its heading that its user ran it as a test, and that it placed no orders. Where its orders would stand, it says that a test cycle places none, and whether the Risk Guard accepted the plan, which is what a cycle that a candle close starts would have done with it. Its entries say how long after its start they happened, and not how long after the close of its candle, which may be hours before. A check of it says on the page of the risk checks that it is of a test cycle: see "The page" in [risk-guard.md](risk-guard.md). |
+| **The cycles of one close are listed with the one that started last first.** | A test cycle is for a close that a cycle of the job may be for as well. |
+| **The pages have no form.** | A user reads the record of a cycle, and changes none. A test cycle is run on a page of its own, which the list leads to: see "A test cycle" in [cycles.md](cycles.md). |
 
 The page of the state of an agent leads to the list, and so does the page of its risk checks, which leads from each check to the timeline of its cycle.
 
@@ -511,6 +521,7 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 - `StandInPlanOrders.NoEntry` is what placing the orders of a plan answers, for a cycle whose entry is skipped.
 - **A plan is read for an agent.** `PlanAgents.On` is an agent on a market, with the position that it holds or with none, and `PlanAgents.For` is one that may have the plan of an answer, whatever its action. A cycle whose agent holds a position is given `PlanAgents.Holding`, which is a `StandInHoldings`: see "Testing" in [cycles.md](cycles.md).
 - **A decision is made stale by moving the clock while a call is held.** `StandInModels.Hold` holds the call of the Strategist or of the Risk Manager, the test sets the clock to when the role answers, and lets the call go. The limits are those of the file of the tests: 100 seconds for 15m, 200 for 1H, 400 for 4H, and 800 for 1D.
+- A test cycle is run through `ITestCycles`, for agents of the database: see "Testing" in [cycles.md](cycles.md).
 - `LiveProviderTests` sends the schema of each role to the providers themselves, and reads what they answer with `IRoleResults`. It is skipped unless a key and a model are given: see "Checking against the real providers" in [ai-providers.md](ai-providers.md).
 
 ## Not built yet
@@ -525,5 +536,4 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 - Exporting decisions as CSV (FR-RPT-4), and showing AI usage from the recorded tokens (FR-RPT-3, FR-KEY-11).
 - Retention of the records: decision records are kept 365 days and role transcripts 90 (NFR-DAT-5). `Retention` has the settings, and nothing deletes yet.
 - Telling a model why its first answer was rejected. The call that is made once more has the same prompt.
-- A test cycle that a user runs for an agent (FR-CYC-12).
 - Sending the schemas to the real providers in the suite. `LiveProviderTests` does when it is given keys.

@@ -31,7 +31,7 @@
                 <tr>
                     <th scope="row">@RiskCheckPages.NameOf(rule.Rule)</th>
                     <td><span class="rule-outcome rule-@(rule.Outcome.ToString().ToLowerInvariant())">@RiskCheckPages.Describe(rule.Outcome)</span></td>
-                    <td>@RiskCheckPages.Says(rule, Check.Action)</td>
+                    <td>@RiskCheckPages.Says(rule, Check.Action, Check.Kind)</td>
                 </tr>
             }
         </tbody>

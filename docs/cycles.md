@@ -8,9 +8,11 @@ The Sentiment Analyst gathers news and social context using the live-search capa
 
 A plan does only what a plan may do: the actions of its market, for an agent that holds at most one position, with protection that only tightens, and with a stop-loss and a take-profit where it opens a position (FR-CYC-4 to FR-CYC-7). A decision that completes later than the stale limit for its timeframe cannot open a position (FR-CYC-9). Both are in [team.md](team.md): "What a plan may do" and "The stale limit".
 
+A user can run a test cycle for an agent that produces a full decision record and places no orders (FR-CYC-12). It is in "A test cycle".
+
 What is built is what starts a cycle and lets it wait for its turn, the data package that the cycle then builds, what the call of the Sentiment Analyst and its report go by, which is in "Live search", and the calls of the team, which are in [team.md](team.md): the four roles in their order, the validation of what each answers, what a plan may do, the stale limit, and the record of the cycle (SRS 3.2, steps 3 to 5). What goes on of the plan of the team is checked by the Risk Guard, which is in [risk-guard.md](risk-guard.md) (step 6). What the Risk Guard accepted is handed to what places the orders, which is in [orders.md](orders.md) (step 7): a cycle that starts settles the orders of its agent with the exchange, builds its package, runs its team, has what goes on of its plan checked, and places the orders of what was accepted, or does nothing.
 
-The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests`, `IndicatorTests`, and `SentimentLiveSearchTests`. Those of the team are in the classes whose names begin with `Team`.
+The code is in `src/Ecnanib/DecisionEngine`. The rules below are enforced by tests in `tests/Ecnanib.Tests/DecisionEngine`, in the classes whose names begin with `Cycle`, and in `DataPackageTests`, `IndicatorTests`, `SentimentLiveSearchTests`, `TestCycleTests`, and `TestCyclePageTests`. Those of the team are in the classes whose names begin with `Team`.
 
 How a job is scheduled, and what becomes of a boundary that passed, is in [background-work.md](background-work.md). The states of an agent are in [agents.md](agents.md). The candles are in "Market data" in [exchange.md](exchange.md), and the settings in [configuration.md](configuration.md).
 
@@ -147,7 +149,12 @@ public sealed record CycleStart(
     Agent Agent,
     IReadOnlyList<AgentRoleView> Roles,
     DateTimeOffset ClosedAt,
-    ExchangeCandles Candles);
+    ExchangeCandles Candles,
+    DateTimeOffset? TestedAt = null)
+{
+    public bool IsTest { get; }
+    public DateTimeOffset StaleFrom { get; }
+}
 ```
 
 | Part | What it is |
@@ -156,6 +163,7 @@ public sealed record CycleStart(
 | `Agent`, `Roles` | The agent and the roles of its team that have a model, as stored when the turn came. |
 | `ClosedAt` | The close of the candle that the cycle is for. |
 | `Candles` | The closed candles through that close. |
+| `TestedAt` | When its user ran the cycle, for a test cycle. Null for a cycle that a candle close started. `IsTest` says which it is, and `StaleFrom` what the stale limit of its decision counts from: see "A test cycle". |
 
 - **The token is canceled** when the application stops, when it stops being the instance that runs the background work, and 45 seconds before the next close. The cycle then ends soon, by letting `OperationCanceledException` out, and leaves no entry without its protection (NFR-REL-5).
 - An error that leaves `RunAsync` ends the cycle with no decision.
@@ -386,6 +394,47 @@ What runs the roles of a cycle has three things to mind with this:
 - **A call that searches takes longer,** and the Sentiment Analyst is one of the two calls that a cycle starts with. Its share of the 90 seconds of "How long a cycle takes" is the time limit of its provider at most, and twice that when it is called once more.
 - **A `LiveSearch` pattern that names a model which does not take the search fails every call of that model as a Sentiment Analyst.** The provider refuses the request, which is a call that failed, and is not made again. The cycle continues with sentiment marked unavailable. The tracked file names `grok-4*` for Grok, and no model of another provider.
 
+## A test cycle
+
+**A user can run a test cycle for an agent that produces a full decision record and places no orders** (FR-CYC-12). It is one cycle, run on demand, to see what the team would decide. `ITestCycles` runs it, for the user who is signed in:
+
+```csharp
+public interface ITestCycles
+{
+    Task<TestCycleResult> RunAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+}
+
+public sealed record TestCycleResult(TestCycleOutcome Outcome, Guid? CycleId = null, IReadOnlyList<RoleBlock>? Roles = null);
+```
+
+**It is a cycle as every other, with what changes anything left out.** `TestCycles` hands `IDecisionCycle` a `CycleStart` with `TestedAt`, and `TeamCycle` does with it what it does with every cycle, but for this:
+
+| What a cycle does | A test cycle |
+|---|---|
+| Settles the orders of its agent with the exchange | **Does not.** Settling takes an entry that rests off the exchange, and places the protection that a position lacks. The team decides on what the records of the agent say it holds, which the job that settles the orders keeps: see "Settling" in [orders.md](orders.md). |
+| Evaluates the loss limits of its agent | **Does not.** A limit that is reached halts the agent and closes its position (FR-RSK-8). The Risk Guard still holds a plan that opens a position to both limits, and the record says what it found. |
+| Builds its data package, and runs its team | The same: the four roles in their order, each with its model, on the key of the agent's user. |
+| Has the Risk Guard check what goes on | The same, on the facts as they are then. |
+| Hands what the Risk Guard accepted to `IPlanOrders` | **Hands it to nothing.** `AgentOrders.PlaceAsync` refuses a test cycle as well, where an order is made: that it places no order does not rest on one line. |
+| Is recorded when it ends | The same, with `decision_cycles.kind` as `Test`: see "The record of a cycle" in [team.md](team.md). |
+
+| Rule | Detail |
+|---|---|
+| **It is run for an agent in any state,** in Demo and in Live. | A draft among them, which is what a user tries before starting it. A test cycle starts nothing: the agent does not run for it. `IAgentTeams.FindAsync` of Agents says the agent of the user as it is stored, with its team: see "What other components ask of Agents" in [agents.md](agents.md). An agent of another user is not found (NFR-SEC-3). |
+| **An agent runs with its whole team** (FR-TEAM-1). | A role that has no model, or whose model its user cannot select now, runs no test cycle: the answer is `RolesBlock`, with each such role, as a start of the agent is answered. It is asked before anything is called, so no model is paid for a cycle that cannot be completed, and nothing is recorded. |
+| **It is for the latest closed candle of the agent's timeframe.** | `Timeframes.LatestClose` says the close: the UTC boundary of the timeframe at that moment, or the last one before it. `ClosedCandles` asks for the candles through it, as it does for the cycles of a close, so a test cycle that is run just after a close waits for its candle as they do. The answer is `NoCandles` when the exchange gives none, and no model is called. |
+| **Its stale limit counts from the moment that it is run,** and not from the close of its candle (FR-CYC-9). | A cycle that a candle close starts decides within seconds of the close. A test cycle is run at any time, hours after the close of a candle of a day: counted from the close, its decision would be stale before a model was called, and it would show nothing of the review or of the Risk Guard. `CycleStart.StaleFrom` is what the limit counts from, where the team decides and where the Risk Guard checks. A team that takes longer than the limit ends as `Stale`, as it would for a candle that has just closed. |
+| **A user runs one test cycle at a time.** | Another one is answered `AlreadyRunning`, and starts nothing. The count is kept in memory, by each running instance for itself, as the attempt limits of Accounts are. |
+| **It takes no place in the queue of a close,** and waits for none (FR-CYC-11). | The queue is of one run of the job. What a test cycle adds to the calls of a provider is bounded by the rule above: one cycle for a user, which is two calls with one key at most, beside the `Trading:Cycles:MaxPerKey` cycles of the job. |
+| **It runs inside the request that asked for it,** which returns when the cycle has ended. | No hosted service and no job runs it: see [background-work.md](background-work.md). It runs on whichever instance serves the request, and needs no lock of the background work: it places no order, and what it stores is its own record. |
+| **A cycle that has started is not given up when the browser goes away.** | Its models are being called, on the keys of its user. The request ends the asking only before the cycle starts. |
+| **A cycle is stopped, and never left behind.** | It is stopped with the application, and when it runs longer than `TestCycles.EndsWithin`, which is 10 minutes and no setting: the longest cycle is six minutes with the time limits of the tracked file. A cycle that is stopped is recorded as `Stopped`. |
+| **A cycle that an error ends is recorded as `Failed`,** and logged once, as the job logs one. | The record of a cycle that an error or a stop ended is looked for: the answer is `Recorded` when it is there, and `NotRecorded` when it is not, or when the read fails as well, which is a warning. The page then says that no record was found, and where one would be. |
+| **A key that a provider refuses is checked again,** as in every cycle. | A key that the provider then refuses is marked invalid, and the agents that run with it move to Attention required (FR-KEY-3, FR-KEY-10): that is true of the key whatever asked, and is the one thing that a test cycle can come to change beside its record. It is done under the lock of the account, as every check of a key is. The page says so. |
+| **It is no action that the audit trail names** (NFR-LOG-7). | It places no order, and starts, pauses, and stops no agent. The log says who ran it, and its record says the rest. |
+
+**The page.** `/agents/<id>/test-cycle` says what a test cycle is, that it places no order, and that its models are called on the user's own keys, where live search may add provider charges (FR-CYC-3), and has the button. The form waits for the cycle, and leads to its timeline. What kept a cycle from running is said on the page. A test cycle affects no trading, so the page asks nothing once more for an agent in Live (FR-UI-3). The pages of the cycles and of the risk checks tell the record of a test cycle apart: see "The timeline" in [team.md](team.md).
+
 ## How long a cycle takes
 
 With providers responding normally, 95% of cycles finish within 90 seconds of candle close (NFR-PRF-2). A cycle is three calls of the team one after the other, the first of them two at once, so it takes what the providers of its team take: no test shows that with the providers themselves. What starts the cycles has its share of it, and measures the rest:
@@ -443,6 +492,23 @@ The data package of agent {AgentId} for the close at {ClosedAt} was built in {Du
 
 What runs the team of a cycle logs under `Ecnanib.DecisionEngine.TeamCycle` and `Ecnanib.DecisionEngine.RoleRuns`, inside the cycle as well: see "The log" in [team.md](team.md).
 
+What runs a test cycle logs under the area `Ecnanib.DecisionEngine.TestCycles`. From where the cycle has an id, its events carry `UserId`, `AgentId`, and `CycleId`, as those of the job do, and so does everything that the cycle itself logs:
+
+```
+User {UserId} runs a test cycle of agent {AgentId}, which is {AgentState}, for the close at {ClosedAt} ({Timeframe})
+The test cycle of agent {AgentId} for the close at {ClosedAt} ended in {DurationMs} ms
+The test cycle of agent {AgentId} for the close at {ClosedAt} failed after {DurationMs} ms, with no decision
+The test cycle of agent {AgentId} for the close at {ClosedAt} was stopped after {DurationMs} ms, with the application
+The test cycle of agent {AgentId} for the close at {ClosedAt} was stopped after {DurationMs} ms: it ran longer than {EndsWithinMinutes} minutes
+User {UserId} was refused a test cycle of agent {AgentId}: {RoleCount} of the roles of its team cannot work ({Roles})
+User {UserId} was refused a test cycle of agent {AgentId}: a test cycle of theirs runs already
+The exchange did not give the candle of {Symbol} on {Market} in {TradingMode} that closed at {ClosedAt} ({Timeframe}), for a test cycle of agent {AgentId}: {ExchangeCallOutcome}
+The candles of {Symbol} on {Market} in {TradingMode} could not be asked for ({Timeframe}), for a test cycle of agent {AgentId}
+Whether the test cycle of agent {AgentId} for the close at {ClosedAt} is recorded could not be read
+```
+
+A test cycle that started, ended, or was stopped with the application, and one that was refused, are information. A candle that the exchange did not give, a cycle that ran too long, and a record that could not be looked for, are warnings. A cycle that failed, and candles that could not be asked for, are errors, each with the error. What `TeamCycle` logs of a stale decision says for a test cycle the seconds since the cycle was run, which is what its stale limit counts from.
+
 | Level | Event |
 |---|---|
 | `Information` | The cycles that are due, the start and the end of a cycle, a data package that was built, an agent that gets no cycle, a cycle that was stopped with the application, and the summary of a close. |
@@ -475,6 +541,8 @@ A limit is held to through what the stand-in counted while the cycles were held,
 
 `PackagesApplication` is the application with both, and builds the package of a cycle of an agent that needs no row. `CyclesApplication` takes a `StandInHoldings` as well, for cycles whose agent holds a position, and other settings of the file of the tests, such as a stale limit: see "Testing" in [team.md](team.md). `CyclesApplication` runs the job with the application's own inside of a cycle, on `StandInMarket`, when a test says that its cycles build packages: `CycleDataPackageTests` does, and runs the job behind the gateway itself once, with a stand-in for Binance. Such a cycle runs the team of its agent as well, behind stand-ins for the models, the keys, and the records: see "Testing" in [team.md](team.md).
 
+**A test cycle is run through `ITestCycles`,** for agents of the database, each with a whole team that the key of its user can use: `CyclesApplication` with `storedAgents` and `buildsPackages`, on a clock that stands between two closes, so that the job has nothing to do. `TestCycleTests` holds what a test cycle leaves out to what the stand-ins were handed, and to the orders and the loss limits themselves, with `OrdersApplication`. `TestCyclePageTests` runs cycles from the page, through the gateway itself, and reads the pages that show them.
+
 ## Not built yet
 
 - The orders that only one market has: see "Not built yet" in [orders.md](orders.md).
@@ -484,7 +552,10 @@ A limit is held to through what the stand-in counted while the cycles were held,
 - Taking out of a report what a prompt never holds, so that the rest of it can be read. A report that holds it is rejected whole.
 - A start that waits for reconciliation before it schedules anything (NFR-REL-3). The agents are reconciled as the background work starts, beside the other jobs, and an agent that is not reconciled gets no cycle: nothing is placed for it before. The other jobs do not wait.
 - Recording a cycle that never started: one that was skipped, or whose agent no longer ran. A cycle is one run of a team, and such a one ran none: it leaves its events in the log, and is on no page. A cycle that started is recorded as a complete record, however it ends (FR-CYC-10).
-- A test cycle that a user runs for an agent (FR-CYC-12). The queue is of one run of the job, so a cycle that starts outside a run takes none of its places.
+- A place in the queue of a close for a test cycle. It starts outside a run of the job, and is bounded by one for a user at a time.
+- Following a test cycle while it runs (FR-NTF-2), and running one without a page that waits. The page waits for the cycle, and a browser that goes away finds it on the list of the cycles.
+- A limit on how many test cycles a user runs in a day. Its models are called on the user's own keys, and one runs at a time.
+- Settling the orders of an agent before its test cycle, by reading the exchange alone. The team of a test cycle decides on the records as the job that settles the orders left them, which runs every minute for the agents that have something to settle.
 - Limits on calls. The places are of cycles: a cycle is two calls with one key while the two analysts work.
 - Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A provider that is slow holds back the cycles that need it, and nothing pauses its calls.
 - Stopping the cycle of an agent when its user pauses or stops it. What places an entry asks again whether the agent takes new entries.

@@ -1040,6 +1040,7 @@ public class AgentPageTests
             (AgentBrowser.SwitchToDemoPage(agent.Id), AgentBrowser.SwitchToDemoForm, []),
             (AgentBrowser.ConfirmControlPage(agent.Id, "start"), AgentBrowser.StartForm, []),
             (AgentBrowser.ConfirmControlPage(running, "pause"), AgentBrowser.PauseForm, []),
+            (AgentBrowser.TestCyclePage(running), AgentBrowser.TestCycleForm, []),
         ];
 
         foreach (var (path, form, fields) in forms)
@@ -1049,9 +1050,11 @@ public class AgentPageTests
             Assert.Equal(HttpStatusCode.BadRequest, answer.StatusCode);
         }
 
-        // No agent was started or stopped by another site, and no position closed.
+        // No agent was started or stopped by another site, no position closed, and no test
+        // cycle run on the keys of the user.
         Assert.Equal(stored["agents"], application.RowsOf(user.Id)["agents"]);
         Assert.Equal(stored["agent_state_changes"], application.RowsOf(user.Id)["agent_state_changes"]);
+        Assert.Empty(application.RowsOf(user.Id)["decision_cycles"]);
         Assert.Empty(exposure.Closes);
         Assert.DoesNotContain(StoredAuditEvent.All(application.Database), recorded => recorded.Action.StartsWith("Agent", StringComparison.Ordinal));
     }

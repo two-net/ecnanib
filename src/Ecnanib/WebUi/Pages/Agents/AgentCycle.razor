@@ -17,6 +17,9 @@
     in plain language (NFR-USA-2). An outcome is said as words, and does not rely on a colour. The
     page has no form: a user reads the record of a cycle, and changes none. The badge of the mode
     of the agent is under the heading, and the cycle says the mode it ran in (FR-UI-3, FR-BIN-11).
+    A test cycle, which its user ran, says so under the heading, and that it placed no orders
+    (FR-CYC-12). It is run at any time after the close of its candle, so its entries say how long
+    after its start they happened.
 *@
 
 @if (_agent is not null && _cycle is not null)
@@ -27,10 +30,15 @@
 
     <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
+    @if (IsTest)
+    {
+        <p class="cycle-kind cycle-kind-test"><strong>Test cycle.</strong> @CyclePages.TestCycleRan</p>
+    }
+
     <p>
         The cycle for the candle that closed at @PageTimes.At(_cycle.ClosedAt), in <ModeBadge Mode="@_cycle.Mode" />. Outcome:
         <strong class="cycle-outcome cycle-@(_cycle.Outcome.ToString().ToLowerInvariant())">@CyclePages.Describe(_cycle.Outcome)</strong>.
-        @CyclePages.Explain(_cycle.Outcome)
+        @CyclePages.Explain(_cycle.Outcome, _cycle.Kind)
     </p>
 
     <p>@CyclePages.TimelineExplained</p>
@@ -42,7 +50,7 @@
             <li class="timeline-entry timeline-@entry.Kind">
                 @if (entry.Timed)
                 {
-                    <p class="timeline-time">@PageTimes.AtSecond(entry.At), @CyclePages.After(_cycle.ClosedAt, entry.At)</p>
+                    <p class="timeline-time">@PageTimes.AtSecond(entry.At), @After(entry)</p>
                 }
 
                 @switch (entry.What)
@@ -54,18 +62,29 @@
                             @(_cycle.DataPackage is { } closed
                                 ? $"The {closed.Timeframe.Code()} candle of {closed.Symbol} closed."
                                 : "The candle that the cycle is for closed.")
-                            A cycle starts when a candle of the agent's timeframe closes, and decides on closed candles only.
+                            @(IsTest
+                                ? "It was the latest closed candle of the agent's timeframe when the test cycle was run. A cycle decides on closed candles only."
+                                : "A cycle starts when a candle of the agent's timeframe closes, and decides on closed candles only.")
                         </p>
 
                         break;
 
                     case Started:
-                        <h2>The cycle started</h2>
+                        @if (IsTest)
+                        {
+                            <h2>The test cycle started</h2>
 
-                        <p>
-                            The turn of the cycle came. Before the team is called, the orders of the agent are settled with the
-                            exchange, and its loss limits are evaluated.
-                        </p>
+                            <p>@CyclePages.TestStarted</p>
+                        }
+                        else
+                        {
+                            <h2>The cycle started</h2>
+
+                            <p>
+                                The turn of the cycle came. Before the team is called, the orders of the agent are settled with the
+                                exchange, and its loss limits are evaluated.
+                            </p>
+                        }
 
                         break;
 
@@ -215,9 +234,9 @@
                         break;
 
                     case Ended:
-                        <h2>The cycle ended: @CyclePages.Describe(_cycle.Outcome)</h2>
+                        <h2>@(IsTest ? "The test cycle ended" : "The cycle ended"): @CyclePages.Describe(_cycle.Outcome)</h2>
 
-                        <p>@CyclePages.Explain(_cycle.Outcome) The cycle ran for @CyclePages.Seconds(_cycle.EndedAt - _cycle.StartedAt).</p>
+                        <p>@CyclePages.Explain(_cycle.Outcome, _cycle.Kind) The cycle ran for @CyclePages.Seconds(_cycle.EndedAt - _cycle.StartedAt).</p>
 
                         break;
                 }
@@ -263,6 +282,9 @@
     private CycleRecord? _cycle;
     private IReadOnlyList<Entry> _entries = [];
 
+    // Whether its user ran the cycle as a test, which places no order (FR-CYC-12).
+    private bool IsTest => _cycle is { Kind: CycleKind.Test };
+
     [Parameter]
     public Guid Id { get; set; }
 
@@ -304,6 +326,16 @@
 
         _entries = EntriesOf(_cycle);
     }
+
+    /// <summary>
+    /// How long after the close of the candle an entry happened. A test cycle is run at any time
+    /// after that close, hours after it for a candle of a day: what happened in it says how long
+    /// after its start that was, and the close of its candle stands as the close.
+    /// </summary>
+    private string After(Entry entry) =>
+        IsTest && entry.What is not Closed
+            ? CyclePages.AfterStart(_cycle!.StartedAt, entry.At)
+            : CyclePages.After(_cycle!.ClosedAt, entry.At);
 
     /// <summary>
     /// The entries of the timeline of a cycle, in the order they happened. What happened at the

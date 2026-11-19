@@ -69,6 +69,9 @@ public class TeamRecordTests
 
         Assert.Equal((agent, ada, TradingMode.Demo, Close, CycleOutcome.Approved), (cycle.AgentId, cycle.UserId, cycle.Mode, cycle.ClosedAt, cycle.Outcome));
         Assert.True(cycle.StartedAt <= cycle.EndedAt);
+
+        // The close of a candle started it: it is no test cycle, which its user runs (FR-CYC-12).
+        Assert.Equal(CycleKind.Scheduled, cycle.Kind);
         Assert.Equal(
             cycle.Id.ToString(),
             Assert.Single(application.Written(TeamLog.Area, TeamLog.Decided)).Text("CycleId"));

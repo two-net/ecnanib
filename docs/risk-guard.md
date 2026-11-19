@@ -28,6 +28,8 @@ What the team of an agent decides, and what goes on of its plan, is in [team.md]
 | `Unreviewed` | The plan to close a position, or to adjust protection. |
 | `Stale`, for a plan that reverses | The close alone: a plan to close the position. |
 
+**The plan of a test cycle is checked as every plan is, and what was accepted is handed to nothing** (FR-CYC-12). A test cycle, which its user runs, places no order: its check is recorded, so that its user sees what the Risk Guard would make of the plan, and that is all that becomes of it. See "A test cycle" in [cycles.md](cycles.md).
+
 | Rule | Detail |
 |---|---|
 | **The Risk Guard is rules only.** | `Ecnanib.RiskGuard` may use `Shared` and `Platform`, and no other component: see [architecture.md](architecture.md). `GuardCheck.Of` is one function of a `GuardCase`, which is the plan and the facts. It reads nothing, stores nothing, and has no service. `LossLimits` is functions of the equity of an agent and of what its loss is counted from, in the same way. |
@@ -56,7 +58,7 @@ What the team of an agent decides, and what goes on of its plan, is in [team.md]
 | `ProtectionTightens` | An adjustment moves the stop-loss only in the direction that reduces risk (FR-CYC-6). | The new stop-loss | The one that rests |
 | `DailyLossLimit` | The agent has lost less than its daily loss limit since the UTC day began, in percent of its equity then. | The loss, in percent | The agent's limit |
 | `DrawdownLimit` | The agent's equity is less than its drawdown limit below its peak, in percent of the peak. | The fall, in percent | The agent's limit |
-| `NotStale` | The plan is checked no later than the stale limit of the agent's timeframe after the close. | Seconds since the close | The limit, in seconds |
+| `NotStale` | The plan is checked no later than the stale limit of the agent's timeframe after the close. For a test cycle, after the moment that its user ran it. | Seconds since the close, or since a test cycle was run | The limit, in seconds |
 | `ModePermitted`, `MarketPermitted`, `SymbolPermitted` | See "Permitted". | | |
 | `NoGlobalHalt` | No global halt is on. | | |
 | `LiquidationBuffer` | On Futures, the estimated liquidation price is at least the agent's liquidation buffer times as far from the entry as the stop-loss. | How many times as far | The agent's buffer |
@@ -163,7 +165,7 @@ With a price of 60000, a quantity step of 0.001, an equity of 1000, and a risk f
 | Whether the key lets it trade | `IKeyValidation.BlockForAsync` | From what the last check of the key recorded. Binance is asked nothing. See "Permitted". |
 | Whether a halt is on | `IGlobalHalt.IsOnAsync` | See "The global halt". |
 | The limits | The agent of the cycle | Its settings as they were stored when the turn of the cycle came: a change applies from the agent's next cycle (FR-AGT-8). The risk per trade and the leverage cap are among them, for the size of the order. |
-| The stale limit | `Trading:StaleSeconds` | That of the agent's timeframe, counted from the close of the candle of the cycle. |
+| The stale limit | `Trading:StaleSeconds` | That of the agent's timeframe, counted from the close of the candle of the cycle. For a test cycle it is counted from the moment that the cycle was run, which is what `CycleStart.StaleFrom` says: a test cycle is run at any time after the close of its candle. The rule is the same, and is handed another "since". |
 | The risk fraction | The plan | As the Risk Manager left it: lower than the Strategist planned where the review reduced it. See "The review" in [team.md](team.md). |
 
 - **An exchange that gives no answer is a fact that is not known,** and a warning in the log. The gateway does not read again for 5 seconds, and the next close starts the next cycle.
@@ -316,6 +318,7 @@ A reverse closes the open position, and then opens one on the opposite side. It 
 | **A model answers a plan, and nothing more.** | The plan is validated against its schema before it goes on, and has no quantity and no leverage: see "What a model cannot do" in [team.md](team.md). A plan that the Risk Manager approved is rejected all the same when a rule does not hold. |
 | **Nothing hands a check a size.** | `GuardCase` has the risk fraction of the plan, and no place for a quantity or a leverage: the check computes both (FR-RSK-5). `RiskGuardRulesTests` finds every type of the application that makes an `OrderSize`, and fails for one that is not `OrderSizing`. So the size that a result says is within the agent's risk per trade, within its equity on Spot, and within its leverage cap on Futures. |
 | **The page takes nothing.** | It has no form. A form that is posted at it changes nothing. |
+| **A test cycle leaves no rule out, and leads to no trade.** | Its plan is held to every rule that the plan of any cycle is held to, on the facts as they are. That its stale limit counts from the moment it was run opens nothing: `TeamCycle` hands what was accepted of a test cycle to nothing, and `AgentOrders.PlaceAsync` refuses a test cycle where an order is made. `TestCycleTests` holds both to it. |
 | **An order is made from what was accepted.** | `GuardResult.Case` is the plan that was checked, with the facts that it was checked on, and `GuardResult.Size` the quantity and the leverage that the check computed for its order. `IPlanOrders.PlaceAsync` takes the result, and refuses one that is not accepted. `RiskGuardRulesTests` pins what uses `Ecnanib.ExchangeGateway.Trading` outside the gateway, which is `AgentOrders` alone, and fails for a type that uses it and takes no `GuardResult`. What settles the orders and what closes a position for its user take none: they open nothing. |
 
 ## The record of a check
@@ -367,6 +370,8 @@ public interface IRiskCheckRecords
 | **The latest 20 checks, latest close first.** | The page says so when there are more. The two checks of a reverse stand in their order. |
 | **A check leads to the timeline of its cycle.** | `RiskCheckView.CycleId` names the cycle. The size and the rules of a check are the component `RiskCheckRules`, which both pages show, with the texts of `RiskCheckPages`. |
 | **A check says the mode it was made in,** as a badge beside its verdict (FR-BIN-11). | The badge of the mode that the agent is in now is under the heading, as on every page of an agent (FR-UI-3). |
+| **A check of a test cycle says that it is one** (FR-CYC-12). | Beside the close of its candle. A check that accepted its plan says that the plan would go on to the orders, and that a test cycle places none. Its stale rule says the seconds since the test cycle was run. `RiskCheckView.Kind` is what started the cycle of the check. |
+| **The checks of one close stand with those of the cycle that started last first.** | A test cycle is for a close that a cycle of the job may be for as well, and the checks of a cycle stay together. |
 | **The checks of an agent of another user are not found.** | The page asks `IStoredAgents` for the agent of the user who is signed in, and answers "not found" as for an agent that does not exist. `IRiskCheckRecords` asks for the checks by owner as well. |
 | The Decision Engine may not use Accounts. | So the page hands `IRiskCheckRecords` the user who is signed in, by id. |
 | **The page has no form.** | A user reads the checks, and changes none: see "What cannot bypass it". |

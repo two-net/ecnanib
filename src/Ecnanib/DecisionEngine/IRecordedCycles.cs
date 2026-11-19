@@ -46,8 +46,15 @@ public sealed record CycleHistory(int Total, IReadOnlyList<CycleListing> Cycles)
 /// <param name="StartedAt">When the cycle started.</param>
 /// <param name="EndedAt">When it ended.</param>
 /// <param name="Outcome">How it ended.</param>
+/// <param name="Kind">What started it: the close of its candle, or its user, who ran it as a test (FR-CYC-12).</param>
 public sealed record CycleListing(
-    Guid Id, DateTimeOffset ClosedAt, TradingMode Mode, DateTimeOffset StartedAt, DateTimeOffset EndedAt, CycleOutcome Outcome);
+    Guid Id,
+    DateTimeOffset ClosedAt,
+    TradingMode Mode,
+    DateTimeOffset StartedAt,
+    DateTimeOffset EndedAt,
+    CycleOutcome Outcome,
+    CycleKind Kind = CycleKind.Scheduled);
 
 /// <summary>One cycle, as a complete record (FR-CYC-10).</summary>
 /// <param name="Id">The id of the cycle.</param>
@@ -61,6 +68,10 @@ public sealed record CycleListing(
 /// <param name="Checks">What the Risk Guard made of what went on of the plan, in the order of the checks. Empty when nothing went on.</param>
 /// <param name="Orders">The orders that the cycle placed, in the order they were written, each as it is now. Empty when it placed none.</param>
 /// <param name="NoEntry">Why no entry was placed for a plan to open a position that the Risk Guard accepted, or null.</param>
+/// <param name="Kind">
+/// What started it: the close of its candle, or its user, who ran it as a test. A test cycle
+/// placed no orders, whatever its team decided (FR-CYC-12).
+/// </param>
 public sealed record CycleRecord(
     Guid Id,
     DateTimeOffset ClosedAt,
@@ -72,7 +83,8 @@ public sealed record CycleRecord(
     IReadOnlyList<RoleCallView> Calls,
     IReadOnlyList<RiskCheckView> Checks,
     IReadOnlyList<CycleOrderView> Orders,
-    NoEntryReason? NoEntry);
+    NoEntryReason? NoEntry,
+    CycleKind Kind = CycleKind.Scheduled);
 
 /// <summary>One call of a role in a cycle, as its user reads it (FR-TEAM-8).</summary>
 /// <param name="Role">The role that was called.</param>
@@ -168,7 +180,7 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
             .OrderByDescending(cycle => cycle.ClosedAt)
             .ThenByDescending(cycle => cycle.StartedAt)
             .Take(Shown)
-            .Select(cycle => new CycleListing(cycle.Id, cycle.ClosedAt, cycle.Mode, cycle.StartedAt, cycle.EndedAt, cycle.Outcome))
+            .Select(cycle => new CycleListing(cycle.Id, cycle.ClosedAt, cycle.Mode, cycle.StartedAt, cycle.EndedAt, cycle.Outcome, cycle.Kind))
             .ToListAsync(cancellationToken);
 
         return new CycleHistory(total, latest);
@@ -229,7 +241,7 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
             .ToDictionaryAsync(template => template.Id, template => new TemplateVersion(template.Kind, template.Subject, template.Version), cancellationToken);
 
         var guarded = await RiskCheckViews.OfAsync(
-            context, userId, [.. checks.Select(check => (check, cycle.ClosedAt, cycle.Mode))], cancellationToken);
+            context, userId, [.. checks.Select(check => (check, cycle.ClosedAt, cycle.Mode, cycle.Kind))], cancellationToken);
 
         // A model of the catalog is never deleted, so a call finds the one that it was made
         // with, and its provider, for good.
@@ -295,7 +307,8 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
                     order.CreatedAt,
                     order.UpdatedAt)),
             ],
-            cycle.NoEntry);
+            cycle.NoEntry,
+            cycle.Kind);
     }
 
     // A call points at its model with a key that keeps the model from being deleted, so these

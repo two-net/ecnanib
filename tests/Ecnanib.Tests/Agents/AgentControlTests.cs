@@ -567,6 +567,7 @@ public class AgentControlTests
             (AgentBrowser.AgentStatePage(running.Id), AgentBrowser.ResumeForm),
             (AgentBrowser.StopAgentPage(running.Id), AgentBrowser.StopForm),
             (AgentBrowser.ClosePositionPage(running.Id), AgentBrowser.ClosePositionForm),
+            (AgentBrowser.TestCyclePage(running.Id), AgentBrowser.TestCycleForm),
         ];
 
         foreach (var (page, form) in forms)

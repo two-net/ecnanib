@@ -72,6 +72,9 @@ internal static class AgentsRules
         ["IAgentHalts.FindAsync"] =
             "Reads one agent in whatever state it is, for what watches its loss limits when its account is reconciled. It " +
             "changes no agent.",
+        ["IAgentTeams.FindAsync"] =
+            "Reads one agent of a user in whatever state it is, with its team and with what keeps the team from working, for " +
+            "what runs a test cycle of it, which places no order (FR-CYC-12). It changes no agent.",
     };
 
     /// <summary>

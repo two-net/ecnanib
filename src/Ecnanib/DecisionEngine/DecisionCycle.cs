@@ -18,6 +18,10 @@ namespace Ecnanib.DecisionEngine;
 /// none, with an error, or stopped. A cycle that never started leaves no row.
 /// </para>
 /// <para>
+/// It says what started it. A test cycle, which its user ran, is recorded as a cycle that a
+/// candle close started is, and is told apart from one by its kind (FR-CYC-12).
+/// </para>
+/// <para>
 /// It says the mode that the agent was in, and keeps saying it when the agent is switched: what
 /// an agent decided in Demo is Demo for good (FR-BIN-11).
 /// </para>
@@ -44,6 +48,9 @@ namespace Ecnanib.DecisionEngine;
 /// Why the cycle placed no entry for a plan to open a position that the Risk Guard accepted.
 /// Null for a cycle that placed its entry, and for one whose plan opened nothing.
 /// </param>
+/// <param name="kind">
+/// What started the cycle: the close of a candle, or its user, who ran it as a test (FR-CYC-12).
+/// </param>
 public sealed class DecisionCycle(
     Guid id,
     Guid agentId,
@@ -54,7 +61,8 @@ public sealed class DecisionCycle(
     DateTimeOffset endedAt,
     CycleOutcome outcome,
     string? dataPackage = null,
-    NoEntryReason? noEntry = null) : IUserOwned
+    NoEntryReason? noEntry = null,
+    CycleKind kind = CycleKind.Scheduled) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -75,6 +83,24 @@ public sealed class DecisionCycle(
     public string? DataPackage { get; } = dataPackage;
 
     public NoEntryReason? NoEntry { get; } = noEntry;
+
+    public CycleKind Kind { get; } = kind;
+}
+
+/// <summary>
+/// What started a cycle. A member is stored by its name, so renaming one changes stored data and
+/// needs a migration. See "A test cycle" in docs/cycles.md.
+/// </summary>
+public enum CycleKind
+{
+    /// <summary>The close of a candle of the agent's timeframe started it, for an agent that ran (FR-CYC-1).</summary>
+    Scheduled,
+
+    /// <summary>
+    /// Its user ran it, to see what the team would decide (FR-CYC-12). It is recorded as any
+    /// cycle is, and places no order.
+    /// </summary>
+    Test,
 }
 
 internal sealed class DecisionCycleConfiguration : IEntityTypeConfiguration<DecisionCycle>
@@ -95,6 +121,7 @@ internal sealed class DecisionCycleConfiguration : IEntityTypeConfiguration<Deci
         builder.Property(cycle => cycle.Outcome);
         builder.Property(cycle => cycle.DataPackage);
         builder.Property(cycle => cycle.NoEntry);
+        builder.Property(cycle => cycle.Kind);
 
         // The cycles of one agent of a user, in the order of their closes. It is also the index
         // of the key below.

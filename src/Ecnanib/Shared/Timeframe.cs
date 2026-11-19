@@ -66,4 +66,11 @@ public static class Timeframes
     /// </summary>
     public static IReadOnlyList<Timeframe> ClosingAt(DateTimeOffset time) =>
         [.. All.Where(timeframe => time.UtcTicks % timeframe.Length().Ticks == 0)];
+
+    /// <summary>
+    /// The latest close of a candle of a timeframe at a time: the UTC boundary of the timeframe
+    /// at that time, or the last one before it. A time that is a boundary is its own latest close.
+    /// </summary>
+    public static DateTimeOffset LatestClose(this Timeframe timeframe, DateTimeOffset time) =>
+        new(time.UtcTicks - (time.UtcTicks % timeframe.Length().Ticks), TimeSpan.Zero);
 }

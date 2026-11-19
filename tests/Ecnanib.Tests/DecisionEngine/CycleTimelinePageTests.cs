@@ -733,7 +733,8 @@ public partial class CycleTimelinePageTests
             AgentBrowser.Read(row.Groups[3].Value),
             AgentBrowser.Read(row.Groups[4].Value),
             AgentBrowser.Read(row.Groups[5].Value),
-            row.Groups[6].Value)),
+            row.Groups[6].Value,
+            row.Groups["kind"].Value)),
     ];
 
     /// <summary>The rows of the table of a data package, each with its value for every series.</summary>
@@ -763,7 +764,12 @@ public partial class CycleTimelinePageTests
     ];
 
     /// <summary>A cycle as a list shows it.</summary>
-    private sealed record ListedCycle(string ClosedAt, string Mode, string Outcome, string Means, string Took, string Timeline);
+    /// <remarks>
+    /// A cycle of these tests was started by the close of a candle, and is listed as scheduled:
+    /// a test cycle, which its user runs, is in <see cref="TestCyclePageTests"/> (FR-CYC-12).
+    /// </remarks>
+    private sealed record ListedCycle(
+        string ClosedAt, string Mode, string Outcome, string Means, string Took, string Timeline, string Kind = "Scheduled");
 
     /// <summary>A row of the table of a data package: what it measures, and its value for each series.</summary>
     private sealed record Measure(string Name, IReadOnlyList<string> Values)
@@ -812,7 +818,8 @@ public partial class CycleTimelinePageTests
     private static partial Regex RuleNames();
 
     [GeneratedRegex(
-        @"<tr>\s*<th scope=""row"">([^<]*)</th>\s*<td><span class=""mode-badge mode-[a-z]+"">(Demo|Live)</span></td>\s*" +
+        @"<tr>\s*<th scope=""row"">([^<]*)</th>\s*<td><span class=""cycle-kind cycle-kind-[a-z]+"">(?<kind>[^<]*)</span></td>\s*" +
+        @"<td><span class=""mode-badge mode-[a-z]+"">(Demo|Live)</span></td>\s*" +
         @"<td><span class=""cycle-outcome cycle-[a-z]+"">([^<]*)</span></td>\s*<td>([^<]*)</td>\s*<td>([^<]*)</td>\s*" +
         @"<td><a href=""([^""]*)"">Timeline</a></td>\s*</tr>")]
     private static partial Regex Listed();

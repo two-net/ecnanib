@@ -91,6 +91,12 @@ public static class WebUiModule
     /// </summary>
     public static string AgentCyclePath(Guid agentId, Guid cycleId) => $"{AgentCyclesPath(agentId)}/{cycleId}";
 
+    /// <summary>
+    /// The path of the page a user runs a test cycle of an agent on: one cycle, on demand, that
+    /// is recorded and places no orders (FR-CYC-12).
+    /// </summary>
+    public static string AgentTestCyclePath(Guid agentId) => $"{AgentPath(agentId)}/test-cycle";
+
     /// <summary>The path of the page a user stops an agent on, and chooses what happens to its open position (FR-AGT-11).</summary>
     public static string StopAgentPath(Guid agentId) => $"{AgentPath(agentId)}/stop";
 

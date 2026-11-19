@@ -19,6 +19,10 @@ namespace Ecnanib.DecisionEngine;
 /// A cycle is run for an agent that ran when its turn came. An agent is paused or stopped by its
 /// user at any moment, also while its cycle runs, so what places an entry asks again then.
 /// </para>
+/// <para>
+/// A test cycle, which its user runs for an agent in any state, is handed over as a cycle is,
+/// with <see cref="CycleStart.TestedAt"/>: it is recorded, and places no order (FR-CYC-12).
+/// </para>
 /// </remarks>
 public interface IDecisionCycle
 {
@@ -28,7 +32,8 @@ public interface IDecisionCycle
     /// Canceled when the application stops, when it stops being the instance that runs the
     /// background work, and 45 seconds before the next close, by which the cycles of a close
     /// are over. The cycle then ends soon, by throwing <see cref="OperationCanceledException"/>,
-    /// and leaves no entry without its protection (NFR-REL-5).
+    /// and leaves no entry without its protection (NFR-REL-5). For a test cycle it is canceled
+    /// when the application stops, and when the cycle runs longer than a test cycle may.
     /// </param>
     /// <remarks>
     /// An error that leaves this ends the cycle with no decision. It is logged once, with the
@@ -54,9 +59,26 @@ public interface IDecisionCycle
 /// that is in progress is not among them (FR-CYC-1). The agents that share a symbol and a
 /// timeframe are handed the same.
 /// </param>
+/// <param name="TestedAt">
+/// When its user ran the cycle, for a test cycle (FR-CYC-12): it places no order, settles
+/// nothing with the exchange, and halts nothing. Null for a cycle that a candle close started.
+/// See "A test cycle" in docs/cycles.md.
+/// </param>
 public sealed record CycleStart(
     Guid CycleId,
     Agent Agent,
     IReadOnlyList<AgentRoleView> Roles,
     DateTimeOffset ClosedAt,
-    ExchangeCandles Candles);
+    ExchangeCandles Candles,
+    DateTimeOffset? TestedAt = null)
+{
+    /// <summary>Whether its user ran the cycle as a test, which places no order (FR-CYC-12).</summary>
+    public bool IsTest => TestedAt is not null;
+
+    /// <summary>
+    /// What the stale limit of the decision counts from (FR-CYC-9): the close of the candle, and
+    /// for a test cycle the moment that its user ran it. A test cycle is run at any time, hours
+    /// after the close of its candle, and decides as a cycle does whose candle has just closed.
+    /// </summary>
+    public DateTimeOffset StaleFrom => TestedAt ?? ClosedAt;
+}

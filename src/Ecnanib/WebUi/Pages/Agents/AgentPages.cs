@@ -34,6 +34,9 @@ public static class AgentPages
     /// <summary>The name of the form that closes the open position of an agent.</summary>
     public const string ClosePositionForm = "close-agent-position";
 
+    /// <summary>The name of the form that runs a test cycle of an agent (FR-CYC-12).</summary>
+    public const string TestCycleForm = "run-agent-test-cycle";
+
     /// <summary>The name of the form that switches an agent to Live (FR-AGT-7).</summary>
     public const string SwitchToLiveForm = "switch-agent-to-live";
 
