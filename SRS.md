@@ -646,6 +646,7 @@ The outline below shows what the single configuration file contains. Key names a
     "Spot": { "Live": { "BaseUrl": "", "FeedUrl": "" }, "Demo": { "BaseUrl": "", "FeedUrl": "" } },
     "Futures": { "Live": { "BaseUrl": "", "FeedUrl": "" }, "Demo": { "BaseUrl": "", "FeedUrl": "" } },
     "Symbols": [],
+    "FeeSymbols": [],
     "OutboundIps": [],
     "LimitSharePercent": 70,
     "ReconcileMinutes": 5,

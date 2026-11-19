@@ -55,7 +55,10 @@ public interface IExchangeMarketData
     /// <summary>The price that a symbol last traded at.</summary>
     /// <param name="market">The market.</param>
     /// <param name="mode">The environment.</param>
-    /// <param name="symbol">The symbol, which is one of the configuration file.</param>
+    /// <param name="symbol">
+    /// The symbol, which is one of the configuration file: one that an agent may trade, or one
+    /// that prices a fee (FR-BIN-10).
+    /// </param>
     /// <param name="cancellationToken">Ends the wait of this asker.</param>
     Task<ExchangePrice> GetPriceAsync(Market market, TradingMode mode, string symbol, CancellationToken cancellationToken);
 

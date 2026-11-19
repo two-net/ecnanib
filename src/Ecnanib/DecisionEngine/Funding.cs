@@ -15,7 +15,8 @@ namespace Ecnanib.DecisionEngine;
 /// exchange gave it is unique among the funding of an account. The funding of a position is its
 /// rows together, as the fees of a position are the fees of its executions: nothing adds them up
 /// here. What works out the equity of an agent adds them up, each time that it is asked for
-/// it: see <see cref="AgentResults"/>.
+/// it, and the result of the position says their sum once the position is closed: see
+/// <see cref="AgentResults"/> and <see cref="PositionResult"/>.
 /// </para>
 /// <para>
 /// It carries its owner along to the position that it hangs on: <c>(position_id, user_id)</c>

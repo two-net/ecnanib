@@ -25,7 +25,7 @@ public class OrderRecordTests
     private static readonly DateTimeOffset Morning = new(2026, 11, 17, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    [ProvesOwnershipOf("orders", "fills", "positions", "fundings", "equity_marks")]
+    [ProvesOwnershipOf("orders", "fills", "positions", "fundings", "equity_marks", "position_roles", "position_results", "equity_snapshots")]
     public async Task The_orders_of_an_agent_are_of_the_user_of_the_agent_and_of_no_other()
     {
         using var application = new AccountsApplication(clock: new TestClock(Morning));
@@ -60,12 +60,22 @@ public class OrderRecordTests
         Assert.Equal(
             [adas],
             await context.Set<EquityMark>().OwnedBy(ada.Id).Select(mark => mark.AgentId).ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            [adasPosition],
+            await context.Set<PositionRole>().OwnedBy(ada.Id).Select(role => role.PositionId).Distinct().ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            [adasPosition],
+            await context.Set<PositionResult>().OwnedBy(ada.Id).Select(result => result.PositionId).ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            [adas],
+            await context.Set<EquitySnapshot>().OwnedBy(ada.Id).Select(snapshot => snapshot.AgentId).ToListAsync(TestContext.Current.CancellationToken));
 
         // The owner of an order and of a position is the owner of its agent, the owner of an
         // execution the owner of its order, the owner of what a position received and paid as
-        // funding the owner of the position, and the owner of what the loss limits of an agent
-        // are counted from the owner of the agent: the database holds to each, whatever wrote
-        // the row.
+        // funding, of the models that held its roles, and of its result the owner of the
+        // position, and the owner of what the loss limits of an agent are counted from, and of
+        // its equity at a moment, the owner of the agent: the database holds to each, whatever
+        // wrote the row.
         var gracesOrder = await context.Set<Order>().AsNoTracking().FirstAsync(order => order.AgentId == graces, TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(application, OrderOf(graces, ada.Id, OrderStatus.Filled)));
@@ -77,6 +87,31 @@ public class OrderRecordTests
 
         await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
             application, new EquityMark(graces, ada.Id, TradingMode.Live, "USDT", 1000m, Morning.AddHours(-9), 0m, 0m, Morning)));
+
+        // A role that the position of Grace has no row for yet, so that only whose it is stands in the way.
+        var gracesRole = await context.Set<PositionRole>().AsNoTracking().FirstAsync(role => role.PositionId == gracesPosition, TestContext.Current.CancellationToken);
+        await context.Set<PositionRole>()
+            .Where(role => role.PositionId == gracesPosition && role.Role == gracesRole.Role)
+            .ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
+            application, new PositionRole(gracesPosition, ada.Id, gracesRole.Role, gracesRole.ModelId)));
+        await StoreAsync(application, gracesRole);
+
+        // And a position of Grace that has no result yet.
+        var gracesOther = PositionOf(graces, grace.Id, closed: true);
+        await StoreAsync(application, gracesOther);
+        await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
+            application,
+            new PositionResult(gracesOther.Id, ada.Id, "USDT", 0m, 0m, 0m, 0m, risk: null, resultInR: null, holdingSeconds: 0, complete: true, Morning)));
+        await context.Set<Position>().Where(position => position.Id == gracesOther.Id).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
+            application, new EquitySnapshot(graces, ada.Id, TradingMode.Live, Morning, "USDT", 1000m, 1000m)));
+
+        // A position has one result.
+        await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
+            application,
+            new PositionResult(adasPosition, ada.Id, "USDT", 0m, 0m, 0m, 0m, risk: null, resultInR: null, holdingSeconds: 0, complete: true, Morning)));
 
         // What a position received or paid at a funding time is stored once for it.
         await Assert.ThrowsAsync<DbUpdateException>(() => StoreAsync(
@@ -110,6 +145,16 @@ public class OrderRecordTests
 
         // So is what its loss limits were counted from.
         Assert.Equal([kept], await context.Set<EquityMark>().Select(mark => mark.AgentId).ToListAsync(TestContext.Current.CancellationToken));
+
+        // And so are the models that held its roles when its position was opened, the result
+        // of the position, and its equity over time.
+        Assert.Equal(
+            [keptPosition],
+            await context.Set<PositionRole>().Select(role => role.PositionId).Distinct().ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            [keptPosition],
+            await context.Set<PositionResult>().Select(result => result.PositionId).ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal([kept], await context.Set<EquitySnapshot>().Select(snapshot => snapshot.AgentId).ToListAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -252,6 +297,7 @@ public class OrderRecordTests
     }
 
     private static Position PositionOf(Guid agentId, Guid userId, bool closed) => new(
-        Guid.CreateVersion7(), agentId, userId, TradingMode.Demo, Market.Spot, "BTCUSDT", PositionSide.Long, 60000m, 0.01m, 59000m, 62000m,
+        Guid.CreateVersion7(), agentId, userId, TradingMode.Demo, Market.Spot, "BTCUSDT", "USDT", Timeframe.OneHour, PositionSide.Long,
+        60000m, 0.01m, 59000m, 62000m,
         Morning, closed ? Morning.AddHours(1) : null, closed ? ExitReason.StopLoss : null, alertedAt: null, fundingDueAt: null);
 }

@@ -35,6 +35,11 @@ public static class DecisionEngineModule
         services.AddSingleton<StoredOrders>();
         services.AddSingleton<IPlanOrders, AgentOrders>();
 
+        // What the fee of an execution is worth in the asset that its symbol is priced in,
+        // said as the execution is stored, so that the fee is in every profit and loss figure
+        // whatever asset the exchange took it in (FR-BIN-10). It reads prices, and no account.
+        services.AddSingleton<FeeValuation>();
+
         // What the positions and the orders answer to those that waited for them: Agents asks
         // what an agent holds on the exchange and has its position closed, a cycle reads what
         // its agent holds, and what starts a cycle asks whether the orders of its agent are
@@ -52,11 +57,19 @@ public static class DecisionEngineModule
         // when its loss for the UTC day reaches its daily loss limit, or its drawdown from its
         // peak equity reaches its drawdown limit, its position is closed and it is halted
         // (FR-RSK-8). The Risk Guard says when a limit is reached, and Agents halts the agent.
+        // It records the equity that it evaluated: the equity of an agent over time.
         services.AddSingleton<ILossLimits, LossLimitWatch>();
 
         // Settles the orders every minute, for the agents that have something to settle: what
         // a cycle could not finish, and what was under way when the application stopped.
         services.AddBackgroundJob<OrderSettlingJob>();
+
+        // Records the result of every closed position, once all of it is stored: its net profit
+        // or loss, its result in R, its fees, its funding, and how long it was held (FR-EXP-1).
+        // The fees and the funding are those that the exchange said (FR-BIN-10). It reads the
+        // rows alone, and has the equity of the agent recorded after it.
+        services.AddSingleton<PositionResults>();
+        services.AddBackgroundJob<PositionResultsJob>();
 
         // Reconciles the agents with the exchange, which is the source of truth, as the
         // background work starts and at the time between reconciliations: what the account of

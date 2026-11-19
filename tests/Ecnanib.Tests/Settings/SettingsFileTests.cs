@@ -69,6 +69,7 @@ public class SettingsFileTests
             new[] { (Market.Spot, TradingMode.Live), (Market.Spot, TradingMode.Demo), (Market.Futures, TradingMode.Live), (Market.Futures, TradingMode.Demo) },
             account => Assert.Null(settings.Binance.FeedUrl(account.Item1, account.Item2)));
         Assert.Equal(["BTCUSDT", "SOLUSDT"], settings.Binance.Symbols);
+        Assert.Equal(["BNBUSDT"], settings.Binance.FeeSymbols);
         Assert.Equal([IPAddress.Parse("203.0.113.7")], settings.Binance.OutboundIps);
         Assert.Equal(60, settings.Binance.LimitSharePercent);
         Assert.Equal(4, settings.Binance.ReconcileMinutes);
@@ -207,6 +208,11 @@ public class SettingsFileTests
         { "Binance:Futures:Demo:FeedUrl", "7", "Binance:Futures:Demo:FeedUrl" },
         { "Binance:Symbols", "[]", "Binance:Symbols" },
         { "Binance:Symbols", "[\"btcusdt\"]", "Binance:Symbols:0" },
+
+        // A symbol that prices a fee is written as one that is traded, and is listed once (FR-BIN-10).
+        { "Binance:FeeSymbols", "\"BNBUSDT\"", "Binance:FeeSymbols" },
+        { "Binance:FeeSymbols", "[\"BNB-USDT\"]", "Binance:FeeSymbols:0" },
+        { "Binance:FeeSymbols", "[\"BNBUSDT\", \"BNBUSDT\"]", "Binance:FeeSymbols" },
         { "Binance:OutboundIps", "[\"300.1.1.1\"]", "Binance:OutboundIps:0" },
         { "Trading:StaleSeconds", "{ \"15m\": 100, \"1H\": 200, \"1D\": 800 }", "Trading:StaleSeconds:4H" },
 
@@ -389,10 +395,14 @@ public class SettingsFileTests
         var settings = Load(SettingsJson.Valid()
             .WithJson("Application:Operators", "[]")
             .WithJson("Binance:OutboundIps", "[]")
+            .WithJson("Binance:FeeSymbols", "[]")
             .WithJson("Logging:Overrides", "{}"));
 
         Assert.Empty(settings.Application.Operators);
         Assert.Empty(settings.Binance.OutboundIps);
+
+        // No symbol prices a fee then: one in an asset of neither side of its symbol has no value.
+        Assert.Empty(settings.Binance.FeeSymbols);
         Assert.Empty(settings.Logging.Overrides);
     }
 

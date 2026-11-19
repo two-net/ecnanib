@@ -91,6 +91,13 @@ internal static class PersonalDataRules
         ["fundings.transaction_id"] = "The number that Binance gave what a position received or paid at a funding time.",
         ["fundings.asset"] = "The asset that a position received or paid funding in, as Binance names it, such as USDT.",
         ["positions.symbol"] = "A symbol of Binance that the configuration file lists: the one of the agent when the position was opened.",
+        ["positions.quote_asset"] =
+            "The asset that the symbol of a position is priced in, as Binance names it, such as USDT: the one of the agent when the position was opened.",
+        ["position_results.asset"] =
+            "The asset that the result of a closed position is in, as Binance names it, such as USDT: the one that its symbol is priced in.",
+        ["equity_snapshots.asset"] =
+            "The asset that the equity of an agent at a moment is in, as Binance names it, such as USDT: the one that the symbol of " +
+            "the agent was priced in then.",
         ["equity_marks.asset"] =
             "The asset that the result of an agent is in, as Binance names it, such as USDT: the one that the symbol of the agent " +
             "was priced in when its loss limits were last evaluated.",

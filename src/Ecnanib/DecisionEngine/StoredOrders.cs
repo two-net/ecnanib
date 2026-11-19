@@ -44,6 +44,15 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
     /// </summary>
     public static readonly TimeSpan FundingWithin = TimeSpan.FromDays(1);
 
+    /// <summary>
+    /// For how long after an order came to be over the fees of its executions are still valued,
+    /// when what values one could not be read as the execution was stored. A price is read
+    /// again within seconds, so a fee that has no value after this is one that nothing values:
+    /// it is in an asset that the configuration file names no symbol for. The result of its
+    /// position does not wait longer.
+    /// </summary>
+    public static readonly TimeSpan FeesValuedWithin = TimeSpan.FromHours(1);
+
     // The millisecond of the id that was handed out last.
     private static long _lastMillisecond;
 
@@ -798,6 +807,23 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
 
         var now = clock.GetUtcNow();
 
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        // The agent as it is now: the asset that its symbol is priced in, its timeframe, and the
+        // models of its roles are those that the position is linked to for good (FR-EXP-1). None
+        // of the first two changes while the agent has an order.
+        var agent = await context.Set<Agent>()
+            .AsNoTracking()
+            .Where(stored => stored.Id == entry.AgentId)
+            .Select(stored => new { stored.QuoteAsset, stored.Timeframe })
+            .SingleAsync(cancellationToken);
+
+        var roles = await context.Set<AgentRole>()
+            .AsNoTracking()
+            .Where(role => role.AgentId == entry.AgentId)
+            .ToListAsync(cancellationToken);
+
         var position = new Position(
             NextId(),
             entry.AgentId,
@@ -805,6 +831,8 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
             entry.Mode,
             entry.Market,
             entry.Symbol,
+            agent.QuoteAsset,
+            agent.Timeframe,
             entry.Side == OrderSide.Buy ? PositionSide.Long : PositionSide.Short,
             averagePrice,
             held,
@@ -819,12 +847,10 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
             // first time soon after it is opened (FR-BIN-F4). One of the Spot market has none.
             fundingDueAt: entry.Market == Market.Futures ? now : null);
 
-        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
-        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
-
-        // The position first: the entry then names it.
+        // The position first: the entry then names it, and so do the models of its roles.
         context.Add(position);
         context.AddRange(fills);
+        context.AddRange(roles.Select(role => new PositionRole(position.Id, position.UserId, role.Role, role.ModelId)));
         await context.SaveChangesAsync(cancellationToken);
 
         var written = await context.Set<Order>()
@@ -901,6 +927,40 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
         context.AddRange(fills.Where(fill => !stored.Contains(fill.TradeId)));
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The executions, of all users, whose fee has no value yet, as far as they are still
+    /// valued, each with the order that it is of, in the order of their ids (FR-BIN-10). There
+    /// are few: a fee is valued as its execution is stored, unless what values it could not be
+    /// read then.
+    /// </summary>
+    public async Task<IReadOnlyList<(Fill Fill, Order Order)>> UnvaluedFeesAsync(CancellationToken cancellationToken)
+    {
+        var since = clock.GetUtcNow() - FeesValuedWithin;
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        var rows = await (
+            from fill in context.Set<Fill>().AsNoTracking()
+            join order in context.Set<Order>().AsNoTracking() on fill.OrderId equals order.Id
+            where fill.FeeValue == null && order.UpdatedAt >= since
+            orderby fill.Id
+            select new { fill, order })
+            .ToListAsync(cancellationToken);
+
+        return [.. rows.Select(row => (row.fill, row.order))];
+    }
+
+    /// <summary>Writes what the fee of an execution is worth, when the execution says nothing of it yet: it is said once.</summary>
+    /// <returns>Whether it was written.</returns>
+    public async Task<bool> ValueFeeAsync(Guid fillId, decimal value, CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        return await context.Set<Fill>()
+            .Where(fill => fill.Id == fillId && fill.FeeValue == null)
+            .ExecuteUpdateAsync(row => row.SetProperty(fill => fill.FeeValue, (decimal?)value), cancellationToken) > 0;
     }
 
     /// <summary>
@@ -1089,10 +1149,20 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
     /// source of truth: no order of the agent closed it, so no order says why.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// It is written under the lock of the account, and only when the position and the orders of
     /// its agent that are not over still are as they were read, which is as the exchange was
     /// asked about them: an order that another began or saw executed meanwhile is what explains
     /// the account, and then nothing is written.
+    /// </para>
+    /// <para>
+    /// <b>What it held is counted at the price now</b> (FR-BIN-10). No order of the agent sold
+    /// it, so no execution says what it was sold at, or for which fee: what it made is what it
+    /// would have made at the price that its agent's equity valued it at a moment ago, and is
+    /// kept with the position. So the equity of its agent does not move because the position is
+    /// gone. Where the price is not known, it counts as closed at the price that it was entered
+    /// at, and the position says all the same that its result is an estimate.
+    /// </para>
     /// </remarks>
     /// <param name="position">The position, as it was read.</param>
     /// <param name="live">The orders of its agent that are not over, as they were read.</param>
@@ -1103,15 +1173,21 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
     /// that share an asset are worked out against each other, and the second of two that are
     /// corrected at the same moment is worked out anew.
     /// </param>
+    /// <param name="price">The price that the position is valued at now, or null when the exchange did not say.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Whether it was written.</returns>
     public async Task<bool> ClosedAtExchangeAsync(
-        Position position, IReadOnlyList<Order> live, IReadOnlyList<(Guid Id, decimal Quantity)>? beside, CancellationToken cancellationToken)
+        Position position,
+        IReadOnlyList<Order> live,
+        IReadOnlyList<(Guid Id, decimal Quantity)>? beside,
+        decimal? price,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(position);
         ArgumentNullException.ThrowIfNull(live);
 
         var now = clock.GetUtcNow();
+        var made = MadeAt(position, position.Quantity, price);
 
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
@@ -1128,7 +1204,8 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
             .ExecuteUpdateAsync(
                 row => row
                     .SetProperty(stored => stored.ClosedAt, (DateTimeOffset?)now)
-                    .SetProperty(stored => stored.ExitReason, (ExitReason?)ExitReason.ClosedAtExchange),
+                    .SetProperty(stored => stored.ExitReason, (ExitReason?)ExitReason.ClosedAtExchange)
+                    .SetProperty(stored => stored.MadeAtExchange, stored => (decimal?)((stored.MadeAtExchange ?? 0m) + made)),
                 cancellationToken);
 
         if (written != 1)
@@ -1146,11 +1223,25 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
     /// holds it (FR-BIN-7, FR-BIN-8): less than the records said, or more. It is written as
     /// <see cref="ClosedAtExchangeAsync"/> writes, under the same conditions.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What left it is counted at the price now,</b> as what a position held that was closed
+    /// at the exchange is: see <see cref="ClosedAtExchangeAsync"/>. What was added to it made
+    /// nothing yet.
+    /// </para>
+    /// <para>
+    /// <b>The orders that closed a part of it earlier keep the value that they had.</b> Each is
+    /// counted against the price that the position was entered at, which is another from now on
+    /// where the exchange says another: what that would change of them is kept with the
+    /// position, so that it changes nothing.
+    /// </para>
+    /// </remarks>
     /// <param name="position">The position, as it was read.</param>
     /// <param name="quantity">What it holds, which is more than nothing: a position that holds nothing is closed.</param>
     /// <param name="entryPrice">The average price that it was entered at, as the exchange says it, or null where the exchange says none.</param>
     /// <param name="live">The orders of its agent that are not over, as they were read.</param>
     /// <param name="beside">The other open positions of the user that share what the account holds, as they were read, or null.</param>
+    /// <param name="price">The price that the position is valued at now, or null when the exchange did not say.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Whether it was written.</returns>
     public async Task<bool> HeldAsync(
@@ -1159,11 +1250,14 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
         decimal? entryPrice,
         IReadOnlyList<Order> live,
         IReadOnlyList<(Guid Id, decimal Quantity)>? beside,
+        decimal? price,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(position);
         ArgumentNullException.ThrowIfNull(live);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(quantity);
+
+        var entered = entryPrice ?? position.EntryPrice;
 
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
@@ -1173,12 +1267,25 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
             return false;
         }
 
+        var made = MadeAt(position, Math.Max(position.Quantity - quantity, 0m), price);
+
+        if (entered != position.EntryPrice)
+        {
+            var closedEarlier = await context.Set<Order>()
+                .AsNoTracking()
+                .Where(order => order.PositionId == position.Id && order.Purpose != OrderPurpose.Entry)
+                .SumAsync(order => order.ExecutedQuantity, cancellationToken);
+
+            made += MadeAt(position, closedEarlier, entered);
+        }
+
         var written = await context.Set<Position>()
             .Where(row => row.Id == position.Id && row.ClosedAt == null && row.Quantity == position.Quantity)
             .ExecuteUpdateAsync(
                 row => row
                     .SetProperty(stored => stored.Quantity, quantity)
-                    .SetProperty(stored => stored.EntryPrice, entryPrice ?? position.EntryPrice),
+                    .SetProperty(stored => stored.EntryPrice, entered)
+                    .SetProperty(stored => stored.MadeAtExchange, stored => (decimal?)((stored.MadeAtExchange ?? 0m) + made)),
                 cancellationToken);
 
         if (written != 1)
@@ -1420,6 +1527,28 @@ internal sealed class StoredOrders(IDbContextFactory<EcnanibDbContext> contexts,
             checkedAt: null,
             pairId,
             cancelAfter: null);
+
+    /// <summary>
+    /// What a quantity of a position makes at a price, counted from the price that the position
+    /// was entered at. Nothing where the price is not known, and where the numbers cannot be
+    /// worked out with, which are no numbers of a market.
+    /// </summary>
+    private static decimal MadeAt(Position position, decimal quantity, decimal? price)
+    {
+        if (price is not { } at || quantity <= 0m)
+        {
+            return 0m;
+        }
+
+        try
+        {
+            return Position.Made(position.Side, quantity, position.EntryPrice, at);
+        }
+        catch (OverflowException)
+        {
+            return 0m;
+        }
+    }
 
     private static Task CloseAsync(
         EcnanibDbContext context, Guid positionId, ExitReason? reason, DateTimeOffset now, CancellationToken cancellationToken) =>

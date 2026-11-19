@@ -25,10 +25,11 @@ namespace Ecnanib.DecisionEngine;
 /// for by closing it says none.
 /// </para>
 /// <para>
-/// It says the mode, the market, and the symbol that the agent had when the position was
-/// opened, and keeps saying them (FR-BIN-11). It carries its owner along to the agent that it
-/// hangs on: <c>(agent_id, user_id)</c> points at <c>agents (id, user_id)</c>. See
-/// docs/ownership.md.
+/// It says the mode, the market, the symbol, the asset that the symbol is priced in, and the
+/// timeframe that the agent had when the position was opened, and keeps saying them (FR-BIN-11,
+/// FR-EXP-1). The models that held the roles of the agent then are rows of their own that name
+/// it: see <see cref="PositionRole"/>. It carries its owner along to the agent that it hangs
+/// on: <c>(agent_id, user_id)</c> points at <c>agents (id, user_id)</c>. See docs/ownership.md.
 /// </para>
 /// <para>
 /// <b>What it received and paid as funding</b> on the Futures market is rows of the
@@ -37,10 +38,17 @@ namespace Ecnanib.DecisionEngine;
 /// of it is read. See "Funding" in docs/orders.md.
 /// </para>
 /// <para>
-/// Its result, the sums of its fees and of its funding, and its result in R are not stored yet:
-/// what the positions of an agent made and lost is worked out from their orders, their
-/// executions, and their funding when the equity of the agent is asked for
-/// (<see cref="AgentResults"/>).
+/// <b>What left it by no order of the agent is an amount here.</b> A position that its user, or
+/// the exchange, closed or reduced at the exchange has no execution for that part, so what the
+/// part made is counted at the price when the records were corrected, and kept here: see
+/// <see cref="StoredOrders.ClosedAtExchangeAsync"/> and "What is corrected" in docs/orders.md.
+/// A position that says an amount here, also one of nothing, is one whose result is an estimate.
+/// </para>
+/// <para>
+/// Its result, the sums of its fees and of its funding, and its result in R are a row of their
+/// own, which is written once the position is closed and all of it is stored: see
+/// <see cref="PositionResult"/>. Until then, and for the equity of its agent, they are worked out
+/// from its orders, their executions, and its funding (<see cref="AgentResults"/>).
 /// </para>
 /// </remarks>
 /// <param name="id">Assigned by the application.</param>
@@ -49,6 +57,8 @@ namespace Ecnanib.DecisionEngine;
 /// <param name="mode">The mode that the agent was in.</param>
 /// <param name="market">The market that the position is on.</param>
 /// <param name="symbol">The symbol that it is in.</param>
+/// <param name="quoteAsset">The asset that the symbol is priced in, which its result is in.</param>
+/// <param name="timeframe">The timeframe that the agent worked on.</param>
 /// <param name="side">Long or short.</param>
 /// <param name="entryPrice">The average price that it was entered at.</param>
 /// <param name="quantity">How much of the asset it holds: what an order that protects or closes it is for.</param>
@@ -68,6 +78,13 @@ namespace Ecnanib.DecisionEngine;
 /// closed position whose funding was read after it was closed. So a closed position that says
 /// a time here is one whose funding is not all stored.
 /// </param>
+/// <param name="madeAtExchange">
+/// What the parts of it made that left it by no order of the agent, in the asset that its symbol
+/// is priced in, each at the price when the records were corrected: above zero for a profit,
+/// below it for a loss. It also holds what keeps the orders that closed a part of it earlier at
+/// the value that they had, when the exchange said another entry price. Null for a position
+/// whose records were never corrected against the account.
+/// </param>
 public sealed class Position(
     Guid id,
     Guid agentId,
@@ -75,6 +92,8 @@ public sealed class Position(
     TradingMode mode,
     Market market,
     string symbol,
+    string quoteAsset,
+    Timeframe timeframe,
     PositionSide side,
     decimal entryPrice,
     decimal quantity,
@@ -84,7 +103,8 @@ public sealed class Position(
     DateTimeOffset? closedAt,
     ExitReason? exitReason,
     DateTimeOffset? alertedAt,
-    DateTimeOffset? fundingDueAt) : IUserOwned
+    DateTimeOffset? fundingDueAt,
+    decimal? madeAtExchange = null) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -97,6 +117,10 @@ public sealed class Position(
     public Market Market { get; } = market;
 
     public string Symbol { get; } = symbol;
+
+    public string QuoteAsset { get; } = quoteAsset;
+
+    public Timeframe Timeframe { get; } = timeframe;
 
     public PositionSide Side { get; } = side;
 
@@ -118,8 +142,22 @@ public sealed class Position(
 
     public DateTimeOffset? FundingDueAt { get; } = fundingDueAt;
 
+    public decimal? MadeAtExchange { get; } = madeAtExchange;
+
     /// <summary>The side of an order that closes or protects the position: it sells what a long position holds, and buys back what a short one sold.</summary>
     public OrderSide ClosingSide => Side == PositionSide.Long ? OrderSide.Sell : OrderSide.Buy;
+
+    /// <summary>
+    /// What a quantity of the position makes between two prices, in the direction of the
+    /// position: a long position gains as the price rises, and a short one as it falls. It is
+    /// rounded as every amount that is added up is: see <see cref="AgentResults.Rounded"/>.
+    /// </summary>
+    /// <param name="side">The side of the position.</param>
+    /// <param name="quantity">How much of the asset that is traded.</param>
+    /// <param name="from">The price that it is counted from.</param>
+    /// <param name="to">The price that it is counted to.</param>
+    public static decimal Made(PositionSide side, decimal quantity, decimal from, decimal to) =>
+        AgentResults.Rounded(quantity * (side == PositionSide.Long ? to - from : from - to));
 }
 
 /// <summary>How a position was closed. A member is stored by its name, so renaming one needs a migration.</summary>
@@ -169,6 +207,8 @@ internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>
         builder.Property(position => position.Mode);
         builder.Property(position => position.Market);
         builder.Property(position => position.Symbol);
+        builder.Property(position => position.QuoteAsset);
+        builder.Property(position => position.Timeframe);
         builder.Property(position => position.Side);
         builder.Property(position => position.EntryPrice);
         builder.Property(position => position.Quantity);
@@ -179,6 +219,7 @@ internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>
         builder.Property(position => position.ExitReason);
         builder.Property(position => position.AlertedAt);
         builder.Property(position => position.FundingDueAt);
+        builder.Property(position => position.MadeAtExchange);
 
         // An agent holds one position at most (FR-CYC-5).
         builder.HasIndex(position => position.AgentId).IsUnique().HasFilter("closed_at IS NULL");

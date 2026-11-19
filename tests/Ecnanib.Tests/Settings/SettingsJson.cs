@@ -72,6 +72,7 @@ internal sealed class SettingsJson
               "Demo": { "BaseUrl": "https://futures-demo.example" }
             },
             "Symbols": [ "BTCUSDT", "SOLUSDT" ],
+            "FeeSymbols": [ "BNBUSDT" ],
             "OutboundIps": [ "203.0.113.7" ],
             "LimitSharePercent": 60,
             "ReconcileMinutes": 4,

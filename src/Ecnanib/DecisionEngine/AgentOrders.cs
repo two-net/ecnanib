@@ -5,6 +5,7 @@ using Ecnanib.Credentials;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.ExchangeGateway.Trading;
 using Ecnanib.Notifications;
+using Ecnanib.Platform.Settings;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
 
@@ -110,6 +111,8 @@ internal sealed class AgentOrders(
     StoredOrders stored,
     IAgentTrading agents,
     INotifications notifications,
+    FeeValuation fees,
+    BinanceSettings binance,
     TimeProvider clock,
     ILogger<AgentOrders> logger) : IPlanOrders
 {
@@ -2143,7 +2146,9 @@ internal sealed class AgentOrders(
             said.ExecutedQuantity,
             entryPrice,
             held,
-            [.. fills.Select(fill => RowOf(entry, fill))],
+
+            // No price is read for a fee here: the position has no stop-loss yet.
+            await RowsOfAsync(entry, fills, readsPrice: false),
             CancellationToken.None);
 
         if (position is not null)
@@ -2322,9 +2327,13 @@ internal sealed class AgentOrders(
         var side = position.Side == PositionSide.Long ? "long" : "short";
         var said = Written(position.Quantity);
 
+        // What left the position has no execution, so it is counted at the price now, which is
+        // what the equity of the agent valued it at a moment ago (FR-BIN-10).
+        var price = await ValuedAtAsync(position);
+
         if (holds.Quantity <= 0m)
         {
-            if (!await stored.ClosedAtExchangeAsync(position, resting, holds.Beside, CancellationToken.None))
+            if (!await stored.ClosedAtExchangeAsync(position, resting, holds.Beside, price, CancellationToken.None))
             {
                 return Held.NotSaid;
             }
@@ -2344,7 +2353,7 @@ internal sealed class AgentOrders(
 
         if (holds.Quantity < position.Quantity)
         {
-            if (!await stored.HeldAsync(position, holds.Quantity, holds.EntryPrice, resting, holds.Beside, CancellationToken.None))
+            if (!await stored.HeldAsync(position, holds.Quantity, holds.EntryPrice, resting, holds.Beside, price, CancellationToken.None))
             {
                 return Held.NotSaid;
             }
@@ -2379,7 +2388,7 @@ internal sealed class AgentOrders(
             }
         }
 
-        if (!await stored.HeldAsync(position, holds.Quantity, holds.EntryPrice, live: [], holds.Beside, CancellationToken.None))
+        if (!await stored.HeldAsync(position, holds.Quantity, holds.EntryPrice, live: [], holds.Beside, price, CancellationToken.None))
         {
             return Held.NotSaid;
         }
@@ -2587,7 +2596,47 @@ internal sealed class AgentOrders(
 
     /// <summary>The executions of an order as rows, or null when the exchange did not say them.</summary>
     private async Task<IReadOnlyList<Fill>?> FillsAsync(Order order, string exchangeOrderId) =>
-        await FillsOfAsync(order, exchangeOrderId) is { } fills ? [.. fills.Select(fill => RowOf(order, fill))] : null;
+        await FillsOfAsync(order, exchangeOrderId) is { } fills ? await RowsOfAsync(order, fills, readsPrice: true) : null;
+
+    /// <summary>
+    /// The executions of an order as rows, each with what its fee is worth in the asset that the
+    /// symbol is priced in, where that is known now (FR-BIN-10). A fee that is not valued here is
+    /// valued by a later run of what settles the orders: see <see cref="FeeValuation"/>.
+    /// </summary>
+    /// <param name="order">The order that was executed.</param>
+    /// <param name="fills">Its executions, as the exchange said them.</param>
+    /// <param name="readsPrice">Whether the price of another symbol is read now for a fee that needs one: not while a position waits for its stop-loss.</param>
+    private async Task<IReadOnlyList<Fill>> RowsOfAsync(Order order, IReadOnlyList<ExchangeFill> fills, bool readsPrice)
+    {
+        var rows = new List<Fill>(fills.Count);
+
+        foreach (var fill in fills)
+        {
+            var value = await fees.OfAsync(order, fill.Fee, fill.FeeAsset, fill.Price, readsPrice, again: false, CancellationToken.None);
+
+            rows.Add(new Fill(
+                Guid.CreateVersion7(), order.Id, order.UserId, fill.TradeId, fill.Price, fill.Quantity, fill.Fee, fill.FeeAsset, fill.At, value));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// The price that what left a position by no order of the agent is counted at: the price
+    /// that the equity of its agent values the position at, now. Null when the exchange did not
+    /// say, and for a symbol that the configuration file no longer lists, which has no price.
+    /// </summary>
+    private async Task<decimal?> ValuedAtAsync(Position position)
+    {
+        if (!binance.Symbols.Contains(position.Symbol))
+        {
+            return null;
+        }
+
+        var (price, _) = await AgentResults.PriceOfAsync(market, position, CancellationToken.None);
+
+        return price;
+    }
 
     /// <summary>The rules of a symbol as the exchange says them, or null when it did not say or the market lacks it.</summary>
     private async Task<ExchangeSymbol?> SymbolAsync(Market on, TradingMode mode, string symbol, CancellationToken cancellationToken)
@@ -2711,9 +2760,6 @@ internal sealed class AgentOrders(
         OrderType.Limit => ExchangeOrderType.Limit,
         _ => throw new ArgumentOutOfRangeException(nameof(order), order.Type, "The exchange has no such order."),
     };
-
-    private static Fill RowOf(Order order, ExchangeFill fill) => new(
-        Guid.CreateVersion7(), order.Id, order.UserId, fill.TradeId, fill.Price, fill.Quantity, fill.Fee, fill.FeeAsset, fill.At);
 
     /// <summary>
     /// Whether an order protects a position and rests as it was placed: a stop-loss or a

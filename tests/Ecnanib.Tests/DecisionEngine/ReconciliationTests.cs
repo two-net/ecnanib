@@ -66,6 +66,11 @@ public class ReconciliationTests
         Assert.Equal(ExitReason.ClosedAtExchange, position.ExitReason);
         Assert.NotNull(position.ClosedAt);
 
+        // No execution says what it was sold at, so it counts as closed at the price when that
+        // was found (FR-BIN-10): the price that it was entered at here, at which it made nothing.
+        // See AgentResultTests for a price that has moved.
+        Assert.Equal(0m, position.MadeAtExchange);
+
         // What protected it would act on the next position of the agent: it is taken off.
         Assert.Equal(
             [
@@ -136,6 +141,10 @@ public class ReconciliationTests
         var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
         Assert.Equal((0.005m, null), (position.Quantity, position.ClosedAt));
 
+        // What left it counts as sold at the price when that was found, which is the price that
+        // it was entered at here. The position says that it was corrected.
+        Assert.Equal(0m, position.MadeAtExchange);
+
         // Its orders only reduce the position, so they close no more than the account holds: they rest on.
         Assert.Equal(["FILLED", "NEW", "NEW"], application.Binance.Orders.Select(order => order.Status));
         Assert.Equal(3, (await application.OrdersOfAsync(agent.Id)).Count);
@@ -167,6 +176,10 @@ public class ReconciliationTests
         // The records hold what the account holds, at the price that Binance says.
         var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
         Assert.Equal((0.05m, 60300m, null), (position.Quantity, position.EntryPrice, position.ClosedAt));
+
+        // What was added to it has made nothing, and no order had closed a part of it. The
+        // position says all the same that it was corrected: its result is no measured one.
+        Assert.Equal(0m, position.MadeAtExchange);
 
         // What protected the position was for what the agent opened: it is taken off, and
         // placed anew for all that is held, at the prices that the position says.

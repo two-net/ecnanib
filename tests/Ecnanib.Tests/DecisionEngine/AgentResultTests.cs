@@ -3,6 +3,7 @@ using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Shared;
 using Ecnanib.Tests.RiskGuard;
+using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.Tests.DecisionEngine;
 
@@ -11,7 +12,9 @@ namespace Ecnanib.Tests.DecisionEngine;
 /// loss to date. Both loss limits include unrealized profit and loss (FR-RSK-8), and the system
 /// computes quantity from the agent's equity (FR-RSK-5). This is the equity that the positions,
 /// the orders, the executions, and the funding of an agent add up to, as whatever asks what an
-/// agent holds is told it. See "The equity of an agent" in docs/orders.md.
+/// agent holds is told it. Fees and funding payments are taken from exchange data and included
+/// in every profit and loss figure (FR-BIN-10). See "The equity of an agent" and "The value of
+/// a fee" in docs/orders.md.
 /// </summary>
 /// <remarks>
 /// The agent of these tests has a capital of 1000 USDT. The Binance of the tests executes an
@@ -21,6 +24,8 @@ namespace Ecnanib.Tests.DecisionEngine;
 /// </remarks>
 public class AgentResultTests
 {
+    private const string Fees = "Ecnanib.DecisionEngine.FeeValuation";
+
     [Fact]
     public async Task An_agent_that_has_traded_nothing_has_the_capital_that_its_user_allocated_as_its_equity()
     {
@@ -180,24 +185,257 @@ public class AgentResultTests
     }
 
     [Fact]
-    public async Task What_was_closed_at_the_exchange_by_no_order_of_the_agent_counts_as_closed_at_the_price_that_it_was_entered_at()
+    public async Task What_was_closed_at_the_exchange_by_no_order_of_the_agent_counts_as_closed_at_the_price_when_it_was_found()
     {
         using var application = new OrdersApplication();
         var agent = await application.GiveAgentAsync(market: Market.Futures);
         await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
+        await application.SettleAsync(agent.Id);
         application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(4));
 
-        // Its user closes the position at Binance by hand, far below its entry. No order of the
-        // agent did it, so no execution of it is stored: what it lost there is not known until
-        // the executions that were done by hand are read, which is not built.
+        // The price falls far below its entry: the 0.02 have lost 200, which is in the equity
+        // of the agent with the fee of its entry.
         application.Binance.Price = 50000m;
+        Assert.Equal(798.8m, (await HoldsAsync(application, agent)).Equity);
+
+        // Its user closes the position at Binance by hand. No order of the agent did it, so no
+        // execution says what it was sold at: it counts as closed at the price when that is
+        // found, which is what the equity valued it at a moment ago.
         application.Binance.HoldByHand(Market.Futures, 0m);
         Assert.True(await application.ReconcileAsync(agent.Id));
 
-        Assert.Equal(ExitReason.ClosedAtExchange, Assert.Single(await application.PositionsOfAsync(agent.Id)).ExitReason);
+        var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
+        Assert.Equal((ExitReason.ClosedAtExchange, (decimal?)-200m), (position.ExitReason, position.MadeAtExchange));
 
-        // The fee of its entry is all that is counted.
+        // The loss is the agent's, and is in its loss limits: its equity is as it was, and
+        // stays so wherever the price goes from here.
+        Assert.Equal(798.8m, (await HoldsAsync(application, agent)).Equity);
+
+        application.Binance.Price = 60000m;
+        Assert.Equal(798.8m, (await HoldsAsync(application, agent)).Equity);
+    }
+
+    [Fact]
+    public async Task What_its_user_sold_of_a_position_at_the_exchange_leaves_the_equity_of_its_agent_as_it_was()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync(market: Market.Futures);
+        await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
+        await application.SettleAsync(agent.Id);
+        application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(4));
+
+        // At 61000 the 0.02 have made 20.
+        application.Binance.Price = 61000m;
+        Assert.Equal(1018.8m, (await HoldsAsync(application, agent)).Equity);
+
+        // Its user sells half of it at Binance by hand: the half counts as sold at the price
+        // when that is found, which is 10 made, and the other half is valued as before. Binance
+        // says the price that the position was entered at as it was: a sale changes none.
+        application.Binance.HoldByHand(Market.Futures, 0.01m);
+        application.Binance.EnteredAt = 60000m;
+        Assert.True(await application.ReconcileAsync(agent.Id));
+
+        var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
+        Assert.Equal((0.01m, null, (decimal?)10m), (position.Quantity, position.ClosedAt, position.MadeAtExchange));
+        Assert.Equal(1018.8m, (await HoldsAsync(application, agent)).Equity);
+
+        // What was sold no longer moves with the price: only the half that is held does.
+        application.Binance.Price = 62000m;
+        Assert.Equal(1028.8m, (await HoldsAsync(application, agent)).Equity);
+    }
+
+    [Fact]
+    public async Task What_left_a_position_counts_as_closed_at_its_entry_price_where_the_price_is_not_known()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync(market: Market.Futures);
+        await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
+        await application.SettleAsync(agent.Id);
+        application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(4));
+
+        // The exchange does not say the price as the records are corrected: they are corrected
+        // all the same, for the exchange is the source of truth for what an agent holds.
+        application.Binance.Price = 50000m;
+        application.Binance.HoldByHand(Market.Futures, 0m);
+        application.FundingTimes.Prices = ExchangeCallOutcome.TimedOut;
+        Assert.True(await application.ReconcileAsync(agent.Id));
+
+        // Nothing is guessed: what it made is nothing, and the position says that it was
+        // corrected, so its result is no measured one.
+        var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
+        Assert.Equal((ExitReason.ClosedAtExchange, (decimal?)0m), (position.ExitReason, position.MadeAtExchange));
+
+        application.FundingTimes.Prices = ExchangeCallOutcome.Succeeded;
         Assert.Equal(998.8m, (await HoldsAsync(application, agent)).Equity);
+    }
+
+    [Fact]
+    public async Task A_position_that_was_added_to_at_the_exchange_keeps_what_was_closed_of_it_earlier_at_the_value_that_it_had()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync(market: Market.Futures);
+        await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
+        await application.SettleAsync(agent.Id);
+        var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
+        var at = application.Clock.GetUtcNow();
+
+        // As the records are after an order of the agent closed half of the position at 59000,
+        // and ended with that: 10 lost, and the position holds 0.01.
+        var closeId = Guid.CreateVersion7();
+        await StoreAsync(
+            application,
+            new Order(
+                closeId, agent.Id, agent.UserId, agent.Mode, agent.Market, agent.Symbol, cycleId: null, position.Id,
+                Order.ClientOrderIdOf(closeId), exchangeOrderId: "7005", OrderPurpose.Close, OrderType.Market, OrderSide.Sell,
+                price: null, stopLoss: null, takeProfit: null, quantity: 0.02m, OrderStatus.Expired,
+                executedQuantity: 0.01m, averagePrice: 59000m, ExitReason.UserClose, sends: 1, fillsRecorded: true,
+                createdAt: at, updatedAt: at, checkedAt: at, pairId: null, cancelAfter: null));
+
+        await using (var context = await application.Application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken))
+        {
+            await context.Set<Position>()
+                .Where(row => row.Id == position.Id)
+                .ExecuteUpdateAsync(row => row.SetProperty(stored => stored.Quantity, 0.01m), TestContext.Current.CancellationToken);
+        }
+
+        // At 60800 the half that is held has made 8: 1000, less the fee of 1.2 and the 10, with the 8.
+        application.Clock.Set(at.AddMinutes(4));
+        application.Binance.Price = 60800m;
+        Assert.Equal(996.8m, (await HoldsAsync(application, agent)).Equity);
+
+        // The account holds 0.02: its user bought 0.01 more by hand, at 60800, and Binance says
+        // the average of both as the price that the position was entered at.
+        application.Binance.EnteredAt = 60400m;
+        Assert.True(await application.ReconcileAsync(agent.Id));
+
+        position = Assert.Single(await application.PositionsOfAsync(agent.Id));
+        Assert.Equal((0.02m, 60400m), (position.Quantity, position.EntryPrice));
+
+        // The half that was closed at 59000 was entered at 60000, and lost 10. Counted against
+        // 60400 it would have lost 14: the 4 are kept with the position, so that it lost what it
+        // lost. What was bought has made nothing yet, and the equity is as it was.
+        Assert.Equal(4m, position.MadeAtExchange);
+        Assert.Equal(996.8m, (await HoldsAsync(application, agent)).Equity);
+    }
+
+    [Fact]
+    public async Task A_fee_that_is_taken_in_another_asset_is_counted_by_what_that_asset_traded_at_when_its_execution_was_stored()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync();
+
+        // The account pays its fees with BNB: Binance takes the tenth of a percent of the
+        // purchase, which is worth 0.6 USDT, as 0.0012 BNB at the 500 that BNB trades at.
+        application.Binance.FeeAsset = "BNB";
+        await application.PlaceAsync(agent, GuardCases.OpenLong);
+
+        // The execution is stored as the position is opened, which is before the position has
+        // its stop-loss: no price is read then, and the fee has no value yet.
+        var entry = (await application.OrdersOfAsync(agent.Id))[0];
+        Assert.Equal((0.0012m, "BNB", null), Row(Assert.Single(await application.FillsOfAsync(entry.Id))));
+        Assert.Equal(0, application.FundingTimes.FeePricesAsked);
+        Assert.Equal(1000m, (await HoldsAsync(application, agent)).Equity);
+
+        // The job that settles the orders values it with its next run, within a minute. The
+        // execution says the fee as Binance took it, and what it is worth beside it: by the
+        // price of BNBUSDT, which the configuration file names as a symbol that prices a fee.
+        application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(1));
+        await application.WhileTimePassesAsync(application.Application.SettleOrdersAsync(application.Clock.GetUtcNow()));
+
+        Assert.Equal((0.0012m, "BNB", 0.6m), Row(Assert.Single(await application.FillsOfAsync(entry.Id))));
+        Assert.Equal(1, application.FundingTimes.FeePricesAsked);
+
+        // So the fee is in the equity of the agent, as one in USDT is.
+        Assert.Equal(999.4m, (await HoldsAsync(application, agent)).Equity);
+
+        // It is valued once: where BNB goes from here changes nothing of what the fee was worth.
+        application.Binance.FeeAssetPrice = 900m;
+        application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(1));
+        await application.WhileTimePassesAsync(application.Application.SettleOrdersAsync(application.Clock.GetUtcNow()));
+
+        Assert.Equal(999.4m, (await HoldsAsync(application, agent)).Equity);
+        Assert.Equal(1, application.FundingTimes.FeePricesAsked);
+
+        static (decimal Fee, string FeeAsset, decimal? FeeValue) Row(Fill fill) => (fill.Fee, fill.FeeAsset, fill.FeeValue);
+    }
+
+    [Fact]
+    public async Task A_fee_whose_price_could_not_be_read_is_valued_by_a_later_run_of_what_settles_the_orders()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync(market: Market.Futures);
+        application.Binance.FeeAsset = "BNB";
+        application.Binance.ExecutedAt = application.Clock.GetUtcNow();
+
+        // The exchange does not say what BNB trades at as the executions of the entry are stored.
+        application.FundingTimes.FeePrices = ExchangeCallOutcome.TimedOut;
+        await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
+        await application.SettleAsync(agent.Id);
+
+        var entry = (await application.OrdersOfAsync(agent.Id))[0];
+        Assert.Equal((0.0024m, "BNB", null), Row(Assert.Single(await application.FillsOfAsync(entry.Id))));
+
+        // The execution is stored as Binance said it, and its fee is in no figure yet. It is
+        // said, with the symbol that was not priced, and never with an amount.
+        Assert.Equal(1000m, (await HoldsAsync(application, agent)).Equity);
+
+        var said = Assert.Single(application.Application.Events(), written => written.Area == Fees && written.Level == "Warning");
+        Assert.Equal(
+            "A fee of agent {AgentId} in {Symbol} is not valued yet: the exchange did not give the price of {FeeSymbol} ({ExchangeCallOutcome})",
+            said.Template);
+        Assert.Equal(("BTCUSDT", "BNBUSDT", "TimedOut"), (said.Text("Symbol"), said.Text("FeeSymbol"), said.Text("ExchangeCallOutcome")));
+
+        // The job that settles the orders values it with its next run, and says nothing more
+        // while the price is still not read.
+        application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(1));
+        await application.WhileTimePassesAsync(application.Application.SettleOrdersAsync(application.Clock.GetUtcNow()));
+
+        Assert.Null(Assert.Single(await application.FillsOfAsync(entry.Id)).FeeValue);
+        Assert.Single(application.Application.Events(), written => written.Area == Fees && written.Level == "Warning");
+
+        // Once the exchange says the price, the fee is worth what BNB trades at then: 1.2.
+        application.FundingTimes.FeePrices = ExchangeCallOutcome.Succeeded;
+        application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(1));
+        await application.WhileTimePassesAsync(application.Application.SettleOrdersAsync(application.Clock.GetUtcNow()));
+
+        Assert.Equal((0.0024m, "BNB", 1.2m), Row(Assert.Single(await application.FillsOfAsync(entry.Id))));
+        Assert.Equal(998.8m, (await HoldsAsync(application, agent)).Equity);
+
+        static (decimal Fee, string FeeAsset, decimal? FeeValue) Row(Fill fill) => (fill.Fee, fill.FeeAsset, fill.FeeValue);
+    }
+
+    [Fact]
+    public async Task A_fee_in_an_asset_that_the_file_names_no_symbol_for_is_in_no_figure_and_is_said_once()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync(market: Market.Futures);
+        application.Binance.FeeAsset = "DOGE";
+        application.Binance.ExecutedAt = application.Clock.GetUtcNow();
+
+        await application.PlaceAsync(agent, GuardCases.OpenLongOnFutures);
+        await application.SettleAsync(agent.Id);
+
+        // Nothing says what the asset is worth: the file lists BNBUSDT, and no DOGEUSDT. The
+        // fee has no value, and no price is asked for.
+        var entry = (await application.OrdersOfAsync(agent.Id))[0];
+        Assert.Null(Assert.Single(await application.FillsOfAsync(entry.Id)).FeeValue);
+        Assert.Equal(0, application.FundingTimes.FeePricesAsked);
+
+        // The equity of the agent is known all the same, without the fee: an agent is not held
+        // back for a fee.
+        var holds = await HoldsAsync(application, agent);
+        Assert.Equal((1000m, true), (holds.Equity, holds.Valued));
+
+        // It is said once, as the execution is stored, and not with every run that asks again.
+        application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(1));
+        await application.WhileTimePassesAsync(application.Application.SettleOrdersAsync(application.Clock.GetUtcNow()));
+
+        var said = Assert.Single(application.Application.Events(), written => written.Area == Fees && written.Level == "Warning");
+        Assert.Equal(
+            "A fee of agent {AgentId} in {Symbol} was taken in {FeeAsset}, which the configuration file names no symbol for: it has no " +
+            "value, and is in no profit and loss figure",
+            said.Template);
+        Assert.Equal((agent.Id.ToString(), "BTCUSDT", "DOGE"), (said.Text("AgentId"), said.Text("Symbol"), said.Text("FeeAsset")));
     }
 
     [Theory]
@@ -249,8 +487,8 @@ public class AgentResultTests
         var at = OrdersApplication.Start;
 
         var position = new Position(
-            Guid.CreateVersion7(), agent.Id, agent.UserId, agent.Mode, agent.Market, agent.Symbol, PositionSide.Long,
-            entryPrice, quantity: 0.00700000m, stopLoss: 70000m, takeProfit: null, openedAt: at, closedAt: at.AddMinutes(5),
+            Guid.CreateVersion7(), agent.Id, agent.UserId, agent.Mode, agent.Market, agent.Symbol, agent.QuoteAsset, agent.Timeframe,
+            PositionSide.Long, entryPrice, quantity: 0.00700000m, stopLoss: 70000m, takeProfit: null, openedAt: at, closedAt: at.AddMinutes(5),
             ExitReason.StopLoss, alertedAt: null, fundingDueAt: null);
         var stopLossId = Guid.CreateVersion7();
         var stopLoss = new Order(
@@ -264,14 +502,16 @@ public class AgentResultTests
         await StoreAsync(
             application,
             stopLoss,
-            new Fill(Guid.CreateVersion7(), stopLossId, agent.UserId, "9001", exitPrice, 0.00700000m, fee: 0.00000700m, feeAsset: "BTC", at));
+            new Fill(
+                Guid.CreateVersion7(), stopLossId, agent.UserId, "9001", exitPrice, 0.00700000m, fee: 0.00000700m, feeAsset: "BTC", at,
+                feeValue: Math.Round(0.00000700m * exitPrice, 12, MidpointRounding.AwayFromZero)));
 
         var holds = await HoldsAsync(application, agent);
 
         // What the position lost, and the fee that was taken in the asset at the price of its
         // execution, each to 12 decimal places: far below anything that is traded.
-        var lost = Math.Round(0.00700000m * (exitPrice - entryPrice), 12);
-        var fee = Math.Round(0.00000700m * exitPrice, 12);
+        var lost = Math.Round(0.00700000m * (exitPrice - entryPrice), 12, MidpointRounding.AwayFromZero);
+        var fee = Math.Round(0.00000700m * exitPrice, 12, MidpointRounding.AwayFromZero);
 
         Assert.Equal(1000m + lost - fee, holds.Equity);
         Assert.InRange(holds.Equity, 989.5m, 989.6m);
@@ -287,8 +527,8 @@ public class AgentResultTests
         // A position that its stop-loss closed, of which the exchange said how much was
         // executed, and no average price.
         var position = new Position(
-            Guid.CreateVersion7(), agent.Id, agent.UserId, agent.Mode, agent.Market, agent.Symbol, PositionSide.Long,
-            entryPrice: 60000m, quantity: 0.01m, stopLoss: 59000m, takeProfit: null, openedAt: at, closedAt: at.AddMinutes(5),
+            Guid.CreateVersion7(), agent.Id, agent.UserId, agent.Mode, agent.Market, agent.Symbol, agent.QuoteAsset, agent.Timeframe,
+            PositionSide.Long, entryPrice: 60000m, quantity: 0.01m, stopLoss: 59000m, takeProfit: null, openedAt: at, closedAt: at.AddMinutes(5),
             ExitReason.StopLoss, alertedAt: null, fundingDueAt: null);
         var stopLossId = Guid.CreateVersion7();
         var stopLoss = new Order(
@@ -310,8 +550,8 @@ public class AgentResultTests
         // 58900, each for a fee in USDT.
         await StoreAsync(
             application,
-            new Fill(Guid.CreateVersion7(), stopLossId, agent.UserId, "9001", 59000m, 0.004m, fee: 0.236m, feeAsset: "USDT", at),
-            new Fill(Guid.CreateVersion7(), stopLossId, agent.UserId, "9002", 58900m, 0.006m, fee: 0.3534m, feeAsset: "USDT", at));
+            new Fill(Guid.CreateVersion7(), stopLossId, agent.UserId, "9001", 59000m, 0.004m, fee: 0.236m, feeAsset: "USDT", at, feeValue: 0.236m),
+            new Fill(Guid.CreateVersion7(), stopLossId, agent.UserId, "9002", 58900m, 0.006m, fee: 0.3534m, feeAsset: "USDT", at, feeValue: 0.3534m));
 
         holds = await HoldsAsync(application, agent);
 

@@ -448,6 +448,41 @@ public class MarketDataTests
     }
 
     [Fact]
+    public async Task The_price_of_a_symbol_that_prices_a_fee_is_served_and_nothing_else_of_it()
+    {
+        var binance = BinanceCalls.ThatAnswers();
+        using var application = BinanceCalls.Behind(binance);
+        var data = application.Services.GetRequiredService<IExchangeMarketData>();
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        // BNBUSDT is a symbol of Binance:FeeSymbols in the file of the tests, and none of
+        // Binance:Symbols: a fee that Binance took in BNB is valued by its price (FR-BIN-10).
+        const string feeSymbol = "BNBUSDT";
+
+        var price = await data.GetPriceAsync(Market.Spot, TradingMode.Live, feeSymbol, cancellationToken);
+
+        Assert.Equal(ExchangeCallOutcome.Succeeded, price.Outcome);
+
+        var call = Assert.Single(binance.Calls);
+        Assert.Equal($"GET {BinanceCalls.AddressOf(Market.Spot, TradingMode.Live)}/api/v3/ticker/price", $"{call.Method} {call.Endpoint}");
+        Assert.Equal([("symbol", feeSymbol)], call.Query);
+
+        // It is priced, and not traded: nothing else is read of it, and the symbols that a
+        // market has, which are those that an agent may trade, are without it.
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => data.GetCandlesAsync(Market.Spot, TradingMode.Live, feeSymbol, CandleInterval.OneHour, cancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => data.GetMarkPriceAsync(TradingMode.Live, feeSymbol, cancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => data.GetOpenInterestAsync(TradingMode.Live, feeSymbol, cancellationToken));
+
+        Assert.Single(binance.Calls);
+
+        var symbols = await data.GetSymbolsAsync(Market.Spot, TradingMode.Live, cancellationToken);
+
+        Assert.Equal(ExchangeCallOutcome.Succeeded, symbols.Outcome);
+        Assert.DoesNotContain(symbols.Symbols, listed => listed.Symbol == feeSymbol);
+    }
+
+    [Fact]
     public async Task What_is_no_call_ends_with_an_error_and_reaches_binance_with_nothing()
     {
         var binance = BinanceCalls.ThatAnswers();

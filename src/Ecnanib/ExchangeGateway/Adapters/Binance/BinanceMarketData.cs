@@ -24,7 +24,9 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// </para>
 /// <para>
 /// Only the symbols of the configuration file are served. So what is held has a bound, and no
-/// text of a caller is sent to Binance.
+/// text of a caller is sent to Binance. The price that a symbol last traded at is served for
+/// the symbols that price a fee as well, <c>Binance:FeeSymbols</c>, and nothing else of those:
+/// they are priced, and not traded (FR-BIN-10).
 /// </para>
 /// </remarks>
 internal sealed class BinanceMarketData : IExchangeMarketData, IDisposable
@@ -47,6 +49,7 @@ internal sealed class BinanceMarketData : IExchangeMarketData, IDisposable
     private readonly BinanceCall _call;
     private readonly BinanceSettings _settings;
     private readonly HashSet<string> _listed;
+    private readonly HashSet<string> _priced;
 
     private readonly BinanceShared<(Market Market, TradingMode Mode, string Symbol, CandleInterval Interval), ExchangeCandles> _candles;
     private readonly BinanceShared<(Market Market, TradingMode Mode, string Symbol), ExchangePrice> _prices;
@@ -59,6 +62,7 @@ internal sealed class BinanceMarketData : IExchangeMarketData, IDisposable
         _call = call;
         _settings = settings;
         _listed = new HashSet<string>(settings.Symbols, StringComparer.Ordinal);
+        _priced = new HashSet<string>(settings.Symbols.Concat(settings.FeeSymbols), StringComparer.Ordinal);
 
         // A read ends when the application stops, and not when an asker cancels.
         var stopping = lifetime.ApplicationStopping;
@@ -109,7 +113,7 @@ internal sealed class BinanceMarketData : IExchangeMarketData, IDisposable
 
     public Task<ExchangePrice> GetPriceAsync(Market market, TradingMode mode, string symbol, CancellationToken cancellationToken)
     {
-        var endpoint = BinanceEndpoint.PriceOf(market, Listed(symbol));
+        var endpoint = BinanceEndpoint.PriceOf(market, Priced(symbol));
         Known(market, mode);
 
         return _prices.AskAsync(
@@ -200,6 +204,20 @@ internal sealed class BinanceMarketData : IExchangeMarketData, IDisposable
         return _listed.Contains(symbol)
             ? symbol
             : throw new ArgumentException("The symbol is not one of Binance:Symbols of the configuration file.", nameof(symbol));
+    }
+
+    /// <summary>
+    /// A symbol whose price is served: one that the configuration file lists, to be traded or to
+    /// price a fee. Any other is no call.
+    /// </summary>
+    private string Priced(string symbol)
+    {
+        ArgumentNullException.ThrowIfNull(symbol);
+
+        return _priced.Contains(symbol)
+            ? symbol
+            : throw new ArgumentException(
+                "The symbol is not one of Binance:Symbols or Binance:FeeSymbols of the configuration file.", nameof(symbol));
     }
 
     /// <summary>Says so before anything is held or sent when a market has no such environment.</summary>

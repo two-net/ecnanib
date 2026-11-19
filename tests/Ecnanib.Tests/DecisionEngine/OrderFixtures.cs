@@ -24,8 +24,9 @@ internal static class StoredOrderRows
     /// <summary>
     /// Gives an agent of a user the orders of a position that is over, stored as the application
     /// stores them: an entry that was executed, with its one execution, the position that it
-    /// opened, what the position paid as funding, and the stop-loss that closed it. Everything is over, so the agent holds nothing,
-    /// and nothing is left to settle. It is for a test that is about something else, and needs a
+    /// opened, with the models that held the roles of the agent, what the position paid as
+    /// funding, the stop-loss that closed it, its result, and the equity of the agent after it.
+    /// Everything is over, so the agent holds nothing, and nothing is left to settle. It is for a test that is about something else, and needs a
     /// row in every table that holds rows of users.
     /// </summary>
     /// <returns>The id of the position.</returns>
@@ -43,6 +44,8 @@ internal static class StoredOrderRows
             agent.Mode,
             agent.Market,
             agent.Symbol,
+            agent.QuoteAsset,
+            agent.Timeframe,
             PositionSide.Long,
             entryPrice: 100_000m,
             quantity: 0.01m,
@@ -124,7 +127,43 @@ internal static class StoredOrderRows
         context.Add(stopLoss);
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        context.Add(new Fill(Guid.CreateVersion7(), entryId, userId, tradeId: "9001", 100_000m, 0.01m, fee: 0.5m, feeAsset: "USDT", at));
+        context.Add(new Fill(
+            Guid.CreateVersion7(), entryId, userId, tradeId: "9001", 100_000m, 0.01m, fee: 0.5m, feeAsset: "USDT", at, feeValue: 0.5m));
+
+        // The models that held the roles of the agent when the position was opened, as the
+        // position names them: those that its roles have now. An agent with no team has none.
+        var roles = await context.Set<AgentRole>()
+            .AsNoTracking()
+            .Where(role => role.AgentId == agentId)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        context.AddRange(roles.Select(role => new PositionRole(position.Id, userId, role.Role, role.ModelId)));
+
+        // The result of the position, as what records the results stores it once the position
+        // is closed: it lost the 10.1 that its stop-loss was executed below its entry, the fee
+        // of its entry, and what it paid as funding, of the 10 that it risked.
+        context.Add(new PositionResult(
+            position.Id,
+            userId,
+            agent.QuoteAsset,
+            grossResult: -10.1m,
+            fees: 0.5m,
+            funding: -0.1m,
+            netResult: -10.7m,
+            risk: 10m,
+            resultInR: -1.07m,
+            holdingSeconds: 1800,
+            complete: true,
+            recordedAt: at.AddMinutes(31)));
+
+        // The equity of the agent after it, as what watches the loss limits records it. An agent
+        // that is given orders a second time at the same moment has the row already.
+        if (!await context.Set<EquitySnapshot>().AnyAsync(
+            snapshot => snapshot.AgentId == agentId && snapshot.Mode == agent.Mode && snapshot.At == at.AddMinutes(31),
+            TestContext.Current.CancellationToken))
+        {
+            context.Add(new EquitySnapshot(
+                agentId, userId, agent.Mode, at.AddMinutes(31), agent.QuoteAsset, agent.AllocatedCapital, agent.AllocatedCapital - 10.7m));
+        }
 
         // What the position paid as funding while it was open, as the exchange says it of a
         // position of the Futures market. It is a row of the user in one more table.
@@ -284,8 +323,19 @@ internal sealed class TradingBinance
     /// <summary>The price that an order at the market is executed at.</summary>
     public decimal Price { get; set; } = 60000m;
 
-    /// <summary>The asset that Binance takes its fee in. On the Spot market it may be the asset that is bought.</summary>
+    /// <summary>
+    /// The asset that Binance takes its fee in. On the Spot market it may be the asset that is
+    /// bought, and on either it may be an asset of neither side of the symbol, such as BNB, which
+    /// an account that pays its fees with it is charged in.
+    /// </summary>
     public string FeeAsset { get; set; } = "USDT";
+
+    /// <summary>
+    /// What an asset of neither side of the symbol trades at, in USDT: the price of the symbol
+    /// that prices a fee in it, such as <c>BNBUSDT</c>. A fee in such an asset is the tenth of a
+    /// percent that every fee is, in that asset at this price.
+    /// </summary>
+    public decimal FeeAssetPrice { get; set; } = 500m;
 
     /// <summary>
     /// When Binance says that the executions of its orders were, where it lists them: a moment
@@ -712,9 +762,12 @@ internal sealed class TradingBinance
             : price;
         order.Executed += quantity;
         order.Status = order.Executed >= order.Asked.Quantity ? "FILLED" : "PARTIALLY_FILLED";
-        order.Trades.Add(feeAsset == BaseAsset
-            ? (++_next, quantity, Fee(quantity), BaseAsset)
-            : (++_next, quantity, Fee(quantity * price), feeAsset));
+        order.Trades.Add(feeAsset switch
+        {
+            BaseAsset => (++_next, quantity, Fee(quantity), BaseAsset),
+            "USDT" => (++_next, quantity, Fee(quantity * price), feeAsset),
+            _ => (++_next, quantity, Fee(quantity * price) / FeeAssetPrice, feeAsset),
+        });
     }
 
     /// <summary>
@@ -1058,8 +1111,13 @@ internal static class HeldPositions
 internal sealed class StandInFundingTimes : IExchangeMarketData
 {
     private IExchangeMarketData? _gateway;
+    // The symbol that the agents of the tests trade: every other symbol that is priced prices a fee.
+    private const string TradedSymbol = "BTCUSDT";
+
     private Func<decimal>? _price;
+    private Func<decimal>? _feeAssetPrice;
     private int _asked;
+    private int _feePricesAsked;
 
     /// <summary>When the next funding is, as the exchange says it with the mark price, or null where the gateway's own answer is given.</summary>
     public DateTimeOffset? Next { get; set; }
@@ -1093,6 +1151,23 @@ internal sealed class StandInFundingTimes : IExchangeMarketData
         return this;
     }
 
+    /// <summary>
+    /// Says where the price of a symbol that prices a fee comes from: the Binance of the test,
+    /// which says what an asset of neither side of its symbol trades at.
+    /// </summary>
+    public StandInFundingTimes FeesPricedBy(Func<decimal> price)
+    {
+        _feeAssetPrice = price;
+
+        return this;
+    }
+
+    /// <summary>How a read of the price of a symbol that prices a fee ends: it succeeds, unless a test says otherwise.</summary>
+    public ExchangeCallOutcome FeePrices { get; set; } = ExchangeCallOutcome.Succeeded;
+
+    /// <summary>How many times the price of a symbol that prices a fee was asked for.</summary>
+    public int FeePricesAsked => Volatile.Read(ref _feePricesAsked);
+
     public async Task<ExchangeMarkPrice> GetMarkPriceAsync(TradingMode mode, string symbol, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _asked);
@@ -1123,6 +1198,16 @@ internal sealed class StandInFundingTimes : IExchangeMarketData
 
     public Task<ExchangePrice> GetPriceAsync(Market market, TradingMode mode, string symbol, CancellationToken cancellationToken)
     {
+        // A symbol that is not the one that the agents of the tests trade prices a fee.
+        if (symbol != TradedSymbol && _feeAssetPrice is { } worth)
+        {
+            Interlocked.Increment(ref _feePricesAsked);
+
+            return Task.FromResult(FeePrices == ExchangeCallOutcome.Succeeded
+                ? new ExchangePrice(FeePrices, worth(), DateTimeOffset.UtcNow)
+                : new ExchangePrice(FeePrices, null, null));
+        }
+
         if (_price is not { } priced)
         {
             return Gateway.GetPriceAsync(market, mode, symbol, cancellationToken);
@@ -1205,7 +1290,7 @@ internal sealed class OrdersApplication : IDisposable
         // what its user did there by hand, unless a test says otherwise, and an order is held
         // to it, as Binance holds it.
         Binance.HoldsOrdersToTheAccount = true;
-        FundingTimes.PricedBy(() => Binance.Price);
+        FundingTimes.PricedBy(() => Binance.Price).FeesPricedBy(() => Binance.FeeAssetPrice);
         Application.Providers.FuturesPosition = _ => Binance.Position();
         Application.Providers.Balances = (market, _) => market == Market.Spot ? Binance.Balances() : StandInProviders.Funded;
     }
@@ -1380,6 +1465,53 @@ internal sealed class OrdersApplication : IDisposable
             .OrderBy(funding => funding.At)
             .ThenBy(funding => funding.TransactionId)
             .ToListAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Records the results of the closed positions that are due, as the job that the scheduler
+    /// runs every minute does, at the moment that the clock shows.
+    /// </summary>
+    public Task RecordResultsAsync() => Application.RecordResultsAsync();
+
+    /// <summary>The result of a position as it is stored, or null when it has none.</summary>
+    public async Task<PositionResult?> ResultOfAsync(Guid positionId)
+    {
+        await using var context = await Application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        return await context.Set<PositionResult>()
+            .AsNoTracking()
+            .SingleOrDefaultAsync(result => result.PositionId == positionId, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>The models that held the roles of the agent of a position when it was opened, as they are stored, in the order of the roles.</summary>
+    public async Task<IReadOnlyList<PositionRole>> RolesOfAsync(Guid positionId)
+    {
+        await using var context = await Application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        return
+        [
+            .. (await context.Set<PositionRole>()
+                    .AsNoTracking()
+                    .Where(role => role.PositionId == positionId)
+                    .ToListAsync(TestContext.Current.CancellationToken))
+                .OrderBy(role => role.Role),
+        ];
+    }
+
+    /// <summary>The equity of an agent over time as it is stored, oldest first, and Demo before Live at one moment.</summary>
+    public async Task<IReadOnlyList<EquitySnapshot>> SnapshotsOfAsync(Guid agentId)
+    {
+        await using var context = await Application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        return
+        [
+            .. (await context.Set<EquitySnapshot>()
+                    .AsNoTracking()
+                    .Where(snapshot => snapshot.AgentId == agentId)
+                    .ToListAsync(TestContext.Current.CancellationToken))
+                .OrderBy(snapshot => snapshot.At)
+                .ThenBy(snapshot => snapshot.Mode),
+        ];
     }
 
     /// <summary>The notifications of a user as they are stored, in the order they were raised in.</summary>

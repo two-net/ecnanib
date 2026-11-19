@@ -21,11 +21,12 @@ namespace Ecnanib.DecisionEngine;
 /// <item>
 /// What its positions made: for each order that closed a position or a part of one, what was
 /// executed times how far its average price is from the price that the position was entered at,
-/// in the direction of the position.
+/// in the direction of the position. And what left a position by no order of the agent, at the
+/// price when that was found: see <see cref="Position.MadeAtExchange"/>.
 /// </item>
 /// <item>
-/// Less the fees of the executions of its orders: as they are in that asset, and at the price
-/// of the execution where the exchange took them in the asset that is traded.
+/// Less the fees of the executions of its orders, each by what it is worth in that asset, which
+/// its execution says: see <see cref="FeeValues"/>.
 /// </item>
 /// <item>What its positions received as funding, less what they paid.</item>
 /// <item>
@@ -50,10 +51,12 @@ namespace Ecnanib.DecisionEngine;
 /// <para>
 /// <b>What it does not know, it does not guess.</b> Where the price of an open position cannot
 /// be read, the result says so: nothing is halted on it, and no position is opened on it. Not
-/// counted, until the results of a position are kept: a fee in an asset that is neither of the
-/// two of the symbol, a position in a symbol that is priced in another asset than the agent's,
-/// and what was closed at the exchange by no order of the agent, by its user or by the exchange:
-/// it has no execution, so it counts as closed at the price that it was entered at.
+/// counted: a fee that has no value, which is one in an asset that the configuration file names
+/// no symbol for, and a position in a symbol that is priced in another asset than the agent's.
+/// </para>
+/// <para>
+/// <b>The sums are those of <see cref="ResultSums"/>,</b> which the result of a closed position
+/// is worked out with as well: what an agent made is what its positions made, by one rule.
 /// </para>
 /// <para>
 /// It only reads, and uses no key of a user: the prices are those of the market.
@@ -68,6 +71,12 @@ internal sealed class AgentResults(
     /// </summary>
     public const int Places = 12;
 
+    /// <summary>
+    /// An amount as it is added up: rounded to <see cref="Places"/>, a half away from zero, which
+    /// is how the database rounds the amounts that it adds up itself.
+    /// </summary>
+    public static decimal Rounded(decimal amount) => Math.Round(amount, Places, MidpointRounding.AwayFromZero);
+
     /// <summary>The result of an agent now, with the marks that its loss limits are counted from as they are stored.</summary>
     /// <param name="agent">The agent, as it is stored: its mode and the asset that its symbol is priced in say what is counted.</param>
     /// <param name="cancellationToken">Cancels the reads.</param>
@@ -80,96 +89,35 @@ internal sealed class AgentResults(
         var quote = agent.QuoteAsset;
 
         decimal made;
-        var priced = true;
+        bool priced;
+        decimal paid;
         decimal funding;
         Position? open;
         EquityMark? marks;
-        List<FeesOf> fees;
 
         await using (var context = await contexts.CreateDbContextAsync(cancellationToken))
         await using (await context.BeginSnapshotAsync(cancellationToken))
         {
-            // The orders that closed a position of the agent, or a part of one, each with the
-            // position that it closed.
-            var exits =
-                from order in context.Set<Order>().AsNoTracking()
-                join position in context.Set<Position>().AsNoTracking() on order.PositionId equals (Guid?)position.Id
-                where position.AgentId == id
-                    && position.Mode == mode
-                    && position.Symbol.EndsWith(quote)
-                    && order.Purpose != OrderPurpose.Entry
-                    && order.ExecutedQuantity > 0m
-                select new { order.Id, order.ExecutedQuantity, order.AveragePrice, position.EntryPrice, position.Side };
-
-            made = await exits
-                .Where(exit => exit.AveragePrice != null)
-                .SumAsync(
-                    exit => exit.Side == PositionSide.Long
-                        ? Math.Round(exit.ExecutedQuantity * (exit.AveragePrice!.Value - exit.EntryPrice), Places)
-                        : Math.Round(exit.ExecutedQuantity * (exit.EntryPrice - exit.AveragePrice!.Value), Places),
-                    cancellationToken);
-
-            // An order of which the exchange said no average price is counted by its executions,
-            // once they are stored and add up to what was executed of it. There are few such orders.
-            var unpriced = await exits
-                .Where(exit => exit.AveragePrice == null)
-                .Select(exit => new { exit.Id, exit.ExecutedQuantity, exit.EntryPrice, exit.Side })
-                .ToListAsync(cancellationToken);
-
-            foreach (var exit in unpriced)
-            {
-                var executions = await context.Set<Fill>()
-                    .AsNoTracking()
-                    .Where(fill => fill.OrderId == exit.Id)
-                    .Select(fill => new { fill.Quantity, fill.Price })
-                    .ToListAsync(cancellationToken);
-
-                if (executions.Sum(execution => execution.Quantity) != exit.ExecutedQuantity)
-                {
-                    priced = false;
-
-                    continue;
-                }
-
-                var worth = executions.Sum(execution => execution.Quantity * execution.Price);
-                var cost = exit.ExecutedQuantity * exit.EntryPrice;
-
-                made += Math.Round(exit.Side == PositionSide.Long ? worth - cost : cost - worth, Places);
-            }
-
-            // The fees of every order of the agent, also of an entry that opened nothing, by
-            // the asset that the exchange took them in.
-            fees = await (
-                from fill in context.Set<Fill>().AsNoTracking()
-                join order in context.Set<Order>().AsNoTracking() on fill.OrderId equals order.Id
-                where order.AgentId == id && order.Mode == mode && order.Symbol.EndsWith(quote)
-                group new { Fee = Math.Round(fill.Fee, Places), AtItsPrice = Math.Round(fill.Fee * fill.Price, Places) }
-                    by new { order.Symbol, fill.FeeAsset } into taken
-                select new FeesOf(taken.Key.Symbol, taken.Key.FeeAsset, taken.Sum(fee => fee.Fee), taken.Sum(fee => fee.AtItsPrice)))
-                .ToListAsync(cancellationToken);
-
-            funding = await (
-                from row in context.Set<Funding>().AsNoTracking()
-                join position in context.Set<Position>().AsNoTracking() on row.PositionId equals position.Id
-                where position.AgentId == id && position.Mode == mode && position.Symbol.EndsWith(quote) && row.Asset == quote
-                select Math.Round(row.Amount, Places))
-                .SumAsync(cancellationToken);
-
-            open = await context.Set<Position>()
+            // The positions of the agent in its mode, in the asset that its symbol is priced in.
+            var positions = context.Set<Position>()
                 .AsNoTracking()
-                .SingleOrDefaultAsync(
-                    position => position.AgentId == id && position.ClosedAt == null && position.Mode == mode && position.Symbol.EndsWith(quote),
-                    cancellationToken);
+                .Where(position => position.AgentId == id && position.Mode == mode && position.QuoteAsset == quote);
+
+            // Every order of the agent there, also an entry that opened nothing: its fee is paid.
+            var orders = context.Set<Order>()
+                .AsNoTracking()
+                .Where(order => order.AgentId == id && order.Mode == mode && order.Symbol.EndsWith(quote));
+
+            (made, priced) = await ResultSums.MadeAsync(context, positions, cancellationToken);
+            (paid, _) = await ResultSums.FeesAsync(context, orders, cancellationToken);
+            funding = await ResultSums.FundingAsync(context, positions, cancellationToken);
+
+            open = await positions.SingleOrDefaultAsync(position => position.ClosedAt == null, cancellationToken);
 
             marks = await context.Set<EquityMark>()
                 .AsNoTracking()
                 .SingleOrDefaultAsync(mark => mark.AgentId == id && mark.Mode == mode, cancellationToken);
         }
-
-        // In the asset that the symbol is priced in, a fee is what it is. In the asset that is
-        // traded it is worth what the execution paid for it. A fee in any other asset is not
-        // counted: nothing here says what that asset is worth.
-        var paid = fees.Sum(fee => fee.Asset == quote ? fee.Amount : fee.Symbol == fee.Asset + quote ? fee.AtItsPrice : 0m);
 
         if (!priced)
         {
@@ -184,7 +132,7 @@ internal sealed class AgentResults(
         if (open is not null)
         {
             // Asked only for a position that is open: an agent that holds none is valued by its rows alone.
-            (price, var outcome) = await PriceOfAsync(open, cancellationToken);
+            (price, var outcome) = await PriceOfAsync(market, open, cancellationToken);
 
             if (price is null)
             {
@@ -203,10 +151,15 @@ internal sealed class AgentResults(
     /// The price that an open position is valued at: the mark price on the Futures market, which
     /// is what the exchange values the position at and triggers its stop-loss on (FR-BIN-F3), and
     /// the price that the symbol last traded at on the Spot market. Null when the exchange did
-    /// not say.
+    /// not say. What left a position by no order of the agent is counted at it as well: see
+    /// <see cref="StoredOrders.ClosedAtExchangeAsync"/>.
     /// </summary>
-    private async Task<(decimal? Price, ExchangeCallOutcome Outcome)> PriceOfAsync(Position position, CancellationToken cancellationToken)
+    public static async Task<(decimal? Price, ExchangeCallOutcome Outcome)> PriceOfAsync(
+        IExchangeMarketData market, Position position, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(market);
+        ArgumentNullException.ThrowIfNull(position);
+
         if (position.Market == Market.Futures)
         {
             var mark = await market.GetMarkPriceAsync(position.Mode, position.Symbol, cancellationToken);
@@ -218,13 +171,128 @@ internal sealed class AgentResults(
 
         return (last.Outcome == ExchangeCallOutcome.Succeeded ? last.Price : null, last.Outcome);
     }
+}
 
-    /// <summary>The fees of the orders of an agent in a symbol that the exchange took in one asset.</summary>
-    /// <param name="Symbol">The symbol.</param>
-    /// <param name="Asset">The asset that they were taken in.</param>
-    /// <param name="Amount">How much of it.</param>
-    /// <param name="AtItsPrice">What that was worth in the asset that the symbol is priced in, each at the price of its execution, where the asset is the one that is traded.</param>
-    private sealed record FeesOf(string Symbol, string Asset, decimal Amount, decimal AtItsPrice);
+/// <summary>
+/// The sums that a result is worked out from, of the positions and the orders that it is asked
+/// about: the one rule for what positions made, what their fees were, and what they received and
+/// paid as funding (FR-BIN-10). The result of an agent asks it about all that the agent did in a
+/// mode, and the result of a closed position about that position alone: see
+/// <see cref="AgentResults"/> and <see cref="PositionResults"/>.
+/// </summary>
+/// <remarks>
+/// It reads with the context that it is given, in the transaction that the context holds: what
+/// asks for sums that agree with each other asks in a snapshot.
+/// </remarks>
+internal static class ResultSums
+{
+    /// <summary>
+    /// What positions made, before fees and funding: for each order that closed one or a part of
+    /// one, what was executed of it times how far its average price is from the price that the
+    /// position was entered at, in the direction of the position, with what left the positions
+    /// by no order of the agent.
+    /// </summary>
+    /// <returns>
+    /// The sum, and whether every such order says the price that it was executed at: its average
+    /// price, or the prices of its executions where the exchange said no average. One that says
+    /// neither is not in the sum.
+    /// </returns>
+    public static async Task<(decimal Made, bool Priced)> MadeAsync(
+        EcnanibDbContext context, IQueryable<Position> positions, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(positions);
+
+        // The orders that closed a position, or a part of one, each with the position that it closed.
+        var exits =
+            from order in context.Set<Order>().AsNoTracking()
+            join position in positions on order.PositionId equals (Guid?)position.Id
+            where order.Purpose != OrderPurpose.Entry && order.ExecutedQuantity > 0m
+            select new { order.Id, order.ExecutedQuantity, order.AveragePrice, position.EntryPrice, position.Side };
+
+        var made = await exits
+            .Where(exit => exit.AveragePrice != null)
+            .SumAsync(
+                exit => exit.Side == PositionSide.Long
+                    ? Math.Round(exit.ExecutedQuantity * (exit.AveragePrice!.Value - exit.EntryPrice), AgentResults.Places)
+                    : Math.Round(exit.ExecutedQuantity * (exit.EntryPrice - exit.AveragePrice!.Value), AgentResults.Places),
+                cancellationToken);
+
+        var priced = true;
+
+        // An order of which the exchange said no average price is counted by its executions,
+        // once they are stored and add up to what was executed of it. There are few such orders.
+        var unpriced = await exits
+            .Where(exit => exit.AveragePrice == null)
+            .Select(exit => new { exit.Id, exit.ExecutedQuantity, exit.EntryPrice, exit.Side })
+            .ToListAsync(cancellationToken);
+
+        foreach (var exit in unpriced)
+        {
+            var executions = await context.Set<Fill>()
+                .AsNoTracking()
+                .Where(fill => fill.OrderId == exit.Id)
+                .Select(fill => new { fill.Quantity, fill.Price })
+                .ToListAsync(cancellationToken);
+
+            if (executions.Sum(execution => execution.Quantity) != exit.ExecutedQuantity)
+            {
+                priced = false;
+
+                continue;
+            }
+
+            var worth = executions.Sum(execution => execution.Quantity * execution.Price);
+            var cost = exit.ExecutedQuantity * exit.EntryPrice;
+
+            made += AgentResults.Rounded(exit.Side == PositionSide.Long ? worth - cost : cost - worth);
+        }
+
+        // What left the positions by no order of the agent, each part at the price when it was
+        // found: it has no execution, and is kept with its position.
+        made += await positions.SumAsync(position => position.MadeAtExchange ?? 0m, cancellationToken);
+
+        return (made, priced);
+    }
+
+    /// <summary>
+    /// The fees of the executions of orders, each by what it is worth in the asset that the
+    /// symbol of its order is priced in, which its execution says.
+    /// </summary>
+    /// <returns>The sum, and whether every execution says what its fee is worth. A fee that has no value is not in the sum.</returns>
+    public static async Task<(decimal Fees, bool Valued)> FeesAsync(
+        EcnanibDbContext context, IQueryable<Order> orders, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(orders);
+
+        var values =
+            from fill in context.Set<Fill>().AsNoTracking()
+            join order in orders on fill.OrderId equals order.Id
+            select fill.FeeValue;
+
+        var fees = await values.SumAsync(value => value ?? 0m, cancellationToken);
+        var valued = !await values.AnyAsync(value => value == null, cancellationToken);
+
+        return (fees, valued);
+    }
+
+    /// <summary>
+    /// What positions received as funding, less what they paid, in the asset that the symbol of
+    /// each is priced in. Funding in another asset is not in the sum.
+    /// </summary>
+    public static Task<decimal> FundingAsync(EcnanibDbContext context, IQueryable<Position> positions, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(positions);
+
+        return (
+            from row in context.Set<Funding>().AsNoTracking()
+            join position in positions on row.PositionId equals position.Id
+            where row.Asset == position.QuoteAsset
+            select Math.Round(row.Amount, AgentResults.Places))
+            .SumAsync(cancellationToken);
+    }
 }
 
 /// <summary>The result of an agent at a moment. See <see cref="AgentResults"/>.</summary>

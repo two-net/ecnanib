@@ -7,6 +7,12 @@ namespace Ecnanib.Platform.Settings;
 /// <param name="Spot">The Spot endpoints, each with the address of its account event feed where it has one.</param>
 /// <param name="Futures">The USDⓈ-margined perpetual Futures endpoints, each with the address of its account event feed where it has one.</param>
 /// <param name="Symbols">The symbols an agent may trade (FR-AGT-6).</param>
+/// <param name="FeeSymbols">
+/// The symbols that price a fee which the exchange took in an asset of neither side of the symbol
+/// that was traded, such as <c>BNBUSDT</c> for a fee in BNB of a symbol that is priced in USDT
+/// (FR-BIN-10). Their price is read, and no agent trades them for being listed here. With none,
+/// such a fee is in no profit and loss figure.
+/// </param>
 /// <param name="OutboundIps">The fixed addresses the service calls Binance from, shown to users for IP-restricted keys.</param>
 /// <param name="LimitSharePercent">The share of Binance's request limit the service allows itself (FR-BIN-4): from 2 to 100.</param>
 /// <param name="ReconcileMinutes">The time between reconciliations with the exchange.</param>
@@ -22,6 +28,7 @@ public sealed record BinanceSettings(
     BinanceMarketSettings Spot,
     BinanceMarketSettings Futures,
     IReadOnlyList<string> Symbols,
+    IReadOnlyList<string> FeeSymbols,
     IReadOnlyList<IPAddress> OutboundIps,
     int LimitSharePercent,
     int ReconcileMinutes,
@@ -88,6 +95,7 @@ public sealed record BinanceSettings(
     internal static BinanceSettings Read(SettingsReader file)
     {
         const string symbolsKey = "Binance:Symbols";
+        const string feeSymbolsKey = "Binance:FeeSymbols";
         const string outboundIpsKey = "Binance:OutboundIps";
 
         var spot = BinanceMarketSettings.Read(file, "Binance:Spot");
@@ -97,6 +105,9 @@ public sealed record BinanceSettings(
             .Select(key => Symbol(file, key))
             .ToList();
         file.Distinct(symbolsKey, symbols);
+
+        var feeSymbols = file.List(feeSymbolsKey).Select(key => Symbol(file, key)).ToList();
+        file.Distinct(feeSymbolsKey, feeSymbols);
 
         var outboundIps = file.List(outboundIpsKey).Select(file.IpAddress).ToList();
 
@@ -112,6 +123,7 @@ public sealed record BinanceSettings(
             spot,
             futures,
             symbols,
+            feeSymbols,
             outboundIps,
             limitSharePercent,
             reconcileMinutes,

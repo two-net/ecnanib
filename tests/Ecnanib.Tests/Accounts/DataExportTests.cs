@@ -85,6 +85,17 @@ internal static class ExportRules
             "What the loss limits of a user's agents are counted from: two amounts and two times for an agent in a mode, " +
             "worked out from the trades of the agent. They hold no personal data, and the equity of an agent over time is " +
             "exported with its trades (FR-RPT-4), which is not built.",
+        ["position_roles"] =
+            "The model that held each role of an agent when a position of it was opened: the name of a role and the id of " +
+            "a model of the catalog. They hold no personal data, and are exported with the trades that they belong to " +
+            "(FR-RPT-4), which is not built. The models that the roles of an agent have now are in the export.",
+        ["position_results"] =
+            "The result of each closed position of a user's agents: its net profit or loss, its result in R, its fees, its " +
+            "funding, and how long it was held. They are exported as the trades of the user (FR-RPT-4), which is not built.",
+        ["equity_snapshots"] =
+            "The equity of a user's agents over time: an amount, a capital, and an asset for an agent in a mode at a moment, " +
+            "worked out from the trades of the agent. They hold no personal data, and are exported with the trades " +
+            "(FR-RPT-4), which is not built.",
     };
 }
 

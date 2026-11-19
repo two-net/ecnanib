@@ -27,9 +27,19 @@ namespace Ecnanib.DecisionEngine;
 /// The agents are settled a few at a time, each on its own: what cannot be settled for one,
 /// because its key is refused, keeps no other waiting.
 /// </para>
+/// <para>
+/// Every run first values the fees of the executions that were stored without a value, because
+/// what values a fee could not be read then (FR-BIN-10): see <see cref="FeeValuation"/>. There
+/// are seldom any, and it asks about no order for them.
+/// </para>
 /// </remarks>
 internal sealed class OrderSettlingJob(
-    StoredOrders stored, IPlanOrders orders, BinanceSettings binance, TimeProvider clock, ILogger<OrderSettlingJob> logger)
+    StoredOrders stored,
+    IPlanOrders orders,
+    FeeValuation fees,
+    BinanceSettings binance,
+    TimeProvider clock,
+    ILogger<OrderSettlingJob> logger)
     : IBackgroundJob, IDueAtStart
 {
     /// <summary>The name of the job, which is the key of its row of the <c>background_jobs</c> table.</summary>
@@ -50,6 +60,16 @@ internal sealed class OrderSettlingJob(
     public async Task RunAsync(BackgroundJobRun run, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(run);
+
+        try
+        {
+            await fees.ValueStoredAsync(cancellationToken);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            // Said once. The orders are settled all the same, and the next run values again.
+            logger.LogError(error, "The fees of the executions that were stored without a value could not be valued");
+        }
 
         var agents = await ToSettleAsync(cancellationToken);
 

@@ -39,6 +39,16 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string PositionWatchKey = "position-watch";
 
+    // The job of the Decision Engine that records the results of the closed positions, named in the same way.
+    private const string PositionResults = "Ecnanib.DecisionEngine.PositionResultsJob";
+
+    /// <summary>
+    /// The key under which the job that records the results of the closed positions is kept: the
+    /// scheduler of no application of the tests runs it, and a test runs it from there itself, at
+    /// a moment of its choosing.
+    /// </summary>
+    public const string PositionResultsKey = "position-results";
+
     // The job of the Decision Engine that reconciles the agents with the exchange, named in the same way.
     private const string Reconciliation = "Ecnanib.DecisionEngine.ReconciliationJob";
 
@@ -189,6 +199,19 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
 
             services.Remove(watching);
             services.AddKeyedSingleton(typeof(IBackgroundJob), PositionWatchKey, watching.ImplementationType!);
+
+            // The job that records the results of the closed positions is due as the background
+            // work starts when a position is closed and has no result, and then every minute: it
+            // writes the result, and has the loss limits of the agent evaluated, which reads a
+            // price where the agent holds a position. Many tests give a user a closed position
+            // for a reason of their own, and compare what the tables hold before and after. So
+            // no application of a test runs this job on a schedule: a test that is about what a
+            // run does finds it by its key, and runs it itself.
+            var recording = services.Single(job =>
+                job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == PositionResults);
+
+            services.Remove(recording);
+            services.AddKeyedSingleton(typeof(IBackgroundJob), PositionResultsKey, recording.ImplementationType!);
 
             // The job that follows the account event feed runs every minute, for most of its
             // minute, and has the gateway open a connection for every account in which an agent

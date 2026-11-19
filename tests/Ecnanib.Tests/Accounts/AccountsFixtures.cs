@@ -294,6 +294,19 @@ internal sealed class AccountsApplication : IDisposable
     public IBackgroundJob PositionWatch =>
         _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.PositionWatchKey);
 
+    /// <summary>
+    /// Runs the job that records the results of the closed positions, now, as the scheduler does
+    /// every minute. A test runs it itself: the scheduler of no application of the tests does.
+    /// </summary>
+    public Task RecordResultsAsync(CancellationToken? cancellationToken = null) =>
+        PositionResults.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that records the results of the closed positions, which only a test runs.</summary>
+    public IBackgroundJob PositionResults =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.PositionResultsKey);
+
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 
     public IFairUse FairUse => _application.Services.GetRequiredService<IFairUse>();

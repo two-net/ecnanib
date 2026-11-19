@@ -60,6 +60,11 @@ namespace Ecnanib.DecisionEngine;
 /// evaluation asks again, and the stop-loss of the position rests on the exchange meanwhile.
 /// </para>
 /// <para>
+/// <b>An evaluation records the equity that it found,</b> in its transaction, when that is due:
+/// the rows are the equity of the agent over time. See <see cref="EquitySnapshots.IsDue"/>. An
+/// equity that is not known is not recorded.
+/// </para>
+/// <para>
 /// It places no order itself, and is handed no key: the close is asked of what places the
 /// orders, as the close of a user is.
 /// </para>
@@ -223,6 +228,7 @@ internal sealed class LossLimitWatch(
         }
 
         await KeepAsync(context, agent, before, dayBeganAt, atDayStart, peak, now, cancellationToken);
+        await RecordAsync(context, agent, equity, holds: result.Open is not null, now, cancellationToken);
 
         // Committed whatever becomes of what asked: a commit that is given up as it lands
         // would leave an agent halted, and nobody told.
@@ -271,6 +277,28 @@ internal sealed class LossLimitWatch(
                     .SetProperty(mark => mark.PeakResult, peak)
                     .SetProperty(mark => mark.UpdatedAt, now),
                 cancellationToken);
+    }
+
+    /// <summary>
+    /// Records the equity of an agent as it was evaluated, when that is due: the equity of an
+    /// agent over time is these rows. See <see cref="EquitySnapshots.IsDue"/>.
+    /// </summary>
+    private static async Task RecordAsync(
+        EcnanibDbContext context, Agent agent, decimal equity, bool holds, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var newest = await context.Set<EquitySnapshot>()
+            .AsNoTracking()
+            .Where(snapshot => snapshot.AgentId == agent.Id && snapshot.Mode == agent.Mode)
+            .OrderByDescending(snapshot => snapshot.At)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (!EquitySnapshots.IsDue(newest, agent.QuoteAsset, agent.AllocatedCapital, equity, holds, now))
+        {
+            return;
+        }
+
+        context.Add(new EquitySnapshot(agent.Id, agent.UserId, agent.Mode, now, agent.QuoteAsset, agent.AllocatedCapital, equity));
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>Whether an agent holds a position, or has an entry that is not over and may open one.</summary>

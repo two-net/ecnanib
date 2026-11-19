@@ -449,8 +449,8 @@ public class FundingRecordTests
         await using var context = await application.Application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
         context.Add(new Position(
-            Guid.CreateVersion7(), agent.Id, agent.UserId, agent.Mode, Market.Futures, agent.Symbol, PositionSide.Long, entryPrice: 60000m,
-            quantity: 0.02m, stopLoss: 59000m, takeProfit: 62000m, openedAt, closedAt: null, exitReason: null, alertedAt: null,
+            Guid.CreateVersion7(), agent.Id, agent.UserId, agent.Mode, Market.Futures, agent.Symbol, agent.QuoteAsset, agent.Timeframe,
+            PositionSide.Long, entryPrice: 60000m, quantity: 0.02m, stopLoss: 59000m, takeProfit: 62000m, openedAt, closedAt: null, exitReason: null, alertedAt: null,
             fundingDueAt: openedAt));
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }

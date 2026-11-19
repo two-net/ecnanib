@@ -828,6 +828,46 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("equity_marks", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.DecisionEngine.EquitySnapshot", b =>
+                {
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Mode")
+                        .HasColumnType("text")
+                        .HasColumnName("mode");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<string>("Asset")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("asset");
+
+                    b.Property<decimal>("Capital")
+                        .HasColumnType("numeric")
+                        .HasColumnName("capital");
+
+                    b.Property<decimal>("Equity")
+                        .HasColumnType("numeric")
+                        .HasColumnName("equity");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("AgentId", "Mode", "At")
+                        .HasName("pk_equity_snapshots");
+
+                    b.HasIndex("AgentId", "UserId")
+                        .HasDatabaseName("ix_equity_snapshots_agent_id_user_id");
+
+                    b.ToTable("equity_snapshots", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.DecisionEngine.Fill", b =>
                 {
                     b.Property<Guid>("Id")
@@ -846,6 +886,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("fee_asset");
+
+                    b.Property<decimal?>("FeeValue")
+                        .HasColumnType("numeric")
+                        .HasColumnName("fee_value");
 
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uuid")
@@ -870,6 +914,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_fills");
+
+                    b.HasIndex("OrderId")
+                        .HasDatabaseName("ix_fills_order_id")
+                        .HasFilter("fee_value IS NULL");
 
                     b.HasIndex("OrderId", "TradeId")
                         .IsUnique()
@@ -1102,6 +1150,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("funding_due_at");
 
+                    b.Property<decimal?>("MadeAtExchange")
+                        .HasColumnType("numeric")
+                        .HasColumnName("made_at_exchange");
+
                     b.Property<string>("Market")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1120,6 +1172,11 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("numeric")
                         .HasColumnName("quantity");
 
+                    b.Property<string>("QuoteAsset")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("quote_asset");
+
                     b.Property<string>("Side")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1137,6 +1194,11 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.Property<decimal?>("TakeProfit")
                         .HasColumnType("numeric")
                         .HasColumnName("take_profit");
+
+                    b.Property<string>("Timeframe")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("timeframe");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
@@ -1161,6 +1223,99 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasDatabaseName("ix_positions_agent_id_user_id_opened_at");
 
                     b.ToTable("positions", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.DecisionEngine.PositionResult", b =>
+                {
+                    b.Property<Guid>("PositionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("position_id");
+
+                    b.Property<string>("Asset")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("asset");
+
+                    b.Property<bool>("Complete")
+                        .HasColumnType("boolean")
+                        .HasColumnName("complete");
+
+                    b.Property<decimal>("Fees")
+                        .HasColumnType("numeric")
+                        .HasColumnName("fees");
+
+                    b.Property<decimal>("Funding")
+                        .HasColumnType("numeric")
+                        .HasColumnName("funding");
+
+                    b.Property<decimal>("GrossResult")
+                        .HasColumnType("numeric")
+                        .HasColumnName("gross_result");
+
+                    b.Property<long>("HoldingSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("holding_seconds");
+
+                    b.Property<decimal>("NetResult")
+                        .HasColumnType("numeric")
+                        .HasColumnName("net_result");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<decimal?>("ResultInR")
+                        .HasColumnType("numeric")
+                        .HasColumnName("result_in_r");
+
+                    b.Property<decimal?>("Risk")
+                        .HasColumnType("numeric")
+                        .HasColumnName("risk");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("PositionId")
+                        .HasName("pk_position_results");
+
+                    b.HasIndex("PositionId", "UserId")
+                        .HasDatabaseName("ix_position_results_position_id_user_id");
+
+                    b.ToTable("position_results", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.DecisionEngine.PositionRole", b =>
+                {
+                    b.Property<Guid>("PositionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("position_id");
+
+                    b.Property<string>("Role")
+                        .HasColumnType("text")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("ModelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("model_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("PositionId", "Role")
+                        .HasName("pk_position_roles");
+
+                    b.HasIndex("ModelId")
+                        .HasDatabaseName("ix_position_roles_model_id");
+
+                    b.HasIndex("Role")
+                        .HasDatabaseName("ix_position_roles_role");
+
+                    b.HasIndex("PositionId", "UserId")
+                        .HasDatabaseName("ix_position_roles_position_id_user_id");
+
+                    b.ToTable("position_roles", (string)null);
                 });
 
             modelBuilder.Entity("Ecnanib.DecisionEngine.PromptTemplate", b =>
@@ -1947,6 +2102,17 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasConstraintName("fk_equity_marks_agents_agent_id_user_id");
                 });
 
+            modelBuilder.Entity("Ecnanib.DecisionEngine.EquitySnapshot", b =>
+                {
+                    b.HasOne("Ecnanib.Agents.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_equity_snapshots_agents_agent_id_user_id");
+                });
+
             modelBuilder.Entity("Ecnanib.DecisionEngine.Fill", b =>
                 {
                     b.HasOne("Ecnanib.DecisionEngine.Order", null)
@@ -1995,6 +2161,42 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_positions_agents_agent_id_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.DecisionEngine.PositionResult", b =>
+                {
+                    b.HasOne("Ecnanib.DecisionEngine.Position", null)
+                        .WithMany()
+                        .HasForeignKey("PositionId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_position_results_positions_position_id_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.DecisionEngine.PositionRole", b =>
+                {
+                    b.HasOne("Ecnanib.Catalog.AiModel", null)
+                        .WithMany()
+                        .HasForeignKey("ModelId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_position_roles_ai_models_model_id");
+
+                    b.HasOne("Ecnanib.Platform.Persistence.RoleRow", null)
+                        .WithMany()
+                        .HasForeignKey("Role")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_position_roles_roles_role");
+
+                    b.HasOne("Ecnanib.DecisionEngine.Position", null)
+                        .WithMany()
+                        .HasForeignKey("PositionId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_position_roles_positions_position_id_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.DecisionEngine.RiskCheck", b =>
