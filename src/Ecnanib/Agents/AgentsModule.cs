@@ -1,6 +1,7 @@
 using Ecnanib.Accounts;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
+using Ecnanib.Platform.BackgroundWork;
 
 namespace Ecnanib.Agents;
 
@@ -52,6 +53,11 @@ public static class AgentsModule
         // one be halted, and that an agent which its daily loss limit halted run again when the
         // next UTC day begins (FR-RSK-8).
         services.AddSingleton<IAgentHalts, AgentHalts>();
+
+        // What gives the roles of an agent that opted in other models by strength, on its own,
+        // and the job that has it do so every hour (FR-TEAM-10).
+        services.AddSingleton<RoleReassignments>();
+        services.AddBackgroundJob<RoleReassignmentJob>();
 
         // What Accounts asks before it deletes an account: whether an agent of the user is
         // active (FR-ACC-9).

@@ -74,6 +74,8 @@ Each of the four may also have a `FeedUrl`: the address of Binance's account eve
 
 `Trading:LiquidationWarningPercent`, a whole number from 1 to 99, says when a position of Futures approaches liquidation (FR-BIN-F5). It is a share, in percent, of the way from the price that the position was entered at to the price that Binance liquidates it at: the user of the position is told when no more than that is left between the mark price and the liquidation price. The tracked file has 20, a fifth of the way. With the bounds of `Trading:Aggressive` in the tracked file, a stop-loss is no further than about seven tenths of the way, so one that works closes the position before the warning: a lower least liquidation buffer or a higher greatest leverage brings the two closer, and this number is then to be lowered with them. See "The margin of a position" in [orders.md](orders.md).
 
+`Trading:RoleReassignmentDays`, a whole number from 1 to 365, says how many days, each of 24 hours, pass at the least between two times that the service gives the roles of one agent other models by strength (FR-TEAM-10). It counts for an agent whose user turned the automatic reassignment on, and from the last time that the service gave a role of it another model. The tracked file has 7. See "Reassigning the roles automatically" in [agents.md](agents.md).
+
 `Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
 
 ### Permissions

@@ -345,6 +345,20 @@ internal sealed class AccountsApplication : IDisposable
     public IBackgroundJob ExperienceScoring =>
         _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.ExperienceScoringKey);
 
+    /// <summary>
+    /// Runs the job that gives the roles of the agents that opted in other models by strength,
+    /// now, as the scheduler does every hour. A test runs it itself: the scheduler of no
+    /// application of the tests does.
+    /// </summary>
+    public Task ReassignRolesAsync(CancellationToken? cancellationToken = null) =>
+        RoleReassignment.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that reassigns the roles of agents by strength, which only a test runs.</summary>
+    public IBackgroundJob RoleReassignment =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.RoleReassignmentKey);
+
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 
     public IFairUse FairUse => _application.Services.GetRequiredService<IFairUse>();

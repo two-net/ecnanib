@@ -91,6 +91,9 @@ internal sealed class StoredAgents(
     public Task<RoleChoices> RoleChoicesAsync(HttpContext request) =>
         roles.ChoicesAsync(SignedInUser.RequiredIdOf(request), request.RequestAborted);
 
+    public Task<RoleRecommendations> RoleRecommendationsAsync(HttpContext request, Market market, Timeframe timeframe) =>
+        roles.RecommendationsAsync(SignedInUser.RequiredIdOf(request), market, timeframe, request.RequestAborted);
+
     public async Task<SaveAgentResult> CreateAsync(HttpContext request, AgentEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
@@ -179,7 +182,7 @@ internal sealed class StoredAgents(
 
         var now = clock.GetUtcNow();
         var agent = NewAgent(userId, settings.Name, mode, settings.Market, settings.Symbol, quoteAsset, settings.Timeframe,
-            settings.AllocatedCapital, settings.Risk, now);
+            settings.AllocatedCapital, settings.Risk, now, settings.ReassignsRoles);
 
         // With its first change: an agent has a history from when it is created (FR-AGT-10).
         // And with the models that were chosen for its roles (FR-AGT-5).
@@ -337,13 +340,18 @@ internal sealed class StoredAgents(
 
         // A change to the capital, to a risk setting, or to the model of a role of an agent in
         // Live is a change to what it does with real money, and is asked about once more
-        // (FR-UI-3). Decided under the lock, of the mode that the agent is in now, whatever the
-        // page showed. A new name is not asked about.
+        // (FR-UI-3). So is turning on or off that the service gives its roles other models by
+        // strength: what is confirmed then is every change that the service makes later, which
+        // asks nobody (FR-TEAM-10). Decided under the lock, of the mode that the agent is in
+        // now, whatever the page showed. A new name is not asked about.
         var riskChanged = settings.Risk != RiskOf(agent);
 
         if (agent.Mode == TradingMode.Live
             && !confirmedForLive
-            && (riskChanged || settings.AllocatedCapital != agent.AllocatedCapital || chosen.Count > 0))
+            && (riskChanged
+                || settings.AllocatedCapital != agent.AllocatedCapital
+                || chosen.Count > 0
+                || settings.ReassignsRoles != agent.ReassignsRoles))
         {
             return new SaveAgentResult(SaveAgentOutcome.NotConfirmedForLive, agentId);
         }
@@ -365,7 +373,8 @@ internal sealed class StoredAgents(
                     .SetProperty(stored => stored.LiquidationBuffer, settings.Risk.LiquidationBuffer)
                     .SetProperty(stored => stored.DailyLossPercent, settings.Risk.DailyLossPercent)
                     .SetProperty(stored => stored.DrawdownPercent, settings.Risk.DrawdownPercent)
-                    .SetProperty(stored => stored.MaxEntryDistancePercent, settings.Risk.MaxEntryDistancePercent),
+                    .SetProperty(stored => stored.MaxEntryDistancePercent, settings.Risk.MaxEntryDistancePercent)
+                    .SetProperty(stored => stored.ReassignsRoles, settings.ReassignsRoles),
                 cancellationToken);
 
         await AgentRoles.StoreAsync(context, userId, agentId, chosen, cancellationToken);
@@ -485,10 +494,11 @@ internal sealed class StoredAgents(
         }
 
         // The settings of the agent, under a name of its own. A copy is a new agent: it is in
-        // Demo and in Draft, whatever the agent it was made from is (FR-AGT-7).
+        // Demo and in Draft, whatever the agent it was made from is (FR-AGT-7). And the service
+        // reassigns none of its roles until its user turns that on for it (FR-TEAM-10).
         var now = clock.GetUtcNow();
         var copy = NewAgent(userId, AgentRules.CopyNameOf(source.Name, names), TradingMode.Demo, source.Market, source.Symbol,
-            quoteAsset, source.Timeframe, source.AllocatedCapital, RiskOf(source), now);
+            quoteAsset, source.Timeframe, source.AllocatedCapital, RiskOf(source), now, reassignsRoles: false);
 
         context.Set<Agent>().Add(copy);
         context.Set<AgentStateChange>().Add(AgentStateChanges.First(copy));
@@ -591,7 +601,8 @@ internal sealed class StoredAgents(
         Timeframe timeframe,
         decimal allocatedCapital,
         AgentRisk risk,
-        DateTimeOffset now) =>
+        DateTimeOffset now,
+        bool reassignsRoles) =>
         new(
             Guid.CreateVersion7(),
             userId,
@@ -612,7 +623,8 @@ internal sealed class StoredAgents(
             AgentState.Draft,
             AgentStateCause.Created,
             now,
-            now);
+            now,
+            reassignsRoles);
 
     private static SaveAgentResult Invalid(AgentField field, AgentProblem problem, Guid? agentId = null) =>
         new(SaveAgentOutcome.Invalid, agentId, new Dictionary<AgentField, AgentProblem> { [field] = problem });
@@ -697,7 +709,9 @@ internal sealed class StoredAgents(
             agent.CreatedAt,
             await exposures.StructureCanChangeAsync(context, agent, cancellationToken),
             await HoldsPositionAsync(context, agent, cancellationToken),
-            given);
+            given,
+            agent.ReassignsRoles,
+            agent.RolesReassignedAt);
 
     /// <summary>
     /// Whether an agent has an open position, which its user can close at any time (FR-AGT-12).
@@ -747,6 +761,8 @@ internal sealed class AgentActivity : IAgentActivity
 /// <param name="StateCause">Why it is in that state.</param>
 /// <param name="StateChangedAt">Since when it is.</param>
 /// <param name="CreatedAt">When it was created.</param>
+/// <param name="ReassignsRoles">Whether its user turned on that the service gives its roles other models by strength (FR-TEAM-10).</param>
+/// <param name="RolesReassignedAt">When the service last gave a role of it another model by strength, when it did.</param>
 public sealed record ExportedAgent(
     Guid Id,
     string Name,
@@ -760,7 +776,9 @@ public sealed record ExportedAgent(
     AgentState State,
     AgentStateCause StateCause,
     DateTimeOffset StateChangedAt,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    bool ReassignsRoles,
+    DateTimeOffset? RolesReassignedAt);
 
 /// <summary>The agents of a user, for the export of their data (NFR-SEC-9).</summary>
 internal sealed class AgentsExport : IExportedPart
@@ -791,7 +809,9 @@ internal sealed class AgentsExport : IExportedPart
                 agent.State,
                 agent.StateCause,
                 agent.StateChangedAt,
-                agent.CreatedAt)),
+                agent.CreatedAt,
+                agent.ReassignsRoles,
+                agent.RolesReassignedAt)),
         ];
     }
 }

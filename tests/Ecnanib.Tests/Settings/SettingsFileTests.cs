@@ -97,6 +97,7 @@ public class SettingsFileTests
         Assert.Equal(new CycleSettings(MaxPerProvider: 40, MaxPerKey: 3), settings.Trading.Cycles);
         Assert.Equal(new DataPackageSettings(Candles: 120, ContextCandles: 30), settings.Trading.DataPackage);
         Assert.Equal(25, settings.Trading.LiquidationWarningPercent);
+        Assert.Equal(5, settings.Trading.RoleReassignmentDays);
 
         Assert.Equal(
             new ExperienceSettings(4, 15, 25, new ShadowFeeSettings(Spot: 0.2m, Futures: 0.04m), new ExperienceBoardSettings(6, 60)),
@@ -250,6 +251,14 @@ public class SettingsFileTests
         { "Trading:LiquidationWarningPercent", "100", "Trading:LiquidationWarningPercent" },
         { "Trading:LiquidationWarningPercent", "12.5", "Trading:LiquidationWarningPercent" },
         { "Trading:LiquidationWarningPercent", "\"25\"", "Trading:LiquidationWarningPercent" },
+
+        // How many days pass at the least between two times that the roles of an agent are
+        // reassigned by strength (FR-TEAM-10): whole days, one or more, and a year at the most.
+        { "Trading:RoleReassignmentDays", "null", "Trading:RoleReassignmentDays" },
+        { "Trading:RoleReassignmentDays", "0", "Trading:RoleReassignmentDays" },
+        { "Trading:RoleReassignmentDays", "366", "Trading:RoleReassignmentDays" },
+        { "Trading:RoleReassignmentDays", "1.5", "Trading:RoleReassignmentDays" },
+        { "Trading:RoleReassignmentDays", "\"7\"", "Trading:RoleReassignmentDays" },
 
         // How often the account entry points may be tried (NFR-SEC-4).
         { "Limits:SignIn", "null", "Limits:SignIn" },

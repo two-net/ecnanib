@@ -319,9 +319,17 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("quote_asset");
 
+                    b.Property<bool>("ReassignsRoles")
+                        .HasColumnType("boolean")
+                        .HasColumnName("reassigns_roles");
+
                     b.Property<decimal>("RiskPerTradePercent")
                         .HasColumnType("numeric")
                         .HasColumnName("risk_per_trade_percent");
+
+                    b.Property<DateTimeOffset?>("RolesReassignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("roles_reassigned_at");
 
                     b.Property<string>("State")
                         .IsRequired()

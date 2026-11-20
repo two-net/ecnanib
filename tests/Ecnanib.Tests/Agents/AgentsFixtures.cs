@@ -39,7 +39,9 @@ internal sealed record StoredAgent(
     string State,
     string StateCause,
     DateTimeOffset StateChangedAt,
-    DateTimeOffset CreatedAt)
+    DateTimeOffset CreatedAt,
+    bool ReassignsRoles = false,
+    DateTimeOffset? RolesReassignedAt = null)
 {
     /// <summary>Every agent, oldest first.</summary>
     public static IReadOnlyList<StoredAgent> All(TestDatabase database)
@@ -49,7 +51,8 @@ internal sealed record StoredAgent(
             """
             SELECT id, user_id, name, mode, market, symbol, quote_asset, timeframe, allocated_capital,
                    risk_per_trade_percent, min_reward_to_risk, leverage_cap, liquidation_buffer, daily_loss_percent,
-                   drawdown_percent, max_entry_distance_percent, state, state_cause, state_changed_at, created_at
+                   drawdown_percent, max_entry_distance_percent, state, state_cause, state_changed_at, created_at,
+                   reassigns_roles, roles_reassigned_at
             FROM agents ORDER BY created_at, id
             """,
             connection);
@@ -78,7 +81,9 @@ internal sealed record StoredAgent(
                 reader.GetString(16),
                 reader.GetString(17),
                 reader.GetFieldValue<DateTimeOffset>(18),
-                reader.GetFieldValue<DateTimeOffset>(19)));
+                reader.GetFieldValue<DateTimeOffset>(19),
+                reader.GetBoolean(20),
+                reader.IsDBNull(21) ? null : reader.GetFieldValue<DateTimeOffset>(21)));
         }
 
         return agents;
@@ -249,6 +254,31 @@ internal static class AgentBrowser
     /// <summary>What the form that switches an agent to Live brings when the box that confirms the risk is ticked.</summary>
     public static readonly (string Name, string Value) RiskConfirmed = ("Risk", "confirmed");
 
+    /// <summary>
+    /// The button of the form of an agent that saves it with the recommended team, as a form
+    /// brings it (FR-TEAM-4): alone, without what a page recommended, as something that is not
+    /// a browser can send it.
+    /// </summary>
+    public static readonly (string Name, string Value) Recommended = ("Apply", "recommended");
+
+    /// <summary>
+    /// The button that saves the form with the recommended team, pressed on a page: with what
+    /// that page recommended, which the form carries.
+    /// </summary>
+    public static (string Name, string Value)[] RecommendedOn(string page)
+    {
+        var carried = System.Text.RegularExpressions.Regex.Match(page, "<input type=\"hidden\" name=\"Recommended\" value=\"([^\"]*)\"");
+        Assert.True(carried.Success, $"The page recommends no team:{Environment.NewLine}{page}");
+
+        return [Recommended, ("Recommended", WebUtility.HtmlDecode(carried.Groups[1].Value))];
+    }
+
+    /// <summary>The button of the form of an agent that shows the strongest candidates and stores nothing.</summary>
+    public static readonly (string Name, string Value) ShowCandidates = ("Show", "candidates");
+
+    /// <summary>The box of the form of an agent that turns on the automatic reassignment of its roles, ticked (FR-TEAM-10).</summary>
+    public static readonly (string Name, string Value) Reassigns = ("ReassignsRoles", "on");
+
     /// <summary>The badge of a mode, as a page writes it.</summary>
     public static string Badge(TradingMode mode) =>
         $"<span class=\"mode-badge mode-{mode.ToString().ToLowerInvariant()}\">{mode}</span>";
@@ -343,6 +373,34 @@ internal static class AgentBrowser
         .. System.Text.RegularExpressions.Regex.Matches(page, "<p class=\"form-warning\" role=\"note\">([^<]*)</p>")
             .Select(warning => WebUtility.HtmlDecode(warning.Groups[1].Value)),
     ];
+
+    /// <summary>What a page warns of for the team that the button of the recommended team would save, in order.</summary>
+    public static IReadOnlyList<string> RecommendedWarningsOn(string page) =>
+    [
+        .. System.Text.RegularExpressions.Regex.Matches(page, "<p class=\"form-warning recommended-team\" role=\"note\">([^<]*)</p>")
+            .Select(warning => WebUtility.HtmlDecode(warning.Groups[1].Value)),
+    ];
+
+    /// <summary>
+    /// What the form on a page says under a role about its strongest candidate, or null when it
+    /// says nothing there: <c>market-analyst</c>.
+    /// </summary>
+    public static string? CandidateOn(string page, string role)
+    {
+        var line = System.Text.RegularExpressions.Regex.Match(
+            page, $"<p id=\"agent-{role}-candidate\" class=\"role-candidate\">([^<]*)</p>");
+
+        return line.Success ? WebUtility.HtmlDecode(line.Groups[1].Value) : null;
+    }
+
+    /// <summary>Whether the box that turns on the automatic reassignment of the roles is ticked on a page.</summary>
+    public static bool ReassignsOn(string page)
+    {
+        var box = System.Text.RegularExpressions.Regex.Match(page, "<input id=\"agent-reassigns-roles\"[^>]*>");
+        Assert.True(box.Success, $"The page has no box for the automatic reassignment:{Environment.NewLine}{page}");
+
+        return box.Value.Contains(" checked", StringComparison.Ordinal);
+    }
 
     /// <summary>Fills in the form that creates an agent and saves it, and follows where the answer leads.</summary>
     public static Task<(string Path, string Page)> CreateAgentAsync(this HttpClient client, params (string Name, string Value)[] fields) =>
@@ -506,6 +564,12 @@ internal sealed class StandInExposure : IAgentExposure
     /// <summary>What a test does at the moment a close is asked for, before it is answered: to see what is stored by then.</summary>
     public Action<Guid>? OnClose { get; set; }
 
+    /// <summary>
+    /// What a test does each time it is asked whether an agent has an open position, before it
+    /// answers: to change something between two questions of whoever asks.
+    /// </summary>
+    public Func<Guid, Task>? OnPositionAsked { get; set; }
+
     /// <summary>The agents whose position it was asked to close, in order.</summary>
     public IReadOnlyList<Guid> Closes => [.. _closes];
 
@@ -534,8 +598,15 @@ internal sealed class StandInExposure : IAgentExposure
     public Task<bool> HasOpenPositionOrOrdersAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken) =>
         Task.FromResult(_positions.ContainsKey(agentId) || _orders.ContainsKey(agentId));
 
-    public Task<bool> HasOpenPositionAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken) =>
-        Task.FromResult(_positions.ContainsKey(agentId));
+    public async Task<bool> HasOpenPositionAsync(EcnanibDbContext context, Guid agentId, CancellationToken cancellationToken)
+    {
+        if (OnPositionAsked is { } asked)
+        {
+            await asked(agentId);
+        }
+
+        return _positions.ContainsKey(agentId);
+    }
 
     public Task<PositionCloseOutcome> ClosePositionAtMarketAsync(Guid agentId, CancellationToken cancellationToken)
     {
@@ -615,7 +686,9 @@ internal static class StoredAgentRows
         TradingMode mode = TradingMode.Demo,
         AgentStateCause cause = AgentStateCause.Created,
         bool team = true,
-        Timeframe timeframe = Timeframe.OneHour)
+        Timeframe timeframe = Timeframe.OneHour,
+        bool reassignsRoles = false,
+        DateTimeOffset? rolesReassignedAt = null)
     {
         var id = Guid.CreateVersion7();
 
@@ -641,7 +714,9 @@ internal static class StoredAgentRows
             state,
             cause,
             stateChangedAt: at,
-            createdAt: at));
+            createdAt: at,
+            reassignsRoles,
+            rolesReassignedAt));
         context.Add(new AgentStateChange(Guid.CreateVersion7(), id, userId, mode, state, cause, at));
 
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);

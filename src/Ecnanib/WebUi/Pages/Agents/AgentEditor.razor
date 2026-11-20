@@ -3,10 +3,13 @@
 @attribute [Authorize]
 @using Ecnanib.Agents
 @using Ecnanib.Catalog
+@using Ecnanib.Experience
 @using Ecnanib.Platform.Settings
 @using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Experience
 @inject IStoredAgents Agents
 @inject TradingSettings Trading
+@inject ExperienceSettings Experience
 @inject NavigationManager Navigation
 
 @*
@@ -19,8 +22,8 @@
     the page whenever one is posted: a form that is not there cannot be answered. The badge of
     the mode is under the heading: a new agent is in Demo, and the form offers no choice of the
     mode, which is switched on a page of its own (FR-AGT-7). A change to the capital, to a risk
-    setting, or to the model of a role of an agent in Live is asked about once more before it is
-    stored (FR-UI-3).
+    setting, to the model of a role, or to whether the roles are reassigned automatically is
+    asked about once more for an agent in Live before it is stored (FR-UI-3).
 
     Each of the four roles of the team has a choice of a provider and a choice of a model
     (FR-AGT-5, FR-TEAM-1). On a new agent the providers are those of the default mapping of the
@@ -29,6 +32,16 @@
     at all (FR-CAT-6, FR-CAT-9): the list follows the provider with a press of a button, which
     stores nothing, as the symbols follow the market. A provider may hold more than one role,
     and the form warns of it where it shows the providers (FR-TEAM-5).
+
+    Under each role is its strongest candidate by measured strength, on the market and the
+    timeframe that the form holds, with which data its score is of and whether the role is
+    recommended it (FR-TEAM-4, FR-EXP-4, FR-EXP-9). One button saves the form with the
+    recommended models in the roles: they are put in the fields of the roles before the form is
+    answered, so everything that holds a form holds it, and an agent in Live is asked about once
+    more with them in the form. The form carries what it recommended when it was shown, and the
+    button stores that or nothing: where what is recommended now is something else, the form
+    comes back with it. Any role is given another model as before. A box turns on that
+    the service reassigns the roles by the same rule on its own (FR-TEAM-10).
 *@
 
 @if (_found)
@@ -279,6 +292,22 @@
                     <p class="form-warning" role="note">@warning</p>
                 }
 
+                @* What a candidate is, the formula of its score, and what the figures cannot tell (FR-TEAM-4, FR-EXP-4, FR-EXP-11). *@
+                <p>@AgentPages.StrengthExplained</p>
+
+                <p>@ExperiencePages.StrengthFormula(Experience.Damping) @ExperiencePages.EnoughExplained(Experience.MinSamples)</p>
+
+                <p role="note">@ExperiencePages.PastResults @ExperiencePages.SmallSamples(Experience.MinSamples) @ExperiencePages.DemoDiffers</p>
+
+                @if (_recommendations is { } scores)
+                {
+                    <p><a href="@ExperiencePages.Path(TrackRecordFilter.None with { Market = scores.Market, Timeframe = scores.Timeframe })">@AgentPages.StrengthsLink</a></p>
+                }
+                else
+                {
+                    <p role="note">@AgentPages.CandidatesNeedTimeframe</p>
+                }
+
                 @foreach (var role in AgentRoleRules.All)
                 {
                     var (name, job) = AgentPages.Describe(role);
@@ -326,6 +355,12 @@
                             <p role="note">@nothingOffered <a href="@WebUiModule.KeysPath">Your keys</a></p>
                         }
 
+                        @* Against the model that the role has as it is stored, whatever the form holds: the rule of the service is the same. *@
+                        @if (_recommendations is { } recommendations)
+                        {
+                            <p id="agent-@(id)-candidate" class="role-candidate">@AgentPages.CandidateOf(recommendations, role, StoredModelOf(role))</p>
+                        }
+
                         @if (Problem(role) is { } roleProblem)
                         {
                             <p class="field-error" role="alert">@roleProblem</p>
@@ -335,6 +370,21 @@
 
                 @* Stores nothing: the form comes back with the models of the providers that are chosen now. *@
                 <button type="submit" name="Show" value="@AgentPages.ShowModels" formnovalidate>@AgentPages.ShowModelsButton</button>
+
+                @* Stores nothing: the form comes back with the candidates of the market and the timeframe that are chosen now. *@
+                <button type="submit" name="Show" value="@AgentPages.ShowCandidates" formnovalidate>@AgentPages.ShowCandidatesButton</button>
+
+                <div class="field">
+                    @* Not ticked for its user: an agent opts in (FR-TEAM-10). *@
+                    <input id="agent-reassigns-roles" name="@AgentPages.ReassignsRolesField" type="checkbox" value="@AgentPages.ReassignsRolesOn"
+                           checked="@ReassignsRoles" aria-describedby="agent-reassigns-roles-hint" />
+                    <label for="agent-reassigns-roles">@AgentPages.ReassignsRolesLabel</label>
+                    <p id="agent-reassigns-roles-hint" class="field-hint">@AgentPages.ReassignsRolesExplained(Trading.RoleReassignmentDays)</p>
+                    @if (_agent?.RolesReassignedAt is { } reassignedAt)
+                    {
+                        <p role="note">@AgentPages.RolesLastReassigned(reassignedAt, Trading.RoleReassignmentDays)</p>
+                    }
+                </div>
             </fieldset>
 
             @if (_confirmLive)
@@ -347,6 +397,28 @@
             else
             {
                 <button type="submit">@(_agent is null ? "Create the agent" : "Save the agent")</button>
+
+                @if (_recommendations is not null)
+                {
+                    @if (Recommended().Count > 0)
+                    {
+                        @* Said of the team that the button below saves, so before it is saved (FR-TEAM-5). *@
+                        @foreach (var warning in RecommendedWarnings())
+                        {
+                            <p class="form-warning recommended-team" role="note">@AgentPages.OfRecommendedTeam(warning)</p>
+                        }
+
+                        @* What the form recommends now, which the button saves: a recommendation that is another by then is shown first, and not stored. *@
+                        <input type="hidden" name="@AgentPages.RecommendedField" value="@AgentPages.RecommendedAs(_recommendations, Recommended())" />
+
+                        @* One action (FR-TEAM-4): the form is saved with the recommended model in each role that has one. *@
+                        <button type="submit" name="@AgentPages.ApplyField" value="@AgentPages.ApplyRecommended">@(_agent is null ? AgentPages.CreateRecommendedButton : AgentPages.SaveRecommendedButton)</button>
+                    }
+                    else
+                    {
+                        <p role="note">@AgentPages.NothingRecommended</p>
+                    }
+                }
             }
         </form>
     }
@@ -366,6 +438,8 @@
     private IReadOnlyDictionary<AgentField, AgentProblem> _problems = new Dictionary<AgentField, AgentProblem>();
     private IReadOnlyDictionary<Role, RoleProblem> _roleProblems = new Dictionary<Role, RoleProblem>();
     private RoleChoices _choices = new([], new Dictionary<Role, AiProviderCode>());
+    private RoleRecommendations? _recommendations;
+    private bool _recommendationChanged;
     private string? _notNow;
     private string? _notSaved;
     private bool _confirmLive;
@@ -447,12 +521,32 @@
     private string? Show { get; set; }
 
     /// <summary>
-    /// The button that saves a change to the capital, to a risk setting, or to the model of a
-    /// role of an agent in Live, when that is what was pressed: the page asked once more, and
-    /// this is the answer.
+    /// The button that saves a change to the capital, to a risk setting, to the model of a
+    /// role, or to whether the roles are reassigned automatically for an agent in Live, when
+    /// that is what was pressed: the page asked once more, and this is the answer.
     /// </summary>
     [SupplyParameterFromForm]
     private string? Confirm { get; set; }
+
+    /// <summary>
+    /// The button that saves the form with the recommended team, when that is what was pressed
+    /// (FR-TEAM-4).
+    /// </summary>
+    [SupplyParameterFromForm]
+    private string? Apply { get; set; }
+
+    /// <summary>What the form recommended when it was shown, which the button of the recommended team saves.</summary>
+    [SupplyParameterFromForm(Name = "Recommended")]
+    private string? RecommendedEntry { get; set; }
+
+    /// <summary>
+    /// The box that turns on that the service reassigns the roles by strength, when it is
+    /// ticked (FR-TEAM-10). A box that is not ticked brings nothing.
+    /// </summary>
+    [SupplyParameterFromForm(Name = "ReassignsRoles")]
+    private string? ReassignsRolesEntry { get; set; }
+
+    private bool ReassignsRoles => string.Equals(ReassignsRolesEntry, AgentPages.ReassignsRolesOn, StringComparison.Ordinal);
 
     private string Title => _agent is null ? "Create an agent" : $"Settings of the agent {_agent.Name}";
 
@@ -488,6 +582,30 @@
             _showForm = true;
             await OfferSymbolsAsync(request);
             _choices = await Agents.RoleChoicesAsync(request);
+            await RecommendAsync(request);
+
+            if (Apply == AgentPages.ApplyRecommended && Show is null)
+            {
+                // The button saves what the form showed, and nothing that its user did not
+                // see: another market or timeframe was chosen since, the scores changed, or a
+                // role was given another model meanwhile. Then nothing is stored, and the form
+                // is back with what is recommended now.
+                var recommended = Recommended();
+
+                if (_recommendations is null
+                    || recommended.Count == 0
+                    || !string.Equals(RecommendedEntry, AgentPages.RecommendedAs(_recommendations, recommended), StringComparison.Ordinal))
+                {
+                    _recommendationChanged = true;
+                }
+                else
+                {
+                    // The recommended models are put in the fields of the roles before the form
+                    // is answered: SaveAsync reads them as it reads what a user chose, and the
+                    // form comes back with them when it is not stored, as for an agent in Live.
+                    EnterRecommended();
+                }
+            }
 
             return;
         }
@@ -530,11 +648,13 @@
             DailyLossEntry = AgentPages.Number(_agent.Risk.DailyLossPercent);
             DrawdownEntry = AgentPages.Number(_agent.Risk.DrawdownPercent);
             EntryDistanceEntry = AgentPages.Number(_agent.Risk.MaxEntryDistancePercent);
+            ReassignsRolesEntry = _agent.ReassignsRoles ? AgentPages.ReassignsRolesOn : null;
         }
 
         _showForm = true;
         await OfferSymbolsAsync(request);
         _choices = await Agents.RoleChoicesAsync(request);
+        await RecommendAsync(request);
 
         // A role that has a model starts from it, and from its provider. A role that has none,
         // which is every role of a new agent, starts from the provider that the configuration
@@ -565,6 +685,13 @@
             return;
         }
 
+        if (_recommendationChanged)
+        {
+            _notSaved = AgentPages.RecommendationChanged;
+
+            return;
+        }
+
         var entry = new AgentEntry(
             NameEntry,
             MarketEntry,
@@ -578,7 +705,8 @@
             DailyLossEntry,
             DrawdownEntry,
             EntryDistanceEntry,
-            [.. AgentRoleRules.All.Select(role => new RoleEntry(role, ProviderEntry(role), ModelEntry(role)))]);
+            [.. AgentRoleRules.All.Select(role => new RoleEntry(role, ProviderEntry(role), ModelEntry(role)))],
+            ReassignsRoles);
 
         var result = _agent is null
             ? await Agents.CreateAsync(request, entry)
@@ -643,6 +771,56 @@
         if (_agent is not null && _agent.Market == _market && _offered.All(symbol => symbol.Symbol != _agent.Symbol))
         {
             _offered = [new SymbolChoice(_agent.Symbol, _agent.QuoteAsset), .. _offered];
+        }
+    }
+
+    /// <summary>
+    /// The models that have a strength score in each role, on the market and the timeframe that
+    /// the form holds now: those of the agent when the form is first shown. A score is of one
+    /// market and one timeframe, so there is none to show while no timeframe is chosen.
+    /// </summary>
+    private async Task RecommendAsync(HttpContext request)
+    {
+        _recommendations = Timeframes.WithCode(TimeframeEntry?.Trim()) is { } timeframe
+            ? await Agents.RoleRecommendationsAsync(request, _market, timeframe)
+            : null;
+    }
+
+    /// <summary>The model that a role has as it is stored, which a new agent has none of.</summary>
+    private Guid? StoredModelOf(Role role) => _agent?.Roles.FirstOrDefault(given => given.Role == role)?.ModelId;
+
+    /// <summary>
+    /// The roles that are recommended another model than they have, each with that model
+    /// (FR-TEAM-4): its strongest candidate, when it scores above the model that the role has.
+    /// </summary>
+    private IReadOnlyList<(Role Role, ScoredModel Model)> Recommended()
+    {
+        if (_recommendations is not { } recommendations)
+        {
+            return [];
+        }
+
+        var recommended = new List<(Role, ScoredModel)>();
+        foreach (var role in AgentRoleRules.All)
+        {
+            if (recommendations.RecommendedFor(role, StoredModelOf(role)) is { } model)
+            {
+                recommended.Add((role, model));
+            }
+        }
+
+        return recommended;
+    }
+
+    /// <summary>
+    /// Puts the recommended model of each role that has one in its fields, with its provider. A
+    /// role that is recommended none keeps what the form holds for it.
+    /// </summary>
+    private void EnterRecommended()
+    {
+        foreach (var (role, model) in Recommended())
+        {
+            Enter(role, model.Slice.Model.Provider.Value, model.ModelId.ToString());
         }
     }
 
@@ -774,7 +952,26 @@
     /// provider that holds more than one role, and the Strategist and the Risk Manager on the
     /// same one.
     /// </summary>
-    private IReadOnlyList<string> Warnings()
+    private IReadOnlyList<string> Warnings() => WarningsOf(ProvidersHeld());
+
+    /// <summary>
+    /// What the form warns of for the team that the button of the recommended team would save
+    /// (FR-TEAM-5): the providers that the form holds, with the provider of the recommended model
+    /// in each role that has one. Strength may give two roles to one provider.
+    /// </summary>
+    private IReadOnlyList<string> RecommendedWarnings()
+    {
+        var providers = ProvidersHeld();
+        foreach (var (role, model) in Recommended())
+        {
+            providers[role] = model.Slice.Model.Provider;
+        }
+
+        return WarningsOf(providers);
+    }
+
+    /// <summary>The provider that the form holds for each role now.</summary>
+    private Dictionary<Role, AiProviderCode> ProvidersHeld()
     {
         var providers = new Dictionary<Role, AiProviderCode>();
         foreach (var role in AgentRoleRules.All)
@@ -785,6 +982,11 @@
             }
         }
 
+        return providers;
+    }
+
+    private IReadOnlyList<string> WarningsOf(Dictionary<Role, AiProviderCode> providers)
+    {
         var warned = AgentRoleRules.WarningsOf(providers);
         var warnings = new List<string>();
 

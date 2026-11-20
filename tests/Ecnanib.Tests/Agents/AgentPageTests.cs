@@ -1238,7 +1238,7 @@ public class AgentPageTests
         Assert.Equal(
             [
                 "id", "name", "mode", "market", "symbol", "timeframe", "allocatedCapital", "quoteAsset", "risk", "state",
-                "stateCause", "stateChangedAt", "createdAt",
+                "stateCause", "stateChangedAt", "createdAt", "reassignsRoles", "rolesReassignedAt",
             ],
             exported.EnumerateObject().Select(property => property.Name));
         Assert.Equal(
@@ -1271,6 +1271,11 @@ public class AgentPageTests
                 risk.GetProperty("dailyLossPercent").GetDecimal(),
                 risk.GetProperty("drawdownPercent").GetDecimal(),
                 risk.GetProperty("maxEntryDistancePercent").GetDecimal()));
+
+        // Whether the service reassigns its roles by strength is a setting of the agent, and is
+        // off unless its user turned it on. The service has reassigned none (FR-TEAM-10).
+        Assert.False(exported.GetProperty("reassignsRoles").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, exported.GetProperty("rolesReassignedAt").ValueKind);
     }
 
     [Fact]

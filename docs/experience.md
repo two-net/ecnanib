@@ -91,7 +91,7 @@ A `TrackRecordFilter` is a role, a market, a timeframe, a mode, and a period. Wh
 | **What is enough is counted for the view,** and not for a row. | The trades that the view would count in a mode, under its other choices: its role, its market, its timeframe, and its period. A trade that is in no measure is no sample. |
 | **The rule takes sample sizes, and not trades.** | So that whatever counts something else than trades goes by the same rule: the measures of the roles do (FR-EXP-3). |
 
-A recommendation of a team is not built. It is to go by `ExperienceBasis.Choose`, with the sample sizes of the slices that it recommends from, which `IRoleStrengths` answers for each mode: see "The strength score", and "Not built yet".
+What recommends a team goes by the same rule, with the sample sizes of the slices that it recommends from, which `IRoleStrengths` answers for each mode: `RoleRecommendations` of Agents chooses the mode for each model, from the samples of its slice in Live and in Demo, and says which it used (FR-TEAM-4). See "The strength score", and "Role by strength" in [agents.md](agents.md).
 
 ## The measure of each role
 
@@ -146,7 +146,7 @@ public interface IRoleStrengths
 | Rule | Detail |
 |---|---|
 | **A slice is of one model, one role, one market, and one timeframe.** | Nothing is added up over two of any of them. A model that was the Market Analyst of an agent on Spot on the hour and of one on Futures on 4 hours has two slices. |
-| **It takes its mode, and chooses none.** | A slice is of one mode. A screen hands over the mode that it shows, which its track records say. What recommends from the scores asks for each mode, and goes by `ExperienceBasis.Choose` with the sample sizes of the slices. The mode of the filter is not gone by. |
+| **It takes its mode, and chooses none.** | A slice is of one mode. A screen hands over the mode that it shows, which its track records say. What recommends from the scores asks for each mode, and goes by `ExperienceBasis.Choose` with the sample sizes of the slices: Agents does, for the form of an agent and for the automatic reassignment of its roles (FR-TEAM-4, FR-TEAM-10). The mode of the filter is not gone by. |
 | **The filter chooses among the slices.** | A role, a market, and a timeframe each leave the other slices out. `OfModelAsync` answers every role of one model, and does not go by the role of the filter. |
 | **A period counts a sample by when it happened.** | A call and a vetoed plan by the close of the candle of their cycle, and an executed plan by when its position was closed, as a track record does. |
 | **Only a slice with a sample is answered.** | A user with nothing has no slice. |
@@ -346,7 +346,7 @@ A run that completed something says how much, as information, and a run that com
 
 ## Not built yet
 
-- Recommending a team by measured strength (FR-TEAM-4). The strength score of each model in each role is worked out, and a slice without enough samples has none to recommend from. A recommendation is to use Live data where there is enough, otherwise Demo data, and to say which (FR-EXP-9): `ExperienceBasis.Choose` is that rule, the experience screens go by it already, and `IRoleStrengths` answers the slices of each mode for it.
+- Recommending a team from anything but the slice of the agent's own market and timeframe. Agents recommends the strongest candidate of each role from the strength scores, and reassigns the roles of an agent that opted in (FR-TEAM-4, FR-TEAM-10): see "Role by strength" in [agents.md](agents.md). A model that was measured on another market or timeframe has no score there, and is recommended nothing from it.
 - The funding of a shadow trade. A position of Futures receives and pays funding, and a shadow trade is charged its fees alone: the specification names standard fees, and the funding rates of the past are not kept.
 - A shadow trade of a plan that was approved and then opened no position: one that the Risk Guard rejected, one whose entry was skipped, and one whose entry at a price was not reached. Only a plan that was executed has a result on the approved side.
 - Following a shadow trade for longer than 200 candles, and scoring what the candles of the exchange no longer reach. The gateway reads the newest candles alone: see "Market data" in [exchange.md](exchange.md).

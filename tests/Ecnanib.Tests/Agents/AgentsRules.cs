@@ -49,6 +49,9 @@ internal static class AgentsRules
         ["IStoredAgents.SymbolsAsync"] = "Reads the symbols that an agent can be given on each market.",
         ["IStoredAgents.RoleChoicesAsync"] =
             "Reads the models that a user can give the roles of an agent, and the provider that each role has by default.",
+        ["IStoredAgents.RoleRecommendationsAsync"] =
+            "Reads the models that have a strength score in each role on a market and a timeframe, strongest first, from " +
+            "what the user's own agents did: what a role is recommended from (FR-TEAM-4). It changes no agent.",
         ["IStoredAgents.CreateAsync"] = "Creates an agent, which is a draft in Demo, with the models that were chosen for its roles.",
         ["IStoredAgents.SaveAsync"] =
             "Changes the settings of an agent, the models of its roles among them, and neither its state nor its mode.",

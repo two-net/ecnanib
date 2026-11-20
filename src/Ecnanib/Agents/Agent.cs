@@ -37,6 +37,14 @@ namespace Ecnanib.Agents;
 /// <param name="stateCause">Why it is in that state.</param>
 /// <param name="stateChangedAt">Since when it is.</param>
 /// <param name="createdAt">When it was created.</param>
+/// <param name="reassignsRoles">
+/// Whether its user turned on that the service gives its roles other models by strength
+/// (FR-TEAM-10). A new agent has it off: its user opts in.
+/// </param>
+/// <param name="rolesReassignedAt">
+/// When the service last gave a role of it another model by strength, or null while it never
+/// did. The days between two such times are counted from it.
+/// </param>
 public sealed class Agent(
     Guid id,
     Guid userId,
@@ -57,7 +65,9 @@ public sealed class Agent(
     AgentState state,
     AgentStateCause stateCause,
     DateTimeOffset stateChangedAt,
-    DateTimeOffset createdAt) : IUserOwned
+    DateTimeOffset createdAt,
+    bool reassignsRoles = false,
+    DateTimeOffset? rolesReassignedAt = null) : IUserOwned
 {
     public Guid Id { get; } = id;
 
@@ -98,6 +108,10 @@ public sealed class Agent(
     public DateTimeOffset StateChangedAt { get; } = stateChangedAt;
 
     public DateTimeOffset CreatedAt { get; } = createdAt;
+
+    public bool ReassignsRoles { get; } = reassignsRoles;
+
+    public DateTimeOffset? RolesReassignedAt { get; } = rolesReassignedAt;
 }
 
 internal sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
@@ -128,6 +142,9 @@ internal sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
         builder.Property(agent => agent.StateCause);
         builder.Property(agent => agent.StateChangedAt);
         builder.Property(agent => agent.CreatedAt);
+
+        builder.Property(agent => agent.ReassignsRoles);
+        builder.Property(agent => agent.RolesReassignedAt);
 
         // A user has no two agents of one name (FR-AGT-1). The index also finds the agents of a user.
         builder.HasIndex(agent => new { agent.UserId, agent.Name }).IsUnique();

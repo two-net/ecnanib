@@ -9,6 +9,7 @@ using Ecnanib.Platform.Settings;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
 using Ecnanib.WebUi.Pages.Account;
+using Ecnanib.WebUi.Pages.Experience;
 
 namespace Ecnanib.WebUi.Pages.Agents;
 
@@ -65,13 +66,13 @@ public static class AgentPages
 
     /// <summary>
     /// What the form of the settings says when it asks once more: the capital, a risk setting,
-    /// or the model of a role of an agent in Live was changed, and nothing is stored until its
-    /// user says so again.
+    /// the model of a role, or whether the roles are reassigned automatically was changed for
+    /// an agent in Live, and nothing is stored until its user says so again.
     /// </summary>
     public const string ConfirmSaveForLive =
-        "This agent is in Live. The capital, the risk settings, and the models of the roles you entered apply to trading " +
-        "with real money, from the agent's next cycle. Nothing is saved yet. Check them, and press \"" + SaveForLive +
-        "\" to save them.";
+        "This agent is in Live. The capital, the risk settings, the models of the roles, and whether the roles are " +
+        "reassigned automatically, as you entered them, apply to trading with real money, from the agent's next cycle. " +
+        "Nothing is saved yet. Check them, and press \"" + SaveForLive + "\" to save them.";
 
     /// <summary>What the page that switches an agent to Live says to a form that came without the confirmation.</summary>
     public const string ConfirmRiskFirst = "Tick the box to confirm that you understand the risk. Nothing was switched.";
@@ -123,6 +124,175 @@ public static class AgentPages
 
     /// <summary>What the choice of a model says while none is chosen.</summary>
     public const string ChooseModel = "Choose a model";
+
+    /// <summary>
+    /// The value of the button that shows the strongest candidate of each role and stores
+    /// nothing. A page is not interactive, so the candidates follow the market and the timeframe
+    /// with a press of it.
+    /// </summary>
+    public const string ShowCandidates = "candidates";
+
+    /// <summary>What that button says.</summary>
+    public const string ShowCandidatesButton = "Show the strongest candidates";
+
+    /// <summary>The name of the button that saves the form with the recommended team (FR-TEAM-4).</summary>
+    public const string ApplyField = "Apply";
+
+    /// <summary>The value of that button.</summary>
+    public const string ApplyRecommended = "recommended";
+
+    /// <summary>What that button says on the form of an agent that is stored.</summary>
+    public const string SaveRecommendedButton = "Save with the recommended team";
+
+    /// <summary>What that button says on the form that creates an agent.</summary>
+    public const string CreateRecommendedButton = "Create with the recommended team";
+
+    /// <summary>
+    /// The name of the field that carries what the form recommended when it was shown: the
+    /// button of the recommended team saves that, and nothing that its user did not see.
+    /// </summary>
+    public const string RecommendedField = "Recommended";
+
+    /// <summary>
+    /// What the form says when the button of the recommended team was pressed and the
+    /// recommendation is not the one that the form showed: nothing is stored, and the form is
+    /// back with what is recommended now.
+    /// </summary>
+    public const string RecommendationChanged =
+        "Nothing was saved. The recommended team is not the one that this page showed: the market or the timeframe was " +
+        "changed, or the strength scores or the models of the roles have changed since. Check the candidates below, and " +
+        "press the button again.";
+
+    /// <summary>
+    /// What a form recommends, as one text that the form carries: the market, the timeframe,
+    /// and the recommended model of each role that has one. Two forms that recommend the same
+    /// carry the same text.
+    /// </summary>
+    public static string RecommendedAs(RoleRecommendations recommendations, IReadOnlyList<(Role Role, ScoredModel Model)> recommended)
+    {
+        ArgumentNullException.ThrowIfNull(recommendations);
+        ArgumentNullException.ThrowIfNull(recommended);
+
+        return string.Join(
+            ';',
+            [recommendations.Market.ToString(), recommendations.Timeframe.Code(), .. recommended.Select(role => $"{role.Role}={role.Model.ModelId:N}")]);
+    }
+
+    /// <summary>The name of the box that turns the automatic reassignment of the roles on (FR-TEAM-10).</summary>
+    public const string ReassignsRolesField = "ReassignsRoles";
+
+    /// <summary>The value of that box when it is ticked.</summary>
+    public const string ReassignsRolesOn = "on";
+
+    /// <summary>What the label of that box says.</summary>
+    public const string ReassignsRolesLabel = "Reassign the roles by strength automatically";
+
+    /// <summary>
+    /// What the form says about the strongest candidates, above the roles: what a candidate is,
+    /// which data its score is of, and when a role is recommended one (FR-TEAM-4, FR-EXP-9).
+    /// </summary>
+    public const string StrengthExplained =
+        "Under each role is its strongest candidate: the model with the highest strength score in that role, on the " +
+        "market and the timeframe of the agent, among the models that your own keys can use. A strength score is worked " +
+        "out from what your own agents did. A model is scored from its Live data where there is enough, and from its " +
+        "Demo data otherwise, and each line says which. For the Sentiment Analyst only a model that searches live is a " +
+        "candidate. A candidate is recommended only when it scores above the model that the role has: a model with no " +
+        "score counts as 0. You decide: choose any model for any role.";
+
+    /// <summary>What the form says in place of the candidates while no timeframe is chosen: a score is of one market and one timeframe.</summary>
+    public const string CandidatesNeedTimeframe =
+        "Choose a market and a timeframe, and press \"" + ShowCandidatesButton + "\": a strength score is of one market " +
+        "and one timeframe.";
+
+    /// <summary>What the form says under a role that no model can be recommended for (FR-EXP-4).</summary>
+    public const string NotEnoughDataToRecommend = "Not enough data to recommend a model.";
+
+    /// <summary>What the form says where the button that saves the recommended team would be, when no role is recommended another model.</summary>
+    public const string NothingRecommended =
+        "No role is recommended another model now: each has its strongest candidate, has none that scores above its " +
+        "model, or has not enough data.";
+
+    /// <summary>The link from the form to the experience screen, where every strength score is.</summary>
+    public const string StrengthsLink = "The strength scores of your models on this market and timeframe";
+
+    /// <summary>
+    /// What the form says under a role about its strongest candidate (FR-TEAM-4): the model,
+    /// its provider, its score in the unit of the role, its sample size, and which data the
+    /// score is of (FR-EXP-9), and then that the role has it, that it is recommended and against
+    /// what, or why it is not. A role with no candidate says that there is not enough data
+    /// (FR-EXP-4). The mode is said as a word, and never as a badge: the badge of a page is the
+    /// mode of its agent.
+    /// </summary>
+    /// <param name="recommendations">The scored models of the market and the timeframe.</param>
+    /// <param name="role">The role.</param>
+    /// <param name="currentModelId">The model that the role has, or null when it has none.</param>
+    public static string CandidateOf(RoleRecommendations recommendations, Role role, Guid? currentModelId)
+    {
+        ArgumentNullException.ThrowIfNull(recommendations);
+
+        if (recommendations.StrongestFor(role) is not { } strongest)
+        {
+            return NotEnoughDataToRecommend;
+        }
+
+        var model = strongest.Slice.Model;
+
+        var candidate =
+            $"Strongest candidate: {NameOf(model.Identifier, model.DisplayName)}, of {model.ProviderName}. " +
+            $"Strength score {ExperiencePages.Score(strongest.Slice)}, sample size {ExperiencePages.Samples(strongest.Slice)}, " +
+            $"{strongest.Basis} data.";
+
+        if (strongest.ModelId == currentModelId)
+        {
+            return $"{candidate} The role has it.";
+        }
+
+        var current = recommendations.Of(role, currentModelId);
+
+        var against = (currentModelId, current) switch
+        {
+            (null, _) => "the role has no model yet",
+            (_, null) => "the model that the role has has no strength score yet, which counts as 0",
+            _ => $"the model that the role has scores {ExperiencePages.Score(current.Slice)} " +
+                $"(sample size {ExperiencePages.Samples(current.Slice)}, {current.Basis} data)",
+        };
+
+        return recommendations.RecommendedFor(role, currentModelId) is null
+            ? $"{candidate} Not recommended: it does not score above what the role has, and {against}."
+            : $"{candidate} Recommended: {against}.";
+    }
+
+    /// <summary>What the form says before a warning of the team that the button of the recommended team would save (FR-TEAM-5).</summary>
+    public static string OfRecommendedTeam(string warning) => $"With the recommended team: {warning}";
+
+    /// <summary>
+    /// What the form says under the box that turns the automatic reassignment on: what the
+    /// service does then, how often, when not, and that it asks nobody again (FR-TEAM-10).
+    /// </summary>
+    /// <param name="days">How many days pass at the least between two reassignments of an agent: <c>Trading:RoleReassignmentDays</c>.</param>
+    public static string ReassignsRolesExplained(int days) =>
+        "When this is on, the service gives a role its recommended model on its own, by the rule above: at most once " +
+        $"in {Days(days)} for the agent, only while the agent runs, and only while it has no open position. You are " +
+        "told of each change with a notification, and it applies from the agent's next cycle. A model that you choose " +
+        "yourself is replaced the same way while this is on. For an agent in Live this changes which models trade with " +
+        "real money, and you are not asked again for each change.";
+
+    /// <summary>When the service last gave a role of the agent another model by strength, and until when it gives none again.</summary>
+    /// <param name="last">When it last did.</param>
+    /// <param name="days">How many days pass at the least between two reassignments of an agent.</param>
+    public static string RolesLastReassigned(DateTimeOffset last, int days) =>
+        $"The service last reassigned a role of this agent on {PageTimes.At(last)}, and reassigns none again before " +
+        $"{PageTimes.At(last.AddDays(days))}.";
+
+    /// <summary>What the page that switches an agent to Live says when the automatic reassignment is on for it (FR-TEAM-10, FR-UI-3).</summary>
+    /// <param name="days">How many days pass at the least between two reassignments of an agent.</param>
+    public static string ReassignsRolesInLive(int days) =>
+        "Automatic reassignment of the roles is on for this agent: in Live the service gives its roles other models by " +
+        $"strength on its own, at most once in {Days(days)}, and does not ask you again. Turn it off in the settings of " +
+        "the agent first if you do not want that.";
+
+    private static string Days(int days) =>
+        days == 1 ? "1 day" : $"{days.ToString(CultureInfo.InvariantCulture)} days";
 
     /// <summary>What the form says about the roles, above them (FR-TEAM-1, FR-AGT-8).</summary>
     public const string RolesExplained =
@@ -316,6 +486,7 @@ public static class AgentPages
         NotificationType.LiquidationWarning => "Liquidation warning",
         NotificationType.ReconciliationMismatch => "Reconciliation mismatch",
         NotificationType.AgentHalted => "Agent halted",
+        NotificationType.RolesReassigned => "Roles reassigned",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "The type has no description."),
     };
 

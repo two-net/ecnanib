@@ -1,6 +1,7 @@
 using Ecnanib.Accounts;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
+using Ecnanib.Experience;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Settings;
 using Ecnanib.Shared;
@@ -158,7 +159,8 @@ internal sealed record RoleChoice(Role Role, Guid ModelId);
 /// <summary>
 /// Gives the roles of an agent's team their models (FR-AGT-5, FR-TEAM-1): says what a user can
 /// select, holds what a form brought to it, stores the choices, and says what about the team
-/// keeps an agent from running. See docs/agents.md.
+/// keeps an agent from running. It also says which models are the strongest in each role by
+/// measured experience, which a role is recommended from (FR-TEAM-4). See docs/agents.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -174,7 +176,7 @@ internal sealed record RoleChoice(Role Role, Guid ModelId);
 /// when the agent is started or resumed.
 /// </para>
 /// </remarks>
-internal sealed class AgentRoles(IKeyModels keyModels, ICatalogModels catalog, TradingSettings trading)
+internal sealed class AgentRoles(IKeyModels keyModels, ICatalogModels catalog, IRoleStrengths strengths, TradingSettings trading)
 {
     /// <summary>What a user can give the roles of an agent, and what each role has by default.</summary>
     public async Task<RoleChoices> ChoicesAsync(Guid userId, CancellationToken cancellationToken)
@@ -194,6 +196,31 @@ internal sealed class AgentRoles(IKeyModels keyModels, ICatalogModels catalog, T
                     provider.Models)),
             ],
             AgentRoleRules.All.ToDictionary(role => role, trading.DefaultRoles.Of));
+    }
+
+    /// <summary>
+    /// The models that have a strength score in each role on a market and a timeframe, from
+    /// what the agents of one user did, strongest first, with which of them the user can give a
+    /// role now (FR-TEAM-4). Experience says the scores of each mode, and
+    /// <see cref="RoleRecommendations.Of"/> which mode each model is gone by (FR-EXP-9).
+    /// </summary>
+    /// <remarks>
+    /// Every sample counts, however old: a recommendation has no period. Nothing of what the
+    /// agents of anyone else did is in it (NFR-SEC-3). It only reads, and asks no provider.
+    /// </remarks>
+    public async Task<RoleRecommendations> RecommendationsAsync(
+        Guid userId, Market market, Timeframe timeframe, CancellationToken cancellationToken)
+    {
+        var slices = new TrackRecordFilter(Role: null, market, timeframe, Mode: null, TrackPeriod.AllTime);
+
+        var live = await strengths.OfUserAsync(userId, slices, TradingMode.Live, cancellationToken);
+        var demo = await strengths.OfUserAsync(userId, slices, TradingMode.Demo, cancellationToken);
+
+        var selectable = (await keyModels.SelectableAsync(userId, cancellationToken))
+            .SelectMany(provider => provider.Models)
+            .ToList();
+
+        return RoleRecommendations.Of(market, timeframe, live, demo, selectable);
     }
 
     /// <summary>The roles of every agent of a user with their models, by agent, each agent's in the order of the roles.</summary>

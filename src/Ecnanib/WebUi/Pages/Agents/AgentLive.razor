@@ -2,11 +2,13 @@
 @attribute [Authorize]
 @using Ecnanib.Accounts
 @using Ecnanib.Agents
+@using Ecnanib.Platform.Settings
 @using Ecnanib.Shared
 @using Ecnanib.WebUi.Pages.Account
 @using Ecnanib.WebUi.Pages.Legal
 @inject IStoredAgents Agents
 @inject IAgentModes Modes
+@inject TradingSettings Trading
 @inject IReauthentication Reauthentication
 @inject NavigationManager Navigation
 
@@ -56,6 +58,12 @@
         </ul>
 
         <p>The <a href="@LegalPages.RiskDisclosurePath" target="_blank" rel="noopener">risk disclosure</a> says this in full.</p>
+
+        @if (_agent.ReassignsRoles)
+        {
+            @* Said where the switch is confirmed: in Live the service changes the models that trade with real money, and asks nobody (FR-TEAM-10, FR-UI-3). *@
+            <p role="note">@AgentPages.ReassignsRolesInLive(Trading.RoleReassignmentDays) <a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+        }
 
         <form method="post" @formname="@AgentPages.SwitchToLiveForm" @onsubmit="SwitchAsync">
             <AntiforgeryToken />

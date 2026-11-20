@@ -94,6 +94,12 @@ public enum NotificationType
     /// FR-NTF-1).
     /// </summary>
     AgentHalted,
+
+    /// <summary>
+    /// A role of an agent was given another model by strength, by the service: its user turned
+    /// automatic reassignment on for the agent, and is told of each change (FR-TEAM-10).
+    /// </summary>
+    RolesReassigned,
 }
 
 internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>

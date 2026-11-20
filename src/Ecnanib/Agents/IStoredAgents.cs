@@ -51,6 +51,18 @@ public interface IStoredAgents
     Task<RoleChoices> RoleChoicesAsync(HttpContext request);
 
     /// <summary>
+    /// The models that have a strength score in each role on a market and a timeframe, from
+    /// what the user's own agents did, strongest first, with which of them the user can give a
+    /// role now: what a role is recommended from (FR-TEAM-4). Each says whether its score is of
+    /// Live or of Demo data (FR-EXP-9), and a model without enough samples is not among them
+    /// (FR-EXP-4). It only reads, and asks no provider.
+    /// </summary>
+    /// <param name="request">The request of the signed-in user.</param>
+    /// <param name="market">The market of the agent.</param>
+    /// <param name="timeframe">The timeframe of the agent.</param>
+    Task<RoleRecommendations> RoleRecommendationsAsync(HttpContext request, Market market, Timeframe timeframe);
+
+    /// <summary>
     /// Creates an agent with what was entered, in Demo and in Draft. A user whose email address
     /// is not verified creates none, and neither does one who has as many agents as the
     /// fair-use limit allows (FR-ACC-1, FR-ACC-7). A role is given the model that was chosen for
@@ -64,21 +76,23 @@ public interface IStoredAgents
     /// or orders (FR-AGT-8). The models of its roles change in any state, and apply from its
     /// next cycle: a model that a role is newly given is one that the user can select, and a
     /// role that has a model keeps one (FR-AGT-5). A change to a risk setting is recorded in the
-    /// audit trail (NFR-LOG-7).
+    /// audit trail (NFR-LOG-7). Whether the service reassigns its roles by strength is among
+    /// the settings (FR-TEAM-10).
     /// </summary>
     /// <param name="request">The request of the signed-in user.</param>
     /// <param name="agentId">The agent.</param>
     /// <param name="entry">What was entered.</param>
     /// <param name="confirmedForLive">
     /// Whether the user was asked once more, and confirmed. It counts for an agent in Live: a
-    /// change to its capital, to a risk setting, or to the model of a role is not stored
-    /// without it (FR-UI-3).
+    /// change to its capital, to a risk setting, to the model of a role, or to whether its roles
+    /// are reassigned automatically is not stored without it (FR-UI-3).
     /// </param>
     Task<SaveAgentResult> SaveAsync(HttpContext request, Guid agentId, AgentEntry entry, bool confirmedForLive);
 
     /// <summary>
     /// Creates a copy of an agent, under a name of its own, in Demo and in Draft, whatever mode
-    /// the agent is in, with the models that its roles have. It counts against the fair-use
+    /// the agent is in, with the models that its roles have, and with the automatic
+    /// reassignment of its roles off, whatever the agent has. It counts against the fair-use
     /// limit as any agent does. An agent in Live is copied only when its market has its symbol
     /// in Demo as well (FR-AGT-6).
     /// </summary>
@@ -123,6 +137,8 @@ public sealed record StoredAgentList(IReadOnlyList<AgentView> Agents, AgentCreat
 /// The roles of its team that have a model, each with its model, in the order of the roles
 /// (FR-AGT-5). A role that is not among them has none yet.
 /// </param>
+/// <param name="ReassignsRoles">Whether its user turned on that the service gives its roles other models by strength (FR-TEAM-10).</param>
+/// <param name="RolesReassignedAt">When the service last gave a role of it another model by strength, or null while it never did.</param>
 public sealed record AgentView(
     Guid Id,
     string Name,
@@ -139,7 +155,9 @@ public sealed record AgentView(
     DateTimeOffset CreatedAt,
     bool StructureCanChange,
     bool HasOpenPosition,
-    IReadOnlyList<AgentRoleView> Roles);
+    IReadOnlyList<AgentRoleView> Roles,
+    bool ReassignsRoles,
+    DateTimeOffset? RolesReassignedAt);
 
 /// <summary>
 /// The risk settings of an agent that its user chooses, each within the hard bounds of the
@@ -192,6 +210,10 @@ public sealed record SymbolChoice(string Symbol, string QuoteAsset);
 /// <param name="DrawdownPercent">The drawdown limit, in percent.</param>
 /// <param name="MaxEntryDistancePercent">The most distance of an entry from the current price, in percent.</param>
 /// <param name="Roles">What was chosen for the roles of the team: for each, a provider and a model.</param>
+/// <param name="ReassignsRoles">
+/// Whether the box was ticked that has the service give the roles other models by strength
+/// (FR-TEAM-10). A form that brings no such box says that it is off: an agent opts in.
+/// </param>
 public sealed record AgentEntry(
     string? Name,
     string? Market,
@@ -205,7 +227,8 @@ public sealed record AgentEntry(
     string? DailyLossPercent,
     string? DrawdownPercent,
     string? MaxEntryDistancePercent,
-    IReadOnlyList<RoleEntry> Roles);
+    IReadOnlyList<RoleEntry> Roles,
+    bool ReassignsRoles);
 
 /// <summary>A setting of an agent that a form has a field for.</summary>
 public enum AgentField
@@ -286,8 +309,9 @@ public enum SaveAgentOutcome
     NotFound,
 
     /// <summary>
-    /// The agent is in Live, the capital, a risk setting, or the model of a role was changed,
-    /// and its user was not asked once more (FR-UI-3). Nothing was stored.
+    /// The agent is in Live, the capital, a risk setting, the model of a role, or whether its
+    /// roles are reassigned automatically was changed, and its user was not asked once more
+    /// (FR-UI-3). Nothing was stored.
     /// </summary>
     NotConfirmedForLive,
 }
@@ -411,7 +435,8 @@ public static class AgentRules
                     liquidationBuffer!.Value,
                     dailyLoss!.Value,
                     drawdown!.Value,
-                    entryDistance!.Value));
+                    entryDistance!.Value),
+                entry.ReassignsRoles);
 
         TChoice? Chosen<TChoice>(AgentField field, string? text, Func<string?, TChoice?> among)
             where TChoice : struct
@@ -554,4 +579,4 @@ public static class AgentRules
 
 /// <summary>The settings of an agent that a form brought, read and found to be in order.</summary>
 internal sealed record AgentSettings(
-    string Name, Market Market, string Symbol, Timeframe Timeframe, decimal AllocatedCapital, AgentRisk Risk);
+    string Name, Market Market, string Symbol, Timeframe Timeframe, decimal AllocatedCapital, AgentRisk Risk, bool ReassignsRoles);

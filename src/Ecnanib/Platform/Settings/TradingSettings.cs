@@ -4,8 +4,9 @@ namespace Ecnanib.Platform.Settings;
 
 /// <summary>
 /// The <c>Trading</c> section: the default team, the Aggressive profile, the stale limits, how
-/// many cycles run at once, how many candles the data package of a cycle holds, and when a
-/// position of the Futures market approaches liquidation.
+/// many cycles run at once, how many candles the data package of a cycle holds, when a
+/// position of the Futures market approaches liquidation, and how often the roles of an agent
+/// are reassigned by strength.
 /// </summary>
 /// <param name="DefaultRoles">The provider that fills each role on a new agent.</param>
 /// <param name="Aggressive">The one trading profile.</param>
@@ -18,17 +19,27 @@ namespace Ecnanib.Platform.Settings;
 /// position is told that it approaches liquidation when no more than that is left between the
 /// mark price and the liquidation price (FR-BIN-F5).
 /// </param>
+/// <param name="RoleReassignmentDays">
+/// How many days, each of 24 hours, pass at the least between two times that the service gives
+/// the roles of one agent other models by strength, from 1 to 365 (FR-TEAM-10). It counts for an
+/// agent whose user turned that on, and from the last time that a role of it was given another
+/// model that way.
+/// </param>
 public sealed record TradingSettings(
     DefaultRolesSettings DefaultRoles,
     AggressiveSettings Aggressive,
     StaleSecondsSettings StaleSeconds,
     CycleSettings Cycles,
     DataPackageSettings DataPackage,
-    int LiquidationWarningPercent)
+    int LiquidationWarningPercent,
+    int RoleReassignmentDays)
 {
     // No way is left at nothing, and all of it at a hundred: neither is a warning.
     private const int LeastLiquidationWarningPercent = 1;
     private const int MostLiquidationWarningPercent = 99;
+
+    // A year at the most: longer than that is never, which is what turning it off is for.
+    private const int MostRoleReassignmentDays = 365;
 
     internal static TradingSettings Read(SettingsReader file, AiProvidersSettings aiProviders) =>
         new(
@@ -38,7 +49,8 @@ public sealed record TradingSettings(
             CycleSettings.Read(file),
             DataPackageSettings.Read(file),
             file.WholeNumber(
-                "Trading:LiquidationWarningPercent", minimum: LeastLiquidationWarningPercent, maximum: MostLiquidationWarningPercent));
+                "Trading:LiquidationWarningPercent", minimum: LeastLiquidationWarningPercent, maximum: MostLiquidationWarningPercent),
+            file.WholeNumber("Trading:RoleReassignmentDays", minimum: 1, maximum: MostRoleReassignmentDays));
 }
 
 /// <summary>The provider that fills each of the four roles on a new agent (FR-TEAM-3).</summary>

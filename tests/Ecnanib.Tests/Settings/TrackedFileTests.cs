@@ -82,6 +82,10 @@ public class TrackedFileTests
         // seven tenths of that way, so one that works closes the position first.
         Assert.Equal(20, settings.Trading.LiquidationWarningPercent);
 
+        // The roles of an agent whose user turned it on are reassigned by strength at most once
+        // every 7 days (FR-TEAM-10).
+        Assert.Equal(7, settings.Trading.RoleReassignmentDays);
+
         // A shadow trade is charged what Binance charges an account with no discount for an
         // order that takes: a tenth of a percent on Spot, and a twentieth on Futures (FR-EXP-5).
         Assert.Equal(

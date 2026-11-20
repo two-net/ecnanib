@@ -430,7 +430,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `notifications` | Each notification of the user: what it is about, the id of the agent that it is about, what it says, whether it is read, and when it was raised. |
 | `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, when it was saved, what its last check found and when, and the identifiers of the models that the provider listed to it, or nothing where it has listed none yet. Never the key. |
 | `exchangeKeys` | Each Binance credential that is stored: its id, the environment, the last four characters of the API key, when it was saved, what its last check found and when, and what Binance said it may do: trade on Spot, trade on Futures, and work only from listed addresses. Never a key. |
-| `agents` | Each agent: its id, its name, its mode, market, symbol, and timeframe, its allocated capital and the asset it is in, its risk settings, its state with its cause and since when, and when it was created. |
+| `agents` | Each agent: its id, its name, its mode, market, symbol, and timeframe, its allocated capital and the asset it is in, its risk settings, its state with its cause and since when, when it was created, whether its roles are reassigned automatically, and when the service last reassigned one. |
 | `agentRoles` | Each role of an agent that was given a model: the id of the agent, the role, and the provider and the identifier of the model. |
 | `agentStateChanges` | Each change of the state of an agent that the user has: the id of the agent, the state it came to, why, and when. |
 
