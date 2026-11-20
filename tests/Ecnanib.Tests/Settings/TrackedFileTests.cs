@@ -81,7 +81,13 @@ public class TrackedFileTests
         // A stop-loss that the least liquidation buffer above allows is no further than about
         // seven tenths of that way, so one that works closes the position first.
         Assert.Equal(20, settings.Trading.LiquidationWarningPercent);
-        Assert.Equal(new ExperienceSettings(5, 20, 20, new ExperienceBoardSettings(MinUsers: 5, MinTrades: 50)), settings.Experience);
+
+        // A shadow trade is charged what Binance charges an account with no discount for an
+        // order that takes: a tenth of a percent on Spot, and a twentieth on Futures (FR-EXP-5).
+        Assert.Equal(
+            new ExperienceSettings(
+                5, 20, 20, new ShadowFeeSettings(Spot: 0.1m, Futures: 0.05m), new ExperienceBoardSettings(MinUsers: 5, MinTrades: 50)),
+            settings.Experience);
         Assert.Equal(new RetentionSettings(90, 365, 90, 730), settings.Retention);
         Assert.Equal(
             new LimitsSettings(

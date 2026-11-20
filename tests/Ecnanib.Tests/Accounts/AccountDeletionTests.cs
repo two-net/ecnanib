@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using Ecnanib.Accounts;
+using Ecnanib.DecisionEngine;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
@@ -55,7 +56,9 @@ public class AccountDeletionTests
         // recovery codes, the event of turning two-factor authentication on, a session on her
         // desk, a sign-in on her phone that waits for its code, a key of an AI provider and of
         // Binance, and an agent, which is a draft, with a cycle, the calls of its roles, the
-        // orders of a position that is over, and a notification about it.
+        // orders of a position that is over, and a notification about it. A second cycle of the
+        // agent ended with a veto, so she has the shadow trade of its plan as well, beside the
+        // call of an analyst that every cycle leaves.
         var (grace, gracesApp, _) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
@@ -65,6 +68,7 @@ public class AccountDeletionTests
         await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
         var gracesAgent = await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true);
         await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow());
+        await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow(), CycleOutcome.Vetoed, orders: false);
         await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
 
         // So has Ada, who is signed in on two browsers. Her stored keys go with her account, at
@@ -74,6 +78,7 @@ public class AccountDeletionTests
         await application.GiveKeysAsync(ada.Id, clock.GetUtcNow());
         var adasAgent = await application.GiveAgentAsync(ada.Id, clock.GetUtcNow(), team: true);
         await application.GiveCycleAsync(ada.Id, adasAgent, clock.GetUtcNow());
+        await application.GiveCycleAsync(ada.Id, adasAgent, clock.GetUtcNow(), CycleOutcome.Vetoed, orders: false);
         await application.GiveNotificationAsync(ada.Id, adasAgent, clock.GetUtcNow());
         using var desk = application.CreateClient();
         using var tablet = application.CreateClient();

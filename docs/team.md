@@ -211,7 +211,7 @@ The ranges are fixed, in `RoleRanges`, and are no settings.
 | **Block a plan that closes a position or tightens protection** | It is not asked about one. |
 
 - **A vetoed plan does not go on, in whole.** A reverse that is vetoed closes nothing: the position stays as it is, with its protective orders, and the Strategist plans again at the next close.
-- **A veto is a decision, and no failure.** The cycle ended, and its record says `Vetoed`. The plan that was vetoed is in the record, with its entry, its stop-loss, and its take-profit (FR-EXP-5).
+- **A veto is a decision, and no failure.** The cycle ended, and its record says `Vetoed`. The plan that was vetoed is in the record, with its entry, its stop-loss, and its take-profit (FR-EXP-5). It is left to Experience as a shadow trade, which says what the plan would have produced, for the measure of the Risk Manager that vetoed it: see "Shadow trades" in [experience.md](experience.md).
 
 ## The stale limit
 
@@ -322,6 +322,7 @@ A role is called twice at most: `RoleRuns.Attempts`. **What becomes of the cycle
 | The orders | `orders`, under the id of the cycle: see "The record of an order" in [orders.md](orders.md). Why no entry was placed is `decision_cycles.no_entry`. |
 | The final outcome | `decision_cycles.outcome`: see "The outcome of a cycle". |
 | What started the cycle | `decision_cycles.kind`: `Scheduled` for a cycle that a candle close started, and `Test` for one that its user ran (FR-CYC-12). |
+| What Experience is to judge of it | `analyst_calls` and `shadow_trades`, which Experience keeps: the call of each analyst that called a direction, and the plan that was vetoed. See "What a cycle leaves for Experience" in [experience.md](experience.md). |
 
 ```csharp
 public interface ICycleRecords
@@ -339,6 +340,7 @@ public interface ICycleRecords
 | **A cycle is recorded once, when it ends, however it ends.** | With a decision, with none, with an error, or stopped. The cycle, the calls of its roles, and the checks of the Risk Guard are stored in one transaction: all of them or none. The checks are in `risk_checks` and `risk_check_rules`: see "The record of a check" in [risk-guard.md](risk-guard.md). |
 | **A cycle that ends with no decision or no order is still recorded, with its outcome.** | A plan that holds, a veto, a stale decision, a role that gave no valid result, an error, a stop, and a loss limit that halted the agent each leave a row of `decision_cycles` that says so, with whatever calls were made by then. `CycleRecordTests` holds the cycles to it. |
 | **The summary of the data package is kept from the moment that the package is built.** | `TeamCycle` hands it to what the cycle keeps before any role is called, so a cycle that ends later with no decision, with an error, or stopped is recorded with it. A cycle that ends before its package is built has none: one whose market data the exchange did not give, one whose team is not whole, and one whose agent a loss limit halted. |
+| **A cycle is stored with what it leaves for Experience.** | `CycleExperience.Of` makes the rows from the cycle and the calls of its roles, as they are stored, and they are written in the same transaction (FR-EXP-3, FR-EXP-5). What it cannot read leaves no row, and the cycle is stored all the same. A test cycle leaves none. |
 | **The orders of a cycle are rows of their own, which name the cycle.** | An order is written before it is sent, which is before its cycle is recorded, so `orders.cycle_id` points at no row. The record of a cycle is read with the orders that carry its id. |
 | **Why no entry was placed is kept with the cycle.** | `IPlanOrders.PlaceAsync` answers with a member of `NoEntryReason` when a plan to open a position that the Risk Guard accepted led to no entry, and `TeamCycle` records it as `no_entry`. See "When no entry is placed" in [orders.md](orders.md). The outcome of the cycle stays the decision of its team. |
 | **A call that is made once more is a row of its own.** | `attempt` is 1 or 2. |

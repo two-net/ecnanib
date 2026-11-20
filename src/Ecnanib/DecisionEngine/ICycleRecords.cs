@@ -57,7 +57,13 @@ internal sealed class CycleRecords(IDbContextFactory<EcnanibDbContext> contexts)
             context.AddRange(check.Rules);
         }
 
-        // One save is one transaction: the cycle, its calls, and its checks are stored together.
+        // What Experience is to judge of the cycle once the candles after it have closed: the
+        // calls of its analysts (FR-EXP-3), and its plan where that was vetoed (FR-EXP-5). They
+        // are rows of Experience, which say what the record says, and are written with it.
+        context.AddRange(CycleExperience.Of(cycle, outputs));
+
+        // One save is one transaction: the cycle, its calls, its checks, and what Experience
+        // is to judge of it are stored together.
         await context.SaveChangesAsync(cancellationToken);
     }
 }

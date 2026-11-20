@@ -5,6 +5,7 @@
 @using Ecnanib.WebUi.Pages.Agents
 @using Ecnanib.WebUi.Pages.Catalog
 @inject ITrackRecords Records
+@inject IRoleStrengths Strengths
 @inject NavigationManager Navigation
 
 @*
@@ -13,12 +14,14 @@
     is signed in, filterable by role, market, timeframe, mode, and period (FR-EXP-2, FR-UI-2).
     Demo and Live are never added up: the screen shows one mode, as a badge under its heading,
     says why it is that one, and leads to the other (FR-EXP-9, FR-BIN-11). It states what the
-    figures cannot tell whatever it has to show (FR-EXP-11). The filter is in the address, and
-    an address that names a choice which there is not is answered with "not found". The records
+    figures cannot tell whatever it has to show (FR-EXP-11). Under the records it shows the
+    strength score of each model in each role, market, and timeframe, in the same mode and by the
+    same filter, with its formula (FR-EXP-3, FR-EXP-4). The filter is in the address, and an
+    address that names a choice which there is not is answered with "not found". The records
     are asked for by owner, and a model is named by the catalog, which is the same for everyone.
 *@
 
-@if (_view is not null && _filter is not null)
+@if (_view is not null && _strengths is not null && _filter is not null)
 {
     var scope = _view.Scope;
 
@@ -114,6 +117,8 @@
 
     <p>@ExperiencePages.FollowsPositions</p>
 
+    <RoleStrengthsTable View="@_strengths" Filter="@_filter" HeadingId="experience-strengths" />
+
     <p><a href="@WebUiModule.CatalogPath">Model catalog</a></p>
 
     <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
@@ -122,6 +127,7 @@
 @code {
     private TrackRecordFilter? _filter;
     private TrackRecordView? _view;
+    private RoleStrengthView? _strengths;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -147,5 +153,9 @@
         // Experience may not use Accounts, so it is handed the user who is signed in, and works
         // out the records from the trades of that user alone.
         _view = await Records.OfUserAsync(SignedInUser.RequiredIdOf(request), _filter, request.RequestAborted);
+
+        // The strength scores are of the mode that the page shows, which the records above
+        // say: a page shows one mode, and never both (FR-EXP-9, FR-BIN-11).
+        _strengths = await Strengths.OfUserAsync(SignedInUser.RequiredIdOf(request), _filter, _view.Scope.Mode, request.RequestAborted);
     }
 }

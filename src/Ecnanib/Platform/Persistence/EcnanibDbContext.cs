@@ -8,8 +8,9 @@ namespace Ecnanib.Platform.Persistence;
 /// <summary>
 /// The application's one database: PostgreSQL, with the schema defined by the code (NFR-DAT-1,
 /// NFR-DAT-2). The model is every <see cref="IEntityTypeConfiguration{TEntity}"/> in the
-/// application, each beside the entity it maps, in the component that owns it. See
-/// docs/persistence.md.
+/// application, each beside the entity it maps, in the component that owns it. A key between
+/// two components is the one thing that is mapped elsewhere: in the component that may
+/// reference the other. See docs/persistence.md.
 /// </summary>
 /// <remarks>
 /// There is no set property per entity, because the platform must not name a component's types.

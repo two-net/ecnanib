@@ -1,0 +1,135 @@
+@using Ecnanib.Experience
+@using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Catalog
+
+@*
+    The strength scores of an experience screen: for each model, role, market, and timeframe the
+    measure of the role, its sample size, and the score, which is the measure damped toward zero
+    for a small sample (FR-EXP-3, FR-EXP-4). The formula is shown, with the damping of the
+    configuration file, and so is how each role is measured, whatever there is to show. A slice
+    of fewer samples than the minimum says "Not enough data", and no score. The slices are of
+    the one mode that the page shows (FR-EXP-9, FR-BIN-11), and it has no badge of its own. A
+    measure and a score say their sign, so a gain is told from a loss without a colour
+    (FR-THM-5). The rows are in the order of the providers and the models, and never of a score:
+    the screen ranks nothing.
+*@
+
+<section class="role-strengths" aria-labelledby="@HeadingId">
+    <h2 id="@HeadingId">@ExperiencePages.StrengthHeading</h2>
+
+    <p>@ExperiencePages.StrengthExplained(View.Mode)</p>
+
+    <p><strong>@ExperiencePages.StrengthFormula(View.Damping)</strong> @ExperiencePages.EnoughExplained(View.MinSamples)</p>
+
+    <p>The measure is of the role:</p>
+
+    <ul>
+        <li>@ExperiencePages.AnalystMeasure</li>
+        <li>@ExperiencePages.StrategistMeasure</li>
+        <li>@ExperiencePages.RiskManagerMeasure</li>
+    </ul>
+
+    <p>@ExperiencePages.ShadowTradesExplained</p>
+
+    @foreach (var leftOut in LeftOut())
+    {
+        <p role="note">@leftOut</p>
+    }
+
+    @if (View.Slices.Count == 0)
+    {
+        <p>@ExperiencePages.NoStrengths(View.Mode)</p>
+    }
+    else
+    {
+        @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
+        <div class="track-records" role="region" aria-labelledby="@HeadingId" tabindex="0">
+            <table>
+                <caption>@Caption</caption>
+                <thead>
+                    <tr>
+                        @if (WithModel)
+                        {
+                            <th scope="col">Model</th>
+                            <th scope="col">Provider</th>
+                        }
+
+                        <th scope="col">Role</th>
+                        <th scope="col">Market</th>
+                        <th scope="col">Timeframe</th>
+                        <th scope="col">Samples</th>
+                        <th scope="col">Measure</th>
+                        <th scope="col">Strength score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var slice in View.Slices)
+                    {
+                        <tr>
+                            @if (WithModel)
+                            {
+                                @* The page of the model says its slices alone, with the same filter. *@
+                                <th scope="row"><a href="@ExperiencePages.ModelPath(slice.Model.Id, Filter)">@CatalogPages.NameOf(slice.Model)</a></th>
+                                <td>@slice.Model.ProviderName</td>
+                                <td>@ExperiencePages.NameOf(slice.Role)</td>
+                            }
+                            else
+                            {
+                                <th scope="row">@ExperiencePages.NameOf(slice.Role)</th>
+                            }
+
+                            <td>@slice.Market</td>
+                            <td>@slice.Timeframe.Code()</td>
+                            <td>@ExperiencePages.Samples(slice)</td>
+
+                            @if (slice.Enough)
+                            {
+                                <td>@ExperiencePages.Measure(slice)</td>
+                                <td>@ExperiencePages.Score(slice)</td>
+                            }
+                            else
+                            {
+                                <td colspan="2">@ExperiencePages.NotEnoughData</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <p>@ExperiencePages.StrengthsFollow</p>
+</section>
+
+@code {
+    /// <summary>The strength scores that the section shows, in the mode of the page.</summary>
+    [Parameter, EditorRequired]
+    public RoleStrengthView View { get; set; } = default!;
+
+    /// <summary>The filter of the page, which a link to the page of a model keeps.</summary>
+    [Parameter, EditorRequired]
+    public TrackRecordFilter Filter { get; set; } = TrackRecordFilter.None;
+
+    /// <summary>The id of the heading of the section, which names the region of its table.</summary>
+    [Parameter, EditorRequired]
+    public string HeadingId { get; set; } = string.Empty;
+
+    /// <summary>Whether a row names its model. The page of a model shows the slices of that model, and does not.</summary>
+    [Parameter]
+    public bool WithModel { get; set; } = true;
+
+    /// <summary>The name of the table, which says whose slices it holds and in which mode.</summary>
+    private string Caption => WithModel
+        ? $"The strength score of each model in each role in {View.Mode}"
+        : $"The strength score of the model in each role in {View.Mode}";
+
+    /// <summary>What the scores leave out, each as a note: nothing is left out without a word.</summary>
+    private IEnumerable<string> LeftOut() =>
+        new[]
+        {
+            ExperiencePages.CallsAwaiting(View),
+            ExperiencePages.CallsWithoutCandles(View),
+            ExperiencePages.ShadowTradesOpen(View),
+            ExperiencePages.ShadowTradesWithoutResult(View),
+        }.OfType<string>();
+}

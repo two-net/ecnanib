@@ -72,6 +72,16 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string AccountFeedKey = "account-feed";
 
+    // The job of Experience that scores the calls of the analysts and follows the shadow trades, named in the same way.
+    private const string ExperienceScoring = "Ecnanib.Experience.ExperienceScoringJob";
+
+    /// <summary>
+    /// The key under which the job that scores the calls of the analysts and follows the shadow
+    /// trades is kept: the scheduler of no application of the tests runs it, and a test runs it
+    /// from there itself, at a moment of its choosing.
+    /// </summary>
+    public const string ExperienceScoringKey = "experience-scoring";
+
     private SettingsDirectory? _ownDirectory;
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
@@ -224,6 +234,19 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
 
             services.Remove(following);
             services.AddKeyedSingleton(typeof(IBackgroundJob), AccountFeedKey, following.ImplementationType!);
+
+            // The job that scores the calls of the analysts and follows the shadow trades is due
+            // as the background work starts, and then every few minutes: it asks the exchange
+            // for the candles of every call and every shadow trade that is due, and writes what
+            // became of each. Many tests record a cycle for a reason of their own, which leaves
+            // such rows, over a market data that has no candles, and compare what the tables
+            // hold before and after. So no application of a test runs this job on a schedule: a
+            // test that is about what a run does finds it by its key, and runs it itself.
+            var scoring = services.Single(job =>
+                job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == ExperienceScoring);
+
+            services.Remove(scoring);
+            services.AddKeyedSingleton(typeof(IBackgroundJob), ExperienceScoringKey, scoring.ImplementationType!);
 
             // The job that reconciles the agents with the exchange is due as the background
             // work starts when an agent holds anything, and then every few minutes: it asks

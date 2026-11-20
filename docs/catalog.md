@@ -186,7 +186,7 @@ Every provider has a part of the page, in the order of the providers' codes, als
 | **A model is linked by its id in the catalog.** | The id stays the same for good, and what a provider wrote is never part of a path. |
 | The times are UTC. | As on the other pages: see "Not built yet". |
 
-The page of a model's experience record is for signed-in users too. A path that names no model of the catalog is answered with "not found". The page names the model, with its provider, its identifier, and its status, and shows the track record of the model from the closed trades of the user who is signed in, by role (FR-EXP-2). For a model that no trade of the user counts for it says so. The record is Experience's, and is asked for by owner, where the catalog is the same for everyone: see "The screens" in [experience.md](experience.md).
+The page of a model's experience record is for signed-in users too. A path that names no model of the catalog is answered with "not found". The page names the model, with its provider, its identifier, and its status, and shows the track record of the model from the closed trades of the user who is signed in, by role (FR-EXP-2), and under it the strength score of the model in each role, market, and timeframe, with its formula (FR-EXP-4). For a model that no trade of the user counts for it says so. The record is Experience's, and is asked for by owner, where the catalog is the same for everyone: see "The screens" in [experience.md](experience.md).
 
 Both pages ask `ICatalogModels` about the catalog, which reads and writes nothing else:
 

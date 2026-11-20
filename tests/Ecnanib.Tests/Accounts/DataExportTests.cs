@@ -97,6 +97,17 @@ internal static class ExportRules
             "The equity of a user's agents over time: an amount, a capital, and an asset for an agent in a mode at a moment, " +
             "worked out from the trades of the agent. They hold no personal data, and are exported with the trades " +
             "(FR-RPT-4), which is not built.",
+
+        // What Experience scores of the decisions of a user's agents. Experience keeps the rows,
+        // and may not use Accounts either.
+        ["analyst_calls"] =
+            "The calls of the analysts of a user's agents, each with whether the price went the way that was called: the " +
+            "name of a role, the id of a model of the catalog, a symbol, and prices. They hold no personal data, and are " +
+            "exported with the decisions that they belong to (FR-RPT-4), which is not built.",
+        ["shadow_trades"] =
+            "What the plans that the Risk Managers of a user's agents vetoed would have produced: the prices of a plan, how " +
+            "it would have ended, and its result in R. They hold no personal data, and are exported with the decisions that " +
+            "they belong to (FR-RPT-4), which is not built.",
     };
 }
 

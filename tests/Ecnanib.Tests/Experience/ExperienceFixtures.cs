@@ -118,6 +118,156 @@ internal static class StoredTradeRows
     }
 }
 
+/// <summary>
+/// The calls of analysts and the shadow trades that a test needs a user to have, as they are
+/// once they are scored, without the cycles that leave them and the candles that score them.
+/// </summary>
+internal static class StoredExperienceRows
+{
+    /// <summary>
+    /// Gives an agent of a user calls of an analyst, each of a cycle of its own, an hour apart
+    /// and the latest at a time: so many that matched, so many that did not, so many that are
+    /// not scored yet, and so many whose candles could no longer be had. What the test does not
+    /// say of them is as their agent is now.
+    /// </summary>
+    /// <param name="application">The application.</param>
+    /// <param name="userId">The user whose agent it is.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="role">The analyst.</param>
+    /// <param name="modelId">The model that made the calls.</param>
+    /// <param name="latest">The close of the candle of the latest of the calls.</param>
+    /// <param name="matched">How many matched.</param>
+    /// <param name="missed">How many did not.</param>
+    /// <param name="awaiting">How many are not scored yet.</param>
+    /// <param name="withoutCandles">How many could not be scored.</param>
+    /// <param name="mode">The mode that the agent was in.</param>
+    /// <param name="market">The market that it traded on.</param>
+    /// <param name="timeframe">The timeframe that it worked on.</param>
+    public static async Task GiveCallsAsync(
+        this AccountsApplication application,
+        Guid userId,
+        Guid agentId,
+        Role role,
+        Guid modelId,
+        DateTimeOffset latest,
+        int matched = 0,
+        int missed = 0,
+        int awaiting = 0,
+        int withoutCandles = 0,
+        TradingMode? mode = null,
+        Market? market = null,
+        Timeframe? timeframe = null)
+    {
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        var agent = await context.Set<Agent>().AsNoTracking().SingleAsync(stored => stored.Id == agentId, TestContext.Current.CancellationToken);
+
+        CallOutcome?[] outcomes =
+        [
+            .. Enumerable.Repeat<CallOutcome?>(CallOutcome.Matched, matched),
+            .. Enumerable.Repeat<CallOutcome?>(CallOutcome.Missed, missed),
+            .. Enumerable.Repeat<CallOutcome?>(null, awaiting),
+            .. Enumerable.Repeat<CallOutcome?>(CallOutcome.NoCandles, withoutCandles),
+        ];
+
+        foreach (var (outcome, hour) in outcomes.Select((outcome, hour) => (outcome, hour)))
+        {
+            var closedAt = latest.AddHours(-hour);
+            var cycle = Cycle(agent, userId, mode ?? agent.Mode, closedAt, CycleOutcome.Hold);
+            var scored = outcome is CallOutcome.Matched or CallOutcome.Missed;
+
+            context.Add(cycle);
+            context.Add(new AnalystCall(
+                cycle.Id,
+                role,
+                userId,
+                modelId,
+                cycle.Mode,
+                market ?? agent.Market,
+                agent.Symbol,
+                timeframe ?? agent.Timeframe,
+                closedAt,
+                CallDirection.Bullish,
+                price: 61310m,
+                dueAt: closedAt.AddHours(4),
+                outcome,
+                laterPrice: scored ? (outcome == CallOutcome.Matched ? 61500m : 61000m) : null,
+                scoredAt: outcome is null ? null : closedAt.AddHours(4).AddMinutes(1)));
+        }
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Gives an agent of a user the shadow trade of a plan that its Risk Manager vetoed, of a
+    /// cycle of its own: one that ended with a result, unless the test says otherwise. What the
+    /// test does not say of it is as its agent is now.
+    /// </summary>
+    /// <param name="application">The application.</param>
+    /// <param name="userId">The user whose agent it is.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="modelId">The model that vetoed the plan.</param>
+    /// <param name="closedAt">The close of the candle that the plan was made on.</param>
+    /// <param name="resultInR">Its result in R, or null for one that has none.</param>
+    /// <param name="outcome">How it ended, or null for one that is open still. Without a word of the test, at its stop-loss or its take-profit, by its result.</param>
+    /// <param name="open">Whether it has not ended yet.</param>
+    /// <param name="mode">The mode that the agent was in.</param>
+    /// <param name="market">The market that it traded on.</param>
+    /// <param name="timeframe">The timeframe that it worked on.</param>
+    /// <returns>The id of the cycle, which is the key of the shadow trade.</returns>
+    public static async Task<Guid> GiveShadowTradeAsync(
+        this AccountsApplication application,
+        Guid userId,
+        Guid agentId,
+        Guid modelId,
+        DateTimeOffset closedAt,
+        decimal? resultInR = -1m,
+        ShadowOutcome? outcome = null,
+        bool open = false,
+        TradingMode? mode = null,
+        Market? market = null,
+        Timeframe? timeframe = null)
+    {
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        var agent = await context.Set<Agent>().AsNoTracking().SingleAsync(stored => stored.Id == agentId, TestContext.Current.CancellationToken);
+        var cycle = Cycle(agent, userId, mode ?? agent.Mode, closedAt, CycleOutcome.Vetoed);
+        ShadowOutcome? ended = open ? null : outcome ?? (resultInR > 0m ? ShadowOutcome.TakeProfit : ShadowOutcome.StopLoss);
+
+        context.Add(cycle);
+        context.Add(new ShadowTrade(
+            cycle.Id,
+            userId,
+            modelId,
+            cycle.Mode,
+            market ?? agent.Market,
+            agent.Symbol,
+            timeframe ?? agent.Timeframe,
+            closedAt,
+            ShadowSide.Long,
+            entryPrice: 61310m,
+            resting: false,
+            stopLoss: 59000m,
+            takeProfit: 64000m,
+            dueAt: closedAt.AddHours(1),
+            ended,
+            resultInR: open ? null : resultInR,
+            exitedAt: ended is ShadowOutcome.StopLoss or ShadowOutcome.TakeProfit or ShadowOutcome.TimeUp ? closedAt.AddHours(3) : null,
+            evaluatedAt: open ? null : closedAt.AddHours(3).AddMinutes(1)));
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return cycle.Id;
+    }
+
+    /// <summary>
+    /// The row of a cycle with no calls, for a row of Experience to hang on. It is written as a
+    /// row, and not stored as the application stores a cycle, which would leave rows of its own.
+    /// </summary>
+    private static DecisionCycle Cycle(Agent agent, Guid userId, TradingMode mode, DateTimeOffset closedAt, CycleOutcome outcome) =>
+        new(Guid.CreateVersion7(), agent.Id, userId, mode, closedAt, closedAt.AddSeconds(2), closedAt.AddSeconds(40), outcome);
+}
+
 /// <summary>Closed trades that a test of the measures makes up, without a database.</summary>
 internal static class Trades
 {

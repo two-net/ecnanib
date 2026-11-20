@@ -98,7 +98,9 @@ public class SettingsFileTests
         Assert.Equal(new DataPackageSettings(Candles: 120, ContextCandles: 30), settings.Trading.DataPackage);
         Assert.Equal(25, settings.Trading.LiquidationWarningPercent);
 
-        Assert.Equal(new ExperienceSettings(4, 15, 25, new ExperienceBoardSettings(6, 60)), settings.Experience);
+        Assert.Equal(
+            new ExperienceSettings(4, 15, 25, new ShadowFeeSettings(Spot: 0.2m, Futures: 0.04m), new ExperienceBoardSettings(6, 60)),
+            settings.Experience);
         Assert.Equal(new RetentionSettings(30, 180, 45, 365), settings.Retention);
         Assert.Equal(
             new LimitsSettings(
@@ -164,6 +166,13 @@ public class SettingsFileTests
         { "Trading:Aggressive:MinRewardToRisk", "[1, 1.5, 3]", "Trading:Aggressive:MinRewardToRisk" },
         { "Trading:Aggressive:LiquidationBuffer", "[2.5, 2]", "Trading:Aggressive:LiquidationBuffer" },
         { "Experience:Board:MinUsers", "0", "Experience:Board:MinUsers" },
+
+        // The fee of a shadow trade is a number of percent, and no negative one. It is one
+        // number for each market, and not one for both.
+        { "Experience:ShadowFeePercent:Spot", "-0.1", "Experience:ShadowFeePercent:Spot" },
+        { "Experience:ShadowFeePercent:Futures", "1.01", "Experience:ShadowFeePercent:Futures" },
+        { "Experience:ShadowFeePercent:Spot", "\"0.1\"", "Experience:ShadowFeePercent:Spot" },
+        { "Experience:ShadowFeePercent", "0.1", "Experience:ShadowFeePercent" },
         { "Retention:AuditDays", "-1", "Retention:AuditDays" },
         { "Limits:MaxAgentsPerUser", "0", "Limits:MaxAgentsPerUser" },
         { "Logging:Outputs:File:RetainedFiles", "0", "Logging:Outputs:File:RetainedFiles" },

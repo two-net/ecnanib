@@ -2,11 +2,13 @@
 
 The system maintains a track record per provider and per model, filterable by role, market, timeframe, mode, and period. It shows closed trades, win rate, average R, total R, profit factor, largest drawdown in R, and average holding time (FR-EXP-2). Demo and Live experience are kept and scored separately, and what is not told a mode uses Live data where there is enough, otherwise Demo data, and says which was used (FR-EXP-9). Experience screens state that past results do not predict future results, that small samples are unreliable, and that Demo results differ from Live (FR-EXP-11).
 
-A track record is of one user: of the closed trades of that user's agents. It is worked out from the recorded results of the closed positions each time it is asked for, and nothing of it is stored.
+A role-specific measure is kept for each role: for the two analysts the share of their calls that matched the price change over the next 4 closed candles, for the Strategist the average R of its executed plans, and for the Risk Manager the average R of what it approved minus the average R that what it vetoed would have produced (FR-EXP-3). A strength score per model, role, market, and timeframe is that measure damped toward zero for small samples, and the screens show it with its formula (FR-EXP-4). Vetoed plans are evaluated as shadow trades against later closed candles, and never place orders (FR-EXP-5).
 
-The code is in `src/Ecnanib/Experience`, what hands it the trades in `src/Ecnanib/DecisionEngine/ClosedPositions.cs`, and the screens in `src/Ecnanib/WebUi/Pages/Experience`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Experience` and `tests/Ecnanib.Tests/DecisionEngine/ClosedPositionTests.cs`.
+A track record is of one user: of the closed trades of that user's agents. It is worked out from the recorded results of the closed positions each time it is asked for, and nothing of it is stored. A strength score is worked out in the same way, and no aggregate is stored either. What Experience stores is what later candles are to say something of: the calls of the analysts and the shadow trades of the vetoed plans, each of which a job gives its outcome.
 
-What is recorded for a closed position is in "The results of a position" in [orders.md](orders.md). The catalog of models is in [catalog.md](catalog.md), whose screen links each model to its experience record. Whose rows a request reaches is in [ownership.md](ownership.md).
+The code is in `src/Ecnanib/Experience`, what hands it the trades in `src/Ecnanib/DecisionEngine/ClosedPositions.cs`, what leaves it the calls and the vetoed plans of a cycle in `src/Ecnanib/DecisionEngine/CycleExperience.cs`, and the screens in `src/Ecnanib/WebUi/Pages/Experience`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Experience`, and in `ClosedPositionTests.cs` and `CycleExperienceTests.cs` of `tests/Ecnanib.Tests/DecisionEngine`.
+
+What is recorded for a closed position is in "The results of a position" in [orders.md](orders.md), and what is recorded for a cycle in "The record of a cycle" in [team.md](team.md). The candles are those of the Exchange Gateway: see "Market data" in [exchange.md](exchange.md). The catalog of models is in [catalog.md](catalog.md), whose screen links each model to its experience record. Whose rows a request reaches is in [ownership.md](ownership.md), and how a job runs in [background-work.md](background-work.md).
 
 ## The trades
 
@@ -89,7 +91,137 @@ A `TrackRecordFilter` is a role, a market, a timeframe, a mode, and a period. Wh
 | **What is enough is counted for the view,** and not for a row. | The trades that the view would count in a mode, under its other choices: its role, its market, its timeframe, and its period. A trade that is in no measure is no sample. |
 | **The rule takes sample sizes, and not trades.** | So that whatever counts something else than trades goes by the same rule: the measures of the roles do (FR-EXP-3). |
 
-A recommendation of a team is not built. It is to go by `ExperienceBasis.Choose`, with the sample sizes of what it recommends from: see "Not built yet".
+A recommendation of a team is not built. It is to go by `ExperienceBasis.Choose`, with the sample sizes of the slices that it recommends from, which `IRoleStrengths` answers for each mode: see "The strength score", and "Not built yet".
+
+## The measure of each role
+
+`RoleMeasures` works out the measure of a model in a role (FR-EXP-3). It is a rule only: it reads nothing. A `RoleMeasure` is the measure, or nothing where it cannot be said, and its sample size.
+
+| Role | The measure | A sample |
+|---|---|---|
+| Market Analyst, Sentiment Analyst | The share of the calls that were not neutral whose direction matched the price change over the next 4 closed candles, minus 50 percent. It is a fraction from -0.5 to 0.5, and a model that is right half of the time is at 0, where a coin is. | A call that was scored: one that matched, or one that did not. |
+| Strategist | The average R of the plans that were executed. | A closed trade with a result in R, for the model that was the Strategist of its position. |
+| Risk Manager | The average R of the plans that it approved, minus the average R that the plans which it vetoed would have produced. One that vetoes the plans which would have lost is above 0. | A plan that it reviewed and that has a result, on either side: a closed trade for the model that was the Risk Manager of its position, or a shadow trade with a result for the model that vetoed its plan. |
+
+| Rule | Detail |
+|---|---|
+| **A neutral call is no sample.** | It called no direction, so nothing is scored, and no row is written for it. |
+| **An executed plan is a closed trade.** | A plan that opened a position is the trade of that position, so the Strategist and the approved side of the Risk Manager are worked out from the trades of `IClosedTrades`, by the model that `position_roles` names for the role. A plan that closed a position, or moved its protection, has no result of its own. |
+| **A plan whose risk the Risk Manager reduced is approved.** | It went on, with less risk, and a result in R is a multiple of what was risked. |
+| **The measure of the Risk Manager is said only where both sides have a result.** | Without a vetoed plan there is nothing to take away, and what is left would be the measure of the Strategist. Without an approved one there is nothing to take it from. The sample is counted all the same, and the slice says what it is made of: `6 (4 approved, 2 vetoed)`. |
+| **A result that is an estimate counts,** as in a track record. | Leaving out the positions that were liquidated would leave out the worst plans. |
+| **Results that are out of the range of a number say no measure.** | A trade on which next to nothing was risked has a result of very many R. The sample is counted, the measure is "Not available", and nothing fails. |
+| **A measure is of one mode.** | Whoever asks hands over the samples of one mode (FR-EXP-9, FR-BIN-11). |
+
+## The strength score
+
+`StrengthScore.Of` is the formula of the specification (FR-EXP-4):
+
+```
+strength score = measure × n ÷ (n + damping)
+```
+
+where n is the sample size of the measure, and the damping is `Experience:Damping`, which is 20 in the tracked file. A measure of 20 samples counts for half of itself, one of 180 for nine tenths, and one of 5 for a fifth: a few lucky results do not look like strength. `StrengthScoreTests` holds the formula.
+
+| Rule | Detail |
+|---|---|
+| **A score keeps the sign of its measure,** and is never further from 0 than the measure is. | It is in the unit of its measure: a share for an analyst, and R for the Strategist and the Risk Manager. |
+| **A slice of fewer samples than `Experience:MinSamples` has no score.** | It says its sample, and "Not enough data". With no score, nothing can recommend from it (FR-EXP-4). `RoleStrength.Of` decides it, in one place. |
+| **A slice whose measure cannot be said has no score either,** whatever its sample. | A Risk Manager that has results on one side only. |
+| **No sample and no damping divide nothing.** | The score is 0. The file may set the damping to 0, and then a score is its measure. |
+| **A score is in the range of a number wherever its measure is.** | It is worked out as the formula is written, and where the measure cannot be multiplied by its sample, as the measure times the sample over the sample and the damping, which is 1 at the most. |
+
+`IRoleStrengths` answers the slices of a user. It is handed the user by id, as `ITrackRecords` is.
+
+```csharp
+public interface IRoleStrengths
+{
+    Task<RoleStrengthView> OfUserAsync(Guid userId, TrackRecordFilter filter, TradingMode mode, CancellationToken cancellationToken);
+
+    Task<RoleStrengthView> OfModelAsync(
+        Guid userId, Guid modelId, TrackRecordFilter filter, TradingMode mode, CancellationToken cancellationToken);
+}
+```
+
+| Rule | Detail |
+|---|---|
+| **A slice is of one model, one role, one market, and one timeframe.** | Nothing is added up over two of any of them. A model that was the Market Analyst of an agent on Spot on the hour and of one on Futures on 4 hours has two slices. |
+| **It takes its mode, and chooses none.** | A slice is of one mode. A screen hands over the mode that it shows, which its track records say. What recommends from the scores asks for each mode, and goes by `ExperienceBasis.Choose` with the sample sizes of the slices. The mode of the filter is not gone by. |
+| **The filter chooses among the slices.** | A role, a market, and a timeframe each leave the other slices out. `OfModelAsync` answers every role of one model, and does not go by the role of the filter. |
+| **A period counts a sample by when it happened.** | A call and a vetoed plan by the close of the candle of their cycle, and an executed plan by when its position was closed, as a track record does. |
+| **Only a slice with a sample is answered.** | A user with nothing has no slice. |
+| **The slices are in the order of the providers' codes, the identifiers, the roles, the markets, and the timeframes.** | Never in the order of a score: the screens rank nothing. |
+| **No aggregate is stored.** | The calls are counted by the database, by slice and outcome, because an agent of a short timeframe makes one every quarter hour. The trades and the shadow trades are handed over as they are. |
+| **What is left out is counted.** | The calls that are not scored yet, the calls that could not be scored, the shadow trades that have not ended, and the ones that ended with no result. A screen says each. |
+
+## What a cycle leaves for Experience
+
+The record of a cycle says its market and its timeframe in the summary of its data package alone, which is one line of JSON, and a vetoed plan in the answer of its Strategist alone. And the exchange gives the candles of the recent past only. So what later candles are to say something of is written out as rows of Experience when the cycle is recorded, in the same transaction, and a job completes them: see "The job".
+
+`CycleExperience.Of` of the Decision Engine makes the rows from the record of a cycle, and `CycleRecords.StoreAsync` stores them with it. Experience may not use the Decision Engine, so it is the Decision Engine that hands the facts over, to `AnalystCall.Of` and `ShadowTrade.Of`, which decide what a row says.
+
+| Rule | Detail |
+|---|---|
+| **Only a cycle that a candle close started leaves anything.** | A test cycle places no order, and its user runs as many of them for one candle as they like: it would be the same call, counted again (FR-CYC-12). |
+| **A cycle with no summary of its data package leaves nothing.** | One that ended before its package was built says no market, no timeframe, and no price. |
+| **A call is left for each analyst that gave a valid answer and called a direction,** however the cycle ended. | The analyst called what it called, whatever the team made of it afterwards: a plan that held, a decision that was stale, a role that gave no decision, or a veto. |
+| **A shadow trade is left for a cycle that ended as `Vetoed`.** | With the entry, the stop-loss, and the take-profit of the plan, and the model of the Risk Manager's call. The veto is the outcome of the cycle, and not the answer of the Risk Manager, which is not always kept. |
+| **The latest valid answer of a role is the one that is read.** | An answer that was rejected is no call. |
+| **A plan that reverses is on the other side of what the agent held,** which the summary of the data package says. | A plan names no side for a reverse. |
+| **It is made from the record, and from nothing else.** | The row of the cycle and the calls of its roles, as they are stored. What stores a cycle is handed nothing more for it. |
+| **It fails nothing.** | What cannot be read leaves no row, and the cycle is stored all the same: the record of a cycle is not given up for what is worked out from it. |
+| **A row says what its cycle says, in columns of its own.** | The mode, the market, the symbol, and the timeframe of the agent when the cycle ran. What an agent did in Demo stays Demo (FR-BIN-11), and no summary is read to work out a measure. |
+
+## The calls of the analysts
+
+An `AnalystCall` is the direction that the Market Analyst or the Sentiment Analyst called in a cycle, with the close of the candle that the cycle was for. `CallScore.Of` says whether it matched.
+
+| Rule | Detail |
+|---|---|
+| **The price change is from the close of the cycle's candle to the close of the 4th candle after it.** | By the candles of the agent's own timeframe, market, symbol, and environment: a call in Demo is scored against the candles of Binance's test environment. |
+| **A bullish call matches a higher close, and a bearish call a lower one.** | What the candles between them did says nothing. |
+| **The 4th candle is counted, and not timed.** | Where Binance has no candle for a time, during a halt, the candles after a call are the ones that there are, and the 4th of them is the one. |
+| **A price that did not change matches no direction.** | The call said that it would change, so it is a sample, and one that was not right. |
+| **A call is due when its 4th later candle can have closed.** | An hour after a call on 15 minutes, and 4 days after one on a day. Until then nothing asks the exchange about it. |
+| **A call is scored once.** | Its row has its outcome, the later price, and when it was scored, and nothing changes it after that. |
+| **The Sentiment Analyst is scored whether its model searched live or not.** | A call of a model that cannot search is the call of that model in that role. |
+
+## Shadow trades
+
+A `ShadowTrade` is what a vetoed plan would have produced. `ShadowTradeRule.Of` follows it over the candles that closed after the plan, with its own entry, stop-loss, and take-profit and with standard fees (FR-EXP-5). It is a rule only: it is handed prices and candles, and answers with a result.
+
+| Rule | Detail |
+|---|---|
+| **A shadow trade never places an order.** | It is a row, and a rule that reads candles. Nothing of Experience can reach the orders of the Exchange Gateway: `ComponentRules.cs` opens `ExchangeGateway.Trading` to the gateway and to the Decision Engine alone, `DependencyRuleTests` holds every type to it, and `ExperienceModelTests` pins it for this. |
+| **The stop-loss is taken to be hit first when it and the take-profit fall inside one candle.** | A candle does not say in which order it reached its prices, and the worse of the two is assumed. |
+| **An entry at the market is entered at the close of the candle that the plan was made on.** | Which is the price that the plan was written on. So every later candle counts, whole. |
+| **An entry at a price is entered at that price, once the first later candle reaches it,** and not at all otherwise. | An entry that rests is taken off when the next candle of its agent has closed: see "An entry at a price" in [orders.md](orders.md). One that was not entered ends as `NotEntered`, with no result. |
+| **In the candle that enters an entry at a price only the stop-loss counts.** | The candle does not say whether its other end came before the entry. A candle that came to the stop-loss came through the entry first. |
+| **It ends at its own prices.** | A candle that opens beyond the stop-loss still ends the trade at the stop-loss. |
+| **It is followed for 200 later candles, and then closed at the last close.** | `ShadowTradeRule.CandlesFollowed`. Nothing manages a shadow trade as a team manages a position, and the exchange gives only the newest 498 candles of a length, so one that has reached neither price by then ends as `TimeUp`, with the result at that close. That is about 2 days on 15 minutes, and 200 days on a day. |
+| **The result is in R:** what its price moved by, less the fee on its entry and on its exit, over the distance from its entry to its stop-loss. | The quantity is on both sides, and so in neither: a shadow trade has no size. It is rounded to 12 decimal places, as the result of a position is. |
+| **The standard fee is a setting, for each market.** | `Experience:ShadowFeePercent`, in percent of what an order is worth. The tracked file has what Binance charges an account with no discount for an order that takes: 0.1 on Spot and 0.05 on Futures. It is charged twice, for the entry and for the exit. |
+| **No funding is counted.** | See "Not built yet". |
+| **A plan whose stop-loss or take-profit is on the wrong side of its entry has ended as it is written,** as `Rejected`, with no result. | Nothing asks where they stand before the veto: the Risk Guard checks what goes on, and a vetoed plan does not. It would have rejected such a plan (FR-RSK-4), so no trade would have been made of it. No other rule of the Risk Guard is asked: its facts are those of the moment. |
+| **A result that is out of the range of a number is not said.** | A stop-loss next to the entry risks next to nothing. The trade ends as it ended, with no result. |
+| **Only a shadow trade with a result is a sample.** | One that is open still, one that was not entered, one that was rejected, and one whose candles could not be had is in no measure, and a screen says how many there are. |
+
+## The job
+
+`ExperienceScoringJob`, named `experience-scoring`, scores the calls and follows the shadow trades every 5 minutes. `ExperienceScoring` does the work.
+
+| Rule | Detail |
+|---|---|
+| **It runs for the rows that are due, and for no other.** | A call is due when its 4th later candle can have closed, and a shadow trade when the next candle has that it was not followed over. A run that finds none asks the exchange nothing. A candle closes every quarter hour at the soonest. |
+| **It takes the 200 rows of each kind that are due the longest.** | `ExperienceScoring.Most`. A shadow trade that is open still is given the close of the next candle as when it is due, so the rows that wait behind it have their turn. |
+| **The candles of a symbol are read once for everything that needs them.** | One read for each market, environment, symbol, and timeframe, through `IExchangeMarketData`, where a read is shared with whatever else asks: see "Market data" in [exchange.md](exchange.md). They need no key. |
+| **A row is completed once.** | An update changes a row only while it has no outcome. So a row that went with its agent while the candles were read fails nothing, and a row that has its outcome keeps it. |
+| **A shadow trade is followed anew from its close with every look.** | Its row keeps no progress but when it is next due: the rule is handed every candle after the plan, which the exchange still gives for as long as a shadow trade is followed. |
+| **A read that fails leaves everything for the next run.** | The exchange gave no answer, or the limiter held the call back. Nothing is written, and the log says so. |
+| **A candle that has not closed yet is waited for.** | The exchange may not have begun the next candle when a row is due. The row is due still with the next run. |
+| **Candles that are no longer given end a row with no result,** as `NoCandles`. | The oldest candle that the exchange gives began after the cycle's own had closed: the service was down for longer than the candles reach back, which is about 5 days on 15 minutes. Or the configuration file no longer lists the symbol, which the gateway answers with an error. Or the exchange gives no candle of the symbol at all, and the cycle is longer ago than 498 candles last: until then such a row waits. |
+| **It works across users.** | A job has no user who is signed in. Each row says whose it is, and what is written of a row is written to that row alone: see "What is not asked for by owner" in [ownership.md](ownership.md). |
+| **No test application runs it on a schedule.** | A test runs it itself, from the key `EcnanibApplicationFactory.ExperienceScoringKey`: see [background-work.md](background-work.md). |
 
 ## The screens
 
@@ -97,8 +229,8 @@ The pages are rendered on the server for each request, and neither is interactiv
 
 | Page | What it is |
 |---|---|
-| `/experience` | The experience screen (FR-UI-2): the track record of each provider, and of each model, from the closed trades of the user. Each model leads to its page, with the same filter. |
-| `/experience/models/<id>` | The experience record of one model, which the catalog links each model to (FR-CAT-10): its track record in any role, and in each role. A role that the model never held says that no closed trade is counted, and no measure. |
+| `/experience` | The experience screen (FR-UI-2): the track record of each provider, and of each model, from the closed trades of the user, and under them the strength score of each model in each role, market, and timeframe. Each model leads to its page, with the same filter. |
+| `/experience/models/<id>` | The experience record of one model, which the catalog links each model to (FR-CAT-10): its track record in any role, and in each role, and under them its strength score in each role, market, and timeframe. A role that the model never held says that no closed trade is counted, and no measure. |
 
 | Rule | Detail |
 |---|---|
@@ -117,6 +249,24 @@ The pages are rendered on the server for each request, and neither is interactiv
 
 The texts of the screens are in `ExperiencePages`, in one place, with how a filter is named in an address and read from one.
 
+### The strength scores
+
+Each screen has the section "Strength by role" under its track records, which `RoleStrengthsTable` shows. `StrengthPageTests` reads it as a signed-in user does.
+
+| Rule | Detail |
+|---|---|
+| **The formula is shown, whatever there is to show** (FR-EXP-4). | "Strength score = measure × n ÷ (n + 20), where n is the sample size", with the damping of the configuration file, and from how many samples on a slice has a score. So is how each role is measured, and that a vetoed plan is followed as a shadow trade, which never places an order. |
+| **A slice is a row:** model, provider, role, market, timeframe, samples, measure, and strength score. | The page of a model shows the slices of that model, and a row does not name it again. |
+| **A slice below the minimum sample says "Not enough data",** in place of its measure and its score. | It says its sample. |
+| **A measure that cannot be said is "Not available",** and so is its score. | A Risk Manager with results on one side only. |
+| **A measure and a score say their unit and their sign.** | `+25 percentage points` for an analyst, which is right 75 times in 100, and `+1.5 R` for the Strategist and the Risk Manager. So a gain is told from a loss without a colour (FR-THM-5). |
+| **The sample of a Risk Manager says what it is made of.** | `6 (4 approved, 2 vetoed)`. |
+| **The scores are of the mode that the page shows,** and by its filter. | The section has no badge of its own: a page has one. The table says its mode in its name. |
+| **The mode is chosen by the closed trades,** as before. | With no mode chosen, a page shows Live where it has enough closed trades. The calls of the analysts are many more than the trades, and do not choose it: the link to the other mode shows the scores of that mode. |
+| **What the scores leave out is said,** each as a note. | The calls that are not scored yet, the calls that could not be scored, the vetoed plans that are followed still, and the ones whose shadow trade has no result, with why. |
+| **A screen with nothing measured says that,** and has no table. | The formula is there all the same. |
+| **The rows are in the order of the providers and the models,** and never of a score. | The screen ranks nothing. |
+
 ### What every screen states
 
 Every experience screen states, under the heading "What these figures cannot tell" (FR-EXP-11):
@@ -131,26 +281,77 @@ Every experience screen states, under the heading "What these figures cannot tel
 
 | Key | What it is | In the tracked file |
 |---|---|---|
-| `Experience:MinSamples` | The sample size below which a record is marked as a small sample, and from which Live data is enough to go by. It is also the sample size below which a slice shows "not enough data" (FR-EXP-4), which is not built. | 20 |
+| `Experience:MinSamples` | The sample size below which a record is marked as a small sample, and from which Live data is enough to go by. It is also the sample size below which a slice shows "Not enough data", and has no strength score (FR-EXP-4). | 20 |
+| `Experience:Damping` | The constant that damps a strength score toward zero for small samples (FR-EXP-4): the 20 of measure × n ÷ (n + 20). A whole number, 0 or more. | 20 |
+| `Experience:ShadowFeePercent:Spot` | The standard fee of an order of a shadow trade on the Spot market (FR-EXP-5), in percent of what the order is worth, from 0 to 1. | 0.1 |
+| `Experience:ShadowFeePercent:Futures` | The same on the Futures market. | 0.05 |
 
-The other keys of `Experience` are for what is not built: `LessonsPerPrompt`, `Damping`, and those of `Board`. The file is read with them, and nothing uses them yet. How a setting reaches a component is in [configuration.md](configuration.md).
+The other keys of `Experience` are for what is not built: `LessonsPerPrompt`, and those of `Board`. The file is read with them, and nothing uses them yet. How a setting reaches a component is in [configuration.md](configuration.md).
 
 ## The data
 
-Experience has no table. A track record is worked out from `positions`, `position_results`, and `position_roles`, which the Decision Engine keeps: see "The record of an order" in [orders.md](orders.md). So nothing of it is to be deleted with an account or with an agent, nothing of it is in the export of a user's data beyond what those tables are, and it cannot say something else than the positions say.
+A track record has no table. It is worked out from `positions`, `position_results`, and `position_roles`, which the Decision Engine keeps: see "The record of an order" in [orders.md](orders.md). So it cannot say something else than the positions say. A strength score has no table either.
+
+Experience has two tables, for what later candles are to say something of:
+
+| Table | Columns |
+|---|---|
+| `analyst_calls` | `cycle_id`, `role`, `user_id`, `model_id`, `mode`, `market`, `symbol`, `timeframe`, `closed_at`, `direction`, `price`, `due_at`, `outcome`, `later_price`, `scored_at`. One row for each analyst of a cycle that called a direction: `(cycle_id, role)` is its key. Indexed by `(user_id, closed_at)`, and by `due_at` over the rows that have no outcome. |
+| `shadow_trades` | `cycle_id`, `user_id`, `model_id`, `mode`, `market`, `symbol`, `timeframe`, `closed_at`, `side`, `entry_price`, `resting`, `stop_loss`, `take_profit`, `due_at`, `outcome`, `result_in_r`, `exited_at`, `evaluated_at`. One row for the vetoed plan of a cycle: `cycle_id` is its key. Indexed in the same two ways. |
+
+| Column | What it holds |
+|---|---|
+| `mode`, `market`, `timeframe` | The name of a member of `TradingMode`, `Market`, and `Timeframe`: those of the agent when the cycle ran. |
+| `symbol` | A symbol of Binance that the configuration file lists. It is listed in `PersonalDataRules` as that. |
+| `closed_at` | The close of the candle that the cycle was for. |
+| `model_id` | The model of the catalog that made the call, or that vetoed the plan. A model is never deleted (FR-CAT-5). |
+| `analyst_calls.role` | The name of a member of `Role`, which is the key of its row in `roles`: `MarketAnalyst` or `SentimentAnalyst`. |
+| `analyst_calls.direction`, `price` | `Bullish` or `Bearish`, and the close of the cycle's candle. |
+| `analyst_calls.outcome`, `later_price`, `scored_at` | Null until the call is scored. `Matched`, `Missed`, or `NoCandles`, with the close of the 4th later candle, and when it was scored. |
+| `shadow_trades.side`, `entry_price`, `resting`, `stop_loss`, `take_profit` | `Long` or `Short`, the price that it is entered at, whether that is the price of an entry that rests, and the stop-loss and the take-profit of the plan. |
+| `shadow_trades.outcome`, `result_in_r`, `exited_at`, `evaluated_at` | Null until the trade has ended. `StopLoss`, `TakeProfit`, `TimeUp`, `NotEntered`, `Rejected`, or `NoCandles`, with its result in R where it has one, the close of the candle that ended it, and when that was found. |
+| `due_at` | When the row is next looked at. For a call it never changes. For a shadow trade it moves to the close of the next candle while the trade is open. |
+
+- **A row is written once, with its cycle, and completed once, by the job.** Nothing else changes it.
+- **Both tables hold rows of users.** `AnalystCall` and `ShadowTrade` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. `RoleStrengthsTests` has the test with two users, which is marked for both.
+- **A row hangs on its cycle, and carries its owner along:** `(cycle_id, user_id)` points at `decision_cycles (id, user_id)`, with a key that deletes the row with the cycle. So the rows of an agent go with it, and those of an account with the account. A row names no agent in a column of its own.
+- **That key is declared by the Decision Engine,** in `ExperienceKeys.cs`, because Experience may not use it. So each of the two entities has two configurations: its own, in Experience, and that of its key. See "The model" in [persistence.md](persistence.md). `ExperienceModelTests` holds the names of the keys.
+- **Neither table is in the export of a user's data.** Both are listed in `ExportRules.NotExported`, as the cycles that they hang on are: see "Exporting your data" in [accounts.md](accounts.md).
+- **A cycle that was stored before the tables were added has no rows.** The migration `AddExperienceScoring` creates the tables, and fills nothing.
+- Records of decisions are kept for a year (NFR-DAT-5), and nothing deletes yet. A row of Experience goes with its cycle when that is deleted: see "Not built yet".
+
+## The log
+
+```
+{Calls} calls of analysts were scored, and {ShadowTrades} shadow trades ended
+The candles of {Symbol} on {Market} in {TradingMode} could not be read for Experience ({ExchangeCallOutcome}). What it was to score of it waits for the next run
+The candles of {Symbol} on {Market} in {TradingMode} are not to be had: the configuration file does not list the symbol. What Experience was to score of it ends with no result
+```
+
+A run that completed something says how much, as information, and a run that completed nothing says nothing. Candles that could not be read are a warning, said once for each symbol with each run, and so are candles that are not to be had. An event names a symbol, a market, and a mode, and no user: the candles of a symbol are the same for everyone.
 
 ## Testing
 
-`TrackRecordTests` and `ExperienceBasisTests` hold the measures and the rule of Live or Demo to the tables above, without a database. `ExperienceTextTests` does so for how a record is written and how a filter is named in an address.
+`TrackRecordTests` and `ExperienceBasisTests` hold the measures and the rule of Live or Demo to the tables above, without a database. `ExperienceTextTests` does so for how a record and a strength score are written and how a filter is named in an address.
+
+`StrengthScoreTests` holds the formula, `RoleMeasuresTests` the measure of each role, `CallScoreTests` the score of a call, and `ShadowTradeRuleTests` the shadow trade, each without a database: a shadow trade is handed the candles that its test names. `ExperienceModelTests` reads the model and the architecture rules: the names of the keys to the cycle, and that nothing of Experience can reach the orders of the gateway.
 
 `ClosedPositionTests` reads the trades as Experience does, through `IClosedTrades`, and has the test with two users, which is marked for `positions`, `position_results`, and `position_roles`. `TrackRecordsTests` asks `ITrackRecords`, and `ExperiencePageTests` reads the screens as a signed-in user does.
 
+`CycleExperienceTests` stores cycles as the application does, and reads what each left. `ExperienceScoringJobTests` runs the job itself, at moments of its choosing, with `StandInCandles` in place of the candles of the exchange, which answers each ask with the candles that the test names: no test application runs the job on a schedule. `RoleStrengthsTests` asks `IRoleStrengths`, and has the test with two users, which is marked for `analyst_calls` and `shadow_trades`. `StrengthPageTests` reads the section of the strength scores on both screens.
+
 `StoredTradeRows.GiveTradeAsync` gives an agent a closed position with its roles and its result, stored as the application stores them, without the cycle and the orders that lead to one. A test says of it what it is about: its result in R, its mode, its market, its timeframe, whether its result is complete, and whether it is recorded at all. Most of these tests take 3 trades as the minimum sample, with a file of their own, so that a test has enough of them with a few.
+
+`StoredExperienceRows.GiveCallsAsync` and `GiveShadowTradeAsync` give an agent calls and shadow trades as they are once they are scored, each on a cycle of its own that has no calls, without the candles that score them. `GiveCycleAsync` of the tests of the Decision Engine stores a whole cycle as the application does, which leaves the call of its Market Analyst, and the shadow trade of its plan when it ended with a veto: a test that needs a row in every table of users gives its agent one of each.
 
 ## Not built yet
 
-- The measure of each role, the strength score of a model in a role, and the shadow trades of vetoed plans (FR-EXP-3, FR-EXP-4, FR-EXP-5). The track record is of closed trades alone.
-- Recommending a team by measured strength (FR-TEAM-4). It is to use Live data where there is enough, otherwise Demo data, and to say which (FR-EXP-9): `ExperienceBasis.Choose` is that rule, and the experience screens go by it already.
+- Recommending a team by measured strength (FR-TEAM-4). The strength score of each model in each role is worked out, and a slice without enough samples has none to recommend from. A recommendation is to use Live data where there is enough, otherwise Demo data, and to say which (FR-EXP-9): `ExperienceBasis.Choose` is that rule, the experience screens go by it already, and `IRoleStrengths` answers the slices of each mode for it.
+- The funding of a shadow trade. A position of Futures receives and pays funding, and a shadow trade is charged its fees alone: the specification names standard fees, and the funding rates of the past are not kept.
+- A shadow trade of a plan that was approved and then opened no position: one that the Risk Guard rejected, one whose entry was skipped, and one whose entry at a price was not reached. Only a plan that was executed has a result on the approved side.
+- Following a shadow trade for longer than 200 candles, and scoring what the candles of the exchange no longer reach. The gateway reads the newest candles alone: see "Market data" in [exchange.md](exchange.md).
+- Scoring the cycles that were recorded before the tables were added. They left no rows.
+- Deleting the calls and the shadow trades that are older than the records of decisions are kept (NFR-DAT-5). They go with their cycles, and nothing deletes a cycle for its age yet.
 - Lessons: writing one after each closed position, recalling them into prompts, and the page that a user reads and manages them on (FR-EXP-6, FR-EXP-7, FR-EXP-8).
 - The platform-wide board, which shows the same track record aggregated across all users (FR-EXP-10). A track record is of one user.
 - Keeping the trades of an agent that is deleted. The specification keeps positions indefinitely (NFR-DAT-5), and deleting an agent deletes its positions: see "The record of an order" in [orders.md](orders.md). A track record follows the positions, so it loses those trades.

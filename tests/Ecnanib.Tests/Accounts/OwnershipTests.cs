@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Ecnanib.Accounts;
+using Ecnanib.DecisionEngine;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
@@ -42,7 +43,8 @@ public class OwnershipTests
         // recovery codes, the event of turning two-factor authentication on, a session on her
         // desk, a sign-in on her phone that waits for its code, a key of each kind, and an
         // agent with its team, a cycle, the calls of its roles, the orders of a position that
-        // is over, and a notification about it. What a user does with keys of their own is in
+        // is over, a second cycle that ended with a veto, with the shadow trade of its plan,
+        // and a notification about it. What a user does with keys of their own is in
         // KeyPageTests, and with agents of their own in AgentPageTests and AgentRoleTests. Whose
         // the record of a cycle is, is in TeamRecordTests, whose the orders are in
         // OrderRecordTests, and whose a notification is in NotificationTests.
@@ -55,6 +57,7 @@ public class OwnershipTests
         await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
         var gracesAgent = await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true);
         await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow());
+        await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow(), CycleOutcome.Vetoed, orders: false);
         await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
 
         var before = application.RowsOf(grace.Id);

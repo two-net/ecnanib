@@ -7,6 +7,7 @@
 @using Ecnanib.WebUi.Pages.Catalog
 @inject ICatalogModels Models
 @inject ITrackRecords Records
+@inject IRoleStrengths Strengths
 @inject NavigationManager Navigation
 
 @*
@@ -15,14 +16,16 @@
     the model from the closed trades of the user who is signed in, in each role and in any role,
     filterable by market, timeframe, mode, and period (FR-EXP-2). It shows one mode, as a badge
     under its heading, and leads to the other: Demo and Live are never added up (FR-EXP-9,
-    FR-BIN-11). It states what the figures cannot tell whatever it has to show (FR-EXP-11). A
-    model is named by its id in the catalog, and a path that names none is answered with "not
-    found", as an address is that names a choice which there is not. A model is never deleted,
-    so the page of one that its provider no longer offers stays, and so does the page of one
-    that no trade of the user counts for: it says so. The records are asked for by owner.
+    FR-BIN-11). It states what the figures cannot tell whatever it has to show (FR-EXP-11).
+    Under the records it shows the strength score of the model in each role, market, and
+    timeframe, in the same mode, with its formula (FR-EXP-3, FR-EXP-4). A model is named by its
+    id in the catalog, and a path that names none is answered with "not found", as an address is
+    that names a choice which there is not. A model is never deleted, so the page of one that
+    its provider no longer offers stays, and so does the page of one that no trade of the user
+    counts for: it says so. The records are asked for by owner.
 *@
 
-@if (_model is not null && _view is not null && _filter is not null)
+@if (_model is not null && _view is not null && _strengths is not null && _filter is not null)
 {
     var scope = _view.Scope;
 
@@ -87,6 +90,8 @@
 
     <p>@ExperiencePages.FollowsPositions</p>
 
+    <RoleStrengthsTable View="@_strengths" Filter="@_filter" HeadingId="model-experience-strengths" WithModel="false" />
+
     <p><a href="@ExperiencePages.Path(_filter with { Role = null })">Experience of every provider and model</a></p>
 
     <p><a href="@WebUiModule.CatalogPath">Back to the model catalog</a></p>
@@ -96,6 +101,7 @@
     private CatalogModel? _model;
     private TrackRecordFilter? _filter;
     private ModelTrackRecordView? _view;
+    private RoleStrengthView? _strengths;
 
     [Parameter]
     public Guid ModelId { get; set; }
@@ -126,5 +132,10 @@
         // The catalog is the same for everyone, and the trades are not: Experience is handed
         // the user who is signed in, and works out the record from the trades of that user alone.
         _view = await Records.OfModelAsync(SignedInUser.RequiredIdOf(request), _model.Id, _filter, request.RequestAborted);
+
+        // The strength scores of the model are of the mode that the page shows, which its
+        // records above say: a page shows one mode, and never both (FR-EXP-9, FR-BIN-11).
+        _strengths = await Strengths.OfModelAsync(
+            SignedInUser.RequiredIdOf(request), _model.Id, _filter, _view.Scope.Mode, request.RequestAborted);
     }
 }

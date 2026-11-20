@@ -150,6 +150,25 @@ internal sealed class SettingsReader
         return number;
     }
 
+    /// <summary>One number that need not be whole, from the least to the most that it may be, both included.</summary>
+    public decimal Number(string key, decimal minimum, decimal maximum)
+    {
+        var rule = $"must be a number from {Show(minimum)} to {Show(maximum)}";
+
+        if (!TryDecimal(key, rule, out var number))
+        {
+            return 0m;
+        }
+
+        if (number < minimum || number > maximum)
+        {
+            Problem(key, rule);
+            return 0m;
+        }
+
+        return number;
+    }
+
     public bool Flag(string key) =>
         TryScalar(key, Kind.Flag, "must be true or false", out var text) && bool.Parse(text);
 

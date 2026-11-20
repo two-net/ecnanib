@@ -417,6 +417,7 @@ public sealed record TestCycleResult(TestCycleOutcome Outcome, Guid? CycleId = n
 | Has the Risk Guard check what goes on | The same, on the facts as they are then. |
 | Hands what the Risk Guard accepted to `IPlanOrders` | **Hands it to nothing.** `AgentOrders.PlaceAsync` refuses a test cycle as well, where an order is made: that it places no order does not rest on one line. |
 | Is recorded when it ends | The same, with `decision_cycles.kind` as `Test`: see "The record of a cycle" in [team.md](team.md). |
+| Leaves Experience the calls of its analysts, and its plan where that was vetoed | **Leaves nothing.** Its user runs as many test cycles for one candle as they like, so its calls would be counted again and again, and none of them places an order. It is in no measure of a role: see "What a cycle leaves for Experience" in [experience.md](experience.md). |
 
 | Rule | Detail |
 |---|---|

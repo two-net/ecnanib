@@ -9,7 +9,8 @@ namespace Ecnanib.WebUi.Pages.Experience;
 /// <summary>
 /// What the experience screens say, in one place: the statements that every one of them makes
 /// (FR-EXP-11), how a track record is written (FR-EXP-2), how its filter is named in an address
-/// and read from one, and which mode a screen shows and why (FR-EXP-9). See docs/experience.md.
+/// and read from one, which mode a screen shows and why (FR-EXP-9), and how a strength score is
+/// worked out and written, with its formula (FR-EXP-3, FR-EXP-4). See docs/experience.md.
 /// </summary>
 public static class ExperiencePages
 {
@@ -344,6 +345,146 @@ public static class ExperiencePages
     public const string EstimatesExplained =
         "A result is an estimate when not all of it is what Binance said: a position that was liquidated or closed at Binance by hand, or a fee that could not be valued. Such a trade is counted all the same.";
 
+    /// <summary>The heading of the strength scores on an experience screen.</summary>
+    public const string StrengthHeading = "Strength by role";
+
+    /// <summary>What is written for a slice that has fewer samples than the minimum (FR-EXP-4).</summary>
+    public const string NotEnoughData = "Not enough data";
+
+    /// <summary>How an analyst is measured (FR-EXP-3).</summary>
+    public const string AnalystMeasure =
+        "Market Analyst and Sentiment Analyst: the share of the calls that were not neutral whose direction matched the price change "
+        + "over the next 4 closed candles, minus 50 percent. It is written in percentage points: +10 is right 60 times in 100. "
+        + "A sample is a call that was scored.";
+
+    /// <summary>How the Strategist is measured (FR-EXP-3).</summary>
+    public const string StrategistMeasure =
+        "Strategist: the average R of the plans that were executed. A sample is a closed trade.";
+
+    /// <summary>How the Risk Manager is measured (FR-EXP-3).</summary>
+    public const string RiskManagerMeasure =
+        "Risk Manager: the average R of the plans that it approved, minus the average R that the plans which it vetoed would have produced. "
+        + "A sample is a plan that it reviewed and that has a result: an approved one whose trade is closed, or a vetoed one whose shadow trade has ended. "
+        + "The measure is said once there is at least one of each.";
+
+    /// <summary>What a shadow trade is, and that it places no order (FR-EXP-5).</summary>
+    public const string ShadowTradesExplained =
+        "What a vetoed plan would have produced is worked out as a shadow trade: against the candles that closed after it, with its own entry, "
+        + "stop-loss, and take-profit and with standard fees, and with the stop-loss taken to be hit first when both fall inside one candle. "
+        + "A shadow trade never places an order.";
+
+    /// <summary>What the strength scores follow, which says why a sample can leave them.</summary>
+    public const string StrengthsFollow =
+        "A strength score is worked out from the cycles and the positions that are stored. When you delete an agent, they are deleted with it, "
+        + "and its calls, its trades, and its shadow trades leave the scores.";
+
+    /// <summary>What a strength score is, and of which mode the ones on a screen are.</summary>
+    public static string StrengthExplained(TradingMode mode) =>
+        $"A strength score says how well a model did one role, on one market and one timeframe, in {mode}. "
+        + "It is the measure of the role, damped toward zero for a small sample, so that a few lucky results do not look like strength.";
+
+    /// <summary>The formula of the strength score, as a screen shows it, with the damping of the configuration file (FR-EXP-4).</summary>
+    public static string StrengthFormula(int damping) =>
+        $"Strength score = measure × n ÷ (n + {Count(damping)}), where n is the sample size.";
+
+    /// <summary>From how many samples on a slice has a score (FR-EXP-4).</summary>
+    public static string EnoughExplained(int minSamples) =>
+        $"A slice of fewer than {Count(minSamples)} samples says \"{NotEnoughData}\", and has no score.";
+
+    /// <summary>What a screen says when no slice has a sample.</summary>
+    public static string NoStrengths(TradingMode mode) =>
+        $"Nothing is measured here in {mode} yet: no call of an analyst is scored, no plan is executed, and no vetoed plan has a result.";
+
+    /// <summary>
+    /// A measure or a score of an analyst, which is a share above or below a half, in percentage
+    /// points with one decimal place at most, and with its sign: <c>+12.5 percentage points</c>.
+    /// </summary>
+    public static string InPoints(decimal? fraction) =>
+        fraction is { } known
+            ? $"{Rounded(known * 100m, 1).ToString("+0.#;-0.#;0", CultureInfo.InvariantCulture)} percentage points"
+            : NotAvailable;
+
+    /// <summary>The measure of a slice, in the unit of its role: percentage points for an analyst, and R for the Strategist and the Risk Manager.</summary>
+    public static string Measure(RoleStrength slice)
+    {
+        ArgumentNullException.ThrowIfNull(slice);
+
+        return InUnitOf(slice.Role, slice.Measure.Value);
+    }
+
+    /// <summary>The strength score of a slice, in the unit of its measure.</summary>
+    public static string Score(RoleStrength slice)
+    {
+        ArgumentNullException.ThrowIfNull(slice);
+
+        return InUnitOf(slice.Role, slice.Score);
+    }
+
+    /// <summary>The sample size of a slice, and for a Risk Manager what it is made of: <c>6 (4 approved, 2 vetoed)</c>.</summary>
+    public static string Samples(RoleStrength slice)
+    {
+        ArgumentNullException.ThrowIfNull(slice);
+
+        return slice.Measure.Reviewed is { } reviewed
+            ? $"{Count(slice.Measure.Samples)} ({Count(reviewed.Approved)} approved, {Count(reviewed.Vetoed)} vetoed)"
+            : Count(slice.Measure.Samples);
+    }
+
+    /// <summary>The calls of analysts that a screen leaves out because they are not scored yet, or null when there are none.</summary>
+    public static string? CallsAwaiting(RoleStrengthView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        return view.CallsAwaiting switch
+        {
+            0 => null,
+            1 => "1 call of an analyst is not counted yet: it is scored once 4 candles have closed after it.",
+            var count => $"{Count(count)} calls of analysts are not counted yet: each is scored once 4 candles have closed after it.",
+        };
+    }
+
+    /// <summary>The calls of analysts that a screen leaves out because they could not be scored, or null when there are none.</summary>
+    public static string? CallsWithoutCandles(RoleStrengthView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        return view.CallsWithoutCandles switch
+        {
+            0 => null,
+            1 => "1 call of an analyst is not counted: the candles after it could no longer be had from Binance.",
+            var count => $"{Count(count)} calls of analysts are not counted: the candles after them could no longer be had from Binance.",
+        };
+    }
+
+    /// <summary>The shadow trades that a screen leaves out because they have not ended yet, or null when there are none.</summary>
+    public static string? ShadowTradesOpen(RoleStrengthView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        return view.ShadowTradesOpen switch
+        {
+            0 => null,
+            1 => "1 vetoed plan is not counted yet: its shadow trade has reached neither its stop-loss nor its take-profit.",
+            var count => $"{Count(count)} vetoed plans are not counted yet: their shadow trades have reached neither their stop-loss nor their take-profit.",
+        };
+    }
+
+    /// <summary>The shadow trades that a screen leaves out because they ended with no result, or null when there are none.</summary>
+    public static string? ShadowTradesWithoutResult(RoleStrengthView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        const string why =
+            "its entry was not reached, its stop-loss or take-profit was on the wrong side of its entry, or the candles after it could no longer be had from Binance";
+
+        return view.ShadowTradesWithoutResult switch
+        {
+            0 => null,
+            1 => $"1 vetoed plan is not counted, because its shadow trade has no result: {why}.",
+            var count => $"{Count(count)} vetoed plans are not counted, because their shadow trades have no result: for each, {why}.",
+        };
+    }
+
     /// <summary>
     /// Whether a choice of an address is one that can be made: it is absent or empty, and so
     /// not made, or it names one of the choices as that one is written. A choice that is made
@@ -385,6 +526,10 @@ public static class ExperiencePages
 
         return made.Count == 0 ? string.Empty : "?" + string.Join('&', made);
     }
+
+    /// <summary>A measure or a score in the unit of its role.</summary>
+    private static string InUnitOf(Role role, decimal? value) =>
+        role is Role.MarketAnalyst or Role.SentimentAnalyst ? InPoints(value) : InR(value);
 
     private static decimal Rounded(decimal number, int places) => Math.Round(number, places, MidpointRounding.AwayFromZero);
 

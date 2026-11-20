@@ -198,6 +198,12 @@ internal static class StoredCycleRows
     /// The agent has a team, as <c>GiveAgentAsync</c> gives it one. The cycle keeps the summary
     /// of a data package: see <see cref="CycleSummaries.Of"/>.
     /// </summary>
+    /// <remarks>
+    /// The cycle is stored by the application, so it leaves what a cycle leaves for Experience:
+    /// the call of its Market Analyst, which is bullish, to be scored, and none of its Sentiment
+    /// Analyst, which is neutral. One that ended with a veto leaves the shadow trade of its plan
+    /// as well, so a test that needs a row in every table gives its agent such a cycle too.
+    /// </remarks>
     /// <param name="application">The application.</param>
     /// <param name="userId">The user.</param>
     /// <param name="agentId">The agent.</param>
@@ -205,6 +211,9 @@ internal static class StoredCycleRows
     /// <param name="outcome">How the cycle ended.</param>
     /// <param name="orders">Whether the cycle placed orders. A test of a cycle that placed none says so.</param>
     /// <param name="noEntry">Why the cycle placed no entry, where the test says that it placed none.</param>
+    /// <param name="kind">What started the cycle: the close of a candle, unless the test says that its user ran it as a test.</param>
+    /// <param name="answers">What each role answered, in place of <see cref="TeamAnswers.Of"/>.</param>
+    /// <param name="position">The position that the agent held when the cycle ran, as the summary of its data package says it.</param>
     /// <returns>The id of the cycle.</returns>
     public static async Task<Guid> GiveCycleAsync(
         this AccountsApplication application,
@@ -213,7 +222,10 @@ internal static class StoredCycleRows
         DateTimeOffset closedAt,
         CycleOutcome outcome = CycleOutcome.Approved,
         bool orders = true,
-        NoEntryReason? noEntry = null)
+        NoEntryReason? noEntry = null,
+        CycleKind kind = CycleKind.Scheduled,
+        Func<Role, string>? answers = null,
+        PositionContext? position = null)
     {
         await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
@@ -234,8 +246,9 @@ internal static class StoredCycleRows
             closedAt.AddSeconds(2),
             closedAt.AddSeconds(40),
             outcome,
-            CycleSummaries.Of(agent, closedAt).ToJson(),
-            noEntry);
+            CycleSummaries.Of(agent, closedAt, position).ToJson(),
+            noEntry,
+            kind);
 
         RoleOutput[] outputs =
         [
@@ -262,7 +275,7 @@ internal static class StoredCycleRows
                     RoleCallOutcome.Succeeded,
                     RoleValidation.Valid,
                     rejection: null,
-                    result: TeamAnswers.Of(given.Role));
+                    result: (answers ?? TeamAnswers.Of)(given.Role));
             }),
         ];
 

@@ -99,6 +99,7 @@ internal sealed class SettingsJson
             "LessonsPerPrompt": 4,
             "MinSamples": 15,
             "Damping": 25,
+            "ShadowFeePercent": { "Spot": 0.2, "Futures": 0.04 },
             "Board": { "MinUsers": 6, "MinTrades": 60 }
           },
           "Retention": { "TranscriptDays": 30, "DecisionDays": 180, "NotificationDays": 45, "AuditDays": 365 },

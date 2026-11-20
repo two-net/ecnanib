@@ -189,6 +189,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What works out the track record of each provider and of each model from the closed trades of a user.</summary>
     public ITrackRecords TrackRecords => _application.Services.GetRequiredService<ITrackRecords>();
 
+    /// <summary>What works out the measure and the strength score of each model in each role from what a user's agents did.</summary>
+    public IRoleStrengths RoleStrengths => _application.Services.GetRequiredService<IRoleStrengths>();
+
     /// <summary>What validates the answer of a role.</summary>
     public IRoleResults RoleResults => _application.Services.GetRequiredService<IRoleResults>();
 
@@ -327,6 +330,20 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>The job that records the results of the closed positions, which only a test runs.</summary>
     public IBackgroundJob PositionResults =>
         _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.PositionResultsKey);
+
+    /// <summary>
+    /// Runs the job that scores the calls of the analysts and follows the shadow trades, now, as
+    /// the scheduler does every few minutes. A test runs it itself: the scheduler of no
+    /// application of the tests does.
+    /// </summary>
+    public Task ScoreExperienceAsync(CancellationToken? cancellationToken = null) =>
+        ExperienceScoring.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that scores the calls of the analysts and follows the shadow trades, which only a test runs.</summary>
+    public IBackgroundJob ExperienceScoring =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.ExperienceScoringKey);
 
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 

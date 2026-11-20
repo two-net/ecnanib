@@ -111,6 +111,91 @@ public class ExperienceTextTests
             ExperiencePages.Path(new TrackRecordFilter(Role.RiskManager, Market.Futures, Timeframe.FifteenMinutes, TradingMode.Live, TrackPeriod.Last365Days)));
     }
 
+    [Theory]
+    [InlineData("0.25", "+25 percentage points")]
+    [InlineData("0.125", "+12.5 percentage points")]
+    [InlineData("-0.5", "-50 percentage points")]
+    [InlineData("-0.0345", "-3.5 percentage points")]
+    [InlineData("0.0344", "+3.4 percentage points")]
+    [InlineData("0", "0 percentage points")]
+
+    // What rounds to nothing is written as nothing, without a sign.
+    [InlineData("0.0004", "0 percentage points")]
+    [InlineData("-0.0004", "0 percentage points")]
+    public void A_measure_of_an_analyst_is_written_in_percentage_points_with_its_sign_and_one_decimal_place_at_the_most(
+        string fraction, string written)
+    {
+        Assert.Equal(written, ExperiencePages.InPoints(decimal.Parse(fraction, System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    [Fact]
+    public void A_measure_and_a_score_are_written_in_the_unit_of_their_role()
+    {
+        RoleStrength Slice(Role role, RoleMeasure measure) =>
+            RoleStrength.Of(SampleModels.Claude, role, Market.Spot, Timeframe.OneHour, measure, minSamples: 20, damping: 20);
+
+        // An analyst is measured in a share above or below a half, and the two others in R.
+        foreach (var analyst in new[] { Role.MarketAnalyst, Role.SentimentAnalyst })
+        {
+            var called = Slice(analyst, RoleMeasures.OfAnalyst(matched: 13, missed: 7));
+
+            Assert.Equal(
+                ("20", "+15 percentage points", "+7.5 percentage points"),
+                (ExperiencePages.Samples(called), ExperiencePages.Measure(called), ExperiencePages.Score(called)));
+        }
+
+        var planned = Slice(Role.Strategist, new RoleMeasure(-0.42m, 60));
+
+        Assert.Equal(("60", "-0.42 R", "-0.32 R"), (ExperiencePages.Samples(planned), ExperiencePages.Measure(planned), ExperiencePages.Score(planned)));
+
+        // The sample of a Risk Manager says what it is made of.
+        var reviewed = Slice(Role.RiskManager, new RoleMeasure(1.5m, 30, new ReviewedPlans(Approved: 21, Vetoed: 9)));
+
+        Assert.Equal(
+            ("30 (21 approved, 9 vetoed)", "+1.5 R", "+0.9 R"),
+            (ExperiencePages.Samples(reviewed), ExperiencePages.Measure(reviewed), ExperiencePages.Score(reviewed)));
+
+        // What cannot be said is "Not available", in either unit.
+        var oneSided = Slice(Role.RiskManager, new RoleMeasure(null, 30, new ReviewedPlans(Approved: 30, Vetoed: 0)));
+
+        Assert.Equal(("Not available", "Not available"), (ExperiencePages.Measure(oneSided), ExperiencePages.Score(oneSided)));
+        Assert.Equal("Not available", ExperiencePages.InPoints(null));
+    }
+
+    [Fact]
+    public void The_formula_is_written_with_the_damping_and_the_minimum_sample_of_the_configuration_file()
+    {
+        // The values of the specification, and others.
+        Assert.Equal("Strength score = measure × n ÷ (n + 20), where n is the sample size.", ExperiencePages.StrengthFormula(damping: 20));
+        Assert.Equal("Strength score = measure × n ÷ (n + 35), where n is the sample size.", ExperiencePages.StrengthFormula(damping: 35));
+        Assert.Equal("A slice of fewer than 20 samples says \"Not enough data\", and has no score.", ExperiencePages.EnoughExplained(minSamples: 20));
+        Assert.Equal("Not enough data", ExperiencePages.NotEnoughData);
+    }
+
+    [Fact]
+    public void What_the_scores_leave_out_is_said_in_words_and_nothing_is_said_of_nothing()
+    {
+        RoleStrengthView View(int awaiting = 0, int withoutCandles = 0, int open = 0, int withoutResult = 0) =>
+            new(TradingMode.Demo, MinSamples: 20, Damping: 20, [], awaiting, withoutCandles, open, withoutResult);
+
+        var nothing = View();
+
+        Assert.Null(ExperiencePages.CallsAwaiting(nothing));
+        Assert.Null(ExperiencePages.CallsWithoutCandles(nothing));
+        Assert.Null(ExperiencePages.ShadowTradesOpen(nothing));
+        Assert.Null(ExperiencePages.ShadowTradesWithoutResult(nothing));
+
+        // One is written as one, and more as how many.
+        Assert.StartsWith("1 call of an analyst is not counted yet:", ExperiencePages.CallsAwaiting(View(awaiting: 1)));
+        Assert.StartsWith("12 calls of analysts are not counted yet:", ExperiencePages.CallsAwaiting(View(awaiting: 12)));
+        Assert.StartsWith("1 call of an analyst is not counted:", ExperiencePages.CallsWithoutCandles(View(withoutCandles: 1)));
+        Assert.StartsWith("3 calls of analysts are not counted:", ExperiencePages.CallsWithoutCandles(View(withoutCandles: 3)));
+        Assert.StartsWith("1 vetoed plan is not counted yet:", ExperiencePages.ShadowTradesOpen(View(open: 1)));
+        Assert.StartsWith("4 vetoed plans are not counted yet:", ExperiencePages.ShadowTradesOpen(View(open: 4)));
+        Assert.StartsWith("1 vetoed plan is not counted, because", ExperiencePages.ShadowTradesWithoutResult(View(withoutResult: 1)));
+        Assert.StartsWith("5 vetoed plans are not counted, because", ExperiencePages.ShadowTradesWithoutResult(View(withoutResult: 5)));
+    }
+
     /// <summary>What an address says after its path, as a request brings it.</summary>
     private static QueryCollection QueryOf(string address) =>
         new(Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri("https://ecnanib.example" + address).Query)

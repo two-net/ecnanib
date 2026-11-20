@@ -105,6 +105,10 @@ internal static class PersonalDataRules
         ["equity_marks.asset"] =
             "The asset that the result of an agent is in, as Binance names it, such as USDT: the one that the symbol of the agent " +
             "was priced in when its loss limits were last evaluated.",
+        ["analyst_calls.symbol"] =
+            "A symbol of Binance that the configuration file lists: the one of the agent when an analyst of its team made the call.",
+        ["shadow_trades.symbol"] =
+            "A symbol of Binance that the configuration file lists: the one of the agent when the plan was vetoed.",
         ["notifications.content"] =
             "What the service tells the user about an agent, in the service's own words: what happened to a position, " +
             "or how it stands, with its symbol and its mode. Nothing that a user typed is in it, and no secret (FR-NTF-1). It is in the export.",
