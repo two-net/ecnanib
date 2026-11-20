@@ -1,0 +1,151 @@
+@attribute [Route(WebUiModule.ExperiencePath)]
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Experience
+@using Ecnanib.WebUi.Pages.Agents
+@using Ecnanib.WebUi.Pages.Catalog
+@inject ITrackRecords Records
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The experience screen: the
+    track record of each AI provider and of each model, from the closed trades of the user who
+    is signed in, filterable by role, market, timeframe, mode, and period (FR-EXP-2, FR-UI-2).
+    Demo and Live are never added up: the screen shows one mode, as a badge under its heading,
+    says why it is that one, and leads to the other (FR-EXP-9, FR-BIN-11). It states what the
+    figures cannot tell whatever it has to show (FR-EXP-11). The filter is in the address, and
+    an address that names a choice which there is not is answered with "not found". The records
+    are asked for by owner, and a model is named by the catalog, which is the same for everyone.
+*@
+
+@if (_view is not null && _filter is not null)
+{
+    var scope = _view.Scope;
+
+    <PageTitle>@ExperiencePages.Title</PageTitle>
+
+    <h1>@ExperiencePages.Title</h1>
+
+    <p>Mode: <ModeBadge Mode="@scope.Mode" /> @ExperiencePages.ModeExplained(scope) @ExperiencePages.NeverAddedUp <a href="@ExperiencePages.Path(_filter with { Mode = ExperiencePages.OtherThan(scope.Mode) })">@ExperiencePages.OtherModeLink(scope)</a></p>
+
+    <p>@ExperiencePages.Explained</p>
+
+    <ExperienceNotes />
+
+    <ExperienceFilter Action="@WebUiModule.ExperiencePath" Filter="@_filter" />
+
+    <p>@ExperiencePages.PeriodExplained(scope) @ExperiencePages.CountsFor(_filter.Role)</p>
+
+    @if (ExperiencePages.Awaiting(scope) is { } awaiting)
+    {
+        <p role="note">@awaiting</p>
+    }
+
+    @if (ExperiencePages.WithoutR(scope) is { } withoutR)
+    {
+        <p role="note">@withoutR</p>
+    }
+
+    <h2 id="experience-providers">By provider</h2>
+
+    @if (_view.Providers.Count == 0)
+    {
+        <p>@ExperiencePages.NoTrades(scope)</p>
+    }
+    else
+    {
+        @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
+        <div class="track-records" role="region" aria-labelledby="experience-providers" tabindex="0">
+            <table>
+                <caption>The track record of each provider in @scope.Mode</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Provider</th>
+                        <TrackRecordHeadings />
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var provider in _view.Providers)
+                    {
+                        <tr>
+                            <th scope="row">@provider.ProviderName</th>
+                            <TrackRecordCells Record="@provider.Record" />
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <h2 id="experience-models">By model</h2>
+
+    @if (_view.Models.Count == 0)
+    {
+        <p>@ExperiencePages.NoTrades(scope)</p>
+    }
+    else
+    {
+        <div class="track-records" role="region" aria-labelledby="experience-models" tabindex="0">
+            <table>
+                <caption>The track record of each model in @scope.Mode</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Model</th>
+                        <th scope="col">Provider</th>
+                        <TrackRecordHeadings />
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var model in _view.Models)
+                    {
+                        <tr>
+                            @* The page of the model says its record by role, for the same trades. *@
+                            <th scope="row"><a href="@ExperiencePages.ModelPath(model.Model.Id, _filter)">@CatalogPages.NameOf(model.Model)</a></th>
+                            <td>@model.Model.ProviderName</td>
+                            <TrackRecordCells Record="@model.Record" />
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <p>@ExperiencePages.EstimatesExplained</p>
+
+    <p>@ExperiencePages.FollowsPositions</p>
+
+    <p><a href="@WebUiModule.CatalogPath">Model catalog</a></p>
+
+    <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
+}
+
+@code {
+    private TrackRecordFilter? _filter;
+    private TrackRecordView? _view;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // An address that names a choice which there is not is not found: the page shows what
+        // its address asks for, and never something else in its place.
+        _filter = ExperiencePages.FilterOf(request.Request.Query);
+
+        if (_filter is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // Experience may not use Accounts, so it is handed the user who is signed in, and works
+        // out the records from the trades of that user alone.
+        _view = await Records.OfUserAsync(SignedInUser.RequiredIdOf(request), _filter, request.RequestAborted);
+    }
+}

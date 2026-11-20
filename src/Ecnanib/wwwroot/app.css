@@ -197,6 +197,59 @@ code {
         border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
     }
 
+/* The track records of the experience screens: a table of records, which scrolls sideways by
+   itself on a narrow screen, as the catalog does. A figure is in one piece, with its unit. */
+.track-records {
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+}
+
+    .track-records table {
+        border-collapse: collapse;
+        min-width: 60rem;
+    }
+
+    /* Read out as the name of the table, and not shown: the heading above says the same. */
+    .track-records caption {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .track-records th, .track-records td {
+        padding: 0.25rem 1rem 0.25rem 0;
+        text-align: start;
+        vertical-align: baseline;
+    }
+
+    .track-records tbody th {
+        font-weight: 600;
+    }
+
+    .track-records tbody tr {
+        border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    }
+
+/* The filter of a track record: its choices side by side where there is room, and one under
+   another on a narrow screen, with the button that shows what was chosen after them. */
+.experience-filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0 1.5rem;
+}
+
+    .experience-filter > .field {
+        max-width: none;
+    }
+
+    .experience-filter > button[type=submit] {
+        margin: 0 0 1rem;
+    }
+
 /* The agents of a user: one table, which scrolls sideways by itself on a narrow screen, as the
    catalog does. The last cell of a row holds what can be done with the agent, side by side. */
 .agents {

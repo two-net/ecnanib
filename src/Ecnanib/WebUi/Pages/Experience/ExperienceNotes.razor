@@ -1,0 +1,20 @@
+@using Ecnanib.Platform.Settings
+@inject ExperienceSettings Settings
+
+@*
+    What every experience screen states: that past results do not predict future results, that
+    small samples are unreliable, and that Demo results differ from Live (FR-EXP-11). It asks
+    for nothing of the page that shows it, so that a page states all three whatever it has to
+    show, also when it has no trade to show. The sample size that a record is marked below is
+    the one of the configuration file.
+*@
+
+<section class="experience-statements" aria-labelledby="experience-statements-heading">
+    <h2 id="experience-statements-heading">@ExperiencePages.StatementsHeading</h2>
+
+    <ul>
+        <li>@ExperiencePages.PastResults</li>
+        <li>@ExperiencePages.SmallSamples(Settings.MinSamples)</li>
+        <li>@ExperiencePages.DemoDiffers</li>
+    </ul>
+</section>

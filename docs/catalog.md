@@ -18,7 +18,7 @@ How a provider's list is read is in [ai-providers.md](ai-providers.md). How a jo
 - **A model is stored once for its provider and identifier.** A unique index holds that. The identifier is what a call to the model names it by: see "The call" in [ai-providers.md](ai-providers.md).
 - **What a provider does not say is empty.** Empty is unknown. Nothing is guessed, and nothing is filled in from another model. Which provider says what is in "The list of models" in [ai-providers.md](ai-providers.md).
 - **The rows belong to the service.** The catalog is the same for every user, so both tables are listed in `OwnershipRules.cs`: see [ownership.md](ownership.md). A row of a sync names no user and no key, also when a user's key was used.
-- **No row of `ai_models` is ever deleted,** so what is recorded about a model later, such as its experience, still points at it.
+- **No row of `ai_models` is ever deleted,** so what is recorded about a model later still points at it: the roles of a position, which the track record of the model is worked out from. See [experience.md](experience.md).
 
 ## When the catalog is synced
 
@@ -186,9 +186,9 @@ Every provider has a part of the page, in the order of the providers' codes, als
 | **A model is linked by its id in the catalog.** | The id stays the same for good, and what a provider wrote is never part of a path. |
 | The times are UTC. | As on the other pages: see "Not built yet". |
 
-The page of a model's experience record is for signed-in users too. A path that names no model of the catalog is answered with "not found". The record itself is not built: the page names the model, with its provider, its identifier, and its status, and says that nothing is recorded yet. See "Not built yet".
+The page of a model's experience record is for signed-in users too. A path that names no model of the catalog is answered with "not found". The page names the model, with its provider, its identifier, and its status, and shows the track record of the model from the closed trades of the user who is signed in, by role (FR-EXP-2). For a model that no trade of the user counts for it says so. The record is Experience's, and is asked for by owner, where the catalog is the same for everyone: see "The screens" in [experience.md](experience.md).
 
-Both pages ask `ICatalogModels`, which reads and writes nothing else:
+Both pages ask `ICatalogModels` about the catalog, which reads and writes nothing else:
 
 ```csharp
 public interface ICatalogModels
@@ -255,7 +255,6 @@ The file of the tests allows the models of Claude that `claude-*` names, but for
 - What follows a call that reports that the model does not exist (FR-CAT-8). The gateway answers such a call with the outcome `ModelNotFound`: see "Outcomes" in [ai-providers.md](ai-providers.md). What runs the team of an agent records the call, and the cycle ends as its role says: see "When a role gives no valid result" in [team.md](team.md). Moving the agent to Attention required then is not built: it takes an operation of Agents that a cycle can ask. Until then such an agent is called again at each close, until a sync marks the model. The Catalog is not told, and marks nothing for it: a model is marked by the provider's list alone.
 - Telling the user that a model is unavailable (FR-NTF-1). In-app notifications are not built.
 - Telling an agent that its model is no longer eligible, after the patterns of the file were changed. The model cannot be selected anew, and an agent that has it keeps it: it is not started or resumed with it, and one that runs with it runs on.
-- The experience record of a model (FR-EXP-2). The catalog screen links each model to its page, which says that nothing is recorded yet. The track record takes its place there, with the statements that an experience screen makes (FR-EXP-11).
 - Times in the user's own time zone on the catalog screen (NFR-USA-3). The pages write a time through `PageTimes`, in UTC.
 - The operator's button that triggers a sync, and its event in the audit trail (FR-OPS-4, FR-OPS-5). `ICatalogSync.SyncAsync` is what it calls.
 - Deleting old rows of `catalog_sync_runs`. Every sync adds a row. With the keys of users that is a row for each check of a key, which is about one a day for each stored key.

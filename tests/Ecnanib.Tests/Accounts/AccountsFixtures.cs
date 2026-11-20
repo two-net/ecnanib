@@ -9,6 +9,7 @@ using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.Experience;
 using Ecnanib.Notifications;
 using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Persistence;
@@ -181,6 +182,12 @@ internal sealed class AccountsApplication : IDisposable
 
     /// <summary>What reads the cycles that were recorded for an agent, each as a complete record.</summary>
     public IRecordedCycles RecordedCycles => _application.Services.GetRequiredService<IRecordedCycles>();
+
+    /// <summary>What says the closed trades of a user, as whatever keeps positions recorded them: the one that there is.</summary>
+    public IClosedTrades ClosedTrades => _application.Services.GetServices<IClosedTrades>().Single();
+
+    /// <summary>What works out the track record of each provider and of each model from the closed trades of a user.</summary>
+    public ITrackRecords TrackRecords => _application.Services.GetRequiredService<ITrackRecords>();
 
     /// <summary>What validates the answer of a role.</summary>
     public IRoleResults RoleResults => _application.Services.GetRequiredService<IRoleResults>();

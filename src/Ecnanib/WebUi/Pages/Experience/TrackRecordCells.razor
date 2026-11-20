@@ -1,0 +1,33 @@
+@using System.Globalization
+@using Ecnanib.Experience
+
+@*
+    The measures of one track record, as the cells of a row: closed trades, win rate, average R,
+    total R, profit factor, largest drawdown in R, and average holding time (FR-EXP-2), with what
+    is to be noted about it: that it is a small sample (FR-EXP-11), and how many of its results
+    are estimates. A result in R says its sign, so a profit is told from a loss without a colour
+    (FR-THM-5). A record of no trades says that, and no measure.
+*@
+
+<td>@Record.Trades.ToString(CultureInfo.InvariantCulture)</td>
+
+@if (Record.Trades == 0)
+{
+    <td colspan="7">No closed trade is counted.</td>
+}
+else
+{
+    <td>@ExperiencePages.WinRate(Record)</td>
+    <td>@ExperiencePages.InR(Record.AverageR)</td>
+    <td>@ExperiencePages.InR(Record.TotalR)</td>
+    <td>@ExperiencePages.ProfitFactor(Record)</td>
+    <td>@ExperiencePages.Drawdown(Record)</td>
+    <td>@ExperiencePages.Held(Record.AverageHoldingTime)</td>
+    <td>@ExperiencePages.Notes(Record)</td>
+}
+
+@code {
+    /// <summary>The record that the cells are of.</summary>
+    [Parameter, EditorRequired]
+    public TrackRecord Record { get; set; } = default!;
+}

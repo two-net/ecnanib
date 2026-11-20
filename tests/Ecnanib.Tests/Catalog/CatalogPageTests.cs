@@ -327,13 +327,14 @@ public class CatalogPageTests
         Assert.Contains($"<a href=\"/experience/models/{next.Id}\">Experience of claude-next</a>", catalog);
         Assert.Equal(2, Regex.Count(catalog, "<a href=\"/experience/models/"));
 
-        // The page there names the model, says that nothing is recorded yet, and leads back.
+        // The page there names the model, says that no trade of the user counts for it yet, and
+        // leads back. Its track record is in the tests of the experience screens.
         var record = KeyBrowser.Read(await client.PageAsync(WebUiModule.ModelExperiencePath(opus.Id)));
 
         Assert.Contains("<h1>Experience of Claude Opus 5.5</h1>", record);
         Assert.Contains("A model of Claude, which names it <code>claude-opus-5-5</code>.", record);
         Assert.Contains("Status in the catalog: Active", record);
-        Assert.Contains("Nothing is recorded yet about how this model has traded.", record);
+        Assert.Contains("Nothing is recorded here about how this model has traded for you in Demo.", record);
         Assert.Contains("<a href=\"/catalog\">Back to the model catalog</a>", record);
         Assert.DoesNotContain("claude-next", record);
 

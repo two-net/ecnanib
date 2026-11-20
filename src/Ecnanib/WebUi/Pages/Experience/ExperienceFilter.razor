@@ -1,0 +1,88 @@
+@using Ecnanib.Experience
+@using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Agents
+
+@*
+    The filter of a track record: role, market, timeframe, mode, and period (FR-EXP-2). A page
+    is not interactive, so the form is sent with its button, and by an address: it asks for
+    something to be shown and changes nothing, so the choices are in the address of the page,
+    which can be kept and sent on. A choice that is left as it starts is not made. The mode has
+    no choice of both: Demo and Live are never added up (FR-EXP-9, FR-BIN-11).
+*@
+
+<h2 id="experience-filter-heading">Which trades are counted</h2>
+
+<form method="get" action="@Action" class="experience-filter" aria-labelledby="experience-filter-heading">
+    @if (WithRole)
+    {
+        <div class="field">
+            <label for="filter-role">Role</label>
+            <select id="filter-role" name="@ExperiencePages.RoleKey">
+                <option value="">Any role</option>
+                @foreach (var role in Enum.GetValues<Role>())
+                {
+                    <option value="@ExperiencePages.Token(role)" selected="@(Filter.Role == role)">@ExperiencePages.NameOf(role)</option>
+                }
+            </select>
+        </div>
+    }
+
+    <div class="field">
+        <label for="filter-market">Market</label>
+        <select id="filter-market" name="@ExperiencePages.MarketKey">
+            <option value="">Any market</option>
+            @foreach (var market in Enum.GetValues<Market>())
+            {
+                <option value="@ExperiencePages.Token(market)" selected="@(Filter.Market == market)">@market</option>
+            }
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="filter-timeframe">Timeframe</label>
+        <select id="filter-timeframe" name="@ExperiencePages.TimeframeKey">
+            <option value="">Any timeframe</option>
+            @foreach (var timeframe in Timeframes.All)
+            {
+                <option value="@timeframe.Code()" selected="@(Filter.Timeframe == timeframe)">@AgentPages.Describe(timeframe)</option>
+            }
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="filter-mode">Mode</label>
+        <select id="filter-mode" name="@ExperiencePages.ModeKey">
+            <option value="">Live where there is enough, otherwise Demo</option>
+            @foreach (var mode in Enum.GetValues<TradingMode>())
+            {
+                <option value="@ExperiencePages.Token(mode)" selected="@(Filter.Mode == mode)">@mode</option>
+            }
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="filter-period">Period</label>
+        <select id="filter-period" name="@ExperiencePages.PeriodKey">
+            @foreach (var period in TrackPeriods.All)
+            {
+                <option value="@ExperiencePages.Token(period)" selected="@(Filter.Period == period)">@ExperiencePages.Describe(period)</option>
+            }
+        </select>
+    </div>
+
+    <button type="submit">Show</button>
+</form>
+
+@code {
+    /// <summary>The path of the page that the form asks for: the one that shows it.</summary>
+    [Parameter, EditorRequired]
+    public string Action { get; set; } = string.Empty;
+
+    /// <summary>The filter that the page shows now, whose choices the form starts from.</summary>
+    [Parameter, EditorRequired]
+    public TrackRecordFilter Filter { get; set; } = TrackRecordFilter.None;
+
+    /// <summary>Whether the form has the choice of a role. The page of a model says every role, and has none.</summary>
+    [Parameter]
+    public bool WithRole { get; set; } = true;
+}

@@ -43,6 +43,12 @@ public static class WebUiModule
     public const string CatalogPath = "/catalog";
 
     /// <summary>
+    /// The path of the experience screen: the track record of each AI provider and of each model,
+    /// from the closed trades of the user (FR-EXP-2, FR-UI-2).
+    /// </summary>
+    public const string ExperiencePath = "/experience";
+
+    /// <summary>
     /// The path of the page of a model's experience record, which the catalog links each model
     /// to. The model is named by its id in the catalog, which stays the same for good.
     /// </summary>

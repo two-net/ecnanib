@@ -1,4 +1,5 @@
 using Ecnanib.Agents;
+using Ecnanib.Experience;
 using Ecnanib.Platform.BackgroundWork;
 
 namespace Ecnanib.DecisionEngine;
@@ -157,6 +158,12 @@ public static class DecisionEngineModule
         // with the summary of its data package, the calls of its roles, the checks of the Risk
         // Guard, and its orders, which a page shows as a timeline (FR-CYC-10). It only reads.
         services.AddSingleton<IRecordedCycles, RecordedCycles>();
+
+        // The closed positions of a user as the trades that a track record counts, which
+        // Experience waited for: it may not use the Decision Engine, which keeps the positions
+        // (FR-EXP-1, FR-EXP-2). It only reads, and is handed nothing but the database, so that
+        // what asks Experience from below the Decision Engine closes no circle.
+        services.AddSingleton<IClosedTrades, ClosedPositions>();
 
         return services;
     }

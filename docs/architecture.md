@@ -65,6 +65,8 @@ Agents asks what an agent holds on the exchange this way, has its position close
 
 The Risk Guard asks whether the global halt is on this way: it declares `IGlobalHalt`, for whatever keeps the halt to implement. See [risk-guard.md](risk-guard.md).
 
+Experience asks for the closed trades of a user this way, which a track record is worked out from: it declares `IClosedTrades`, which the Decision Engine implements, because it keeps the positions, their results, and the models that held their roles. So Agents, which may use Experience and not the Decision Engine, asks Experience alone about a track record. See [experience.md](experience.md).
+
 An interface that waits for its implementation has a test that fails once the implementation is due. For the ones that wait for Agents, that is once an agent can run or uses a model, and not once Agents has a table. An agent can run now, and uses the models that the roles of its team were given, so what waited for either is built, and its tests hold Agents to it. [`AgentsRules.cs`](../tests/Ecnanib.Tests/Agents/AgentsRules.cs) says what Agents can do, and those tests ask it.
 
 ### Changing a rule
@@ -165,7 +167,7 @@ The Catalog keeps the models that the four providers offer. It is filled only fr
 
 A model is stored once, with what its provider says about it, and what the provider does not say is unknown (FR-CAT-4). A model that enough syncs in a row lack is marked unavailable, and is never deleted (FR-CAT-5). With the keys of users it must also have gone unseen for long enough, because one key may see fewer models than another. A sync that fails for one provider leaves that provider's catalog as it was and the others alone, and every sync is recorded (FR-CAT-7).
 
-Only an eligible model can be selected for an agent: one that its provider still offers and that the configuration file allows, with allow and deny patterns for each provider. The file also says which models can search live (FR-CAT-6), which a selector shows and `IModelCapabilities` answers for what calls a model (FR-CYC-3). Whatever depends on a model is told inside the transaction that marks it unavailable, and no other model is ever put in its place (FR-CAT-8). A screen lists the catalog by provider for every signed-in user: each model with its status and what its provider says about it, with unknown shown as unknown, and each provider with when it was last synced. It links each model to the page of its experience record (FR-CAT-10). Agents is told, and moves the agents that run with the model to Attention required. Not built yet: what follows a call that reports that the model does not exist, and the experience record itself. See [catalog.md](catalog.md).
+Only an eligible model can be selected for an agent: one that its provider still offers and that the configuration file allows, with allow and deny patterns for each provider. The file also says which models can search live (FR-CAT-6), which a selector shows and `IModelCapabilities` answers for what calls a model (FR-CYC-3). Whatever depends on a model is told inside the transaction that marks it unavailable, and no other model is ever put in its place (FR-CAT-8). A screen lists the catalog by provider for every signed-in user: each model with its status and what its provider says about it, with unknown shown as unknown, and each provider with when it was last synced. It links each model to the page of its experience record (FR-CAT-10). Agents is told, and moves the agents that run with the model to Attention required. Not built yet: what follows a call that reports that the model does not exist. See [catalog.md](catalog.md).
 
 ## Agents
 
@@ -218,6 +220,16 @@ Fees and funding are what the exchange said, and are in every profit and loss fi
 Every closed position is given its result, once all of it is stored (FR-EXP-1): a job records its net profit or loss, its result in R, its fees, its funding, and how long it was held, in `position_results`, by the sums that the equity of its agent is worked out with. And the equity of an agent is recorded over time, in `equity_snapshots`: what watches the loss limits writes the equity that it evaluated.
 
 Not built yet: the pages that show the results and the equity of an agent, and the executions of what was done at the exchange by hand, with their prices and their fees. See [orders.md](orders.md).
+
+## Experience
+
+Experience works out a track record for each AI provider and for each model, from the closed trades of one user: closed trades, win rate, average R, total R, profit factor, largest drawdown in R, and average holding time, filterable by role, market, timeframe, mode, and period (FR-EXP-2). `TrackRecord` is the rule of the measures, and `ITrackRecords` answers with the records of a user. Nothing of a record is stored: it is worked out from the results of the closed positions each time it is asked for, which the Decision Engine hands over through `IClosedTrades`. So a record says what the positions say, and a trade that is deleted with its agent is in no record.
+
+Demo and Live are scored separately, and never added up (FR-EXP-9, FR-BIN-11). What is not told a mode goes by `ExperienceBasis`: Live where it has at least `Experience:MinSamples` samples, otherwise Demo, and it says which. The experience screens go by it for the mode that they show first.
+
+A signed-in user reads the records on the experience screen, which the bar at the top of every page leads to, and the record of one model by role on the page that the catalog links the model to. Every experience screen states that past results do not predict future results, that small samples are unreliable, and that Demo results differ from Live (FR-EXP-11), and a test asks every one of them for it.
+
+Not built yet: the measures of the roles, strength scores, and shadow trades, recommending a team by strength, lessons, and the platform-wide board. See [experience.md](experience.md).
 
 ## Risk Guard
 

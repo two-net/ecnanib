@@ -1235,6 +1235,9 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasDatabaseName("ix_positions_funding_due_at")
                         .HasFilter("funding_due_at IS NOT NULL");
 
+                    b.HasIndex("UserId", "ClosedAt")
+                        .HasDatabaseName("ix_positions_user_id_closed_at");
+
                     b.HasIndex("AgentId", "UserId", "OpenedAt")
                         .HasDatabaseName("ix_positions_agent_id_user_id_opened_at");
 

@@ -2,7 +2,11 @@ namespace Ecnanib.Platform.Settings;
 
 /// <summary>The <c>Experience</c> section: lessons, strength scores, and the platform-wide board.</summary>
 /// <param name="LessonsPerPrompt">The most recent lessons a prompt may include (FR-EXP-7).</param>
-/// <param name="MinSamples">The sample size below which a slice shows "not enough data" (FR-EXP-4).</param>
+/// <param name="MinSamples">
+/// The sample size below which a slice shows "not enough data" (FR-EXP-4). A track record of
+/// fewer trades is marked as a small sample (FR-EXP-11), and Live data is enough to go by from
+/// this many samples on (FR-EXP-9).
+/// </param>
 /// <param name="Damping">The constant that damps a strength score toward zero for small samples (FR-EXP-4).</param>
 /// <param name="Board">When a slice may appear on the platform-wide board.</param>
 public sealed record ExperienceSettings(

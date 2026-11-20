@@ -237,6 +237,11 @@ internal sealed class PositionConfiguration : IEntityTypeConfiguration<Position>
         // the index of the key below.
         builder.HasIndex(position => new { position.AgentId, position.UserId, position.OpenedAt });
 
+        // The closed positions of one user, by when they were closed: what a track record is
+        // worked out from, for all of them or for a period (FR-EXP-2). No other index starts
+        // with the owner, so without it that read would go through the positions of everyone.
+        builder.HasIndex(position => new { position.UserId, position.ClosedAt });
+
         // The positions of an agent go with it when it is deleted, and with the account when
         // that is. The key carries the owner along (NFR-DAT-9).
         builder.HasOne<Agent>()
