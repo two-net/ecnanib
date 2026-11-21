@@ -28,7 +28,8 @@ internal sealed class PromptTemplates(IDbContextFactory<EcnanibDbContext> contex
             Enum.GetValues<Role>().ToDictionary(role => role, role => Find(PromptTemplateKind.Role, role.ToString())),
             Find(PromptTemplateKind.Market, market.ToString()),
             Find(PromptTemplateKind.Timeframe, timeframe.Code()),
-            Find(PromptTemplateKind.Profile, AggressiveProfile));
+            Find(PromptTemplateKind.Profile, AggressiveProfile),
+            Find(PromptTemplateKind.Lesson, PromptTemplateConfiguration.LessonSubject));
 
         // A role and a market are stored under their names, and a timeframe under its code, as
         // the seed names them.
@@ -36,6 +37,6 @@ internal sealed class PromptTemplates(IDbContextFactory<EcnanibDbContext> contex
             inUse.SingleOrDefault(template => template.Kind == kind && template.Subject == subject)
             ?? throw new InvalidOperationException(
                 $"No prompt template is in use for the {kind} {subject}. Templates are seeded through migrations, " +
-                "one in use for each role, market, timeframe, and profile. See docs/prompts.md.");
+                "one in use for each role, market, timeframe, and profile, and one for the lesson. See docs/prompts.md.");
     }
 }

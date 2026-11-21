@@ -476,6 +476,54 @@ fieldset {
     overflow-wrap: anywhere;
 }
 
+/* The lessons of a user (FR-EXP-8): one under another, each set apart from the one above it by
+   a line, with its four parts as a list of names and what each says. What a model wrote wraps,
+   also a word that is longer than a narrow screen is wide. */
+.lesson {
+    border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    margin: 0 0 1.5rem;
+    padding-top: 0.5rem;
+    max-width: 48rem;
+    overflow-wrap: anywhere;
+}
+
+    .lesson h2 {
+        font-size: 1.125rem;
+        margin: 0.5rem 0;
+    }
+
+    .lesson dt {
+        font-weight: 600;
+    }
+
+    .lesson dd {
+        margin: 0 0 0.5rem;
+    }
+
+/* What can be done with a lesson, side by side, and what leads to the next lessons. */
+.lesson-actions, .lesson-pages {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+    margin-bottom: 1rem;
+}
+
+    /* A control is named after its lesson, which is long: on a narrow screen its name wraps
+       inside the button, and the page does not scroll sideways for it. */
+    .lesson-actions > form {
+        margin: 0;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+        .lesson-actions > form > button[type=submit] {
+            margin-top: 0;
+            max-width: 100%;
+            white-space: normal;
+            text-align: start;
+        }
+
 /* The badge of the mode of an agent, wherever an agent is shown: Demo or Live (FR-UI-3). It says
    the mode as a word, so it does not rely on its colour. Demo is an outline in the colour of the
    text around it. Live is filled, in the red of an error, because real money is at stake: it

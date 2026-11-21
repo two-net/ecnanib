@@ -66,7 +66,7 @@ public class SeedDataTests
     }
 
     [Fact]
-    public void There_is_one_template_in_use_for_each_role_market_timeframe_and_profile()
+    public void There_is_one_template_in_use_for_each_role_market_timeframe_and_profile_and_one_for_the_lesson()
     {
         using var context = Migrated.Value.Context();
 
@@ -82,7 +82,11 @@ public class SeedDataTests
         AssertSubjects(PromptTemplateKind.Timeframe, ["15m", "1H", "4H", "1D"]);
         AssertSubjects(PromptTemplateKind.Profile, ["Aggressive"]);
 
-        Assert.Equal(11, inUse.Count);
+        // And the instructions for the lesson of a closed position, which are the same for
+        // every agent (FR-EXP-6).
+        AssertSubjects(PromptTemplateKind.Lesson, ["PostTrade"]);
+
+        Assert.Equal(12, inUse.Count);
         Assert.All(templates, template =>
         {
             Assert.True(template.Version >= 1);

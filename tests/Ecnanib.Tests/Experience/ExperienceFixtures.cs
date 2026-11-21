@@ -118,6 +118,97 @@ internal static class StoredTradeRows
     }
 }
 
+/// <summary>Lessons that a test needs a user to have, without the model that writes them.</summary>
+internal static class StoredLessonRows
+{
+    /// <summary>What the lesson of <see cref="GiveLessonAsync"/> says for its takeaway, unless the test says another.</summary>
+    public const string Takeaway = "Wait for the retest of a broken level before entering.";
+
+    /// <summary>
+    /// Gives an agent of a user a closed position with its result, and the lesson of that
+    /// position, stored as the application stores one once its model has written it. It is for a
+    /// test of what is recalled, read, or managed: no model is called. A position has one
+    /// lesson, and a lesson is only ever of a position that has its result. What the test does
+    /// not say of it is as its agent is now.
+    /// </summary>
+    /// <param name="application">The application.</param>
+    /// <param name="userId">The user whose agent it is.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="closedAt">When the position was closed.</param>
+    /// <param name="takeaway">The takeaway of the lesson, which tells one lesson from another.</param>
+    /// <param name="enabled">Whether the lesson is enabled.</param>
+    /// <param name="outcome">What became of the lesson: written, or why not, or null for one that waits.</param>
+    /// <param name="resultInR">The result of the position in R.</param>
+    /// <param name="mode">The mode that the position was in.</param>
+    /// <param name="market">The market that it was traded on.</param>
+    /// <param name="timeframe">The timeframe that the agent worked on.</param>
+    /// <param name="setup">The setup of the lesson.</param>
+    /// <returns>The id of the position, which names the lesson.</returns>
+    public static async Task<Guid> GiveLessonAsync(
+        this AccountsApplication application,
+        Guid userId,
+        Guid agentId,
+        DateTimeOffset closedAt,
+        string takeaway = Takeaway,
+        bool enabled = true,
+        LessonOutcome? outcome = LessonOutcome.Written,
+        decimal? resultInR = 1m,
+        TradingMode? mode = null,
+        Market? market = null,
+        Timeframe? timeframe = null,
+        string setup = "Long on a breakout above the range high.")
+    {
+        var positionId = await application.GiveTradeAsync(userId, agentId, closedAt, resultInR, mode, market, timeframe);
+
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        var position = await context.Set<Position>().AsNoTracking().SingleAsync(stored => stored.Id == positionId, TestContext.Current.CancellationToken);
+        var written = outcome == LessonOutcome.Written;
+
+        // The model that the Risk Manager of the agent has now, where it has one, and the
+        // version of the lesson instructions that is in use: what wrote a lesson, as its row says it.
+        var modelId = written
+            ? await context.Set<AgentRole>()
+                .AsNoTracking()
+                .Where(role => role.AgentId == agentId && role.Role == Role.RiskManager)
+                .Select(role => (Guid?)role.ModelId)
+                .SingleOrDefaultAsync(TestContext.Current.CancellationToken)
+            : null;
+        var templateId = written
+            ? await context.Set<PromptTemplate>()
+                .AsNoTracking()
+                .Where(template => template.Kind == PromptTemplateKind.Lesson && template.IsActive)
+                .Select(template => (int?)template.Id)
+                .SingleAsync(TestContext.Current.CancellationToken)
+            : null;
+
+        context.Add(new Lesson(
+            position.Id,
+            userId,
+            agentId,
+            position.Mode,
+            position.Market,
+            position.Symbol,
+            position.Timeframe,
+            closedAt,
+            resultInR,
+            dueAt: closedAt.AddMinutes(1),
+            outcome,
+            setup: written ? setup : null,
+            expected: written ? "Continuation to the next resistance." : null,
+            happened: written ? "The price fell back into the range and the stop-loss was executed." : null,
+            takeaway: written ? takeaway : null,
+            tags: written ? Lesson.NamesOf([LessonTag.Entry, LessonTag.Timing]) : null,
+            modelId,
+            templateId,
+            writtenAt: outcome is null ? null : closedAt.AddMinutes(2),
+            enabled));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return positionId;
+    }
+}
+
 /// <summary>
 /// The calls of analysts and the shadow trades that a test needs a user to have, as they are
 /// once they are scored, without the cycles that leave them and the candles that score them.

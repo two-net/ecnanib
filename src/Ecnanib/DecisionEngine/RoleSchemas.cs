@@ -57,6 +57,20 @@ internal static class RoleSchemas
         ""","rationale":{"type":"string"}}""" +
         ""","required":["verdict","riskFraction","rationale"],"additionalProperties":false}""";
 
+    /// <summary>
+    /// The lesson of a closed position, which the model of the agent's Risk Manager writes after
+    /// it: the setup, what was expected, what happened, one takeaway, and what it is about
+    /// (FR-EXP-6). It is the schema of no role: no cycle asks for it. The tags are the members
+    /// of <see cref="Ecnanib.Experience.LessonTag"/>, as a schema writes them.
+    /// </summary>
+    public const string Lesson =
+        """{"type":"object","properties":{"setup":{"type":"string"}""" +
+        ""","expected":{"type":"string"}""" +
+        ""","happened":{"type":"string"}""" +
+        ""","takeaway":{"type":"string"}""" +
+        ""","tags":{"type":"array","items":{"type":"string","enum":["entry","stop_loss","take_profit","risk","trend","range","volatility","sentiment","funding","fees","timing"]}}}""" +
+        ""","required":["setup","expected","happened","takeaway","tags"],"additionalProperties":false}""";
+
     /// <summary>The schema of what a role answers.</summary>
     public static string Of(Role role) => role switch
     {

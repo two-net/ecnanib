@@ -86,6 +86,9 @@
 
         @* What the roles of the agent are told is read on a page of its own, and edited nowhere (FR-PRM-7). *@
         <p><a href="@WebUiModule.AgentPromptsPath(_agent.Id)">@AgentPages.PromptsLink</a></p>
+
+        @* What the closed trades of the agent taught is read, and managed, on a page of the lessons (FR-EXP-8). *@
+        <p><a href="@WebUiModule.LessonsOfAgentPath(_agent.Id)">@Ecnanib.WebUi.Pages.Experience.LessonPages.OfAgentLink</a></p>
     }
 
     @if (_showForm)

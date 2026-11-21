@@ -93,7 +93,7 @@ internal static class PromptRules
     /// the prompt follow from, and what cancels the question.
     /// </summary>
     public static readonly IReadOnlySet<string> NoData =
-        new HashSet<string> { "ComposeAsync(role)", "ComposeAsync(cancellationToken)" };
+        new HashSet<string> { "ComposeAsync(role)", "ComposeAsync(cancellationToken)", "ComposeLessonAsync(cancellationToken)" };
 
     /// <summary>
     /// Every value that a caller hands to what composes a prompt, each with the kind of data
@@ -126,6 +126,31 @@ internal static class PromptRules
 
         ["ComposeAsync(parts).DataPackage"] = SentData.MarketData,
         ["ComposeAsync(parts).Lessons[]"] = SentData.Lessons,
+
+        // The call that writes the lesson of a closed position (FR-EXP-6) is handed that
+        // position: what it was traded on, which are the settings of its agent then, and what
+        // it was and how it ended, which is the state of a position, over. It is handed no
+        // equity, no limit, and no time.
+        ["ComposeLessonAsync(parts).Position.Market"] = SentData.AgentSettings,
+        ["ComposeLessonAsync(parts).Position.Timeframe"] = SentData.AgentSettings,
+        ["ComposeLessonAsync(parts).Position.Symbol"] = SentData.AgentSettings,
+        ["ComposeLessonAsync(parts).Position.QuoteAsset"] = SentData.AgentSettings,
+        ["ComposeLessonAsync(parts).Position.Side"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.EntryPrice"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.StopLoss"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.TakeProfit[]"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.ExitReason"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.HoldingSeconds"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.ResultInR[]"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.NetResult"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.Fees"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.Funding"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Position.Complete"] = SentData.PositionState,
+
+        // The plan that opened the position and the review of that plan: what the position was
+        // opened for. Both were sent before, in the data package of the cycle that made them.
+        ["ComposeLessonAsync(parts).Plan"] = SentData.PositionState,
+        ["ComposeLessonAsync(parts).Review"] = SentData.PositionState,
     };
 
     /// <summary>
@@ -144,6 +169,17 @@ internal static class PromptRules
         ["ComposeAsync(parts).Lessons[]"] =
             "A lesson that a model wrote about a closed trade: the setup, what was expected, what happened, and a " +
             "takeaway. It names no user and no agent.",
+        ["ComposeLessonAsync(parts).Position.Symbol"] =
+            "A symbol of Binance that the configuration file lists: the one of the position that the lesson is of.",
+        ["ComposeLessonAsync(parts).Position.QuoteAsset"] =
+            "The asset that the symbol of that position is priced in, as Binance names it, such as USDT.",
+        ["ComposeLessonAsync(parts).Plan"] =
+            "The trade plan that opened the position, as the Strategist answered it and as the record of its cycle " +
+            "keeps it: one line of JSON, which was validated, and is kept only when it holds no email address and no " +
+            "identifier. It names no user and no agent.",
+        ["ComposeLessonAsync(parts).Review"] =
+            "The review of that plan, as the Risk Manager answered it and as the record of its cycle keeps it: one " +
+            "line of JSON, held to the same. It names no user and no agent.",
     };
 
     /// <summary>

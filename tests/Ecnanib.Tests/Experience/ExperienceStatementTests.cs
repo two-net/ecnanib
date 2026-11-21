@@ -41,7 +41,9 @@ public class ExperienceStatementTests
             .Order(StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(["/experience", "/experience/models/{ModelId:guid}"], routes);
+        // The track records, the record of one model, and the lessons, which are a page of
+        // experience as well: what one trade taught is the smallest sample that there is.
+        Assert.Equal(["/experience", "/experience/lessons", "/experience/models/{ModelId:guid}"], routes);
 
         async Task EveryScreenStatesAsync(string what)
         {

@@ -5,6 +5,7 @@ using Ecnanib.Accounts;
 using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Credentials;
+using Ecnanib.Tests.Experience;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.WebUi;
@@ -42,6 +43,11 @@ internal static class ExportRules
         ["agents"] = "agents",
         ["agent_roles"] = "agentRoles",
         ["agent_state_changes"] = "agentStateChanges",
+
+        // What the models of the Risk Managers of a user's agents wrote after closed positions,
+        // which the user reads and manages (FR-EXP-8). Experience keeps the rows, and may not
+        // use Accounts, so Agents hands them over: see LessonPageTests for what the section holds.
+        ["lessons"] = "lessons",
     };
 
     /// <summary>The tables whose rows are not in the export, each with why.</summary>
@@ -143,7 +149,7 @@ public class DataExportTests
         Assert.Equal(
             [
                 "exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "notifications", "aiKeys", "exchangeKeys",
-                "agents", "agentRoles", "agentStateChanges",
+                "agents", "agentRoles", "agentStateChanges", "lessons",
             ],
             NamesIn(export));
         Assert.Equal(Morning.AddMinutes(5), export.GetProperty("exportedAt").GetDateTimeOffset());
@@ -299,8 +305,9 @@ public class DataExportTests
         await gracesPhone.SignInAsync(Grace);
         await gracesPhone.EnterCodeAsync(gracesCodes[0]);
         await application.GiveKeysAsync(grace.Id, clock.GetUtcNow());
-        await application.GiveNotificationAsync(
-            grace.Id, await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true), clock.GetUtcNow());
+        var gracesAgent = await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true);
+        await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
+        await application.GiveLessonAsync(grace.Id, gracesAgent, clock.GetUtcNow());
         Assert.All(
             ExportRules.Exported.Keys,
             table => Assert.True(application.RowsOf(grace.Id)[table].Count > 0, $"Grace has no row in {table}, so nothing shows that it stays out."));
@@ -330,6 +337,7 @@ public class DataExportTests
         Assert.Equal(0, export.GetProperty("agents").GetArrayLength());
         Assert.Equal(0, export.GetProperty("agentRoles").GetArrayLength());
         Assert.Equal(0, export.GetProperty("agentStateChanges").GetArrayLength());
+        Assert.Equal(0, export.GetProperty("lessons").GetArrayLength());
 
         // And nothing in it is Grace's: not her address, not her id, and not a time of hers.
         Assert.DoesNotContain("grace", text, StringComparison.OrdinalIgnoreCase);
@@ -363,8 +371,9 @@ public class DataExportTests
         await client.SignInAsync(Ada);
         await client.EnterCodeAsync(app.CodeAt(clock.GetUtcNow()));
         await application.GiveKeysAsync(ada.Id, clock.GetUtcNow());
-        await application.GiveNotificationAsync(
-            ada.Id, await application.GiveAgentAsync(ada.Id, clock.GetUtcNow(), team: true), clock.GetUtcNow());
+        var agent = await application.GiveAgentAsync(ada.Id, clock.GetUtcNow(), team: true);
+        await application.GiveNotificationAsync(ada.Id, agent, clock.GetUtcNow());
+        await application.GiveLessonAsync(ada.Id, agent, clock.GetUtcNow());
 
         var rows = application.RowsOf(ada.Id);
         var export = JsonDocument.Parse(await client.PageAsync(Export)).RootElement;

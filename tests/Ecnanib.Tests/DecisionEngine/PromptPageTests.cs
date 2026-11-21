@@ -55,8 +55,9 @@ public partial class PromptPageTests
         Assert.Contains("Each provider handles what it is sent under its own terms", read);
         Assert.Contains("<a href=\"/account/keys\">Your keys</a>", page);
 
-        // The four roles, in the order they work in, and then the three modules that go by the
-        // settings of this agent: each under its name, with its version and its text as stored.
+        // The four roles, in the order they work in, then the three modules that go by the
+        // settings of this agent, and the instructions for the lesson of a closed position
+        // (FR-EXP-6): each under its name, with its version and its text as stored.
         Assert.Equal(
             [
                 Stored("Market Analyst", PromptTemplateKind.Role, "MarketAnalyst"),
@@ -66,11 +67,15 @@ public partial class PromptPageTests
                 Stored("Futures", PromptTemplateKind.Market, "Futures"),
                 Stored("4H", PromptTemplateKind.Timeframe, "4H"),
                 Stored("Aggressive", PromptTemplateKind.Profile, "Aggressive"),
+                Stored("Lesson of a closed position", PromptTemplateKind.Lesson, "PostTrade"),
             ],
             PromptBrowser.PromptsOn(page));
 
+        // It leads to the lessons that were written from those instructions.
+        Assert.Contains($"<a href=\"/experience/lessons?agent={swing}\">Lessons of the agent</a>", page);
+
         // An agent on another market and another timeframe reads the modules of its own, and
-        // the same roles and the same profile.
+        // the same roles, the same profile, and the same instructions for a lesson.
         var other = PromptBrowser.PromptsOn(await client.PageAsync(AgentBrowser.AgentPromptsPage(scalp)));
 
         Assert.Equal(
@@ -82,6 +87,7 @@ public partial class PromptPageTests
                 Stored("Spot", PromptTemplateKind.Market, "Spot"),
                 Stored("15m", PromptTemplateKind.Timeframe, "15m"),
                 Stored("Aggressive", PromptTemplateKind.Profile, "Aggressive"),
+                Stored("Lesson of a closed position", PromptTemplateKind.Lesson, "PostTrade"),
             ],
             other);
 
@@ -131,7 +137,7 @@ public partial class PromptPageTests
         using var gracesBrowser = application.CreateClient();
         await gracesBrowser.SignInAsync(Grace);
 
-        Assert.Equal(7, PromptBrowser.PromptsOn(await gracesBrowser.PageAsync(AgentBrowser.AgentPromptsPage(gracesAgent))).Count);
+        Assert.Equal(8, PromptBrowser.PromptsOn(await gracesBrowser.PageAsync(AgentBrowser.AgentPromptsPage(gracesAgent))).Count);
     }
 
     [Fact]

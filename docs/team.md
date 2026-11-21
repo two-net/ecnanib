@@ -45,9 +45,10 @@ What starts a cycle, and the data package that it builds, are in [cycles.md](cyc
 |---|---|---|
 | Market Analyst | The text of the data package: the candles, the indicators, the open orders, and on Futures the mark price, the funding, and the open interest. | None |
 | Sentiment Analyst | One line: `Candle close: 2026-11-18T10:15Z`. It reads news and social context, and no candle: its read is its own, and not a second read of the price. | None |
-| Strategist | The text of the data package, the report of the Market Analyst, and the report of the Sentiment Analyst with its mark. | Those that were recalled (FR-EXP-7). None yet. |
-| Risk Manager | The text of the data package, and the plan of the Strategist. | Those that were recalled. None yet. |
+| Strategist | The text of the data package, the report of the Market Analyst, and the report of the Sentiment Analyst with its mark. | Those that were recalled (FR-EXP-7). |
+| Risk Manager | The text of the data package, and the plan of the Strategist. | The same. |
 
+- **The lessons are recalled once in a cycle, before the Strategist is called,** and the same go to both roles: up to `Experience:LessonsPerPrompt` of them, those of the agent first and then those of its user's other agents on the same symbol, market, and timeframe, within a fixed size budget. `RecalledLessons` asks Experience for them, for the user of the cycle's agent, and leaves out one that holds what a prompt never holds, so that no prompt is refused for a stored lesson. A cycle whose lessons cannot be read decides with none. A test cycle recalls them as any cycle does. See "Recalling lessons" in [experience.md](experience.md). `CycleLessonTests` reads them in the prompts that the models of a team were sent.
 - **The Risk Manager is given neither report.** It reviews the plan independently (SRS 4.5): it forms its own view from the market data. What a search found reaches it only in the words of the Strategist's plan, so untrusted content has one role less to reach (risk R6).
 - `DataPackage.ForMarketAnalyst`, `ForSentimentAnalyst`, `ForStrategist`, and `ForRiskManager` make the parts of each prompt. Everything is placed in the data package, which the instructions of every role name as data: see "Untrusted content" in [prompts.md](prompts.md).
 
@@ -88,6 +89,7 @@ The schema of what a role answers is fixed: `IRoleResults.SchemaOf(role)`. The p
 - **No schema has a place for a quantity or a leverage.** Models choose neither (FR-RSK-5).
 - **The instructions of a role name every field of its schema,** with what it means and what it may be: see "The templates" in [prompts.md](prompts.md). `RoleSchemaTests` holds the two to each other.
 - A schema is one line in the source file, which is the same in every checkout.
+- **The lesson of a closed position has a schema of its own,** which is the schema of no role: `setup`, `expected`, `happened`, `takeaway`, and `tags`, a list of at most 3 of a fixed set. No cycle asks for it: the model of the agent's Risk Manager answers it after a position is closed (FR-EXP-6), and `IRoleResults.ReadLesson` validates the answer with the rules of this page and the limits of a lesson. See "Writing a lesson" in [experience.md](experience.md). `LessonPromptTests` holds the schema to what all four providers take.
 
 ## Validating a result
 
@@ -477,7 +479,8 @@ The page of the state of an agent leads to the list, and so does the page of its
 | **What a model answers is read as data.** | Into a result with the fields of its schema and no others. An answer that asks for a function to be called is no JSON object, so it is no result: the role is called once more, and nothing is called for it. |
 | **A plan is no order.** | It has no quantity and no leverage. What goes on of a plan goes on to the Risk Guard, which checks every limit, and is where both are computed (FR-RSK-3, FR-RSK-5). |
 | **What runs the team uses nothing of the exchange.** | `TeamCycle`, `RoleRuns`, `RoleResults`, `SchemaCheck`, `PlanReview`, and `StaleLimit` reference no type of the Exchange Gateway. Operations that place orders belong in `Ecnanib.ExchangeGateway.Trading`: see "Placing orders" in [architecture.md](architecture.md). |
-| **Only the Decision Engine is handed a stored key,** and only it calls a model. | `IKeyHandOver` is asked by `RoleRuns` alone. See "What a provider is sent" in [prompts.md](prompts.md). |
+| **Only the Decision Engine is handed a stored key,** and only it calls a model. | `IKeyHandOver` is asked for the key of an AI provider by `RoleRuns`, for the call of a role in a cycle, and by `LessonRuns`, for the call that writes the lesson of a closed position, and by nothing else: `TeamRulesTests` pins the two. See "What a provider is sent" in [prompts.md](prompts.md). |
+| **A lesson reaches no order.** | It is text that a model wrote, which a later prompt names as data. What has a lesson written and what recalls lessons reference no type of the Exchange Gateway either: `LessonRuns`, `LessonWriting`, `LessonWritingJob`, and `RecalledLessons`. |
 
 ## The log
 
@@ -529,7 +532,7 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 ## Not built yet
 
 - Leaving out the calls of a cycle that can decide nothing: one that is stale as it starts, for an agent that holds no position. Its team is called, and what it plans ends as `Hold` or `Stale`.
-- Recalling lessons for the Strategist and the Risk Manager (FR-EXP-7). Both are given none.
+- Saying in the record of a cycle which lessons its prompts recalled: see "Not built yet" in [experience.md](experience.md).
 - Moving an agent to Attention required when a call reports that its model does not exist (FR-CAT-8). The call is recorded as `ModelNotFound`, and the cycle ends as its role says. The catalog marks a model that its provider no longer lists, which moves the agents that run with it: see "When a model goes" in [agents.md](agents.md).
 - Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A call that ends as `Failed` is not made again, and the next close calls again.
 - Recording a cycle that never started: one that was skipped, or whose agent no longer ran. It is no run of a team, and leaves its events in the log: see "Not built yet" in [cycles.md](cycles.md).

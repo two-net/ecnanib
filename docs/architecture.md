@@ -233,7 +233,9 @@ What a measure needs of the future is stored, and nothing else: Experience keeps
 
 A signed-in user reads the records on the experience screen, which the bar at the top of every page leads to, and the record of one model by role on the page that the catalog links the model to. Both show the strength scores under the records, with the formula. Every experience screen states that past results do not predict future results, that small samples are unreliable, and that Demo results differ from Live (FR-EXP-11), and a test asks every one of them for it.
 
-What recommends a team from the scores is Agents, which may use Experience: see "Role by strength" in [agents.md](agents.md). Not built yet: lessons, and the platform-wide board. See [experience.md](experience.md).
+Experience keeps the lessons as well: what one closed position taught, as the setup, what was expected, what happened, and one takeaway of at most 60 words (FR-EXP-6). The row of a lesson is written with the result of its position, by the Decision Engine, and a job of the Decision Engine has the model of the agent's Risk Manager write it, with the key of the agent's user: only the Decision Engine calls a model. Experience declares what that job asks and completes, `IDueLessons`, and implements it itself, so the reference points downward as it is. `ILessons` answers what a prompt recalls: up to `Experience:LessonsPerPrompt` lessons, those of the agent first and then those of its user's other agents on the same symbol, market, and timeframe, within a fixed size budget, and only what is written, enabled, and the same user's (FR-EXP-7). A user reads all of their lessons on a page of experience, disables or deletes any of them, and resets those of an agent (FR-EXP-8). Experience may not use Accounts, so that what feeds a prompt is out of reach of personal data: Agents hands the lessons to the export of a user's data.
+
+What recommends a team from the scores is Agents, which may use Experience: see "Role by strength" in [agents.md](agents.md). Not built yet: the platform-wide board. See [experience.md](experience.md).
 
 ## Risk Guard
 
@@ -261,7 +263,7 @@ The instructions of every role tell its model to treat news, social posts, and w
 
 The instructions of each role say what the role is given and name each field of the structured result that it answers, with its values and ranges (FR-TEAM-6). Each call of a role is recorded with the template versions that its prompt was composed from (FR-PRM-6).
 
-Not built yet: what hands a prompt its lessons. See [prompts.md](prompts.md).
+`IPromptComposition` composes one more prompt: that of the call that writes the lesson of a closed position, from the lesson instructions, which are a seeded template of a kind of their own, and from the closed position with the plan that opened it and the review of that plan (FR-EXP-6). Every part of it passes the same screen. And the prompts of the Strategist and of the Risk Manager recall the lessons that Experience answers with (FR-EXP-7). See [prompts.md](prompts.md).
 
 ## Ownership
 

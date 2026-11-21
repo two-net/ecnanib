@@ -1,0 +1,109 @@
+@page "/agents/{Id:guid}/lessons/reset"
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.Experience
+@using Ecnanib.WebUi.Pages.Experience
+@inject IStoredAgents Agents
+@inject ILessons Lessons
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. Resetting the lessons of an
+    agent deletes every one of them, with those that wait to be written, so that the agent starts
+    with none (FR-EXP-8). It takes no proof of who the user is: it exposes no key and moves no
+    money. The page asks once more instead, and says how many lessons go. An agent of another
+    user is not found, like one that does not exist. The form is on the page whenever one is
+    posted, whatever is stored by then: a form that is sent twice finds no lesson the second
+    time, and is answered as the first one was. The badge of the agent's mode is under the
+    heading (FR-UI-3).
+*@
+
+@if (_agent is not null)
+{
+    <PageTitle>Reset the lessons of the agent @_agent.Name</PageTitle>
+
+    <h1>Reset the lessons of the agent @_agent.Name</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
+    @if (_list is not null)
+    {
+        <p>@LessonPages.ResetExplained(_list.Written, _list.Waiting)</p>
+    }
+}
+
+@if (_showForm)
+{
+    <form method="post" @formname="@LessonPages.ResetForm" @onsubmit="ResetAsync">
+        <AntiforgeryToken />
+
+        <button type="submit">@LessonPages.Reset</button>
+    </form>
+}
+
+@if (_agent is not null)
+{
+    <p><a href="@WebUiModule.LessonsOfAgentPath(_agent.Id)">@LessonPages.KeepAll</a></p>
+}
+
+@code {
+    private AgentView? _agent;
+    private LessonList? _list;
+    private bool _showForm;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session. An agent of
+        // another user is not found, like one that does not exist.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (!HttpMethods.IsGet(request.Request.Method))
+        {
+            // A form was posted, and is answered by ResetAsync, also where no agent is.
+            _showForm = true;
+
+            return;
+        }
+
+        if (_agent is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // How many lessons go: those of this agent, of the user who is signed in.
+        _list = await Lessons.OfUserAsync(SignedInUser.RequiredIdOf(request), Id, page: 1, request.RequestAborted);
+        _showForm = true;
+    }
+
+    private async Task ResetAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The lessons of the agent that was found for this user, and of no other. An agent that
+        // is not there has none: it is answered as one whose lessons were reset before.
+        if (_agent is not null)
+        {
+            await Lessons.ResetAsync(SignedInUser.RequiredIdOf(request), _agent.Id, request.RequestAborted);
+        }
+
+        // The page that says which lessons there are now. A reload of it resets nothing again.
+        Navigation.NavigateTo(_agent is null ? WebUiModule.LessonsPath : WebUiModule.LessonsOfAgentPath(_agent.Id));
+    }
+}

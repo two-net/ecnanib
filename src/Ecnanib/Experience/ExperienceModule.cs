@@ -12,8 +12,9 @@ public static class ExperienceModule
     /// Registers the component: what works out the track record of each provider and of each
     /// model from the closed trades of a user (FR-EXP-2), with Demo and Live apart (FR-EXP-9),
     /// what works out the measure and the strength score of each model in each role (FR-EXP-3,
-    /// FR-EXP-4), and the job that scores the calls of the analysts and follows the shadow
-    /// trades of the vetoed plans (FR-EXP-5).
+    /// FR-EXP-4), the job that scores the calls of the analysts and follows the shadow trades of
+    /// the vetoed plans (FR-EXP-5), and the lessons of closed positions, as they are recalled
+    /// into prompts and as their user manages them (FR-EXP-7, FR-EXP-8).
     /// </summary>
     public static IServiceCollection AddExperience(this IServiceCollection services)
     {
@@ -28,6 +29,14 @@ public static class ExperienceModule
         services.AddSingleton<IRoleStrengths, RoleStrengths>();
         services.AddSingleton<ExperienceScoring>();
         services.AddBackgroundJob<ExperienceScoringJob>();
+
+        // The lessons of closed positions (FR-EXP-6 to FR-EXP-8): what a prompt recalls of them,
+        // what their user reads and does with them, and what the job that has them written asks
+        // and completes. That job is of the Decision Engine, which alone calls a model, and it
+        // is the Decision Engine that leaves a lesson to be written with the result of a position.
+        services.AddSingleton<Lessons>();
+        services.AddSingleton<ILessons>(provider => provider.GetRequiredService<Lessons>());
+        services.AddSingleton<IDueLessons>(provider => provider.GetRequiredService<Lessons>());
 
         return services;
     }

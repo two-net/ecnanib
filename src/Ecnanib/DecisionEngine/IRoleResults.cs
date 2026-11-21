@@ -1,4 +1,5 @@
 using Ecnanib.Agents;
+using Ecnanib.Experience;
 using Ecnanib.Shared;
 
 namespace Ecnanib.DecisionEngine;
@@ -53,6 +54,21 @@ public interface IRoleResults
     /// <param name="answered">The answer, as the gateway gave it.</param>
     /// <param name="plan">The plan that was reviewed: a review reduces its risk fraction only to less than it is.</param>
     RoleResult<RiskReview> ReadReview(string answered, TradePlan plan);
+
+    /// <summary>
+    /// The JSON Schema of the lesson of a closed position, which the model of the agent's Risk
+    /// Manager writes after it (FR-EXP-6). It is fixed, as the schema of a role is.
+    /// </summary>
+    string LessonSchema { get; }
+
+    /// <summary>
+    /// Reads the lesson that a model wrote, and holds it to the limits of a lesson
+    /// (<see cref="LessonLimits"/>): each part says something and is short, the takeaway has at
+    /// most 60 words, and the tags are few. A lesson is read in a later prompt, so one that
+    /// holds what a prompt never holds is rejected (FR-PRM-9).
+    /// </summary>
+    /// <param name="answered">The answer, as the gateway gave it.</param>
+    RoleResult<LessonDraft> ReadLesson(string answered);
 }
 
 /// <summary>What became of the answer of a role: a result that is valid, or why it was rejected.</summary>

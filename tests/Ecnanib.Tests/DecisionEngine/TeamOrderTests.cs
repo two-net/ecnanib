@@ -246,7 +246,8 @@ public class TeamOrderTests
             DataOf(Role.Strategist));
         Assert.Equal($"{package}\n\nTrade plan:\n{TeamAnswers.Plan()}", DataOf(Role.RiskManager));
 
-        // Every prompt has the seven parts, and no role is given a lesson: nothing recalls one yet.
+        // Every prompt has the seven parts, and no role is given a lesson: the agent has none
+        // to recall. CycleLessonTests has an agent that has.
         Assert.All(models.Calls, call =>
         {
             Assert.Equal(Headings, HeadingsOf(call.Request.Prompt));

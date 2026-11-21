@@ -623,6 +623,14 @@ public static class AgentPages
     public const string ProfilePromptExplained =
         "What every role is told about how to trade. The product has one profile, and every agent trades it.";
 
+    /// <summary>What the page says above the prompt of the lesson of a closed position (FR-EXP-6).</summary>
+    public const string LessonPromptExplained =
+        "What the model of the Risk Manager is told when it writes the lesson of a closed position. It is the same " +
+        "for every agent.";
+
+    /// <summary>The name of the prompt of the lesson, as the page shows it.</summary>
+    public const string LessonPromptName = "Lesson of a closed position";
+
     /// <summary>The version of a prompt template, as a page says it: <c>Version 1</c>.</summary>
     public static string VersionOf(PromptTemplate template)
     {

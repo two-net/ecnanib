@@ -1,0 +1,216 @@
+@attribute [Route(WebUiModule.LessonsPath)]
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.Experience
+@using Ecnanib.Platform.Settings
+@inject ILessons Stored
+@inject IStoredAgents Agents
+@inject ExperienceSettings Settings
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page shows the lessons of
+    the user who is signed in, and no others (FR-EXP-8): what the models of the Risk Managers of
+    their agents wrote after closed positions, the most recently closed first, a page of them at
+    a time, of every agent or of the one that the address names. A form of the page disables a
+    lesson, or enables it again: the forms are on the page whenever one is posted, for the
+    lessons that it shows then. Deleting a lesson and resetting the lessons of an agent each have
+    a page of their own, which asks once more. The page says what a lesson is, who writes it and
+    under whose key, and where it is recalled (FR-EXP-6, FR-EXP-7, NFR-SEC-8), and states what
+    every experience screen states (FR-EXP-11). A lesson says its mode as a word: the page shows
+    lessons of both modes, and has no badge (FR-BIN-11). What a model wrote is written as text,
+    like everything else on a page (NFR-SEC-4). An address that names a choice which there is not
+    is answered with "not found". The times are UTC.
+*@
+
+@if (_list is not null)
+{
+    var title = _agent is null ? LessonPages.Title : LessonPages.TitleOf(_agent.Name);
+
+    <PageTitle>@title</PageTitle>
+
+    <h1 id="lessons-heading">@title</h1>
+
+    <p>@LessonPages.Explained</p>
+
+    <p>@LessonPages.RecallExplained(Settings.LessonsPerPrompt)</p>
+
+    <p>@LessonPages.ManageExplained</p>
+
+    <ExperienceNotes />
+
+    @if (LessonPages.Waiting(_list.Waiting) is { } waiting)
+    {
+        <p role="note">@waiting</p>
+    }
+
+    @if (LessonPages.Unwritten(_list.Unwritten) is { } unwritten)
+    {
+        <p role="note">@unwritten</p>
+    }
+
+    @if (_list.Lessons.Count == 0)
+    {
+        <p>@(_agent is null ? LessonPages.None : LessonPages.NoneOfAgent)</p>
+    }
+    else
+    {
+        <p>@LessonPages.Lessons(_list.Written), the most recently closed first. @LessonPages.PageOf(_list).</p>
+
+        <section class="lessons" aria-labelledby="lessons-heading">
+            @foreach (var lesson in _list.Lessons)
+            {
+                <article class="lesson" aria-labelledby="@LessonPages.HeadingId(lesson.Id)">
+                    <h2 id="@LessonPages.HeadingId(lesson.Id)">@LessonPages.HeadingOf(lesson)</h2>
+
+                    @* The agent by the name that its user gave it, and the mode of the trade as a word. *@
+                    <p>Agent <a href="@WebUiModule.LessonsOfAgentPath(lesson.AgentId)">@NameOf(lesson.AgentId)</a>, in @LessonPages.ModeOf(lesson). Closed @PageTimes.At(lesson.ClosedAt).</p>
+
+                    <dl>
+                        <dt>Setup</dt>
+                        <dd>@lesson.Setup</dd>
+                        <dt>Expected</dt>
+                        <dd>@lesson.Expected</dd>
+                        <dt>What happened</dt>
+                        <dd>@lesson.Happened</dd>
+                        <dt>Takeaway</dt>
+                        <dd>@lesson.Takeaway</dd>
+                        @if (lesson.Tags.Count > 0)
+                        {
+                            <dt>About</dt>
+                            <dd>@LessonPages.Tags(lesson)</dd>
+                        }
+                    </dl>
+
+                    <p>@(lesson.Enabled ? LessonPages.EnabledExplained : LessonPages.DisabledExplained)</p>
+
+                    @* Named after the lesson, so that each control says what it is for by itself. *@
+                    <div class="lesson-actions">
+                        @if (lesson.Enabled)
+                        {
+                            <form method="post" @formname="@LessonPages.DisableForm(lesson.Id)" @onsubmit="() => SetEnabledAsync(lesson, enabled: false)">
+                                <AntiforgeryToken />
+
+                                <button type="submit">Disable the @LessonPages.NameOf(lesson)</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <form method="post" @formname="@LessonPages.EnableForm(lesson.Id)" @onsubmit="() => SetEnabledAsync(lesson, enabled: true)">
+                                <AntiforgeryToken />
+
+                                <button type="submit">Enable the @LessonPages.NameOf(lesson)</button>
+                            </form>
+                        }
+
+                        <a href="@WebUiModule.DeleteAgentLessonPath(lesson.AgentId, lesson.Id)">Delete the @LessonPages.NameOf(lesson)</a>
+                    </div>
+                </article>
+            }
+        </section>
+
+        @if (_list.Pages > 1)
+        {
+            <nav class="lesson-pages" aria-label="Pages of lessons">
+                @if (_list.Page > 1)
+                {
+                    <a href="@WebUiModule.LessonsOfAgentPath(_agent?.Id, _list.Page - 1)">Newer lessons</a>
+                }
+
+                @if (_list.Page < _list.Pages)
+                {
+                    <a href="@WebUiModule.LessonsOfAgentPath(_agent?.Id, _list.Page + 1)">Older lessons</a>
+                }
+            </nav>
+        }
+    }
+
+    @if (_agent is not null)
+    {
+        <p><a href="@WebUiModule.ResetAgentLessonsPath(_agent.Id)">@LessonPages.Reset of @_agent.Name</a></p>
+
+        <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+
+        <p><a href="@WebUiModule.LessonsPath">@LessonPages.OfEveryAgentLink</a></p>
+    }
+
+    <p><a href="@WebUiModule.ExperiencePath">@ExperiencePages.Title</a></p>
+
+    <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
+}
+
+@code {
+    private LessonList? _list;
+    private AgentView? _agent;
+    private IReadOnlyDictionary<Guid, string> _names = new Dictionary<Guid, string>();
+    private int _page = 1;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // An address that names a choice which there is not is not found: the page shows what
+        // its address asks for, and never something else in its place.
+        if (LessonPages.ChoicesOf(request.Request.Query) is not var (agentId, page))
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // The agents of the user of the session, by the names that their user gave them. An
+        // agent of another user is not among them, so its lessons are not found, like those of
+        // an agent that does not exist.
+        var agents = (await Agents.ListAsync(request)).Agents;
+
+        if (agentId is { } asked && agents.All(agent => agent.Id != asked))
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // Experience may not use Accounts, so it is handed the user who is signed in, and
+        // answers with the lessons of that user alone.
+        var list = await Stored.OfUserAsync(SignedInUser.RequiredIdOf(request), agentId, page, request.RequestAborted);
+
+        // A page after the last one is none that there is. The first page is always there.
+        if (page > list.Pages)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        _agent = agents.SingleOrDefault(agent => agent.Id == agentId);
+        _names = agents.ToDictionary(agent => agent.Id, agent => agent.Name);
+        _page = page;
+        _list = list;
+    }
+
+    // The lessons of an agent go with it, so every lesson has an agent that is listed.
+    private string NameOf(Guid agentId) => _names.TryGetValue(agentId, out var name) ? name : "of this lesson";
+
+    private async Task SetEnabledAsync(LessonView lesson, bool enabled)
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // Asked for by owner again: the lesson that the form names, among those of the user of
+        // the session. One that went meanwhile changes nothing.
+        await Stored.SetEnabledAsync(SignedInUser.RequiredIdOf(request), lesson.Id, enabled, request.RequestAborted);
+
+        // The page as it is now, by the address that it was asked for by. A reload of it sends
+        // no form again.
+        Navigation.NavigateTo(WebUiModule.LessonsOfAgentPath(_agent?.Id, _page));
+    }
+}

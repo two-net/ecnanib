@@ -62,7 +62,12 @@ public class TeamRulesTests
         // A report, a plan, and a review are made from an answer that was validated, and from
         // nothing else: so whatever holds one holds an answer that passed its schema and its
         // ranges, and no plan reaches the Risk Guard that did not (NFR-SEC-6, NFR-SEC-7).
-        Type[] results = [typeof(MarketReport), typeof(KeyLevel), typeof(SentimentRead), typeof(TradePlan), typeof(RiskReview)];
+        // A lesson is held to the same: what a later prompt recalls passed its schema and its
+        // limits (FR-EXP-6).
+        Type[] results =
+        [
+            typeof(MarketReport), typeof(KeyLevel), typeof(SentimentRead), typeof(TradePlan), typeof(RiskReview), typeof(LessonDraft),
+        ];
 
         Assert.All(results, result =>
         {
@@ -114,6 +119,36 @@ public class TeamRulesTests
     }
 
     [Fact]
+    public void What_has_a_lesson_written_and_what_recalls_lessons_use_nothing_of_the_exchange()
+    {
+        // A lesson is text that a model wrote, and that a later prompt names as data: nothing
+        // of it is carried out, and nothing that writes or recalls one can place an order or
+        // read an account (NFR-SEC-6). What they need of a position is stored.
+        string[] ofLessons =
+        [
+            "Ecnanib.DecisionEngine.LessonRuns",
+            "Ecnanib.DecisionEngine.LessonWriting",
+            "Ecnanib.DecisionEngine.LessonWritingJob",
+            "Ecnanib.DecisionEngine.RecalledLessons",
+        ];
+
+        Assert.All(ofLessons, type =>
+        {
+            var uses = DependencyChecker.FindDependenciesOf(Application, type);
+
+            // The rule finds what a type uses, so it would find the gateway.
+            Assert.Contains(uses, used => used.StartsWith("Ecnanib.", StringComparison.Ordinal));
+
+            var ofTheExchange = uses.Where(used => used.StartsWith("Ecnanib.ExchangeGateway.", StringComparison.Ordinal)).ToList();
+
+            Assert.True(
+                ofTheExchange.Count == 0,
+                $"{type} uses {string.Join(", ", ofTheExchange)}. What has a lesson written, and what recalls lessons, uses " +
+                "nothing of the exchange: a lesson reaches no order (NFR-SEC-6). See docs/experience.md.");
+        });
+    }
+
+    [Fact]
     public void A_plan_and_a_review_have_no_place_for_what_the_system_decides()
     {
         // Models do not choose quantity or leverage (FR-RSK-5): a plan names an action, an
@@ -135,16 +170,22 @@ public class TeamRulesTests
         // (FR-KEY-9): the Decision Engine calls the models, with prompts that it composed.
         var asking = DependencyChecker.FindCallersOf(Application, "Ecnanib.Credentials.IKeyHandOver::AiKeyAsync");
 
-        // The rule finds what runs a role, so it would find another that asks for a key.
-        Assert.Equal(["Ecnanib.DecisionEngine.RoleRuns"], asking.Select(caller => caller.Split('+')[0]).Distinct());
+        // The rule finds what runs a role, so it would find another that asks for a key. Two
+        // do: what runs a role of a cycle, and what has the lesson of a closed position written,
+        // by the model of the agent's Risk Manager (FR-EXP-6). Pinned, so that another shows in
+        // a review as what it is: one more that is handed a key.
+        string[] handed = ["Ecnanib.DecisionEngine.LessonRuns", "Ecnanib.DecisionEngine.RoleRuns"];
+
+        Assert.Equal(handed, asking.Select(caller => caller.Split('+')[0]).Distinct().Order(StringComparer.Ordinal));
 
         // And what is handed over is read there alone.
         var reading = DependencyChecker.FindCallersOf(Application, "Ecnanib.Credentials.HandedKey::get_Key")
             .Select(caller => caller.Split('+')[0])
             .Distinct()
+            .Order(StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(["Ecnanib.DecisionEngine.RoleRuns"], reading);
+        Assert.Equal(handed, reading);
 
         // The Binance credential of a user is handed to what places the orders of their agent,
         // to what watches the position of their agent on the Futures market, which only reads

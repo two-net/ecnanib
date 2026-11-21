@@ -4,6 +4,7 @@
 @using Ecnanib.DecisionEngine
 @using Ecnanib.Shared
 @using Ecnanib.WebUi.Pages.Account
+@using Ecnanib.WebUi.Pages.Experience
 @inject IStoredAgents Agents
 @inject IPromptTemplates Templates
 @inject NavigationManager Navigation
@@ -11,8 +12,9 @@
 @*
     Rendered on the server for each request, and never interactive. The page shows the prompt
     templates that an agent of the user uses now: the instructions of each of the four roles,
-    and the parts for its market, for its timeframe, and for the trading profile, each with its
-    version (FR-PRM-7). Which they are follows from the settings of the agent, and from nothing
+    the parts for its market, for its timeframe, and for the trading profile, and the
+    instructions for the lesson of a closed position (FR-EXP-6), each with its version
+    (FR-PRM-7). Which they are follows from the settings of the agent, and from nothing
     that is asked for here. The templates are the same for every user, and are the system's: the
     page has no form, and nothing that is posted at it is taken. A template is written as text,
     like everything else on a page. The badge of the mode is under the heading (FR-UI-3). The
@@ -60,6 +62,12 @@
     <p>@AgentPages.ProfilePromptExplained</p>
 
     <PromptText Name="@_templates.Profile.Subject" Template="@_templates.Profile" />
+
+    <h2>Lesson</h2>
+
+    <p>@AgentPages.LessonPromptExplained <a href="@WebUiModule.LessonsOfAgentPath(_agent.Id)">@LessonPages.OfAgentLink</a></p>
+
+    <PromptText Name="@AgentPages.LessonPromptName" Template="@_templates.Lesson" />
 
     <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
 

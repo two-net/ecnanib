@@ -51,9 +51,10 @@ public class PromptTemplateVersionTests
     [InlineData("DELETE FROM prompt_templates WHERE kind = 'Market' AND subject = 'Spot'")]
     [InlineData("DELETE FROM prompt_templates")]
 
-    // Emptying the table, with the calls of the roles that point at its rows.
+    // Emptying the table, with what points at its rows: the calls of the roles, and the lessons,
+    // each of which names the version that it was written from.
     [InlineData("TRUNCATE prompt_templates CASCADE")]
-    [InlineData("TRUNCATE prompt_templates, role_outputs")]
+    [InlineData("TRUNCATE prompt_templates, role_outputs, lessons")]
     public void A_version_of_a_template_is_never_deleted(string deletion)
     {
         var database = Migrated.Value;
@@ -72,9 +73,10 @@ public class PromptTemplateVersionTests
         var database = Migrated.Value;
         var before = StoredTemplate.All(database);
 
-        // Each call of a role points at the versions that it used (FR-TEAM-8), so the database
-        // empties the table only together with the calls, which the rule of the versions then
-        // refuses: see above. Alone, it is refused at once.
+        // Each call of a role points at the versions that it used (FR-TEAM-8), and each lesson
+        // at the version that it was written from, so the database empties the table only
+        // together with the calls and the lessons, which the rule of the versions then refuses:
+        // see above. Alone, it is refused at once.
         var refused = Assert.Throws<PostgresException>(() => database.Execute("TRUNCATE prompt_templates"));
 
         Assert.Equal(PostgresErrorCodes.FeatureNotSupported, refused.SqlState);
@@ -138,8 +140,9 @@ public class PromptTemplateVersionTests
         Assert.Equal(seeded.Count, seeded.Select(template => template.Id).Distinct().Count());
         Assert.All(seeded, template => Assert.False(string.IsNullOrWhiteSpace(template.Text), $"Template {template.Id} has no text."));
 
-        // A template is of one of the four kinds (FR-PRM-1).
-        Assert.Equal(["Role", "Market", "Timeframe", "Profile"], Enum.GetNames<PromptTemplateKind>());
+        // A template is of one of the four kinds of a role call (FR-PRM-1), or is the
+        // instructions for the lesson of a closed position (FR-EXP-6).
+        Assert.Equal(["Role", "Market", "Timeframe", "Profile", "Lesson"], Enum.GetNames<PromptTemplateKind>());
 
         // The versions of a kind and subject count up from 1, with none left out, and the latest
         // is the one in use: an edit adds a version, and takes away none.

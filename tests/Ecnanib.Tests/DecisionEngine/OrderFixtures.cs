@@ -3,6 +3,7 @@ using System.Net;
 using Ecnanib.Agents;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.Experience;
 using Ecnanib.Notifications;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
@@ -25,8 +26,9 @@ internal static class StoredOrderRows
     /// Gives an agent of a user the orders of a position that is over, stored as the application
     /// stores them: an entry that was executed, with its one execution, the position that it
     /// opened, with the models that held the roles of the agent, what the position paid as
-    /// funding, the stop-loss that closed it, its result, and the equity of the agent after it.
-    /// Everything is over, so the agent holds nothing, and nothing is left to settle. It is for a test that is about something else, and needs a
+    /// funding, the stop-loss that closed it, its result, the lesson that waits to be written of
+    /// it, and the equity of the agent after it. Everything is over, so the agent holds nothing,
+    /// and nothing is left to settle. It is for a test that is about something else, and needs a
     /// row in every table that holds rows of users.
     /// </summary>
     /// <returns>The id of the position.</returns>
@@ -154,6 +156,21 @@ internal static class StoredOrderRows
             holdingSeconds: 1800,
             complete: true,
             recordedAt: at.AddMinutes(31)));
+
+        // The lesson of the position, as what records the result leaves it: to be written, with
+        // nothing of a lesson yet. So no prompt recalls it, and no model is called for it unless
+        // a test runs the job that has lessons written.
+        context.Add(Lesson.Due(
+            position.Id,
+            userId,
+            agentId,
+            agent.Mode,
+            agent.Market,
+            agent.Symbol,
+            agent.Timeframe,
+            at.AddMinutes(30),
+            resultInR: -1.07m,
+            now: at.AddMinutes(31)));
 
         // The equity of the agent after it, as what watches the loss limits records it. An agent
         // that is given orders a second time at the same moment has the row already.

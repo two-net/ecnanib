@@ -20,6 +20,11 @@ namespace Ecnanib.DecisionEngine;
 /// not reviewed, so no review stands in the way of reducing risk (FR-TEAM-7).
 /// </para>
 /// <para>
+/// <b>The lessons are recalled once, for the Strategist and the Risk Manager</b> (FR-EXP-7):
+/// before the Strategist is called, and the same go to both. The analysts are handed none. See
+/// <see cref="RecalledLessons"/>.
+/// </para>
+/// <para>
 /// <b>When a role gives no valid result,</b> also when it was called once more: a cycle whose
 /// Sentiment Analyst gave none continues with sentiment marked unavailable, and a cycle whose
 /// other role gave none ends with no decision and no new entry (FR-TEAM-9). A plan that does
@@ -77,6 +82,7 @@ internal sealed class TeamCycle(
     IDataPackages packages,
     IRoleResults results,
     RoleRuns roles,
+    RecalledLessons recalled,
     PlanChecks checks,
     IPlanOrders orders,
     ILossLimits limits,
@@ -90,10 +96,6 @@ internal sealed class TeamCycle(
     /// the run that started it waits for it.
     /// </summary>
     public static readonly TimeSpan RecordsWithin = TimeSpan.FromSeconds(5);
-
-    // The lessons that are recalled for the Strategist and the Risk Manager (FR-EXP-7). Nothing
-    // keeps lessons yet, so a call is given none.
-    private static readonly IReadOnlyList<string> NoLessons = [];
 
     public async Task RunAsync(CycleStart cycle, CancellationToken cancellationToken)
     {
@@ -197,6 +199,11 @@ internal sealed class TeamCycle(
 
         var sentiment = SentimentOf(cycle, await searching);
 
+        // The lessons that the Strategist and the Risk Manager are handed (FR-EXP-7): those of
+        // the agent first, then those of its user's other agents on what it trades. Recalled
+        // once, so that both read the same. A test cycle recalls them as any cycle does.
+        var lessons = await recalled.OfAsync(cycle.Agent, cancellationToken);
+
         // Step 4: the Strategist, with both reports. A plan does what a plan may do for the
         // agent as its prompt stated it: the actions of its market, one position, protection
         // that only tightens, and at most the risk that the agent allows (FR-CYC-4 to FR-CYC-7).
@@ -204,7 +211,7 @@ internal sealed class TeamCycle(
             kept,
             cycle,
             team[Role.Strategist],
-            package.ForStrategist(NoLessons, market, sentiment),
+            package.ForStrategist(lessons, market, sentiment),
             answered => results.ReadPlan(answered, package.Agent),
             cancellationToken);
 
@@ -235,7 +242,7 @@ internal sealed class TeamCycle(
                 kept,
                 cycle,
                 team[Role.RiskManager],
-                package.ForRiskManager(NoLessons, planned),
+                package.ForRiskManager(lessons, planned),
                 answered => results.ReadReview(answered, plan),
                 cancellationToken);
 

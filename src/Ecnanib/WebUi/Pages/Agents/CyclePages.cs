@@ -456,6 +456,7 @@ public static class CyclePages
             PromptTemplateKind.Market => $"the module of the market {template.Subject}, {version}",
             PromptTemplateKind.Timeframe => $"the module of the timeframe {template.Subject}, {version}",
             PromptTemplateKind.Profile => $"the module of the profile {template.Subject}, {version}",
+            PromptTemplateKind.Lesson => $"the instructions for the lesson of a closed position, {version}",
             _ => throw new ArgumentOutOfRangeException(nameof(template), template.Kind, "No such kind of template."),
         };
     }

@@ -192,6 +192,12 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What works out the measure and the strength score of each model in each role from what a user's agents did.</summary>
     public IRoleStrengths RoleStrengths => _application.Services.GetRequiredService<IRoleStrengths>();
 
+    /// <summary>The lessons of a user: what a prompt recalls of them, and what their user reads and does with them.</summary>
+    public ILessons Lessons => _application.Services.GetRequiredService<ILessons>();
+
+    /// <summary>The lessons that are to be written, as the job that has them written asks for them and completes them.</summary>
+    public IDueLessons DueLessons => _application.Services.GetRequiredService<IDueLessons>();
+
     /// <summary>What validates the answer of a role.</summary>
     public IRoleResults RoleResults => _application.Services.GetRequiredService<IRoleResults>();
 
@@ -358,6 +364,20 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>The job that reassigns the roles of agents by strength, which only a test runs.</summary>
     public IBackgroundJob RoleReassignment =>
         _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.RoleReassignmentKey);
+
+    /// <summary>
+    /// Runs the job that has the lessons of the closed positions written, now, as the scheduler
+    /// does every few minutes. A test runs it itself: the scheduler of no application of the
+    /// tests does.
+    /// </summary>
+    public Task WriteLessonsAsync(CancellationToken? cancellationToken = null) =>
+        LessonWriting.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that has the lessons of the closed positions written, which only a test runs.</summary>
+    public IBackgroundJob LessonWriting =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.LessonWritingKey);
 
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 

@@ -1,4 +1,5 @@
 using Ecnanib.Agents;
+using Ecnanib.Experience;
 using Ecnanib.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -41,6 +42,13 @@ namespace Ecnanib.DecisionEngine;
 /// (FR-RSK-8): the last fee and the last funding of a position are stored after it is closed,
 /// and an agent that no longer runs and holds nothing is evaluated by nothing else. See
 /// <see cref="EquitySnapshot"/>.
+/// </para>
+/// <para>
+/// <b>Recording a result leaves the lesson of the position to be written</b> (FR-EXP-6): a row
+/// of Experience, with what the position says and nothing of a lesson yet, in the same
+/// transaction as the result. So a position has its lesson to be written exactly when it has its
+/// result, and a lesson that its user deleted is not written again. The model of the agent's Risk
+/// Manager is called for it by a job of its own: see <see cref="LessonWriting"/>.
 /// </para>
 /// <para>
 /// It only reads the rows, and writes the results: it asks no exchange, and is handed no key.
@@ -151,6 +159,20 @@ internal sealed class PositionResults(
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
 
         context.Add(result);
+
+        // The lesson of the position, to be written: with the result, or not at all. A position
+        // has one of each, so another that recorded the result meanwhile left the lesson too.
+        context.Add(Lesson.Due(
+            position.Id,
+            position.UserId,
+            position.AgentId,
+            position.Mode,
+            position.Market,
+            position.Symbol,
+            position.Timeframe,
+            position.ClosedAt ?? result.RecordedAt,
+            result.ResultInR,
+            result.RecordedAt));
 
         try
         {

@@ -69,6 +69,11 @@ public static class AgentsModule
         services.AddSingleton<IExportedPart, AgentRolesExport>();
         services.AddSingleton<IExportedPart, AgentStateChangesExport>();
 
+        // And the part that Experience keeps: the lessons of the agents (FR-EXP-8). Experience
+        // may not use Accounts, which declares what an export is made of, so that what recalls
+        // lessons into prompts cannot reach personal data (FR-PRM-9). This component may use both.
+        services.AddSingleton<IExportedPart, LessonsExport>();
+
         return services;
     }
 }

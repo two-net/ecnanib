@@ -54,6 +54,36 @@ public static class WebUiModule
     /// </summary>
     public static string ModelExperiencePath(Guid modelId) => $"/experience/models/{modelId}";
 
+    /// <summary>
+    /// The path of the page of the lessons of a user: what the models of the Risk Managers of
+    /// their agents wrote after closed positions, which they read, disable, and delete (FR-EXP-8).
+    /// </summary>
+    public const string LessonsPath = "/experience/lessons";
+
+    /// <summary>The name of the choice of an agent in the address of the page of the lessons.</summary>
+    public const string LessonsAgentKey = "agent";
+
+    /// <summary>The name of the choice of a page in the address of the page of the lessons.</summary>
+    public const string LessonsPageKey = "page";
+
+    /// <summary>The path of the page of the lessons, with the lessons of one agent alone, and with a page of them.</summary>
+    public static string LessonsOfAgentPath(Guid? agentId, int page = 1)
+    {
+        var choices = new List<string>();
+
+        if (agentId is { } agent)
+        {
+            choices.Add($"{LessonsAgentKey}={agent}");
+        }
+
+        if (page > 1)
+        {
+            choices.Add($"{LessonsPageKey}={page.ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        return choices.Count == 0 ? LessonsPath : $"{LessonsPath}?{string.Join('&', choices)}";
+    }
+
     /// <summary>The path of the page that lists the agents of a user (FR-AGT-1).</summary>
     public const string AgentsPath = "/agents";
 
@@ -102,6 +132,12 @@ public static class WebUiModule
     /// is recorded and places no orders (FR-CYC-12).
     /// </summary>
     public static string AgentTestCyclePath(Guid agentId) => $"{AgentPath(agentId)}/test-cycle";
+
+    /// <summary>The path of the page a user resets the lessons of an agent on: every one of them is deleted (FR-EXP-8).</summary>
+    public static string ResetAgentLessonsPath(Guid agentId) => $"{AgentPath(agentId)}/lessons/reset";
+
+    /// <summary>The path of the page a user deletes one lesson of an agent on (FR-EXP-8). The lesson is named by the id of its position.</summary>
+    public static string DeleteAgentLessonPath(Guid agentId, Guid lessonId) => $"{AgentPath(agentId)}/lessons/{lessonId}/delete";
 
     /// <summary>The path of the page a user stops an agent on, and chooses what happens to its open position (FR-AGT-11).</summary>
     public static string StopAgentPath(Guid agentId) => $"{AgentPath(agentId)}/stop";

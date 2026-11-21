@@ -87,14 +87,15 @@ public class PromptRulesTests
             "prompt are selected from the agent's settings, and a mismatched combination cannot be chosen (FR-PRM-4): " +
             "IPromptComposition reads the templates itself, by the market and the timeframe of the context. See docs/prompts.md.");
 
-        // The market and the timeframe are said once, by the context of the agent. A second
-        // place could say another, and the modules would follow one of the two.
+        // The market and the timeframe are said once for a prompt, by the context of the agent.
+        // A second place could say another, and the modules would follow one of the two. The
+        // prompt of a lesson says them once as well, by the closed position, and has no module.
         Assert.Equal(
-            ["ComposeAsync(parts).Agent.Market"],
-            given.Where(part => part.What == typeof(Market)).Select(part => part.Where));
+            ["ComposeAsync(parts).Agent.Market", "ComposeLessonAsync(parts).Position.Market"],
+            given.Where(part => part.What == typeof(Market)).Select(part => part.Where).Order(StringComparer.Ordinal));
         Assert.Equal(
-            ["ComposeAsync(parts).Agent.Timeframe"],
-            given.Where(part => part.What == typeof(Timeframe)).Select(part => part.Where));
+            ["ComposeAsync(parts).Agent.Timeframe", "ComposeLessonAsync(parts).Position.Timeframe"],
+            given.Where(part => part.What == typeof(Timeframe)).Select(part => part.Where).Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -107,6 +108,8 @@ public class PromptRulesTests
         Assert.Equal(
             [
                 "ComposeAsync(parts).Chosen",
+                "ComposeAsync(parts).Chosen.Lesson",
+                "ComposeAsync(parts).Chosen.Lesson.Kind",
                 "ComposeAsync(parts).Chosen.Market",
                 "ComposeAsync(parts).Chosen.Market.Kind",
                 "ComposeAsync(parts).Chosen.Profile",
@@ -129,10 +132,16 @@ public class PromptRulesTests
     [Fact]
     public void What_a_provider_is_sent_is_market_data_agent_settings_position_state_and_lessons()
     {
-        // One operation composes a prompt, from the role, the parts, and nothing else.
-        var compose = Assert.Single(typeof(IPromptComposition).GetMethods());
+        // One operation composes the prompt of a role call, from the role, the parts, and
+        // nothing else. And one composes the prompt of the lesson of a closed position, from
+        // its parts and nothing else (FR-EXP-6). Pinned: a third would be a third thing that a
+        // provider is sent.
+        var operations = typeof(IPromptComposition).GetMethods().ToDictionary(
+            operation => operation.Name, operation => operation.GetParameters().Select(parameter => parameter.Name).ToList());
 
-        Assert.Equal(["role", "parts", "cancellationToken"], compose.GetParameters().Select(parameter => parameter.Name));
+        Assert.Equal(["ComposeAsync", "ComposeLessonAsync"], operations.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(["role", "parts", "cancellationToken"], operations["ComposeAsync"]);
+        Assert.Equal(["parts", "cancellationToken"], operations["ComposeLessonAsync"]);
 
         // Every value that is handed over is listed with its kind, and none is an identifier
         // or a text that does not say what it holds.
@@ -151,7 +160,7 @@ public class PromptRulesTests
     }
 
     [Fact]
-    public void The_texts_that_a_provider_is_sent_are_the_symbol_its_asset_the_data_package_and_the_lessons()
+    public void The_texts_that_a_provider_is_sent_are_the_symbol_its_asset_the_data_package_the_lessons_and_what_opened_a_closed_position()
     {
         // Pinned, so that a change to the list shows in a review as what it is: a decision
         // about what a provider is sent that could say who a user is.
@@ -161,16 +170,26 @@ public class PromptRulesTests
                 "ComposeAsync(parts).Agent.Symbol",
                 "ComposeAsync(parts).DataPackage",
                 "ComposeAsync(parts).Lessons[]",
+                "ComposeLessonAsync(parts).Plan",
+                "ComposeLessonAsync(parts).Position.QuoteAsset",
+                "ComposeLessonAsync(parts).Position.Symbol",
+                "ComposeLessonAsync(parts).Review",
             ],
             PromptRules.FreeText.Keys.Order(StringComparer.Ordinal));
         Assert.All(PromptRules.FreeText, text => Assert.False(string.IsNullOrWhiteSpace(text.Value), $"{text.Key} does not say what it holds."));
 
         // The market data is the data package, and the lessons are the lessons: everything
-        // else that is sent is a setting of the agent, or the state of its position.
+        // else that is sent is a setting of the agent, or the state of its position. For the
+        // lesson of a closed position, it is that position, with the plan that opened it and
+        // the review of that plan.
         Assert.Equal(["ComposeAsync(parts).DataPackage"], Listed(SentData.MarketData));
         Assert.Equal(["ComposeAsync(parts).Lessons[]"], Listed(SentData.Lessons));
         Assert.All(Listed(SentData.AgentSettings).Concat(Listed(SentData.PositionState)), sent =>
-            Assert.StartsWith("ComposeAsync(parts).Agent.", sent, StringComparison.Ordinal));
+            Assert.True(
+                sent.StartsWith("ComposeAsync(parts).Agent.", StringComparison.Ordinal)
+                || sent.StartsWith("ComposeLessonAsync(parts).Position.", StringComparison.Ordinal)
+                || sent is "ComposeLessonAsync(parts).Plan" or "ComposeLessonAsync(parts).Review",
+                $"{sent} is listed as a setting of an agent or as the state of a position, and is neither of the context of an agent nor of a closed position."));
 
         // No id of the agent, of its user, or of anything else is among them, and no name.
         var given = PromptRules.DataGivenTo(typeof(IPromptComposition));
@@ -224,10 +243,16 @@ public class PromptRulesTests
             "the Decision Engine alone, with a prompt that it composed. See docs/prompts.md.");
     }
 
-    /// <summary>A composition whose caller says whose agent the prompt is for, and what the agent is called.</summary>
+    /// <summary>
+    /// A composition whose caller says whose agent the prompt is for, and what the agent is
+    /// called. The prompt of a lesson is as the application composes it, so that only what is
+    /// planted is found.
+    /// </summary>
     private interface IPlantedNamingComposition
     {
         Task<string> ComposeAsync(Role role, PlantedNamingParts parts, Guid userId, CancellationToken cancellationToken);
+
+        Task<string> ComposeLessonAsync(LessonParts parts, CancellationToken cancellationToken);
     }
 
     private sealed record PlantedNamingParts(

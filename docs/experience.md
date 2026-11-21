@@ -4,9 +4,11 @@ The system maintains a track record per provider and per model, filterable by ro
 
 A role-specific measure is kept for each role: for the two analysts the share of their calls that matched the price change over the next 4 closed candles, for the Strategist the average R of its executed plans, and for the Risk Manager the average R of what it approved minus the average R that what it vetoed would have produced (FR-EXP-3). A strength score per model, role, market, and timeframe is that measure damped toward zero for small samples, and the screens show it with its formula (FR-EXP-4). Vetoed plans are evaluated as shadow trades against later closed candles, and never place orders (FR-EXP-5).
 
-A track record is of one user: of the closed trades of that user's agents. It is worked out from the recorded results of the closed positions each time it is asked for, and nothing of it is stored. A strength score is worked out in the same way, and no aggregate is stored either. What Experience stores is what later candles are to say something of: the calls of the analysts and the shadow trades of the vetoed plans, each of which a job gives its outcome.
+After each closed position, the agent's Risk Manager model writes a short lesson: the setup, what was expected, what happened, and one takeaway of at most 60 words (FR-EXP-6). Each Strategist and Risk Manager prompt includes up to 5 recent lessons, taken first from the same agent and then from the user's other agents on the same symbol, market, and timeframe, within a fixed size budget (FR-EXP-7). A user reads all of their lessons, disables or deletes any lesson, and resets an agent's lessons (FR-EXP-8). A disabled or deleted lesson is not recalled into prompts, and lessons are recalled only from the same user's agents.
 
-The code is in `src/Ecnanib/Experience`, what hands it the trades in `src/Ecnanib/DecisionEngine/ClosedPositions.cs`, what leaves it the calls and the vetoed plans of a cycle in `src/Ecnanib/DecisionEngine/CycleExperience.cs`, and the screens in `src/Ecnanib/WebUi/Pages/Experience`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Experience`, and in `ClosedPositionTests.cs` and `CycleExperienceTests.cs` of `tests/Ecnanib.Tests/DecisionEngine`.
+A track record is of one user: of the closed trades of that user's agents. It is worked out from the recorded results of the closed positions each time it is asked for, and nothing of it is stored. A strength score is worked out in the same way, and no aggregate is stored either. What Experience stores is what later candles are to say something of: the calls of the analysts and the shadow trades of the vetoed plans, each of which a job gives its outcome. And the lessons, each of which a job of the Decision Engine has written.
+
+The code is in `src/Ecnanib/Experience`, what hands it the trades in `src/Ecnanib/DecisionEngine/ClosedPositions.cs`, what leaves it the calls and the vetoed plans of a cycle in `src/Ecnanib/DecisionEngine/CycleExperience.cs`, and the screens in `src/Ecnanib/WebUi/Pages/Experience`. What has a lesson written is in `LessonWriting.cs` and `LessonRuns.cs` of `src/Ecnanib/DecisionEngine`, and what hands a cycle its lessons in `RecalledLessons.cs` there. The rules below are enforced by tests in `tests/Ecnanib.Tests/Experience`, and in `ClosedPositionTests.cs`, `CycleExperienceTests.cs`, `LessonWritingJobTests.cs`, `LessonPromptTests.cs`, and `CycleLessonTests.cs` of `tests/Ecnanib.Tests/DecisionEngine`.
 
 What is recorded for a closed position is in "The results of a position" in [orders.md](orders.md), and what is recorded for a cycle in "The record of a cycle" in [team.md](team.md). The candles are those of the Exchange Gateway: see "Market data" in [exchange.md](exchange.md). The catalog of models is in [catalog.md](catalog.md), whose screen links each model to its experience record. Whose rows a request reaches is in [ownership.md](ownership.md), and how a job runs in [background-work.md](background-work.md).
 
@@ -223,14 +225,112 @@ A `ShadowTrade` is what a vetoed plan would have produced. `ShadowTradeRule.Of` 
 | **It works across users.** | A job has no user who is signed in. Each row says whose it is, and what is written of a row is written to that row alone: see "What is not asked for by owner" in [ownership.md](ownership.md). |
 | **No test application runs it on a schedule.** | A test runs it itself, from the key `EcnanibApplicationFactory.ExperienceScoringKey`: see [background-work.md](background-work.md). |
 
+## Lessons
+
+A `Lesson` is what one closed position taught, as a row of `lessons`: the setup, what was expected, what happened, and one takeaway (FR-EXP-6), with what its position says, and with whether it is recalled. `LessonWords` is what a lesson says, and `LessonLimits` what it is held to. Both are rules only: they read nothing.
+
+| Rule | Detail |
+|---|---|
+| **A position has one lesson.** | The row is found by its position: `position_id` is its key. So a lesson is named by the id of its position, on a page and in an address. |
+| **It is written with the result of its position, and completed once.** | What records the result of a closed position writes the row with it, with nothing of a lesson yet: see "Writing a lesson". A job gives the row what its model wrote, or says why it has nothing, and nothing completes it a second time. |
+| **A lesson has four parts, each on one line.** | `LessonWords.OneLine` makes every run of white space, line breaks, and characters that are not written one space. So no part of a lesson begins a line, and a lesson cannot pose as a heading of the prompt that recalls it. |
+| **It is handed to a prompt as one line:** `Setup: … Expected: … What happened: … Takeaway: …`. | `LessonWords.TextOf`. The names of the parts are the service's own. |
+| **The takeaway has at most 60 words** (FR-EXP-6). | `LessonLimits.TakeawayWords`. A word is what stands between white space. It has at most 600 characters as well: a word can be long. |
+| **The setup, what was expected, and what happened have at most 500 characters each.** | `LessonLimits.PartCharacters`. The instructions ask for one sentence each. |
+| **The limits are fixed, and are no settings.** | The size of what a prompt recalls follows from them: see "Recalling lessons". |
+| **A lesson has at most 3 tags, of a fixed set.** | `LessonTag`: entry, stop-loss, take-profit, risk, trend, range, volatility, sentiment, funding, fees, and timing. The model chooses from the set, which the schema of a lesson lists, so a tag is never text of a model's own. A row keeps them by their names, in the order of the set. |
+| **A lesson says what its position says, in columns of its own,** and names its agent. | The agent, the mode, the market, the symbol, and the timeframe of the position, when it was closed, and its result in R. Experience cannot read the positions, and what recalls lessons and what resets those of an agent go by these columns. |
+| **A lesson says its mode, and is recalled whatever it is.** | What an agent learned in Demo stays its lesson after it is switched to Live. A page says the mode of each lesson, as a word (FR-BIN-11). |
+| **Only a lesson that is written and enabled is recalled.** | Its user disables it, and enables it again, which changes nothing else of the row. A new lesson is enabled. |
+| **A lesson goes with its position,** which goes with its agent. | The lessons of a deleted agent leave every prompt and every page: see "Not built yet". |
+
+What became of the lesson of a position is its outcome, which is nothing while it waits:
+
+| Outcome | What it says |
+|---|---|
+| `Written` | The lesson is written. |
+| `NoModel` | The Risk Manager of the agent had no model when the lesson was due, so none was called. |
+| `NoKey` | The user of the agent had no key that could be used for the provider of that model, so none was called. |
+| `NotComposed` | The prompt of the call was not composed: a part of it held what a prompt never holds (FR-PRM-9). |
+| `NoResult` | The model was called, once more where that is done, and gave no valid lesson. |
+
+## Writing a lesson
+
+`LessonWritingJob`, named `lesson-writing`, has the lessons written every 5 minutes. `LessonWriting` does the work, and `LessonRuns` calls the model. They are of the Decision Engine, and not of Experience, which keeps the lessons: only the Decision Engine calls a model, with a prompt that it composed (NFR-SEC-8). Experience declares what the job asks and completes, `IDueLessons`, and implements it itself.
+
+```csharp
+public interface IDueLessons
+{
+    Task<IReadOnlyList<DueLesson>> DueAsync(int most, CancellationToken cancellationToken);
+
+    Task<bool> ClaimAsync(Guid positionId, CancellationToken cancellationToken);
+
+    Task<bool> WriteAsync(Guid positionId, LessonWords words, Guid modelId, int templateId, CancellationToken cancellationToken);
+
+    Task<bool> EndAsync(Guid positionId, LessonOutcome why, CancellationToken cancellationToken);
+}
+```
+
+| Rule | Detail |
+|---|---|
+| **A lesson is due once its position has its result.** | `PositionResults.RecordAsync` of the Decision Engine writes the row of the lesson with the result, in the same transaction, due at once: see "The results of a position" in [orders.md](orders.md). So a position has its lesson to be written exactly when it has its result, which is some minutes after its close. |
+| **A lesson that its user deleted is not written again.** | The row is gone, and its position has its result: nothing writes a row for it a second time. |
+| **A position whose result was recorded before the table was added has no lesson.** | The migration `AddLessons` creates the table, and fills nothing. So no model is called for the trades of the past when the application is deployed. |
+| **The model is the one that the Risk Manager of the agent has now,** and the key is the one of the agent's user now. | `IAgentTeams` of Agents says both. The model that held the role when the position was opened, which `position_roles` names, may no longer be the one that the user gave it. The row keeps the model that wrote the lesson. |
+| **The model is sent the closed position, and what the team answered when it was opened.** | What it was traded on, its side, the prices that it was opened with, how it was closed, how long it was held, and its result, with the plan of the Strategist and the review of the Risk Manager as the record of that cycle keeps them. See "The lesson of a closed position" in [prompts.md](prompts.md). |
+| **It answers the schema of a lesson,** and its answer is validated. | `RoleSchemas.Lesson`: `setup`, `expected`, `happened`, `takeaway`, and `tags`. `IRoleResults.ReadLesson` holds the answer to the schema and to the limits of a lesson, with the rules that hold the answer of a role: see "Validating a result" in [team.md](team.md). A takeaway of 61 words is rejected as `takeaway: TextTooLong`. |
+| **A lesson that holds what a prompt never holds is rejected** (FR-PRM-9). | A secret, an email address, or an identifier: `answer: HoldsWhatAPromptNeverHolds`. A later prompt reads the lesson, and would be refused for it. |
+| **A call that timed out, or that gave an invalid lesson, is made once more,** and no more. | As a role is called once more in a cycle (FR-TEAM-9), with the same prompt, and with the key asked for again for that call alone (FR-KEY-9). A call that failed, or whose model the provider does not have, is not made again. |
+| **Every call is billed to the user of the agent, so there are two at the most.** | A position whose model gave no valid lesson has none, and nothing calls for it again, in the next run or later. Its row says why. |
+| **A key that the provider refuses is checked again,** once. | Which marks it, and tells what depends on it (FR-KEY-3, FR-KEY-10). The call is not made again with it. |
+| **A lesson is taken before its model is called.** | `ClaimAsync` moves when it is due an hour on, only while it is due and has no outcome. A run that is stopped while the model is called leaves the lesson for a later run, and the model is not called for it again at once. |
+| **A row is completed once.** | An update changes a row only while it has no outcome. So a row that went with its agent while the model was called fails nothing, and a row that has its outcome keeps it. |
+| **One lesson at a time, the longest due first, and at most 50 with a run.** | `LessonWriting.Most`. The calls of the lessons are outside the queue of a close, and one at a time, so they add one call at the most to what the cycles ask of a provider. |
+| **A run starts no lesson after 2 minutes.** | `LessonWriting.StartsWithin`. A call may take as long as its provider is given, and may be made once more: so a run is over before the next one is due. What is left waits for that run. |
+| **It works across users.** | A job has no user who is signed in. Each row says whose it is: everything that is read for a lesson is read for that user, the key is that user's, and what is written is written to that row alone. See "What is not asked for by owner" in [ownership.md](ownership.md). |
+| **It places no order, and reads nothing of the exchange.** | What it needs of a position is stored. A lesson is text, which a later prompt names as data: nothing of it is carried out (NFR-SEC-6). `TeamRulesTests` holds the types to it. |
+| **No test application runs it on a schedule.** | A test runs it itself, from the key `EcnanibApplicationFactory.LessonWritingKey`: see [background-work.md](background-work.md). |
+
+## Recalling lessons
+
+`ILessons` answers what a prompt recalls. It is handed the user by id, as `ITrackRecords` is.
+
+```csharp
+public interface ILessons
+{
+    Task<IReadOnlyList<string>> RecallAsync(Guid userId, LessonScope scope, CancellationToken cancellationToken);
+
+    // And what the pages ask: see "The pages of the lessons".
+}
+
+public sealed record LessonScope(Guid AgentId, string Symbol, Market Market, Timeframe Timeframe);
+```
+
+`LessonRecall.Of` is the rule of which lessons are recalled. It is a rule only: it reads nothing.
+
+| Rule | Detail |
+|---|---|
+| **The lessons of the agent first, the most recently closed first** (FR-EXP-7). | Whatever the agent traded when each was written, and in whatever mode: what an agent learned stays its own. |
+| **Then those of the user's other agents on the same symbol, market, and timeframe.** | The ones that the agent trades now, which the scope says. The most recently closed first. |
+| **At most `Experience:LessonsPerPrompt` of them.** | 5 in the tracked file. With 0, a prompt recalls none. |
+| **Within a fixed size budget:** 4,000 characters of the lessons of one prompt. | `LessonRecall.BudgetCharacters`. It is no setting. The longest lesson that there can be is about half of it, so a prompt of an agent that has a lesson recalls one, and five lessons of the size that the instructions ask for fit. |
+| **A lesson is recalled whole, or not at all.** | Cut short, it would say something else. The first that does not fit ends the recall, so an older lesson never stands in for a more recent one. |
+| **Only a lesson that is written and enabled.** | A lesson that is disabled, one that was deleted, one that waits, and one that could not be written are in no prompt. |
+| **Only the lessons of the same user.** | The question starts with `OwnedBy(userId)`: a lesson of another user is not recalled, whatever its agent trades (NFR-DAT-9). `LessonsTests` has the test with two users, which is marked for `lessons`. |
+| **They are recalled once in a cycle, before the Strategist is called,** and the same go to both roles. | `RecalledLessons` of the Decision Engine asks, for the user of the cycle's agent, and `TeamCycle` hands what it answers to the prompts of the Strategist and of the Risk Manager. The two analysts are handed none. See "What a role is given" in [team.md](team.md). |
+| **A test cycle recalls them as any cycle does.** | It composes the same prompts (FR-CYC-12). |
+| **A stored lesson that holds what a prompt never holds is left out,** and the others go on. | A lesson is screened when it is written, so none should. What the screen finds can change after a lesson was stored, with a secret of the configuration file, and a prompt that held such a lesson would be refused. So a cycle is never given up for a stored lesson. The log says how many were left out. |
+| **Lessons that cannot be read are not waited for.** | The team decides with none, and the log says so, as an error. |
+
 ## The screens
 
-The pages are rendered on the server for each request, and neither is interactive. Each is for a signed-in user: a visitor is sent to sign in. The bar at the top of every page leads to the experience screen.
+The pages are rendered on the server for each request, and none is interactive. Each is for a signed-in user: a visitor is sent to sign in. The bar at the top of every page leads to the experience screen.
 
 | Page | What it is |
 |---|---|
 | `/experience` | The experience screen (FR-UI-2): the track record of each provider, and of each model, from the closed trades of the user, and under them the strength score of each model in each role, market, and timeframe. Each model leads to its page, with the same filter. |
 | `/experience/models/<id>` | The experience record of one model, which the catalog links each model to (FR-CAT-10): its track record in any role, and in each role, and under them its strength score in each role, market, and timeframe. A role that the model never held says that no closed trade is counted, and no measure. |
+| `/experience/lessons` | The lessons of the user, which they read, disable, and delete (FR-EXP-8): see "The pages of the lessons". The experience screen leads to it. |
 
 | Rule | Detail |
 |---|---|
@@ -267,6 +367,33 @@ Each screen has the section "Strength by role" under its track records, which `R
 | **A screen with nothing measured says that,** and has no table. | The formula is there all the same. |
 | **The rows are in the order of the providers and the models,** and never of a score. | The screen ranks nothing. |
 
+### The pages of the lessons
+
+A user reads all of their lessons, disables or deletes any lesson, and resets an agent's lessons (FR-EXP-8). `ILessons` answers the pages, each question for the user who is signed in: `OfUserAsync`, `FindAsync`, `SetEnabledAsync`, `DeleteAsync`, and `ResetAsync`. `LessonPageTests` reads the pages as a signed-in user does.
+
+| Page | What it is |
+|---|---|
+| `/experience/lessons` | Every lesson of the user that is written, the most recently closed first, 25 to a page. With `agent=<id>`, the lessons of one agent of theirs. A form of the page disables a lesson, or enables it again. The experience screen leads to it, and the pages of an agent to the lessons of that agent. |
+| `/agents/<id>/lessons/<lesson>/delete` | Asks once more, and deletes one lesson. A page of the agent: see "The pages" in [agents.md](agents.md). |
+| `/agents/<id>/lessons/reset` | Asks once more, and deletes every lesson of the agent. A page of the agent as well. |
+
+| Rule | Detail |
+|---|---|
+| **A lesson is shown with what was traded and how the trade ended.** | Its heading is the symbol, the market, the timeframe, and the result in R, with its sign, or "no result in R" where its position has none. Under it are the agent, by the name that its user gave it, the mode of the trade, when the position was closed, the four parts, and the tags. |
+| **A lesson says its mode as a word.** | The page shows lessons of both modes, and has no badge (FR-BIN-11). A page of an agent has the badge of the agent, and says the mode of a lesson as a word there too: a lesson that was written in Demo is shown for an agent that is in Live. |
+| **The page says what a lesson is, who writes it, and under whose key** (NFR-SEC-8, NFR-USA-2). | The model of the agent's Risk Manager, in a call under the user's own key, which is sent the closed position, the plan that opened it, and the review of that plan. And where lessons are recalled, with the count of the configuration file. |
+| **It says what it leaves out.** | How many closed positions wait for their lesson, and how many have none because none could be written, each as a note. |
+| **Disabling and enabling take one press of a button.** | Each lesson of the page has a form of its own, named after it. The page answers with itself, by its own address, so a reload sends no form again. One press undoes the other, and neither places an order. |
+| **Deleting a lesson and resetting the lessons of an agent each ask once more,** on a page of their own. | Neither can be undone. Neither takes a proof of who the user is: it exposes no key and moves no money. A form that is sent twice finds nothing the second time, and is answered as the first one was. |
+| **A lesson that is deleted is gone for good,** and is not written again. | The page says so, and that disabling keeps the lesson and leaves it out of the prompts. |
+| **Resetting deletes every lesson of the agent,** with those that wait to be written. | So that no lesson of a trade from before the reset is written after it. The lessons of the user's other agents stay, and the agent recalls those still. The trades stay: a lesson is not a trade. |
+| **The choices are in the address:** `agent` and `page`. | A choice that is absent or empty is not made. An address that names a choice which there is not is not found: an agent that is none of the user's, a page that there is not, a choice that is made twice, and an id or a number that is written in another way than the page writes it. `LessonPages.ChoicesOf` reads the address. What it names besides is not gone by. |
+| **A lesson of another user is not found,** like one that does not exist. | And no page has a form for one: a form that is posted all the same is the form of no page, or is answered as for a lesson that is gone already, and changes nothing. |
+| **What a model wrote is shown as text.** | Like everything else on a page (NFR-SEC-4). |
+| **It states what every experience screen states.** | A lesson is what one trade taught: the smallest sample that there is. |
+
+The texts of the pages are in `LessonPages`, in one place.
+
 ### What every screen states
 
 Every experience screen states, under the heading "What these figures cannot tell" (FR-EXP-11):
@@ -275,7 +402,7 @@ Every experience screen states, under the heading "What these figures cannot tel
 - that small samples are unreliable, with the sample size that a record is marked below,
 - and that Demo results differ from Live results.
 
-`ExperienceNotes` states all three, and asks for nothing of the page that shows it. So a page states them whatever it has to show, also when it has no trade to show. `ExperienceStatementTests` asks every route of `Ecnanib.WebUi.Pages.Experience`, with no trade, with trades in Demo, and with trades in both modes, so a screen that is added fails it until it makes the statements.
+`ExperienceNotes` states all three, and asks for nothing of the page that shows it. So a page states them whatever it has to show, also when it has no trade to show. `ExperienceStatementTests` asks every route of `Ecnanib.WebUi.Pages.Experience`, the page of the lessons among them, with no trade, with trades in Demo, and with trades in both modes, so a screen that is added fails it until it makes the statements.
 
 ## The settings
 
@@ -285,19 +412,21 @@ Every experience screen states, under the heading "What these figures cannot tel
 | `Experience:Damping` | The constant that damps a strength score toward zero for small samples (FR-EXP-4): the 20 of measure × n ÷ (n + 20). A whole number, 0 or more. | 20 |
 | `Experience:ShadowFeePercent:Spot` | The standard fee of an order of a shadow trade on the Spot market (FR-EXP-5), in percent of what the order is worth, from 0 to 1. | 0.1 |
 | `Experience:ShadowFeePercent:Futures` | The same on the Futures market. | 0.05 |
+| `Experience:LessonsPerPrompt` | The most lessons that a prompt of the Strategist or of the Risk Manager recalls (FR-EXP-7). A whole number, 0 or more: with 0, a prompt recalls none, and lessons are written all the same. | 5 |
 
-The other keys of `Experience` are for what is not built: `LessonsPerPrompt`, and those of `Board`. The file is read with them, and nothing uses them yet. How a setting reaches a component is in [configuration.md](configuration.md).
+The size budget of the recalled lessons and the limits of a lesson are fixed, and are no settings: see "Recalling lessons" and "Lessons". The other keys of `Experience` are for what is not built: those of `Board`. The file is read with them, and nothing uses them yet. How a setting reaches a component is in [configuration.md](configuration.md).
 
 ## The data
 
 A track record has no table. It is worked out from `positions`, `position_results`, and `position_roles`, which the Decision Engine keeps: see "The record of an order" in [orders.md](orders.md). So it cannot say something else than the positions say. A strength score has no table either.
 
-Experience has two tables, for what later candles are to say something of:
+Experience has three tables. Two are for what later candles are to say something of, and the third is for the lessons:
 
 | Table | Columns |
 |---|---|
 | `analyst_calls` | `cycle_id`, `role`, `user_id`, `model_id`, `mode`, `market`, `symbol`, `timeframe`, `closed_at`, `direction`, `price`, `due_at`, `outcome`, `later_price`, `scored_at`. One row for each analyst of a cycle that called a direction: `(cycle_id, role)` is its key. Indexed by `(user_id, closed_at)`, and by `due_at` over the rows that have no outcome. |
 | `shadow_trades` | `cycle_id`, `user_id`, `model_id`, `mode`, `market`, `symbol`, `timeframe`, `closed_at`, `side`, `entry_price`, `resting`, `stop_loss`, `take_profit`, `due_at`, `outcome`, `result_in_r`, `exited_at`, `evaluated_at`. One row for the vetoed plan of a cycle: `cycle_id` is its key. Indexed in the same two ways. |
+| `lessons` | `position_id`, `user_id`, `agent_id`, `mode`, `market`, `symbol`, `timeframe`, `closed_at`, `result_in_r`, `due_at`, `outcome`, `setup`, `expected`, `happened`, `takeaway`, `tags`, `model_id`, `template_id`, `written_at`, `enabled`. One row for the lesson of a closed position: `position_id` is its key. Indexed by `(user_id, closed_at)`, by `(user_id, agent_id, closed_at)`, and by `due_at` over the rows that have no outcome. |
 
 | Column | What it holds |
 |---|---|
@@ -310,14 +439,24 @@ Experience has two tables, for what later candles are to say something of:
 | `analyst_calls.outcome`, `later_price`, `scored_at` | Null until the call is scored. `Matched`, `Missed`, or `NoCandles`, with the close of the 4th later candle, and when it was scored. |
 | `shadow_trades.side`, `entry_price`, `resting`, `stop_loss`, `take_profit` | `Long` or `Short`, the price that it is entered at, whether that is the price of an entry that rests, and the stop-loss and the take-profit of the plan. |
 | `shadow_trades.outcome`, `result_in_r`, `exited_at`, `evaluated_at` | Null until the trade has ended. `StopLoss`, `TakeProfit`, `TimeUp`, `NotEntered`, `Rejected`, or `NoCandles`, with its result in R where it has one, the close of the candle that ended it, and when that was found. |
-| `due_at` | When the row is next looked at. For a call it never changes. For a shadow trade it moves to the close of the next candle while the trade is open. |
+| `due_at` | When the row is next looked at. For a call it never changes. For a shadow trade it moves to the close of the next candle while the trade is open. For a lesson it moves an hour on when the lesson is taken for its model to be called. |
+| `lessons.agent_id`, `mode`, `market`, `symbol`, `timeframe`, `closed_at`, `result_in_r` | What the position of the lesson says: its agent, what it was traded on, when it was closed, and its result in R, which is null where it has none. |
+| `lessons.outcome`, `written_at` | Null while the lesson waits. `Written`, `NoModel`, `NoKey`, `NotComposed`, or `NoResult`, with when the row was given it. |
+| `lessons.setup`, `expected`, `happened`, `takeaway` | Null until the lesson is written. What its model wrote, each on one line. They are listed in `PersonalDataRules` as that. |
+| `lessons.tags` | The names of members of `LessonTag`, as `text[]`, in the order of the set. Null until the lesson is written. |
+| `lessons.model_id`, `template_id` | The model of the catalog that wrote the lesson, and the version of the lesson instructions that it was written from (FR-PRM-6). Null until the lesson is written. Neither a model nor a version is ever deleted. |
+| `lessons.enabled` | Whether the lesson may be recalled into a prompt. True until its user disables it. |
 
-- **A row is written once, with its cycle, and completed once, by the job.** Nothing else changes it.
-- **Both tables hold rows of users.** `AnalystCall` and `ShadowTrade` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. `RoleStrengthsTests` has the test with two users, which is marked for both.
+- **A row is written once, with its cycle, and completed once, by the job.** Nothing else changes it. A lesson is written once with the result of its position, and completed once: after that its user alone changes it, by disabling it, enabling it, or deleting it.
+- **All three tables hold rows of users.** `AnalystCall`, `ShadowTrade`, and `Lesson` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. `RoleStrengthsTests` has the test with two users for the first two, and `LessonsTests` the one for `lessons`.
 - **A row hangs on its cycle, and carries its owner along:** `(cycle_id, user_id)` points at `decision_cycles (id, user_id)`, with a key that deletes the row with the cycle. So the rows of an agent go with it, and those of an account with the account. A row names no agent in a column of its own.
 - **That key is declared by the Decision Engine,** in `ExperienceKeys.cs`, because Experience may not use it. So each of the two entities has two configurations: its own, in Experience, and that of its key. See "The model" in [persistence.md](persistence.md). `ExperienceModelTests` holds the names of the keys.
-- **Neither table is in the export of a user's data.** Both are listed in `ExportRules.NotExported`, as the cycles that they hang on are: see "Exporting your data" in [accounts.md](accounts.md).
-- **A cycle that was stored before the tables were added has no rows.** The migration `AddExperienceScoring` creates the tables, and fills nothing.
+- **A lesson hangs on its position, and carries its owner along:** `(position_id, user_id)` points at `positions (id, user_id)`, with a key that deletes the row with the position. So the lessons of an agent go with it, and those of an account with the account. And `template_id` points at `prompt_templates`, with a key that keeps a version that a lesson names.
+- **Those two keys are declared by the Decision Engine as well,** in `LessonKeys.cs`, each in a configuration that is named to apply after the table that it points at. `ExperienceModelTests` holds the names of the keys.
+- **A lesson names its agent in a column of its own,** unlike a call and a shadow trade: the lessons of the agent are recalled first, and are what a reset deletes, and Experience cannot ask the positions whose they are. The column has no key of its own: the row goes with its position, which goes with the agent.
+- **Neither table of the calls and the shadow trades is in the export of a user's data.** Both are listed in `ExportRules.NotExported`, as the cycles that they hang on are: see "Exporting your data" in [accounts.md](accounts.md).
+- **The lessons are in the export,** in the section `lessons`: every row, a lesson that waits or could not be written with which it is. Agents hands them over: Experience may not use Accounts, which declares what an export is made of, so that what recalls lessons into prompts stays out of reach of personal data (FR-PRM-9).
+- **A cycle that was stored before the tables were added has no rows.** The migration `AddExperienceScoring` creates the tables, and fills nothing. A position whose result was recorded before `AddLessons` has no lesson.
 - Records of decisions are kept for a year (NFR-DAT-5), and nothing deletes yet. A row of Experience goes with its cycle when that is deleted: see "Not built yet".
 
 ## The log
@@ -327,6 +466,23 @@ Experience has two tables, for what later candles are to say something of:
 The candles of {Symbol} on {Market} in {TradingMode} could not be read for Experience ({ExchangeCallOutcome}). What it was to score of it waits for the next run
 The candles of {Symbol} on {Market} in {TradingMode} are not to be had: the configuration file does not list the symbol. What Experience was to score of it ends with no result
 ```
+
+What has the lessons written says, under `Ecnanib.DecisionEngine.LessonWritingJob`, `LessonWriting`, `LessonRuns`, and `RecalledLessons`:
+
+```
+{Lessons} lessons of closed positions were written, and {Unwritten} positions were left without one
+The lesson of the position of agent {AgentId} in {Symbol} was written
+The lesson of the position of agent {AgentId} in {Symbol} was not written: {LessonOutcome}
+The lesson of a position of agent {AgentId} was rejected on attempt {Attempt}: {RejectedField} is {RejectionRule}
+The lesson of a position of agent {AgentId} is not written: user {UserId} has no key for the AI provider {Provider} that can be used ({KeyHandOverOutcome})
+The lesson of a position of agent {AgentId} is not written: its part "{PromptPart}" would hold {PromptLeak}
+The {Role} of agent {AgentId} gave no valid lesson of a closed position
+The lesson of the position {PositionId} could not be written
+{Lessons} lessons of agent {AgentId} are recalled into no prompt: each holds what a prompt never holds
+The lessons of agent {AgentId} could not be recalled, so its team decides with none
+```
+
+A lesson that is written is information, and one that is not is a warning, with why. A rejection says the field and the rule, in the service's own words. **No event holds anything that a model wrote:** not a part of a lesson, and not what a rejected answer said.
 
 A run that completed something says how much, as information, and a run that completed nothing says nothing. Candles that could not be read are a warning, said once for each symbol with each run, and so are candles that are not to be had. An event names a symbol, a market, and a mode, and no user: the candles of a symbol are the same for everyone.
 
@@ -340,6 +496,12 @@ A run that completed something says how much, as information, and a run that com
 
 `CycleExperienceTests` stores cycles as the application does, and reads what each left. `ExperienceScoringJobTests` runs the job itself, at moments of its choosing, with `StandInCandles` in place of the candles of the exchange, which answers each ask with the candles that the test names: no test application runs the job on a schedule. `RoleStrengthsTests` asks `IRoleStrengths`, and has the test with two users, which is marked for `analyst_calls` and `shadow_trades`. `StrengthPageTests` reads the section of the strength scores on both screens.
 
+`LessonTests` holds the limits of a lesson, that each of its parts is one line, and the rule of what a prompt recalls, with its count and its budget, without a database. `LessonsTests` asks `ILessons` and `IDueLessons`: the order of the recall, across the modes, what is not recalled, and the test with two users, which is marked for `lessons`. `LessonPageTests` reads the pages of the lessons, presses their buttons, and reads the section of the export.
+
+`LessonWritingJobTests` runs the job itself, with `StandInModels` in the place of the AI providers and `StandInKeys` in the place of what hands a stored key over: the lesson of a closed position, written once, the one call more, a model that gives none, a user with no key, a Risk Manager with no model, two users, a run that starts no lesson late, and a run that is stopped. `LessonPromptTests` holds the prompt of the call, the schema of a lesson, and its validation. `CycleLessonTests` runs cycles as the application does, with agents that are stored, and reads the lessons in the prompts that their models were sent.
+
+`StoredLessonRows.GiveLessonAsync` gives an agent a closed position with its result and the lesson of that position, as it is once its model has written it, or as a test says: one that waits, or one that could not be written. A test tells one lesson from another by its takeaway. `StoredOrderRows.GiveOrdersAsync` leaves the lesson of its position to be written, as recording a result does: so a cycle that a test stores with its orders has one that waits, which no prompt recalls.
+
 `StoredTradeRows.GiveTradeAsync` gives an agent a closed position with its roles and its result, stored as the application stores them, without the cycle and the orders that lead to one. A test says of it what it is about: its result in R, its mode, its market, its timeframe, whether its result is complete, and whether it is recorded at all. Most of these tests take 3 trades as the minimum sample, with a file of their own, so that a test has enough of them with a few.
 
 `StoredExperienceRows.GiveCallsAsync` and `GiveShadowTradeAsync` give an agent calls and shadow trades as they are once they are scored, each on a cycle of its own that has no calls, without the candles that score them. `GiveCycleAsync` of the tests of the Decision Engine stores a whole cycle as the application does, which leaves the call of its Market Analyst, and the shadow trade of its plan when it ended with a veto: a test that needs a row in every table of users gives its agent one of each.
@@ -352,7 +514,13 @@ A run that completed something says how much, as information, and a run that com
 - Following a shadow trade for longer than 200 candles, and scoring what the candles of the exchange no longer reach. The gateway reads the newest candles alone: see "Market data" in [exchange.md](exchange.md).
 - Scoring the cycles that were recorded before the tables were added. They left no rows.
 - Deleting the calls and the shadow trades that are older than the records of decisions are kept (NFR-DAT-5). They go with their cycles, and nothing deletes a cycle for its age yet.
-- Lessons: writing one after each closed position, recalling them into prompts, and the page that a user reads and manages them on (FR-EXP-6, FR-EXP-7, FR-EXP-8).
+- Saying in the record of a cycle which lessons its prompts recalled. A lesson can be disabled or deleted afterwards, and the record of a cycle holds no prompt: see "The record of a cycle" in [team.md](team.md).
+- A record of the calls that write lessons. A lesson says the model that wrote it and the version of its instructions. How long a call took and how many tokens it used are in the log of the gateway alone, and a call that gave no lesson leaves the outcome of its row.
+- Lessons for the positions that were closed before lessons were written. Their rows were never left: see "Writing a lesson".
+- Calling a model for a lesson again later, after it gave none. Every call is billed to the user, so there are two at the most.
+- Keeping the lessons of an agent that is deleted. The specification keeps lessons indefinitely (NFR-DAT-5), and a lesson goes with its position, which goes with its agent, as a trade does.
+- What the market did while a position was open, in the prompt of its lesson. Candles are not kept (NFR-DAT-6): the model is sent how the position ended, and not the path to it.
+- A choice of lessons by what they are about. The tags are shown, and nothing recalls or filters by them.
 - The platform-wide board, which shows the same track record aggregated across all users (FR-EXP-10). A track record is of one user.
 - Keeping the trades of an agent that is deleted. The specification keeps positions indefinitely (NFR-DAT-5), and deleting an agent deletes its positions: see "The record of an order" in [orders.md](orders.md). A track record follows the positions, so it loses those trades.
 - A track record by symbol, by agent, or by exit reason. A trade says none of them to Experience.

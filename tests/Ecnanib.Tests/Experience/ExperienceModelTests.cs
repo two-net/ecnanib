@@ -48,6 +48,76 @@ public class ExperienceModelTests
             key => Assert.Same(toCycle.PrincipalKey, key.PrincipalKey));
     }
 
+    [Fact]
+    public void The_keys_of_a_lesson_are_named_for_their_tables_and_the_key_of_the_positions_keeps_its_name()
+    {
+        using var context = ModelOnly.Context();
+        var mapped = context.Model.FindEntityType(typeof(Lesson))!;
+
+        // The entity has three configurations: its own in Experience, and one for each of its
+        // keys to what the Decision Engine keeps, each named so that it is applied after the
+        // configuration of the table that it points at. All are of the one table, and its keys
+        // are named for the tables, and not for what an entity was called before it had one.
+        Assert.Equal("lessons", mapped.GetTableName());
+        Assert.Equal("pk_lessons", mapped.FindPrimaryKey()!.GetName());
+        Assert.Equal(["position_id"], mapped.FindPrimaryKey()!.Properties.Select(property => property.GetColumnName()));
+
+        var toPosition = Assert.Single(mapped.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(Position));
+
+        Assert.Equal("fk_lessons_positions_position_id_user_id", toPosition.GetConstraintName());
+        Assert.Equal(["position_id", "user_id"], toPosition.Properties.Select(property => property.GetColumnName()));
+
+        // It carries the owner along, and the lesson goes with its position, so with the agent
+        // of that position and with the account (NFR-DAT-9, FR-ACC-9).
+        Assert.Equal(["id", "user_id"], toPosition.PrincipalKey.Properties.Select(property => property.GetColumnName()));
+        Assert.Equal(DeleteBehavior.Cascade, toPosition.DeleteBehavior);
+
+        // The key of the positions that it points at is the one that the results of the
+        // positions point at, under the name that it had before.
+        Assert.Equal("ak_positions_id_user_id", toPosition.PrincipalKey.GetName());
+        Assert.All(
+            context.Model.FindEntityType(typeof(PositionResult))!.GetForeignKeys().Where(key => key.PrincipalEntityType.ClrType == typeof(Position)),
+            key => Assert.Same(toPosition.PrincipalKey, key.PrincipalKey));
+
+        // A lesson names the version of the lesson instructions that it was written from
+        // (FR-PRM-6), which is a row that is never deleted, and the model that wrote it, which
+        // is one of the catalog and is never deleted either (FR-CAT-5).
+        var toTemplate = Assert.Single(mapped.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PromptTemplate));
+
+        Assert.Equal("fk_lessons_prompt_templates_template_id", toTemplate.GetConstraintName());
+        Assert.Equal(DeleteBehavior.Restrict, toTemplate.DeleteBehavior);
+
+        var toModel = Assert.Single(mapped.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(Ecnanib.Catalog.AiModel));
+
+        Assert.Equal("fk_lessons_ai_models_model_id", toModel.GetConstraintName());
+        Assert.Equal(DeleteBehavior.Restrict, toModel.DeleteBehavior);
+        Assert.Equal(3, mapped.GetForeignKeys().Count());
+    }
+
+    [Fact]
+    public void A_lesson_says_the_mode_and_names_its_agent_which_recall_and_reset_go_by()
+    {
+        using var context = ModelOnly.Context();
+        var columns = context.Model.FindEntityType(typeof(Lesson))!.GetProperties().Select(property => property.GetColumnName()).ToList();
+
+        // What an agent learned is stored with the mode it was learned in (FR-BIN-11), together
+        // with the market, the symbol, and the timeframe of its position: what the lessons of
+        // other agents are recalled by (FR-EXP-7).
+        Assert.Contains("mode", columns);
+        Assert.Contains("market", columns);
+        Assert.Contains("symbol", columns);
+        Assert.Contains("timeframe", columns);
+
+        // And, unlike a call and a shadow trade, it names its agent in a column of its own:
+        // the lessons of the agent are recalled first, and are what a reset deletes (FR-EXP-8),
+        // and Experience cannot ask the positions whose they are. The row goes with its
+        // position, which goes with the agent, so no deleted agent is left in the column.
+        Assert.Contains("agent_id", columns);
+        Assert.DoesNotContain(
+            context.Model.FindEntityType(typeof(Lesson))!.GetForeignKeys(),
+            key => key.Properties.Any(property => property.GetColumnName() == "agent_id"));
+    }
+
     [Theory]
     [InlineData(typeof(AnalystCall))]
     [InlineData(typeof(ShadowTrade))]

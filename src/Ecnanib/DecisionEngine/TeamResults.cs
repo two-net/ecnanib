@@ -1,3 +1,4 @@
+using Ecnanib.Experience;
 using Ecnanib.Shared;
 
 namespace Ecnanib.DecisionEngine;
@@ -253,6 +254,20 @@ public sealed record TradePlan
     internal TradePlan ClosingOnly() => Action == PlanAction.Reverse
         ? new(PlanAction.Close, entryType: null, entryPrice: null, stopLoss: null, takeProfit: null, riskFraction: null, Rationale)
         : throw new InvalidOperationException($"Only a plan that reverses closes a position before it opens one, and this plan is to {Action}.");
+}
+
+/// <summary>
+/// The lesson of a closed position, as its model wrote it and as its validation left it: each
+/// text on one line and inside the limits of a lesson (FR-EXP-6). See "Writing a lesson" in
+/// docs/experience.md.
+/// </summary>
+/// <remarks>Only what validates an answer makes one: see <see cref="IRoleResults"/>.</remarks>
+public sealed record LessonDraft
+{
+    internal LessonDraft(LessonWords words) => Words = words;
+
+    /// <summary>What the lesson says, as its row is given it.</summary>
+    public LessonWords Words { get; }
 }
 
 /// <summary>

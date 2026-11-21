@@ -414,6 +414,7 @@ public sealed record TestCycleResult(TestCycleOutcome Outcome, Guid? CycleId = n
 | Settles the orders of its agent with the exchange | **Does not.** Settling takes an entry that rests off the exchange, and places the protection that a position lacks. The team decides on what the records of the agent say it holds, which the job that settles the orders keeps: see "Settling" in [orders.md](orders.md). |
 | Evaluates the loss limits of its agent | **Does not.** A limit that is reached halts the agent and closes its position (FR-RSK-8). The Risk Guard still holds a plan that opens a position to both limits, and the record says what it found. |
 | Builds its data package, and runs its team | The same: the four roles in their order, each with its model, on the key of the agent's user. |
+| Recalls the lessons of its agent into the prompts of its Strategist and its Risk Manager | The same (FR-EXP-7): see "Recalling lessons" in [experience.md](experience.md). It opens and closes no position, so no lesson is written of it. |
 | Has the Risk Guard check what goes on | The same, on the facts as they are then. |
 | Hands what the Risk Guard accepted to `IPlanOrders` | **Hands it to nothing.** `AgentOrders.PlaceAsync` refuses a test cycle as well, where an order is made: that it places no order does not rest on one line. |
 | Is recorded when it ends | The same, with `decision_cycles.kind` as `Test`: see "The record of a cycle" in [team.md](team.md). |

@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Ecnanib.Agents;
+using Ecnanib.Experience;
 using Ecnanib.Shared;
 
 namespace Ecnanib.DecisionEngine;
@@ -23,20 +24,29 @@ internal sealed class RoleResults(PromptScreen screen) : IRoleResults
     private static readonly IReadOnlyDictionary<Role, JsonElement> Schemas = Enum.GetValues<Role>()
         .ToDictionary(role => role, role => JsonDocument.Parse(RoleSchemas.Of(role)).RootElement.Clone());
 
+    // And the schema of a lesson, which is of no role.
+    private static readonly JsonElement LessonSchemaRead = JsonDocument.Parse(RoleSchemas.Lesson).RootElement.Clone();
+
     public string SchemaOf(Role role) => RoleSchemas.Of(role);
 
+    public string LessonSchema => RoleSchemas.Lesson;
+
     public RoleResult<MarketReport> ReadMarketReport(string answered) =>
-        Read(Role.MarketAnalyst, answered, placed: true, MarketReportOf);
+        Read(Schemas[Role.MarketAnalyst], answered, placed: true, MarketReportOf);
 
     public RoleResult<SentimentRead> ReadSentiment(string answered) =>
-        Read(Role.SentimentAnalyst, answered, placed: true, SentimentOf);
+        Read(Schemas[Role.SentimentAnalyst], answered, placed: true, SentimentOf);
+
+    // A later prompt reads a lesson, so one that holds what a prompt never holds is rejected.
+    public RoleResult<LessonDraft> ReadLesson(string answered) =>
+        Read(LessonSchemaRead, answered, placed: true, LessonOf);
 
     public RoleResult<TradePlan> ReadPlan(string answered, AgentContext agent)
     {
         ArgumentNullException.ThrowIfNull(agent);
         ArgumentNullException.ThrowIfNull(agent.Limits);
 
-        return Read(Role.Strategist, answered, placed: true, plan => PlanOf(plan, agent));
+        return Read(Schemas[Role.Strategist], answered, placed: true, plan => PlanOf(plan, agent));
     }
 
     public RoleResult<RiskReview> ReadReview(string answered, TradePlan plan)
@@ -44,18 +54,18 @@ internal sealed class RoleResults(PromptScreen screen) : IRoleResults
         ArgumentNullException.ThrowIfNull(plan);
 
         // No prompt reads a review, so what it holds refuses none. It is not kept all the same.
-        return Read(Role.RiskManager, answered, placed: false, review => ReviewOf(review, plan));
+        return Read(Schemas[Role.RiskManager], answered, placed: false, review => ReviewOf(review, plan));
     }
 
     /// <summary>
     /// Reads an answer: the schema first, then the values, then what the text holds as it is
     /// placed in a prompt.
     /// </summary>
-    /// <param name="role">The role that answered.</param>
+    /// <param name="schema">The schema of what was asked for: that of a role, or that of a lesson.</param>
     /// <param name="answered">The answer.</param>
-    /// <param name="placed">Whether a later role reads the answer in its prompt.</param>
+    /// <param name="placed">Whether a later prompt reads the answer.</param>
     /// <param name="typed">Reads the values of an answer that is inside its schema, or says which is outside its range.</param>
-    private RoleResult<T> Read<T>(Role role, string answered, bool placed, Func<JsonElement, Values<T>> typed)
+    private RoleResult<T> Read<T>(JsonElement schema, string answered, bool placed, Func<JsonElement, Values<T>> typed)
         where T : class
     {
         ArgumentNullException.ThrowIfNull(answered);
@@ -85,7 +95,7 @@ internal sealed class RoleResults(PromptScreen screen) : IRoleResults
             var written = JsonSerializer.Serialize(answer, OneLine);
             var kept = screen.LeakIn(written) is null ? written : null;
 
-            if (SchemaCheck.Violation(Schemas[role], answer) is { } outside)
+            if (SchemaCheck.Violation(schema, answer) is { } outside)
             {
                 return new RoleResult<T>(null, kept, outside);
             }
@@ -360,6 +370,64 @@ internal sealed class RoleResults(PromptScreen screen) : IRoleResults
         }
 
         return new RiskReview(verdict, riskFraction, answer.GetProperty("rationale").GetString()!);
+    }
+
+    /// <summary>
+    /// A lesson says something in each of its parts, in one line each, and is short: a takeaway
+    /// of at most 60 words (FR-EXP-6), and at most a few tags.
+    /// </summary>
+    /// <remarks>
+    /// The parts are read as one line each, which is how the row keeps them and how a prompt is
+    /// handed them: a line break in an answer is a space, so a lesson cannot pose as a heading
+    /// of a prompt. They are held to their limits as they are kept, and screened as a prompt
+    /// places them.
+    /// </remarks>
+    private Values<LessonDraft> LessonOf(JsonElement answer)
+    {
+        var parts = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var (field, most) in new[]
+        {
+            ("setup", LessonLimits.PartCharacters),
+            ("expected", LessonLimits.PartCharacters),
+            ("happened", LessonLimits.PartCharacters),
+            ("takeaway", LessonLimits.TakeawayCharacters),
+        })
+        {
+            var line = LessonWords.OneLine(answer.GetProperty(field).GetString()!);
+
+            if (line.Length == 0)
+            {
+                return Broke(RejectionRule.Empty, field);
+            }
+
+            if (line.Length > most)
+            {
+                return Broke(RejectionRule.TextTooLong, field);
+            }
+
+            parts[field] = line;
+        }
+
+        if (LessonLimits.WordsIn(parts["takeaway"]) > LessonLimits.TakeawayWords)
+        {
+            return Broke(RejectionRule.TextTooLong, "takeaway");
+        }
+
+        // A tag that is named twice is one tag.
+        var tags = answer.GetProperty("tags").EnumerateArray().Select(Named<LessonTag>).Distinct().ToList();
+
+        if (tags.Count > LessonLimits.Tags)
+        {
+            return Broke(RejectionRule.TooMany, "tags");
+        }
+
+        if (screen.LeakIn(LessonWords.TextOf(parts["setup"], parts["expected"], parts["happened"], parts["takeaway"])) is not null)
+        {
+            return Broke(RejectionRule.HoldsWhatAPromptNeverHolds, RoleRejection.Answer);
+        }
+
+        return new LessonDraft(LessonWords.Of(parts["setup"], parts["expected"], parts["happened"], parts["takeaway"], tags));
     }
 
     /// <summary>What the rationale of an answer breaks, or null: it says something, and is short.</summary>

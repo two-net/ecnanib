@@ -17,9 +17,9 @@ public interface IPromptTemplates
 {
     /// <summary>
     /// The templates that an agent on a market and a timeframe uses now: the one of each role,
-    /// the module of the market, the module of the timeframe, and the module of the profile. The
-    /// market and the timeframe are the agent's own settings, so a module that does not go with
-    /// them cannot be asked for (FR-PRM-4).
+    /// the module of the market, the module of the timeframe, the module of the profile, and the
+    /// instructions for the lesson of a closed position. The market and the timeframe are the
+    /// agent's own settings, so a module that does not go with them cannot be asked for (FR-PRM-4).
     /// </summary>
     /// <param name="market">The market of the agent.</param>
     /// <param name="timeframe">The timeframe of the agent.</param>
@@ -35,11 +35,16 @@ public interface IPromptTemplates
 /// <param name="Market">The module of the agent's market.</param>
 /// <param name="Timeframe">The module of the agent's timeframe.</param>
 /// <param name="Profile">The module of the trading profile, which is the same for every agent.</param>
+/// <param name="Lesson">
+/// The instructions for the lesson that the model of the agent's Risk Manager writes after a
+/// closed position (FR-EXP-6), which are the same for every agent. No call of a role uses them.
+/// </param>
 public sealed record TemplatesInUse(
     IReadOnlyDictionary<Role, PromptTemplate> Roles,
     PromptTemplate Market,
     PromptTemplate Timeframe,
-    PromptTemplate Profile)
+    PromptTemplate Profile,
+    PromptTemplate Lesson)
 {
     /// <summary>
     /// The templates that one call of a role uses, in the order a prompt is composed in: the

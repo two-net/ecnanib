@@ -109,6 +109,17 @@ internal static class PersonalDataRules
             "A symbol of Binance that the configuration file lists: the one of the agent when an analyst of its team made the call.",
         ["shadow_trades.symbol"] =
             "A symbol of Binance that the configuration file lists: the one of the agent when the plan was vetoed.",
+        ["lessons.symbol"] =
+            "A symbol of Binance that the configuration file lists: the one of the position that the lesson is of.",
+        ["lessons.setup"] =
+            "What a model wrote about the setup of a closed trade. The model was sent the closed position, the plan that " +
+            "opened it, and the review of that plan, and nothing that says who the user is (FR-PRM-9, NFR-SEC-8), and a " +
+            "lesson that holds an email address or an identifier is not kept.",
+        ["lessons.expected"] = "What the same model wrote about what the plan of that trade expected, held to the same.",
+        ["lessons.happened"] = "What the same model wrote about what happened in that trade, held to the same.",
+        ["lessons.takeaway"] = "The one takeaway that the same model wrote about that trade, held to the same.",
+        ["lessons.tags"] =
+            "What a lesson is about, as the names of members of a fixed set that its model chose from: no text of a model's own.",
         ["notifications.content"] =
             "What the service tells the user about an agent, in the service's own words: what happened to a position, " +
             "or how it stands, with its symbol and its mode. Nothing that a user typed is in it, and no secret (FR-NTF-1). It is in the export.",

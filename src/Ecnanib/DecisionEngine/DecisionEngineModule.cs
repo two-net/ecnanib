@@ -109,6 +109,18 @@ public static class DecisionEngineModule
         // agent's user, the validation of its answer, and the one call more (FR-TEAM-9).
         services.AddSingleton<RoleRuns>();
 
+        // The lessons that the prompts of a cycle recall, for its Strategist and its Risk
+        // Manager (FR-EXP-7). Experience says which, for the user of the agent alone.
+        services.AddSingleton<RecalledLessons>();
+
+        // Has the lesson of every closed position written, by the model of the agent's Risk
+        // Manager, with the key of the agent's user (FR-EXP-6): the call, the validation of
+        // what the model wrote, and the one call more. It is here, and not in Experience, which
+        // keeps the lessons: only this component calls a model (NFR-SEC-8).
+        services.AddSingleton<LessonRuns>();
+        services.AddSingleton<LessonWriting>();
+        services.AddBackgroundJob<LessonWritingJob>();
+
         // The data package of a cycle: candles, the context of the higher timeframes, the
         // indicators, which the system computes, and what the agent holds, which what keeps the
         // positions and the orders says.

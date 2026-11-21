@@ -433,6 +433,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `agents` | Each agent: its id, its name, its mode, market, symbol, and timeframe, its allocated capital and the asset it is in, its risk settings, its state with its cause and since when, when it was created, whether its roles are reassigned automatically, and when the service last reassigned one. |
 | `agentRoles` | Each role of an agent that was given a model: the id of the agent, the role, and the provider and the identifier of the model. |
 | `agentStateChanges` | Each change of the state of an agent that the user has: the id of the agent, the state it came to, why, and when. |
+| `lessons` | The lesson of each closed position of the user's agents (FR-EXP-8): the id of the agent, the mode, market, symbol, and timeframe of the position, when it was closed, its result in R, what the lesson says, what it is about, whether it is enabled, and when it was written. A lesson that waits to be written, or that could not be, says which, and has no words. |
 
 | Rule | Detail |
 |---|---|
@@ -458,6 +459,7 @@ public interface IExportedPart
 - **A part is a section of the file,** beside the ones of Accounts, under the name it gives. It is there also when the user has no such rows, as an empty list.
 - **A part asks for the rows of the user it is given,** with `OwnedBy`, and holds no secret.
 - Credentials hands over `aiKeys` and `exchangeKeys` this way, Agents hands over `agents`, `agentRoles`, and `agentStateChanges`, and Notifications hands over `notifications`. See [credentials.md](credentials.md), [agents.md](agents.md), and [notifications.md](notifications.md).
+- **Agents hands over `lessons` as well, which Experience keeps.** Experience may not use Accounts, and stays so: it recalls lessons into prompts, and what feeds a prompt is kept out of reach of personal data (FR-PRM-9). Agents may use both, and reads the rows of Experience as they are stored. See "The data" in [experience.md](experience.md).
 
 The log has `User {UserId} exported their data`, and nothing of the data.
 
@@ -661,7 +663,6 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
 - Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
-- The part of the export that Experience keeps: lessons. It hands its part over as an `IExportedPart` when it is built, as Credentials does for the keys and Agents for the agents. See "Exporting your data".
 - Preferences. None is stored yet. When one is, it is personal data of an allowed kind, and it is in the export.
 - Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
 - The rest of the audit trail: the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".

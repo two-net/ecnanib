@@ -67,6 +67,18 @@ internal static class TeamAnswers
     public static string Review(string verdict = "approve", decimal? riskFraction = null, string rationale = "The stop is beyond the level.") =>
         $$"""{"verdict":"{{verdict}}","riskFraction":{{Number(riskFraction)}},"rationale":"{{rationale}}"}""";
 
+    /// <summary>
+    /// What the model of a Risk Manager answers when it writes the lesson of a closed position
+    /// (FR-EXP-6): unless a test says otherwise, a lesson that is inside its schema and its limits.
+    /// </summary>
+    public static string Lesson(
+        string setup = "Long BTCUSDT on the hour, on a breakout above the range high.",
+        string expected = "Continuation to the next resistance.",
+        string happened = "The price fell back into the range, and the stop-loss was executed at -1.07 R.",
+        string takeaway = "Wait for the retest of a broken level before entering.",
+        string tags = "\"entry\",\"timing\"") =>
+        $$"""{"setup":{{Quoted(setup)}},"expected":{{Quoted(expected)}},"happened":{{Quoted(happened)}},"takeaway":{{Quoted(takeaway)}},"tags":[{{tags}}]}""";
+
     /// <summary>What a role answers, unless a test says otherwise: a valid answer of its own schema.</summary>
     public static string Of(Role role) => role switch
     {
@@ -78,6 +90,9 @@ internal static class TeamAnswers
     };
 
     private static string Text(string? value) => value is null ? "null" : $"\"{value}\"";
+
+    // A text as JSON writes it: a line break in it is an escape, as a model answers one.
+    private static string Quoted(string value) => System.Text.Json.JsonSerializer.Serialize(value);
 
     private static string Number(decimal? value) => value is { } number ? number.ToString(CultureInfo.InvariantCulture) : "null";
 }
@@ -365,6 +380,12 @@ internal static class TeamLog
 /// <param name="Number">Which call of its role it is, of all that the stand-in was asked for: 1 for the first.</param>
 internal sealed record AskedModel(Role Role, AiProviderCode Provider, AiCallRequest Request, string ApiKey, int Number);
 
+/// <summary>One call of a model for the lesson of a closed position, as <see cref="StandInModels"/> was asked for it.</summary>
+/// <param name="Provider">The provider that was asked.</param>
+/// <param name="Request">What the call was made with: the model, the prompt, the schema, and whether the model may search.</param>
+/// <param name="ApiKey">The key that the call was made with.</param>
+internal sealed record AskedLesson(AiProviderCode Provider, AiCallRequest Request, string ApiKey);
+
 /// <summary>
 /// Stands for the AI providers where the team of an agent calls its models: it answers each
 /// role with a valid result of its schema, unless the test says what a call of a role is
@@ -379,6 +400,8 @@ internal sealed class StandInModels : IAiProviderGateway
     private readonly Dictionary<Role, Queue<Func<AskedModel, AiCallResult>>> _said = [];
     private readonly HashSet<Role> _holds = [];
     private readonly List<(Role Role, TaskCompletionSource Held)> _held = [];
+    private readonly List<AskedLesson> _lessons = [];
+    private readonly Queue<AiCallResult> _lessonsSaid = new();
     private int _running;
     private int _most;
 
@@ -414,6 +437,36 @@ internal sealed class StandInModels : IAiProviderGateway
 
     /// <summary>The calls of a role, in the order they came in.</summary>
     public IReadOnlyList<AskedModel> CallsOf(Role role) => [.. Calls.Where(call => call.Role == role)];
+
+    /// <summary>
+    /// The calls for the lesson of a closed position, in the order they came in. They are of no
+    /// cycle, and are none of <see cref="Calls"/>.
+    /// </summary>
+    public IReadOnlyList<AskedLesson> LessonCalls
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _lessons];
+            }
+        }
+    }
+
+    /// <summary>What the next calls for a lesson are answered with, one after the other. A call after them is answered with a valid lesson.</summary>
+    public void SaysLesson(params AiCallResult[] answers)
+    {
+        lock (_gate)
+        {
+            foreach (var answer in answers)
+            {
+                _lessonsSaid.Enqueue(answer);
+            }
+        }
+    }
+
+    /// <summary>The same, with what the model answers: each a result that the call succeeded with.</summary>
+    public void SaysLesson(params string[] answers) => SaysLesson([.. answers.Select(answer => Answered(answer))]);
 
     /// <summary>What the next calls of a role are answered with, one after the other. A call after them is answered with a valid result.</summary>
     public void Says(Role role, params AiCallResult[] answers) =>
@@ -480,6 +533,20 @@ internal sealed class StandInModels : IAiProviderGateway
     public async Task<AiCallResult> CompleteAsync(
         AiProviderCode provider, AiCallRequest request, string apiKey, CancellationToken cancellationToken)
     {
+        // The lesson of a closed position is asked for with a schema of its own, by no role of
+        // a cycle: it is answered apart, and kept apart.
+        if (request.ResultSchema.Contains("\"takeaway\"", StringComparison.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            lock (_gate)
+            {
+                _lessons.Add(new AskedLesson(provider, request, apiKey));
+
+                return _lessonsSaid.Count > 0 ? _lessonsSaid.Dequeue() : Answered(TeamAnswers.Lesson());
+            }
+        }
+
         var role = RoleOf(request.ResultSchema);
 
         AskedModel asked;

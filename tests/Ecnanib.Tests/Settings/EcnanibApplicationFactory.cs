@@ -92,6 +92,16 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string RoleReassignmentKey = "role-reassignment";
 
+    // The job of the Decision Engine that has the lessons of the closed positions written, named in the same way.
+    private const string LessonWriting = "Ecnanib.DecisionEngine.LessonWritingJob";
+
+    /// <summary>
+    /// The key under which the job that has the lessons of the closed positions written is kept:
+    /// the scheduler of no application of the tests runs it, and a test runs it from there
+    /// itself, at a moment of its choosing.
+    /// </summary>
+    public const string LessonWritingKey = "lesson-writing";
+
     private SettingsDirectory? _ownDirectory;
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
@@ -270,6 +280,20 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
 
             services.Remove(reassigning);
             services.AddKeyedSingleton(typeof(IBackgroundJob), RoleReassignmentKey, reassigning.ImplementationType!);
+
+            // The job that has the lessons of the closed positions written is due as the
+            // background work starts, and then every few minutes: it calls the model of the
+            // Risk Manager of an agent for every lesson that is due, with the key of the agent's
+            // user. Many tests give an agent a closed position for a reason of their own, which
+            // leaves such a lesson, and stand nothing in for the models, or script what the
+            // roles of a cycle answer and nothing else. So no application of a test runs this
+            // job on a schedule: a test that is about what a run does finds it by its key, and
+            // runs it itself.
+            var writing = services.Single(job =>
+                job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == LessonWriting);
+
+            services.Remove(writing);
+            services.AddKeyedSingleton(typeof(IBackgroundJob), LessonWritingKey, writing.ImplementationType!);
 
             // The job that reconciles the agents with the exchange is due as the background
             // work starts when an agent holds anything, and then every few minutes: it asks

@@ -7,6 +7,7 @@ using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.DecisionEngine;
+using Ecnanib.Tests.Experience;
 using Ecnanib.WebUi.Pages.Agents;
 using Microsoft.AspNetCore.Components;
 
@@ -46,6 +47,15 @@ public class AgentModeBadgeTests
             [inLive] = await application.GiveCycleAsync(user.Id, inLive, Morning, orders: false),
         };
 
+        // Each has a lesson, which was written in the mode that the agent is not in now: the
+        // page that deletes a lesson is a page of its agent, and says the mode of the lesson as
+        // a word, so that the page has the one badge of the agent.
+        var lessons = new Dictionary<Guid, Guid>
+        {
+            [inDemo] = await application.GiveLessonAsync(user.Id, inDemo, Morning.AddHours(-1), mode: TradingMode.Live),
+            [inLive] = await application.GiveLessonAsync(user.Id, inLive, Morning.AddHours(-1), mode: TradingMode.Demo),
+        };
+
         // Every page of the agents, by its route: a page that is added later is among them, and
         // fails here until it shows the badge.
         var routes = typeof(AgentPages).Assembly.GetTypes()
@@ -73,6 +83,7 @@ public class AgentModeBadgeTests
                 var path = route
                     .Replace("{Id:guid}", agent.ToString(), StringComparison.Ordinal)
                     .Replace("{CycleId:guid}", cycles[agent].ToString(), StringComparison.Ordinal)
+                    .Replace("{LessonId:guid}", lessons[agent].ToString(), StringComparison.Ordinal)
                     .Replace("{Control}", "start", StringComparison.Ordinal);
 
                 Assert.False(

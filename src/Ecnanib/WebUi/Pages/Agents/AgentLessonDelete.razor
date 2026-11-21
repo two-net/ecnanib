@@ -1,0 +1,137 @@
+@page "/agents/{Id:guid}/lessons/{LessonId:guid}/delete"
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.Experience
+@using Ecnanib.WebUi.Pages.Experience
+@inject IStoredAgents Agents
+@inject ILessons Lessons
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. Deleting a lesson takes no
+    proof of who the user is: it exposes no key and moves no money. The page asks once more
+    instead (FR-EXP-8), and says what the lesson is. The lesson is named by the id of its
+    position, and is one of the agent that the path names: a lesson of another agent, or of
+    another user, is not found, like one that does not exist. The form is on the page whenever
+    one is posted, whatever is stored by then: a form that is sent twice finds no lesson the
+    second time, and is answered as the first one was. The badge of the agent's mode is under the
+    heading (FR-UI-3), and the lesson says its own mode as a word: what an agent learned in Demo
+    stays its lesson after it was switched to Live.
+*@
+
+@if (_agent is not null)
+{
+    <PageTitle>Delete a lesson of the agent @_agent.Name</PageTitle>
+
+    <h1>Delete a lesson of the agent @_agent.Name</h1>
+
+    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+
+    @if (_lesson is not null)
+    {
+        <p>@LessonPages.DeleteExplained</p>
+
+        <article class="lesson" aria-labelledby="@LessonPages.HeadingId(_lesson.Id)">
+            <h2 id="@LessonPages.HeadingId(_lesson.Id)">@LessonPages.HeadingOf(_lesson)</h2>
+
+            <p>Written from a trade in @LessonPages.ModeOf(_lesson). Closed @PageTimes.At(_lesson.ClosedAt).</p>
+
+            <dl>
+                <dt>Setup</dt>
+                <dd>@_lesson.Setup</dd>
+                <dt>Expected</dt>
+                <dd>@_lesson.Expected</dd>
+                <dt>What happened</dt>
+                <dd>@_lesson.Happened</dd>
+                <dt>Takeaway</dt>
+                <dd>@_lesson.Takeaway</dd>
+            </dl>
+
+            <p>@(_lesson.Enabled ? LessonPages.EnabledExplained : LessonPages.DisabledExplained)</p>
+        </article>
+    }
+}
+
+@if (_showForm)
+{
+    <form method="post" @formname="@LessonPages.DeleteForm" @onsubmit="DeleteAsync">
+        <AntiforgeryToken />
+
+        <button type="submit">@LessonPages.Delete</button>
+    </form>
+}
+
+@if (_agent is not null)
+{
+    <p><a href="@WebUiModule.LessonsOfAgentPath(_agent.Id)">@LessonPages.Keep</a></p>
+}
+
+@code {
+    private AgentView? _agent;
+    private LessonView? _lesson;
+    private bool _showForm;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [Parameter]
+    public Guid LessonId { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The agent that the path names, among those of the user of the session, and the lesson
+        // that it names, among those of that agent. Neither is found for another user.
+        _agent = await Agents.FindAsync(request, Id);
+
+        if (_agent is not null
+            && await Lessons.FindAsync(SignedInUser.RequiredIdOf(request), LessonId, request.RequestAborted) is { } lesson
+            && lesson.AgentId == Id)
+        {
+            _lesson = lesson;
+        }
+
+        if (!HttpMethods.IsGet(request.Request.Method))
+        {
+            // A form was posted, and is answered by DeleteAsync, also where no lesson is.
+            _showForm = true;
+
+            return;
+        }
+
+        if (_lesson is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        _showForm = true;
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // Only the lesson that was found for this user and this agent is deleted. One that is
+        // not there was deleted before, or is nobody's that asks here: either is answered alike.
+        if (_lesson is not null)
+        {
+            await Lessons.DeleteAsync(SignedInUser.RequiredIdOf(request), _lesson.Id, request.RequestAborted);
+        }
+
+        // The page that says which lessons there are now. A reload of it deletes nothing again.
+        Navigation.NavigateTo(_agent is null ? WebUiModule.LessonsPath : WebUiModule.LessonsOfAgentPath(_agent.Id));
+    }
+}
