@@ -183,6 +183,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What reads the cycles that were recorded for an agent, each as a complete record.</summary>
     public IRecordedCycles RecordedCycles => _application.Services.GetRequiredService<IRecordedCycles>();
 
+    /// <summary>What works out the AI usage of a user from the recorded calls of the roles.</summary>
+    public IAiUsage AiUsage => _application.Services.GetRequiredService<IAiUsage>();
+
     /// <summary>What says the closed trades of a user, as whatever keeps positions recorded them: the one that there is.</summary>
     public IClosedTrades ClosedTrades => _application.Services.GetServices<IClosedTrades>().Single();
 

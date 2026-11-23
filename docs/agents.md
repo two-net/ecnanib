@@ -526,6 +526,7 @@ The pages are rendered on the server for each request, and none is interactive. 
 
 - **Every page of an agent has the badge of its mode under its heading** (FR-UI-3). See "The badge".
 - **The page of the state and the form of the agent lead to the lessons of the agent,** which are read on a page of experience: `/experience/lessons?agent=<id>`. The page of the prompts shows the instructions that the lessons are written from, and leads there too.
+- **The page of the state leads to the AI usage of the agent,** which is read on the page of the AI usage: `/usage?agent=<id>` (FR-RPT-3). See "AI usage" in [team.md](team.md).
 - **A control that changes nothing says why on the page it was pressed on,** and one that did what was asked leads to the page of the state by a request that changes nothing, so a reload sends no form again. A position that was closed is said on the page that closed it: no other page would say it.
 - When a form of the page of the state is posted, all three of its forms are on the page: a form that is not there cannot be answered, and one that is sent twice finds the agent in another state the second time.
 - What a user named an agent is written as text, like everything else on a page, and is in no log event.

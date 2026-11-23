@@ -636,10 +636,10 @@ The outline below shows what the single configuration file contains. Key names a
   },
   "Email": { "Host": "", "Port": 0, "User": "", "Password": "", "From": "" },
   "AiProviders": {
-    "Claude": { "BaseUrl": "", "CatalogKey": "", "TimeoutSeconds": 60, "Allow": [], "Deny": [], "LiveSearch": [] },
-    "Gemini": { "BaseUrl": "", "CatalogKey": "", "TimeoutSeconds": 60, "Allow": [], "Deny": [], "LiveSearch": [] },
-    "GPT": { "BaseUrl": "", "CatalogKey": "", "TimeoutSeconds": 60, "Allow": [], "Deny": [], "LiveSearch": [] },
-    "Grok": { "BaseUrl": "", "CatalogKey": "", "TimeoutSeconds": 60, "Allow": [], "Deny": [], "LiveSearch": [] }
+    "Claude": { "BaseUrl": "", "CatalogKey": "", "TimeoutSeconds": 60, "Allow": [], "Deny": [], "LiveSearch": [], "Prices": [] },
+    "Gemini": { "BaseUrl": "", "CatalogKey": "", "TimeoutSeconds": 60, "Allow": [], "Deny": [], "LiveSearch": [], "Prices": [] },
+    "GPT": { "BaseUrl": "", "CatalogKey": "", "TimeoutSeconds": 60, "Allow": [], "Deny": [], "LiveSearch": [], "Prices": [] },
+    "Grok": { "BaseUrl": "", "CatalogKey": "", "TimeoutSeconds": 60, "Allow": [], "Deny": [], "LiveSearch": [], "Prices": [] }
   },
   "CatalogSync": { "IntervalHours": 24, "MissedSyncsBeforeUnavailable": 2 },
   "Binance": {

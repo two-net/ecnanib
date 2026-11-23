@@ -8,8 +8,9 @@ public static class CatalogModule
     /// <summary>
     /// Registers the component: what syncs the catalog from the providers' lists of their
     /// models, the job that does so on the schedule (FR-CAT-1, FR-CAT-2), and what says which
-    /// models can be selected (FR-CAT-6), and what reads the catalog for the screen that lists it
-    /// (FR-CAT-10). What depends on a model is told when a sync marks the model unavailable,
+    /// models can be selected (FR-CAT-6), what says what the tokens of a model cost (FR-CAT-11),
+    /// and what reads the catalog for the screen that lists it (FR-CAT-10). What depends on a
+    /// model is told when a sync marks the model unavailable,
     /// through <see cref="IModelDependents"/>, which Agents implements and registers (FR-CAT-8).
     /// </summary>
     public static IServiceCollection AddCatalog(this IServiceCollection services)
@@ -27,6 +28,10 @@ public static class CatalogModule
 
         // What the file says that a model can do, for what calls one: whether it searches live.
         services.AddSingleton<IModelCapabilities>(provider => provider.GetRequiredService<ModelEligibility>());
+
+        // What the file says that the tokens of a model cost, for what estimates the cost of
+        // the calls of a user (FR-CAT-11). A model that it gives no price has none.
+        services.AddSingleton<IModelPrices, ModelPrices>();
 
         // The catalog as the screen lists it: every model, also one that cannot be selected.
         services.AddSingleton<ICatalogModels, CatalogModels>();

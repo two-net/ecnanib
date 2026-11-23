@@ -17,7 +17,8 @@ namespace Ecnanib.Catalog;
 /// </para>
 /// <para>
 /// A pattern is the identifier of a model, in which <c>*</c> stands for any run of characters,
-/// an empty one included. Nothing else in it is special, and letter case is ignored.
+/// an empty one included. Nothing else in it is special, and letter case is ignored:
+/// <see cref="ModelPattern"/> is the rule.
 /// </para>
 /// <para>
 /// Nothing of this is stored. The file is read once, as the application starts, so what it says
@@ -45,7 +46,7 @@ internal sealed class ModelEligibility(AiProvidersSettings providers) : IModelCa
     {
         foreach (var pattern in patterns)
         {
-            if (Matches(pattern, identifier))
+            if (ModelPattern.Names(pattern, identifier))
             {
                 return true;
             }
@@ -53,53 +54,4 @@ internal sealed class ModelEligibility(AiProvidersSettings providers) : IModelCa
 
         return false;
     }
-
-    /// <summary>
-    /// Whether a pattern names an identifier. It goes through both once, and goes back only to
-    /// the last <c>*</c>, so an identifier that a provider wrote cannot make it take long.
-    /// </summary>
-    private static bool Matches(string pattern, string identifier)
-    {
-        var inPattern = 0;
-        var inIdentifier = 0;
-
-        // The last star that was passed, and how much of the identifier it stands for so far.
-        var star = -1;
-        var afterStar = 0;
-
-        while (inIdentifier < identifier.Length)
-        {
-            if (inPattern < pattern.Length && pattern[inPattern] == '*')
-            {
-                star = inPattern++;
-                afterStar = inIdentifier;
-            }
-            else if (inPattern < pattern.Length && Same(pattern[inPattern], identifier[inIdentifier]))
-            {
-                inPattern++;
-                inIdentifier++;
-            }
-            else if (star >= 0)
-            {
-                // The star stands for one character more, and what follows it is tried again.
-                inPattern = star + 1;
-                inIdentifier = ++afterStar;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        // The identifier has ended. What is left of the pattern must stand for nothing.
-        while (inPattern < pattern.Length && pattern[inPattern] == '*')
-        {
-            inPattern++;
-        }
-
-        return inPattern == pattern.Length;
-    }
-
-    private static bool Same(char one, char other) =>
-        one == other || char.ToUpperInvariant(one) == char.ToUpperInvariant(other);
 }

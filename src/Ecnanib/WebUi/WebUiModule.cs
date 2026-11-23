@@ -90,6 +90,22 @@ public static class WebUiModule
         return choices.Count == 0 ? LessonsPath : $"{LessonsPath}?{string.Join('&', choices)}";
     }
 
+    /// <summary>
+    /// The path of the page of the AI usage of a user: the calls that the roles of their agents
+    /// made, by day, agent, and provider, with their tokens and what they are estimated to cost
+    /// (FR-RPT-3).
+    /// </summary>
+    public const string UsagePath = "/usage";
+
+    /// <summary>The name of the choice of an agent in the address of the page of the AI usage.</summary>
+    public const string UsageAgentKey = "agent";
+
+    /// <summary>The name of the choice of a period in the address of the page of the AI usage.</summary>
+    public const string UsagePeriodKey = "period";
+
+    /// <summary>The path of the page of the AI usage, with the usage of one agent alone.</summary>
+    public static string UsageOfAgentPath(Guid agentId) => $"{UsagePath}?{UsageAgentKey}={agentId}";
+
     /// <summary>The path of the page that lists the agents of a user (FR-AGT-1).</summary>
     public const string AgentsPath = "/agents";
 

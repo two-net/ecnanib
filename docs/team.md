@@ -355,7 +355,7 @@ public interface ICycleRecords
 | Table | Columns |
 |---|---|
 | `decision_cycles` | `id`, `agent_id`, `user_id`, `mode`, `closed_at`, `started_at`, `ended_at`, `outcome`, `data_package`, `no_entry`, `kind`. Indexed by `(agent_id, user_id, closed_at)`. |
-| `role_outputs` | `id`, `cycle_id`, `user_id`, `role`, `attempt`, `model_id`, `role_template_id`, `market_template_id`, `timeframe_template_id`, `profile_template_id`, `called_at`, `latency_ms`, `input_tokens`, `output_tokens`, `live_searches`, `outcome`, `validation`, `rejection`, `result`. One row for each `(cycle_id, user_id, role, attempt)`. |
+| `role_outputs` | `id`, `cycle_id`, `user_id`, `role`, `attempt`, `model_id`, `role_template_id`, `market_template_id`, `timeframe_template_id`, `profile_template_id`, `called_at`, `latency_ms`, `input_tokens`, `output_tokens`, `live_searches`, `outcome`, `validation`, `rejection`, `result`. One row for each `(cycle_id, user_id, role, attempt)`. Indexed by `(user_id, called_at)` as well, with what the AI usage adds up carried in the index. |
 
 | Column | What it holds |
 |---|---|
@@ -385,6 +385,8 @@ public interface ICycleRecords
 The migration `AddCycleRecord` adds `data_package` and `no_entry`, and the index of `orders` that finds the orders of a cycle. It gave the cycles that were stored then neither: nothing kept a summary before it, and why no entry was placed was in the log alone.
 
 The migration `AddCycleKind` adds `kind`. It gave every cycle that was stored then `Scheduled`: until then nothing but the close of a candle started a cycle.
+
+The migration `AddRoleOutputCalledAtIndex` adds the index of `role_outputs` by owner and time. It carries the cycle, the model, the outcome, the tokens, and the live searches of a call, so the database can count the calls of a period from the index, without the rows, which hold what the models answered: see "AI usage".
 
 ### The summary of the data package
 
@@ -469,6 +471,49 @@ public sealed record CycleRecord(
 
 The page of the state of an agent leads to the list, and so does the page of its risk checks, which leads from each check to the timeline of its cycle.
 
+## AI usage
+
+**A user sees what the calls of their agents add up to** (FR-RPT-3, FR-KEY-11): calls, tokens, and estimated cost where pricing is known. Every call is charged to the user's own key, and an agent on 15 minutes makes about 384 of them a day. `IAiUsage` works the usage out from the recorded calls:
+
+```csharp
+public interface IAiUsage
+{
+    Task<AiUsageView> OfUserAsync(Guid userId, AiUsageFilter filter, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<KeyUsage>> OfKeysAsync(Guid userId, IReadOnlyList<KeyInUse> keys, CancellationToken cancellationToken);
+}
+
+public sealed record UsageFigures(
+    int Calls, int NotCounted, long? InputTokens, long? OutputTokens, long LiveSearches, decimal? EstimatedCost);
+```
+
+`OfUserAsync` answers with the usage of each provider over a period, and of each day, agent, and provider in it. A period is the last 7, 30, or 90 days, and the usage is of every agent of the user, or of one. `OfKeysAsync` answers with the usage of each key that it is told of.
+
+| Rule | Detail |
+|---|---|
+| **Nothing of it is stored.** | It is worked out from the rows of `role_outputs` each time it is asked for, so it says what they say. The calls of an agent go with the agent when it is deleted, and its usage with them. |
+| **Every call that was made counts.** | Whatever came of it, and in a test cycle as in a cycle that a close started. A row with the outcome `NoKey` is no call: none was made. |
+| **Demo and Live are added up.** | A provider charges a key the same for a call in each. Elsewhere the two are never added up (FR-BIN-11): this is what the calls cost, and no result of trading. |
+| **A day is a UTC day.** | A call is of the day of its `called_at`, whatever time zone the database goes by. A period ends with today, and starts at midnight UTC of its first day. |
+| **What is not known is null, and never zero.** | `UsageFigures.Of` is the one rule. A call whose provider counted no tokens is among `Calls` and among `NotCounted`: it timed out or failed, and may be charged for all the same. The tokens are of the calls that were counted, and are null when none was. |
+| **The cost is an estimate of the counted tokens.** | In US dollars, at the price that the configuration file gives each model now (FR-CAT-11): see "Prices" in [catalog.md](catalog.md). It is null when no call was counted, and when a model that was counted has no price: a sum that leaves a model out would read as the whole. |
+| **The estimate is of tokens alone.** | It holds nothing for the live searches, which a provider charges apart, and which are counted beside. Every token of a prompt is priced as input, also one that a provider read from a cache or wrote to one: see "Usage" in [ai-providers.md](ai-providers.md). |
+| **The usage of a key is of the calls to its provider since the key was stored.** | A user has one key for each provider (FR-KEY-2), and a call records no key. So the calls to a provider from the `saved_at` of the key that is stored now were made with that key, and a call before then with the key that it took the place of. They are counted over the last 30 days, or from `saved_at` when that is later. |
+| **The calls are counted by the database.** | In one statement, grouped by day, agent, and model, and from the index of `role_outputs` by owner and time, which carries what is added up. The models are then priced, and added up by provider. |
+| **Everything is asked for by owner.** | The Decision Engine may not use Accounts, so a page hands `IAiUsage` the user who is signed in, by id. Credentials may not use the Decision Engine, so the page of the keys asks `IAiUsage` itself. |
+
+### The page of the AI usage
+
+A signed-in user reads the usage at `/usage`, which the bar at the top of every page leads to. The page of the state of an agent leads to the usage of that agent alone.
+
+- **The choices are in the address:** `agent`, the id of an agent, and `period`, which is `7`, `30`, or `90`. A choice that is absent or empty is not made, and the page then shows every agent over the last 30 days. An address that names a choice which there is not, or an agent of another user, is answered with "not found".
+- **It has two tables:** each provider over the period, and each day, agent, and provider, the latest day first. Each row has the calls, how many of them were not counted, the tokens in and out, the live searches, and the estimated cost.
+- **What is not known is written as "Unknown".** No cell is left blank, and none says zero for it. A cost is written to the cent, and one of less than a cent to a hundredth of a cent, so a cost that is not nothing is never written as nothing.
+- **The page says what it counts and what it leaves out:** that test cycles count, that Demo and Live are added up, that the calls that write lessons are not counted, that a call that was not counted may be charged for, what the estimate is of, and that the usage of an agent goes with the agent.
+- **A user whose agents made no call is told so,** and is shown no table.
+
+The page of the keys says under each stored key for an AI provider what the calls with it add up to, in one sentence (FR-KEY-11): see "The pages" in [credentials.md](credentials.md). `UsagePages` has the texts of both, and how a figure is written.
+
 ## What a model cannot do
 
 **Models cannot place orders or call internal functions** (NFR-SEC-6). `TeamRulesTests` and `TeamRecordTests` hold the code to it:
@@ -527,6 +572,7 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 - **A plan is read for an agent.** `PlanAgents.On` is an agent on a market, with the position that it holds or with none, and `PlanAgents.For` is one that may have the plan of an answer, whatever its action. A cycle whose agent holds a position is given `PlanAgents.Holding`, which is a `StandInHoldings`: see "Testing" in [cycles.md](cycles.md).
 - **A decision is made stale by moving the clock while a call is held.** `StandInModels.Hold` holds the call of the Strategist or of the Risk Manager, the test sets the clock to when the role answers, and lets the call go. The limits are those of the file of the tests: 100 seconds for 15m, 200 for 1H, 400 for 4H, and 800 for 1D.
 - A test cycle is run through `ITestCycles`, for agents of the database: see "Testing" in [cycles.md](cycles.md).
+- **The AI usage is asked for as a page asks for it.** `StoredCycleRows.GiveCallsAsync` gives an agent the record of a cycle with the calls that a test names, each with its time, its model, how it ended, and what its provider counted, and with nothing else. `AiUsageTests` asks `IAiUsage` about them, once on a database whose sessions are 14 hours ahead of UTC, and `UsageFiguresTests` holds the rule of the figures with no database. `UsagePageTests` reads the page.
 - `LiveProviderTests` sends the schema of each role to the providers themselves, and reads what they answer with `IRoleResults`. It is skipped unless a key and a model are given: see "Checking against the real providers" in [ai-providers.md](ai-providers.md).
 
 ## Not built yet
@@ -538,7 +584,10 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 - Recording a cycle that never started: one that was skipped, or whose agent no longer ran. It is no run of a team, and leaves its events in the log: see "Not built yet" in [cycles.md](cycles.md).
 - The decision timeline on the agent detail screen (FR-RPT-2), a timeline that follows a cycle while it runs (FR-NTF-2), and the cycles before the latest 50. A cycle is shown once it is recorded, on a page of its own.
 - Why a plan that closes a position or adjusts its protection placed no order, in the record of its cycle. The record says why no entry was placed, and the log says the rest.
-- Exporting decisions as CSV (FR-RPT-4), and showing AI usage from the recorded tokens (FR-RPT-3, FR-KEY-11).
+- Exporting decisions as CSV (FR-RPT-4).
+- The calls that write lessons in the AI usage. They are charged to the user's key, and are recorded nowhere: see "Not built yet" in [experience.md](experience.md).
+- Keeping the usage of an agent that is deleted. Nothing of the usage is stored, so it goes with the calls.
+- What a provider charges for live searches, and for the tokens that it reads from a cache or writes to one, in the estimated cost. The searches are counted, and every token of a prompt is priced as input.
 - Retention of the records: decision records are kept 365 days and role transcripts 90 (NFR-DAT-5). `Retention` has the settings, and nothing deletes yet.
 - Telling a model why its first answer was rejected. The call that is made once more has the same prompt.
 - Sending the schemas to the real providers in the suite. `LiveProviderTests` does when it is given keys.

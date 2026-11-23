@@ -50,6 +50,17 @@ Each entry under `AiProviders` is one AI provider, named by its code. `BaseUrl` 
 
 A model that `LiveSearch` names is called with the live search of its provider when it is the model of a Sentiment Analyst, which may add charges of the provider to the key of the agent's user. So a pattern names only models that take that search together with a result schema: the call of one that does not fails. The tracked file names `grok-4*` for Grok and nothing for the other providers. With it, only the Grok 4 models search, and the report of a Sentiment Analyst on any other model is marked "no live data". A call that searches takes longer: a provider whose models search may need a longer `TimeoutSeconds`. See "Live search" in [ai-providers.md](ai-providers.md) and in [cycles.md](cycles.md).
 
+`Prices` is a list of what the tokens of the provider's models cost, so that what the calls of a user cost can be estimated (FR-CAT-11). An entry is a pattern, `Model`, written as the patterns of `Allow` are, and two prices in US dollars for a million tokens, as the providers publish them: `InputPerMillionTokens` for the tokens of a prompt, and `OutputPerMillionTokens` for the tokens of an answer. A price is a number from 0 to 1000000, and 0 for a model that is not charged for.
+
+```json
+"Prices": [
+  { "Model": "claude-opus-*", "InputPerMillionTokens": 15, "OutputPerMillionTokens": 75 },
+  { "Model": "claude-*", "InputPerMillionTokens": 3, "OutputPerMillionTokens": 15 }
+]
+```
+
+The price of a model is the first entry whose pattern names it, so a pattern that names fewer models goes before one that names more. In the example a model of Opus has the first price, and every other model of Claude the second. The other way round, `claude-*` would name every model, and the entry after it would never be reached. A list names no pattern twice. The tracked file names no price, and the numbers above are an example and no price list: a deployment writes what the models that it runs cost. A model that no entry names has no price, and what its calls cost is shown as unknown, never as nothing. See "Prices" in [catalog.md](catalog.md) and "AI usage" in [team.md](team.md).
+
 Each of `Binance:Spot` and `Binance:Futures` has a `BaseUrl` under `Live` and under `Demo`: the address of Binance's API for that market, on the real exchange and in Binance's test environment. An address is the host alone, such as `https://api.binance.com`. The gateway adds the path of each call, with the `/api` or `/fapi` that it begins with, so an address that already ends in one of them is wrong: Binance's page on its demo mode writes the address of Spot that way. See [exchange.md](exchange.md).
 
 Each of the four may also have a `FeedUrl`: the address of Binance's account event feed for that market, on the real exchange and in its test environment, which is a WebSocket that is reached over TLS, `wss` (FR-BIN-7): what is sent to it may hold a credential, so `ws` is taken for an address of this machine alone. On Spot it is the address of Binance's WebSocket API, with its path, such as `wss://ws-api.binance.com:443/ws-api/v3`. On Futures it is the address that the user data streams are under, such as `wss://fstream.binance.com/private`, to which the gateway adds the stream of an account. The key may be left out, or left empty: the accounts of users are not followed there then, and their agents are reconciled on the schedule alone. See "The account event feed" in [exchange.md](exchange.md).

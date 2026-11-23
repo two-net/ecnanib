@@ -132,6 +132,9 @@ internal sealed class CatalogApplication : IDisposable
     /// <summary>What says what the configuration file says that a model can do.</summary>
     public IModelCapabilities Capabilities => _application.Services.GetRequiredService<IModelCapabilities>();
 
+    /// <summary>What says what the configuration file says that the tokens of a model cost.</summary>
+    public IModelPrices Prices => _application.Services.GetRequiredService<IModelPrices>();
+
     /// <summary>
     /// Starts the application, and waits until the job that syncs the catalog has had its first
     /// run on this database, which is due as the background work starts there.

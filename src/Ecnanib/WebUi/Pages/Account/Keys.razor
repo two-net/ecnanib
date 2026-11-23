@@ -1,9 +1,13 @@
 @attribute [Route(WebUiModule.KeysPath)]
 @attribute [Authorize]
+@using Ecnanib.Accounts
 @using Ecnanib.Credentials
+@using Ecnanib.DecisionEngine
 @using Ecnanib.Platform.Settings
 @using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Usage
 @inject IStoredKeys StoredKeys
+@inject IAiUsage AiUsage
 @inject BinanceSettings Binance
 
 @*
@@ -11,7 +15,9 @@
     stored, each by its last four characters, with what its provider said when it was last asked
     about it (FR-KEY-3). A key itself is never read for it, and so is never in what the browser
     gets (FR-KEY-8). A form of the page asks the provider about a stored key again: the forms
-    are on the page whenever one is posted, for the keys that are stored then.
+    are on the page whenever one is posted, for the keys that are stored then. Under each key
+    for an AI provider the page says its usage: the calls that were made with it, their tokens,
+    and what they are estimated to cost where the price is known (FR-KEY-11).
 *@
 
 <PageTitle>Your API keys</PageTitle>
@@ -49,6 +55,10 @@
                     {
                         <span>Key <code>@KeyPages.Masked(key)</code>, saved @KeyPages.Saved(key).</span>
                         <span>@KeyPages.Checked(key, slot.ProviderName)</span>
+                        @if (_usage.TryGetValue(slot.Provider, out var usage))
+                        {
+                            <span>@KeyPages.Usage(usage)</span>
+                        }
                         <a href="@WebUiModule.AiKeyPath(slot.Provider)">Replace the @slot.ProviderName key</a>
                         <a href="@WebUiModule.DeleteAiKeyPath(slot.Provider)">Delete the @slot.ProviderName key</a>
                         <form method="post" @formname="@KeyPages.CheckAiForm(slot.Provider)" @onsubmit="() => CheckAiKeyAsync(slot)">
@@ -69,6 +79,12 @@
             </li>
         }
     </ul>
+
+    @if (_usage.Count > 0)
+    {
+        @* What the usage under a key is, and where it is shown by day (FR-KEY-11, FR-RPT-3). *@
+        <p>@KeyPages.UsageExplained <a href="@WebUiModule.UsagePath">@UsagePages.ByDayLink</a></p>
+    }
 
     <h2>Binance</h2>
 
@@ -119,6 +135,7 @@
 
 @code {
     private StoredKeysState? _state;
+    private IReadOnlyDictionary<AiProviderCode, KeyUsage> _usage = new Dictionary<AiProviderCode, KeyUsage>();
     private string? _checked;
 
     [CascadingParameter]
@@ -128,7 +145,7 @@
     {
         if (HttpContext is { } request)
         {
-            _state = await StoredKeys.StateAsync(request);
+            await ShowAsync(request);
         }
     }
 
@@ -143,7 +160,7 @@
 
         // What the provider said, and the keys as they are stored now.
         _checked = KeyPages.Says(outcome, $"{slot.ProviderName} key");
-        _state = await StoredKeys.StateAsync(request);
+        await ShowAsync(request);
     }
 
     private async Task CheckExchangeKeyAsync(ExchangeKeySlot slot)
@@ -156,6 +173,24 @@
         var outcome = await StoredKeys.CheckExchangeKeyAsync(request, slot.Environment);
 
         _checked = KeyPages.Says(outcome, $"Binance key for {slot.Environment}");
-        _state = await StoredKeys.StateAsync(request);
+        await ShowAsync(request);
+    }
+
+    /// <summary>Reads the keys as they are stored now, and the usage of each key for an AI provider.</summary>
+    private async Task ShowAsync(HttpContext request)
+    {
+        var state = await StoredKeys.StateAsync(request);
+
+        // Credentials may not use the Decision Engine, which keeps the calls, so the page asks
+        // it: with the user who is signed in, and with when each key that is stored now was
+        // stored, because a call before then was made with another key.
+        var keys = state.AiKeys
+            .Where(slot => slot.Key is not null)
+            .Select(slot => new KeyInUse(slot.Provider, slot.Key!.SavedAt))
+            .ToList();
+        var usage = await AiUsage.OfKeysAsync(SignedInUser.RequiredIdOf(request), keys, request.RequestAborted);
+
+        _usage = usage.ToDictionary(key => key.Provider);
+        _state = state;
     }
 }

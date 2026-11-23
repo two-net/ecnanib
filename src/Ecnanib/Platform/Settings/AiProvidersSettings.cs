@@ -50,14 +50,27 @@ public sealed record AiProvidersSettings(IReadOnlyDictionary<AiProviderCode, AiP
 /// Patterns of the models that can search live. It says so of a model that may be selected, and
 /// allows none by itself.
 /// </param>
+/// <param name="Prices">
+/// What the tokens of the provider's models cost, for the models that the file gives a price
+/// (FR-CAT-11). The price of a model is the first entry whose pattern names it, so a pattern
+/// that names fewer models goes before one that names more. A model that no entry names has no
+/// price: what its tokens cost is then not known, and is not taken to be nothing.
+/// </param>
 public sealed record AiProviderSettings(
     Uri BaseUrl,
     Secret? CatalogKey,
     int TimeoutSeconds,
     IReadOnlyList<string> Allow,
     IReadOnlyList<string> Deny,
-    IReadOnlyList<string> LiveSearch)
+    IReadOnlyList<string> LiveSearch,
+    IReadOnlyList<ModelPriceSettings> Prices)
 {
+    /// <summary>
+    /// The most that a million tokens may be said to cost. No provider charges near it: a price
+    /// above it is most likely one that was written for some other number of tokens.
+    /// </summary>
+    public const decimal MostPerMillionTokens = 1_000_000m;
+
     internal static AiProviderSettings Read(SettingsReader file, string key) =>
         new(
             file.Url($"{key}:BaseUrl"),
@@ -65,7 +78,8 @@ public sealed record AiProviderSettings(
             file.WholeNumber($"{key}:TimeoutSeconds", minimum: 1, maximum: 600),
             Patterns(file, $"{key}:Allow"),
             Patterns(file, $"{key}:Deny"),
-            Patterns(file, $"{key}:LiveSearch"));
+            Patterns(file, $"{key}:LiveSearch"),
+            PricesOf(file, $"{key}:Prices"));
 
     private static List<string> Patterns(SettingsReader file, string key)
     {
@@ -73,6 +87,23 @@ public sealed record AiProviderSettings(
         file.Distinct(key, patterns);
 
         return patterns;
+    }
+
+    /// <summary>
+    /// The prices of a provider, in the order of the file, which is the order they are tried in.
+    /// A pattern is listed once: the second entry of one would never be the price of a model.
+    /// </summary>
+    private static List<ModelPriceSettings> PricesOf(SettingsReader file, string key)
+    {
+        var prices = file.List(key)
+            .Select(item => new ModelPriceSettings(
+                Pattern(file, $"{item}:Model"),
+                file.Number($"{item}:InputPerMillionTokens", 0m, MostPerMillionTokens),
+                file.Number($"{item}:OutputPerMillionTokens", 0m, MostPerMillionTokens)))
+            .ToList();
+        file.Distinct(key, prices.Select(price => price.Model));
+
+        return prices;
     }
 
     /// <summary>
@@ -91,3 +122,19 @@ public sealed record AiProviderSettings(
         return pattern;
     }
 }
+
+/// <summary>
+/// What the tokens of some models of a provider cost (FR-CAT-11): an entry of the provider's
+/// <c>Prices</c> list. The providers do not report their prices in one way, so the file says them.
+/// </summary>
+/// <param name="Model">
+/// A pattern of the models that the price is of, as the patterns of <c>Allow</c> are written:
+/// the identifier of a model, in which <c>*</c> stands for any run of characters, and letter
+/// case is ignored.
+/// </param>
+/// <param name="InputPerMillionTokens">
+/// What a million tokens of a prompt cost, in US dollars, as the providers publish their prices.
+/// Zero for a model that is not charged for.
+/// </param>
+/// <param name="OutputPerMillionTokens">What a million tokens of an answer cost, in US dollars.</param>
+public sealed record ModelPriceSettings(string Model, decimal InputPerMillionTokens, decimal OutputPerMillionTokens);

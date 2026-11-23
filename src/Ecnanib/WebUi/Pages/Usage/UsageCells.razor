@@ -1,0 +1,21 @@
+@using Ecnanib.DecisionEngine
+
+@*
+    The figures of some calls, as the cells of a row: how many calls were made, how many of them
+    their provider counted no tokens for, the tokens of the others, the live searches, and what
+    the tokens are estimated to cost (FR-RPT-3). What is not known says so: no cell is left
+    blank, and none says zero for it.
+*@
+
+<td>@UsagePages.Whole(Figures.Calls)</td>
+<td>@UsagePages.Whole(Figures.NotCounted)</td>
+<td>@UsagePages.Tokens(Figures.InputTokens)</td>
+<td>@UsagePages.Tokens(Figures.OutputTokens)</td>
+<td>@UsagePages.Whole(Figures.LiveSearches)</td>
+<td>@UsagePages.Cost(Figures.EstimatedCost)</td>
+
+@code {
+    /// <summary>The figures that the cells are of.</summary>
+    [Parameter, EditorRequired]
+    public UsageFigures Figures { get; set; } = default!;
+}

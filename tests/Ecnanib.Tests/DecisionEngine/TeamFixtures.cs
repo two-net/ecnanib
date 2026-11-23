@@ -9,6 +9,7 @@ using Ecnanib.ExchangeGateway;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.RiskGuard;
 using Microsoft.EntityFrameworkCore;
@@ -305,7 +306,100 @@ internal static class StoredCycleRows
 
         return cycleId;
     }
+
+    /// <summary>
+    /// Gives an agent of a user the record of a cycle with the calls that the test names, and
+    /// nothing else: no check of the Risk Guard, no order, and no summary of a data package, so
+    /// the cycle leaves nothing for Experience. It is for a test of what the calls add up to,
+    /// which says of each call when it was made, with which model, how it ended, and what its
+    /// provider counted. The catalog is given each model that a call names.
+    /// </summary>
+    /// <param name="application">The application.</param>
+    /// <param name="userId">The user.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="closedAt">The close that the cycle was for.</param>
+    /// <param name="calls">The calls of the cycle: one for a role and an attempt at the most.</param>
+    /// <param name="kind">What started the cycle: the close of a candle, unless the test says that its user ran it as a test.</param>
+    /// <returns>The id of the cycle.</returns>
+    public static async Task<Guid> GiveCallsAsync(
+        this AccountsApplication application,
+        Guid userId,
+        Guid agentId,
+        DateTimeOffset closedAt,
+        IReadOnlyList<GivenCall> calls,
+        CycleKind kind = CycleKind.Scheduled)
+    {
+        Agent agent;
+
+        await using (var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken))
+        {
+            agent = await context.Set<Agent>().AsNoTracking().SingleAsync(stored => stored.Id == agentId, TestContext.Current.CancellationToken);
+        }
+
+        var inUse = await application.PromptTemplates.InUseAsync(agent.Market, agent.Timeframe, TestContext.Current.CancellationToken);
+
+        var cycleId = Guid.CreateVersion7();
+        var cycle = new DecisionCycle(
+            cycleId, agentId, userId, agent.Mode, closedAt, closedAt.AddSeconds(2), closedAt.AddSeconds(40), CycleOutcome.Hold, kind: kind);
+
+        var outputs = new List<RoleOutput>();
+
+        foreach (var call in calls)
+        {
+            var modelId = await application.GiveModelAsync(call.Provider, call.Model, closedAt);
+            var templates = inUse.For(call.Role);
+            var answered = call.Outcome == RoleCallOutcome.Succeeded;
+
+            outputs.Add(new RoleOutput(
+                Guid.CreateVersion7(),
+                cycleId,
+                userId,
+                call.Role,
+                call.Attempt,
+                modelId,
+                templates[0].Id,
+                templates[1].Id,
+                templates[2].Id,
+                templates[3].Id,
+                call.CalledAt,
+
+                // A call that was not made took no time.
+                latencyMs: call.Outcome == RoleCallOutcome.NoKey ? 0 : 1500,
+                call.InputTokens,
+                call.OutputTokens,
+                call.LiveSearches,
+                call.Outcome,
+                answered ? RoleValidation.Valid : RoleValidation.NoResult,
+                rejection: null,
+                result: answered ? TeamAnswers.Of(call.Role) : null));
+        }
+
+        await application.CycleRecords.StoreAsync(cycle, outputs, [], TestContext.Current.CancellationToken);
+
+        return cycleId;
+    }
 }
+
+/// <summary>A call of a role that a test gives a cycle, with what the test says of it.</summary>
+/// <param name="Role">The role that was called.</param>
+/// <param name="CalledAt">When the call was made.</param>
+/// <param name="InputTokens">The tokens of the prompt, or null when the provider counted none.</param>
+/// <param name="OutputTokens">The tokens of the answer, or null when the provider counted none.</param>
+/// <param name="Outcome">How the call ended.</param>
+/// <param name="Provider">The provider of the model that was called.</param>
+/// <param name="Model">The identifier of that model.</param>
+/// <param name="Attempt">Which call of the role in its cycle.</param>
+/// <param name="LiveSearches">How many live searches the provider ran, for a call that offered the model one.</param>
+internal sealed record GivenCall(
+    Role Role,
+    DateTimeOffset CalledAt,
+    int? InputTokens = 1200,
+    int? OutputTokens = 150,
+    RoleCallOutcome Outcome = RoleCallOutcome.Succeeded,
+    string Provider = "claude",
+    string Model = StoredAgentRows.TeamModel,
+    int Attempt = 1,
+    int? LiveSearches = null);
 
 /// <summary>The summary of a data package, as the record of a cycle keeps it, for a test that needs a cycle to have one.</summary>
 internal static class CycleSummaries

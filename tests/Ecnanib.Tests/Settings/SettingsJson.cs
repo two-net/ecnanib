@@ -56,10 +56,10 @@ internal sealed class SettingsJson
           },
           "Email": { "Host": "mail.example", "Port": 2525, "User": "mailer", "Password": "email-password", "From": "noreply@ecnanib.example" },
           "AiProviders": {
-            "Claude": { "BaseUrl": "https://claude.example", "CatalogKey": "", "TimeoutSeconds": 30, "Allow": [ "claude-*" ], "Deny": [ "*-preview" ], "LiveSearch": [] },
-            "Gemini": { "BaseUrl": "https://gemini.example", "CatalogKey": "", "TimeoutSeconds": 31, "Allow": [], "Deny": [], "LiveSearch": [] },
-            "GPT": { "BaseUrl": "https://gpt.example", "CatalogKey": "", "TimeoutSeconds": 32, "Allow": [], "Deny": [], "LiveSearch": [] },
-            "Grok": { "BaseUrl": "https://grok.example", "CatalogKey": "", "TimeoutSeconds": 33, "Allow": [], "Deny": [], "LiveSearch": [ "grok-*" ] }
+            "Claude": { "BaseUrl": "https://claude.example", "CatalogKey": "", "TimeoutSeconds": 30, "Allow": [ "claude-*" ], "Deny": [ "*-preview" ], "LiveSearch": [], "Prices": [ { "Model": "claude-priced-*", "InputPerMillionTokens": 3, "OutputPerMillionTokens": 15.5 } ] },
+            "Gemini": { "BaseUrl": "https://gemini.example", "CatalogKey": "", "TimeoutSeconds": 31, "Allow": [], "Deny": [], "LiveSearch": [], "Prices": [] },
+            "GPT": { "BaseUrl": "https://gpt.example", "CatalogKey": "", "TimeoutSeconds": 32, "Allow": [], "Deny": [], "LiveSearch": [], "Prices": [] },
+            "Grok": { "BaseUrl": "https://grok.example", "CatalogKey": "", "TimeoutSeconds": 33, "Allow": [], "Deny": [], "LiveSearch": [ "grok-*" ], "Prices": [] }
           },
           "CatalogSync": { "IntervalHours": 12, "MissedSyncsBeforeUnavailable": 3 },
           "Binance": {

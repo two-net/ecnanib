@@ -2,10 +2,13 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Ecnanib.Accounts;
 using Ecnanib.Credentials;
+using Ecnanib.DecisionEngine;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.DecisionEngine;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.WebUi.Pages.Account;
@@ -951,6 +954,71 @@ public class KeyPageTests
 
         // The log tells the same in its own words, without the names of the actions.
         Assert.DoesNotContain(application.Events(), written => written.ToString().Contains("KeyAdded", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task The_page_says_the_usage_of_each_stored_AI_key()
+    {
+        // The usage of each of the user's AI keys: calls, tokens, and estimated cost where
+        // pricing is known (FR-KEY-11). The file of this test gives the model of the agents'
+        // teams a price of 3 dollars for a million tokens in and 15 for a million out.
+        var clock = new TestClock(Morning);
+        using var application = new AccountsApplication(
+            clock: clock,
+            settings: file => file.WithJson(
+                "AiProviders:Claude:Prices",
+                $$"""[ { "Model": "{{StoredAgentRows.TeamModel}}", "InputPerMillionTokens": 3, "OutputPerMillionTokens": 15 } ]"""));
+        using var client = application.CreateClient();
+        var user = await application.RegisterVerifiedAsync(Ada);
+        await client.SignInAsync(Ada);
+
+        // Without a key there is no usage to say, and the page says nothing of it.
+        Assert.DoesNotContain("Usage ", await client.PageAsync(KeysPage));
+
+        // The key for Claude was stored two days ago, in place of another. The keys for Grok
+        // and Gemini are old, and there is none for GPT.
+        var replaced = Morning.AddDays(-2);
+
+        await application.GiveAiKeyAsync(user.Id, "claude", replaced, accessibleModels: null);
+        await application.GiveAiKeyAsync(user.Id, "grok", Morning.AddDays(-100), accessibleModels: null);
+        await application.GiveAiKeyAsync(user.Id, "gemini", Morning.AddDays(-100), accessibleModels: null);
+
+        var agent = await application.GiveAgentAsync(user.Id, Morning.AddDays(-100));
+
+        // Claude: a call with the key before this one, then a call with this one, and one that
+        // timed out. Grok: a call that searched, of a model that has no price, and one that is
+        // older than the days that are counted.
+        await application.GiveCallsAsync(user.Id, agent, replaced.AddHours(-1), [new GivenCall(Role.MarketAnalyst, replaced.AddSeconds(-1), 9000, 900)]);
+        await application.GiveCallsAsync(user.Id, agent, Morning.AddDays(-1),
+        [
+            new GivenCall(Role.MarketAnalyst, Morning.AddDays(-1), 1_000_000, 100_000),
+            new GivenCall(Role.Strategist, Morning.AddDays(-1), null, null, RoleCallOutcome.TimedOut),
+            new GivenCall(Role.SentimentAnalyst, Morning.AddDays(-1), 2000, 300, Provider: "grok", Model: "grok-test-model", LiveSearches: 2),
+        ]);
+        await application.GiveCallsAsync(
+            user.Id, agent, Morning.AddDays(-40), [new GivenCall(Role.SentimentAnalyst, Morning.AddDays(-40), Provider: "grok", Model: "grok-test-model")]);
+
+        var page = KeyBrowser.Read(await client.PageAsync(KeysPage));
+
+        // Each stored key says its own usage. What is not known is said to be unknown, and no
+        // zero stands for it.
+        Assert.Contains(
+            "<span>Usage since this key was saved: 2 calls, of which 1 was not counted by the provider: "
+            + "1000000 tokens in and 100000 tokens out. Estimated cost 4.50 USD.</span>",
+            page);
+        Assert.Contains(
+            "<span>Usage in the last 30 days: 1 call: 2000 tokens in and 300 tokens out. 2 live searches. Estimated cost unknown.</span>", page);
+        Assert.Contains("<span>Usage in the last 30 days: No call was made.</span>", page);
+        Assert.Equal(3, Regex.Count(page, "<span>Usage "));
+
+        // The page says what the usage is, and leads to the usage by day.
+        Assert.Contains("What you are charged is on your account with the provider.", page);
+        Assert.Contains("<a href=\"/usage\">AI usage by day, agent, and provider</a>", page);
+
+        // The page that answers a check of a key says the usage as well.
+        var (_, afterCheck) = await client.CheckAiKeyAsync("claude");
+
+        Assert.Equal(3, Regex.Count(KeyBrowser.Read(afterCheck), "<span>Usage "));
     }
 
     [Fact]

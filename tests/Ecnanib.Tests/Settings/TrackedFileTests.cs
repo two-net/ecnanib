@@ -33,6 +33,10 @@ public class TrackedFileTests
         Assert.Equal(30, settings.Logging.Outputs.File?.RetainedFiles);
         Assert.Equal(4, settings.AiProviders.ByCode.Count);
         Assert.All(settings.AiProviders.ByCode.Values, provider => Assert.Equal(60, provider.TimeoutSeconds));
+
+        // The file names no price: a deployment says what the models that it runs cost, and
+        // until it does, what a call cost is not known (FR-CAT-11).
+        Assert.All(settings.AiProviders.ByCode.Values, provider => Assert.Empty(provider.Prices));
         Assert.Equal(new CatalogSyncSettings(IntervalHours: 24, MissedSyncsBeforeUnavailable: 2), settings.CatalogSync);
 
         // Binance's own addresses, of each market on the real exchange and in its test

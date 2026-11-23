@@ -1,14 +1,17 @@
 using Ecnanib.Accounts;
 using Ecnanib.Credentials;
+using Ecnanib.DecisionEngine;
 using Ecnanib.Platform.Settings;
 using Ecnanib.Shared;
+using Ecnanib.WebUi.Pages.Usage;
 
 namespace Ecnanib.WebUi.Pages.Account;
 
 /// <summary>
 /// What the pages of a user's keys have in common: how a stored key is shown, which is never as
 /// the key (FR-KEY-8), what they say about a key that cannot be stored, and what they say about
-/// what its provider said of it (FR-KEY-3 to FR-KEY-5).
+/// what its provider said of it (FR-KEY-3 to FR-KEY-5). They say the usage of each key for an
+/// AI provider as well: calls, tokens, and estimated cost (FR-KEY-11).
 /// </summary>
 public static class KeyPages
 {
@@ -224,6 +227,26 @@ public static class KeyPages
         KeyProblem.NotInOnePiece => "A key is in one piece: letters, digits, and signs, with no space or line break in it. Copy it again, whole.",
         _ => throw new ArgumentOutOfRangeException(nameof(problem), problem, "The problem has no message."),
     };
+
+    /// <summary>What the usage of the keys is, and what its cost is not (FR-KEY-11).</summary>
+    public const string UsageExplained =
+        "The usage of a key is the calls that the roles of your agents made with it: how many, the tokens that the provider " +
+        "counted for them, and what those are estimated to cost. It is an estimate, and \"unknown\" where a model has no " +
+        "price here. What you are charged is on your account with the provider.";
+
+    /// <summary>
+    /// The usage of a stored key for an AI provider (FR-KEY-11): the calls to its provider in
+    /// the last days, or since the key was saved when that is later, because a call before
+    /// then was made with the key that this one took the place of.
+    /// </summary>
+    public static string Usage(KeyUsage usage)
+    {
+        ArgumentNullException.ThrowIfNull(usage);
+
+        var since = usage.SinceSaved ? "Usage since this key was saved" : $"Usage in the last {UsagePages.Whole(KeyUsage.Days)} days";
+
+        return $"{since}: {UsagePages.Sentence(usage.Figures)}";
+    }
 
     /// <summary>A time as a person reads it. The time is UTC.</summary>
     private static string At(DateTimeOffset time) => PageTimes.At(time);

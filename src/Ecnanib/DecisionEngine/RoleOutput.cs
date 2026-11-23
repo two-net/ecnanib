@@ -198,6 +198,21 @@ internal sealed class RoleOutputConfiguration : IEntityTypeConfiguration<RoleOut
         // row. It is also the index of the key below, which finds the calls of a cycle.
         builder.HasIndex(output => new { output.CycleId, output.UserId, output.Role, output.Attempt }).IsUnique();
 
+        // The calls of a user over a time, which is what the usage of the user's keys is added
+        // up from (FR-RPT-3, FR-KEY-11). The index carries what is added up, so the database
+        // can count the calls of a period from it, without the rows, which hold what the
+        // models answered.
+        builder.HasIndex(output => new { output.UserId, output.CalledAt })
+            .IncludeProperties(output => new
+            {
+                output.CycleId,
+                output.ModelId,
+                output.Outcome,
+                output.InputTokens,
+                output.OutputTokens,
+                output.LiveSearches,
+            });
+
         // The calls of a cycle go with it, and so with its agent and with the account. The key
         // carries the owner along, so the call of a cycle is its user's (NFR-DAT-9).
         builder.HasOne<DecisionCycle>()

@@ -162,6 +162,36 @@ public interface IModelDependents
 - A model that an agent was given while the sync was storing is not among what an implementation finds. The call that then reports that the model does not exist is what tells of it, and nothing moves the agent for that yet: see "Not built yet".
 - **Agents implements it,** as `AgentModelDependents`: the agents that run with a model that goes move to Attention required, with the cause `ModelUnavailable`, and their roles keep the models that their users gave them. It locks the accounts concerned in the order of their ids, and takes no lock on a model. `ModelDependentsTests` holds Agents to being told, for every row of Agents that points at a model, and `AgentModelDependentsTests` shows what it does. See "When a model goes" in [agents.md](agents.md).
 
+## Prices
+
+Price per token can be supplied in the configuration file, so that what the calls of a user cost can be estimated (FR-CAT-11). The providers do not report their prices in one way, and most of the lists that the catalog is synced from say none, so the file says them, for the models that a deployment gives a price.
+
+| Key | What it says |
+|---|---|
+| `AiProviders:<Provider>:Prices` | A list of entries, each with `Model`, a pattern of the models that the price is of, `InputPerMillionTokens`, and `OutputPerMillionTokens`. |
+
+- **A price is in US dollars for a million tokens,** as the providers publish their prices: one for the tokens of a prompt, and one for the tokens of an answer. A price is 0 or more, and 0 for a model that is not charged for.
+- **The price of a model is the first entry whose pattern names it,** in the order of the file. A pattern is written as the patterns of `Allow` are, and `ModelPattern` is the one rule for both. So a pattern that names fewer models goes before one that names more: `claude-opus-*` before `claude-*`. The other way round, the second entry is never reached. See [configuration.md](configuration.md).
+- **A model that no entry names has no price,** and neither has a model of a provider that the file has no entry for. No price is not a price of nothing: what the calls of such a model cost is not known, and is shown as unknown. The tracked file names no price, so every cost is unknown until a deployment writes one.
+- **A price says nothing about whether a model can be selected.** It is said of a model whatever its status, also of one that the file does not allow: a call that was made is priced, whatever became of its model since.
+- **Nothing of it is stored.** The file is read once, as the application starts. So a price that was changed holds from the next start, also for the calls that were made before: an estimate uses the price that the file names now.
+
+`IModelPrices` answers with the price of a model, or with null for a model that has none:
+
+```csharp
+public interface IModelPrices
+{
+    ModelPrice? Of(AiProviderCode provider, string identifier);
+}
+
+public sealed record ModelPrice(decimal InputPerMillionTokens, decimal OutputPerMillionTokens)
+{
+    public decimal CostOf(long inputTokens, long outputTokens);
+}
+```
+
+What estimates the cost of the calls of a user is the Decision Engine, which keeps the calls: see "AI usage" in [team.md](team.md).
+
 ## The catalog screen
 
 A signed-in user reads the catalog at `/catalog`, which the bar at the top of every page leads to (FR-CAT-10). The page is rendered on the server for each request. It is the same for every user: the rows of the catalog belong to the service, so nothing on it is asked for by owner, and it names no user and no key.
@@ -248,6 +278,8 @@ The configuration file of the tests holds no `CatalogKey`, as the tracked file h
 
 The file of the tests allows the models of Claude that `claude-*` names, but for those that `*-preview` names, and no model of another provider. A test that needs other patterns writes them into its own file, with `SettingsJson.WithJson`. What is eligible is asked through `ISelectableModels`, as a component asks.
 
+The file of the tests gives one price, to the models of Claude that `claude-priced-*` names, which is no model that a test runs with. A test that needs other prices writes them into its own file in the same way. `ModelPriceTests` asks `IModelPrices` for the price of a model, as a component asks.
+
 `CatalogPageTests` reads the screen as a signed-in user does, on `AccountsApplication`, which has the pages of an account. It waits for the first run of the job, and then asks for each further sync itself, with `ICatalogSync.SyncAsync`. Those syncs are minutes apart: the session of the user who reads the screen ends after 45 idle minutes in the file of the tests.
 
 ## Not built yet
@@ -258,4 +290,5 @@ The file of the tests allows the models of Claude that `claude-*` names, but for
 - Times in the user's own time zone on the catalog screen (NFR-USA-3). The pages write a time through `PageTimes`, in UTC.
 - The operator's button that triggers a sync, and its event in the audit trail (FR-OPS-4, FR-OPS-5). `ICatalogSync.SyncAsync` is what it calls.
 - Deleting old rows of `catalog_sync_runs`. Every sync adds a row. With the keys of users that is a row for each check of a key, which is about one a day for each stored key.
-- Prices (FR-CAT-11). Grok lists them, and they are not kept.
+- Keeping the prices that a provider lists. Grok lists them, and they are not kept: the price of a model is what the configuration file says (FR-CAT-11), and a model that the file gives none has none.
+- The price of a model on the catalog screen. The page of the AI usage shows what the calls of a user are estimated to cost, and not what a model costs.

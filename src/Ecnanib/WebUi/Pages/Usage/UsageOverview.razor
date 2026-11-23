@@ -1,0 +1,205 @@
+@attribute [Route(WebUiModule.UsagePath)]
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.DecisionEngine
+@inject IAiUsage Usage
+@inject IStoredAgents Agents
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page shows the AI usage
+    of the user who is signed in, and of no other: the calls that the roles of their agents made,
+    for each provider, and for each day, agent, and provider, with the tokens that the providers
+    counted and what they are estimated to cost where the configuration file gives the model a
+    price (FR-RPT-3, FR-CAT-11). What is not known is written as "Unknown", and never as zero.
+    It shows the usage of every agent or of the one that the address names, over the period that
+    the address names: the choices are in the address, and an address that names a choice which
+    there is not is answered with "not found". Demo and Live are added up here, and the page
+    says so: a provider charges a key the same in each, so the page has no badge of a mode
+    (FR-BIN-11). The days are UTC days.
+*@
+
+@if (_view is not null && _filter is not null)
+{
+    var title = _agent is null ? UsagePages.Title : UsagePages.TitleOf(_agent.Name);
+
+    <PageTitle>@title</PageTitle>
+
+    <h1>@title</h1>
+
+    <p>@UsagePages.Explained</p>
+
+    <p>@UsagePages.Counted</p>
+
+    <h2 id="usage-filter-heading">Which calls are counted</h2>
+
+    @* The page is not interactive, so the form is sent with its button, and by an address. *@
+    <form method="get" action="@WebUiModule.UsagePath" class="experience-filter" aria-labelledby="usage-filter-heading">
+        <div class="field">
+            <label for="usage-agent">Agent</label>
+            <select id="usage-agent" name="@WebUiModule.UsageAgentKey">
+                <option value="">All your agents</option>
+                @foreach (var agent in _agents)
+                {
+                    <option value="@agent.Id" selected="@(_filter.AgentId == agent.Id)">@agent.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="usage-period">Period</label>
+            <select id="usage-period" name="@WebUiModule.UsagePeriodKey">
+                @foreach (var period in Enum.GetValues<UsagePeriod>())
+                {
+                    <option value="@UsagePages.Token(period)" selected="@(_filter.Period == period)">@UsagePages.Describe(period)</option>
+                }
+            </select>
+        </div>
+
+        <button type="submit">Show</button>
+    </form>
+
+    <p>@UsagePages.PeriodExplained(_view, _filter)</p>
+
+    @if (_view.Days.Count == 0)
+    {
+        <p>@UsagePages.NoCalls(ofOneAgent: _agent is not null)</p>
+    }
+    else
+    {
+        <h2 id="usage-providers">By provider</h2>
+
+        @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
+        <div class="track-records" role="region" aria-labelledby="usage-providers" tabindex="0">
+            <table>
+                <caption>The AI usage of each provider</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Provider</th>
+                        <UsageHeadings />
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var provider in _view.Providers)
+                    {
+                        <tr>
+                            <th scope="row">@provider.ProviderName</th>
+                            <UsageCells Figures="@provider.Figures" />
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <h2 id="usage-days">By day, agent, and provider</h2>
+
+        <div class="track-records" role="region" aria-labelledby="usage-days" tabindex="0">
+            <table>
+                <caption>The AI usage of each day, agent, and provider</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Day</th>
+                        <th scope="col">Agent</th>
+                        <th scope="col">Provider</th>
+                        <UsageHeadings />
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var day in _days)
+                    {
+                        <tr>
+                            <th scope="row">@PageTimes.Day(day.Day)</th>
+
+                            @* The agent by the name that its user gave it, which leads to its usage alone. *@
+                            <td><a href="@UsagePages.Path(_filter with { AgentId = day.AgentId })">@NameOf(day.AgentId)</a></td>
+                            <td>@day.ProviderName</td>
+                            <UsageCells Figures="@day.Figures" />
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <p>@UsagePages.NotCountedExplained</p>
+
+    <p>@UsagePages.CostExplained</p>
+
+    <p>@UsagePages.Follows</p>
+
+    @if (_agent is not null)
+    {
+        <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+
+        <p><a href="@UsagePages.Path(_filter with { AgentId = null })">@UsagePages.OfEveryAgentLink</a></p>
+    }
+
+    <p><a href="@WebUiModule.KeysPath">Your API keys</a></p>
+
+    <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
+}
+
+@code {
+    private AiUsageFilter? _filter;
+    private AiUsageView? _view;
+    private AgentView? _agent;
+    private IReadOnlyList<AgentView> _agents = [];
+    private IReadOnlyList<DayUsage> _days = [];
+    private IReadOnlyDictionary<Guid, string> _names = new Dictionary<Guid, string>();
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // An address that names a choice which there is not is not found: the page shows what
+        // its address asks for, and never something else in its place.
+        if (UsagePages.ChoicesOf(request.Request.Query) is not { } filter)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // The agents of the user of the session, by the names that their user gave them. An
+        // agent of another user is not among them, so its usage is not found, like that of an
+        // agent that does not exist.
+        var agents = (await Agents.ListAsync(request)).Agents;
+
+        if (filter.AgentId is { } asked && agents.All(agent => agent.Id != asked))
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // The Decision Engine may not use Accounts, so it is handed the user who is signed in,
+        // and works out the usage from the calls of that user alone.
+        var view = await Usage.OfUserAsync(SignedInUser.RequiredIdOf(request), filter, request.RequestAborted);
+
+        _agent = agents.SingleOrDefault(agent => agent.Id == filter.AgentId);
+        _agents = agents;
+        _names = agents.ToDictionary(agent => agent.Id, agent => agent.Name);
+
+        // The latest day first, and within a day the agents by their names, each with its providers.
+        _days =
+        [
+            .. view.Days
+                .OrderByDescending(day => day.Day)
+                .ThenBy(day => NameOf(day.AgentId), StringComparer.Ordinal)
+                .ThenBy(day => day.AgentId)
+                .ThenBy(day => day.ProviderName, StringComparer.Ordinal),
+        ];
+        _filter = filter;
+        _view = view;
+    }
+
+    // The calls of an agent go with it, so every call has an agent that is listed.
+    private string NameOf(Guid agentId) => _names.TryGetValue(agentId, out var name) ? name : "An agent that was deleted";
+}

@@ -53,9 +53,11 @@ public class SettingsFileTests
         Assert.Equal(["claude-*"], claude.Allow);
         Assert.Equal(["*-preview"], claude.Deny);
         Assert.Empty(claude.LiveSearch);
+        Assert.Equal([new ModelPriceSettings("claude-priced-*", InputPerMillionTokens: 3m, OutputPerMillionTokens: 15.5m)], claude.Prices);
         var grok = settings.AiProviders.ByCode[new AiProviderCode("Grok")];
         Assert.Null(grok.CatalogKey);
         Assert.Equal(["grok-*"], grok.LiveSearch);
+        Assert.Empty(grok.Prices);
 
         Assert.Equal(new CatalogSyncSettings(12, 3), settings.CatalogSync);
 
@@ -208,6 +210,31 @@ public class SettingsFileTests
         { "AiProviders:Claude:Allow", "[\"claude-* gpt-*\"]", "AiProviders:Claude:Allow:0" },
         { "AiProviders:Claude:Deny", "[\"*-preview\", \"claude-\\t*\"]", "AiProviders:Claude:Deny:1" },
         { "AiProviders:Grok:LiveSearch", "[\"grok-*\", \"GROK-*\"]", "AiProviders:Grok:LiveSearch" },
+
+        // What the tokens of a model cost (FR-CAT-11): a list, which may be empty, of a pattern
+        // with two prices for a million tokens, each nothing or more. A pattern is listed once,
+        // and an entry holds nothing else.
+        { "AiProviders:Claude:Prices", "null", "AiProviders:Claude:Prices" },
+        { "AiProviders:Claude:Prices", "{}", "AiProviders:Claude:Prices" },
+        { "AiProviders:Claude:Prices", "[\"claude-*\"]", "AiProviders:Claude:Prices:0" },
+        { "AiProviders:Claude:Prices", "[null]", "AiProviders:Claude:Prices:0" },
+        {
+            "AiProviders:Claude:Prices",
+            "[{ \"Model\": \"claude-*\", \"InputPerMillionTokens\": 3 }]",
+            "AiProviders:Claude:Prices:0:OutputPerMillionTokens"
+        },
+        { "AiProviders:Claude:Prices:0:Model", "\"\"", "AiProviders:Claude:Prices:0:Model" },
+        { "AiProviders:Claude:Prices:0:Model", "\"claude-* gpt-*\"", "AiProviders:Claude:Prices:0:Model" },
+        { "AiProviders:Claude:Prices:0:InputPerMillionTokens", "-0.01", "AiProviders:Claude:Prices:0:InputPerMillionTokens" },
+        { "AiProviders:Claude:Prices:0:InputPerMillionTokens", "\"3\"", "AiProviders:Claude:Prices:0:InputPerMillionTokens" },
+        { "AiProviders:Claude:Prices:0:OutputPerMillionTokens", "1000000.01", "AiProviders:Claude:Prices:0:OutputPerMillionTokens" },
+        { "AiProviders:Claude:Prices:0:Currency", "\"EUR\"", "AiProviders:Claude:Prices:0:Currency" },
+        {
+            "AiProviders:Claude:Prices",
+            "[{ \"Model\": \"claude-*\", \"InputPerMillionTokens\": 3, \"OutputPerMillionTokens\": 15 }, "
+                + "{ \"Model\": \"CLAUDE-*\", \"InputPerMillionTokens\": 1, \"OutputPerMillionTokens\": 5 }]",
+            "AiProviders:Claude:Prices"
+        },
         { "Binance:Spot:Demo", "{}", "Binance:Spot:Demo:BaseUrl" },
         // The address of an account event feed is that of a WebSocket (FR-BIN-7).
         { "Binance:Spot:Demo:FeedUrl", "\"https://spot-demo.example\"", "Binance:Spot:Demo:FeedUrl" },

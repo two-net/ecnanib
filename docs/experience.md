@@ -628,7 +628,7 @@ A run that completed something says how much, as information, and a run that com
 - Scoring the cycles that were recorded before the tables were added. They left no rows.
 - Deleting the calls and the shadow trades that are older than the records of decisions are kept (NFR-DAT-5). They go with their cycles, and nothing deletes a cycle for its age yet.
 - Saying in the record of a cycle which lessons its prompts recalled. A lesson can be disabled or deleted afterwards, and the record of a cycle holds no prompt: see "The record of a cycle" in [team.md](team.md).
-- A record of the calls that write lessons. A lesson says the model that wrote it and the version of its instructions. How long a call took and how many tokens it used are in the log of the gateway alone, and a call that gave no lesson leaves the outcome of its row.
+- A record of the calls that write lessons. A lesson says the model that wrote it and the version of its instructions. How long a call took and how many tokens it used are in the log of the gateway alone, and a call that gave no lesson leaves the outcome of its row. So these calls are in no figure of the AI usage, which is worked out from the recorded calls of the roles, and its page says so: see "AI usage" in [team.md](team.md).
 - Lessons for the positions that were closed before lessons were written. Their rows were never left: see "Writing a lesson".
 - Calling a model for a lesson again later, after it gave none. Every call is billed to the user, so there are two at the most.
 - Keeping the lessons of an agent that is deleted. The specification keeps lessons indefinitely (NFR-DAT-5), and a lesson goes with its position, which goes with its agent, as a trade does.

@@ -1858,6 +1858,11 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.HasIndex("TimeframeTemplateId")
                         .HasDatabaseName("ix_role_outputs_timeframe_template_id");
 
+                    b.HasIndex("UserId", "CalledAt")
+                        .HasDatabaseName("ix_role_outputs_user_id_called_at");
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("UserId", "CalledAt"), new[] { "CycleId", "ModelId", "Outcome", "InputTokens", "OutputTokens", "LiveSearches" });
+
                     b.HasIndex("CycleId", "UserId", "Role", "Attempt")
                         .IsUnique()
                         .HasDatabaseName("ix_role_outputs_cycle_id_user_id_role_attempt");

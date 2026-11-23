@@ -95,6 +95,7 @@ The tokens of a call are counted the same way for every provider, so that they c
 - Gemini counts what the model reasoned apart from its answer, and charges both as output. It counts what a tool put before the model, such as the results of a search, apart from the prompt, and both are input.
 - GPT counts what the model reasoned inside `output_tokens`, and Grok's examples count it beside. What the total holds beyond the input is right for both.
 - What a search found is input wherever a provider counts it as tokens. The searches themselves are counted apart, and are no tokens: see "Live search".
+- What the recorded usage of the calls of a user adds up to, and what it is estimated to cost, is shown to that user (FR-RPT-3, FR-KEY-11): see "AI usage" in [team.md](team.md). The estimate prices every token of the input at one price, and of the output at another.
 
 ## Live search
 
@@ -257,4 +258,3 @@ Run it when an adapter is added or changed, and when a provider changes its API.
 - A setting for how much a call may search, and a limit for GPT and Gemini. The time limit of the call ends a search that goes on.
 - Breakers for repeated failures of a provider or a key (NFR-REL-4).
 - Limits on how many calls a provider or a key takes at once. The gateway has none. What starts the cycles limits how many cycles use a provider, and the key of a user for it, at once (FR-CYC-11): see "The queue" in [cycles.md](cycles.md).
-- Showing the usage of the calls (FR-RPT-3, FR-KEY-11). Each call of a role is recorded with its usage and the searches that it ran (FR-TEAM-8): see "The record of a cycle" in [team.md](team.md).

@@ -171,6 +171,12 @@ public static class DecisionEngineModule
         // Guard, and its orders, which a page shows as a timeline (FR-CYC-10). It only reads.
         services.AddSingleton<IRecordedCycles, RecordedCycles>();
 
+        // The AI usage of a user, from the recorded calls of the roles: calls, tokens, and
+        // estimated cost where the configuration file gives the model a price, by agent,
+        // provider, and day, and for each of the user's keys (FR-RPT-3, FR-KEY-11). It only
+        // reads, and stores nothing of what it works out.
+        services.AddSingleton<IAiUsage, AiUsage>();
+
         // The closed positions of a user as the trades that a track record counts, which
         // Experience waited for: it may not use the Decision Engine, which keeps the positions
         // (FR-EXP-1, FR-EXP-2). It only reads, and is handed nothing but the database, so that
