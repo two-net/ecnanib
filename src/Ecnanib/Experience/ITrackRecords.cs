@@ -173,26 +173,9 @@ internal sealed class TrackRecords(
         var closedFrom = filter.Period.Start(clock.GetUtcNow());
         var trades = await sources.OfUserAsync(userId, closedFrom, cancellationToken);
 
-        // A model says its provider, and its name. A model of the catalog is never deleted
-        // (FR-CAT-5), so the one that held a role is found there for good.
-        var catalog = (await models.ListAsync(cancellationToken))
-            .SelectMany(provider => provider.Models)
-            .ToDictionary(model => model.Id);
-
-        // The models that a trade counts for: the one that held the chosen role, or each model
-        // of its team once. A trade with none of them is in no record, in either mode.
-        var counting = trades
-            .Where(trade => Matches(trade, filter))
-            .Select(trade => (
-                Trade: trade,
-                Models: trade.Roles
-                    .Where(role => filter.Role is null || role.Role == filter.Role)
-                    .Select(role => catalog.GetValueOrDefault(role.ModelId))
-                    .OfType<CatalogModel>()
-                    .DistinctBy(model => model.Id)
-                    .ToList()))
-            .Where(counted => counted.Models.Count > 0)
-            .ToList();
+        // The models that a trade counts for, by the rule that the board goes by as well: the
+        // one that held the chosen role, or each model of its team once.
+        var counting = CountedTrades.Of(trades, filter, await models.ByIdAsync(cancellationToken));
 
         var scope = Scope(filter, closedFrom, [.. counting.Select(counted => counted.Trade)]);
         var ofMode = counting.Where(counted => counted.Trade.Mode == scope.Mode).ToList();
@@ -201,24 +184,16 @@ internal sealed class TrackRecords(
             scope,
             [
                 .. ofMode
-                    .SelectMany(counted => counted.Models
-                        .DistinctBy(model => model.Provider)
-                        .Select(model => (model.Provider, model.ProviderName, counted.Trade)))
-                    .GroupBy(counted => (counted.Provider, counted.ProviderName), counted => counted.Trade)
+                    .ByProvider()
                     .Select(provider => new ProviderTrackRecord(
-                        provider.Key.Provider, provider.Key.ProviderName, TrackRecord.Of(provider, settings.MinSamples)))
-                    .Where(provider => provider.Record.Trades > 0)
-                    .OrderBy(provider => provider.Provider.Value, StringComparer.Ordinal),
+                        provider.Provider, provider.ProviderName, TrackRecord.Of(provider.Trades, settings.MinSamples)))
+                    .Where(provider => provider.Record.Trades > 0),
             ],
             [
                 .. ofMode
-                    .SelectMany(counted => counted.Models.Select(model => (Model: model, counted.Trade)))
-                    .GroupBy(counted => counted.Model.Id)
-                    .Select(model => new ModelTrackRecord(
-                        model.First().Model, TrackRecord.Of(model.Select(counted => counted.Trade), settings.MinSamples)))
-                    .Where(model => model.Record.Trades > 0)
-                    .OrderBy(model => model.Model.Provider.Value, StringComparer.Ordinal)
-                    .ThenBy(model => model.Model.Identifier, StringComparer.Ordinal),
+                    .ByModel()
+                    .Select(model => new ModelTrackRecord(model.Model, TrackRecord.Of(model.Trades, settings.MinSamples)))
+                    .Where(model => model.Record.Trades > 0),
             ]);
     }
 
@@ -231,7 +206,7 @@ internal sealed class TrackRecords(
 
         // The trades in which the model held a role, whichever: the page of a model says every role.
         var held = (await sources.OfUserAsync(userId, closedFrom, cancellationToken))
-            .Where(trade => Matches(trade, filter) && trade.Roles.Any(role => role.ModelId == modelId))
+            .Where(trade => CountedTrades.Matches(trade, filter) && trade.Roles.Any(role => role.ModelId == modelId))
             .ToList();
 
         var scope = Scope(filter, closedFrom, held);
@@ -248,11 +223,6 @@ internal sealed class TrackRecords(
                         settings.MinSamples))),
             ]);
     }
-
-    /// <summary>Whether a trade is of the market and the timeframe of a filter. Its period is asked of the source, and its mode is decided after.</summary>
-    private static bool Matches(ClosedTrade trade, TrackRecordFilter filter) =>
-        (filter.Market is null || trade.Market == filter.Market)
-        && (filter.Timeframe is null || trade.Timeframe == filter.Timeframe);
 
     /// <summary>
     /// What a view is of, from the trades that it would count in either mode: the mode that the

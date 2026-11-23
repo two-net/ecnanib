@@ -60,6 +60,12 @@ public static class WebUiModule
     /// </summary>
     public const string LessonsPath = "/experience/lessons";
 
+    /// <summary>
+    /// The path of the platform-wide board: the same track record, aggregated across all users,
+    /// which names none of them (FR-EXP-10). A user leaves the board there, and comes back to it.
+    /// </summary>
+    public const string BoardPath = "/experience/board";
+
     /// <summary>The name of the choice of an agent in the address of the page of the lessons.</summary>
     public const string LessonsAgentKey = "agent";
 

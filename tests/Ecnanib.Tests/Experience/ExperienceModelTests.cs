@@ -9,7 +9,9 @@ namespace Ecnanib.Tests.Experience;
 
 /// <summary>
 /// What Experience stores hangs on the cycle that it is of, by a key that the Decision Engine
-/// declares, because Experience may not use it. And shadow trades never place orders (FR-EXP-5):
+/// declares, because Experience may not use it. Who left the platform-wide board points at the
+/// account, by a key that Agents declares for the same reason. And shadow trades never place
+/// orders (FR-EXP-5):
 /// nothing of Experience can reach the orders of the Exchange Gateway. See "The data" in
 /// docs/experience.md, and "The model" in docs/persistence.md. These tests read the model and
 /// the architecture rules, and need no database.
@@ -92,6 +94,36 @@ public class ExperienceModelTests
         Assert.Equal("fk_lessons_ai_models_model_id", toModel.GetConstraintName());
         Assert.Equal(DeleteBehavior.Restrict, toModel.DeleteBehavior);
         Assert.Equal(3, mapped.GetForeignKeys().Count());
+    }
+
+    [Fact]
+    public void Who_left_the_board_points_at_the_account_by_a_key_that_is_named_for_its_tables()
+    {
+        using var context = ModelOnly.Context();
+        var mapped = context.Model.FindEntityType(typeof(BoardOptOut))!;
+
+        // The entity has two configurations: its own in Experience, and that of its key to the
+        // account in Agents, which may use both Experience and Accounts, and which is applied
+        // first. Both are of the one table, and its keys are named for it.
+        Assert.Equal("board_opt_outs", mapped.GetTableName());
+        Assert.Equal("pk_board_opt_outs", mapped.FindPrimaryKey()!.GetName());
+
+        // A user has left the board or has not: the row is found by its user.
+        Assert.Equal(["user_id"], mapped.FindPrimaryKey()!.Properties.Select(property => property.GetColumnName()));
+        Assert.Equal(["user_id", "opted_out_at"], mapped.GetProperties().Select(property => property.GetColumnName()));
+
+        var toAccount = Assert.Single(mapped.GetForeignKeys());
+
+        Assert.Equal(typeof(Ecnanib.Accounts.User), toAccount.PrincipalEntityType.ClrType);
+        Assert.Equal("fk_board_opt_outs_users_user_id", toAccount.GetConstraintName());
+        Assert.Equal(["user_id"], toAccount.Properties.Select(property => property.GetColumnName()));
+
+        // It points at the account itself, and the row goes with it (NFR-DAT-9, FR-ACC-9).
+        Assert.True(toAccount.PrincipalKey.IsPrimaryKey());
+        Assert.Equal(DeleteBehavior.Cascade, toAccount.DeleteBehavior);
+
+        // The key is the row's own: the database keeps no second index for it.
+        Assert.Empty(mapped.GetIndexes());
     }
 
     [Fact]

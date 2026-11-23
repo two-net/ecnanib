@@ -6,7 +6,9 @@ A role-specific measure is kept for each role: for the two analysts the share of
 
 After each closed position, the agent's Risk Manager model writes a short lesson: the setup, what was expected, what happened, and one takeaway of at most 60 words (FR-EXP-6). Each Strategist and Risk Manager prompt includes up to 5 recent lessons, taken first from the same agent and then from the user's other agents on the same symbol, market, and timeframe, within a fixed size budget (FR-EXP-7). A user reads all of their lessons, disables or deletes any lesson, and resets an agent's lessons (FR-EXP-8). A disabled or deleted lesson is not recalled into prompts, and lessons are recalled only from the same user's agents.
 
-A track record is of one user: of the closed trades of that user's agents. It is worked out from the recorded results of the closed positions each time it is asked for, and nothing of it is stored. A strength score is worked out in the same way, and no aggregate is stored either. What Experience stores is what later candles are to say something of: the calls of the analysts and the shadow trades of the vetoed plans, each of which a job gives its outcome. And the lessons, each of which a job of the Decision Engine has written.
+A platform-wide board shows the same track record aggregated across all users. A slice is shown only when at least 5 users and 50 trades contribute. It exposes no user identity, balance, or individual trade, and users can opt out of contributing (FR-EXP-10).
+
+A track record is of one user: of the closed trades of that user's agents. It is worked out from the recorded results of the closed positions each time it is asked for, and nothing of it is stored. A strength score is worked out in the same way, and no aggregate is stored either. The board is worked out in the same way too, from the closed trades of every user who has not left it. What Experience stores is what later candles are to say something of: the calls of the analysts and the shadow trades of the vetoed plans, each of which a job gives its outcome. And the lessons, each of which a job of the Decision Engine has written. And who left the board, which is each user's own choice.
 
 The code is in `src/Ecnanib/Experience`, what hands it the trades in `src/Ecnanib/DecisionEngine/ClosedPositions.cs`, what leaves it the calls and the vetoed plans of a cycle in `src/Ecnanib/DecisionEngine/CycleExperience.cs`, and the screens in `src/Ecnanib/WebUi/Pages/Experience`. What has a lesson written is in `LessonWriting.cs` and `LessonRuns.cs` of `src/Ecnanib/DecisionEngine`, and what hands a cycle its lessons in `RecalledLessons.cs` there. The rules below are enforced by tests in `tests/Ecnanib.Tests/Experience`, and in `ClosedPositionTests.cs`, `CycleExperienceTests.cs`, `LessonWritingJobTests.cs`, `LessonPromptTests.cs`, and `CycleLessonTests.cs` of `tests/Ecnanib.Tests/DecisionEngine`.
 
@@ -94,6 +96,79 @@ A `TrackRecordFilter` is a role, a market, a timeframe, a mode, and a period. Wh
 | **The rule takes sample sizes, and not trades.** | So that whatever counts something else than trades goes by the same rule: the measures of the roles do (FR-EXP-3). |
 
 What recommends a team goes by the same rule, with the sample sizes of the slices that it recommends from, which `IRoleStrengths` answers for each mode: `RoleRecommendations` of Agents chooses the mode for each model, from the samples of its slice in Live and in Demo, and says which it used (FR-TEAM-4). See "The strength score", and "Role by strength" in [agents.md](agents.md).
+
+## The platform-wide board
+
+`IBoardRecords` works out the board: the same track record, of each provider and of each model, from the closed trades of every user who has not left the board (FR-EXP-10). It takes no user, and answers with none.
+
+```csharp
+public interface IBoardRecords
+{
+    Task<BoardView> OfEveryoneAsync(TrackRecordFilter filter, CancellationToken cancellationToken);
+}
+```
+
+A `BoardView` is the records of the providers and of the models in one mode, as `ProviderTrackRecord` and `ModelTrackRecord`, which are the rows of a user's own view. With them it says what the view is of: its mode, whether the rule chose it, from when a trade counts, and how many users and trades must contribute.
+
+| Rule | Detail |
+|---|---|
+| **It is the same track record.** | The filter is the one of a user's records: role, market, timeframe, mode, and period. For whom a trade counts is one rule, `CountedTrades`, which both go by, and the measures are those of `TrackRecord.Of`. `BoardRecordsTests` holds a record of the board to what `TrackRecord.Of` says of the same trades. |
+| **A slice is one record:** that of a provider, or that of a model, of the trades that the filter counts, in one mode. | Each is held to the rule by itself. A provider can have a record while none of its models has one, and a choice of the filter can leave a record too few. |
+| **A slice is shown only when at least `Experience:Board:MinUsers` users and `Experience:Board:MinTrades` trades contribute to it.** | 5 and 50 in the tracked file. `BoardSlice.IsShown` is the rule, and reads nothing. `BoardSliceTests` holds it to those numbers. |
+| **A trade contributes when it is counted,** and a user when a trade of theirs is. | A trade with a result in R. A user is counted once, however many of the trades are theirs: one user with many trades shows nothing, and neither do many users with a few. |
+| **A slice that is not shown is in no answer.** | It is not worked out, it has no row, and nothing says how many trades it would count, or that there is one. |
+| **An answer names no user.** | A `BoardView` holds no user, no agent, no position, no symbol, and no amount of money: the measures are in R, and the one id in it is that of a model of the catalog. `BoardRecordsTests` reads the types of the answer for it. |
+| **A record is of one mode.** | Nothing is added up over Demo and Live (FR-BIN-11). Trades that are enough only when both modes are counted together show nothing. |
+| **Where no mode is chosen, Live is used where it has a record to show, and otherwise Demo** (FR-EXP-9). | What is enough for the board is one record that may be shown: `ExperienceBasis.Choose` is asked with how many providers each mode shows, and with 1 as the minimum. The trades of a model are among those of its provider, so a mode with no provider to show has no model to show either. The choice says nothing that asking for each mode does not say. The view says its mode and whether the rule chose it, and no number of trades. |
+| **Nothing of it is stored.** | It is worked out from the positions each time it is asked for, as the record of a user is. So a user who leaves the board is in no record from the next time on, and neither are the trades of an agent or of an account that is deleted. See "Not built yet". |
+| **The rows are in the order of the providers' codes, and then of the identifiers.** | Never in the order of a result: the board ranks nothing. |
+
+**What the rule does not keep from a reader** is what two records that are both shown say together. A provider whose record counts 51 trades, beside its one model that is shown with 50, says the result of one trade. So do the same record with and without a choice of the filter, and the same record a minute later. Such a difference is still a result in R with no user, no agent, no symbol, and no amount to it. Holding it back needs a second rule, which hides a record for what another shows: see "Not built yet".
+
+### The trades of the board
+
+Experience declares what it needs of whatever keeps the positions, `IBoardTrades`, and the Decision Engine implements and registers it, with `ClosedPositions`, as it does `IClosedTrades`.
+
+```csharp
+public interface IBoardTrades
+{
+    Task<IReadOnlyList<ContributedTrade>> OfContributorsAsync(DateTimeOffset? closedFrom, CancellationToken cancellationToken);
+}
+
+public sealed record ContributedTrade(Guid UserId, ClosedTrade Trade);
+```
+
+| Rule | Detail |
+|---|---|
+| **It is a question of its own.** | `IClosedTrades` answers with the trades of one user, and never with more. What reads across users has another name, so that nothing which asks for the trades of a user comes by those of another. Only `BoardRecords` asks it. |
+| **It is not asked for by owner.** | It is the one read for a page that is not: see "What is not asked for by owner" in [ownership.md](ownership.md). It says whose each trade is, by id, because the board counts the users of a slice. The id is in no answer of the board. |
+| **A user who left the board is left out where the positions are read.** | The question leaves out the positions of every user who has a row of `board_opt_outs`, in the database. So a trade of such a user is handed to nothing. |
+| **Only a closed position with a result in R is read.** | The board counts no other, and says nothing of one: it has no note of the trades that wait for their result. |
+| **It is read as it was at one moment,** with who left the board. | One snapshot, as for the trades of a user. A user who leaves while it reads is in all of the answer, or in none of it. |
+| **A period is asked of the database.** | `closedFrom`, as for the trades of a user. No index serves the read across users: see "Not built yet". |
+
+### Leaving the board
+
+A user can opt out of contributing (FR-EXP-10). `IBoardContribution` answers whether the trades of a user are counted, and stores the choice. It is handed the user by id, as `ILessons` is.
+
+```csharp
+public interface IBoardContribution
+{
+    Task<bool> OfUserAsync(Guid userId, CancellationToken cancellationToken);
+
+    Task SetAsync(Guid userId, bool contributes, CancellationToken cancellationToken);
+}
+```
+
+| Rule | Detail |
+|---|---|
+| **Every user contributes until they leave.** | Nothing is stored for a user who contributes. A user who left has a row of `board_opt_outs`, with when they left, and a user who comes back has none again. |
+| **It holds at once.** | The board is worked out each time it is asked for. Every trade of a user who left is left out, also the ones from before they left, and every one counts again when they come back. |
+| **It changes nothing else.** | The user still sees the board, and their own records, strength scores, and lessons are as they were. |
+| **A choice that is made twice changes nothing the second time.** | Of two forms that are sent at the same time, the second writes nothing: the row is written with `ON CONFLICT DO NOTHING`. Leaving again keeps when the user left. |
+| **It is the user's own.** | The row is asked for with `OwnedBy`, and the statement that writes it names the owner itself. `BoardRecordsTests` has the test with two users, which is marked for `board_opt_outs`. |
+| **It is a preference of the user,** the first that is stored. | It is in the export of the user's data, and goes with the account: see "The data". It is in no event of the audit trail: it exposes no key and moves no money. |
+| **It takes no lock on the account.** | Nothing is decided from what the account is, so nothing has to hold it still. A user whose account is deleted in the moment that they leave the board has that one request fail: the key to the account refuses the row, and none is left behind. |
 
 ## The measure of each role
 
@@ -331,6 +406,7 @@ The pages are rendered on the server for each request, and none is interactive. 
 | `/experience` | The experience screen (FR-UI-2): the track record of each provider, and of each model, from the closed trades of the user, and under them the strength score of each model in each role, market, and timeframe. Each model leads to its page, with the same filter. |
 | `/experience/models/<id>` | The experience record of one model, which the catalog links each model to (FR-CAT-10): its track record in any role, and in each role, and under them its strength score in each role, market, and timeframe. A role that the model never held says that no closed trade is counted, and no measure. |
 | `/experience/lessons` | The lessons of the user, which they read, disable, and delete (FR-EXP-8): see "The pages of the lessons". The experience screen leads to it. |
+| `/experience/board` | The platform-wide board (FR-EXP-10): the track record of each provider, and of each model, from the closed trades of all users, where enough of them contribute. A user leaves the board there, and comes back to it: see "The page of the board". The experience screen leads to it, with the same filter. |
 
 | Rule | Detail |
 |---|---|
@@ -343,7 +419,7 @@ The pages are rendered on the server for each request, and none is interactive. 
 | **What a record cannot say is "Not available".** | And the profit factor of a record with no losing trade is "No losing trade". No cell is left blank. |
 | **What is left out is said.** | How many closed trades are not counted yet because their result is not recorded, and how many are not counted because their result says no R, each as a note. |
 | **The page of a model that no trade of the user counts for is there.** | It says that nothing is recorded for the user in that mode. The catalog links every model to its page, so it is not "not found". A path that names no model of the catalog is. |
-| **The records are asked for by owner.** | A page hands `ITrackRecords` the user who is signed in. The catalog is the same for everyone, and the page of a model has one address for every user: each sees the record of their own trades there. |
+| **The records are asked for by owner.** | A page hands `ITrackRecords` the user who is signed in. The catalog is the same for everyone, and the page of a model has one address for every user: each sees the record of their own trades there. The board alone is of every user, and names none: see "The page of the board". |
 | **What a provider wrote is shown as text.** | The name of a model, like everything else on a page (NFR-SEC-4). |
 | The times are UTC. | As on the other pages. |
 
@@ -394,6 +470,26 @@ A user reads all of their lessons, disables or deletes any lesson, and resets an
 
 The texts of the pages are in `LessonPages`, in one place.
 
+### The page of the board
+
+`/experience/board` shows what `IBoardRecords` answers, with the filter of the experience screen, in the address in the same way. `BoardPageTests` reads it as a signed-in user does.
+
+| Rule | Detail |
+|---|---|
+| **It is for a signed-in user,** as every experience screen is. | A visitor is sent to sign in. The board is for the users of the service, whose trades it is made of. |
+| **It shows the same tables as the experience screen:** by provider, and by model. | With the same columns, written in the same way. A model leads nowhere: the page of a model is of the reader's own trades. |
+| **It says what it never shows, and when a record is shown.** | "The board shows no user, no balance, and no single trade", and that a provider or a model has a record only when at least 5 users and 50 closed trades contribute to it, with the numbers of the configuration file. |
+| **A record that too few contribute to is not on the page at all.** | Not as a row that says "not enough", and not as a number of what is left out. A page with no record says that no provider, and no model, has one. |
+| **It says no number of trades but in a record that is shown.** | The experience screen says how many trades the other mode would count, and how many wait for their result. The board says neither: such a number is of trades that too few may contribute to. |
+| **The mode is under the heading, as a badge.** | With why it is that mode, that Demo and Live are never added up, and a link to the other mode. |
+| **It states what every experience screen states,** and for whom a trade counts. | See "What every screen states". |
+| **Under the records, the user reads whether their own trades are counted,** and leaves the board or comes back to it with one press of a button. | The page has one form at a time, named for what it does: `leave-board`, or `return-to-board`. It answers with itself, by its own address, so a reload sends no form again, and the filter stays. A form that is sent again is the form of no page. Neither takes a proof of who the user is: it exposes no key and moves no money. |
+| **The choice is that of the user who is signed in.** | No form names a user. It is the one thing on the page that is of a user. |
+| **A form that is sent does not have the board worked out.** | The answer leads to the page again, and the board reads the trades of every user. |
+| **The account page says that there is a choice.** | Under "Your data", with a link to the board, and that the choice is stored with the account and is in a download. |
+
+The texts of the page are in `BoardPages`, in one place.
+
 ### What every screen states
 
 Every experience screen states, under the heading "What these figures cannot tell" (FR-EXP-11):
@@ -402,7 +498,7 @@ Every experience screen states, under the heading "What these figures cannot tel
 - that small samples are unreliable, with the sample size that a record is marked below,
 - and that Demo results differ from Live results.
 
-`ExperienceNotes` states all three, and asks for nothing of the page that shows it. So a page states them whatever it has to show, also when it has no trade to show. `ExperienceStatementTests` asks every route of `Ecnanib.WebUi.Pages.Experience`, the page of the lessons among them, with no trade, with trades in Demo, and with trades in both modes, so a screen that is added fails it until it makes the statements.
+`ExperienceNotes` states all three, and asks for nothing of the page that shows it. So a page states them whatever it has to show, also when it has no trade to show. `ExperienceStatementTests` asks every route of `Ecnanib.WebUi.Pages.Experience`, the page of the lessons and the board among them, with no trade, with trades in Demo, and with trades in both modes, so a screen that is added fails it until it makes the statements.
 
 ## The settings
 
@@ -413,20 +509,23 @@ Every experience screen states, under the heading "What these figures cannot tel
 | `Experience:ShadowFeePercent:Spot` | The standard fee of an order of a shadow trade on the Spot market (FR-EXP-5), in percent of what the order is worth, from 0 to 1. | 0.1 |
 | `Experience:ShadowFeePercent:Futures` | The same on the Futures market. | 0.05 |
 | `Experience:LessonsPerPrompt` | The most lessons that a prompt of the Strategist or of the Risk Manager recalls (FR-EXP-7). A whole number, 0 or more: with 0, a prompt recalls none, and lessons are written all the same. | 5 |
+| `Experience:Board:MinUsers` | The fewest users that must contribute to a record of the platform-wide board for it to be shown (FR-EXP-10). A whole number, 1 or more. | 5 |
+| `Experience:Board:MinTrades` | The fewest closed trades that must contribute to it. A whole number, 1 or more. | 50 |
 
-The size budget of the recalled lessons and the limits of a lesson are fixed, and are no settings: see "Recalling lessons" and "Lessons". The other keys of `Experience` are for what is not built: those of `Board`. The file is read with them, and nothing uses them yet. How a setting reaches a component is in [configuration.md](configuration.md).
+The size budget of the recalled lessons and the limits of a lesson are fixed, and are no settings: see "Recalling lessons" and "Lessons". How a setting reaches a component is in [configuration.md](configuration.md).
 
 ## The data
 
-A track record has no table. It is worked out from `positions`, `position_results`, and `position_roles`, which the Decision Engine keeps: see "The record of an order" in [orders.md](orders.md). So it cannot say something else than the positions say. A strength score has no table either.
+A track record has no table. It is worked out from `positions`, `position_results`, and `position_roles`, which the Decision Engine keeps: see "The record of an order" in [orders.md](orders.md). So it cannot say something else than the positions say. A strength score has no table either, and neither has a record of the platform-wide board.
 
-Experience has three tables. Two are for what later candles are to say something of, and the third is for the lessons:
+Experience has four tables. Two are for what later candles are to say something of, the third is for the lessons, and the fourth is for who left the board:
 
 | Table | Columns |
 |---|---|
 | `analyst_calls` | `cycle_id`, `role`, `user_id`, `model_id`, `mode`, `market`, `symbol`, `timeframe`, `closed_at`, `direction`, `price`, `due_at`, `outcome`, `later_price`, `scored_at`. One row for each analyst of a cycle that called a direction: `(cycle_id, role)` is its key. Indexed by `(user_id, closed_at)`, and by `due_at` over the rows that have no outcome. |
 | `shadow_trades` | `cycle_id`, `user_id`, `model_id`, `mode`, `market`, `symbol`, `timeframe`, `closed_at`, `side`, `entry_price`, `resting`, `stop_loss`, `take_profit`, `due_at`, `outcome`, `result_in_r`, `exited_at`, `evaluated_at`. One row for the vetoed plan of a cycle: `cycle_id` is its key. Indexed in the same two ways. |
 | `lessons` | `position_id`, `user_id`, `agent_id`, `mode`, `market`, `symbol`, `timeframe`, `closed_at`, `result_in_r`, `due_at`, `outcome`, `setup`, `expected`, `happened`, `takeaway`, `tags`, `model_id`, `template_id`, `written_at`, `enabled`. One row for the lesson of a closed position: `position_id` is its key. Indexed by `(user_id, closed_at)`, by `(user_id, agent_id, closed_at)`, and by `due_at` over the rows that have no outcome. |
+| `board_opt_outs` | `user_id`, `opted_out_at`. One row for a user who left the platform-wide board, and none for a user who contributes: `user_id` is its key. |
 
 | Column | What it holds |
 |---|---|
@@ -446,9 +545,12 @@ Experience has three tables. Two are for what later candles are to say something
 | `lessons.tags` | The names of members of `LessonTag`, as `text[]`, in the order of the set. Null until the lesson is written. |
 | `lessons.model_id`, `template_id` | The model of the catalog that wrote the lesson, and the version of the lesson instructions that it was written from (FR-PRM-6). Null until the lesson is written. Neither a model nor a version is ever deleted. |
 | `lessons.enabled` | Whether the lesson may be recalled into a prompt. True until its user disables it. |
+| `board_opt_outs.opted_out_at` | When the user left the board. Leaving again keeps it, and coming back deletes the row. |
 
-- **A row is written once, with its cycle, and completed once, by the job.** Nothing else changes it. A lesson is written once with the result of its position, and completed once: after that its user alone changes it, by disabling it, enabling it, or deleting it.
-- **All three tables hold rows of users.** `AnalystCall`, `ShadowTrade`, and `Lesson` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. `RoleStrengthsTests` has the test with two users for the first two, and `LessonsTests` the one for `lessons`.
+- **A row is written once, with its cycle, and completed once, by the job.** Nothing else changes it. A lesson is written once with the result of its position, and completed once: after that its user alone changes it, by disabling it, enabling it, or deleting it. A row of `board_opt_outs` is written when its user leaves the board, and deleted when they come back.
+- **All four tables hold rows of users.** `AnalystCall`, `ShadowTrade`, `Lesson`, and `BoardOptOut` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. `RoleStrengthsTests` has the test with two users for the first two, `LessonsTests` the one for `lessons`, and `BoardRecordsTests` the one for `board_opt_outs`.
+- **Who left the board points at the account itself:** `board_opt_outs (user_id)` at `users (id)`, with a key that deletes the row with the account. A user who has no agent can leave the board, so the row hangs on nothing else. **That key is declared by Agents,** in `BoardKeys.cs`: Experience may not use Accounts, Accounts uses no other component, and Agents may use both. `ExperienceModelTests` holds the name of the key.
+- **Who left the board is in the export,** in the section `boardOptOuts`: one row with when the user left, or none. It is a preference of the user, the first that is stored, which Agents hands over, as it does the lessons. It says nothing of who the user is, an id and a time, so no column of it is listed in `PersonalDataRules`.
 - **A row hangs on its cycle, and carries its owner along:** `(cycle_id, user_id)` points at `decision_cycles (id, user_id)`, with a key that deletes the row with the cycle. So the rows of an agent go with it, and those of an account with the account. A row names no agent in a column of its own.
 - **That key is declared by the Decision Engine,** in `ExperienceKeys.cs`, because Experience may not use it. So each of the two entities has two configurations: its own, in Experience, and that of its key. See "The model" in [persistence.md](persistence.md). `ExperienceModelTests` holds the names of the keys.
 - **A lesson hangs on its position, and carries its owner along:** `(position_id, user_id)` points at `positions (id, user_id)`, with a key that deletes the row with the position. So the lessons of an agent go with it, and those of an account with the account. And `template_id` points at `prompt_templates`, with a key that keeps a version that a lesson names.
@@ -484,6 +586,15 @@ The lessons of agent {AgentId} could not be recalled, so its team decides with n
 
 A lesson that is written is information, and one that is not is a warning, with why. A rejection says the field and the rule, in the service's own words. **No event holds anything that a model wrote:** not a part of a lesson, and not what a rejected answer said.
 
+What stores who left the board says, under `Ecnanib.Experience.BoardContribution`:
+
+```
+User {UserId} left the platform-wide board
+User {UserId} contributes to the platform-wide board again
+```
+
+Each is information, said once for a change: a choice that is made twice says nothing the second time. An event names the user by id, as the events of an account do. The board itself logs nothing: it reads, and its answer names no one.
+
 A run that completed something says how much, as information, and a run that completed nothing says nothing. Candles that could not be read are a warning, said once for each symbol with each run, and so are candles that are not to be had. An event names a symbol, a market, and a mode, and no user: the candles of a symbol are the same for everyone.
 
 ## Testing
@@ -493,6 +604,8 @@ A run that completed something says how much, as information, and a run that com
 `StrengthScoreTests` holds the formula, `RoleMeasuresTests` the measure of each role, `CallScoreTests` the score of a call, and `ShadowTradeRuleTests` the shadow trade, each without a database: a shadow trade is handed the candles that its test names. `ExperienceModelTests` reads the model and the architecture rules: the names of the keys to the cycle, and that nothing of Experience can reach the orders of the gateway.
 
 `ClosedPositionTests` reads the trades as Experience does, through `IClosedTrades`, and has the test with two users, which is marked for `positions`, `position_results`, and `position_roles`. `TrackRecordsTests` asks `ITrackRecords`, and `ExperiencePageTests` reads the screens as a signed-in user does.
+
+`BoardSliceTests` holds when a slice of the board is shown to the numbers of the specification, without a database: 4 users, 49 trades, one user with many trades, and a trade that is in no measure. `BoardRecordsTests` asks `IBoardRecords` and `IBoardContribution`: the same record as `TrackRecord.Of` gives, a record that too few contribute to, a model beside its provider, the modes, the filter, a user who leaves and comes back, an agent that is deleted, and the test with two users, which is marked for `board_opt_outs`. It reads the types of an answer as well, which hold no user and no trade. `ClosedPositionTests` reads the trades of the board as Experience does, through `IBoardTrades`. `BoardPageTests` reads the page as a signed-in user does, presses its buttons, and reads the section of the export. Those tests take 3 users and 6 trades as what must contribute, with a file of their own, and `BoardContributors.GiveContributorsAsync` gives a test several users with an agent and closed trades each.
 
 `CycleExperienceTests` stores cycles as the application does, and reads what each left. `ExperienceScoringJobTests` runs the job itself, at moments of its choosing, with `StandInCandles` in place of the candles of the exchange, which answers each ask with the candles that the test names: no test application runs the job on a schedule. `RoleStrengthsTests` asks `IRoleStrengths`, and has the test with two users, which is marked for `analyst_calls` and `shadow_trades`. `StrengthPageTests` reads the section of the strength scores on both screens.
 
@@ -521,7 +634,12 @@ A run that completed something says how much, as information, and a run that com
 - Keeping the lessons of an agent that is deleted. The specification keeps lessons indefinitely (NFR-DAT-5), and a lesson goes with its position, which goes with its agent, as a trade does.
 - What the market did while a position was open, in the prompt of its lesson. Candles are not kept (NFR-DAT-6): the model is sent how the position ended, and not the path to it.
 - A choice of lessons by what they are about. The tags are shown, and nothing recalls or filters by them.
-- The platform-wide board, which shows the same track record aggregated across all users (FR-EXP-10). A track record is of one user.
+- A stored aggregate of the board. The specification names an aggregated track record with a scope of user or platform, and nothing of either is stored: the board reads every counted trade of every contributor each time it is shown, and no index serves that read, since `positions (user_id, closed_at)` starts with the owner. That is as much work as there are closed trades, for every signed-in user who opens the page.
+- Keeping two records of the board from saying together what neither may say alone. A slice is held to the least users and trades by itself, as the specification says. The difference of two that are shown, or of one at two moments, can be of fewer: see "The platform-wide board". A rule that hides a record for what another shows is not built, and neither is one against a single user who holds most of the trades of a slice.
+- Keeping what is counted on the board from being made up. Demo trades cost nothing, so a few accounts can fill a slice of Demo, and anyone can register several.
+- The strength scores on the board, and the page of one model across users. The board shows the track records, by provider and by model.
+- Recommending a team from the board. See "Role by strength" in [agents.md](agents.md).
+- The board for a visitor. It is for a signed-in user, as every experience screen is.
 - Keeping the trades of an agent that is deleted. The specification keeps positions indefinitely (NFR-DAT-5), and deleting an agent deletes its positions: see "The record of an order" in [orders.md](orders.md). A track record follows the positions, so it loses those trades.
 - A track record by symbol, by agent, or by exit reason. A trade says none of them to Experience.
 - Times in the user's own time zone (NFR-USA-3). The pages write a time through `PageTimes`, in UTC.

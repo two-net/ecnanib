@@ -5,6 +5,7 @@ using Ecnanib.DecisionEngine;
 using Ecnanib.Experience;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.Agents;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.Tests.Experience;
@@ -116,6 +117,142 @@ internal static class StoredTradeRows
 
         await context.Set<Agent>().Where(agent => agent.Id == agentId).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
     }
+
+    /// <summary>
+    /// Gives an agent of a user several positions that are over, each as <see cref="GiveTradeAsync"/>
+    /// stores one, with its result, written together: a test of the platform-wide board needs
+    /// many trades of many users. They were closed a minute apart, the last one at the moment
+    /// that the test says, and each was held for an hour.
+    /// </summary>
+    /// <param name="application">The application.</param>
+    /// <param name="userId">The user whose agent it is.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="count">How many trades.</param>
+    /// <param name="latest">When the last of them was closed.</param>
+    /// <param name="roles">The model that held each role when each was opened.</param>
+    /// <param name="resultInR">The result of each in R.</param>
+    /// <param name="mode">The mode that the agent was in when they were opened.</param>
+    /// <param name="market">The market that they were traded on.</param>
+    /// <param name="timeframe">The timeframe that the agent worked on.</param>
+    /// <returns>The ids of the positions, in the order they were closed in.</returns>
+    public static async Task<IReadOnlyList<Guid>> GiveTradesAsync(
+        this AccountsApplication application,
+        Guid userId,
+        Guid agentId,
+        int count,
+        DateTimeOffset latest,
+        IReadOnlyList<(Role Role, Guid ModelId)> roles,
+        decimal resultInR = 1m,
+        TradingMode? mode = null,
+        Market? market = null,
+        Timeframe? timeframe = null)
+    {
+        const long holdingSeconds = 3600;
+
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        var agent = await context.Set<Agent>().AsNoTracking().SingleAsync(stored => stored.Id == agentId, TestContext.Current.CancellationToken);
+
+        var positions = Enumerable.Range(0, count)
+            .Select(index => latest.AddMinutes(index + 1 - count))
+            .Select(closedAt => new Position(
+                Guid.CreateVersion7(),
+                agentId,
+                userId,
+                mode ?? agent.Mode,
+                market ?? agent.Market,
+                agent.Symbol,
+                agent.QuoteAsset,
+                timeframe ?? agent.Timeframe,
+                PositionSide.Long,
+                entryPrice: 100_000m,
+                quantity: 0.01m,
+                stopLoss: 99_000m,
+                takeProfit: 102_000m,
+                openedAt: closedAt.AddSeconds(-holdingSeconds),
+                closedAt: closedAt,
+                ExitReason.TakeProfit,
+                alertedAt: null,
+                fundingDueAt: null))
+            .ToList();
+
+        context.AddRange(positions);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // What hangs on the positions, once they are stored.
+        context.AddRange(positions.SelectMany(position => roles.Select(role => new PositionRole(position.Id, userId, role.Role, role.ModelId))));
+        context.AddRange(positions.Select(position => new PositionResult(
+            position.Id,
+            userId,
+            agent.QuoteAsset,
+            grossResult: resultInR * 10m,
+            fees: 0m,
+            funding: 0m,
+            netResult: resultInR * 10m,
+            risk: 10m,
+            resultInR,
+            holdingSeconds,
+            complete: true,
+            recordedAt: position.ClosedAt!.Value.AddMinutes(1))));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return [.. positions.Select(position => position.Id)];
+    }
+}
+
+/// <summary>Users whose trades are counted on the platform-wide board, which a test of the board needs several of.</summary>
+internal static class BoardContributors
+{
+    /// <summary>One model in every role of a team: the team of a trade that a test says nothing else of.</summary>
+    public static IReadOnlyList<(Role Role, Guid ModelId)> TeamOf(Guid modelId) =>
+        [.. Enum.GetValues<Role>().Select(role => (role, modelId))];
+
+    /// <summary>
+    /// Registers some users, and gives each an agent with some closed trades of one team. The
+    /// agent has no team of its own: the trades say which models held their roles. The addresses
+    /// are those of <see cref="AddressOf"/>, counted from the first that the test names.
+    /// </summary>
+    /// <param name="application">The application.</param>
+    /// <param name="users">How many users.</param>
+    /// <param name="tradesEach">How many trades each of them has.</param>
+    /// <param name="latest">When the last trade of each was closed.</param>
+    /// <param name="roles">The model that held each role of every trade.</param>
+    /// <param name="resultInR">The result of every trade in R.</param>
+    /// <param name="mode">The mode of the agents, and so of the trades.</param>
+    /// <param name="market">The market of the agents.</param>
+    /// <param name="timeframe">The timeframe of the agents.</param>
+    /// <param name="first">The number of the first user, for a test that asks more than once.</param>
+    /// <returns>Each user with their agent, in the order of their numbers.</returns>
+    public static async Task<IReadOnlyList<(StoredUser User, Guid AgentId)>> GiveContributorsAsync(
+        this AccountsApplication application,
+        int users,
+        int tradesEach,
+        DateTimeOffset latest,
+        IReadOnlyList<(Role Role, Guid ModelId)> roles,
+        decimal resultInR = 1m,
+        TradingMode mode = TradingMode.Demo,
+        Market market = Market.Spot,
+        Timeframe timeframe = Timeframe.OneHour,
+        int first = 1)
+    {
+        var contributors = new List<(StoredUser User, Guid AgentId)>();
+
+        foreach (var number in Enumerable.Range(first, users))
+        {
+            var user = await application.RegisterVerifiedAsync(AddressOf(number));
+            var agent = await application.GiveAgentAsync(
+                user.Id, latest.AddDays(-2), market: market, mode: mode, team: false, timeframe: timeframe);
+
+            await application.GiveTradesAsync(user.Id, agent, tradesEach, latest, roles, resultInR);
+
+            contributors.Add((user, agent));
+        }
+
+        return contributors;
+    }
+
+    /// <summary>The address of the user of a number.</summary>
+    public static string AddressOf(int number) => $"contributor{number}@example.com";
 }
 
 /// <summary>Lessons that a test needs a user to have, without the model that writes them.</summary>

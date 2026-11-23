@@ -175,7 +175,12 @@ public static class DecisionEngineModule
         // Experience waited for: it may not use the Decision Engine, which keeps the positions
         // (FR-EXP-1, FR-EXP-2). It only reads, and is handed nothing but the database, so that
         // what asks Experience from below the Decision Engine closes no circle.
-        services.AddSingleton<IClosedTrades, ClosedPositions>();
+        // The same answers the board of Experience with the counted trades of every user who has
+        // not left it (FR-EXP-10), as a question of its own: what asks for the trades of one
+        // user never comes by those of another.
+        services.AddSingleton<ClosedPositions>();
+        services.AddSingleton<IClosedTrades>(provider => provider.GetRequiredService<ClosedPositions>());
+        services.AddSingleton<IBoardTrades>(provider => provider.GetRequiredService<ClosedPositions>());
 
         return services;
     }

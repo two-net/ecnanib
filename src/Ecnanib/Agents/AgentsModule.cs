@@ -74,6 +74,10 @@ public static class AgentsModule
         // lessons into prompts cannot reach personal data (FR-PRM-9). This component may use both.
         services.AddSingleton<IExportedPart, LessonsExport>();
 
+        // And who left the platform-wide board, which Experience keeps as well (FR-EXP-10): a
+        // preference of the user, handed over for the same reason.
+        services.AddSingleton<IExportedPart, BoardOptOutsExport>();
+
         return services;
     }
 }

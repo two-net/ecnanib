@@ -62,5 +62,11 @@ public sealed record ShadowFeeSettings(decimal Spot, decimal Futures)
             file.Number("Experience:ShadowFeePercent:Futures", Least, Most));
 }
 
-/// <summary>The fewest users and trades that must contribute to a slice of the board (FR-EXP-10).</summary>
+/// <summary>
+/// The fewest users and trades that must contribute to a slice of the board for it to be shown
+/// (FR-EXP-10). A slice is the record of one provider or of one model. See "The platform-wide
+/// board" in docs/experience.md.
+/// </summary>
+/// <param name="MinUsers">The fewest users, each counted once.</param>
+/// <param name="MinTrades">The fewest closed trades with a result in R.</param>
 public sealed record ExperienceBoardSettings(int MinUsers, int MinTrades);

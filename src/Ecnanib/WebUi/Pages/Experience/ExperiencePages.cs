@@ -17,11 +17,14 @@ public static class ExperiencePages
     /// <summary>The name of the experience screen, in its heading and in the bar at the top.</summary>
     public const string Title = "Experience";
 
+    /// <summary>What a track record is measured in, which every screen of track records says.</summary>
+    public const string InRExplained =
+        "Every figure is in R: the amount that was risked on a trade, which is the distance from its entry to its stop-loss, times its quantity. "
+        + "A trade that made twice what it risked is +2 R, and one that was stopped out lost about 1 R.";
+
     /// <summary>What the experience screen says first: what a track record is, and what it is measured in.</summary>
     public const string Explained =
-        "This is how your agents' trades came out for each AI provider and each model. "
-        + "Every figure is in R: the amount that was risked on a trade, which is the distance from its entry to its stop-loss, times its quantity. "
-        + "A trade that made twice what it risked is +2 R, and one that was stopped out lost about 1 R.";
+        "This is how your agents' trades came out for each AI provider and each model. " + InRExplained;
 
     /// <summary>The heading of the statements that every experience screen makes (FR-EXP-11).</summary>
     public const string StatementsHeading = "What these figures cannot tell";
@@ -189,10 +192,13 @@ public static class ExperiencePages
     {
         ArgumentNullException.ThrowIfNull(scope);
 
-        return scope.ClosedFrom is { } from
-            ? $"Counted are the trades that were closed since {PageTimes.At(from)}."
-            : "Counted are the trades of all time.";
+        return PeriodExplained(scope.ClosedFrom);
     }
+
+    /// <summary>Which trades a screen counts by when they were closed, from the moment that its period starts at.</summary>
+    public static string PeriodExplained(DateTimeOffset? closedFrom) => closedFrom is { } from
+        ? $"Counted are the trades that were closed since {PageTimes.At(from)}."
+        : "Counted are the trades of all time.";
 
     /// <summary>For whom a trade counts on the experience screen, which says why its rows do not add up.</summary>
     public static string CountsFor(Role? role) => role is { } chosen
@@ -510,8 +516,11 @@ public static class ExperiencePages
         return chosen is not null;
     }
 
-    /// <summary>The choices of a filter as an address says them after its path, or nothing for a filter that chooses nothing.</summary>
-    private static string QueryOf(TrackRecordFilter filter, bool withRole)
+    /// <summary>
+    /// The choices of a filter as an address says them after its path, or nothing for a filter
+    /// that chooses nothing. The board names its filter in the same way: see <see cref="BoardPages"/>.
+    /// </summary>
+    internal static string QueryOf(TrackRecordFilter filter, bool withRole)
     {
         var choices = new (string Key, string? Value)[]
         {

@@ -35,7 +35,7 @@ public class OwnershipModelTests
         Assert.Equal(
             [
                 "agent_roles", "agent_state_changes", "agents", "ai_credentials", "analyst_calls", "audit_events",
-                "decision_cycles", "equity_marks", "equity_snapshots", "exchange_credentials", "fills", "fundings",
+                "board_opt_outs", "decision_cycles", "equity_marks", "equity_snapshots", "exchange_credentials", "fills", "fundings",
                 "legal_acceptances", "lessons", "notifications", "orders", "pending_sign_ins", "position_results",
                 "position_roles", "positions", "risk_check_rules", "risk_checks", "role_outputs", "sessions", "shadow_trades",
                 "two_factor_recovery_codes",

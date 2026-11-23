@@ -80,6 +80,8 @@ internal sealed class AiProviderConfiguration : IEntityTypeConfiguration<AiProvi
 
 **An entity has one configuration, but for a key to a component that its own may not use.** `analyst_calls` and `shadow_trades` are of Experience, and hang on a cycle of the Decision Engine, which Experience may not reference. So each has a second configuration, in the Decision Engine, for that key alone: `ExperienceKeys.cs`. Configurations are applied in the order of their names, and a key is named from the names that its tables have by then. So such a configuration is named to be applied after the one of the table that it points at, and `ExperienceModelTests` holds the names of the keys. `lessons` is of Experience too, and has two such keys, each in a configuration of its own in `LessonKeys.cs`: `PositionLessonConfiguration` for the key to its position, and `PromptTemplateLessonConfiguration` for the key to the version of the instructions that it was written from. See "The data" in [experience.md](experience.md).
 
+**Where neither component may use the other, a third one that may use both declares the key.** `board_opt_outs` is of Experience, and points at `users`, which is of Accounts: Experience may not use Accounts, and Accounts uses no other component. So Agents declares the key, in `BoardKeys.cs`, as `UserBoardOptOutConfiguration`: it may use both, and hands the rows of Experience to the export of a user's data for the same reason. It is applied after the configuration of the account, because Accounts comes before Agents by name.
+
 | Convention | Meaning |
 |---|---|
 | Names | Tables and columns are in snake_case: `prompt_templates.is_active`. A configuration names its table with `ToTable`. |
@@ -91,7 +93,7 @@ internal sealed class AiProviderConfiguration : IEntityTypeConfiguration<AiProvi
 | Stored secrets | A secret that the application must read again is stored encrypted, as bytes, with the id of its master key in a column beside it whose name ends in `_key_id`. The component declares the column with `AddStoredSecret`, so that its values follow the active master key (FR-KEY-6, FR-KEY-7). See "Adding a stored secret" in [security.md](security.md). |
 | Personal data | A column of a user's row that could say who the user is, which is any column that is not an id, a flag, a number, a time, or an enum, is listed in `PersonalDataRules.cs` with what it holds (NFR-SEC-9). See "Personal data" in [accounts.md](accounts.md). |
 | Shared vocabulary | A lookup table for a type in `Shared`, such as `roles` for `Role`, is mapped in `Platform/Persistence`, so that every component can point at it. |
-| Foreign keys between components | Configured in the component that is allowed to reference the other, following the dependency rules. Where that is not the component of the entity that carries the key, the entity has a second configuration there, for the key alone. |
+| Foreign keys between components | Configured in the component that is allowed to reference the other, following the dependency rules. Where that is not the component of the entity that carries the key, the entity has a second configuration there, for the key alone. Where neither may reference the other, it is in a component that may reference both. |
 | Foreign keys to a seeded table | Declared with `OnDelete(DeleteBehavior.Restrict)`, so that taking a seeded row away can never delete the rows that point at it. |
 
 Operational logs are never written to the database (NFR-DAT-7). The audit trail, which is not a log, is: see "The audit trail" in [accounts.md](accounts.md).

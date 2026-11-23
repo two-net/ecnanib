@@ -41,9 +41,10 @@ public class ExperienceStatementTests
             .Order(StringComparer.Ordinal)
             .ToList();
 
-        // The track records, the record of one model, and the lessons, which are a page of
+        // The track records, the platform-wide board, which shows the same records across all
+        // users (FR-EXP-10), the record of one model, and the lessons, which are a page of
         // experience as well: what one trade taught is the smallest sample that there is.
-        Assert.Equal(["/experience", "/experience/lessons", "/experience/models/{ModelId:guid}"], routes);
+        Assert.Equal(["/experience", "/experience/board", "/experience/lessons", "/experience/models/{ModelId:guid}"], routes);
 
         async Task EveryScreenStatesAsync(string what)
         {

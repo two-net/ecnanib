@@ -205,4 +205,96 @@ public class ClosedPositionTests
 
         Assert.Equal(stays, trade.PositionId);
     }
+
+    [Fact]
+    public async Task The_trades_of_the_board_are_those_of_every_user_who_has_not_left_it_each_with_whose_it_is()
+    {
+        using var application = AgentsApplication.With(new StandInMarketData(), new TestClock(Morning));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var grace = await application.RegisterVerifiedAsync(Grace);
+        var claude = await application.GiveModelAsync("claude", StoredAgentRows.TeamModel, Morning);
+
+        var ofAda = await application.GiveTradeAsync(
+            ada.Id, await application.GiveAgentAsync(ada.Id, Morning), Morning.AddHours(1), resultInR: 2m, holdingSeconds: 1800, complete: false);
+        var ofGrace = await application.GiveTradeAsync(
+            grace.Id,
+            await application.GiveAgentAsync(grace.Id, Morning, market: Market.Futures, timeframe: Timeframe.FourHours),
+            Morning.AddHours(2),
+            resultInR: -1m,
+            mode: TradingMode.Live);
+
+        // Across users, which IClosedTrades never answers: the board adds them up (FR-EXP-10).
+        // In the order they were closed in, each with whose it is and as the trade that a track
+        // record counts.
+        var trades = await application.BoardTrades.OfContributorsAsync(null, TestContext.Current.CancellationToken);
+
+        Assert.Equal([(ada.Id, ofAda), (grace.Id, ofGrace)], trades.Select(trade => (trade.UserId, trade.Trade.PositionId)));
+        Assert.Equal(
+            (TradingMode.Demo, Market.Spot, Timeframe.OneHour, Morning.AddHours(1), new TradeResult(2m, 1800, Complete: false)),
+            (trades[0].Trade.Mode, trades[0].Trade.Market, trades[0].Trade.Timeframe, trades[0].Trade.ClosedAt, trades[0].Trade.Result));
+        Assert.Equal([.. Enum.GetValues<Role>().Select(role => new TradeRole(role, claude))], trades[0].Trade.Roles);
+        Assert.Equal(
+            (TradingMode.Live, Market.Futures, Timeframe.FourHours, -1m),
+            (trades[1].Trade.Mode, trades[1].Trade.Market, trades[1].Trade.Timeframe, trades[1].Trade.Result!.ResultInR));
+
+        // Grace leaves the board: her trade is handed to nothing, and Ada's still is.
+        await application.BoardContribution.SetAsync(grace.Id, contributes: false, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [(ada.Id, ofAda)],
+            (await application.BoardTrades.OfContributorsAsync(null, TestContext.Current.CancellationToken))
+                .Select(trade => (trade.UserId, trade.Trade.PositionId)));
+
+        // Her own trades are read for her as before: she left the board, and nothing else.
+        Assert.Equal(
+            ofGrace,
+            Assert.Single(await application.ClosedTrades.OfUserAsync(grace.Id, null, TestContext.Current.CancellationToken)).PositionId);
+
+        // And she comes back.
+        await application.BoardContribution.SetAsync(grace.Id, contributes: true, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, (await application.BoardTrades.OfContributorsAsync(null, TestContext.Current.CancellationToken)).Count);
+    }
+
+    [Fact]
+    public async Task Only_a_closed_position_with_a_result_in_R_is_a_trade_of_the_board()
+    {
+        using var application = AgentsApplication.With(new StandInMarketData(), new TestClock(Morning));
+        var user = await application.RegisterVerifiedAsync(Ada);
+        var agent = await application.GiveAgentAsync(user.Id, Morning);
+
+        // A position that is open still, one whose result is not recorded yet, and one whose
+        // result says no R: a record counts none of them, and the board says nothing of them,
+        // so none is read for it.
+        await application.GiveTradeAsync(user.Id, agent, Morning.AddHours(1), recorded: false);
+        await application.GiveTradeAsync(user.Id, agent, Morning.AddHours(2), resultInR: null);
+        var counted = await application.GiveTradeAsync(user.Id, agent, Morning.AddHours(3), resultInR: 0m);
+        await application.GiveTradeAsync(user.Id, agent, Morning.AddHours(4), closed: false);
+
+        var trade = Assert.Single(await application.BoardTrades.OfContributorsAsync(null, TestContext.Current.CancellationToken));
+
+        // A trade of exactly 0 R has a result in R.
+        Assert.Equal((user.Id, counted, 0m), (trade.UserId, trade.Trade.PositionId, trade.Trade.Result!.ResultInR));
+    }
+
+    [Fact]
+    public async Task Only_the_trades_of_the_board_that_closed_since_the_moment_asked_for_are_read()
+    {
+        using var application = AgentsApplication.With(new StandInMarketData(), new TestClock(Morning));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var grace = await application.RegisterVerifiedAsync(Grace);
+
+        var first = await application.GiveTradeAsync(ada.Id, await application.GiveAgentAsync(ada.Id, Morning), Morning.AddHours(1));
+        var second = await application.GiveTradeAsync(grace.Id, await application.GiveAgentAsync(grace.Id, Morning), Morning.AddHours(2));
+
+        async Task<IEnumerable<Guid>> SinceAsync(DateTimeOffset? from) =>
+            (await application.BoardTrades.OfContributorsAsync(from, TestContext.Current.CancellationToken)).Select(trade => trade.Trade.PositionId);
+
+        Assert.Equal([first, second], await SinceAsync(null));
+
+        // The moment itself is included, and it is a moment, in whatever offset it is said.
+        Assert.Equal([second], await SinceAsync(Morning.AddHours(2)));
+        Assert.Equal([second], await SinceAsync(Morning.AddHours(2).ToOffset(TimeSpan.FromHours(7))));
+        Assert.Empty(await SinceAsync(Morning.AddHours(2).AddSeconds(1)));
+    }
 }

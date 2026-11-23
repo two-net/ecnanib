@@ -44,10 +44,11 @@ public class OwnershipTests
         // desk, a sign-in on her phone that waits for its code, a key of each kind, and an
         // agent with its team, a cycle, the calls of its roles, the orders of a position that
         // is over, a second cycle that ended with a veto, with the shadow trade of its plan,
-        // and a notification about it. What a user does with keys of their own is in
-        // KeyPageTests, and with agents of their own in AgentPageTests and AgentRoleTests. Whose
-        // the record of a cycle is, is in TeamRecordTests, whose the orders are in
-        // OrderRecordTests, and whose a notification is in NotificationTests.
+        // and a notification about it. And she left the platform-wide board. What a user does
+        // with keys of their own is in KeyPageTests, and with agents of their own in
+        // AgentPageTests and AgentRoleTests. Whose the record of a cycle is, is in
+        // TeamRecordTests, whose the orders are in OrderRecordTests, whose a notification is in
+        // NotificationTests, and whose the choice about the board is in BoardRecordsTests.
         var (grace, gracesApp, _) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
@@ -59,6 +60,7 @@ public class OwnershipTests
         await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow());
         await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow(), CycleOutcome.Vetoed, orders: false);
         await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
+        await application.BoardContribution.SetAsync(grace.Id, contributes: false, TestContext.Current.CancellationToken);
 
         var before = application.RowsOf(grace.Id);
         Assert.All(before, table => Assert.True(table.Value.Count > 0, $"Grace has no row in {table.Key}, so nothing is compared there."));

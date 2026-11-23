@@ -10,7 +10,8 @@ namespace Ecnanib.Platform.Persistence;
 /// NFR-DAT-2). The model is every <see cref="IEntityTypeConfiguration{TEntity}"/> in the
 /// application, each beside the entity it maps, in the component that owns it. A key between
 /// two components is the one thing that is mapped elsewhere: in the component that may
-/// reference the other. See docs/persistence.md.
+/// reference the other, or, where neither may, in one that may reference both. See
+/// docs/persistence.md.
 /// </summary>
 /// <remarks>
 /// There is no set property per entity, because the platform must not name a component's types.

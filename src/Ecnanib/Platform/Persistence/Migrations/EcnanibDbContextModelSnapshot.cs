@@ -1954,6 +1954,22 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("analyst_calls", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Experience.BoardOptOut", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("OptedOutAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opted_out_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_board_opt_outs");
+
+                    b.ToTable("board_opt_outs", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Experience.Lesson", b =>
                 {
                     b.Property<Guid>("PositionId")
@@ -2640,6 +2656,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_analyst_calls_decision_cycles_cycle_id_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Experience.BoardOptOut", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_board_opt_outs_users_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Experience.Lesson", b =>

@@ -45,7 +45,7 @@ public class SingleStoreTests
         Assert.Equal(
             [
                 "agent_roles", "agent_state_changes", "agents", "ai_credentials", "ai_models", "ai_providers",
-                "analyst_calls", "audit_events", "background_jobs", "catalog_sync_runs", "decision_cycles", "equity_marks",
+                "analyst_calls", "audit_events", "background_jobs", "board_opt_outs", "catalog_sync_runs", "decision_cycles", "equity_marks",
                 "equity_snapshots", "exchange_credentials", "fills", "fundings", "legal_acceptances", "lessons", "notifications",
                 "orders", "pending_sign_ins", "position_results", "position_roles", "positions", "prompt_templates", "risk_check_rules",
                 "risk_checks", "role_outputs", "roles", "sessions", "shadow_trades",

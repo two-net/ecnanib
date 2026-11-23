@@ -1,0 +1,207 @@
+@attribute [Route(WebUiModule.BoardPath)]
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Experience
+@using Ecnanib.WebUi.Pages.Agents
+@using Ecnanib.WebUi.Pages.Catalog
+@inject IBoardRecords Board
+@inject IBoardContribution Contribution
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The platform-wide board: the
+    same track record as on the experience screen, of each AI provider and of each model, from
+    the closed trades of every user who has not left the board (FR-EXP-10), by the same filter.
+    A provider or a model has a record only when at least the users and the trades of the
+    configuration file contribute to it, and one that fewer contribute to is not on the page at
+    all. The page shows no user, no agent, no balance, and no single trade, and says no number of
+    trades but in a record that is shown. Demo and Live are never added up: the page shows one
+    mode, as a badge under its heading, says why it is that one, and leads to the other (FR-EXP-9,
+    FR-BIN-11). It states what the figures cannot tell whatever it has to show (FR-EXP-11). A
+    form of the page leaves the board, or comes back to it: that is the choice of the user who is
+    signed in, and of nobody else. A model is named by the catalog, which is the same for
+    everyone, and leads nowhere: the page of a model is of the user's own trades. An address
+    that names a choice which there is not is answered with "not found".
+*@
+
+@if (_filter is not null && _contributes is { } contributes)
+{
+    <PageTitle>@BoardPages.Title</PageTitle>
+
+    <h1>@BoardPages.Title</h1>
+
+    @* A form that was sent is answered with the page again, by its address: the board is not worked out for it. *@
+    @if (_view is not null)
+    {
+        var scope = _view.Scope;
+
+        <p>Mode: <ModeBadge Mode="@scope.Mode" /> @BoardPages.ModeExplained(scope) @ExperiencePages.NeverAddedUp <a href="@BoardPages.Path(_filter with { Mode = ExperiencePages.OtherThan(scope.Mode) })">@BoardPages.OtherModeLink(scope)</a></p>
+
+        <p>@BoardPages.Explained</p>
+
+        <p>@BoardPages.NeverShows(scope)</p>
+
+        <ExperienceNotes />
+
+        <ExperienceFilter Action="@WebUiModule.BoardPath" Filter="@_filter" />
+
+        <p>@ExperiencePages.PeriodExplained(scope.ClosedFrom) @BoardPages.CountsFor(_filter.Role)</p>
+
+        <h2 id="board-providers">By provider</h2>
+
+        @if (_view.Providers.Count == 0)
+        {
+            <p>@BoardPages.NoProviders(scope)</p>
+        }
+        else
+        {
+            @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
+            <div class="track-records" role="region" aria-labelledby="board-providers" tabindex="0">
+                <table>
+                    <caption>The track record of each provider across all users in @scope.Mode</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Provider</th>
+                            <TrackRecordHeadings />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var provider in _view.Providers)
+                        {
+                            <tr>
+                                <th scope="row">@provider.ProviderName</th>
+                                <TrackRecordCells Record="@provider.Record" />
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <h2 id="board-models">By model</h2>
+
+        @if (_view.Models.Count == 0)
+        {
+            <p>@BoardPages.NoModels(scope)</p>
+        }
+        else
+        {
+            <div class="track-records" role="region" aria-labelledby="board-models" tabindex="0">
+                <table>
+                    <caption>The track record of each model across all users in @scope.Mode</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Model</th>
+                            <th scope="col">Provider</th>
+                            <TrackRecordHeadings />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var model in _view.Models)
+                        {
+                            <tr>
+                                <th scope="row">@CatalogPages.NameOf(model.Model)</th>
+                                <td>@model.Model.ProviderName</td>
+                                <TrackRecordCells Record="@model.Record" />
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <p>@ExperiencePages.EstimatesExplained</p>
+
+        <p>@BoardPages.Follows</p>
+    }
+
+    <h2 id="board-contribution">@BoardPages.ContributionHeading</h2>
+
+    @* One form at a time, named for what it does: the other is the form of no page until the choice is made. *@
+    @if (contributes)
+    {
+        <p>@BoardPages.Contributing</p>
+
+        <p>@BoardPages.LeavingKeeps</p>
+
+        <form method="post" @formname="@BoardPages.LeaveForm" @onsubmit="() => SetAsync(contributes: false)">
+            <AntiforgeryToken />
+
+            <button type="submit">@BoardPages.Leave</button>
+        </form>
+    }
+    else
+    {
+        <p>@BoardPages.LeftOut</p>
+
+        <p>@BoardPages.LeavingKeeps</p>
+
+        <form method="post" @formname="@BoardPages.ReturnForm" @onsubmit="() => SetAsync(contributes: true)">
+            <AntiforgeryToken />
+
+            <button type="submit">@BoardPages.Return</button>
+        </form>
+    }
+
+    @* The records of the user's own trades, by the same filter. *@
+    <p><a href="@ExperiencePages.Path(_filter)">@BoardPages.OwnRecordsLink</a></p>
+
+    <p><a href="@WebUiModule.CatalogPath">Model catalog</a></p>
+}
+
+@code {
+    private TrackRecordFilter? _filter;
+    private BoardView? _view;
+    private bool? _contributes;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // An address that names a choice which there is not is not found: the page shows what
+        // its address asks for, and never something else in its place.
+        _filter = ExperiencePages.FilterOf(request.Request.Query);
+
+        if (_filter is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // The one thing of the page that is of a user: whether the user who is signed in has
+        // left the board. Experience may not use Accounts, so it is handed that user.
+        _contributes = await Contribution.OfUserAsync(SignedInUser.RequiredIdOf(request), request.RequestAborted);
+
+        // A form of the page is answered with the page again, by its address. The board reads
+        // the trades of every user, and is not worked out for an answer that nobody reads.
+        if (HttpMethods.IsPost(request.Request.Method))
+        {
+            return;
+        }
+
+        // The board takes no user: its records are of everyone who has not left it.
+        _view = await Board.OfEveryoneAsync(_filter, request.RequestAborted);
+    }
+
+    private async Task SetAsync(bool contributes)
+    {
+        if (HttpContext is not { } request || _filter is null)
+        {
+            return;
+        }
+
+        // The choice of the user of the session, and of no other: no form names a user.
+        await Contribution.SetAsync(SignedInUser.RequiredIdOf(request), contributes, request.RequestAborted);
+
+        // The page as it is now, by the address that it was asked for by. A reload of it sends
+        // no form again.
+        Navigation.NavigateTo(BoardPages.Path(_filter));
+    }
+}

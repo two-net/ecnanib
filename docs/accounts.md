@@ -368,7 +368,7 @@ A user can delete their account (FR-ACC-9). The page is `/account/delete`, linke
 | Re-authentication | Deleting the account is a sensitive action. The page is shown only to a user who has just proved again who they are: everyone else is sent to `/confirm-identity` and comes back. The button asks again, in the action. |
 | Agents | The account is deleted only while every agent of the user is stopped. Otherwise the page says so, and nothing is deleted. See "Agents" below. |
 | What goes | The row of `users`, and with it every row that belongs to the user, in every table. Stored keys are such rows, so they are gone at once. Nothing is marked now and removed later. |
-| What stays | The rows of the service, which carry no owner. Statistics that count across users are such rows, once there are any. |
+| What stays | The rows of the service, which carry no owner. Statistics that count across users are such rows, once there are any. The platform-wide board stores none: it is worked out from the trades that are stored each time it is shown, so the trades of a deleted account leave it at once. See "The platform-wide board" in [experience.md](experience.md). |
 | Sessions | Every browser of the user is signed out. The browser that deleted the account loses its session cookie, and is sent to `/account/deleted`, a page for visitors. |
 | The address | Has no account any more. Registering it again makes a new account, with nothing of the earlier one. |
 | A last message | Tells the address that the account was deleted. If it cannot be sent, the error is logged and the account is deleted all the same. The address is kept nowhere after it. |
@@ -434,6 +434,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `agentRoles` | Each role of an agent that was given a model: the id of the agent, the role, and the provider and the identifier of the model. |
 | `agentStateChanges` | Each change of the state of an agent that the user has: the id of the agent, the state it came to, why, and when. |
 | `lessons` | The lesson of each closed position of the user's agents (FR-EXP-8): the id of the agent, the mode, market, symbol, and timeframe of the position, when it was closed, its result in R, what the lesson says, what it is about, whether it is enabled, and when it was written. A lesson that waits to be written, or that could not be, says which, and has no words. |
+| `boardOptOuts` | Whether the user left the platform-wide board (FR-EXP-10): one row with when they left, and none for a user whose trades are counted there. |
 
 | Rule | Detail |
 |---|---|
@@ -460,6 +461,7 @@ public interface IExportedPart
 - **A part asks for the rows of the user it is given,** with `OwnedBy`, and holds no secret.
 - Credentials hands over `aiKeys` and `exchangeKeys` this way, Agents hands over `agents`, `agentRoles`, and `agentStateChanges`, and Notifications hands over `notifications`. See [credentials.md](credentials.md), [agents.md](agents.md), and [notifications.md](notifications.md).
 - **Agents hands over `lessons` as well, which Experience keeps.** Experience may not use Accounts, and stays so: it recalls lessons into prompts, and what feeds a prompt is kept out of reach of personal data (FR-PRM-9). Agents may use both, and reads the rows of Experience as they are stored. See "The data" in [experience.md](experience.md).
+- **Agents hands over `boardOptOuts` in the same way,** for the same reason: Experience keeps who left the platform-wide board. It is a preference of the user, and so it is in the export.
 
 The log has `User {UserId} exported their data`, and nothing of the data.
 
@@ -611,7 +613,7 @@ Personal data is limited to the email address, the password hash, and preference
 |---|---|
 | The email address | `users.email` |
 | The password hash | `users.password_hash` |
-| Preferences | None is stored yet. |
+| Preferences | One: whether the user left the platform-wide board (FR-EXP-10). It is a row of `board_opt_outs`, which Experience keeps: the id of the user and when they left, and no row for a user who did not. Neither column can say who someone is, so `PersonalDataRules` lists none of them. It is in the export, and goes with the account. See "Leaving the board" in [experience.md](experience.md). |
 | **Beyond the list:** the IP address a security-relevant action came from | `audit_events.origin`. See "The audit trail". |
 
 - **The origin is the one exception,** and it is a decision: the specification lists it for an audit event, and an audit trail without it does not show a takeover. It is in the export, and goes with the account.
@@ -663,7 +665,7 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
 - Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
-- Preferences. None is stored yet. When one is, it is personal data of an allowed kind, and it is in the export.
+- Preferences, but for one. Whether a user left the platform-wide board is stored, and is in the export. No other preference is stored yet, and the account page has no settings of its own: it says that there is that choice, and leads to the board, where it is made. When another preference is stored, it is personal data of an allowed kind, and it is in the export.
 - Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
 - The rest of the audit trail: the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.

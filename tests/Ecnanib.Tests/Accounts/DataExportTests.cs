@@ -48,6 +48,11 @@ internal static class ExportRules
         // which the user reads and manages (FR-EXP-8). Experience keeps the rows, and may not
         // use Accounts, so Agents hands them over: see LessonPageTests for what the section holds.
         ["lessons"] = "lessons",
+
+        // Whether the user left the platform-wide board (FR-EXP-10): the one preference that is
+        // stored, which is in the export. Experience keeps the row, so Agents hands it over as
+        // well: see BoardPageTests for what the section holds.
+        ["board_opt_outs"] = "boardOptOuts",
     };
 
     /// <summary>The tables whose rows are not in the export, each with why.</summary>
@@ -149,7 +154,7 @@ public class DataExportTests
         Assert.Equal(
             [
                 "exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "notifications", "aiKeys", "exchangeKeys",
-                "agents", "agentRoles", "agentStateChanges", "lessons",
+                "agents", "agentRoles", "agentStateChanges", "lessons", "boardOptOuts",
             ],
             NamesIn(export));
         Assert.Equal(Morning.AddMinutes(5), export.GetProperty("exportedAt").GetDateTimeOffset());
@@ -308,6 +313,7 @@ public class DataExportTests
         var gracesAgent = await application.GiveAgentAsync(grace.Id, clock.GetUtcNow(), team: true);
         await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
         await application.GiveLessonAsync(grace.Id, gracesAgent, clock.GetUtcNow());
+        await application.BoardContribution.SetAsync(grace.Id, contributes: false, TestContext.Current.CancellationToken);
         Assert.All(
             ExportRules.Exported.Keys,
             table => Assert.True(application.RowsOf(grace.Id)[table].Count > 0, $"Grace has no row in {table}, so nothing shows that it stays out."));
@@ -338,6 +344,10 @@ public class DataExportTests
         Assert.Equal(0, export.GetProperty("agentRoles").GetArrayLength());
         Assert.Equal(0, export.GetProperty("agentStateChanges").GetArrayLength());
         Assert.Equal(0, export.GetProperty("lessons").GetArrayLength());
+
+        // She has not left the platform-wide board, so the export names no such choice: the one
+        // that there is is Grace's.
+        Assert.Equal(0, export.GetProperty("boardOptOuts").GetArrayLength());
 
         // And nothing in it is Grace's: not her address, not her id, and not a time of hers.
         Assert.DoesNotContain("grace", text, StringComparison.OrdinalIgnoreCase);
@@ -374,6 +384,7 @@ public class DataExportTests
         var agent = await application.GiveAgentAsync(ada.Id, clock.GetUtcNow(), team: true);
         await application.GiveNotificationAsync(ada.Id, agent, clock.GetUtcNow());
         await application.GiveLessonAsync(ada.Id, agent, clock.GetUtcNow());
+        await application.BoardContribution.SetAsync(ada.Id, contributes: false, TestContext.Current.CancellationToken);
 
         var rows = application.RowsOf(ada.Id);
         var export = JsonDocument.Parse(await client.PageAsync(Export)).RootElement;

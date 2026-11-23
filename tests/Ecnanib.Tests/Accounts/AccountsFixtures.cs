@@ -192,6 +192,15 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What works out the measure and the strength score of each model in each role from what a user's agents did.</summary>
     public IRoleStrengths RoleStrengths => _application.Services.GetRequiredService<IRoleStrengths>();
 
+    /// <summary>What says the counted trades of every user who has not left the platform-wide board: the one that there is.</summary>
+    public IBoardTrades BoardTrades => _application.Services.GetServices<IBoardTrades>().Single();
+
+    /// <summary>What works out the records of the platform-wide board from the trades of everyone who contributes.</summary>
+    public IBoardRecords BoardRecords => _application.Services.GetRequiredService<IBoardRecords>();
+
+    /// <summary>Whether the trades of a user are counted on the platform-wide board, which is that user's choice.</summary>
+    public IBoardContribution BoardContribution => _application.Services.GetRequiredService<IBoardContribution>();
+
     /// <summary>The lessons of a user: what a prompt recalls of them, and what their user reads and does with them.</summary>
     public ILessons Lessons => _application.Services.GetRequiredService<ILessons>();
 

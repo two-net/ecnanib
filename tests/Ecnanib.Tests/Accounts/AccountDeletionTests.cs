@@ -58,7 +58,8 @@ public class AccountDeletionTests
         // Binance, and an agent, which is a draft, with a cycle, the calls of its roles, the
         // orders of a position that is over, and a notification about it. A second cycle of the
         // agent ended with a veto, so she has the shadow trade of its plan as well, beside the
-        // call of an analyst that every cycle leaves.
+        // call of an analyst that every cycle leaves. And she left the platform-wide board,
+        // which is a row of hers too.
         var (grace, gracesApp, _) = await application.RegisterWithTwoFactorAsync(Grace, clock);
         using var gracesDesk = application.CreateClient();
         using var gracesPhone = application.CreateClient();
@@ -70,6 +71,7 @@ public class AccountDeletionTests
         await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow());
         await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow(), CycleOutcome.Vetoed, orders: false);
         await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
+        await application.BoardContribution.SetAsync(grace.Id, contributes: false, TestContext.Current.CancellationToken);
 
         // So has Ada, who is signed in on two browsers. Her stored keys go with her account, at
         // once (FR-ACC-9), and so do her agents, none of which is active, with what their teams
@@ -80,6 +82,7 @@ public class AccountDeletionTests
         await application.GiveCycleAsync(ada.Id, adasAgent, clock.GetUtcNow());
         await application.GiveCycleAsync(ada.Id, adasAgent, clock.GetUtcNow(), CycleOutcome.Vetoed, orders: false);
         await application.GiveNotificationAsync(ada.Id, adasAgent, clock.GetUtcNow());
+        await application.BoardContribution.SetAsync(ada.Id, contributes: false, TestContext.Current.CancellationToken);
         using var desk = application.CreateClient();
         using var tablet = application.CreateClient();
         using var phone = application.CreateClient();
