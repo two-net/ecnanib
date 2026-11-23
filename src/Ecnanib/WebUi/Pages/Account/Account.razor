@@ -1,7 +1,9 @@
 @page "/account"
 @attribute [Authorize]
 @using Ecnanib.Accounts
+@using Ecnanib.Notifications
 @inject ITwoFactor TwoFactorAuthentication
+@inject IEmailOptIn EmailOptIn
 
 <PageTitle>Your account</PageTitle>
 
@@ -30,11 +32,29 @@ else
 
 <p><a href="@WebUiModule.KeysPath">Manage your API keys</a></p>
 
+<h2>Notifications</h2>
+
+<p>The service tells you what matters about your agents and your keys on the page of your <a href="@WebUiModule.NotificationsPath">notifications</a>.</p>
+
+@* A preference that is stored: whether the user is sent email for critical events (FR-NTF-3). It is chosen on a page of its own. *@
+@if (_emailOn)
+{
+    <p>Email for critical events: on. Your choice is stored with your account, and is in a download.</p>
+
+    <p><a href="@WebUiModule.NotificationEmailPath">Manage email for critical events</a></p>
+}
+else
+{
+    <p>Email for critical events: off. Your choice is stored with your account, and is in a download.</p>
+
+    <p><a href="@WebUiModule.NotificationEmailPath">Turn on email for critical events</a></p>
+}
+
 <h2>Your data</h2>
 
-<p>What is stored about you is your email address, when you registered and verified it, the legal documents you accepted, the devices you are signed in on, the security-relevant actions of your account, and which keys you stored. Your password is stored only as a hash, and a key only encrypted: neither is in a download, which names a key by its last four characters.</p>
+<p>What is stored about you is your email address, when you registered and verified it, the legal documents you accepted, the devices you are signed in on, the security-relevant actions of your account, which keys you stored, and what the service told you. Your password is stored only as a hash, and a key only encrypted: neither is in a download, which names a key by its last four characters.</p>
 
-@* The one preference that is stored: whether the user left the board (FR-EXP-10). It is chosen on the board itself. *@
+@* The other preference that is stored: whether the user left the board (FR-EXP-10). It is chosen on the board itself. *@
 <p>The closed trades of your agents are counted on the <a href="@WebUiModule.BoardPath">platform-wide board</a>, which adds up the results of all users and names none of them. You can leave the board there. Whether you left it is stored with your account, and is in a download.</p>
 
 @* Marked as a download, so that the browser asks for the file once and does not try to show it as a page. *@
@@ -48,6 +68,7 @@ else
 
 @code {
     private TwoFactorState? _twoFactor;
+    private bool _emailOn;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -57,6 +78,7 @@ else
         if (HttpContext is { } request)
         {
             _twoFactor = await TwoFactorAuthentication.StateAsync(request);
+            _emailOn = (await EmailOptIn.StateAsync(request)).On;
         }
     }
 }

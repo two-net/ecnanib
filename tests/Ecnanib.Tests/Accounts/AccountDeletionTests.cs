@@ -72,6 +72,7 @@ public class AccountDeletionTests
         await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow(), CycleOutcome.Vetoed, orders: false);
         await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
         await application.BoardContribution.SetAsync(grace.Id, contributes: false, TestContext.Current.CancellationToken);
+        await application.GiveEmailOptInAsync(grace.Id, clock.GetUtcNow());
 
         // So has Ada, who is signed in on two browsers. Her stored keys go with her account, at
         // once (FR-ACC-9), and so do her agents, none of which is active, with what their teams
@@ -83,6 +84,7 @@ public class AccountDeletionTests
         await application.GiveCycleAsync(ada.Id, adasAgent, clock.GetUtcNow(), CycleOutcome.Vetoed, orders: false);
         await application.GiveNotificationAsync(ada.Id, adasAgent, clock.GetUtcNow());
         await application.BoardContribution.SetAsync(ada.Id, contributes: false, TestContext.Current.CancellationToken);
+        await application.GiveEmailOptInAsync(ada.Id, clock.GetUtcNow());
         using var desk = application.CreateClient();
         using var tablet = application.CreateClient();
         using var phone = application.CreateClient();

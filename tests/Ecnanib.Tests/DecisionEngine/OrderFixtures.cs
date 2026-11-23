@@ -1536,14 +1536,27 @@ internal sealed class OrdersApplication : IDisposable
         ];
     }
 
-    /// <summary>The notifications of a user as they are stored, in the order they were raised in.</summary>
-    public async Task<IReadOnlyList<Notification>> NotificationsOfAsync(Guid userId)
+    /// <summary>
+    /// The notifications of a user as they are stored, in the order they were raised in: what
+    /// went wrong, and what the service put right.
+    /// </summary>
+    /// <remarks>
+    /// Every position that is opened is said to its user, and so is every result that is
+    /// recorded (FR-NTF-1). A test of an order places entries for a reason of its own, and says
+    /// what its user was told about what it is about. So the notifications that say a position
+    /// was opened or closed are left out, unless the test asks for them, as
+    /// <see cref="PositionNotificationTests"/> does.
+    /// </remarks>
+    /// <param name="userId">The user.</param>
+    /// <param name="positions">Whether those that say a position was opened or closed are among them.</param>
+    public async Task<IReadOnlyList<Notification>> NotificationsOfAsync(Guid userId, bool positions = false)
     {
         await using var context = await Application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
         return await context.Set<Notification>()
             .AsNoTracking()
-            .Where(notification => notification.UserId == userId)
+            .Where(notification => notification.UserId == userId
+                && (positions || (notification.Type != NotificationType.PositionOpened && notification.Type != NotificationType.PositionClosed)))
             .OrderBy(notification => notification.CreatedAt)
             .ThenBy(notification => notification.Id)
             .ToListAsync(TestContext.Current.CancellationToken);

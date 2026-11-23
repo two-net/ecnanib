@@ -70,6 +70,47 @@ public class NotificationTests
     }
 
     [Fact]
+    public async Task What_is_raised_inside_a_transaction_is_stored_when_the_transaction_is_and_not_when_it_is_not()
+    {
+        using var application = new AccountsApplication(clock: new TestClock(Morning));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        Task RaiseInAsync(string content) => application.Notifications.RaiseInAsync(
+            context, ada.Id, NotificationType.KeyInvalid, agentId: null, content, TestContext.Current.CancellationToken);
+
+        // A context that holds no transaction is refused: the notification would stand when
+        // what it tells of fails.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => RaiseInAsync("Raised with no transaction."));
+
+        // What it tells of is undone, and so is the notification.
+        await using (var transaction = await context.Database.BeginTransactionAsync(TestContext.Current.CancellationToken))
+        {
+            await RaiseInAsync("A key that was not marked after all.");
+            await transaction.RollbackAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Empty(await application.ToldAsync(ada.Id));
+
+        // What it tells of is stored, and so is the notification.
+        await using (var transaction = await context.Database.BeginTransactionAsync(TestContext.Current.CancellationToken))
+        {
+            await RaiseInAsync("A key that was marked.");
+            await transaction.CommitAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal([(NotificationType.KeyInvalid, (Guid?)null, "A key that was marked.")], await application.ToldAsync(ada.Id));
+
+        // It says something, in what a notification holds, as one that is raised on its own.
+        await using (await context.Database.BeginTransactionAsync(TestContext.Current.CancellationToken))
+        {
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => RaiseInAsync(" "));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => RaiseInAsync(new string('x', Notification.ContentLength + 1)));
+        }
+    }
+
+    [Fact]
     public async Task What_is_raised_once_in_a_time_is_not_raised_again_about_the_same_agent_within_it()
     {
         var clock = new TestClock(Morning);
@@ -136,8 +177,9 @@ public class NotificationTests
         using var client = application.CreateClient();
         await client.SignInAsync(Ada);
 
-        // With nothing to say, the page has no such heading.
-        Assert.DoesNotContain("Notifications", AgentBrowser.Read(await client.PageAsync(AgentBrowser.AgentStatePage(agent))));
+        // With nothing to say, the page has no such heading. The bar at its top has the link to
+        // the page of the notifications all the same.
+        Assert.DoesNotContain("notifications-heading", await client.PageAsync(AgentBrowser.AgentStatePage(agent)));
 
         await application.GiveNotificationAsync(ada.Id, agent, Morning.AddMinutes(1), "The first thing that happened.");
         await application.GiveNotificationAsync(ada.Id, agent, Morning.AddMinutes(2), "What happened <after> that & more.");

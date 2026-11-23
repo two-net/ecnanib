@@ -1,0 +1,107 @@
+@attribute [Route(WebUiModule.NotificationEmailPath)]
+@attribute [Authorize]
+@using Ecnanib.Notifications
+@using Ecnanib.WebUi.Pages.Notifications
+@inject IEmailOptIn OptIn
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The page says whether the
+    user who is signed in is sent email for critical events, which events those are, and which
+    address an email goes to, and has one form that opts the user in, or out (FR-NTF-3, FR-UI-2).
+    No user is sent such an email until they choose so here. One form at a time, named for what
+    it does: the other is the form of no page until the choice is made. The choice exposes no key
+    and moves no money, so the page asks for no proof of identity. An address that is not
+    verified is sent nothing, and the page says so.
+*@
+
+@if (_state is not null)
+{
+    <PageTitle>@NotificationPages.EmailTitle</PageTitle>
+
+    <h1>@NotificationPages.EmailTitle</h1>
+
+    <p>@NotificationPages.EmailExplained</p>
+
+    <p id="critical-heading">The critical events are:</p>
+
+    <ul aria-labelledby="critical-heading">
+        @foreach (var kind in Critical)
+        {
+            <li>@NotificationTypes.Describe(kind)</li>
+        }
+    </ul>
+
+    <p>@NotificationPages.EmailHolds</p>
+
+    @if (_state.On)
+    {
+        <p>@NotificationPages.EmailIsOn(_state.Address)</p>
+
+        @if (!_state.AddressVerified)
+        {
+            <p role="note">@NotificationPages.AddressNotVerified</p>
+        }
+
+        <form method="post" @formname="@NotificationPages.EmailOffForm" @onsubmit="() => SetAsync(on: false)">
+            <AntiforgeryToken />
+
+            <button type="submit">@NotificationPages.EmailOff</button>
+        </form>
+    }
+    else
+    {
+        <p>@NotificationPages.EmailIsOff</p>
+
+        @if (!_state.AddressVerified)
+        {
+            <p role="note">@NotificationPages.AddressNotVerified</p>
+        }
+
+        <form method="post" @formname="@NotificationPages.EmailOnForm" @onsubmit="() => SetAsync(on: true)">
+            <AntiforgeryToken />
+
+            <button type="submit">@NotificationPages.EmailOn</button>
+        </form>
+    }
+
+    <p><a href="@WebUiModule.NotificationsPath">Your notifications</a></p>
+
+    <p><a href="/account">Back to your account</a></p>
+}
+
+@code {
+    // The kinds of notification that are critical events, in the order that they are declared in.
+    private static readonly NotificationType[] Critical = [.. Enum.GetValues<NotificationType>().Where(NotificationTypes.IsCritical)];
+
+    private EmailOptInState? _state;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The choice of the user of the session, and of no other.
+        _state = await OptIn.StateAsync(request);
+    }
+
+    private async Task SetAsync(bool on)
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // The choice of the user of the session, and of no other: no form names a user.
+        await OptIn.SetAsync(request, on);
+
+        // The page as it is now, by a request that changes nothing: a reload of it sends no
+        // form again.
+        Navigation.NavigateTo(WebUiModule.NotificationEmailPath);
+    }
+}

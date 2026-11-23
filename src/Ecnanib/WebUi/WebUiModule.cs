@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ecnanib.Accounts;
 using Ecnanib.Agents;
+using Ecnanib.Notifications;
 using Ecnanib.Shared;
 using Microsoft.AspNetCore.Antiforgery;
 
@@ -105,6 +106,26 @@ public static class WebUiModule
 
     /// <summary>The path of the page of the AI usage, with the usage of one agent alone.</summary>
     public static string UsageOfAgentPath(Guid agentId) => $"{UsagePath}?{UsageAgentKey}={agentId}";
+
+    /// <summary>
+    /// The path of the page of the notifications of a user: what the service told them, which
+    /// they mark as read there (FR-NTF-1). Notifications says where it is, because an email
+    /// links to it.
+    /// </summary>
+    public const string NotificationsPath = NotificationPaths.List;
+
+    /// <summary>The name of the choice of a page in the address of the page of the notifications.</summary>
+    public const string NotificationsPageKey = "page";
+
+    /// <summary>The path of the page of the notifications, with a page of them.</summary>
+    public static string NotificationsPagePath(int page) =>
+        page > 1 ? $"{NotificationsPath}?{NotificationsPageKey}={page.ToString(CultureInfo.InvariantCulture)}" : NotificationsPath;
+
+    /// <summary>
+    /// The path of the page a user opts in to email for critical events on, and out of it
+    /// (FR-NTF-3, FR-UI-2).
+    /// </summary>
+    public const string NotificationEmailPath = NotificationPaths.Email;
 
     /// <summary>The path of the page that lists the agents of a user (FR-AGT-1).</summary>
     public const string AgentsPath = "/agents";

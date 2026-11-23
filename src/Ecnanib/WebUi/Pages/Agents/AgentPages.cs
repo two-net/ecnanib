@@ -4,7 +4,6 @@ using Ecnanib.Agents;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 using Ecnanib.DecisionEngine;
-using Ecnanib.Notifications;
 using Ecnanib.Platform.Settings;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
@@ -476,19 +475,6 @@ public static class AgentPages
           "resumes it then."
         : $"The agent was not started: it reached its daily loss limit in this UTC day, and does not run before {PageTimes.At(ends)}. " +
           "Start it from then on.";
-
-    /// <summary>What a notification is about, as its user reads it (FR-NTF-1).</summary>
-    public static string Describe(NotificationType type) => type switch
-    {
-        NotificationType.ProtectionFailure => "Order or protection failure",
-        NotificationType.EntrySkipped => "Entry skipped",
-        NotificationType.AttentionRequired => "Agent needs attention",
-        NotificationType.LiquidationWarning => "Liquidation warning",
-        NotificationType.ReconciliationMismatch => "Reconciliation mismatch",
-        NotificationType.AgentHalted => "Agent halted",
-        NotificationType.RolesReassigned => "Roles reassigned",
-        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "The type has no description."),
-    };
 
     /// <summary>The name of the form of a control that starts, pauses, or resumes an agent.</summary>
     public static string FormOf(AgentControl control) => control switch

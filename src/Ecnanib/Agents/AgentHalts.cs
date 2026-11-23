@@ -1,5 +1,7 @@
 using Ecnanib.Credentials;
+using Ecnanib.Notifications;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Shared;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.Agents;
@@ -18,9 +20,17 @@ internal sealed class AgentHalts(
     IDbContextFactory<EcnanibDbContext> contexts,
     IKeyValidation keys,
     AgentRoles roles,
+    INotifications notifications,
     TimeProvider clock,
     ILogger<AgentHalts> logger) : IAgentHalts
 {
+    /// <summary>
+    /// How often the user of an agent is told that it stays halted after the day of its daily
+    /// loss limit: the halts are asked about every quarter hour, and nothing has changed by the
+    /// next one.
+    /// </summary>
+    public static readonly TimeSpan StaysSaidEvery = TimeSpan.FromDays(1);
+
     public async Task<Agent?> FindAsync(Guid agentId, CancellationToken cancellationToken)
     {
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
@@ -119,71 +129,127 @@ internal sealed class AgentHalts(
     /// <summary>
     /// Resumes one agent whose halt for its daily loss limit is over, when its key and its team
     /// allow it. Everything is asked under the lock of its account, of the agent as it is then.
+    /// Its user is told that it runs again, with the change of its state, or that it stays
+    /// halted and why, once in <see cref="StaysSaidEvery"/> (FR-NTF-1).
     /// </summary>
     private async Task<bool> EndAsync(Halted halted, CancellationToken cancellationToken)
     {
         var (agentId, userId) = halted;
 
-        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
-        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        // What keeps the agent halted, when something does: said after the transaction is over.
+        Agent? kept;
+        string keeps;
 
-        if (!await StoredAgents.LockAccountAsync(context, userId, cancellationToken))
+        await using (var context = await contexts.CreateDbContextAsync(cancellationToken))
+        await using (var transaction = await context.Database.BeginTransactionAsync(cancellationToken))
         {
-            return false;
+            if (!await StoredAgents.LockAccountAsync(context, userId, cancellationToken))
+            {
+                return false;
+            }
+
+            var agent = await context.Set<Agent>()
+                .AsNoTracking()
+                .OwnedBy(userId)
+                .SingleOrDefaultAsync(agent => agent.Id == agentId, cancellationToken);
+
+            // The time as it is under the lock: a change that waited for the lock is later than the one that held it.
+            var now = clock.GetUtcNow();
+
+            // Its user may have stopped it meanwhile, or resumed it a moment ago.
+            if (agent is null || AgentStates.HaltEnds(agent.State, agent.StateCause, agent.StateChangedAt) is not { } ends || now < ends)
+            {
+                return false;
+            }
+
+            // What a resume of its user asks, as far as it is known without the exchange (FR-KEY-5).
+            if (await keys.BlockForAsync(userId, agent.Mode, agent.Market, cancellationToken) is { } block)
+            {
+                logger.LogInformation(
+                    "Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: the Binance key for {TradingMode} blocks it ({StartBlock})",
+                    agentId,
+                    userId,
+                    agent.Mode,
+                    block);
+
+                kept = agent;
+                keeps = Says(block, agent.Mode, agent.Market);
+            }
+            else
+            {
+                // An agent runs with its whole team (FR-TEAM-1).
+                var blocked = await roles.BlocksAsync(context, userId, agentId, cancellationToken);
+
+                if (blocked.Count == 0)
+                {
+                    await AgentStateChanges.MoveAsync(
+                        context, userId, agentId, agent.Mode, AgentState.Running, AgentStateCause.DailyLossHaltEnded, now, cancellationToken);
+
+                    // Its user is told with the change, in the same transaction: so they are
+                    // told when the agent runs again, and not when it does not (FR-NTF-1).
+                    await notifications.RaiseInAsync(
+                        context,
+                        userId,
+                        NotificationType.AgentResumed,
+                        agentId,
+                        $"The agent in {agent.Symbol} ({agent.Mode}) runs again: the UTC day in which its daily loss limit halted it is over, " +
+                        "and the service resumed it.",
+                        cancellationToken);
+
+                    await transaction.CommitAsync(cancellationToken);
+
+                    logger.LogInformation(
+                        "Agent {AgentId} of user {UserId} runs again: the UTC day in which its daily loss limit halted it is over", agentId, userId);
+
+                    return true;
+                }
+
+                logger.LogInformation(
+                    "Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: {RoleCount} of the roles of its team cannot work ({Roles})",
+                    agentId,
+                    userId,
+                    blocked.Count,
+                    string.Join(", ", blocked.Select(role => $"{role.Role}: {role.Problem}")));
+
+                var names = RoleNames.Listed([.. blocked.Select(role => role.Role)]);
+
+                kept = agent;
+                keeps = blocked.Count == 1
+                    ? $"its {names} cannot work. Give the role a model that you can select, or store a key that works for its provider"
+                    : $"its {names} cannot work. Give each of these roles a model that you can select, or store a key that works for its provider";
+            }
         }
 
-        var agent = await context.Set<Agent>()
-            .AsNoTracking()
-            .OwnedBy(userId)
-            .SingleOrDefaultAsync(agent => agent.Id == agentId, cancellationToken);
-
-        // The time as it is under the lock: a change that waited for the lock is later than the one that held it.
-        var now = clock.GetUtcNow();
-
-        // Its user may have stopped it meanwhile, or resumed it a moment ago.
-        if (agent is null || AgentStates.HaltEnds(agent.State, agent.StateCause, agent.StateChangedAt) is not { } ends || now < ends)
+        // Nothing changed, and nothing is held any more. The halts are asked about every
+        // quarter hour, so what keeps this one is said once in a day.
+        try
         {
-            return false;
-        }
-
-        // What a resume of its user asks, as far as it is known without the exchange (FR-KEY-5).
-        if (await keys.BlockForAsync(userId, agent.Mode, agent.Market, cancellationToken) is { } block)
-        {
-            logger.LogInformation(
-                "Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: the Binance key for {TradingMode} blocks it ({StartBlock})",
-                agentId,
+            await notifications.RaiseOnceAsync(
                 userId,
-                agent.Mode,
-                block);
-
-            return false;
-        }
-
-        // An agent runs with its whole team (FR-TEAM-1).
-        var blocked = await roles.BlocksAsync(context, userId, agentId, cancellationToken);
-
-        if (blocked.Count > 0)
-        {
-            logger.LogInformation(
-                "Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: {RoleCount} of the roles of its team cannot work ({Roles})",
+                NotificationType.AttentionRequired,
                 agentId,
-                userId,
-                blocked.Count,
-                string.Join(", ", blocked.Select(role => $"{role.Role}: {role.Problem}")));
-
-            return false;
+                $"The agent in {kept.Symbol} ({kept.Mode}) stays halted after the day of its daily loss limit: {keeps}. The service " +
+                "resumes it once that is put right. This is said once in a day for an agent.",
+                StaysSaidEvery,
+                CancellationToken.None);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            logger.LogError(error, "The user {UserId} could not be told that agent {AgentId} stays halted", userId, agentId);
         }
 
-        await AgentStateChanges.MoveAsync(
-            context, userId, agentId, agent.Mode, AgentState.Running, AgentStateCause.DailyLossHaltEnded, now, cancellationToken);
-
-        await transaction.CommitAsync(cancellationToken);
-
-        logger.LogInformation(
-            "Agent {AgentId} of user {UserId} runs again: the UTC day in which its daily loss limit halted it is over", agentId, userId);
-
-        return true;
+        return false;
     }
+
+    /// <summary>What about the Binance key of a user keeps an agent halted, and what to do about it, as its user is told.</summary>
+    private static string Says(StartBlock block, TradingMode mode, Market market) => block switch
+    {
+        StartBlock.NoKey => $"you have stored no Binance key for {mode}. Store one on the page of your keys",
+        StartBlock.NotValid => $"your Binance key for {mode} is not valid. Store a key that works on the page of your keys",
+        StartBlock.SpotTradingMissing or StartBlock.FuturesTradingMissing =>
+            $"your Binance key for {mode} lacks the permission to trade on the {market} market. Give it the permission at Binance, and have the key checked again on the page of your keys",
+        _ => throw new ArgumentOutOfRangeException(nameof(block), block, "Nothing says what keeps the agent halted."),
+    };
 
     private sealed record Halted(Guid Id, Guid UserId);
 }

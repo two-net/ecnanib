@@ -1,0 +1,39 @@
+@using Ecnanib.Accounts
+@using Ecnanib.Notifications
+@using Ecnanib.WebUi.Pages.Notifications
+@inject INotifications Stored
+@inject ILogger<NotificationsLink> Logger
+
+@*
+    The link to the page of the notifications in the bar at the top of every page, with how many
+    the user who is signed in has not read (FR-NTF-1). It is rendered on the server for each
+    request, so the number is as it was when the page was written. The bar is on the page of an
+    error as well, so a count that cannot be read fails no page: the link is then without one.
+*@
+
+<a href="@WebUiModule.NotificationsPath">@NotificationPages.Link(_unread)</a>
+
+@code {
+    private int _unread;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Asked for the user of the session, and only where there is one.
+        if (HttpContext is not { } request || SignedInUser.IdOf(request) is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _unread = await Stored.UnreadCountAsync(request);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            Logger.LogWarning(error, "The notifications that a user has not read could not be counted for the bar of a page");
+        }
+    }
+}

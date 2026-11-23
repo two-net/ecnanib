@@ -2149,9 +2149,27 @@ internal sealed class AgentOrders(
                 position.Side,
                 position.Symbol,
                 said.ExchangeOrderId);
+
+            // Its user is told once: the position is written by one, and another that heard
+            // of the same execution wrote nothing (FR-NTF-1).
+            await TellAsync(position, NotificationType.PositionOpened, OpenedSays(position));
         }
 
         return await stored.FindAsync(entry.Id, CancellationToken.None) ?? entry;
+    }
+
+    /// <summary>
+    /// What the notification of a position that was opened says: what the agent holds, at which
+    /// price, and where its stop-loss and its take-profit are. The side is said on the Futures
+    /// market, where a position is long or short.
+    /// </summary>
+    private static string OpenedSays(Position position)
+    {
+        var what = position.Market == Market.Spot ? "A position" : position.Side == PositionSide.Long ? "A long position" : "A short position";
+        var takeProfit = position.TakeProfit is { } target ? $" and its take-profit at {Written(target)}" : string.Empty;
+
+        return $"{what} in {position.Symbol} ({position.Mode}) was opened: {Written(position.Quantity)} at {Written(position.EntryPrice)}, " +
+            $"with its stop-loss at {Written(position.StopLoss)}{takeProfit}.";
     }
 
     /// <summary>

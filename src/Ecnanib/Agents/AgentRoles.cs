@@ -2,6 +2,7 @@ using Ecnanib.Accounts;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 using Ecnanib.Experience;
+using Ecnanib.Notifications;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Settings;
 using Ecnanib.Shared;
@@ -464,7 +465,7 @@ internal sealed class AgentRoles(IKeyModels keyModels, ICatalogModels catalog, I
 /// transaction would have to wait for, so neither waits for the other in a circle.
 /// </para>
 /// </remarks>
-internal sealed class AgentModelDependents(TimeProvider clock, ILogger<AgentModelDependents> logger) : IModelDependents
+internal sealed class AgentModelDependents(INotifications notifications, TimeProvider clock, ILogger<AgentModelDependents> logger) : IModelDependents
 {
     public async Task ModelsUnavailableAsync(
         EcnanibDbContext context, AiProviderCode provider, IReadOnlyList<Guid> modelIds, CancellationToken cancellationToken)
@@ -498,13 +499,31 @@ internal sealed class AgentModelDependents(TimeProvider clock, ILogger<AgentMode
                 .OwnedBy(userId)
                 .Where(agent => context.Set<AgentRole>().Any(role => role.AgentId == agent.Id && modelIds.Contains(role.ModelId)))
                 .OrderBy(agent => agent.Id)
-                .Select(agent => new { agent.Id, agent.State, agent.Mode })
+                .Select(agent => new { agent.Id, agent.State, agent.Mode, agent.Symbol })
                 .ToListAsync(cancellationToken);
 
             foreach (var agent in agents.Where(agent => AgentStates.NeedsItsKey(agent.State)))
             {
                 await AgentStateChanges.MoveAsync(
                     context, userId, agent.Id, agent.Mode, AgentState.AttentionRequired, AgentStateCause.ModelUnavailable, now, cancellationToken);
+
+                // The roles of the agent whose model is gone, in the order of the team.
+                var roles = await context.Set<AgentRole>()
+                    .AsNoTracking()
+                    .Where(role => role.AgentId == agent.Id && modelIds.Contains(role.ModelId))
+                    .Select(role => role.Role)
+                    .ToListAsync(cancellationToken);
+
+                // Its user is told that the agent waits for them, and for which roles, in the
+                // same transaction: so they are told when the models are marked, and not when
+                // they are not (FR-NTF-1).
+                await notifications.RaiseInAsync(
+                    context,
+                    userId,
+                    NotificationType.ModelUnavailable,
+                    agent.Id,
+                    Says(agent.Symbol, agent.Mode, roles),
+                    cancellationToken);
 
                 // Stored when the models are marked, and not when they are not: both are of the
                 // transaction of the sync.
@@ -515,6 +534,19 @@ internal sealed class AgentModelDependents(TimeProvider clock, ILogger<AgentMode
                     provider.Value);
             }
         }
+    }
+
+    /// <summary>
+    /// What the user of an agent is told when a model of its team is gone: which roles had it,
+    /// and what to do. A team has four roles, so it is short whatever the roles are.
+    /// </summary>
+    private static string Says(string symbol, TradingMode mode, IReadOnlyList<Role> roles)
+    {
+        var (whose, offered, give) = roles.Count > 1
+            ? ($"the models of its {RoleNames.Listed(roles)}", "are no longer offered by their provider", "Give each of these roles another model")
+            : ($"the model of its {RoleNames.Listed(roles)}", "is no longer offered by its provider", "Give the role another model");
+
+        return $"The agent in {symbol} ({mode}) waits for you: {whose} {offered}. {give}, and resume the agent.";
     }
 }
 
@@ -545,5 +577,25 @@ internal sealed class AgentRolesExport : IExportedPart
                 .ThenBy(row => row.Role)
                 .Select(row => new ExportedAgentRole(row.AgentId, row.Role, row.Provider.Value, row.Identifier)),
         ];
+    }
+}
+
+/// <summary>How a notification names the roles of a team.</summary>
+internal static class RoleNames
+{
+    /// <summary>
+    /// Roles by their names, in the order of the team, as a sentence lists them: "Strategist",
+    /// "Strategist and Risk Manager", "Market Analyst, Strategist and Risk Manager".
+    /// </summary>
+    public static string Listed(IReadOnlyList<Role> roles)
+    {
+        var names = roles.Order().Select(RoleReassignments.NameOf).ToList();
+
+        return names.Count switch
+        {
+            0 => "team",
+            1 => names[0],
+            _ => $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}",
+        };
     }
 }

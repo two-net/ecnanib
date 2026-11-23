@@ -8,6 +8,9 @@
             <span>@context.User.Identity?.Name</span>
             <a href="/account">Account</a>
             <a href="@WebUiModule.AgentsPath">Agents</a>
+
+            @* With how many the user has not read, which it asks for itself. *@
+            <NotificationsLink />
             <a href="@WebUiModule.ExperiencePath">Experience</a>
             <a href="@WebUiModule.UsagePath">AI usage</a>
             <a href="@WebUiModule.CatalogPath">Model catalog</a>

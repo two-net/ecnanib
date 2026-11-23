@@ -61,6 +61,7 @@ public class OwnershipTests
         await application.GiveCycleAsync(grace.Id, gracesAgent, clock.GetUtcNow(), CycleOutcome.Vetoed, orders: false);
         await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
         await application.BoardContribution.SetAsync(grace.Id, contributes: false, TestContext.Current.CancellationToken);
+        await application.GiveEmailOptInAsync(grace.Id, clock.GetUtcNow());
 
         var before = application.RowsOf(grace.Id);
         Assert.All(before, table => Assert.True(table.Value.Count > 0, $"Grace has no row in {table.Key}, so nothing is compared there."));

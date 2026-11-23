@@ -1,6 +1,7 @@
 using Ecnanib.Accounts;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
+using Ecnanib.Notifications;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Shared;
 using Microsoft.EntityFrameworkCore;
@@ -525,7 +526,7 @@ internal sealed class AgentControls(
 /// when they are started or resumed.
 /// </para>
 /// </remarks>
-internal sealed class AgentKeyDependents(TimeProvider clock, ILogger<AgentKeyDependents> logger) : IKeyDependents
+internal sealed class AgentKeyDependents(INotifications notifications, TimeProvider clock, ILogger<AgentKeyDependents> logger) : IKeyDependents
 {
     public Task AiKeyDeletedAsync(
         EcnanibDbContext context, Guid userId, AiProviderCode provider, CancellationToken cancellationToken) =>
@@ -555,7 +556,7 @@ internal sealed class AgentKeyDependents(TimeProvider clock, ILogger<AgentKeyDep
             .OwnedBy(userId)
             .Where(agent => agent.Mode == environment)
             .OrderBy(agent => agent.Id)
-            .Select(agent => new { agent.Id, agent.State })
+            .Select(agent => new { agent.Id, agent.State, agent.Symbol })
             .ToListAsync(cancellationToken);
 
         var now = clock.GetUtcNow();
@@ -564,6 +565,16 @@ internal sealed class AgentKeyDependents(TimeProvider clock, ILogger<AgentKeyDep
         {
             await AgentStateChanges.MoveAsync(
                 context, userId, agent.Id, environment, AgentState.AttentionRequired, cause, now, cancellationToken);
+
+            // Its user is told that the agent waits for them, in the same transaction: so they
+            // are told when the agent is moved, and not when it is not (FR-NTF-1).
+            await notifications.RaiseInAsync(
+                context,
+                userId,
+                NotificationType.AttentionRequired,
+                agent.Id,
+                Says(agent.Symbol, environment, cause, $"its Binance key for {environment}"),
+                cancellationToken);
 
             // Stored when the change to the key is, and not when it is not: both are of the
             // transaction of whoever tells.
@@ -591,7 +602,7 @@ internal sealed class AgentKeyDependents(TimeProvider clock, ILogger<AgentKeyDep
                 role.AgentId == agent.Id
                 && context.Set<AiModel>().Any(model => model.Id == role.ModelId && model.Provider == provider)))
             .OrderBy(agent => agent.Id)
-            .Select(agent => new { agent.Id, agent.State, agent.Mode })
+            .Select(agent => new { agent.Id, agent.State, agent.Mode, agent.Symbol })
             .ToListAsync(cancellationToken);
 
         var now = clock.GetUtcNow();
@@ -602,6 +613,24 @@ internal sealed class AgentKeyDependents(TimeProvider clock, ILogger<AgentKeyDep
             await AgentStateChanges.MoveAsync(
                 context, userId, agent.Id, agent.Mode, AgentState.AttentionRequired, cause, now, cancellationToken);
 
+            // The roles of the agent whose model is of the provider, in the order of the team:
+            // Agents names no provider, so its user is told which roles the key is for.
+            var roles = await context.Set<AgentRole>()
+                .AsNoTracking()
+                .Where(role => role.AgentId == agent.Id
+                    && context.Set<AiModel>().Any(model => model.Id == role.ModelId && model.Provider == provider))
+                .Select(role => role.Role)
+                .ToListAsync(cancellationToken);
+
+            // Its user is told that the agent waits for them, in the same transaction (FR-NTF-1).
+            await notifications.RaiseInAsync(
+                context,
+                userId,
+                NotificationType.AttentionRequired,
+                agent.Id,
+                Says(agent.Symbol, agent.Mode, cause, $"your key for the AI provider of its {RoleNames.Listed(roles)}"),
+                cancellationToken);
+
             logger.LogInformation(
                 "Agent {AgentId} of user {UserId} requires attention with the change to the key for the AI provider {Provider}: {AgentStateCause}",
                 agent.Id,
@@ -609,5 +638,20 @@ internal sealed class AgentKeyDependents(TimeProvider clock, ILogger<AgentKeyDep
                 provider.Value,
                 cause);
         }
+    }
+
+    /// <summary>
+    /// What the user of an agent is told when the agent comes to wait for them because a key
+    /// went: which key, whether it was deleted or refused, and what to do. It names no part of
+    /// the key.
+    /// </summary>
+    private static string Says(string symbol, TradingMode mode, AgentStateCause cause, string key)
+    {
+        var went = cause is AgentStateCause.ExchangeKeyDeleted or AgentStateCause.AiKeyDeleted
+            ? "was deleted"
+            : "was refused, and is invalid";
+
+        return $"The agent in {symbol} ({mode}) waits for you: {key} {went}. Store a key that works on the page of your keys, and " +
+            "resume the agent.";
     }
 }

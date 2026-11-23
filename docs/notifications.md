@@ -2,11 +2,13 @@
 
 In-app notifications cover: position opened or closed; agent halted or needing attention; key invalid; model unavailable; order or protection failure; reconciliation mismatch; and liquidation warning (FR-NTF-1).
 
-What is built is what seven events need. The first is a failure of the protection of a position: every open position has a stop-loss order resting on the exchange, and if the protective order cannot be placed after an entry fills, the system closes the position at market at once and alerts the user (FR-RSK-7). The second is an entry that is skipped: if the quote balance is below what the plan needs, the entry is skipped and the user is notified (FR-BIN-S3), and so it is when the Futures wallet lacks the margin the plan needs (FR-BIN-F6). The third is an agent that needs attention because the account of its user at Binance conflicts with how it trades: the user is told what to change (FR-BIN-F2). The fourth is a liquidation warning: the system checks the margin state of open positions at each reconciliation and alerts the user when a position approaches liquidation, and it never adds margin on its own (FR-BIN-F5). The fifth is a reconciliation mismatch: on any mismatch the exchange is treated as the source of truth, records are corrected, and the mismatch is logged and shown (FR-BIN-7), which is how a user sees what they did at Binance by hand in the records of their agent (FR-BIN-8). The sixth is an agent that is halted: when its loss for the UTC day reaches the daily loss limit, or its drawdown from peak equity reaches the drawdown limit, the system closes its position and halts it (FR-RSK-8). The seventh is a role of an agent that the service gave another model by strength: an agent can opt in to automatic role reassignment, and each change is logged and notified (FR-TEAM-10). Each is a notification, which is stored for its user and shown on the page of the agent that it is about.
+A notification belongs to one user and can be marked as read, and a user can opt in to email for critical events (FR-NTF-3).
 
-The code is in `src/Ecnanib/Notifications`: `Notification`, `INotifications`, and `StoredNotifications`. The page is `AgentStatus.razor` in `src/Ecnanib/WebUi/Pages/Agents`. The rules below are enforced by `NotificationTests` in `tests/Ecnanib.Tests/Notifications`, and by `ProtectiveStopTests`, `SpotEntryTests`, `FuturesEntryTests`, `FuturesProtectionTests`, `LiquidationWarningTests`, `ReconciliationTests`, and `LossLimitHaltTests` in `tests/Ecnanib.Tests/DecisionEngine`, and by `RoleReassignmentTests` in `tests/Ecnanib.Tests/Agents`, for when one is raised.
+What is built is what these events need. The first is a failure of the protection of a position: every open position has a stop-loss order resting on the exchange, and if the protective order cannot be placed after an entry fills, the system closes the position at market at once and alerts the user (FR-RSK-7). The second is an entry that is skipped: if the quote balance is below what the plan needs, the entry is skipped and the user is notified (FR-BIN-S3), and so it is when the Futures wallet lacks the margin the plan needs (FR-BIN-F6). The third is an agent that needs attention because the account of its user at Binance conflicts with how it trades: the user is told what to change (FR-BIN-F2). The fourth is a liquidation warning: the system checks the margin state of open positions at each reconciliation and alerts the user when a position approaches liquidation, and it never adds margin on its own (FR-BIN-F5). The fifth is a reconciliation mismatch: on any mismatch the exchange is treated as the source of truth, records are corrected, and the mismatch is logged and shown (FR-BIN-7), which is how a user sees what they did at Binance by hand in the records of their agent (FR-BIN-8). The sixth is an agent that is halted: when its loss for the UTC day reaches the daily loss limit, or its drawdown from peak equity reaches the drawdown limit, the system closes its position and halts it (FR-RSK-8). The seventh is a role of an agent that the service gave another model by strength: an agent can opt in to automatic role reassignment, and each change is logged and notified (FR-TEAM-10). The eighth is a position that was opened, and the ninth a position that was closed, however it was. The tenth is a key that is invalid: an agent that depends on a missing or invalid key moves to Attention required (FR-KEY-10), and its user is told of the key, and of each agent that waits for it. The eleventh is a model that is unavailable: when a model becomes unavailable, agents using it move to Attention required and the user is notified (FR-CAT-8). The twelfth is the end of a halt for the daily loss limit: the agent runs again, or stays halted because its key or its team keeps it. Each is a notification, which is stored for its user, listed on the page of the notifications, and shown on the page of the agent that it is about until its user has read it.
 
-What raises the notification is in [orders.md](orders.md), and for a role that was reassigned in [agents.md](agents.md). The email that the same component sends for an account is in [accounts.md](accounts.md).
+The code is in `src/Ecnanib/Notifications`: `Notification`, `NotificationTypes`, `INotifications`, and `StoredNotifications`, and for email `EmailOptIn`, `IEmailOptIn`, `NotificationEmails`, and `NotificationEmailJob`. The pages are `NotificationsOverview.razor` in `src/Ecnanib/WebUi/Pages/Notifications`, `NotificationEmail.razor` in `src/Ecnanib/WebUi/Pages/Account`, and `AgentStatus.razor` in `src/Ecnanib/WebUi/Pages/Agents`, and the link in the bar is `NotificationsLink.razor` in `src/Ecnanib/WebUi/Layout`. The rules below are enforced by `NotificationTests`, `NotificationPageTests`, and `NotificationEmailTests` in `tests/Ecnanib.Tests/Notifications`. When one is raised is enforced by `PositionNotificationTests`, `ProtectiveStopTests`, `SpotEntryTests`, `FuturesEntryTests`, `FuturesProtectionTests`, `LiquidationWarningTests`, `ReconciliationTests`, and `LossLimitHaltTests` in `tests/Ecnanib.Tests/DecisionEngine`, by `KeyRevalidationTests` in `tests/Ecnanib.Tests/Credentials`, and by `AgentKeyDependentsTests`, `AgentModelDependentsTests`, `AgentHaltTests`, and `RoleReassignmentTests` in `tests/Ecnanib.Tests/Agents`.
+
+What raises the notification is in [orders.md](orders.md), for a key in [credentials.md](credentials.md), for a model in [catalog.md](catalog.md), and for a role that was reassigned and a halt that ends in [agents.md](agents.md). The email that the same component sends for an account is in [accounts.md](accounts.md).
 
 ## The interface
 
@@ -14,18 +16,25 @@ What raises the notification is in [orders.md](orders.md), and for a role that w
 public interface INotifications
 {
     Task RaiseAsync(Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken);
+    Task RaiseInAsync(EcnanibDbContext context, Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken);
     Task<bool> RaiseOnceAsync(Guid userId, NotificationType type, Guid agentId, string content, TimeSpan within, CancellationToken cancellationToken);
     Task<IReadOnlyList<NotificationView>> UnreadOfAgentAsync(HttpContext request, Guid agentId);
+    Task<NotificationList> OfUserAsync(HttpContext request, int page);
+    Task<int> UnreadCountAsync(HttpContext request);
+    Task MarkReadAsync(HttpContext request, Guid notificationId);
+    Task<int> MarkAllReadAsync(HttpContext request, Guid through);
 }
 ```
 
 | Rule | Detail |
 |---|---|
-| **A notification belongs to one user** | `RaiseAsync` takes the user by id: it is asked by background work, where nobody is signed in, and the id is the owner of the row that the notification is about. `UnreadOfAgentAsync` reads for the user of the session, and asks for the rows by owner. See [ownership.md](ownership.md). |
-| **What happens again and again is said once in a time** | `RaiseOnceAsync` raises nothing when the user has a notification of the same type about the same agent that was raised within the time, read or not, and says whether it raised one. It is for what repeats while nothing changes. The page of an agent shows the latest 20 that are not read, and nothing marks one as read yet, so one for each time would leave no room for the others. Two that ask at the same moment may both raise one. |
+| **A notification belongs to one user** | `RaiseAsync` takes the user by id: it is asked by background work, where nobody is signed in, and the id is the owner of the row that the notification is about. What reads and what marks takes the request, and asks for the rows of the user of the session by owner: the notification of another user is not found, and stays as it is. See [ownership.md](ownership.md). |
+| **What is told inside a transaction is stored with it** | `RaiseInAsync` writes the row with the context of whoever asks, and refuses a context that holds no transaction. It is for what changes a key, a model, or the state of an agent in a transaction of its own: its user is told when the change is stored, and not when it is not. The others raise after what they tell of is stored, and a notification that cannot be stored then stops nothing. |
+| **What happens again and again is said once in a time** | `RaiseOnceAsync` raises nothing when the user has a notification of the same type about the same agent that was raised within the time, read or not, and says whether it raised one. It is for what repeats while nothing changes. The page of an agent shows the latest 20 that are not read, so one for each time would leave no room for the others. It asks by the type and the agent, and not by what is said: two causes of one type about one agent are said once in the time between them. Two that ask at the same moment may both raise one. |
 | **It says what happened, in plain words** | The content is the service's own text, in 500 characters at most: what became of a position, or how it stands, with its symbol and its mode. Nothing that a user typed is in it, and no secret. |
 | **It names its agent by the id alone** | Notifications may not use Agents, so the row does not point at the agent's row. A notification belongs to the account, and stays when the agent is deleted. |
-| **It is not read until its user says so** | Nothing marks one as read yet, so every notification about an agent is on the page of the agent. |
+| **It is not read until its user says so** | `MarkReadAsync` marks one, and `MarkAllReadAsync` those that were raised no later than the newest that the page showed: one that was raised after the page was written is not marked by a user who has not seen it. Nothing marks one as read by showing it. One that is read stays on the page of the notifications, and is off the page of its agent. |
+| **A critical event is marked for an email** | For a user who has opted in when it is raised. See "Email for critical events". |
 | **The log does not repeat it** | The event of a notification that was raised names the user, the agent, and what it is about. |
 
 ## What is raised
@@ -52,6 +61,15 @@ public interface INotifications
 | `AgentHalted` | An agent reached its drawdown limit while it ran, and was halted until its user resumes it. Where both limits are reached, this is the one that is said. | "The agent reached its drawdown limit in BTCUSDT (Demo): its equity is 778.8 USDT, 22.12% below its peak of 1000 USDT, and its limit is 20%. It is halted, and its position is closed at market. It stays halted until you resume it." |
 | `ProtectionFailure` | The position of an agent that a loss limit halted could not be closed at market. It is open as it was, and is closed again with a later evaluation of the loss limits. It is said once in an hour for an agent. | "The position of the halted agent in BTCUSDT (Demo) could not be closed at market. It is open as it was, and the service tries again within minutes. Close it with "Close position now", or at Binance. This is said once in an hour for an agent." |
 | `RolesReassigned` | The service gave a role of an agent another model by strength: the agent opted in, runs, and held no position. One for each role that was given another model, with the scores of both models and the data that each is of. It says so when the change gave the Strategist the provider of the Risk Manager, or a provider more than one role. See "Reassigning the roles automatically" in [agents.md](agents.md). | "The Strategist of the agent in BTCUSDT (Demo) now uses claude-b in place of claude-test-model: automatic reassignment by strength is on for it. On Spot 1H, its strength score is +0.5 R from 4 samples of Demo data, against no strength score yet for the model before. It applies from the next cycle, and no role is reassigned again for 7 days." |
+| `PositionOpened` | An entry of an agent was executed, and opened a position. It is said by whoever wrote the position, which is one: what settles the orders and what reconciles hear of the same execution, and say nothing again. On the Futures market it says the side. See "The record of an order" in [orders.md](orders.md). | "A position in BTCUSDT (Demo) was opened: 0.01 at 60000, with its stop-loss at 59000 and its take-profit at 62000." And: "A short position in BTCUSDT (Demo) was opened: 0.02 at 60000, with its stop-loss at 61000 and its take-profit at 58000." |
+| `PositionClosed` | The result of a closed position was recorded: it says how the position was closed, and what it made after fees, and on the Futures market after funding, in the asset that its symbol is priced in, and in R to 2 decimal places where R is known. A position has one result, so it is said once, and it is said then because what it made is known then: within minutes of the close, and at the latest when its executions are no longer asked for. See "The results of a position" in [orders.md](orders.md). | "The position in BTCUSDT (Demo) was closed by its stop-loss. It lost 11.19 USDT after fees, which is -1.12 R." And: "The short position in BTCUSDT (Demo) was closed by you. It made 17.55 USDT after fees and funding, which is +0.88 R." |
+| `PositionClosed` | Such a result that is not complete says so. A position that was closed at Binance has had its mismatch said before. | "The long position in BTCUSDT (Demo) was closed at Binance, and by no order of the agent. It lost 201.2 USDT after fees and funding, which is -10.06 R. Not all of it could be read from Binance, so this is what is known of it." |
+| `KeyInvalid` | A stored key was refused when it was checked again, and became invalid: once, in the transaction that marks it, and not again while it stays invalid. It is about no agent, names an AI provider by its name, and holds no part of the key. See "Validating a key" in [credentials.md](credentials.md). | "Your key for Claude was refused by the provider, and is invalid. The agents that ran with it wait for you. Store a key that works on the page of your keys, and resume them." And: "Your Binance key for Demo was refused by Binance, and is invalid. The agents that ran with it wait for you. Store a key that works on the page of your keys, and resume them." |
+| `KeyInvalid` | The service deleted a Binance key that turned out to be able to withdraw (FR-KEY-4), in the transaction that deletes it. | "Your Binance key for Live can withdraw, as Binance reports, so the service deleted it: it keeps no key that can withdraw. The agents that ran with it wait for you. Store a key without the permission to withdraw on the page of your keys, and resume them." |
+| `AttentionRequired` | An agent that ran came to wait for its user because a key went (FR-KEY-10): the Binance key of its mode, or the key of an AI provider that roles of its team use, was deleted or refused. One for each agent that is moved, in the transaction that moves it, also when its user deleted the key themselves. Agents names no provider, so it says which roles the key was for. See "When a key goes" in [agents.md](agents.md). | "The agent in BTCUSDT (Demo) waits for you: its Binance key for Demo was refused, and is invalid. Store a key that works on the page of your keys, and resume the agent." And: "The agent in BTCUSDT (Live) waits for you: your key for the AI provider of its Risk Manager was deleted. Store a key that works on the page of your keys, and resume the agent." |
+| `ModelUnavailable` | A sync of the catalog marked a model unavailable that roles of an agent have, and the agent, which ran, came to wait for its user (FR-CAT-8). One for each agent that is moved, in the transaction of the sync, with the roles whose model went. See "When a model goes" in [agents.md](agents.md). | "The agent in BTCUSDT (Demo) waits for you: the model of its Strategist is no longer offered by its provider. Give the role another model, and resume the agent." |
+| `AgentResumed` | The service resumed an agent that its daily loss limit halted, when the next UTC day began (FR-RSK-8): in the transaction that resumes it. | "The agent in BTCUSDT (Demo) runs again: the UTC day in which its daily loss limit halted it is over, and the service resumed it." |
+| `AttentionRequired` | An agent stays halted after the day of its daily loss limit, because its Binance key or its team keeps it from running. Its state does not change, and the halts are asked about every quarter hour, so it is said once in a day for an agent. | "The agent in BTCUSDT (Demo) stays halted after the day of its daily loss limit: you have stored no Binance key for Demo. Store one on the page of your keys. The service resumes it once that is put right. This is said once in a day for an agent." |
 
 A mismatch is said each time that the records were corrected for one: it does not repeat while nothing changes, because the records then say what Binance says.
 
@@ -61,34 +79,84 @@ An agent that is halted is said once, when it is halted, with its equity, what i
 
 On Spot the stop-loss is one order of a pair with the take-profit, and a pair that cannot be placed is said as a stop-loss that cannot: the notification is the same. On Futures the two are orders of their own, and the notification says which of them could not be placed. A take-profit that is executed is no failure, and nobody is told.
 
-The page says `ProtectionFailure` as "Order or protection failure", `EntrySkipped` as "Entry skipped", `AttentionRequired` as "Agent needs attention", `LiquidationWarning` as "Liquidation warning", `ReconciliationMismatch` as "Reconciliation mismatch", `AgentHalted` as "Agent halted", and `RolesReassigned` as "Roles reassigned": `AgentPages.Describe`.
+A position that is opened is said when it is, and before its protection is placed: when the protection cannot be placed, the position is closed at market, and its user is told of the failure, and then that the position was closed.
+
+A key that goes is said twice where an agent ran with it: once for the key, which is about no agent, and once for each agent that waits, on the page of that agent. A model that goes is said for each agent alone: the catalog belongs to the service, and a model is nothing of a user's until an agent uses it.
+
+The pages and the email say `ProtectionFailure` as "Order or protection failure", `EntrySkipped` as "Entry skipped", `AttentionRequired` as "Agent needs attention", `LiquidationWarning` as "Liquidation warning", `ReconciliationMismatch` as "Reconciliation mismatch", `AgentHalted` as "Agent halted", `RolesReassigned` as "Roles reassigned", `PositionOpened` as "Position opened", `PositionClosed` as "Position closed", `KeyInvalid` as "Key invalid", `ModelUnavailable` as "Model unavailable", and `AgentResumed` as "Agent runs again": `NotificationTypes.Describe`. It is in Notifications, and not with the pages, because an email says the same words, and Notifications may not use the Web UI.
 
 A start or a resume that the account at Binance stands in the way of is said on the page that asked, and raises no notification: see "The account of Futures" in [agents.md](agents.md).
 
-That the user could not be told, because the notification could not be stored, is said in the log as an error, and stops nothing of the orders.
+That the user could not be told, because the notification could not be stored, is said in the log as an error, and stops nothing of the orders. A notification that is raised inside a transaction is the exception: it is of the transaction, so what cannot be told is not stored either.
 
-## The page
+## The pages
 
-The page of the state of an agent, `/agents/{id}/state`, has a section "Notifications" when its user has not read something about the agent: each notification with what it is about, when it was raised, and what it says, the latest first, 20 at most. What a notification says is written as text, and never as markup (NFR-SEC-4). With nothing to say, the page has no such section.
+Every page is rendered on the server for each request, for the user who is signed in, and a visitor is sent to sign in. What a notification says is written as text, and never as markup (NFR-SEC-4). The times are UTC.
 
-## The data
-
-The migration `AddOrders` adds the table.
-
-| Table | Columns |
-|---|---|
-| `notifications` | `id`, `user_id`, `type`, `agent_id`, `content`, `is_read`, `created_at` |
+**The page of the notifications,** `/notifications`, lists every notification of its user, read and not read, the newest first, 25 to a page: what each is about, when it was raised, whether it is read, and what it says. One that is about an agent leads to the page of the state of that agent, by the name that its user gave it, while the user has the agent. With nothing to say, the page says so.
 
 | Rule | Detail |
 |---|---|
-| **The rows go with the account** | `user_id` points at `users`, and the rows are deleted with the account (FR-ACC-9). |
-| **They are in the export** | The section `notifications` of the export of a user's data holds each, with whether it is read (NFR-SEC-9). See [accounts.md](accounts.md). |
+| **A form marks one as read** | Each notification that is not read has a form of its own, `mark-read-<id>`. It leads back to the page that it was on, by a request that changes nothing. A form that is sent again is the form of no page, and is answered with "bad request", as the forms of the lessons are. |
+| **A form marks all as read** | `mark-all-read` is on the page while something is not read. It names the newest notification that the page knew of, and marks what was raised by then, on every page of them: what was raised since stays not read. A form that names no notification of its user marks nothing. |
+| **It comes a page at a time** | `?page=2` is the second page. An address that names a page which there is not is answered with "not found": a page after the last one, no whole number from 1, or a page twice. |
+| **Nothing names a user** | The user is the one of the session. The form of the notification of another user is the form of no page. |
+
+**The bar at the top of every page** has the link "Notifications", with how many its user has not read: "Notifications (3)". It is counted for each request, so the number is as it was when the page was written. The bar is on the page of an error as well, so a count that cannot be read fails no page: the link is then without a number, and the log has a warning.
+
+**The page of the state of an agent,** `/agents/{id}/state`, has a section "Notifications" when its user has not read something about the agent: each notification with what it is about, when it was raised, and what it says, the latest first, 20 at most, and with a form that marks it as read, which takes it off that page. With nothing to say, the page has no such section.
+
+**The page of the choice,** `/account/notifications`, says whether its user is sent email for critical events, which events those are, and which address an email goes to, and has one form that turns it on, or off. The page of the account says whether it is on, and leads there (FR-UI-2).
+
+## Email for critical events
+
+Users can opt in to email for critical events (FR-NTF-3). The specification names no event as critical. What is critical here is what stops an agent from trading, or puts money at risk: `NotificationTypes.IsCritical`.
+
+| Critical | Not critical |
+|---|---|
+| `AgentHalted`, `AttentionRequired`, `KeyInvalid`, `ModelUnavailable`, `ProtectionFailure`, `LiquidationWarning` | `EntrySkipped`, `ReconciliationMismatch`, `RolesReassigned`, `PositionOpened`, `PositionClosed`, `AgentResumed` |
+
+```csharp
+public interface IEmailOptIn
+{
+    Task<EmailOptInState> StateAsync(HttpContext request);
+    Task SetAsync(HttpContext request, bool on);
+}
+```
+
+| Rule | Detail |
+|---|---|
+| **No email is sent without the opt-in** | A user has a row of `email_opt_ins` or has none, and no user has one until they choose so. A notification is marked for an email when it is raised, for a user who has the row by then. What sends it asks for the row once more: a user who opted out since is sent nothing, and what was marked for them no longer is. So opting in sends nothing that was raised before, and opting out sends nothing that was still to be sent. |
+| **An address that is not verified is sent nothing** | Nothing says yet that it is the user's own. What was marked for it no longer is, and the page of the choice says so. |
+| **The choice is the user's own** | `IEmailOptIn` takes the request, and reads and changes the row of the user of the session. It exposes no key and moves no money, so it asks for no proof of identity, and is in no event of the audit trail. A choice that is made twice changes nothing the second time. |
+| **A job sends, and not what raises** | A notification is raised by a cycle, or by what settles an order, and the email delivery service may take long to answer. The job `notification-email` sends what is marked, every minute: see [background-work.md](background-work.md). |
+| **One message for a user** | With everything that is marked for them by then, oldest first: what each is about, when it was raised, and what it says, as the page says it. Then the address of the page of the notifications, and of the page that turns it off, each on a line of its own, under `Application:PublicUrl`. One event alone is named in the subject, and several are counted there. |
+| **A message that is not taken is sent later** | Where the email delivery service does not take a message, the run says so once, as an error, and ends: what is marked stays so, and the next run asks again. A notification that is still marked a day after it was raised is given up, with a warning: what it tells of is old. A message that was taken and could not be marked as sent is sent again, so a user may be told twice, and never not at all. |
+| **It holds no secret** | An email says what the notifications say, which hold none. The log names the user by id, and holds neither the address nor what a notification says. |
+
+## The data
+
+The migration `AddOrders` adds the table of the notifications, and `AddNotificationEmail` its two columns for email, the indexes that the pages and the job read by, and the table of the choice.
+
+| Table | Columns |
+|---|---|
+| `notifications` | `id`, `user_id`, `type`, `agent_id`, `content`, `is_read`, `created_at`, `email_pending`, `emailed_at` |
+| `email_opt_ins` | `user_id` (the key), `opted_in_at` |
+
+| Rule | Detail |
+|---|---|
+| **The rows go with the account** | `user_id` points at `users` in both tables, and the rows are deleted with the account (FR-ACC-9). |
+| **They are in the export** | The section `notifications` of the export of a user's data holds each, with whether it is read, and when it was sent by email (NFR-SEC-9). The section `emailOptIn` holds one row for a user who opted in, with when, and none for a user who did not: it is a preference. See [accounts.md](accounts.md). |
+| **A row of the choice says that it is on** | A user with no row is sent no email. The row is found by its user, and there is one at the most. |
+| **A notification says what became of its email** | `email_pending` is set while an email is still to be sent for it, and `emailed_at` says when it was handed to the email delivery service. Neither is set for one that no email was to be sent for, or that was given up. A row from before the columns has neither. |
+| **Three indexes** | `(user_id, created_at)` for the page of the notifications, `user_id` over the rows that are not read for the count in the bar, and `created_at` over the rows that are marked for an email for the job. |
 | **The type is stored by its name** | Renaming a member of `NotificationType` needs a migration. What raises a notification adds its member when it is built. |
 
 ## Not built yet
 
-- The other events of FR-NTF-1: a position that was opened or closed, an agent that needs attention for another cause than its account at Binance or a position without protection, a key that is invalid, and a model that is unavailable. And an agent that runs again after a daily halt, or stays halted after it because its key or its team keeps it.
-- The list of all notifications of a user, and marking one as read.
-- Email for critical events, for a user who opted in (FR-NTF-3).
+- An order that failed for another cause than those above: an entry that Binance refused for another cause than what the account holds, an entry that could not be sent, and a close that the team decided and that failed. They are in the record of the cycle and in the log.
+- An agent whose model is reported missing by a call of a cycle, before a sync has marked it (FR-CAT-8): nothing changes its state, so nobody is told.
+- An agent that does not run when a key or a model of it goes: it is asked about them when it is started or resumed, and its user is told of the key alone.
+- A choice of which critical events are sent by email, and a link in an email that turns it off with one press.
 - Showing a notification without a reload of the page (FR-NTF-2).
 - Removing notifications after the days of `Retention:NotificationDays` (NFR-DAT-5).

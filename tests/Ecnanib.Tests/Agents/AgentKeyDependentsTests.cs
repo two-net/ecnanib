@@ -1,10 +1,12 @@
 using Ecnanib.Agents;
 using Ecnanib.Credentials;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.Notifications;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Credentials;
+using Ecnanib.Tests.Notifications;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.WebUi.Pages.Agents;
 using KeyPages = Ecnanib.WebUi.Pages.Account.KeyPages;
@@ -87,10 +89,25 @@ public class AgentKeyDependentsTests
         // And Grace's agent runs: her key is there.
         Assert.Equal("Running", AgentControlTests.StateOf(application, graces).State);
 
+        // Ada is told that each of the two waits for her, and why (FR-NTF-1): once for each,
+        // and nothing about the agents that did not run. Grace is told nothing.
+        const string waits =
+            "The agent in BTCUSDT (Demo) waits for you: its Binance key for Demo was deleted. " + "Store a key that works on the page of your keys, and resume the agent.";
+
+        Assert.Equal(
+            new (NotificationType, Guid?, string)[]
+            {
+                (NotificationType.AttentionRequired, onSpot, waits),
+                (NotificationType.AttentionRequired, onFutures, waits),
+            }.OrderBy(told => told.Item2),
+            await application.ToldAsync(user.Id));
+        Assert.Empty(await application.ToldAsync(grace.Id));
+
         // The page of the agent says the state, what it means, and what to do about it.
         var page = AgentBrowser.Read(await client.PageAsync(AgentBrowser.AgentStatePage(onSpot)));
 
         Assert.Contains("<strong>Attention required</strong>, since 12 November 2026, 09:30 UTC.", page);
+        Assert.Contains($"<strong>Agent needs attention</strong>, 12 November 2026, 09:30 UTC. {waits}", page);
         Assert.Contains(AgentPages.Explain(AgentState.AttentionRequired), page);
         Assert.Contains($"<p>{AgentPages.Says(AgentStateCause.ExchangeKeyDeleted)}</p>", page);
         Assert.Contains("<td>Attention required</td>", await client.PageAsync(AgentBrowser.AgentsPage));
@@ -157,6 +174,23 @@ public class AgentKeyDependentsTests
         Assert.Equal(("AttentionRequired", "ExchangeKeyInvalid", Morning.AddDays(1)), AgentControlTests.StateOf(application, runs));
         Assert.Equal("Paused", AgentControlTests.StateOf(application, paused).State);
 
+        // Its user is told that the key is invalid, and that the agent which ran with it waits
+        // for her (FR-NTF-1): once each, and nothing about the agent that did not run.
+        (NotificationType, Guid?, string)[] told =
+        [
+            (
+                NotificationType.KeyInvalid,
+                null,
+                "Your Binance key for Demo was refused by Binance, and is invalid. The agents that ran with it wait for you. " +
+                "Store a key that works on the page of your keys, and resume them."),
+            (
+                NotificationType.AttentionRequired,
+                runs,
+                "The agent in BTCUSDT (Demo) waits for you: its Binance key for Demo was refused, and is invalid. " + "Store a key that works on the page of your keys, and resume the agent."),
+        ];
+
+        Assert.Equal(told, await application.ToldAsync(user.Id));
+
         // Her session of the day before has ended, so she signs in again. The page of the
         // agent says why it waits for her.
         await client.SignInAsync(Ada);
@@ -179,6 +213,7 @@ public class AgentKeyDependentsTests
         Assert.Equal(
             ["Draft: Created", "Running: UserStarted", "AttentionRequired: ExchangeKeyInvalid"],
             StoredAgentStateChange.Told(application.Database, runs));
+        Assert.Equal(told, await application.ToldAsync(user.Id));
 
         // Binance takes the key again, and the user resumes the agent.
         application.Providers.BinanceAnswer = (_, _) => StandInProviders.TakenInDemo;
@@ -281,6 +316,25 @@ public class AgentKeyDependentsTests
         // And Grace's agent runs: her key is there.
         Assert.Equal("Running", AgentControlTests.StateOf(application, graces).State);
 
+        // Ada is told that each of the two waits for her, with the roles that the key was for
+        // and the mode of each (FR-NTF-1). Grace is told nothing.
+        Assert.Equal(
+            new (NotificationType, Guid?, string)[]
+            {
+                (
+                    NotificationType.AttentionRequired,
+                    onClaude,
+                    "The agent in BTCUSDT (Demo) waits for you: your key for the AI provider of its Market Analyst, Sentiment Analyst, " +
+                    "Strategist and Risk Manager was deleted. " + "Store a key that works on the page of your keys, and resume the agent."),
+                (
+                    NotificationType.AttentionRequired,
+                    mixed,
+                    "The agent in BTCUSDT (Live) waits for you: your key for the AI provider of its Risk Manager was deleted. " +
+                    "Store a key that works on the page of your keys, and resume the agent."),
+            }.OrderBy(told => told.Item2),
+            await application.ToldAsync(user.Id));
+        Assert.Empty(await application.ToldAsync(grace.Id));
+
         // No role was given another model: nothing is put in the place of what the user chose.
         Assert.Equal(
             ["MarketAnalyst: claude-test-model", "SentimentAnalyst: claude-test-model", "Strategist: claude-test-model", "RiskManager: claude-test-model"],
@@ -356,6 +410,24 @@ public class AgentKeyDependentsTests
         Assert.Equal(("AttentionRequired", "AiKeyInvalid", Morning.AddDays(1)), AgentControlTests.StateOf(application, runs));
         Assert.Equal("Paused", AgentControlTests.StateOf(application, paused).State);
 
+        // Its user is told that the key is invalid, by the name of its provider, and that the
+        // agent which ran with it waits for her (FR-NTF-1): once each.
+        (NotificationType, Guid?, string)[] told =
+        [
+            (
+                NotificationType.KeyInvalid,
+                null,
+                "Your key for Claude was refused by the provider, and is invalid. The agents that ran with it wait for you. " +
+                "Store a key that works on the page of your keys, and resume them."),
+            (
+                NotificationType.AttentionRequired,
+                runs,
+                "The agent in BTCUSDT (Demo) waits for you: your key for the AI provider of its Market Analyst, Sentiment Analyst, " +
+                "Strategist and Risk Manager was refused, and is invalid. " + "Store a key that works on the page of your keys, and resume the agent."),
+        ];
+
+        Assert.Equal(told, await application.ToldAsync(user.Id));
+
         // The page of the agent says why it waits for her.
         await client.SignInAsync(Ada);
         var page = AgentBrowser.Read(await client.PageAsync(AgentBrowser.AgentStatePage(runs)));
@@ -377,6 +449,7 @@ public class AgentKeyDependentsTests
         await application.CheckKeysAsync(clock.GetUtcNow());
 
         Assert.Equal(["Running: Created", "AttentionRequired: AiKeyInvalid"], StoredAgentStateChange.Told(application.Database, runs));
+        Assert.Equal(told, await application.ToldAsync(user.Id));
 
         // Claude takes the key again, and lists the model to it. The user resumes the agent.
         application.Providers.AiAnswer = (_, _) => KeyVerdict.Accepted;

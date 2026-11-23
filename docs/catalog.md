@@ -285,7 +285,7 @@ The file of the tests gives one price, to the models of Claude that `claude-pric
 ## Not built yet
 
 - What follows a call that reports that the model does not exist (FR-CAT-8). The gateway answers such a call with the outcome `ModelNotFound`: see "Outcomes" in [ai-providers.md](ai-providers.md). What runs the team of an agent records the call, and the cycle ends as its role says: see "When a role gives no valid result" in [team.md](team.md). Moving the agent to Attention required then is not built: it takes an operation of Agents that a cycle can ask. Until then such an agent is called again at each close, until a sync marks the model. The Catalog is not told, and marks nothing for it: a model is marked by the provider's list alone.
-- Telling the user that a model is unavailable (FR-NTF-1). In-app notifications are not built.
+- Telling the user of an agent that does not run that a model of its team is unavailable (FR-NTF-1). The user of an agent that ran with it is told, by Agents, which moves the agent: see "When a model goes" in [agents.md](agents.md). The catalog names no user, and may not use Notifications.
 - Telling an agent that its model is no longer eligible, after the patterns of the file were changed. The model cannot be selected anew, and an agent that has it keeps it: it is not started or resumed with it, and one that runs with it runs on.
 - Times in the user's own time zone on the catalog screen (NFR-USA-3). The pages write a time through `PageTimes`, in UTC.
 - The operator's button that triggers a sync, and its event in the audit trail (FR-OPS-4, FR-OPS-5). `ICatalogSync.SyncAsync` is what it calls.

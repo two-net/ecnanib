@@ -427,7 +427,8 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | `legalAcceptances` | Each document that was accepted, with its version and the time. |
 | `sessions` | Each browser that is signed in: when it signed in, and when it was last used. |
 | `auditEvents` | Each event of the account in the audit trail: the action, what it was done to, when, and the IP address it came from. |
-| `notifications` | Each notification of the user: what it is about, the id of the agent that it is about, what it says, whether it is read, and when it was raised. |
+| `notifications` | Each notification of the user: what it is about, the id of the agent that it is about, what it says, whether it is read, when it was raised, and when it was sent by email as well, where it was. |
+| `emailOptIn` | Whether the user opted in to email for critical events (FR-NTF-3): one row with when they did, and none for a user who is sent no such email. |
 | `aiKeys` | Each key of an AI provider that is stored: its id, the provider, its last four characters, when it was saved, what its last check found and when, and the identifiers of the models that the provider listed to it, or nothing where it has listed none yet. Never the key. |
 | `exchangeKeys` | Each Binance credential that is stored: its id, the environment, the last four characters of the API key, when it was saved, what its last check found and when, and what Binance said it may do: trade on Spot, trade on Futures, and work only from listed addresses. Never a key. |
 | `agents` | Each agent: its id, its name, its mode, market, symbol, and timeframe, its allocated capital and the asset it is in, its risk settings, its state with its cause and since when, when it was created, whether its roles are reassigned automatically, and when the service last reassigned one. |
@@ -459,7 +460,7 @@ public interface IExportedPart
 
 - **A part is a section of the file,** beside the ones of Accounts, under the name it gives. It is there also when the user has no such rows, as an empty list.
 - **A part asks for the rows of the user it is given,** with `OwnedBy`, and holds no secret.
-- Credentials hands over `aiKeys` and `exchangeKeys` this way, Agents hands over `agents`, `agentRoles`, and `agentStateChanges`, and Notifications hands over `notifications`. See [credentials.md](credentials.md), [agents.md](agents.md), and [notifications.md](notifications.md).
+- Credentials hands over `aiKeys` and `exchangeKeys` this way, Agents hands over `agents`, `agentRoles`, and `agentStateChanges`, and Notifications hands over `notifications` and `emailOptIn`, which is a preference of the user. See [credentials.md](credentials.md), [agents.md](agents.md), and [notifications.md](notifications.md).
 - **Agents hands over `lessons` as well, which Experience keeps.** Experience may not use Accounts, and stays so: it recalls lessons into prompts, and what feeds a prompt is kept out of reach of personal data (FR-PRM-9). Agents may use both, and reads the rows of Experience as they are stored. See "The data" in [experience.md](experience.md).
 - **Agents hands over `boardOptOuts` in the same way,** for the same reason: Experience keeps who left the platform-wide board. It is a preference of the user, and so it is in the export.
 
@@ -613,7 +614,7 @@ Personal data is limited to the email address, the password hash, and preference
 |---|---|
 | The email address | `users.email` |
 | The password hash | `users.password_hash` |
-| Preferences | One: whether the user left the platform-wide board (FR-EXP-10). It is a row of `board_opt_outs`, which Experience keeps: the id of the user and when they left, and no row for a user who did not. Neither column can say who someone is, so `PersonalDataRules` lists none of them. It is in the export, and goes with the account. See "Leaving the board" in [experience.md](experience.md). |
+| Preferences | Two. Whether the user left the platform-wide board (FR-EXP-10) is a row of `board_opt_outs`, which Experience keeps: the id of the user and when they left, and no row for a user who did not. See "Leaving the board" in [experience.md](experience.md). Whether the user is sent email for critical events (FR-NTF-3) is a row of `email_opt_ins`, which Notifications keeps: the id of the user and when they opted in, and no row for a user who did not. See "Email for critical events" in [notifications.md](notifications.md). No column of either can say who someone is, so `PersonalDataRules` lists none of them. Each is in the export, and goes with the account. |
 | **Beyond the list:** the IP address a security-relevant action came from | `audit_events.origin`. See "The audit trail". |
 
 - **The origin is the one exception,** and it is a decision: the specification lists it for an audit event, and an audit trail without it does not show a takeover. It is in the export, and goes with the account.
@@ -649,6 +650,8 @@ The first three `two_factor_` columns are empty together or set together: two-fa
 
 Accounts depends on no other component, so it cannot call Notifications. It declares `IAccountMailer`, and Notifications implements it: `AccountMailer` writes the messages and hands them to `IEmailAdapter`. See "When a lower component must trigger a higher one" in [architecture.md](architecture.md).
 
+These are the messages of an account: a link, or a notice of what was done to the account. They go to the address that the request names, whoever asked. The one other email is what Notifications sends of its own, about a critical event, to a user who opted in and whose address is verified: see "Email for critical events" in [notifications.md](notifications.md).
+
 The adapter is `SmtpEmailAdapter` in `Notifications/Adapters/Smtp`. It sends through the mail server of the `Email` section, with the package MailKit, over a connection of its own for each message. It logs each send with its outcome and duration, and never the address.
 
 The file has no key for encryption. The port and the sign-in decide it:
@@ -665,7 +668,7 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
 - Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
-- Preferences, but for one. Whether a user left the platform-wide board is stored, and is in the export. No other preference is stored yet, and the account page has no settings of its own: it says that there is that choice, and leads to the board, where it is made. When another preference is stored, it is personal data of an allowed kind, and it is in the export.
+- Preferences, but for two. Whether a user left the platform-wide board is stored, and so is whether they are sent email for critical events, and both are in the export. The account page has no settings of its own: it says that there are those choices, and leads to the board and to the page of the email, where each is made. Neither a theme nor a preference for motion is stored. When another preference is stored, it is personal data of an allowed kind, and it is in the export.
 - Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
 - The rest of the audit trail: the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.

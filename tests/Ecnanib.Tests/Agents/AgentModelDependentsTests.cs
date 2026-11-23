@@ -1,11 +1,13 @@
 using Ecnanib.Agents;
 using Ecnanib.AiProviderGateway;
+using Ecnanib.Notifications;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Catalog;
 using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Logging;
+using Ecnanib.Tests.Notifications;
 using Ecnanib.Tests.Settings;
 using Ecnanib.WebUi.Pages.Agents;
 
@@ -89,6 +91,27 @@ public class AgentModelDependentsTests
         // The agent that uses the other model runs, and the one that did not run is as it was.
         Assert.Equal("Running", AgentControlTests.StateOf(application, onOpus).State);
         Assert.Equal("Paused", AgentControlTests.StateOf(application, paused).State);
+
+        // The user of each agent that waits is told that a model of its team is unavailable,
+        // with the roles that had it (FR-NTF-1): once, and each their own agent alone.
+        Assert.Equal(
+            [
+                (
+                    NotificationType.ModelUnavailable,
+                    (Guid?)onHaiku,
+                    "The agent in BTCUSDT (Demo) waits for you: the model of its Strategist is no longer offered by its provider. " +
+                    "Give the role another model, and resume the agent."),
+            ],
+            await application.ToldAsync(user.Id));
+        Assert.Equal(
+            [
+                (
+                    NotificationType.ModelUnavailable,
+                    (Guid?)graces,
+                    "The agent in BTCUSDT (Demo) waits for you: the models of its Market Analyst, Sentiment Analyst, Strategist and " +
+                    "Risk Manager are no longer offered by their provider. Give each of these roles another model, and resume the agent."),
+            ],
+            await application.ToldAsync(grace.Id));
 
         // No other model was put in the place of the one that is gone: every role has what its
         // user gave it.

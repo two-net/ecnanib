@@ -1,5 +1,6 @@
 using Ecnanib.Accounts;
 using Ecnanib.Notifications.Adapters.Smtp;
+using Ecnanib.Platform.BackgroundWork;
 
 namespace Ecnanib.Notifications;
 
@@ -16,14 +17,19 @@ public static class NotificationsModule
         // docs/architecture.md.
         services.AddSingleton<IAccountMailer, AccountMailer>();
 
-        // The in-app notifications of users: what raises one, and what reads the ones that a
-        // user has not read (FR-NTF-1). What is built is what four events raise, among them
-        // the alert of a failure of the protection of a position (FR-RSK-7) and the warning
-        // of a position that approaches liquidation (FR-BIN-F5): see docs/notifications.md.
+        // The in-app notifications of users: what raises one, what reads them for their user,
+        // and what marks them as read (FR-NTF-1). See docs/notifications.md for what raises one.
         services.AddSingleton<INotifications, StoredNotifications>();
 
-        // The part of the export of a user's data that this component keeps (NFR-SEC-9).
+        // Whether a user is sent email for critical events, which the user chooses, and the job
+        // that sends the notifications about them, every minute (FR-NTF-3).
+        services.AddSingleton<IEmailOptIn, StoredEmailOptIn>();
+        services.AddSingleton<NotificationEmails>();
+        services.AddBackgroundJob<NotificationEmailJob>();
+
+        // The parts of the export of a user's data that this component keeps (NFR-SEC-9).
         services.AddSingleton<IExportedPart, NotificationsExport>();
+        services.AddSingleton<IExportedPart, EmailOptInExport>();
 
         return services;
     }

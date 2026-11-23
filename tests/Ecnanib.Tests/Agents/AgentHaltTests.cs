@@ -1,8 +1,10 @@
 using Ecnanib.Agents;
+using Ecnanib.Notifications;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Credentials;
+using Ecnanib.Tests.Notifications;
 using Ecnanib.WebUi.Pages.Agents;
 using Microsoft.EntityFrameworkCore;
 
@@ -360,14 +362,67 @@ public class AgentHaltTests
         Assert.Contains(application.Events(), written => written.Template.Contains("the Binance key for {TradingMode} blocks it", StringComparison.Ordinal));
         Assert.Contains(application.Events(), written => written.Template.Contains("of the roles of its team cannot work", StringComparison.Ordinal));
 
+        // Their users are told (FR-NTF-1): that an agent runs again, and of one that stays
+        // halted, why, and what puts it right.
+        Assert.Equal(
+            new (NotificationType, Guid?, string)[]
+            {
+                (
+                    NotificationType.AgentResumed,
+                    over,
+                    "The agent in BTCUSDT (Live) runs again: the UTC day in which its daily loss limit halted it is over, and the service resumed it."),
+                (
+                    NotificationType.AgentResumed,
+                    late,
+                    "The agent in SOLUSDT (Demo) runs again: the UTC day in which its daily loss limit halted it is over, and the service resumed it."),
+                (
+                    NotificationType.AttentionRequired,
+                    noTeam,
+                    "The agent in BTCUSDT (Demo) stays halted after the day of its daily loss limit: its Market Analyst, Sentiment Analyst, " +
+                    "Strategist and Risk Manager cannot work. Give each of these roles a model that you can select, or store a key that " +
+                    "works for its provider. The service resumes it once that is put right. This is said once in a day for an agent."),
+            }.OrderBy(told => told.Item2).ThenBy(told => told.Item3, StringComparer.Ordinal),
+            await application.ToldAsync(ada.Id));
+
+        const string keeps =
+            "The agent in BTCUSDT (Demo) stays halted after the day of its daily loss limit: you have stored no Binance key for Demo. " +
+            "Store one on the page of your keys. The service resumes it once that is put right. This is said once in a day for an agent.";
+
+        Assert.Equal([(NotificationType.AttentionRequired, (Guid?)noKey, keeps)], await application.ToldAsync(grace.Id));
+
         await application.GiveExchangeKeyAsync(grace.Id, NextDay);
         clock.Set(NextDay.AddMinutes(15));
 
         Assert.Equal(1, await application.AgentHalts.EndDailyHaltsAsync(TestContext.Current.CancellationToken));
         Assert.Equal(("Running", "DailyLossHaltEnded", NextDay.AddMinutes(15)), AgentControlTests.StateOf(application, noKey));
 
+        // The halts are asked about with every close, and what keeps an agent halted is said
+        // once in a day: Ada, whose agent still has no team, is told nothing again.
+        Assert.Equal(3, (await application.ToldAsync(ada.Id)).Count);
+        Assert.Equal(
+            [
+                (NotificationType.AttentionRequired, (Guid?)noKey, keeps),
+                (
+                    NotificationType.AgentResumed,
+                    (Guid?)noKey,
+                    "The agent in BTCUSDT (Demo) runs again: the UTC day in which its daily loss limit halted it is over, and the service resumed it."),
+            ],
+            await application.ToldAsync(grace.Id));
+
         // And a run that finds nothing to end changes nothing.
         Assert.Equal(0, await application.AgentHalts.EndDailyHaltsAsync(TestContext.Current.CancellationToken));
+
+        // A day later the agent that was halted today runs again, and Ada is told once more of
+        // the agent that still has no team.
+        clock.Set(NextDay.AddDays(1).AddMinutes(15));
+        Assert.Equal(1, await application.AgentHalts.EndDailyHaltsAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(("Running", "DailyLossHaltEnded", NextDay.AddDays(1).AddMinutes(15)), AgentControlTests.StateOf(application, today));
+
+        var told = await application.ToldAsync(ada.Id);
+
+        Assert.Equal(2, told.Count(said => said.Type == NotificationType.AttentionRequired && said.AgentId == noTeam));
+        Assert.Single(told, said => said.Type == NotificationType.AgentResumed && said.AgentId == today);
+        Assert.Equal(5, told.Count);
     }
 
     [Fact]

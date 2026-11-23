@@ -32,6 +32,11 @@ internal static class ExportRules
         // its own tests say what the section holds: see NotificationTests.
         ["notifications"] = "notifications",
 
+        // Whether the user opted in to email for critical events (FR-NTF-3): a preference that
+        // is stored, which is in the export. Notifications keeps the row, and hands it over:
+        // see NotificationEmailTests for what the section holds.
+        ["email_opt_ins"] = "emailOptIn",
+
         // Which keys are stored, each by its last four characters, and never a key. Credentials
         // hands them over, and its own tests say what the sections hold: see KeyPageTests.
         ["ai_credentials"] = "aiKeys",
@@ -49,7 +54,7 @@ internal static class ExportRules
         // use Accounts, so Agents hands them over: see LessonPageTests for what the section holds.
         ["lessons"] = "lessons",
 
-        // Whether the user left the platform-wide board (FR-EXP-10): the one preference that is
+        // Whether the user left the platform-wide board (FR-EXP-10): a preference that is
         // stored, which is in the export. Experience keeps the row, so Agents hands it over as
         // well: see BoardPageTests for what the section holds.
         ["board_opt_outs"] = "boardOptOuts",
@@ -153,8 +158,8 @@ public class DataExportTests
         Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
         Assert.Equal(
             [
-                "exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "notifications", "aiKeys", "exchangeKeys",
-                "agents", "agentRoles", "agentStateChanges", "lessons", "boardOptOuts",
+                "exportedAt", "account", "legalAcceptances", "sessions", "auditEvents", "notifications", "emailOptIn", "aiKeys",
+                "exchangeKeys", "agents", "agentRoles", "agentStateChanges", "lessons", "boardOptOuts",
             ],
             NamesIn(export));
         Assert.Equal(Morning.AddMinutes(5), export.GetProperty("exportedAt").GetDateTimeOffset());
@@ -314,6 +319,7 @@ public class DataExportTests
         await application.GiveNotificationAsync(grace.Id, gracesAgent, clock.GetUtcNow());
         await application.GiveLessonAsync(grace.Id, gracesAgent, clock.GetUtcNow());
         await application.BoardContribution.SetAsync(grace.Id, contributes: false, TestContext.Current.CancellationToken);
+        await application.GiveEmailOptInAsync(grace.Id, clock.GetUtcNow());
         Assert.All(
             ExportRules.Exported.Keys,
             table => Assert.True(application.RowsOf(grace.Id)[table].Count > 0, $"Grace has no row in {table}, so nothing shows that it stays out."));
@@ -346,8 +352,10 @@ public class DataExportTests
         Assert.Equal(0, export.GetProperty("lessons").GetArrayLength());
 
         // She has not left the platform-wide board, so the export names no such choice: the one
-        // that there is is Grace's.
+        // that there is is Grace's. And so it is with email for critical events, which she has
+        // not opted in to.
         Assert.Equal(0, export.GetProperty("boardOptOuts").GetArrayLength());
+        Assert.Equal(0, export.GetProperty("emailOptIn").GetArrayLength());
 
         // And nothing in it is Grace's: not her address, not her id, and not a time of hers.
         Assert.DoesNotContain("grace", text, StringComparison.OrdinalIgnoreCase);
@@ -385,6 +393,7 @@ public class DataExportTests
         await application.GiveNotificationAsync(ada.Id, agent, clock.GetUtcNow());
         await application.GiveLessonAsync(ada.Id, agent, clock.GetUtcNow());
         await application.BoardContribution.SetAsync(ada.Id, contributes: false, TestContext.Current.CancellationToken);
+        await application.GiveEmailOptInAsync(ada.Id, clock.GetUtcNow());
 
         var rows = application.RowsOf(ada.Id);
         var export = JsonDocument.Parse(await client.PageAsync(Export)).RootElement;

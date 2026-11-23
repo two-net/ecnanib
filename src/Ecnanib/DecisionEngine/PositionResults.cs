@@ -1,6 +1,9 @@
+using System.Globalization;
 using Ecnanib.Agents;
 using Ecnanib.Experience;
+using Ecnanib.Notifications;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Shared;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.DecisionEngine;
@@ -58,6 +61,7 @@ internal sealed class PositionResults(
     IDbContextFactory<EcnanibDbContext> contexts,
     IAgentHalts agents,
     ILossLimits limits,
+    INotifications notifications,
     TimeProvider clock,
     ILogger<PositionResults> logger)
 {
@@ -197,7 +201,65 @@ internal sealed class PositionResults(
             position.ExitReason,
             result.Complete);
 
+        // Its user is told that it was closed now, and once: with what it made, which is known
+        // when its result is, and a position has one result (FR-NTF-1).
+        await TellAsync(position, result);
+
         return position.AgentId;
+    }
+
+    /// <summary>
+    /// Tells the user of a position that it was closed, how, and what it made. That it could
+    /// not be told is said, and stops nothing: the result is recorded.
+    /// </summary>
+    private async Task TellAsync(Position position, PositionResult result)
+    {
+        try
+        {
+            await notifications.RaiseAsync(
+                position.UserId, NotificationType.PositionClosed, position.AgentId, ClosedSays(position, result), CancellationToken.None);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            logger.LogError(
+                error, "The user {UserId} could not be told that the position of agent {AgentId} was closed", position.UserId, position.AgentId);
+        }
+    }
+
+    /// <summary>
+    /// What the notification of a position that was closed says: how it was closed, and its net
+    /// result in the asset that its symbol is priced in, and in R where that is known. The side
+    /// is said on the Futures market, where a position is long or short, and so is the funding.
+    /// </summary>
+    internal static string ClosedSays(Position position, PositionResult result)
+    {
+        var spot = position.Market == Market.Spot;
+        var what = spot ? "The position" : position.Side == PositionSide.Long ? "The long position" : "The short position";
+
+        var how = position.ExitReason switch
+        {
+            ExitReason.StopLoss => " by its stop-loss",
+            ExitReason.TakeProfit => " by its take-profit",
+            ExitReason.TeamClose => " by the team of the agent",
+            ExitReason.UserClose => " by you",
+            ExitReason.ProtectionFailed => " by the service, because its protection could not be placed",
+            ExitReason.LossLimit => " by the service, because the agent reached a loss limit",
+            ExitReason.ClosedAtExchange => " at Binance, and by no order of the agent",
+            _ => string.Empty,
+        };
+
+        var made = result.NetResult < 0m ? "lost" : "made";
+        var after = spot ? "after fees" : "after fees and funding";
+
+        // To 2 decimal places, as a multiple of what was risked is read: -1 R is the whole of it.
+        var inR = result.ResultInR is { } r
+            ? $", which is {Math.Round(r, 2, MidpointRounding.AwayFromZero).ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture)} R"
+            : string.Empty;
+
+        var complete = result.Complete ? string.Empty : " Not all of it could be read from Binance, so this is what is known of it.";
+
+        return $"{what} in {position.Symbol} ({position.Mode}) was closed{how}. It {made} {Written.Number(Math.Abs(result.NetResult))} " +
+            $"{result.Asset} {after}{inR}.{complete}";
     }
 
     /// <summary>

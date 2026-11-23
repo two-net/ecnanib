@@ -445,8 +445,49 @@ fieldset {
     margin-top: 0.5rem;
 }
 
+    /* The form that marks one as read, under what it says, and close to it. */
+    .agent-notifications > li > form {
+        margin: 0.25rem 0 0;
+    }
+
+        .agent-notifications > li > form > button[type=submit] {
+            margin-top: 0;
+        }
+
 @media (prefers-color-scheme: dark) {
     .agent-notifications {
+        border-left-color: #f2b8b5;
+    }
+}
+
+/* The notifications of a user (FR-NTF-1): one under another, each set apart from the one above
+   it by a line. One that is not read says so in words, and is marked by a line at its side, as
+   on the page of its agent. What a notification says wraps, also a word that is longer than a
+   narrow screen is wide. */
+.notifications {
+    list-style: none;
+    margin: 1rem 0;
+    padding: 0;
+    max-width: 48rem;
+}
+
+.notification {
+    border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    padding: 0.5rem 0 0 0.75rem;
+    border-left: 0.25rem solid transparent;
+    overflow-wrap: anywhere;
+}
+
+    .notification > p {
+        margin: 0 0 0.5rem;
+    }
+
+.notification-unread {
+    border-left-color: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+    .notification-unread {
         border-left-color: #f2b8b5;
     }
 }

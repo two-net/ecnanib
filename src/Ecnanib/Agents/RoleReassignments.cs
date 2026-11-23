@@ -353,7 +353,8 @@ internal sealed class RoleReassignments(
         return name.Length <= length ? name : $"{name[..(length - 1)].TrimEnd()}…";
     }
 
-    private static string NameOf(Role role) => role switch
+    /// <summary>The name of a role as a notification says it.</summary>
+    internal static string NameOf(Role role) => role switch
     {
         Role.MarketAnalyst => "Market Analyst",
         Role.SentimentAnalyst => "Sentiment Analyst",

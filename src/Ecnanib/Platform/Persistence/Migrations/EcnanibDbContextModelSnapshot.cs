@@ -2184,6 +2184,22 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("shadow_trades", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Notifications.EmailOptIn", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("OptedInAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opted_in_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_email_opt_ins");
+
+                    b.ToTable("email_opt_ins", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Notifications.Notification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2204,6 +2220,14 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<bool>("EmailPending")
+                        .HasColumnType("boolean")
+                        .HasColumnName("email_pending");
+
+                    b.Property<DateTimeOffset?>("EmailedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("emailed_at");
+
                     b.Property<bool>("IsRead")
                         .HasColumnType("boolean")
                         .HasColumnName("is_read");
@@ -2219,6 +2243,17 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_notifications");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_notifications_created_at")
+                        .HasFilter("email_pending");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_notifications_user_id")
+                        .HasFilter("NOT is_read");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_notifications_user_id_created_at");
 
                     b.HasIndex("UserId", "AgentId", "CreatedAt")
                         .HasDatabaseName("ix_notifications_user_id_agent_id_created_at");
@@ -2712,6 +2747,16 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_shadow_trades_decision_cycles_cycle_id_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Notifications.EmailOptIn", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_email_opt_ins_users_user_id");
                 });
 
             modelBuilder.Entity("Ecnanib.Notifications.Notification", b =>

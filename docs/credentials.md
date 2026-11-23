@@ -146,9 +146,9 @@ All but the first come to `KeyValidator`, which reads the stored key, asks the p
 | Result | What is written |
 |---|---|
 | The provider took the key. | `Valid`, the time, and for Binance what the key may do. For an AI provider, the models that it then lists to the key: see "The models a key can use". |
-| The provider refused it. | `Invalid`, and the time. What depends on the key is told: see "What depends on a key". The key stays stored, and is asked about again every day: it is valid again when the provider takes it. |
+| The provider refused it. | `Invalid`, and the time. What depends on the key is told: see "What depends on a key". Its user is told: see "Telling the user". The key stays stored, and is asked about again every day: it is valid again when the provider takes it. |
 | The provider gave no answer. | Nothing. The key is as it was, and still due. |
-| Binance reports that the key can withdraw. | The key is deleted. See "Binance permissions". |
+| Binance reports that the key can withdraw. | The key is deleted, and its user is told. See "Binance permissions", and "Telling the user". |
 | The stored value does not decrypt. | Nothing, and nobody is asked. The log has an `Error`. See "Changing the master key" in [security.md](security.md). |
 
 | Rule | Detail |
@@ -159,6 +159,20 @@ All but the first come to `KeyValidator`, which reads the stored key, asks the p
 | A key is asked about once a minute at most. | A provider that gives no answer leaves no time in the row, so the attempts are counted in memory. A button that is pressed again, or a call that fails again and again, does not have the provider asked each time. |
 | One key does not keep the others from being checked. | The job logs what goes wrong with a key as an `Error`, and goes on. |
 | A provider that is down is asked once in a run. | After the first key that it gives no answer about, the job leaves that provider, or that environment of Binance, alone until the next hour. |
+
+### Telling the user
+
+In-app notifications cover a key that is invalid (FR-NTF-1). `KeyValidator` raises one of the type `KeyInvalid` for the user of the key, about no agent: see [notifications.md](notifications.md).
+
+| Rule | Detail |
+|---|---|
+| **It is said once, when the key becomes invalid.** | When a key that was not invalid is refused. A key that is still refused the next day says nothing again, and one that was valid in between says it anew. |
+| **It is said for a key that the service deletes.** | The Binance key that turned out to be able to withdraw: its user did not delete it, and is told that the service did, and why. A key that its user deletes says nothing of itself. |
+| **It is stored with the change to the key.** | Inside the transaction that marks the key or deletes it, with `INotifications.RaiseInAsync`: its user is told when the key is marked, and not when it is not. |
+| **It holds no part of the key** (FR-KEY-8). | It names the provider, as users read it, or the environment of Binance, and not the last four characters of the key. |
+| **The agents that ran with the key are said apart.** | Agents tells the user of each agent that came to wait for them: see "When a key goes" in [agents.md](agents.md). |
+
+It is a critical event, so a user who opted in is sent it by email as well (FR-NTF-3).
 
 The log has an event for a key that turned out invalid, was deleted, or could not be checked, under the area `Ecnanib.Credentials.KeyValidator`: `The key of user {UserId} for the AI provider {Provider} was refused by the provider, and is invalid`. A key that is still valid is not logged: the log of outbound calls has the call.
 
@@ -314,4 +328,3 @@ Whether a key can withdraw is not stored: a key that can is not.
 
 - Telling Agents when the list of the models that a key can use changes: when a key is replaced, and when a check records a list that lacks a model that an agent runs with. `IKeyDependents` is told when a key is deleted or becomes invalid, and not then. See "Not built yet" in [agents.md](agents.md).
 - Saying on `/account/keys` which models a key can use, or that it is not known. The export of a user's data says it.
-- Telling the user that a key is invalid (FR-NTF-1). The list of keys says so. A notification is raised for a failure of the protection of a position only: see [notifications.md](notifications.md).

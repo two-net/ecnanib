@@ -2,11 +2,13 @@ using System.Collections.Concurrent;
 using Ecnanib.Accounts;
 using Ecnanib.Credentials;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.Notifications;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Logging;
+using Ecnanib.Tests.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -169,6 +171,28 @@ public class KeyRevalidationTests
             ],
             dependents.Told);
 
+        // Its user is told of each key, once, in the transaction that marked it: by the name
+        // of its provider, and with no part of the key (FR-NTF-1, FR-KEY-8).
+        Assert.Equal(
+            [
+                (
+                    NotificationType.KeyInvalid,
+                    null,
+                    "Your Binance key for Demo was refused by Binance, and is invalid. The agents that ran with it wait for you. " +
+                    "Store a key that works on the page of your keys, and resume them."),
+                (
+                    NotificationType.KeyInvalid,
+                    (Guid?)null,
+                    "Your key for Claude was refused by the provider, and is invalid. The agents that ran with it wait for you. " +
+                    "Store a key that works on the page of your keys, and resume them."),
+            ],
+            await application.ToldAsync(user.Id));
+        Assert.All(
+            await application.ToldAsync(user.Id),
+            told => Assert.All(
+                new[] { Keys.Claude, Keys.BinanceApi, Keys.BinanceSecret, Keys.Claude[^4..], Keys.BinanceApi[^4..] },
+                secret => Assert.DoesNotContain(secret, told.Content)));
+
         // The key stays stored, as it was: its user replaces it, or puts right what is wrong.
         Assert.Equal(encrypted, StoredAiCredential.Of(application.Database, user.Id, "claude").EncryptedValue);
         await client.SignInAsync(Ada);
@@ -190,6 +214,7 @@ public class KeyRevalidationTests
 
         Assert.Equal(("Invalid", Morning.AddDays(2)), StatusOfAiKey(application, user.Id));
         Assert.Equal(2, dependents.Told.Count);
+        Assert.Equal(2, (await application.ToldAsync(user.Id)).Count);
 
         // Once the provider takes it again, it is valid again, and can become invalid anew.
         application.Providers.AiAnswer = (_, _) => KeyVerdict.Accepted;
@@ -203,6 +228,7 @@ public class KeyRevalidationTests
         Assert.Equal(("Invalid", Morning.AddDays(4)), StatusOfAiKey(application, user.Id));
         Assert.Equal(new Told("invalid", user.Id, "claude", InTransaction: true, StatusThen: "Valid"), dependents.Told[^1]);
         Assert.Equal(3, dependents.Told.Count);
+        Assert.Equal(3, (await application.ToldAsync(user.Id)).Count);
     }
 
     [Fact]
@@ -225,6 +251,10 @@ public class KeyRevalidationTests
         Assert.Equal(("Valid", Morning.AddDays(-2)), StatusOfAiKey(application, ada.Id));
         Assert.Equal(("Valid", Morning.AddDays(-1)), StatusOfAiKey(application, grace.Id));
         Assert.Equal(2, dependents.Told.Count);
+
+        // And nobody is told that a key is invalid which is not marked so.
+        Assert.Empty(await application.ToldAsync(ada.Id));
+        Assert.Empty(await application.ToldAsync(grace.Id));
 
         // The keys after them were checked all the same.
         Assert.Equal(("Valid", Morning), StatusOfExchangeKey(application, ada.Id, "Demo"));
@@ -283,6 +313,18 @@ public class KeyRevalidationTests
         var said = Assert.Single(application.Events(), written => written.Area == ValidatorArea);
         Assert.Equal("The key of user {UserId} of Binance for {TradingMode} can withdraw, as Binance reports, and was deleted", said.Template);
         Assert.Equal((user.Id.ToString(), "Live"), (said.Text("UserId"), said.Text("TradingMode")));
+
+        // Its user did not delete it, so they are told that the service did, and why (FR-NTF-1).
+        Assert.Equal(
+            [
+                (
+                    NotificationType.KeyInvalid,
+                    (Guid?)null,
+                    "Your Binance key for Live can withdraw, as Binance reports, so the service deleted it: it keeps no key that can " +
+                    "withdraw. The agents that ran with it wait for you. Store a key without the permission to withdraw on the page of " +
+                    "your keys, and resume them."),
+            ],
+            await application.ToldAsync(user.Id));
 
         // The list has the place empty again.
         await client.SignInAsync(Ada);

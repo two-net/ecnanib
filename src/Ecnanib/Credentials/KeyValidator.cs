@@ -3,6 +3,7 @@ using Ecnanib.Accounts;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.Catalog;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.Notifications;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
 using Ecnanib.Shared;
@@ -48,6 +49,7 @@ internal sealed class KeyValidator(
     ICatalogSync catalog,
     KeyModels models,
     IEnumerable<IKeyDependents> dependents,
+    INotifications notifications,
     TimeProvider clock,
     ILogger<KeyValidator> logger) : IKeyValidation
 {
@@ -155,6 +157,17 @@ internal sealed class KeyValidator(
                     {
                         await dependent.AiKeyInvalidAsync(context, userId, provider, cancellationToken);
                     }
+
+                    // Its user is told once as well, in the same transaction: so they are told
+                    // when the key is marked, and not when it is not (FR-NTF-1).
+                    await notifications.RaiseInAsync(
+                        context,
+                        userId,
+                        NotificationType.KeyInvalid,
+                        agentId: null,
+                        $"Your key for {await NameOfAsync(context, provider, cancellationToken)} was refused by the provider, and is invalid. " +
+                        "The agents that ran with it wait for you. Store a key that works on the page of your keys, and resume them.",
+                        cancellationToken);
                 }
 
                 await Holding(context.Set<AiCredential>(), stored).ExecuteUpdateAsync(
@@ -246,6 +259,18 @@ internal sealed class KeyValidator(
 
                 await Holding(context.Set<ExchangeCredential>(), stored).ExecuteDeleteAsync(cancellationToken);
 
+                // Its user did not delete it, so they are told that the service did, and why,
+                // in the same transaction (FR-NTF-1).
+                await notifications.RaiseInAsync(
+                    context,
+                    userId,
+                    NotificationType.KeyInvalid,
+                    agentId: null,
+                    $"Your Binance key for {environment} can withdraw, as Binance reports, so the service deleted it: it keeps no key that " +
+                    "can withdraw. The agents that ran with it wait for you. Store a key without the permission to withdraw on the page " +
+                    "of your keys, and resume them.",
+                    cancellationToken);
+
                 // The service did it, for the owner of the key: no request is at hand.
                 await AuditTrail.RecordAsync(
                     context,
@@ -307,6 +332,16 @@ internal sealed class KeyValidator(
                     {
                         await dependent.ExchangeKeyInvalidAsync(context, userId, environment, cancellationToken);
                     }
+
+                    // Its user is told once as well, in the same transaction (FR-NTF-1).
+                    await notifications.RaiseInAsync(
+                        context,
+                        userId,
+                        NotificationType.KeyInvalid,
+                        agentId: null,
+                        $"Your Binance key for {environment} was refused by Binance, and is invalid. The agents that ran with it wait " +
+                        "for you. Store a key that works on the page of your keys, and resume them.",
+                        cancellationToken);
                 }
 
                 // What the key may do stays as Binance last said it: a refusal says nothing about it.
@@ -358,6 +393,14 @@ internal sealed class KeyValidator(
     }
 
     /// <summary>The row of a key, while it still holds the value that was read: not a key that took its place.</summary>
+    /// <summary>The name of an AI provider as users read it, such as "Claude", for what a notification says.</summary>
+    private static async Task<string> NameOfAsync(EcnanibDbContext context, AiProviderCode provider, CancellationToken cancellationToken) =>
+        await context.Set<AiProvider>()
+            .AsNoTracking()
+            .Where(row => row.Code == provider)
+            .Select(row => row.DisplayName)
+            .SingleOrDefaultAsync(cancellationToken) ?? provider.Value;
+
     private static IQueryable<AiCredential> Holding(IQueryable<AiCredential> rows, StoredValue stored) =>
         rows.Where(credential => credential.Id == stored.Id && credential.EncryptedValue == stored.EncryptedValue);
 

@@ -167,7 +167,7 @@ public interface IBoardContribution
 | **It changes nothing else.** | The user still sees the board, and their own records, strength scores, and lessons are as they were. |
 | **A choice that is made twice changes nothing the second time.** | Of two forms that are sent at the same time, the second writes nothing: the row is written with `ON CONFLICT DO NOTHING`. Leaving again keeps when the user left. |
 | **It is the user's own.** | The row is asked for with `OwnedBy`, and the statement that writes it names the owner itself. `BoardRecordsTests` has the test with two users, which is marked for `board_opt_outs`. |
-| **It is a preference of the user,** the first that is stored. | It is in the export of the user's data, and goes with the account: see "The data". It is in no event of the audit trail: it exposes no key and moves no money. |
+| **It is a preference of the user,** the first that was stored. | It is in the export of the user's data, and goes with the account: see "The data". It is in no event of the audit trail: it exposes no key and moves no money. |
 | **It takes no lock on the account.** | Nothing is decided from what the account is, so nothing has to hold it still. A user whose account is deleted in the moment that they leave the board has that one request fail: the key to the account refuses the row, and none is left behind. |
 
 ## The measure of each role

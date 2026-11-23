@@ -391,6 +391,20 @@ internal sealed class AccountsApplication : IDisposable
     public IBackgroundJob LessonWriting =>
         _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.LessonWritingKey);
 
+    /// <summary>
+    /// Runs the job that sends the notifications about critical events by email, now, as the
+    /// scheduler does every minute. A test runs it itself: the scheduler of no application of
+    /// the tests does.
+    /// </summary>
+    public Task SendNotificationEmailsAsync(CancellationToken? cancellationToken = null) =>
+        NotificationEmail.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that sends the notifications about critical events by email, which only a test runs.</summary>
+    public IBackgroundJob NotificationEmail =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.NotificationEmailKey);
+
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 
     public IFairUse FairUse => _application.Services.GetRequiredService<IFairUse>();

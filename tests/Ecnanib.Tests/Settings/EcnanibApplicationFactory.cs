@@ -102,6 +102,16 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string LessonWritingKey = "lesson-writing";
 
+    // The job of Notifications that sends the notifications about critical events by email, named in the same way.
+    private const string NotificationEmail = "Ecnanib.Notifications.NotificationEmailJob";
+
+    /// <summary>
+    /// The key under which the job that sends the notifications about critical events by email
+    /// is kept: the scheduler of no application of the tests runs it, and a test runs it from
+    /// there itself, at a moment of its choosing.
+    /// </summary>
+    public const string NotificationEmailKey = "notification-email";
+
     private SettingsDirectory? _ownDirectory;
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
@@ -294,6 +304,19 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
 
             services.Remove(writing);
             services.AddKeyedSingleton(typeof(IBackgroundJob), LessonWritingKey, writing.ImplementationType!);
+
+            // The job that sends the notifications about critical events by email is due as the
+            // background work starts, and then every minute: it hands the email delivery
+            // service a message for every user who opted in and has such a notification. A
+            // test that raises one for a reason of its own would have it sent, and marked as
+            // sent, at a moment that it does not choose. So no application of a test runs this
+            // job on a schedule: a test that is about what a run does finds it by its key, and
+            // runs it itself.
+            var emailing = services.Single(job =>
+                job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == NotificationEmail);
+
+            services.Remove(emailing);
+            services.AddKeyedSingleton(typeof(IBackgroundJob), NotificationEmailKey, emailing.ImplementationType!);
 
             // The job that reconciles the agents with the exchange is due as the background
             // work starts when an agent holds anything, and then every few minutes: it asks

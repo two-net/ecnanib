@@ -4,6 +4,7 @@
 @using Ecnanib.Notifications
 @using Ecnanib.Shared
 @using Ecnanib.WebUi.Pages.Account
+@using Ecnanib.WebUi.Pages.Notifications
 @inject IStoredAgents Agents
 @inject IAgentControls Controls
 @inject INotifications Notifications
@@ -23,7 +24,9 @@
     finds the agent in another state the second time. The badge of the mode is under the
     heading, and each change of the state says the mode it happened in (FR-BIN-11). What the
     service has to tell the user about the agent, and they have not read, is said first: that a
-    stop-loss could not be placed, and what became of the position (FR-RSK-7, FR-NTF-1).
+    stop-loss could not be placed, and what became of the position (FR-RSK-7, FR-NTF-1). Each
+    has a form that marks it as read, which takes it off this page: it stays on the page of the
+    notifications.
 *@
 
 @if (_agent is not null)
@@ -66,9 +69,20 @@
         <ul class="agent-notifications" aria-labelledby="notifications-heading">
             @foreach (var notification in _notifications)
             {
-                <li><strong>@AgentPages.Describe(notification.Type)</strong>, @PageTimes.At(notification.CreatedAt). @notification.Content</li>
+                <li>
+                    <span id="@NotificationPages.TextId(notification.Id)"><strong>@NotificationTypes.Describe(notification.Type)</strong>, @PageTimes.At(notification.CreatedAt). @notification.Content</span>
+
+                    <form method="post" @formname="@NotificationPages.MarkReadForm(notification.Id)" @onsubmit="() => MarkReadAsync(notification.Id)">
+                        <AntiforgeryToken />
+
+                        @* Every such button says the same: it is described by what its notification says. *@
+                        <button type="submit" aria-describedby="@NotificationPages.TextId(notification.Id)">@NotificationPages.MarkRead</button>
+                    </form>
+                </li>
             }
         </ul>
+
+        <p><a href="@WebUiModule.NotificationsPath">@NotificationPages.AllLink</a></p>
     }
 
     <p>State: <strong>@AgentPages.Describe(_agent.State)</strong>, since @PageTimes.At(_agent.StateChangedAt). @AgentPages.Explain(_agent.State)</p>
@@ -313,6 +327,22 @@
         }
 
         _refused ??= AgentPages.NotOffered(control, _agent!.State);
+    }
+
+    private async Task MarkReadAsync(Guid notificationId)
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // Asked for by owner again: the notification that the form names, among those of the
+        // user of the session.
+        await Notifications.MarkReadAsync(request, notificationId);
+
+        // The page as it is now, by a request that changes nothing: a reload of it sends no
+        // form again.
+        Navigation.NavigateTo(WebUiModule.AgentStatePath(Id));
     }
 
     /// <summary>
