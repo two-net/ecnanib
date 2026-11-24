@@ -112,7 +112,7 @@ Every page is rendered on the server for each request, for the user who is signe
 
 **The dashboard,** `/dashboard`, lists what its user has not read as its alerts, for Live and for Demo apart, by the mode that each notification says, the latest first, 10 of a mode at most, with how many there are in all. What is about no mode is listed above both. Each has a form that marks it as read, `mark-read-<id>`, which leads back to the dashboard, and one that is about an agent leads to the page of the state of that agent. See [dashboard.md](dashboard.md).
 
-**The page of the choice,** `/account/notifications`, says whether its user is sent email for critical events, which events those are, and which address an email goes to, and has one form that turns it on, or off. The page of the account says whether it is on, and leads there (FR-UI-2).
+**The page of the choice,** `/account/notifications`, says whether its user is sent email for critical events, which events those are, and which address an email goes to, and has one form that turns it on, or off. The page of the account says whether it is on, and leads there, and so does "Notifications" in the navigation of the settings (FR-UI-2): see [layout.md](layout.md).
 
 ## Email for critical events
 

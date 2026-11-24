@@ -1,0 +1,22 @@
+@attribute [Route(WebUiModule.OperatorStatusPath)]
+@attribute [Authorize(Policy = OperatorAccess.Policy)]
+@using Ecnanib.Accounts
+
+@*
+    The operator status screen (FR-UI-2). It is for operators alone: a visitor is sent to sign
+    in, and a user who is not an operator is refused (NFR-SEC-3). It has a route and a place in
+    the bar of an operator, and only says what it is to show (FR-OPS-2). It has no form, asks
+    the database nothing, and shows nothing of any user (FR-OPS-5): a screen that only shows is
+    no action of an operator, so nothing of it is recorded in the audit trail. The first form
+    here is such an action. See "Operators" in docs/ownership.md.
+*@
+
+<PageTitle>@Screens.OperatorStatus.Name</PageTitle>
+
+<h1>@Screens.OperatorStatus.Name</h1>
+
+<p>@OperatorPages.ForOperators</p>
+
+<p>@OperatorPages.NotBuiltYet</p>
+
+<p>@OperatorPages.OnlyShows</p>

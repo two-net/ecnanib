@@ -1,0 +1,15 @@
+@inject NavigationManager Navigation
+
+@*
+    The link to a screen in a navigation. It says whether the page that is open is that screen,
+    or a part of it, in a way that a screen reader says too, and its look follows from that
+    (FR-UI-2). It is rendered on the server for each request, as the page around it is.
+*@
+
+<a href="@To.Path" aria-current="@Screens.CurrentOf(To, Screens.PathOf(Navigation.Uri))">@To.Name</a>
+
+@code {
+    /// <summary>The screen that the link leads to.</summary>
+    [Parameter, EditorRequired]
+    public Screen To { get; set; } = default!;
+}

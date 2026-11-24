@@ -1,0 +1,14 @@
+@*
+    The navigation of the settings, above every page of the account of a user: profile, security,
+    API keys, appearance, and notifications (FR-UI-2). The layout puts it there, so a page of
+    the settings carries nothing for it.
+*@
+
+<nav class="settings-nav" aria-label="@Screens.SettingsNavigation">
+    <ul>
+        @foreach (var screen in Screens.OfSettings)
+        {
+            <li><ScreenLink To="screen" /></li>
+        }
+    </ul>
+</nav>

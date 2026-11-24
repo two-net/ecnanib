@@ -146,7 +146,7 @@ No test drives a browser. By hand:
 
 - Figures that move with the price between two changes: the total equity, the day, and what a position would make are of the moment that the page was written. Writing them over the connection, as the page of an agent writes its one position, needs the parts of the dashboard that hold a figure to be parts of that kind.
 - What changes a figure and is said by no table that a page follows: a fee that is valued later, funding that is stored, and the UTC day that begins. The page shows it the next time that it is written.
-- The dashboard as the page that a user lands on after signing in, and the landing page of a visitor (FR-UI-2): `/` is as the template left it.
+- The dashboard as the page that a user lands on after signing in. A user arrives at the start page, `/`, which leads to the dashboard: see "The start page" in [layout.md](layout.md).
 - A setup checklist for a first-time user (FR-UI-4).
 - Animation of what changes (FR-ANI-1 to FR-ANI-7), and times in the time zone of the user (NFR-USA-3).
 - The badge of the mode on the page of the notifications: see [notifications.md](notifications.md).

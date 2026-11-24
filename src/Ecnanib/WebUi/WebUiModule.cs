@@ -16,8 +16,41 @@ namespace Ecnanib.WebUi;
 /// <summary>Web UI: screens, themes, animation, live updates (SRS 3.1).</summary>
 public static class WebUiModule
 {
+    /// <summary>
+    /// The path of the start page: the landing page of a visitor, and where a user arrives after
+    /// signing in (FR-UI-2).
+    /// </summary>
+    public const string HomePath = "/";
+
+    /// <summary>The path of the page a visitor registers on.</summary>
+    public const string RegisterPath = "/register";
+
     /// <summary>The path that the sign-out button posts to.</summary>
     public const string SignOutPath = "/sign-out";
+
+    /// <summary>
+    /// The path of the page of the account of a user, which is the profile among the settings
+    /// (FR-UI-2).
+    /// </summary>
+    public const string AccountPath = "/account";
+
+    /// <summary>
+    /// The path of the page of two-factor authentication, which is the security among the
+    /// settings (FR-UI-2).
+    /// </summary>
+    public const string TwoFactorPath = "/account/two-factor";
+
+    /// <summary>
+    /// The path of the page of the appearance among the settings (FR-UI-2). The choice of a
+    /// theme is not built yet.
+    /// </summary>
+    public const string AppearancePath = "/account/appearance";
+
+    /// <summary>
+    /// The path of the operator status screen, which is for operators alone (FR-UI-2, FR-OPS-2).
+    /// What it is to show is not built yet.
+    /// </summary>
+    public const string OperatorStatusPath = "/operator";
 
     /// <summary>The path of the download of what is stored about the signed-in user (NFR-SEC-9).</summary>
     public const string ExportPath = "/account/export";

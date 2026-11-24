@@ -21,6 +21,8 @@
 
 
 #components-reconnect-modal {
+    /* It brings a white background of its own, so its text stays dark on a dark page too. */
+    color-scheme: light only;
     background-color: white;
     width: 20rem;
     margin: 20vh auto;

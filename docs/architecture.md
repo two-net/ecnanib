@@ -325,6 +325,12 @@ A user can export their trades and decisions as CSV (FR-RPT-4). It is two downlo
 
 Every row says the mode that it was of, and a file adds nothing up (FR-BIN-11). A file holds only the rows of the user of the session, and no secret (NFR-SEC-3, FR-KEY-8). Nothing of an export is stored, and it adds no table. `ComponentRules.cs` is unchanged. See [export.md](export.md).
 
+## Layout and screens
+
+The UI is a responsive web application, usable at desktop and mobile widths, with a route and navigation for each screen of the specification (FR-UI-1, FR-UI-2). It is the frame of the Web UI that every page is written in, and no component of its own: a link past the bar, the bar at the top, the content, and the legal documents at the foot. The frame is rendered on the server for each request and has no script. On a narrow screen its navigation opens and closes with an element that the browser itself opens and closes, and the stylesheet makes one frame of the same elements at both widths: on a wide screen it shows what that element holds, open or not. The link to the screen that is open says so, to a screen reader too.
+
+What the screens are called and where they are is in one place, `Screens` in `WebUi/Layout`, and the tests hold the application to a map of their own, `ScreenRules.cs`: each screen with its route, whom it opens for, and what leads to it. Two screens whose feature is not built have a route and a place in the navigation, and say what they are for: the appearance among the settings, and the operator status screen. The second requires the operator policy and only shows, so it is no operator function: see "Operators" in [ownership.md](ownership.md). The frame stores nothing and adds no table. `ComponentRules.cs` is unchanged. See [layout.md](layout.md).
+
 ## Logging
 
 Components write log events through the host's `ILogger<T>` and nothing else. One rule in `ComponentRules.cs` keeps it that way: only `Platform` may use the logging library, Serilog. So every event passes the one place that masks secrets before it reaches an output (NFR-LOG-4). See [logging.md](logging.md).

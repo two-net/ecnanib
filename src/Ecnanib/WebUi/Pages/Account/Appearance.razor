@@ -1,0 +1,16 @@
+@attribute [Route(WebUiModule.AppearancePath)]
+@attribute [Authorize]
+
+@*
+    The appearance among the settings (FR-UI-2). The page is where the choice of a theme will
+    be, and says how the pages look until then. It has no form, stores nothing, and follows
+    nothing. Its texts are in AppearancePages.
+*@
+
+<PageTitle>@Screens.Appearance.Name</PageTitle>
+
+<h1>@Screens.Appearance.Name</h1>
+
+<p>@AppearancePages.FollowsDevice</p>
+
+<p>@AppearancePages.NotBuiltYet</p>

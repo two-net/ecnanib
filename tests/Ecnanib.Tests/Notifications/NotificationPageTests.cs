@@ -242,7 +242,9 @@ public class NotificationPageTests
         Assert.Contains("1 notification, 1 not read, newest first.", page);
         Assert.DoesNotContain("Something about the agent of Grace.", page);
         Assert.DoesNotContain(hers.ToString(), shown);
-        Assert.Contains("<a href=\"/notifications\">Notifications (1)</a>", shown);
+
+        // The link of the bar says that its page is open, so it carries more than its address.
+        Assert.Matches("<a href=\"/notifications\" aria-current=\"page\">Notifications \\(1\\)</a>", shown);
 
         // The form of Grace's notification is the form of no page of Ada's.
         using (var marked = await SendAsync(client, Page, $"mark-read-{hers}"))

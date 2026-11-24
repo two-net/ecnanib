@@ -200,7 +200,7 @@ public interface IGlobalHalt
 
 | Rule | Detail |
 |---|---|
-| **Nothing implements it yet, and no halt is on.** | `RiskGuardRulesTests` has a test that fails as soon as the operator functions are built and nothing answers. It tells that they are built as the audit trail does: see "The audit trail" in [accounts.md](accounts.md). |
+| **Nothing implements it yet, and no halt is on.** | `RiskGuardRulesTests` has a test that fails as soon as the operator functions are built and nothing answers. It tells that they are built as the audit trail does: see "The audit trail" in [accounts.md](accounts.md). The operator status screen, which only shows and switches nothing, is not one of them: see "Operators" in [ownership.md](ownership.md). |
 | **The halt is on when any implementation says so.** | Whatever keeps the halt implements and registers it. The Risk Guard is a leaf, so a component that may use it implements it: see "When a lower component must trigger a higher one" in [architecture.md](architecture.md). |
 | **A halt stops what opens a position, and nothing else.** | `NoGlobalHalt` is asked of a plan that opens. A plan that closes a position or adjusts protection goes on, and of a reverse the close: see "A reverse that is rejected". |
 | The halt is a runtime flag of the database, and no setting of the file (NFR-CFG-6). | The file has no key for it, and none for the Risk Guard. |

@@ -1,3 +1,35 @@
+/* The page (FR-UI-1). It is light or dark as the device is set: a colour below is that of the
+   text around it, a colour of the system, or one that reads on both. The text is in the typeface
+   of the device and at its size, and a control is in the typeface of the text around it, so a
+   phone does not enlarge the page when a field is typed in. The page is at least as tall as the
+   screen, so its foot is at the bottom of a page that says little. */
+:root {
+    color-scheme: light dark;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+}
+
+button, input, select, textarea {
+    font: inherit;
+}
+
+h1, h2, h3, h4 {
+    line-height: 1.25;
+}
+
 h1:focus {
     outline: none;
 }
@@ -844,20 +876,221 @@ fieldset {
         display: inline;
     }
 
-/* The bar that says who is signed in, with the sign-out button in line with its links. On a
-   narrow screen what does not fit goes to the next line whole, and is not squeezed. */
-.account-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 1rem;
-    align-items: center;
-    margin-bottom: 1rem;
+/* The frame of every page (FR-UI-1, FR-UI-2): the bar at the top, the content, and the foot. It
+   has one width at which it changes, 48rem. Below it the screen is narrow, as of a phone, and
+   from it on the screen is wide. Nothing of it is as wide as a number of pixels says: what does
+   not fit goes to the next line whole, and a table scrolls sideways by itself, so the page
+   itself never does. */
+
+/* The link past the bar, which is the first link of a page. It is out of sight until it has the
+   focus, and then in the corner, over the bar. */
+.skip-link {
+    position: absolute;
+    top: -10rem;
+    left: 0.5rem;
+    z-index: 10;
+    padding: 0.5rem 0.75rem;
+    border: 2px solid currentColor;
+    border-radius: 0.25rem;
+    background: Canvas;
+    color: CanvasText;
 }
 
-    .account-bar form {
+    .skip-link:focus {
+        top: 0.5rem;
+    }
+
+/* The bar: the name of the service, which leads to the start page, and beside it what a visitor
+   or a user is led to. Its links are in the colour of the text, because the bar says what they
+   are. The link to the page that is open, or to the screen that the page is a part of, is
+   heavier and underlined: it is told by more than a colour, and a screen reader is told too. */
+.site-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 1rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
+    .site-bar a, .settings-nav a {
+        display: block;
+        padding: 0.5rem 0;
+        color: inherit;
+        text-decoration: none;
+    }
+
+        .site-bar a:hover, .settings-nav a:hover {
+            text-decoration: underline;
+        }
+
+        .site-bar a[aria-current], .settings-nav a[aria-current] {
+            font-weight: 600;
+            text-decoration: underline;
+            text-decoration-thickness: 2px;
+            text-underline-offset: 0.3em;
+        }
+
+    .site-bar .site-name {
+        margin-inline-end: auto;
+        font-size: 1.125rem;
+        font-weight: 700;
+    }
+
+/* What opens and closes who is signed in and the navigation on a narrow screen: an element that
+   the browser opens and closes by itself, also by keyboard, and of which it says to a screen
+   reader whether it is open. No script does. What opens it is as tall as a finger needs. In a
+   browser that cannot lay out what such an element holds, it is a line of its own under the bar
+   at every width, and opens there. */
+.site-menu {
+    flex-basis: 100%;
+}
+
+    .site-menu > summary {
+        padding: 0.5rem 0.75rem;
+        border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+        border-radius: 0.25rem;
+        cursor: pointer;
+        user-select: none;
+    }
+
+/* Who is signed in, with the button that signs them out. An address that is long wraps. */
+.site-user {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 1rem;
+    min-width: 0;
+}
+
+    .site-user > span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .site-user form {
         margin: 0;
     }
 
-    .account-bar form > button[type=submit] {
-        margin-top: 0;
+        .site-user form > button[type=submit] {
+            margin-top: 0;
+        }
+
+/* The navigation of the bar, and that of the settings above a page of the settings: links side
+   by side, which go to the next line whole where they do not fit. */
+.site-nav ul, .settings-nav ul, .site-footer ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 1.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.settings-nav {
+    margin: 0 0 1rem;
+    border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
+/* The content of a page. A paragraph is no wider than reads well, and a table is as wide as the
+   page lets it be. A word that is longer than a narrow screen is wide breaks. The content takes
+   the focus from the link past the bar, and shows no outline for it: nothing is done there. */
+main {
+    flex: 1 0 auto;
+    padding: 1rem 1rem 2rem;
+    overflow-wrap: break-word;
+}
+
+    main:focus {
+        outline: none;
     }
+
+    main p {
+        max-width: 75ch;
+    }
+
+/* The foot of every page: the legal documents, in smaller text, each as tall as a finger needs. */
+.site-footer {
+    padding: 0.5rem 1rem;
+    border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    font-size: 0.875rem;
+}
+
+    .site-footer a {
+        display: block;
+        padding: 0.5rem 0;
+    }
+
+/* A browser that can lay out what the menu holds, which every browser of today can. The menu
+   itself takes no room in the bar: what opens it stands in the bar, after the link to the
+   notifications, and what it holds is laid out by the bar. */
+@supports selector(::details-content) {
+    .site-menu {
+        display: contents;
+    }
+
+    /* On a narrow screen the bar of a user is the name of the service, the link to the
+       notifications, and the menu. While the menu is open, who is signed in and the navigation
+       are under the bar, as wide as the screen. Closed, they take no room. A visitor has two
+       links and no menu: they stay in the bar. */
+    .site-menu::details-content {
+        display: block;
+        flex-basis: 100%;
+    }
+
+    .site-menu:not([open])::details-content {
+        display: none;
+    }
+
+    /* On a wide screen there is no menu. What it holds always shows, whether it is open or not,
+       as parts of the bar: who is signed in stands in the bar, and the navigation is a line of
+       its own under it. */
+    @media (min-width: 48rem) {
+        .site-menu > summary {
+            display: none;
+        }
+
+        .site-menu::details-content,
+        .site-menu:not([open])::details-content {
+            display: contents;
+            content-visibility: visible;
+        }
+
+        .site-menu > .site-nav {
+            flex-basis: 100%;
+        }
+    }
+}
+
+/* On a narrow screen, who is signed in is a line with the button that signs out at its end, and
+   the links of the navigation are one under another, each as tall as a finger needs. */
+@media not all and (min-width: 48rem) {
+    .site-menu > .site-user {
+        justify-content: space-between;
+        padding: 0.5rem 0;
+        border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    }
+
+    .site-menu > .site-nav ul {
+        display: block;
+    }
+
+    .site-menu > .site-nav li {
+        border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    }
+
+    .site-menu > .site-nav a {
+        padding: 0.625rem 0;
+    }
+}
+
+/* On a wide screen the page has more room at its sides. */
+@media (min-width: 48rem) {
+    .site-bar, .site-footer {
+        padding-inline: 1.5rem;
+    }
+
+    main {
+        padding-inline: 1.5rem;
+    }
+}

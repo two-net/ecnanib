@@ -134,6 +134,8 @@ An operator is a user with the status screens and the safety controls of the ser
 
 An operator function asks in one of the two ways of "The check", and in no other. `AuditRulesTests` watches for both, to tell when the first operator function is built: what an operator does is recorded in the audit trail (FR-OPS-5). See "The audit trail" in [accounts.md](accounts.md).
 
+**A screen that only shows is no operator function.** The operator status screen, `/operator`, has its route and its place in the bar of an operator (FR-UI-2): it requires the policy, says what it is to show, and does nothing. It has no form, asks the database nothing, and shows nothing of any user, so there is nothing of it to record, and nothing that the Risk Guard would have to be told. `AuditRules.OperatorScreensThatOnlyShow` lists it with why, and the rule that tells when the first operator function is built leaves a listed screen out. `AuditRulesTests` holds a listed screen to it: its page has no form but the button of the bar, which signs out. The first form that is put on it fails that test, the screen is taken off the list, and what waits for the operator functions fails until it is built. Anything else that requires the policy counts as before, whether its address is under that of the screen or not. The bar shows the link to the screen by asking the same policy, with `AuthorizeView`, and not by `IsOperator`. See "Screens whose feature is not built" in [layout.md](layout.md).
+
 No operator function is built yet.
 
 ## No tenants and no billing

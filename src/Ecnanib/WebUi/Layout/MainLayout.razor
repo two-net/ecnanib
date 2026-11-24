@@ -1,42 +1,134 @@
 ﻿@inherits LayoutComponentBase
 @using Ecnanib.Accounts
+@using Ecnanib.WebUi.Pages.Legal
+@using Microsoft.AspNetCore.Diagnostics
 @inject IRegistration Registration
+@inject NavigationManager Navigation
 
-<nav class="account-bar" aria-label="Account">
+@*
+    The frame of every page (FR-UI-1, FR-UI-2): a link past the bar, the bar at the top, the
+    content, and the legal documents at the foot. It is rendered on the server for each request
+    and has no script: on a narrow screen the navigation opens and closes with an element that
+    the browser itself opens and closes. Its look is in app.css. See docs/layout.md.
+*@
+
+@* The first link of a page. The browser follows it by itself, so that what a keyboard reaches next is in the content. *@
+<a class="skip-link" href="@(Here)#@Screens.ContentId" data-enhance-nav="false">@Screens.SkipLink</a>
+
+<header class="site-bar">
+    <a class="site-name" href="@WebUiModule.HomePath">@Screens.SiteName</a>
+
     <AuthorizeView>
         <Authorized>
-            <span>@context.User.Identity?.Name</span>
-            <a href="/account">Account</a>
-            <a href="@WebUiModule.DashboardPath">Dashboard</a>
-            <a href="@WebUiModule.AgentsPath">Agents</a>
-
-            @* With how many the user has not read, which it asks for itself. *@
+            @* With how many the user has not read, which it asks for itself. On a narrow screen it stays in the bar. *@
             <NotificationsLink />
-            <a href="@WebUiModule.ExperiencePath">Experience</a>
-            <a href="@WebUiModule.UsagePath">AI usage</a>
-            <a href="@WebUiModule.CatalogPath">Model catalog</a>
 
-            @* Posted to an endpoint of its own, so the button works on every page. *@
-            <form method="post" action="@WebUiModule.SignOutPath">
-                <AntiforgeryToken />
-                <button type="submit">Sign out</button>
-            </form>
+            @*
+                On a narrow screen this opens and closes who is signed in and the navigation, and the
+                browser does that by itself, also by keyboard. On a wide screen the stylesheet shows
+                what it holds whether it is open or not, and hides what opens it.
+            *@
+            <details class="site-menu">
+                <summary>@Screens.Menu</summary>
+
+                <div class="site-user">
+                    <span>@context.User.Identity?.Name</span>
+
+                    @* Posted to an endpoint of its own, so the button works on every page. *@
+                    <form method="post" action="@WebUiModule.SignOutPath">
+                        <AntiforgeryToken />
+                        <button type="submit">@Screens.SignOut</button>
+                    </form>
+                </div>
+
+                <nav class="site-nav" aria-label="@Screens.MainNavigation">
+                    <ul>
+                        @foreach (var screen in Screens.Bar)
+                        {
+                            <li><ScreenLink To="screen" /></li>
+                        }
+
+                        @* Asked of the policy that the screen itself requires, so the link is shown to whom the screen opens for. *@
+                        <AuthorizeView Policy="@OperatorAccess.Policy" Context="anOperator">
+                            <li><ScreenLink To="Screens.OperatorStatus" /></li>
+                        </AuthorizeView>
+                    </ul>
+                </nav>
+            </details>
         </Authorized>
         <NotAuthorized>
-            <a href="@SessionAuthentication.SignInPath">Sign in</a>
+            <nav class="site-nav" aria-label="@Screens.MainNavigation">
+                <ul>
+                    <li><a href="@SessionAuthentication.SignInPath" aria-current="@Current(SessionAuthentication.SignInPath)">@Screens.SignIn</a></li>
 
-            @if (Registration.IsOpen)
-            {
-                <a href="/register">Register</a>
-            }
+                    @if (Registration.IsOpen)
+                    {
+                        <li><a href="@WebUiModule.RegisterPath" aria-current="@Current(WebUiModule.RegisterPath)">@Screens.Register</a></li>
+                    }
+                </ul>
+            </nav>
         </NotAuthorized>
     </AuthorizeView>
-</nav>
+</header>
 
-@Body
+@* What the link at the top leads to. It takes the focus then, and is no stop of the keyboard otherwise. *@
+<main id="@Screens.ContentId" tabindex="-1">
+    @if (Screens.IsOfSettings(Path))
+    {
+        <AuthorizeView>
+            <Authorized>
+                <SettingsNav />
+            </Authorized>
+        </AuthorizeView>
+    }
+
+    @Body
+</main>
+
+<footer class="site-footer">
+    <nav aria-label="@Screens.LegalNavigation">
+        <ul>
+            @foreach (var document in Screens.Legal)
+            {
+                <li><a href="@LegalPages.PathOf(document)">@LegalPages.TitleOf(document)</a></li>
+            }
+        </ul>
+    </nav>
+</footer>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    /// <summary>The path of the page that is open.</summary>
+    private string Path => Screens.PathOf(Navigation.Uri);
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    /// <summary>
+    /// The address of the page that is open, with what follows its question mark. A link to a
+    /// part of a page names the page too, because the pages share one base address.
+    /// </summary>
+    private string Here
+    {
+        get
+        {
+            // An address that has no page, or none for its user, is answered by the page that says
+            // so. The address of the browser is still the one that was asked for.
+            if (HttpContext?.Features.Get<IStatusCodeReExecuteFeature>() is { } asked)
+            {
+                return new PathString(asked.OriginalPathBase).Add(new PathString(asked.OriginalPath)).ToUriComponent()
+                    + asked.OriginalQueryString;
+            }
+
+            return new Uri(Navigation.Uri, UriKind.Absolute).PathAndQuery;
+        }
+    }
+
+    /// <summary>What a link of a visitor says about the page that is open: see <see cref="Screens.CurrentOf"/>.</summary>
+    private string? Current(string path) => Screens.CurrentOf(new Screen(string.Empty, path), Path);
+}

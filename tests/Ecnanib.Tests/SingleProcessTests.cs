@@ -23,7 +23,7 @@ public class SingleProcessTests(EcnanibApplicationFactory application) : IClassF
 
         Assert.Equal(HttpStatusCode.OK, page.StatusCode);
         Assert.Equal("text/html", page.Content.Headers.ContentType?.MediaType);
-        Assert.Contains("<h1>Hello, world!</h1>", await page.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Contains("<h1>Ecnanib</h1>", await page.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(HttpStatusCode.OK, health.StatusCode);
         var answer = await health.Content.ReadFromJsonAsync<HealthResponse>(TestContext.Current.CancellationToken);

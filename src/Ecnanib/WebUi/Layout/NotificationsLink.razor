@@ -3,15 +3,17 @@
 @using Ecnanib.WebUi.Pages.Notifications
 @inject INotifications Stored
 @inject ILogger<NotificationsLink> Logger
+@inject NavigationManager Navigation
 
 @*
     The link to the page of the notifications in the bar at the top of every page, with how many
     the user who is signed in has not read (FR-NTF-1). It is rendered on the server for each
     request, so the number is as it was when the page was written. The bar is on the page of an
     error as well, so a count that cannot be read fails no page: the link is then without one.
+    It says whether the page that is open is that page, as every link of the bar does.
 *@
 
-<a href="@WebUiModule.NotificationsPath">@NotificationPages.Link(_unread)</a>
+<a href="@WebUiModule.NotificationsPath" aria-current="@Screens.CurrentOf(Screens.Notifications, Screens.PathOf(Navigation.Uri))">@NotificationPages.Link(_unread)</a>
 
 @code {
     private int _unread;

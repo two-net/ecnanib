@@ -1,7 +1,40 @@
 ﻿@page "/"
+@using Ecnanib.Accounts
+@using Ecnanib.WebUi.Pages.Legal
+@inject IRegistration Registration
 
-<PageTitle>Home</PageTitle>
+@*
+    The start page (FR-UI-2): the landing page of a visitor, with the ways to register and to
+    sign in. A user arrives here after signing in, and is shown the way to their dashboard. It
+    has no form and follows nothing. Its texts are in HomePages.
+*@
 
-<h1>Hello, world!</h1>
+<PageTitle>@HomePages.Title</PageTitle>
 
-Welcome to your new app.
+<h1>@Screens.SiteName</h1>
+
+<p>@HomePages.What</p>
+
+<p>@HomePages.Who</p>
+
+<p>@HomePages.Risk <a href="@LegalPages.RiskDisclosurePath">@HomePages.RiskLink</a>.</p>
+
+<AuthorizeView>
+    <Authorized>
+        <p><a href="@WebUiModule.DashboardPath">@HomePages.DashboardLink</a></p>
+
+        <p><a href="@WebUiModule.AgentsPath">@HomePages.AgentsLink</a></p>
+    </Authorized>
+    <NotAuthorized>
+        @if (Registration.IsOpen)
+        {
+            <p><a href="@WebUiModule.RegisterPath">@HomePages.RegisterLink</a></p>
+        }
+        else
+        {
+            <p>@HomePages.RegistrationClosed</p>
+        }
+
+        <p><a href="@SessionAuthentication.SignInPath">@HomePages.SignInLink</a></p>
+    </NotAuthorized>
+</AuthorizeView>

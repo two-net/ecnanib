@@ -1,6 +1,7 @@
 using System.Reflection;
 using Ecnanib.Accounts;
 using Ecnanib.Tests.Architecture;
+using Ecnanib.WebUi;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -129,10 +130,27 @@ internal static class AuditRules
     }
 
     /// <summary>
+    /// The screens of an operator that only show, each with why it is no operator function. A
+    /// screen that is listed here requires the operator policy and does not count as one: it
+    /// does nothing that the audit trail could record, and switches nothing that the Risk Guard
+    /// would have to be told. To list one is to decide that, here where it shows.
+    /// <see cref="AuditRulesTests"/> holds each to it: its page has no form of its own, so the
+    /// first thing that an operator can do on it fails a test, and it is taken off this list.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> OperatorScreensThatOnlyShow = new Dictionary<string, string>
+    {
+        [WebUiModule.OperatorStatusPath] =
+            "The operator status screen has its route and its place in the bar of an operator (FR-UI-2), and says only " +
+            "what it is to show (FR-OPS-2). It has no form, asks the database nothing, and shows nothing of any user: it " +
+            "switches no halt, disables no account, and triggers no sync, which are the actions of an operator.",
+    };
+
+    /// <summary>
     /// Why the operator functions count as built, or null while none is: an endpoint that
     /// requires the operator policy, or a call of <see cref="OperatorAccess.IsOperator"/> from
-    /// outside Accounts. What waits for the operator functions asks this: the audit trail, and
-    /// the global halt of the Risk Guard.
+    /// outside Accounts. A screen of <see cref="OperatorScreensThatOnlyShow"/> is none. What
+    /// waits for the operator functions asks this: the audit trail, and the global halt of the
+    /// Risk Guard.
     /// </summary>
     /// <param name="services">The services of a running application, which knows its endpoints.</param>
     public static string? WhyOperatorFunctionsAreBuilt(IServiceProvider services)
@@ -140,7 +158,7 @@ internal static class AuditRules
         var guarded = Endpoints(services)
             .Where(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(data => data.Policy == OperatorAccess.Policy))
             .Select(endpoint => endpoint.RoutePattern.RawText)
-            .FirstOrDefault();
+            .FirstOrDefault(route => route is null || !OperatorScreensThatOnlyShow.ContainsKey(route));
 
         if (guarded is not null)
         {

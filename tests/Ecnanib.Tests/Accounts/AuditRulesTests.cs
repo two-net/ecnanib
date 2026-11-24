@@ -1,10 +1,13 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Ecnanib.Accounts;
 using Ecnanib.Tests.Architecture;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ecnanib.Tests.Accounts;
@@ -134,6 +137,87 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
 
         // And a call of IsOperator is seen where there is one: the policy itself makes it.
         Assert.Contains(CallersOfIsOperator(), caller => IsWithin(caller, "Ecnanib.Accounts"));
+    }
+
+    [Fact]
+    public async Task A_screen_of_an_operator_that_only_shows_is_listed_and_does_nothing()
+    {
+        // Each screen that is listed is there, and requires the policy: nothing is listed that
+        // the rule would not have found.
+        var guarded = Endpoints()
+            .Where(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(data => data.Policy == OperatorAccess.Policy))
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .ToHashSet();
+
+        var stale = AuditRules.OperatorScreensThatOnlyShow.Keys.Where(route => !guarded.Contains(route)).ToList();
+        Assert.True(
+            stale.Count == 0,
+            $"{nameof(AuditRules)} lists screens that no page requires the operator policy for: {string.Join(", ", stale)}");
+
+        Assert.All(AuditRules.OperatorScreensThatOnlyShow.Values, why => Assert.False(string.IsNullOrWhiteSpace(why)));
+
+        // And each does nothing, as an operator sees it. The one form of its page is the button
+        // of the bar, which signs out, and the page takes nothing. The first form that is put
+        // on it is something an operator does: the screen is taken off the list then, and what
+        // waits for the operator functions fails until it is built (FR-OPS-3, FR-OPS-5).
+        using var hosted = new AccountsApplication(
+            settings: file => file.WithJson("Application:Operators", "[ \"olive@example.com\" ]"));
+        using var client = hosted.CreateClient();
+        await hosted.RegisterVerifiedAsync("olive@example.com");
+        await client.SignInAsync("olive@example.com");
+
+        foreach (var route in AuditRules.OperatorScreensThatOnlyShow.Keys)
+        {
+            var page = await client.PageAsync(route);
+
+            const string says = "is listed as a screen that only shows, and";
+
+            var form = Assert.Single(Regex.Matches(page, "<form[^>]*>"));
+            Assert.True(form.Value.Contains("action=\"/sign-out\"", StringComparison.Ordinal), $"{route} {says} has a form of its own.");
+
+            // What the screen itself holds, between the bar and the foot, is text and no control.
+            var content = Regex.Match(page, "<main[^>]*>(.*?)</main>", RegexOptions.Singleline);
+            Assert.True(content.Success, $"{route} has no content.");
+            Assert.Contains("<h1", content.Value);
+
+            Assert.All(
+                new[] { "<form", "<button", "<input", "<select", "<textarea", "contenteditable" },
+                control => Assert.False(content.Value.Contains(control, StringComparison.Ordinal), $"{route} {says} has a control: {control}"));
+
+            // It follows nothing either: no part of it keeps a connection that could take anything.
+            Assert.DoesNotContain("<!--Blazor:{\"type\":\"server\"", page);
+        }
+    }
+
+    [Fact]
+    public void An_operator_function_beside_a_screen_that_only_shows_is_still_seen()
+    {
+        // The rule, asked about endpoints of the test's own: the screen that is listed alone is
+        // no operator function, and anything else that requires the policy is one, whether it
+        // is under the address of that screen or elsewhere.
+        var listed = Assert.Single(AuditRules.OperatorScreensThatOnlyShow.Keys);
+
+        Assert.Null(AuditRules.WhyOperatorFunctionsAreBuilt(Serving(ForOperators(listed), ForUsers("/account"))));
+
+        Assert.Equal(
+            $"{listed}/halt requires the operator policy",
+            AuditRules.WhyOperatorFunctionsAreBuilt(Serving(ForOperators(listed), ForOperators($"{listed}/halt"))));
+
+        Assert.Equal(
+            "/api/catalog/sync requires the operator policy",
+            AuditRules.WhyOperatorFunctionsAreBuilt(Serving(ForOperators("/api/catalog/sync"), ForOperators(listed))));
+
+        static RouteEndpoint ForOperators(string route) => Endpoint(route, new AuthorizeAttribute { Policy = OperatorAccess.Policy });
+
+        static RouteEndpoint ForUsers(string route) => Endpoint(route, new AuthorizeAttribute());
+
+        static RouteEndpoint Endpoint(string route, AuthorizeAttribute required) =>
+            new(_ => Task.CompletedTask, RoutePatternFactory.Parse(route), order: 0, new EndpointMetadataCollection(required), route);
+
+        static IServiceProvider Serving(params RouteEndpoint[] endpoints) =>
+            new ServiceCollection()
+                .AddSingleton<EndpointDataSource>(new DefaultEndpointDataSource(endpoints))
+                .BuildServiceProvider();
     }
 
     [Fact]
