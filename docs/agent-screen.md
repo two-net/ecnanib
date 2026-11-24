@@ -1,10 +1,10 @@
 # Agent screen
 
-The agent screen shows: live team status, the current position and protective orders, an equity curve, the trade list, performance figures (return, win rate, average R, profit factor, largest drawdown, fees, funding), and the decision timeline with every role's output and the Risk Guard result (FR-RPT-2). A Demo or Live badge is always visible on it (FR-UI-3), and Demo results are never combined with Live results (FR-BIN-11).
+The agent screen shows: live team status, the current position and protective orders, an equity curve, the trade list, performance figures (return, win rate, average R, profit factor, largest drawdown, fees, funding), and the decision timeline with every role's output and the Risk Guard result (FR-RPT-2). A Demo or Live badge is always visible on it (FR-UI-3), and Demo results are never combined with Live results (FR-BIN-11). The agent screen shows the team at work as an animated pipeline: each role appears with its provider and model, moves through waiting, working, done, or failed, and the hand-off between roles is visible as the cycle progresses (FR-ANI-1).
 
 It is the page of the state of an agent, `/agents/<id>/state`, which the dashboard, the list of the agents, and every other page of the agent lead to (FR-UI-2). So one screen says what the agent is doing now, how it has performed, and why it made each decision, beside the controls that start, pause, and resume it. Nothing of it is stored for the screen: every figure is worked out from the rows of its user each time the page is asked for.
 
-The page is `AgentStatus.razor` in `src/Ecnanib/WebUi/Pages/Agents`, with its parts `AgentPerformance.razor`, `AgentEquityCurve.razor`, `AgentTradeList.razor`, `AgentDecisions.razor`, and `RoleCallAnswer.razor` beside it, and the texts of those parts in `AgentReportPages.cs`. What it reads is `IStoredAgents` and `IAgentControls` in `src/Ecnanib/Agents`, `IAgentReports` and `IRecordedCycles` in `src/Ecnanib/DecisionEngine`, `ICatalogModels` in `src/Ecnanib/Catalog`, and `INotifications` in `src/Ecnanib/Notifications`. What is written to it over its connection is `LiveFeed` in `src/Ecnanib/WebUi/Live`. The rules below are enforced by `AgentScreenPageTests` and `AgentModeBadgeTests` in `tests/Ecnanib.Tests/Agents`, by `AgentReportTests`, `EquityCurveTests`, and `CycleRecordTests` in `tests/Ecnanib.Tests/DecisionEngine`, and by `LiveFeedTests`, `LivePageTests`, `LiveListenerTests`, and `LiveRuleTests` in `tests/Ecnanib.Tests/LiveUpdates`.
+The page is `AgentStatus.razor` in `src/Ecnanib/WebUi/Pages/Agents`, with its parts `AgentPerformance.razor`, `AgentEquityCurve.razor`, `AgentTradeList.razor`, `AgentDecisions.razor`, and `RoleCallAnswer.razor` beside it, and the texts of those parts in `AgentReportPages.cs`. What it reads is `IStoredAgents` and `IAgentControls` in `src/Ecnanib/Agents`, `IAgentReports` and `IRecordedCycles` in `src/Ecnanib/DecisionEngine`, `ICatalogModels` in `src/Ecnanib/Catalog`, and `INotifications` in `src/Ecnanib/Notifications`. What is written to it over its connection is `LiveFeed` in `src/Ecnanib/WebUi/Live`, where the pipeline is `LiveTeamPipeline.razor`, and what the roles of a cycle do is `ICycleProgress` in `src/Ecnanib/DecisionEngine`. What moves is in `src/Ecnanib/wwwroot/app.css`. The rules below are enforced by `AgentScreenPageTests` and `AgentModeBadgeTests` in `tests/Ecnanib.Tests/Agents`, by `AgentReportTests`, `EquityCurveTests`, `CycleRecordTests`, and `CycleProgressTests` in `tests/Ecnanib.Tests/DecisionEngine`, by `LiveFeedTests`, `LivePageTests`, `LiveListenerTests`, and `LiveRuleTests` in `tests/Ecnanib.Tests/LiveUpdates`, and by `MotionStyleTests` in `tests/Ecnanib.Tests/Themes`.
 
 What the state of an agent is, and its controls, are in [agents.md](agents.md). What the equity of an agent is, how it is recorded over time, and what the result of a position is, are in "The equity of an agent", "The equity of an agent over time", and "The results of a position" in [orders.md](orders.md). What a loss limit counts from is in "The loss limits" in [risk-guard.md](risk-guard.md), what a track record measures in "The measures" in [experience.md](experience.md), what a cycle records in [team.md](team.md), how a page follows what changes in [live-updates.md](live-updates.md), and whose rows a request reaches in [ownership.md](ownership.md).
 
@@ -18,16 +18,64 @@ What the state of an agent is, and its controls, are in [agents.md](agents.md). 
 | **They say it as a word.** | "Demo" or "Live", and not with a badge: a badge of the other mode on the page of an agent would read as the mode of the agent. |
 | **Nothing is added up over both modes.** | A trade of the other mode is on the list, and in no figure. |
 
-## Live team status
+## The team at work
 
-Under the state of the agent, with since when and why, the page has a part "Team".
+Under the state of the agent, with since when and why, the page has a part "Team". It is the live team status of the screen (FR-RPT-2), and shows the team at work as a pipeline (FR-ANI-1).
+
+```
+┌───────────────────┐
+│ Market Analyst    │
+│ claude-…, of …    │ ─┐
+│ ● done            │  │   ┌───────────────────┐       ┌───────────────────┐
+└───────────────────┘  ├──▶│ Strategist        │ ─ ─ ▷ │ Risk Manager      │
+┌───────────────────┐  │   │ gpt-…, of …       │       │ grok-…, of …      │
+│ Sentiment Analyst │ ─┘   │ ◉ working         │       │ ○ waiting         │
+│ gemini-…, of …    │      └───────────────────┘       └───────────────────┘
+│ ● done            │
+└───────────────────┘
+```
 
 | Rule | Detail |
 |---|---|
-| **The four roles, each with the model that it was given.** | The Market Analyst, the Sentiment Analyst, the Strategist, and the Risk Manager, each with its model by the name that the catalog has for it, and the provider of the model: `claude-…, of Claude`, as the timeline of a cycle names the model of a call. A role that was given none says "No model chosen". |
-| **What the team does now is written to the page as it changes.** | The steps of a cycle of the agent that runs, each as the cycle comes to it, over the connection of the page: see "The pages" in [live-updates.md](live-updates.md) and "The progress of a cycle" in [cycles.md](cycles.md). |
-| **A team that does nothing says so.** | While no cycle of the agent runs, the part says "The team is at rest: no cycle of the agent runs at the moment." The state above it says whether the team is called at the next close. The page says so with `LiveShows.Team`. The other pages that show the cycles which run say nothing then. |
+| **The four roles, each with its provider and model.** | The Market Analyst, the Sentiment Analyst, the Strategist, and the Risk Manager, each as a card, with its model by the name that the catalog has for it, and the provider of the model: `claude-…, of Claude`, as the timeline of a cycle names the model of a call. A role that was given none says "No model chosen". |
+| **They stand in the order that they work in,** in three stages. | The two analysts, which work at the same time, then the Strategist, then the Risk Manager (SRS 3.2). On a wide screen the stages are side by side, and on a narrow one they are one under another. The two analysts are one above the other at every width. |
+| **Each role says what it does now, as a word.** | Waiting, working, done, or failed: see "What a role does". The page says what the four words mean above the team. |
+| **The hand-off is a line into the next stage.** | A line leads into the stage of the Strategist, and one into the stage of the Risk Manager. It is faint until the work is handed to the stage, which is when its role leaves waiting, and drawn through from then on. A cycle whose Market Analyst failed hands nothing on, and the line stays faint. |
+| **It follows the cycle as it runs.** | What each role does is written to the page as it changes, over the connection of the page, with the steps of the cycle as words under the pipeline: see "The pages" in [live-updates.md](live-updates.md) and "The progress of a cycle" in [cycles.md](cycles.md). The steps say what no role does: the orders that are settled, the data package, the Risk Guard, the orders, and the record. |
+| **A cycle that has ended stays for 5 seconds,** with how each role ended. | A cycle is gone the moment that its record is stored, so what the last role gave would be gone as it is said. The part says "A cycle has ended", with when, and each of its steps is done. Then the team is at rest. A cycle of the agent that starts within those seconds takes its place. |
+| **A team that does nothing says so.** | While no cycle of the agent runs, every role waits, and the part says "The team is at rest: no cycle of the agent runs at the moment." The state above it says whether the team is called at the next close. The page says so with `LiveShows.Team`. The other pages that show the cycles which run say nothing then, and have no pipeline. |
+| **A test cycle is shown as a cycle of a close is,** in a part of its own. | It runs beside the cycle of a close, so the page may show two pipelines for a while, each under what started its cycle. |
 | **Nothing of what a model answered is there while a cycle runs.** | The decisions show that, once the cycle is recorded. |
+
+### What a role does
+
+| It says | When | Its marker |
+|---|---|---|
+| **waiting** | Its model is not called: the cycle has not come to it, or no cycle runs. A role that the cycle never comes to stays so: a plan that opens no position is not reviewed, so its Risk Manager waits to the end. | A faint ring. |
+| **working** | Its model is being called, also when it is called once more (FR-TEAM-9). | A ring around a dot. |
+| **done** | It gave a valid result. | A disc. |
+| **failed** | It gave no valid result, also when it was called once more, or the cycle ended while it worked. A Sentiment Analyst that failed does not end the cycle: the Strategist works on, with sentiment marked unavailable. | A ring around a cross. |
+
+| Rule | Detail |
+|---|---|
+| **Nothing relies on a colour, or on what moves** (FR-THM-5). | The word says what a role does. The marker beside it is for the eye alone, differs by its shape, and is hidden from a screen reader. A card whose role works or has failed has a second outline, and the one of a role that has failed is in `--danger`, which has a value for each theme: see "Colours" in [themes.md](themes.md). Everything else is in the colour of the text around it. |
+| **A change is read out with its role.** | The part is announced as it changes, as the steps of a cycle are, and a card is announced whole: "Strategist, …, working", and not "working" alone. |
+| **The page carries no style and no script for it.** | The content security policy allows neither: see [security.md](security.md). A card names its state, `role-working`, a stage names that the work was handed to it, `stage-handed`, and the look and what moves are in `app.css`. The browser changes the name of a card in its place, because the part of a cycle and the part of the team at rest are one part of the page: that is what lets a change be shown as one. |
+
+### What moves
+
+| What | How | For how long |
+|---|---|---|
+| The hand-off | The line into a stage is drawn through, from the stage before to this one. | 300 milliseconds, once. |
+| A change of what a role does | The marker, and the second outline of the card, go from one state to the next. | 200 milliseconds. |
+| A role that works | The dot in its marker grows and fades, and comes back. | Once in 1.5 seconds, for as long as the role works. |
+
+| Rule | Detail |
+|---|---|
+| **When the device asks for reduced motion, nothing moves** (FR-ANI-4). | Everything in the table is inside `@media (prefers-reduced-motion: no-preference)`. On a device that asks for reduced motion a role goes from one state to the next at once, and a role that works shows by its word and by the dot in its ring, which stands still. Nothing is taken back for such a device: nothing is given to it. |
+| **A change takes between 150 and 400 milliseconds, and one thing moves by itself** (FR-ANI-5). | The dot of a role that works, which is the one state that is live. It comes and goes less than once a second, so nothing flashes. Nothing that moves holds up a click or a key. |
+| **Only how far something shows and how large it is drawn are changed** (FR-ANI-6). | `opacity` and `transform`, and nothing else: the browser lays nothing out again for them, so nothing around a card moves when its role goes on. A card is as large in one state as in another. |
+| **`MotionStyleTests` holds `app.css` to these three.** | A rule that moves something for every device, a change that takes a second, a second thing that moves by itself, and a change of a width or a colour each fail it. |
 
 ## The current position and its protective orders
 
@@ -174,7 +222,7 @@ A signed-in user opens the screen of an agent at `/agents/<id>/state`. A visitor
 | **It asks for itself again when the price of its position is first read.** | The page was written without that price, or with an older one. The feed of the page follows the price of the position of the agent for the part that says it, and of no other agent: see "The feed of a page" in [live-updates.md](live-updates.md). |
 | **A figure does not move between two changes.** | The position and its price are written over the connection as they change. The figures are of the moment that the page was written, and say the time of their price. |
 | **It has no field to type in.** | A page that follows has none. It has buttons and links, and the pages of the trades are links. |
-| **Its texts are in one place.** | `AgentReportPages` for the parts of this screen, with `AgentPages`, `CyclePages`, `RiskCheckPages`, `LivePages`, and the amounts of `DashboardPages` and the measures of `ExperiencePages` (NFR-USA-4). The times are UTC, and say so. |
+| **Its texts are in one place.** | `AgentReportPages` for the parts of this screen, with `AgentPages`, `CyclePages`, `RiskCheckPages`, `LivePages`, which has the words of what a role does, and the amounts of `DashboardPages` and the measures of `ExperiencePages` (NFR-USA-4). The times are UTC, and say so. |
 | **The tables scroll by themselves on a narrow screen,** | also by keyboard, and the figures stand side by side as far as they fit (FR-UI-1). The look is in `app.css`: a page carries no style of its own. |
 
 ## Testing
@@ -185,20 +233,28 @@ A signed-in user opens the screen of an agent at `/agents/<id>/state`. A visitor
 | `AgentReportTests` | How an agent has performed, as it is read: the figures, the curve, and the trades, the mode of the agent, the price of an open position, what the orders of a trade say, the pages, by owner, and that nothing is written. |
 | `EquityCurveTests` | What the recorded equity says, with no database: the largest drawdown, a capital that was changed, what of a long series is drawn, and numbers that cannot be worked out with. |
 | `CycleRecordTests` | The latest cycles of an agent as complete records: the latest first, five at the most, no test cycle, by owner, and each as one cycle is read. |
-| `LiveFeedTests`, `LivePageTests` | That the screen of an agent has the one price of its position followed and asks for itself again when that is first read, that an equity which is recorded has the page of its agent ask again, and that the page says when its team is at rest. |
+| `LiveFeedTests`, `LivePageTests` | That the screen of an agent has the one price of its position followed and asks for itself again when that is first read, that an equity which is recorded has the page of its agent ask again, and that the page says when its team is at rest. The pipeline as the page is written: the four roles in their order with their models, what each does, a role that failed, the stages that the work was handed to, a cycle that has ended, and that no other page has one. That the feed shows a cycle which has ended for its 5 seconds and reads the cycles again then, and tells a page without the pipeline none that has ended. |
+| `CycleProgressTests` | What the roles of a cycle do as it runs: one analyst that is done while the other works, a role that failed, a role that the cycle never came to, and the cycle as it is kept once it has ended. |
+| `MotionStyleTests` | What moves, in `app.css`: nothing for a device that asks for reduced motion, a change of 150 to 400 milliseconds, one thing that moves by itself, and only `opacity` and `transform`. |
 | `LiveListenerTests`, `LiveRuleTests` | That the database says an equity that is recorded, with its agent, and that the trigger is the one of `LiveRules.cs`. |
 | `AgentModeBadgeTests` | That the page has the badge of its agent, and no badge of the other mode. |
 
 No test drives a browser. By hand:
 
 1. `docker compose up -d`, and run the application.
-2. Sign in, create an agent in Demo, start it, and open the page of its state: its team, its position, and the figures of an agent that has done nothing.
-3. Once it has traded, look at the curve on a light and on a dark screen, and at the width of a phone. The console of the browser shows no report of the content security policy.
-4. Add a row at the database, such as `INSERT INTO equity_snapshots (agent_id, user_id, mode, at, asset, capital, equity) VALUES (...)`: the curve shows it within two seconds, with no reload.
+2. Sign in, create an agent in Demo, start it, and open the page of its state: its team, of which every role waits, its position, and the figures of an agent that has done nothing.
+3. Open the page that runs a test cycle in another window, and run one. On the screen of the agent the two analysts work, each is done in its own time, the line into the Strategist is drawn through, and so on to the Risk Manager. The cycle stays for 5 seconds once it has ended, and then the team is at rest. With a key that its provider refuses, a role says "failed".
+4. Ask the browser to emulate reduced motion, in the rendering panel of its developer tools, and run another: each role says what it does, and nothing moves.
+5. Once it has traded, look at the curve and at the pipeline on a light and on a dark screen, and at the width of a phone. The console of the browser shows no report of the content security policy.
+6. Add a row at the database, such as `INSERT INTO equity_snapshots (agent_id, user_id, mode, at, asset, capital, equity) VALUES (...)`: the curve shows it within two seconds, with no reload.
 
 ## Not built yet
 
-- The team at work as an animated pipeline, with each role waiting, working, done, or failed (FR-ANI-1), and figures and a chart that animate (FR-ANI-2). The part of the team says the steps of a cycle as words.
+- Figures and a chart that animate (FR-ANI-2), and short transitions of the rest of the screen (FR-ANI-3). The pipeline is what moves.
+- A setting that reduces animation (FR-ANI-4). The pipeline follows what the device asks for, and no preference is stored: see "Not built yet" in [themes.md](themes.md).
+- Pausing what moves while it is off screen (FR-ANI-6). A browser draws nothing of a tab in the background, and what moves here is `opacity` and `transform` of one small dot.
+- The pipeline on the list of the cycles and on the page that runs a test cycle, which say the steps as words, and the steps of the service as stages of the pipeline.
+- How the latest cycle went, on the pipeline of a team at rest. A cycle is shown for 5 seconds after it has ended, and the decisions under the team say the rest.
 - Figures that move with the price between two changes: the equity, the net result, and the return are of the moment that the page was written. The position and its price are written over the connection.
 - A choice of the time that the curve is of. It is of all that was recorded in the mode. Until the equity over time is thinned to one row for a day after 90 days (NFR-DAT-5), all of it is read for each request.
 - The fees, the funding, and the margin of the open position: see "Not built yet" in [orders.md](orders.md).

@@ -1,0 +1,60 @@
+@using Ecnanib.DecisionEngine
+@using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Agents
+
+@*
+    The team of an agent at work, as a pipeline (FR-ANI-1): each role with the model that it
+    was given and the provider of the model, and with what it does now: waiting, working, done,
+    or failed. The roles stand in the order that they work in, in three stages: the two analysts,
+    which work at the same time, then the Strategist, then the Risk Manager. A stage that the
+    work was handed to says so, and the stylesheet draws the line into it: that is the hand-off.
+
+    What a role does is said as a word, so nothing relies on a colour or on what moves
+    (FR-THM-5). The marker beside the word is for the eye alone. Everything that moves is in the
+    stylesheet, and only for a device that asks for no reduced motion: the page carries no style
+    and no script for it. The part is written again over the connection of the page as the cycle
+    goes on, and the browser changes the state of a card in its place, which is what lets a
+    change be shown as one. With no cycle to show, every role waits.
+*@
+
+<ol class="team-pipeline" aria-labelledby="team-heading">
+    <li class="pipeline-stage">
+        @* The two analysts work at the same time, and neither reads what the other answers. *@
+        <ul class="pipeline-parallel">
+            <li>@Card(Role.MarketAnalyst)</li>
+            <li>@Card(Role.SentimentAnalyst)</li>
+        </ul>
+    </li>
+    <li class="@StageOf(Role.Strategist)">@Card(Role.Strategist)</li>
+    <li class="@StageOf(Role.RiskManager)">@Card(Role.RiskManager)</li>
+</ol>
+
+@code {
+    /// <summary>The roles of the team, each with the model that it was given.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<LiveRole> Team { get; set; } = [];
+
+    /// <summary>What each role does in the cycle that the pipeline shows, or null when it shows none: every role waits.</summary>
+    [Parameter]
+    public IReadOnlyList<RoleProgress>? Roles { get; set; }
+
+    /// <summary>What a role does now. A role that the cycle says nothing of waits.</summary>
+    private RoleState StateOf(Role role) => Roles?.FirstOrDefault(progress => progress.Role == role)?.State ?? RoleState.Waiting;
+
+    /// <summary>
+    /// A stage after the first, which says whether the work was handed to it: its role has
+    /// left waiting. The line into it is drawn through then.
+    /// </summary>
+    private string StageOf(Role role) => StateOf(role) == RoleState.Waiting ? "pipeline-stage" : "pipeline-stage stage-handed";
+
+    /// <summary>
+    /// A role as a card: its name, its model with the provider, and what it does now. When that
+    /// changes, the whole card is read out, so that the word is not said without its role.
+    /// </summary>
+    private RenderFragment Card(Role role) =>
+        @<div class="pipeline-role @LivePages.ClassOf(StateOf(role))" aria-atomic="true">
+            <span class="role-name">@AgentPages.Describe(role).Name</span>
+            <span class="role-model">@(Team.FirstOrDefault(given => given.Role == role)?.Model ?? AgentReportPages.NoModel)</span>
+            <span class="role-state"><span class="role-marker" aria-hidden="true"></span>@LivePages.Describe(StateOf(role))</span>
+        </div>;
+}

@@ -1,7 +1,5 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Ecnanib.Tests.Accounts;
-using Ecnanib.Tests.Logging;
 
 namespace Ecnanib.Tests.Themes;
 
@@ -29,8 +27,6 @@ public partial class ThemeStyleTests
 
     // What WCAG 2.1 AA asks of text of the size of the text of a page (1.4.3).
     private const double ForText = 4.5;
-
-    private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     [Fact]
     public async Task A_page_is_dark_light_or_as_the_device_is_set_by_what_its_first_element_says()
@@ -85,7 +81,7 @@ public partial class ThemeStyleTests
     [Fact]
     public async Task A_colour_that_is_written_out_is_a_colour_of_the_themes_or_brings_its_own_background()
     {
-        var styles = Comment().Replace(await StylesheetAsync(), string.Empty);
+        var styles = Stylesheets.WithoutComments(await StylesheetAsync());
 
         // Every colour that the stylesheet of the pages writes out, by the rule that it is in.
         // Anything else is the colour of the text around it, or a colour of the system, which
@@ -141,40 +137,13 @@ public partial class ThemeStyleTests
     }
 
     /// <summary>The stylesheet of the pages, as the application serves it.</summary>
-    private static async Task<string> StylesheetAsync() =>
-        (await StylesheetsAsync()).Single(sheet => sheet.Styles.Contains(":root", StringComparison.Ordinal)).Styles;
+    private static Task<string> StylesheetAsync() => Stylesheets.OfThePagesAsync();
 
     /// <summary>Every stylesheet that a page names, as the application serves it.</summary>
-    private static async Task<IReadOnlyList<(string Name, string Styles)>> StylesheetsAsync()
-    {
-        // The application as it is, on the database that the tests share: a stylesheet is a
-        // file, and nothing of it is stored.
-        using var application = new LoggedApplication(LoggedApplication.Settings());
-        using var client = application.CreateClient();
-
-        var page = await client.PageAsync("/");
-        var names = Stylesheet().Matches(page).Select(link => link.Groups[1].Value).ToList();
-
-        // The stylesheet of the pages, and the one of the styles that are written beside a component.
-        Assert.Equal(2, names.Count);
-
-        var sheets = new List<(string, string)>();
-        foreach (var name in names)
-        {
-            sheets.Add((name, await client.GetStringAsync(name, Cancellation)));
-        }
-
-        return sheets;
-    }
+    private static Task<IReadOnlyList<(string Name, string Styles)>> StylesheetsAsync() => Stylesheets.AllAsync();
 
     /// <summary>The selector of the rule that a place in a stylesheet is in.</summary>
-    private static string RuleOf(string styles, int index)
-    {
-        var opened = styles.LastIndexOf('{', index);
-        var before = styles.LastIndexOfAny(['{', '}', ';'], opened - 1);
-
-        return styles[(before + 1)..opened].Trim();
-    }
+    private static string RuleOf(string styles, int index) => Stylesheets.RuleOf(styles, index);
 
     /// <summary>The contrast of two colours as WCAG 2.1 defines it, from 1 to 21.</summary>
     private static double Contrast(string one, string other)
@@ -196,12 +165,6 @@ public partial class ThemeStyleTests
 
         return (0.2126 * Part(1)) + (0.7152 * Part(3)) + (0.0722 * Part(5));
     }
-
-    [GeneratedRegex("<link rel=\"stylesheet\" href=\"([^\"]*)\"")]
-    private static partial Regex Stylesheet();
-
-    [GeneratedRegex(@"/\*.*?\*/", RegexOptions.Singleline)]
-    private static partial Regex Comment();
 
     // A colour of the themes: a name, a light value, and a dark one.
     [GeneratedRegex(@"(?<name>--[a-z-]+):\s*light-dark\((?<light>#[0-9a-fA-F]{6}),\s*(?<dark>#[0-9a-fA-F]{6})\);")]

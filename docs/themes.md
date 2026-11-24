@@ -72,9 +72,9 @@ A cookie that says anything but `dark` or `light` is no choice: the page is as t
 
 | A colour in `app.css` is | For instance |
 |---|---|
-| The colour of the text around it, whole or thinned | The lines of the frame and of the tables, the equity curve, the outline of the Demo badge: `currentColor`, and `color-mix()` with it. |
+| The colour of the text around it, whole or thinned | The lines of the frame and of the tables, the equity curve, the cards and the lines of the team at work, the outline of the Demo badge: `currentColor`, and `color-mix()` with it. |
 | A colour of the system | `Canvas` and `CanvasText`, for the link past the bar. |
-| A colour of the themes | `--danger`, for the error of a form and the line beside what a user is told, and `--warning`, for the line beside what a form warns of. |
+| A colour of the themes | `--danger`, for the error of a form, the line beside what a user is told, and the outline of a role of the team that has failed, and `--warning`, for the line beside what a form warns of. |
 | One that brings its own background | The Live badge: white on red, the same in both themes. |
 
 | Rule | Detail |
@@ -117,7 +117,7 @@ No test drives a browser. By hand:
 
 ## Not built yet
 
-- A preference for reduced motion (FR-ANI-4), which the specification stores with the account beside the theme. There is no animation yet to reduce.
+- A preference for reduced motion (FR-ANI-4), which the specification stores with the account beside the theme. What moves is the team at work on the screen of an agent, and it follows what the device asks for: see "What moves" in [agent-screen.md](agent-screen.md).
 - A colour for a profit and one for a loss. They are told apart by their sign, which the specification asks for, and by nothing else.
 - Taking the theme that a visitor chose on their device into the account that they then register. A new account has System.
 - A check of every screen by a tool that measures contrast in a browser (NFR-USA-1). The contrast of the colours that the stylesheet writes out is computed by a test, and the rest are the colours of the browser.

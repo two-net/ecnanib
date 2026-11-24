@@ -8,9 +8,9 @@ namespace Ecnanib.WebUi.Live;
 
 /// <summary>
 /// What the parts of a page that follow what changes say, in one place: the steps of a cycle
-/// that runs, the position of an agent, and the price that it is valued at (FR-NTF-2). Each is
-/// said in plain language, as words, and none relies on a colour (NFR-USA-2, FR-THM-5). See
-/// docs/live-updates.md.
+/// that runs, what each role of its team does (FR-ANI-1), the position of an agent, and the
+/// price that it is valued at (FR-NTF-2). Each is said in plain language, as words, and none
+/// relies on a colour (NFR-USA-2, FR-THM-5). See docs/live-updates.md.
 /// </summary>
 public static class LivePages
 {
@@ -61,6 +61,44 @@ public static class LivePages
 
     /// <summary>What the step that a cycle is at says: <c>now, since 15 November 2026, 09:20:07 UTC</c>.</summary>
     public static string StepNow(DateTimeOffset since) => $"now, since {PageTimes.AtSecond(since)}";
+
+    /// <summary>The heading of a cycle that ended a moment ago, which says what started it.</summary>
+    public static string Ended(CycleKind kind) => kind == CycleKind.Test ? "A test cycle has ended" : "A cycle has ended";
+
+    /// <summary>What a cycle that ended a moment ago was for, and when it ended.</summary>
+    public static string EndedFor(RunningCycle cycle, DateTimeOffset endedAt)
+    {
+        ArgumentNullException.ThrowIfNull(cycle);
+
+        var ended = $"It was for the candle that closed at {PageTimes.At(cycle.ClosedAt)}, and ended at {PageTimes.AtSecond(endedAt)}.";
+
+        return cycle.Kind == CycleKind.Test
+            ? $"{ended} You ran it as a test: it placed no orders. Its timeline shows the rest."
+            : $"{ended} Its timeline shows the rest.";
+    }
+
+    /// <summary>
+    /// What a role of the team does now, as a word (FR-ANI-1). The page says what each word
+    /// means above the team: see AgentReportPages.TeamExplained.
+    /// </summary>
+    public static string Describe(RoleState state) => state switch
+    {
+        RoleState.Waiting => "waiting",
+        RoleState.Working => "working",
+        RoleState.Done => "done",
+        RoleState.Failed => "failed",
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, "No such state of a role."),
+    };
+
+    /// <summary>The name that the stylesheet knows what a role does by: <c>role-working</c>.</summary>
+    public static string ClassOf(RoleState state) => state switch
+    {
+        RoleState.Waiting => "role-waiting",
+        RoleState.Working => "role-working",
+        RoleState.Done => "role-done",
+        RoleState.Failed => "role-failed",
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, "No such state of a role."),
+    };
 
     /// <summary>
     /// The open position of an agent in a sentence. On the Futures market it says the side: a

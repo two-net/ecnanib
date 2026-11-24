@@ -53,6 +53,13 @@
     [Parameter]
     public bool Values { get; set; }
 
+    /// <summary>
+    /// The roles of the team of the agent, each with the model that it was given, for a page
+    /// that shows the team at work as a pipeline (FR-ANI-1).
+    /// </summary>
+    [Parameter]
+    public IReadOnlyList<LiveRole>? Team { get; set; }
+
     /// <summary>What ILiveSignals.Mark said before the page read what it shows.</summary>
     [Parameter, EditorRequired]
     public long Since { get; set; }
@@ -66,6 +73,6 @@
         var request = HttpContext?.Request ?? throw new InvalidOperationException("A page that follows is written for a request, and there is none.");
 
         _page = request.Path.Value ?? string.Empty;
-        _view = LiveView.Of(request, AgentId, Follows, Shows, Market, Mode, Symbol, QuoteAsset, Since, Values);
+        _view = LiveView.Of(request, AgentId, Follows, Shows, Market, Mode, Symbol, QuoteAsset, Since, Values, Team);
     }
 }

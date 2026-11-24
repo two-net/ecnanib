@@ -18,7 +18,10 @@
 
 @if (View.Shows.HasFlag(LiveShows.Cycle))
 {
-    <LiveCycleSteps Cycles="@_shown.Cycles" SaysRest="@View.Shows.HasFlag(LiveShows.Team)" />
+    @* A page that shows the team at work has it as a pipeline, with each cycle and at rest (FR-ANI-1). *@
+    <LiveCycleSteps Cycles="@_shown.Cycles"
+                    SaysRest="@View.Shows.HasFlag(LiveShows.Team)"
+                    Team="@(View.Shows.HasFlag(LiveShows.Team) ? View.Team ?? [] : null)" />
 }
 
 @if (View.Shows.HasFlag(LiveShows.Position))

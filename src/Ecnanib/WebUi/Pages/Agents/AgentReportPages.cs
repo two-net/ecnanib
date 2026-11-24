@@ -19,10 +19,15 @@ public static class AgentReportPages
     /// <summary>The heading of the team of the agent, with what it does now.</summary>
     public const string TeamHeading = "Team";
 
-    /// <summary>What the page says above the roles of the team.</summary>
+    /// <summary>
+    /// What the page says above the team at work: the order that the roles work in, and what
+    /// the word beside each role means (FR-ANI-1, NFR-USA-2).
+    /// </summary>
     public const string TeamExplained =
         "The four roles that decide for the agent each time a candle of its timeframe closes, each with the model that it was given. " +
-        "What the team does now is said under them, as it changes.";
+        "The two analysts work at the same time, then the Strategist, then the Risk Manager. " +
+        "Each role says what it does now: it is waiting until the cycle comes to it, working while its model is called, " +
+        "done when it gave a valid result, and failed when it gave none.";
 
     /// <summary>What the page says of a role that was given no model.</summary>
     public const string NoModel = "No model chosen";

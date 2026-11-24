@@ -7,6 +7,7 @@
 @using Ecnanib.Notifications
 @using Ecnanib.Platform.LiveUpdates
 @using Ecnanib.Shared
+@using Ecnanib.WebUi.Live
 @using Ecnanib.WebUi.Pages.Account
 @using Ecnanib.WebUi.Pages.Notifications
 @inject IStoredAgents Agents
@@ -44,9 +45,11 @@
     It is the screen of the agent (FR-RPT-2, FR-UI-2): beside the state and the controls it shows
     the live team status, the current position and its protective orders, an equity curve, the
     trade list, the performance figures, and the decision timeline with every role's output and
-    the Risk Guard result. The team is the four roles with the model of each, and under them the
-    part that says what the team does now: the steps of a cycle that runs, or that the team is
-    at rest. The figures and the curve are of the mode that the agent is in, and nothing of the
+    the Risk Guard result. The team is shown at work, as a pipeline (FR-ANI-1): the four roles
+    with the model of each, in the order that they work in, each with what it does now, and
+    under them the steps of a cycle that runs, or that the team is at rest. The pipeline is of
+    the part that is written over the connection, so the page hands that part the team as it
+    read it. The figures and the curve are of the mode that the agent is in, and nothing of the
     other mode is in them. The trades and the decisions each say their mode (FR-BIN-11). They
     are asked for by owner: the Decision Engine, which may not use Accounts, is handed the user
     who is signed in. The equity is worked out as the dashboard works it out, with the open
@@ -124,22 +127,12 @@
         <p>@AgentPages.HaltEnds(ends)</p>
     }
 
-    @* The team of the agent: who decides for it, and under them what the team does now (FR-RPT-2). *@
+    @* The team of the agent: who decides for it, and what each of them does now (FR-RPT-2, FR-ANI-1). *@
     <h2 id="team-heading">@AgentReportPages.TeamHeading</h2>
 
     <p>@AgentReportPages.TeamExplained</p>
 
-    <dl class="agent-roster" aria-labelledby="team-heading">
-        @foreach (var (role, model) in _team)
-        {
-            <div>
-                <dt>@AgentPages.Describe(role).Name</dt>
-                <dd>@(model ?? AgentReportPages.NoModel)</dd>
-            </div>
-        }
-    </dl>
-
-    @* What the team does and what the agent holds now, written over the connection of the page as it changes. *@
+    @* The team at work and what the agent holds now, written over the connection of the page as it changes. *@
     <LiveUpdates AgentId="@_agent.Id"
                  Follows="@Followed"
                  Shows="@(LiveShows.Cycle | LiveShows.Position | LiveShows.Team)"
@@ -148,6 +141,7 @@
                  Symbol="@_agent.Symbol"
                  QuoteAsset="@_agent.QuoteAsset"
                  Values="true"
+                 Team="@_team"
                  Since="@_since" />
 
     <h2>Controls</h2>
@@ -294,7 +288,7 @@
     private AgentView? _agent;
     private AgentReport? _report;
     private IReadOnlyList<CycleRecord> _decisions = [];
-    private IReadOnlyList<(Role Role, string? Model)> _team = [];
+    private IReadOnlyList<LiveRole> _team = [];
     private AgentStateHistory? _history;
     private IReadOnlyList<NotificationView>? _notifications;
     private bool _posted;
@@ -493,7 +487,7 @@
 
         _team =
         [
-            .. Enum.GetValues<Role>().Select(role => (
+            .. Enum.GetValues<Role>().Select(role => new LiveRole(
                 role,
                 agent.Roles.FirstOrDefault(given => given.Role == role) is { } given
                     ? AgentReportPages.Model(given, providers[given.ModelId])

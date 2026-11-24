@@ -107,8 +107,9 @@ internal sealed class TeamCycle(
         var outcome = CycleOutcome.Failed;
         var decided = false;
 
-        // The cycle runs from here until it is recorded, and says each step that it comes to,
-        // for the open pages of its user (FR-NTF-2). What it says is kept in memory alone.
+        // The cycle runs from here until it is recorded, and says each step that it comes to
+        // and what each role of its team does, for the open pages of its user (FR-NTF-2,
+        // FR-ANI-1). What it says is kept in memory alone, and for a moment after it has ended.
         using var running = progress.Begin(cycle, startedAt);
 
         try
@@ -200,10 +201,16 @@ internal sealed class TeamCycle(
         // reads what the other answers.
         running.At(CycleStep.Analysts);
 
-        var analysing = roles.RunAsync(
-            kept, cycle, team[Role.MarketAnalyst], package.ForMarketAnalyst(), results.ReadMarketReport, cancellationToken);
-        var searching = roles.RunAsync(
-            kept, cycle, team[Role.SentimentAnalyst], package.ForSentimentAnalyst(), results.ReadSentiment, cancellationToken);
+        // Each says what it gave as it ends, and not when both are over: one analyst is done
+        // while the other still works (FR-ANI-1).
+        var analysing = SaidAsync(
+            running,
+            Role.MarketAnalyst,
+            roles.RunAsync(kept, cycle, team[Role.MarketAnalyst], package.ForMarketAnalyst(), results.ReadMarketReport, cancellationToken));
+        var searching = SaidAsync(
+            running,
+            Role.SentimentAnalyst,
+            roles.RunAsync(kept, cycle, team[Role.SentimentAnalyst], package.ForSentimentAnalyst(), results.ReadSentiment, cancellationToken));
 
         await Task.WhenAll(analysing, searching);
 
@@ -224,13 +231,16 @@ internal sealed class TeamCycle(
         // that only tightens, and at most the risk that the agent allows (FR-CYC-4 to FR-CYC-7).
         running.At(CycleStep.Strategist);
 
-        var planning = await roles.RunAsync(
-            kept,
-            cycle,
-            team[Role.Strategist],
-            package.ForStrategist(lessons, market, sentiment),
-            answered => results.ReadPlan(answered, package.Agent),
-            cancellationToken);
+        var planning = await SaidAsync(
+            running,
+            Role.Strategist,
+            roles.RunAsync(
+                kept,
+                cycle,
+                team[Role.Strategist],
+                package.ForStrategist(lessons, market, sentiment),
+                answered => results.ReadPlan(answered, package.Agent),
+                cancellationToken));
 
         if (planning.Result is not { Value: { } plan } planned)
         {
@@ -257,13 +267,16 @@ internal sealed class TeamCycle(
             // and neither report.
             running.At(CycleStep.RiskManager);
 
-            var reviewing = await roles.RunAsync(
-                kept,
-                cycle,
-                team[Role.RiskManager],
-                package.ForRiskManager(lessons, planned),
-                answered => results.ReadReview(answered, plan),
-                cancellationToken);
+            var reviewing = await SaidAsync(
+                running,
+                Role.RiskManager,
+                roles.RunAsync(
+                    kept,
+                    cycle,
+                    team[Role.RiskManager],
+                    package.ForRiskManager(lessons, planned),
+                    answered => results.ReadReview(answered, plan),
+                    cancellationToken));
 
             if (reviewing.Result is not { Value: { } review })
             {
@@ -298,6 +311,22 @@ internal sealed class TeamCycle(
         running.At(CycleStep.RiskGuard);
 
         return (decision.Outcome, await checks.CheckAsync(cycle, goesOn, kept, cancellationToken));
+    }
+
+    /// <summary>
+    /// Says what a role gave as its run ends, to the open pages of the user of the cycle: a
+    /// valid result, or none, also when it was called once more (FR-ANI-1, FR-TEAM-9). A run
+    /// that ends with an error says nothing here: the cycle ends with it, and says then that
+    /// the role has failed.
+    /// </summary>
+    private static async Task<RoleRun<T>> SaidAsync<T>(RunningCycles.Running running, Role role, Task<RoleRun<T>> run)
+        where T : class
+    {
+        var gave = await run;
+
+        running.Over(role, valid: gave.Result is not null);
+
+        return gave;
     }
 
     /// <summary>

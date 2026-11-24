@@ -441,7 +441,7 @@ public sealed record TestCycleResult(TestCycleOutcome Outcome, Guid? CycleId = n
 
 ## The progress of a cycle
 
-**Cycle progress updates in the UI within 2 seconds, without a manual refresh** (FR-NTF-2). A cycle is recorded once, when it ends, as a complete record: until then nothing of it is in the database. So a cycle that runs says each step that it comes to, in memory, and `ICycleProgress` answers with the cycles of an agent that run now:
+**Cycle progress updates in the UI within 2 seconds, without a manual refresh** (FR-NTF-2), and each role of the team moves through waiting, working, done, or failed as the cycle progresses (FR-ANI-1). A cycle is recorded once, when it ends, as a complete record: until then nothing of it is in the database. So a cycle that runs says each step that it comes to and what each role of its team does, in memory, and `ICycleProgress` answers with the cycles of an agent that run now, and with those that ended a moment ago:
 
 ```csharp
 public interface ICycleProgress
@@ -450,9 +450,18 @@ public interface ICycleProgress
 }
 
 public sealed record RunningCycle(
-    Guid CycleId, CycleKind Kind, DateTimeOffset ClosedAt, DateTimeOffset StartedAt, IReadOnlyList<ReachedStep> Steps);
+    Guid CycleId, CycleKind Kind, DateTimeOffset ClosedAt, DateTimeOffset StartedAt,
+    IReadOnlyList<ReachedStep> Steps, IReadOnlyList<RoleProgress> Roles, DateTimeOffset? EndedAt = null)
+{
+    public static readonly TimeSpan KeptAfterEnd = TimeSpan.FromSeconds(5);
+    public bool IsGoneAt(DateTimeOffset now);
+}
 
 public sealed record ReachedStep(CycleStep Step, DateTimeOffset At);
+
+public sealed record RoleProgress(Role Role, RoleState State);
+
+public enum RoleState { Waiting, Working, Done, Failed }
 ```
 
 | Step | When a cycle comes to it |
@@ -466,18 +475,28 @@ public sealed record ReachedStep(CycleStep Step, DateTimeOffset At);
 | `Orders` | What the Risk Guard accepted is handed to what places the orders. A test cycle places none. |
 | `Recording` | The cycle is recorded, however it ended. |
 
+| What a role does | When |
+|---|---|
+| `Waiting` | As the cycle starts, and until the cycle comes to the step that calls its model. A role that the cycle never comes to stays so. |
+| `Working` | From the step that calls its model: `Analysts` for the two analysts, `Strategist`, and `RiskManager`. Also while it is called once more. |
+| `Done` | Its run is over, and it gave a valid result. |
+| `Failed` | Its run is over, and it gave no valid result, also when it was called once more (FR-TEAM-9). And a role that still worked as the cycle ended: the cycle was stopped, or ended with an error. |
+
 | Rule | Detail |
 |---|---|
 | **A cycle says the steps that it comes to, and no others.** | Which steps a cycle comes to is its decision: one that a loss limit ends calls no model, a plan that opens no position is not reviewed, and nothing goes on of a plan that was vetoed. So a page lists the steps so far, with the last one as what the cycle does now, and promises none. |
-| **It runs from the moment that its turn comes until it is recorded.** | `TeamCycle` begins to say it as it starts, and it is gone once its record is stored, or could not be. A cycle that waits for its turn in the queue of a close says nothing yet. |
+| **Each role says what it does, as it changes.** | The four roles of the team, always, in the order of `Role`. The two analysts are called at one step and are over each in its own time, so each says so as its run ends, and not when both are over. A Sentiment Analyst that failed stays failed while the cycle goes on with sentiment marked unavailable. |
+| **It runs from the moment that its turn comes until it is recorded.** | `TeamCycle` begins to say it as it starts, and it has ended once its record is stored, or could not be. A cycle that waits for its turn in the queue of a close says nothing yet. |
+| **A cycle that has ended is kept for 5 seconds,** with how each role ended. | `RunningCycle.KeptAfterEnd`. It says when it ended, `EndedAt`, and each of its roles is as it was then. Without it, what the last role gave would be gone as it is said: a cycle whose Strategist failed is recorded within milliseconds. The screen of an agent shows it, and the other pages show the cycles that run: see "The team at work" in [agent-screen.md](agent-screen.md). |
+| **No timer takes it away.** | It is left out of what is answered once its 5 seconds are over, by the clock. It is let go of when a cycle begins: every cycle whose seconds are over, of whatever agent, and those of the agent of the cycle that begins, whose team works again. So nothing here runs by itself, and nothing says that the seconds are over: what shows a cycle asks again then. See "The feed of a page" in [live-updates.md](live-updates.md). |
 | **It is asked for by owner.** | The Decision Engine may not use Accounts, so a page hands it the user of its connection. The cycle of an agent of another user is not found (NFR-SEC-3). |
 | **A cycle is kept by its own id.** | A test cycle starts outside the job, so it may run beside the cycle of a close of the same agent. Each says its own steps, and says what started it. |
-| **It holds nothing of what a model answered.** | The steps and their times. The record of the cycle has the rest, and its timeline shows it: see "The timeline" in [team.md](team.md). |
-| **Each step is told to the open pages of its user.** | With a signal that the Decision Engine raises, `LiveSubject.CycleStep`: as the cycle starts, at each step, and as it ends. It names the user and the agent, and nothing else. See "Signals" in [live-updates.md](live-updates.md). |
+| **It holds nothing of what a model answered.** | The steps and their times, and whether each role gave a valid result. The record of the cycle has the rest, and its timeline shows it: see "The timeline" in [team.md](team.md). |
+| **Each step is told to the open pages of its user.** | With a signal that the Decision Engine raises, `LiveSubject.CycleStep`: as the cycle starts, at each step, as each role is over, and as it ends. It names the user and the agent, and nothing else. See "Signals" in [live-updates.md](live-updates.md). |
 | **What it says is beside what it does.** | Nothing of it fails a cycle, or holds one up. |
 | **It is in memory, for this process.** | The cycles that this instance runs: a cycle of a close runs on the one instance that runs the background work, and a test cycle on the instance that took its request. Nothing of it is stored, so a cycle that is stopped with the application says nothing after the start. |
 
-The pages of the state, the cycles, and the test cycle of an agent show the cycles of the agent that run: see "The pages" in [live-updates.md](live-updates.md). `CycleProgressTests` holds the Decision Engine to the rules above.
+The pages of the state, the cycles, and the test cycle of an agent show the cycles of the agent that run: see "The pages" in [live-updates.md](live-updates.md). The page of the state, which is the screen of the agent, shows what the roles do as a pipeline, and a cycle that has ended for its 5 seconds. `CycleProgressTests` holds the Decision Engine to the rules above.
 
 ## How long a cycle takes
 

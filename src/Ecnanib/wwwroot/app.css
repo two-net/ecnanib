@@ -416,7 +416,8 @@ p.cycle-kind {
    of an agent that run, each with the steps that it has come to, and the position of an agent
    with the price that it is valued at. Everything is said as words, so nothing relies on its
    look: a step that is over is lighter, and the step that a cycle is at says "now". Nothing
-   moves, and nothing changes its size when a price changes: a number is as wide as its digits. */
+   of them moves, and nothing changes its size when a price changes: a number is as wide as its
+   digits. The team at work, above the steps of a cycle on the screen of an agent, is below. */
 .live-cycle, .live-position {
     margin: 0 0 1.5rem;
 }
@@ -725,9 +726,9 @@ fieldset {
     margin-top: 0.25rem;
 }
 
-/* The screen of an agent (FR-RPT-2): its team, its performance figures, its equity curve, its
-   trades, and its decisions, each a part of the page of its state, set apart from the part
-   above it by a line. Everything is said as words and numbers: a profit and a loss are told
+/* The screen of an agent (FR-RPT-2): its performance figures, its equity curve, its trades,
+   and its decisions, each a part of the page of its state, set apart from the part above it
+   by a line. Its team is above them, at work as a pipeline: see below. Everything is said as words and numbers: a profit and a loss are told
    apart by their sign, and nothing relies on a colour (FR-THM-5). A number is as wide as its
    digits, so nothing moves when it changes. */
 .agent-performance, .agent-equity, .agent-trades, .agent-decisions {
@@ -736,26 +737,231 @@ fieldset {
     padding-top: 0.5rem;
 }
 
-/* The roles of the team, each on a line: its name, and beside it its model, which wraps in a
-   column of its own when it is long. */
-.agent-roster {
+/* The team at work, as a pipeline (FR-ANI-1): the four roles as cards, in the order that they
+   work in. On a narrow screen the three stages are one under another, and from 48rem on they
+   are side by side: the two analysts, one above the other, then the Strategist, then the Risk
+   Manager. A card is an outline in the colour of the text around it, as the card of an agent
+   on the dashboard is, and says its role, its model with the provider, and what the role does
+   now, as a word. A name that is long wraps inside its card.
+
+   Nothing relies on a colour, or on what moves (FR-THM-5): the word says what a role does, and
+   the marker beside it differs by its shape. It is a faint ring while the role waits, a ring
+   around a dot while it works, a disc when it is done, and a ring around a cross when it has
+   failed. A card whose role works or has failed has a second outline, and the one of a role
+   that has failed is in the colour of what is wrong. No colour is written out here.
+
+   A line leads into the second and the third stage, in the room between the stages: faint
+   until the work is handed to the stage, and drawn through from then on. That is the hand-off.
+
+   What changes between two states is how far something shows and how large it is drawn, and
+   never where anything is or how much room it takes: so nothing around a card moves when its
+   role goes on. What moves by itself is at the end of this part, for a device that does not
+   ask for reduced motion. */
+.team-pipeline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    list-style: none;
     margin: 0 0 1rem;
+    padding: 0;
+    max-width: 64rem;
 }
 
-    .agent-roster > div {
-        display: grid;
-        grid-template-columns: minmax(8rem, 12rem) 1fr;
-        gap: 0 0.75rem;
+.pipeline-stage {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+/* The two analysts, which work at the same time: one above the other, at every width. */
+.pipeline-parallel {
+    display: grid;
+    gap: 0.5rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.pipeline-role {
+    position: relative;
+    display: grid;
+    gap: 0.125rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-radius: 0.5rem;
+    overflow-wrap: anywhere;
+}
+
+    /* The second outline, over the first: of a role that works, and of one that has failed. */
+    .pipeline-role::after {
+        content: "";
+        position: absolute;
+        inset: -1px;
+        border: 2px solid currentColor;
+        border-radius: inherit;
+        opacity: 0;
+        pointer-events: none;
     }
 
-    .agent-roster dt {
-        font-weight: 600;
+.role-working::after, .role-failed::after {
+    opacity: 1;
+}
+
+.role-failed::after {
+    border-color: var(--danger);
+}
+
+.role-name {
+    font-weight: 600;
+}
+
+.role-model {
+    font-size: 0.875em;
+}
+
+.role-state {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.role-failed .role-state {
+    font-weight: 600;
+}
+
+/* The marker of what a role does: a ring, with a dot in it that is as large as the state says,
+   and a cross over it for a role that has failed. */
+.role-marker {
+    position: relative;
+    flex: none;
+    box-sizing: border-box;
+    width: 0.875em;
+    height: 0.875em;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+}
+
+    .role-marker::before, .role-marker::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: 0;
     }
 
-    .agent-roster dd {
-        margin: 0;
-        overflow-wrap: anywhere;
+    .role-marker::before {
+        border-radius: 50%;
+        background: currentColor;
+        transform: scale(0.5);
     }
+
+    /* Two bars that cross, turned by half a right angle. */
+    .role-marker::after {
+        background:
+            linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat,
+            linear-gradient(currentColor, currentColor) center / 2px 100% no-repeat;
+        transform: rotate(45deg);
+    }
+
+.role-waiting .role-marker {
+    opacity: 0.5;
+}
+
+.role-working .role-marker::before {
+    opacity: 1;
+}
+
+/* As large as the ring, and over it: a disc. */
+.role-done .role-marker::before {
+    opacity: 1;
+    transform: scale(1.4);
+}
+
+.role-failed .role-marker::after {
+    opacity: 1;
+}
+
+/* The line into a stage after the first, in the room above the stage: the faint line that is
+   always there, and over it the line that is drawn through once the work is handed over, from
+   the stage before to this one. */
+.pipeline-stage + .pipeline-stage::before, .pipeline-stage + .pipeline-stage::after {
+    content: "";
+    position: absolute;
+    top: -1.5rem;
+    left: 1.5rem;
+    width: 2px;
+    height: 1.5rem;
+    background: currentColor;
+}
+
+.pipeline-stage + .pipeline-stage::before {
+    opacity: 0.25;
+}
+
+.pipeline-stage + .pipeline-stage::after {
+    transform: scaleY(0);
+    transform-origin: top;
+}
+
+.pipeline-stage + .pipeline-stage.stage-handed::after {
+    transform: none;
+}
+
+/* On a wide screen the stages are side by side, each as wide as the others, with the card of a
+   stage at the middle of its height, and the line into a stage is in the room at its left. */
+@media (min-width: 48rem) {
+    .team-pipeline {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 2.5rem;
+    }
+
+    .pipeline-stage + .pipeline-stage::before, .pipeline-stage + .pipeline-stage::after {
+        top: calc(50% - 1px);
+        left: -2.5rem;
+        width: 2.5rem;
+        height: 2px;
+    }
+
+    .pipeline-stage + .pipeline-stage::after {
+        transform: scaleX(0);
+        transform-origin: left;
+    }
+}
+
+/* What moves (FR-ANI-1), for a device that does not ask for reduced motion: on one that does,
+   nothing here holds, and a role goes from one state to the next at once (FR-ANI-4). A change
+   takes between 150 and 400 milliseconds. One thing moves for as long as its state lasts, the
+   dot of a role that works, which is the one state that is live, and it comes and goes once in
+   a second and a half (FR-ANI-5). Only how far something shows and how large it is drawn are
+   changed, so the browser moves nothing else for it (FR-ANI-6). MotionStyleTests holds the
+   stylesheet to all of this. */
+@media (prefers-reduced-motion: no-preference) {
+    /* The hand-off: the line is drawn through, from the stage before to this one. */
+    .pipeline-stage + .pipeline-stage::after {
+        transition: transform 300ms ease-out;
+    }
+
+    .pipeline-role::after, .role-marker, .role-marker::before, .role-marker::after {
+        transition: opacity 200ms ease-out, transform 200ms ease-out;
+    }
+
+    .role-working .role-marker::before {
+        animation: role-working 1.5s ease-in-out infinite;
+    }
+
+    @keyframes role-working {
+        0%, 100% {
+            opacity: 1;
+            transform: scale(0.5);
+        }
+
+        50% {
+            opacity: 0.5;
+            transform: scale(0.9);
+        }
+    }
+}
 
 /* The figures of an agent stand side by side as those of the dashboard do. There are more of
    them, so each is a little smaller. */

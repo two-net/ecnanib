@@ -23,8 +23,9 @@ public enum LiveShows
 
     /// <summary>
     /// What the team of the agent does now, also when it does nothing: with
-    /// <see cref="Cycle"/>, the page says so when no cycle of the agent runs, as the screen of
-    /// the agent does (FR-RPT-2).
+    /// <see cref="Cycle"/>, the page shows the team at work as a pipeline (FR-ANI-1), says so
+    /// when no cycle of the agent runs, and shows a cycle that ended a moment ago with how
+    /// each role ended, as the screen of the agent does (FR-RPT-2).
     /// </summary>
     Team = 4,
 }
@@ -47,6 +48,10 @@ public enum LiveShows
 /// does (FR-RPT-2): the price that the page follows for its position is the one that it asks
 /// for itself again on, and no price of another agent is followed for it.
 /// </param>
+/// <param name="Team">
+/// The roles of the team of the agent, each with the model that it was given, for a page that
+/// shows the team at work (FR-ANI-1). What each role does is asked of the cycles that run.
+/// </param>
 /// <remarks>
 /// It travels with the page, sealed by the framework, to the connection that the page makes,
 /// so it holds what can be written as text and read again.
@@ -61,7 +66,8 @@ public sealed record LiveView(
     string? QuoteAsset,
     long Since,
     string Address,
-    bool Values = false)
+    bool Values = false,
+    IReadOnlyList<LiveRole>? Team = null)
 {
     /// <summary>
     /// What a page follows, as the request that writes the page makes it. A page that answers
@@ -82,6 +88,7 @@ public sealed record LiveView(
     /// asked for: a price that is read has the page ask for itself again, which a page that
     /// answers a form does on nothing.
     /// </param>
+    /// <param name="team">The roles of the team of the agent, each with its model, for a page that shows the team at work.</param>
     public static LiveView Of(
         HttpRequest request,
         Guid? agentId,
@@ -92,7 +99,8 @@ public sealed record LiveView(
         string? symbol,
         string? quoteAsset,
         long since,
-        bool values = false)
+        bool values = false,
+        IReadOnlyList<LiveRole>? team = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(follows);
@@ -109,15 +117,27 @@ public sealed record LiveView(
             quoteAsset,
             since,
             request.Path.ToUriComponent() + request.QueryString.ToUriComponent(),
-            asked && values);
+            asked && values,
+            team);
     }
 }
+
+/// <summary>
+/// A role of the team of an agent as a page names it: the role, and the model that it was
+/// given, with its provider, in the words of the page.
+/// </summary>
+/// <param name="Role">The role.</param>
+/// <param name="Model">The model that the role was given, with its provider, or null when it was given none.</param>
+public sealed record LiveRole(Role Role, string? Model);
 
 /// <summary>A price that a page follows: which one, of which symbol, where.</summary>
 public sealed record LivePrice(Market Market, TradingMode Mode, string Symbol, ExchangePriceKind Kind);
 
 /// <summary>What the parts of a page show now.</summary>
-/// <param name="Cycles">The cycles of the agent that run.</param>
+/// <param name="Cycles">
+/// The cycles of the agent that run, and for a page that shows the team at work those that
+/// ended a moment ago.
+/// </param>
 /// <param name="Position">The open position of the agent, or null when it holds none.</param>
 /// <param name="Followed">The price that is followed, or null when none is.</param>
 /// <param name="Price">That price as it was last read, or null while none was.</param>
@@ -221,6 +241,12 @@ public sealed class LiveFeeds(
 /// from the exchange once a second.
 /// </para>
 /// <para>
+/// <b>For a page that shows the team at work, it shows a cycle that has ended for a moment,</b>
+/// with how each role ended, which is the screen of the agent (FR-ANI-1). Nothing says when
+/// that moment is over, so the feed reads the cycles again then, by its own clock, and the
+/// page shows that the team is at rest. The other pages are told the cycles that run alone.
+/// </para>
+/// <para>
 /// Everything that it does, it does one thing after the other, on a line of its own: a signal
 /// is told to it by whoever raised it, who is not kept waiting.
 /// </para>
@@ -256,6 +282,7 @@ public sealed class LiveFeed : IAsyncDisposable
     private IDisposable? _pricing;
     private ITimer? _sessionTimer;
     private ITimer? _askTimer;
+    private ITimer? _restTimer;
 
     // The prices that are followed for a page that values what its user holds, and those of
     // them that were not read yet since they were first followed. Only the line of the feed
@@ -433,6 +460,18 @@ public sealed class LiveFeed : IAsyncDisposable
                 await AskAsync();
                 break;
 
+            case RestDue:
+                // The moment that a cycle which ended is shown for is over: nothing says so,
+                // so the cycles are read again, and the page shows what is left of them.
+                if (SignedInUser.IdOf(_user) is { } resting)
+                {
+                    Volatile.Write(ref _state, State with { Cycles = Cycles(resting) });
+                    AwaitRest();
+                    await _page.ShowAsync();
+                }
+
+                break;
+
             case SessionDue:
                 if (!await _session.StandsAsync(_user, _stop.Token))
                 {
@@ -459,6 +498,10 @@ public sealed class LiveFeed : IAsyncDisposable
 
         _sessionTimer = _clock.CreateTimer(
             _ => Post(new SessionDue()), state: null, AsksAboutSessionEvery, AsksAboutSessionEvery);
+
+        // A cycle that had ended a moment before the page read: the page shows it until its
+        // moment is over.
+        AwaitRest();
 
         if (_view.Shows.HasFlag(LiveShows.Position))
         {
@@ -506,6 +549,7 @@ public sealed class LiveFeed : IAsyncDisposable
         if (_view.Shows.HasFlag(LiveShows.Cycle) && (missed || signal.Subject == LiveSubject.CycleStep))
         {
             Volatile.Write(ref _state, State with { Cycles = Cycles(userId) });
+            AwaitRest();
             shows = true;
         }
 
@@ -536,9 +580,60 @@ public sealed class LiveFeed : IAsyncDisposable
         }
     }
 
-    /// <summary>The cycles of the agent of the page that run, where the page shows them.</summary>
-    private IReadOnlyList<RunningCycle> Cycles(Guid userId) =>
-        _view.Shows.HasFlag(LiveShows.Cycle) && _view.AgentId is { } agentId ? _progress.OfAgent(userId, agentId) : [];
+    /// <summary>
+    /// The cycles of the agent of the page that run, where the page shows them. A page that
+    /// shows the team at work is told a cycle that ended a moment ago as well, until that
+    /// moment is over by the clock of the feed. The other pages are told none that has ended.
+    /// </summary>
+    private IReadOnlyList<RunningCycle> Cycles(Guid userId)
+    {
+        if (!_view.Shows.HasFlag(LiveShows.Cycle) || _view.AgentId is not { } agentId)
+        {
+            return [];
+        }
+
+        var cycles = _progress.OfAgent(userId, agentId);
+
+        if (!_view.Shows.HasFlag(LiveShows.Team))
+        {
+            return [.. cycles.Where(cycle => cycle.EndedAt is null)];
+        }
+
+        var now = _clock.GetUtcNow();
+
+        return [.. cycles.Where(cycle => !cycle.IsGoneAt(now))];
+    }
+
+    /// <summary>
+    /// Has the cycles read again when the moment of a cycle that has ended is over: of the one
+    /// whose moment is over first, when the page shows several. Nothing says that moment, and
+    /// the page is to show then that the team is at rest.
+    /// </summary>
+    private void AwaitRest()
+    {
+        _restTimer?.Dispose();
+        _restTimer = null;
+
+        DateTimeOffset? first = null;
+
+        foreach (var cycle in State.Cycles)
+        {
+            if (cycle.EndedAt + RunningCycle.KeptAfterEnd is { } over && (first is null || over < first))
+            {
+                first = over;
+            }
+        }
+
+        if (first is null)
+        {
+            return;
+        }
+
+        var wait = first.Value - _clock.GetUtcNow();
+
+        _restTimer = _clock.CreateTimer(
+            _ => Post(new RestDue()), state: null, wait > TimeSpan.Zero ? wait : TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+    }
 
     /// <summary>
     /// The open position of the agent of the page, where the page shows it, and the price that
@@ -712,6 +807,8 @@ public sealed class LiveFeed : IAsyncDisposable
         _sessionTimer = null;
         _askTimer?.Dispose();
         _askTimer = null;
+        _restTimer?.Dispose();
+        _restTimer = null;
     }
 
     public async ValueTask DisposeAsync()
@@ -758,6 +855,8 @@ public sealed class LiveFeed : IAsyncDisposable
     private sealed record PriceRead(LivePrice Of, WatchedPrice Price) : Work;
 
     private sealed record AskDue : Work;
+
+    private sealed record RestDue : Work;
 
     private sealed record SessionDue : Work;
 

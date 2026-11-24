@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Ecnanib.Accounts;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
@@ -239,6 +240,138 @@ public class LiveFeedTests
         feeding.Clock.Advance(TimeSpan.FromSeconds(5));
         await TakenAsync(feeding, ada.User, agent, page);
         Assert.Equal(0, page.Asked);
+    }
+
+    [Fact]
+    public async Task A_cycle_that_has_ended_is_shown_on_the_screen_of_its_agent_for_a_moment_and_then_the_page_shows_that_the_team_is_at_rest()
+    {
+        using var feeding = new Feeding();
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = Guid.NewGuid();
+        var page = new StandInPage("/agents/an-agent/state");
+
+        // The screen of an agent, which shows its team at work (FR-ANI-1).
+        await using var feed = feeding.Open(ada.Connection, page, agent, follows: [], LiveShows.Cycle | LiveShows.Team);
+
+        await feed.ReadAsync(TestContext.Current.CancellationToken);
+        feed.Follow();
+
+        // A cycle of the agent runs: one analyst works, and the other is done.
+        var cycle = Feeding.Cycle(CycleStep.DataPackage, CycleStep.Analysts) with { Roles = Feeding.Roles(RoleState.Working, RoleState.Done) };
+
+        feeding.Progress.Runs(ada.User.Id, agent, cycle);
+        feeding.Signals.Raise(ada.User.Id, agent, LiveSubject.CycleStep);
+
+        await Wait.UntilAsync(() => page.Shown == 1, "the page to show what the roles do");
+        Assert.Equal(
+            [RoleState.Working, RoleState.Done, RoleState.Waiting, RoleState.Waiting],
+            Assert.Single(feed.State.Cycles).Roles.Select(role => role.State));
+
+        // It ends, and is kept for a moment, with how each role ended: the page shows that.
+        feeding.Progress.Runs(
+            ada.User.Id,
+            agent,
+            cycle with { Roles = Feeding.Roles(RoleState.Done, RoleState.Done, RoleState.Failed), EndedAt = Feeding.Morning });
+        feeding.Signals.Raise(ada.User.Id, agent, LiveSubject.CycleStep);
+
+        await Wait.UntilAsync(() => page.Shown == 2, "the page to show the cycle as it has ended");
+
+        var ended = Assert.Single(feed.State.Cycles);
+
+        Assert.Equal(Feeding.Morning, ended.EndedAt);
+        Assert.Equal(RoleState.Failed, ended.Roles[2].State);
+
+        // Nothing says when the moment is over, so the feed reads the cycles again then, by
+        // its own clock, and not before: to the last of the moment the page shows the cycle.
+        feeding.Clock.Advance(RunningCycle.KeptAfterEnd - TimeSpan.FromMilliseconds(1));
+        await TakenAsync(feeding, ada.User, agent, page);
+
+        Assert.Equal(3, page.Shown);
+        Assert.Single(feed.State.Cycles);
+
+        // The moment is over: the page shows that the team is at rest. What still says the
+        // cycle is asked no further: the feed leaves it out by the time that it is.
+        feeding.Clock.Advance(TimeSpan.FromMilliseconds(1));
+
+        await Wait.UntilAsync(() => page.Shown == 4, "the page to show that its team is at rest");
+        Assert.Empty(feed.State.Cycles);
+
+        // And it reads them once: nothing is left to wait for, and the page asked for nothing.
+        feeding.Clock.Advance(RunningCycle.KeptAfterEnd);
+        await TakenAsync(feeding, ada.User, agent, page);
+
+        Assert.Equal(5, page.Shown);
+        Assert.Equal(0, page.Asked);
+    }
+
+    [Fact]
+    public async Task A_cycle_that_had_ended_as_the_page_was_written_is_shown_until_its_moment_is_over()
+    {
+        using var feeding = new Feeding();
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = Guid.NewGuid();
+        var page = new StandInPage("/agents/an-agent/state");
+
+        // The cycle ended two seconds before the page was asked for, and nothing more is said
+        // of it: no signal comes.
+        feeding.Progress.Runs(
+            ada.User.Id,
+            agent,
+            Feeding.Cycle(CycleStep.Recording) with { Roles = Feeding.Roles(RoleState.Done, RoleState.Done, RoleState.Done), EndedAt = Feeding.Morning });
+        feeding.Clock.Advance(TimeSpan.FromSeconds(2));
+
+        await using var feed = feeding.Open(ada.Connection, page, agent, follows: [], LiveShows.Cycle | LiveShows.Team);
+
+        // The page is written with it, and its connection is made.
+        await feed.ReadAsync(TestContext.Current.CancellationToken);
+        Assert.NotNull(Assert.Single(feed.State.Cycles).EndedAt);
+
+        feed.Follow();
+        await TakenAsync(feeding, ada.User, agent, page);
+
+        Assert.Equal(1, page.Shown);
+        Assert.Single(feed.State.Cycles);
+
+        // The rest of its moment, which began when the cycle ended, and not when the page came.
+        feeding.Clock.Advance(RunningCycle.KeptAfterEnd - TimeSpan.FromSeconds(2));
+
+        await Wait.UntilAsync(() => page.Shown == 2, "the page to show that its team is at rest");
+        Assert.Empty(feed.State.Cycles);
+    }
+
+    [Fact]
+    public async Task A_page_that_does_not_show_the_team_at_work_is_told_no_cycle_that_has_ended()
+    {
+        using var feeding = new Feeding();
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = Guid.NewGuid();
+        var page = new StandInPage("/agents/an-agent/cycles");
+
+        // The list of the cycles of an agent: it shows the cycles that run, as steps.
+        await using var feed = feeding.Open(ada.Connection, page, agent, follows: [], LiveShows.Cycle);
+
+        var cycle = Feeding.Cycle(CycleStep.DataPackage);
+
+        feeding.Progress.Runs(ada.User.Id, agent, cycle);
+        await feed.ReadAsync(TestContext.Current.CancellationToken);
+        feed.Follow();
+
+        Assert.Single(feed.State.Cycles);
+
+        // The cycle ends, beside one that still runs: the page is told the one that runs.
+        var another = Feeding.Cycle(CycleStep.Analysts) with { Kind = CycleKind.Test };
+
+        feeding.Progress.Runs(ada.User.Id, agent, cycle with { EndedAt = Feeding.Morning }, another);
+        feeding.Signals.Raise(ada.User.Id, agent, LiveSubject.CycleStep);
+
+        await Wait.UntilAsync(() => page.Shown == 1, "the page to show the cycles that run");
+        Assert.Equal(another.CycleId, Assert.Single(feed.State.Cycles).CycleId);
+
+        // And it waits for no moment to be over: it reads nothing again by itself.
+        feeding.Clock.Advance(RunningCycle.KeptAfterEnd);
+        await TakenAsync(feeding, ada.User, agent, page);
+
+        Assert.Equal(2, page.Shown);
     }
 
     [Fact]
@@ -909,6 +1042,47 @@ public class LiveFeedTests
             (agent, LiveShows.Cycle | LiveShows.Position, Market.Futures, TradingMode.Live, "SOLUSDT", "USDT", 42L),
             (view.AgentId!.Value, view.Shows, view.Market!.Value, view.Mode!.Value, view.Symbol, view.QuoteAsset, view.Since));
         Assert.Equal("/agents/0191a0c3-6b1c-7c44-9a36-0d4d6a1c2b10/state?page=2", view.Address);
+    }
+
+    [Fact]
+    public void What_a_page_follows_travels_to_its_connection_as_text_with_the_team_that_it_shows_at_work()
+    {
+        var request = new DefaultHttpContext().Request;
+        request.Method = "GET";
+        request.Path = "/agents/0191a0c3-6b1c-7c44-9a36-0d4d6a1c2b10/state";
+
+        // The screen of an agent hands over its team, each role with its model, and one role
+        // that was given none (FR-ANI-1).
+        var view = LiveView.Of(
+            request,
+            Guid.NewGuid(),
+            [LiveSubject.Agent],
+            LiveShows.Cycle | LiveShows.Team,
+            Market.Spot,
+            TradingMode.Demo,
+            "BTCUSDT",
+            "USDT",
+            since: 7,
+            values: true,
+            team:
+            [
+                new LiveRole(Role.MarketAnalyst, "claude-test-model, of Claude"),
+                new LiveRole(Role.SentimentAnalyst, "gemini-test-model, of Gemini"),
+                new LiveRole(Role.Strategist, Model: null),
+                new LiveRole(Role.RiskManager, "grok-test-model, of Grok"),
+            ]);
+
+        // The framework writes what a page follows into the page as text, and reads it again
+        // as the connection of the page is made: the team is the same on the other side.
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var read = JsonSerializer.Deserialize<LiveView>(JsonSerializer.Serialize(view, options), options);
+
+        Assert.NotNull(read);
+        Assert.Equal(view.Team, read.Team);
+        Assert.Equal((view.AgentId, view.Shows, view.Since, view.Address, view.Values), (read.AgentId, read.Shows, read.Since, read.Address, read.Values));
+
+        // A page that hands over no team has none, as before.
+        Assert.Null(LiveView.Of(request, agentId: null, [], LiveShows.None, market: null, mode: null, symbol: null, quoteAsset: null, since: 7).Team);
     }
 
     /// <summary>

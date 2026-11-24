@@ -1,4 +1,5 @@
 using System.Net;
+using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
 using Ecnanib.Agents;
 using Ecnanib.DecisionEngine;
@@ -13,6 +14,7 @@ using Ecnanib.Tests.Notifications;
 using Ecnanib.WebUi;
 using Ecnanib.WebUi.Live;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -22,8 +24,9 @@ namespace Ecnanib.Tests.LiveUpdates;
 /// <summary>
 /// The pages that follow what changes (FR-NTF-2): each carries one part for which it makes its
 /// connection, which is the one push channel from the application to the browser (NFR-ARC-6),
-/// and is written with what that part shows then: the steps of a cycle that runs, and the
-/// position of an agent with the price that it is valued at. See docs/live-updates.md.
+/// and is written with what that part shows then: the steps of a cycle that runs, the team of
+/// an agent at work as a pipeline on the screen of the agent (FR-ANI-1), and the position of an
+/// agent with the price that it is valued at. See docs/live-updates.md and docs/agent-screen.md.
 /// </summary>
 /// <remarks>
 /// A page is asked for as a browser asks for it, and read as it was written: what its
@@ -246,11 +249,14 @@ public partial class LivePageTests
         var ada = await feeding.SignedInAsync(Ada);
         var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
 
-        const string AtRest = "<section class=\"live-cycle\" aria-live=\"polite\"><p class=\"live-rest\">The team is at rest: no cycle of the agent runs at the moment.</p></section>";
-
         // The screen of the agent says what its team does now, also when it does nothing
-        // (FR-RPT-2). The other pages that show the cycles which run have nothing to say then.
-        Assert.Contains(AtRest, AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent))));
+        // (FR-RPT-2): one part, with the team, of which every role waits, and that it is at
+        // rest. The other pages that show the cycles which run have nothing to say then.
+        var resting = AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent)));
+        var part = Assert.Single(LivePart().Matches(resting)).Groups[1].Value;
+
+        Assert.EndsWith("</ol><p class=\"live-rest\">The team is at rest: no cycle of the agent runs at the moment.</p>", part);
+        Assert.All(TeamPipeline.CardsOf(Assert.Single(TeamPipeline.On(part))), role => Assert.Equal("waiting", role.State));
 
         foreach (var path in new[] { WebUiModule.AgentCyclesPath(agent), WebUiModule.AgentTestCyclePath(agent), WebUiModule.AgentsPath, WebUiModule.DashboardPath })
         {
@@ -264,6 +270,178 @@ public partial class LivePageTests
 
         Assert.Contains("<h2>A cycle is running</h2>", running);
         Assert.DoesNotContain("at rest", running);
+    }
+
+    [Fact]
+    public async Task The_screen_of_an_agent_shows_its_team_at_work_as_a_pipeline_and_no_other_page_does()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
+        var model = $"{StoredAgentRows.TeamModel}, of Claude";
+
+        // No cycle runs. The four roles are there all the same, in the order that they work in,
+        // each with its model and the provider of the model: each waits, and nothing was handed on.
+        var page = AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent)));
+        var pipeline = Assert.Single(TeamPipeline.On(page));
+
+        Assert.Equal(
+            [
+                ("Market Analyst", model, "waiting", "role-waiting"),
+                ("Sentiment Analyst", model, "waiting", "role-waiting"),
+                ("Strategist", model, "waiting", "role-waiting"),
+                ("Risk Manager", model, "waiting", "role-waiting"),
+            ],
+            TeamPipeline.CardsOf(pipeline));
+        Assert.Equal([false, false, false], TeamPipeline.HandedOf(pipeline));
+
+        // The two analysts are one stage, which they share: they work at the same time.
+        Assert.Matches("<li class=\"pipeline-stage\"><ul class=\"pipeline-parallel\"><li><div class=\"pipeline-role[^>]*>.*?</div></li><li><div", Flat(pipeline));
+
+        // The page says what the four words mean, above the team.
+        Assert.Contains("waiting until the cycle comes to it, working while its model is called, done when it gave a valid result, and failed when it gave none.", page);
+
+        // A cycle runs: one analyst is done while the other works, and the others wait.
+        var cycle = Feeding.Cycle(CycleStep.Settling, CycleStep.DataPackage, CycleStep.Analysts);
+
+        feeding.Progress.Runs(ada.User.Id, agent, cycle with { Roles = Feeding.Roles(RoleState.Done, RoleState.Working) });
+
+        page = AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent)));
+        pipeline = Assert.Single(TeamPipeline.On(page));
+
+        Assert.Equal(
+            [("done", "role-done"), ("working", "role-working"), ("waiting", "role-waiting"), ("waiting", "role-waiting")],
+            TeamPipeline.CardsOf(pipeline).Select(role => (role.State, role.Class)));
+        Assert.Equal([false, false, false], TeamPipeline.HandedOf(pipeline));
+
+        // It is in the part of its cycle, above the steps, which are said as words as before.
+        Assert.Matches(
+            "<section class=\"live-cycle\" aria-live=\"polite\"><ol class=\"team-pipeline\".*?</ol><h2>A cycle is running</h2>.*?<ol class=\"cycle-steps\">",
+            Flat(page));
+        Assert.Equal(3, Step().Matches(page).Count);
+
+        // The Sentiment Analyst has failed, and the cycle goes on: the work is handed to the
+        // Strategist, and the line into its stage says so. The Risk Manager waits.
+        feeding.Progress.Runs(
+            ada.User.Id,
+            agent,
+            cycle with { Roles = Feeding.Roles(RoleState.Done, RoleState.Failed, RoleState.Working) });
+
+        pipeline = Assert.Single(TeamPipeline.On(AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent)))));
+
+        Assert.Equal(
+            [("done", "role-done"), ("failed", "role-failed"), ("working", "role-working"), ("waiting", "role-waiting")],
+            TeamPipeline.CardsOf(pipeline).Select(role => (role.State, role.Class)));
+        Assert.Equal([false, true, false], TeamPipeline.HandedOf(pipeline));
+
+        // What moves is for the stylesheet: the part carries no style and no script of its own.
+        Assert.DoesNotContain("style=", pipeline);
+        Assert.DoesNotContain("<script", pipeline);
+
+        // The other pages that show the cycles which run say their steps, and have no pipeline.
+        foreach (var path in new[] { WebUiModule.AgentCyclesPath(agent), WebUiModule.AgentTestCyclePath(agent) })
+        {
+            var other = AgentBrowser.Read(await ada.Browser.PageAsync(path));
+
+            Assert.Contains("<h2>A cycle is running</h2>", other);
+            Assert.Empty(TeamPipeline.On(other));
+        }
+    }
+
+    [Fact]
+    public async Task A_cycle_that_ended_a_moment_ago_is_on_the_screen_of_its_agent_with_how_each_role_ended_and_on_no_other_page()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
+
+        // The Strategist gave no valid result, so the cycle ended with no decision, and the
+        // Risk Manager was never called. It ended as the page is asked for.
+        feeding.Progress.Runs(
+            ada.User.Id,
+            agent,
+            Feeding.Cycle(CycleStep.Settling, CycleStep.DataPackage, CycleStep.Analysts, CycleStep.Strategist, CycleStep.Recording) with
+            {
+                Roles = Feeding.Roles(RoleState.Done, RoleState.Done, RoleState.Failed),
+                EndedAt = Feeding.Morning,
+            });
+
+        var page = AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent)));
+        var pipeline = Assert.Single(TeamPipeline.On(page));
+
+        Assert.Equal(["done", "done", "failed", "waiting"], TeamPipeline.CardsOf(pipeline).Select(role => role.State));
+        Assert.Equal([false, true, false], TeamPipeline.HandedOf(pipeline));
+
+        // It says that it has ended, and when, and each of its steps is done: none is "now".
+        Assert.Contains("<h2>A cycle has ended</h2>", page);
+        Assert.Contains(
+            "<p>It was for the candle that closed at 24 November 2026, 09:00 UTC, and ended at 24 November 2026, 09:00:00 UTC. Its timeline shows the rest.</p>",
+            page);
+        Assert.Equal(5, Step().Matches(page).Count);
+        Assert.All(Step().Matches(page), step => Assert.EndsWith(": done", step.Groups[1].Value));
+        Assert.DoesNotContain("is running", page);
+        Assert.DoesNotContain("at rest", page);
+
+        // The other pages show the cycles that run, and this one runs no longer.
+        foreach (var path in new[] { WebUiModule.AgentCyclesPath(agent), WebUiModule.AgentTestCyclePath(agent) })
+        {
+            var other = await ada.Browser.PageAsync(path);
+
+            Assert.DoesNotContain("A cycle has ended", other);
+            Assert.DoesNotContain("is running", other);
+        }
+
+        // Once its moment is over, the screen says that the team is at rest, with every role waiting.
+        feeding.Clock.Advance(RunningCycle.KeptAfterEnd);
+
+        page = AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent)));
+
+        Assert.Contains("The team is at rest", page);
+        Assert.DoesNotContain("A cycle has ended", page);
+        Assert.All(TeamPipeline.CardsOf(Assert.Single(TeamPipeline.On(page))), role => Assert.Equal("waiting", role.State));
+    }
+
+    [Fact]
+    public async Task The_pipeline_stays_in_its_place_as_a_cycle_starts_goes_on_and_ends()
+    {
+        using var application = new LoggedApplication(LoggedApplication.Settings());
+        await using var scope = application.Services.CreateAsyncScope();
+        using var written = new Written(scope.ServiceProvider, scope.ServiceProvider.GetRequiredService<ILoggerFactory>());
+
+        IReadOnlyList<LiveRole> team = [.. Enum.GetValues<Role>().Select(role => new LiveRole(role, "a-model, of Claude"))];
+        var cycle = Feeding.Cycle(CycleStep.DataPackage, CycleStep.Analysts);
+
+        // The team at rest: the part, and the pipeline in it.
+        await written.ShowAsync([], team);
+
+        var parts = written.Parts.ToList();
+
+        Assert.Equal(2, parts.Count);
+
+        // A cycle starts, goes on, has ended, and is kept no longer: the team is at rest again.
+        await written.ShowAsync([cycle with { Roles = Feeding.Roles(RoleState.Working, RoleState.Working) }], team);
+        await written.ShowAsync([cycle with { Roles = Feeding.Roles(RoleState.Done, RoleState.Failed, RoleState.Working) }], team);
+        await written.ShowAsync([cycle with { Roles = Feeding.Roles(RoleState.Done, RoleState.Failed, RoleState.Done, RoleState.Done), EndedAt = Feeding.Morning }], team);
+        await written.ShowAsync([], team);
+
+        // The pipeline is the one that was written first, all along: none was taken away, and
+        // none was written in its place. So the browser changes what a role does in the card
+        // that is there, which is what lets the stylesheet show the change as one (FR-ANI-1).
+        // A pipeline that was written anew would start in its new state, and nothing would move.
+        Assert.Empty(written.TakenAway);
+        Assert.Equal(parts, written.Parts);
+
+        // A second cycle beside the first has a pipeline of its own, which goes with it.
+        await written.ShowAsync([cycle, Feeding.Cycle(CycleStep.DataPackage) with { Kind = CycleKind.Test }], team);
+
+        Assert.Equal(3, written.Parts.Count);
+
+        await written.ShowAsync([cycle], team);
+
+        Assert.Single(written.TakenAway);
+        Assert.DoesNotContain(written.TakenAway[0], parts);
     }
 
     [Fact]
@@ -314,6 +492,58 @@ public partial class LivePageTests
         WebUiModule.NotificationsPath,
     ];
 
+    /// <summary>
+    /// Writes the part that says the cycles of an agent again and again, as the connection of
+    /// a page does, and keeps which of its parts were written and which were taken away.
+    /// </summary>
+#pragma warning disable BL0006 // What a renderer is handed is the framework's to shape: read here is which parts it names, and nothing else.
+    private sealed class Written(IServiceProvider services, ILoggerFactory loggers) : Renderer(services, loggers)
+    {
+        private int? _part;
+
+        /// <summary>The parts that were written so far, by the number that the framework gave each.</summary>
+        public SortedSet<int> Parts { get; } = [];
+
+        /// <summary>The parts that were taken away again.</summary>
+        public List<int> TakenAway { get; } = [];
+
+        public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
+
+        /// <summary>Writes the part with the cycles that run now, on the screen of an agent.</summary>
+        public Task ShowAsync(IReadOnlyList<RunningCycle> cycles, IReadOnlyList<LiveRole> team) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                _part ??= AssignRootComponentId(InstantiateComponent(typeof(LiveCycleSteps)));
+
+                return RenderRootComponentAsync(
+                    _part.Value,
+                    ParameterView.FromDictionary(new Dictionary<string, object?>
+                    {
+                        [nameof(LiveCycleSteps.Cycles)] = cycles,
+                        [nameof(LiveCycleSteps.SaysRest)] = true,
+                        [nameof(LiveCycleSteps.Team)] = team,
+                    }));
+            });
+
+        protected override void HandleException(Exception exception) => ExceptionDispatchInfo.Capture(exception).Throw();
+
+        protected override Task UpdateDisplayAsync(in RenderBatch renderBatch)
+        {
+            for (var at = 0; at < renderBatch.UpdatedComponents.Count; at++)
+            {
+                Parts.Add(renderBatch.UpdatedComponents.Array[at].ComponentId);
+            }
+
+            for (var at = 0; at < renderBatch.DisposedComponentIDs.Count; at++)
+            {
+                TakenAway.Add(renderBatch.DisposedComponentIDs.Array[at]);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+#pragma warning restore BL0006
+
     /// <summary>Stands for a part of a page that fails as it is written.</summary>
     private sealed class Fails : ComponentBase
     {
@@ -335,4 +565,14 @@ public partial class LivePageTests
 
     [GeneratedRegex("""<li class="cycle-step[^"]*">(.*?)</li>""")]
     private static partial Regex Step();
+
+    // A part of a page that says a cycle of an agent, or its team at rest, with what is in it.
+    [GeneratedRegex("""<section class="live-cycle" aria-live="polite">(.*?)</section>""", RegexOptions.Singleline)]
+    private static partial Regex LivePart();
+
+    [GeneratedRegex(@">\s+<")]
+    private static partial Regex Between();
+
+    /// <summary>A page with nothing between one element and the next, for what is asked of the order of its elements.</summary>
+    private static string Flat(string page) => Between().Replace(page, "><");
 }

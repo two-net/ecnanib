@@ -81,17 +81,19 @@ public partial class AgentScreenPageTests
         // The badge of its mode, under the heading (FR-UI-3).
         Assert.Matches($@"</h1>\s*<p>Mode: {Regex.Escape(AgentBrowser.Badge(TradingMode.Demo))} ", page);
 
-        // Live team status: the state of the agent, the four roles with the model of each, and
-        // what the team does now, which is written over the connection of the page as it changes.
+        // Live team status: the state of the agent, and its team at work as a pipeline: the
+        // four roles in the order that they work in, each with its model and the provider of
+        // the model, and with what it does now, which is written over the connection of the
+        // page as it changes (FR-ANI-1). No cycle runs, so each waits.
         Assert.Contains("<p>State: <strong>Running</strong>, since 21 November 2026, 09:00 UTC.", page);
         Assert.Equal(
             [
-                ("Market Analyst", $"{StoredAgentRows.TeamModel}, of Claude"),
-                ("Sentiment Analyst", $"{StoredAgentRows.TeamModel}, of Claude"),
-                ("Strategist", $"{StoredAgentRows.TeamModel}, of Claude"),
-                ("Risk Manager", $"{StoredAgentRows.TeamModel}, of Claude"),
+                ("Market Analyst", $"{StoredAgentRows.TeamModel}, of Claude", "waiting", "role-waiting"),
+                ("Sentiment Analyst", $"{StoredAgentRows.TeamModel}, of Claude", "waiting", "role-waiting"),
+                ("Strategist", $"{StoredAgentRows.TeamModel}, of Claude", "waiting", "role-waiting"),
+                ("Risk Manager", $"{StoredAgentRows.TeamModel}, of Claude", "waiting", "role-waiting"),
             ],
-            Named().Matches(Roster().Match(page).Groups[1].Value).Select(role => (role.Groups[1].Value.Trim(), role.Groups[2].Value.Trim())));
+            TeamPipeline.CardsOf(Assert.Single(TeamPipeline.On(page))));
         Assert.Contains("<p class=\"live-rest\">The team is at rest: no cycle of the agent runs at the moment.</p>", page);
 
         // The current position and its protective orders, as they rest on the exchange.
@@ -273,7 +275,7 @@ public partial class AgentScreenPageTests
 
         Assert.Equal(
             ["No model chosen", "No model chosen", "No model chosen", "No model chosen"],
-            Named().Matches(Roster().Match(withoutTeam).Groups[1].Value).Select(role => role.Groups[2].Value.Trim()));
+            TeamPipeline.CardsOf(Assert.Single(TeamPipeline.On(withoutTeam))).Select(role => role.Model));
 
         // A form of the page that changes nothing, such as starting an agent that has no team,
         // is answered on the page with why, and the page still shows how the agent has performed.
@@ -494,9 +496,6 @@ public partial class AgentScreenPageTests
 
     [GeneratedRegex("<dl class=\"dashboard-figures agent-figures\">(.*?)</dl>", RegexOptions.Singleline)]
     private static partial Regex Figures();
-
-    [GeneratedRegex("<dl class=\"agent-roster\"[^>]*>(.*?)</dl>", RegexOptions.Singleline)]
-    private static partial Regex Roster();
 
     [GeneratedRegex(@"<dt>(.*?)</dt>\s*<dd>(.*?)</dd>", RegexOptions.Singleline)]
     private static partial Regex Named();

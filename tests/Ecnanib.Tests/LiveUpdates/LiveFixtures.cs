@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.LiveUpdates;
@@ -83,6 +84,44 @@ internal static class LiveFixtures
 
         await Wait.UntilAsync(() => first.Heard.Contains(Missed), "the application to listen to what its database says");
     }
+}
+
+/// <summary>
+/// The team at work as a page has it (FR-ANI-1): the cards of its roles, and the stages that
+/// the work was handed to. A test reads a page as a person does, with
+/// <see cref="Agents.AgentBrowser.Read"/>, before it asks.
+/// </summary>
+internal static partial class TeamPipeline
+{
+    /// <summary>The pipelines of a page, each as it is written: one for each cycle, or one of the team at rest.</summary>
+    public static IReadOnlyList<string> On(string page) => [.. Pipeline().Matches(page).Select(pipeline => pipeline.Value)];
+
+    /// <summary>
+    /// The cards of a pipeline, in the order that they are written in: the role, its model with
+    /// the provider, what the role does as the page says it, and as the stylesheet is told it.
+    /// </summary>
+    public static IReadOnlyList<(string Role, string Model, string State, string Class)> CardsOf(string pipeline) =>
+    [
+        .. Card().Matches(pipeline).Select(card => (
+            card.Groups["role"].Value.Trim(), card.Groups["model"].Value.Trim(), card.Groups["state"].Value.Trim(), card.Groups["class"].Value)),
+    ];
+
+    /// <summary>Whether the work was handed to each of the three stages of a pipeline: the first never says so.</summary>
+    public static IReadOnlyList<bool> HandedOf(string pipeline) =>
+        [.. Stage().Matches(pipeline).Select(stage => stage.Groups[1].Success)];
+
+    [GeneratedRegex("<ol class=\"team-pipeline\" aria-labelledby=\"team-heading\">.*?</ol>", RegexOptions.Singleline)]
+    private static partial Regex Pipeline();
+
+    [GeneratedRegex(
+        "<div class=\"pipeline-role (?<class>role-[a-z]+)\" aria-atomic=\"true\">\\s*<span class=\"role-name\">(?<role>.*?)</span>\\s*" +
+        "<span class=\"role-model\">(?<model>.*?)</span>\\s*" +
+        "<span class=\"role-state\"><span class=\"role-marker\" aria-hidden=\"true\"></span>(?<state>.*?)</span>\\s*</div>",
+        RegexOptions.Singleline)]
+    private static partial Regex Card();
+
+    [GeneratedRegex("<li class=\"pipeline-stage( stage-handed)?\">")]
+    private static partial Regex Stage();
 }
 
 /// <summary>Stands for a page that follows what changes: it keeps what its feed asked of it.</summary>
@@ -300,9 +339,13 @@ internal sealed class Feeding : IDisposable
                 agentId, follows ?? [], shows, Market.Spot, TradingMode.Demo, "BTCUSDT", "USDT", since ?? Signals.Mark(), page.Address, values),
             page);
 
-    /// <summary>A cycle that runs, at its first step.</summary>
+    /// <summary>A cycle that runs, at the steps that a test says, with every role of its team waiting.</summary>
     public static RunningCycle Cycle(params CycleStep[] steps) =>
-        new(Guid.NewGuid(), CycleKind.Scheduled, Morning, Morning, [.. steps.Select(step => new ReachedStep(step, Morning))]);
+        new(Guid.NewGuid(), CycleKind.Scheduled, Morning, Morning, [.. steps.Select(step => new ReachedStep(step, Morning))], Roles());
+
+    /// <summary>What the four roles of a team do, in the order of the roles. A role that a test says nothing of waits.</summary>
+    public static IReadOnlyList<RoleProgress> Roles(params RoleState[] states) =>
+        [.. Enum.GetValues<Role>().Select((role, at) => new RoleProgress(role, at < states.Length ? states[at] : RoleState.Waiting))];
 
     public void Dispose() => Application.Dispose();
 }

@@ -148,6 +148,6 @@ No test drives a browser. By hand:
 - What changes a figure and is said by no table that a page follows: a fee that is valued later, funding that is stored, and the UTC day that begins. The page shows it the next time that it is written.
 - The dashboard as the page that a user lands on after signing in. A user arrives at the start page, `/`, which leads to the dashboard: see "The start page" in [layout.md](layout.md).
 - A setup checklist for a first-time user (FR-UI-4).
-- Animation of what changes (FR-ANI-1 to FR-ANI-7), and times in the time zone of the user (NFR-USA-3).
+- Animation of what changes (FR-ANI-2, FR-ANI-3), and times in the time zone of the user (NFR-USA-3). The team at work is on the screen of an agent (FR-ANI-1).
 - The badge of the mode on the page of the notifications: see [notifications.md](notifications.md).
 - An alert when Binance does not answer (NFR-REL-4): nothing raises one yet. See "Not built yet" in [exchange.md](exchange.md).

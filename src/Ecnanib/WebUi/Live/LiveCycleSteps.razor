@@ -9,46 +9,71 @@
     a test says so (FR-CYC-12). With no cycle that runs, there is nothing to say, except on
     the screen of the agent, which says what the team does now also when it does nothing
     (FR-RPT-2): there the part says that the team is at rest.
+
+    On the screen of the agent, which hands over the team, each cycle has the team at work as a
+    pipeline above its steps (FR-ANI-1), and so has the team at rest, with every role waiting.
+    There a cycle that ended a moment ago is shown as well, with how each role ended: it says
+    that it has ended, and each of its steps is done. The part of the first cycle and the part
+    of the team at rest are one part of the page, at the same place, so the pipeline in it
+    stays as a cycle starts and as it ends, and only what its roles do changes.
 *@
 
-@foreach (var cycle in Cycles)
+@foreach (var cycle in Shown)
 {
     <section class="live-cycle" aria-live="polite">
-        <h2>@LivePages.Running(cycle.Kind)</h2>
+        @if (Team is not null)
+        {
+            <LiveTeamPipeline Team="@Team" Roles="@cycle?.Roles" />
+        }
 
-        <p>@LivePages.RunningFor(cycle)</p>
+        @if (cycle is null)
+        {
+            <p class="live-rest">@LivePages.AtRest</p>
+        }
+        else
+        {
+            <h2>@(cycle.EndedAt is null ? LivePages.Running(cycle.Kind) : LivePages.Ended(cycle.Kind))</h2>
 
-        <ol class="cycle-steps">
-            @for (var step = 0; step < cycle.Steps.Count; step++)
-            {
-                var reached = cycle.Steps[step];
+            <p>@(cycle.EndedAt is { } endedAt ? LivePages.EndedFor(cycle, endedAt) : LivePages.RunningFor(cycle))</p>
 
-                @if (step == cycle.Steps.Count - 1)
+            <ol class="cycle-steps">
+                @for (var step = 0; step < cycle.Steps.Count; step++)
                 {
-                    <li class="cycle-step cycle-step-now">@LivePages.Describe(reached.Step): <strong>@LivePages.StepNow(reached.At)</strong></li>
-                }
-                else
-                {
-                    <li class="cycle-step cycle-step-done">@LivePages.Describe(reached.Step): @LivePages.StepDone</li>
-                }
-            }
-        </ol>
-    </section>
-}
+                    var reached = cycle.Steps[step];
 
-@if (SaysRest && Cycles.Count == 0)
-{
-    <section class="live-cycle" aria-live="polite">
-        <p class="live-rest">@LivePages.AtRest</p>
+                    @if (step == cycle.Steps.Count - 1 && cycle.EndedAt is null)
+                    {
+                        <li class="cycle-step cycle-step-now">@LivePages.Describe(reached.Step): <strong>@LivePages.StepNow(reached.At)</strong></li>
+                    }
+                    else
+                    {
+                        <li class="cycle-step cycle-step-done">@LivePages.Describe(reached.Step): @LivePages.StepDone</li>
+                    }
+                }
+            </ol>
+        }
     </section>
 }
 
 @code {
-    /// <summary>The cycles that run, in the order that they started in.</summary>
+    // What the part says when no cycle is there to show: the team at rest, once.
+    private static readonly IReadOnlyList<RunningCycle?> Rest = [null];
+
+    /// <summary>The cycles that run, in the order that they started in, and those that ended a moment ago where the page shows them.</summary>
     [Parameter, EditorRequired]
     public IReadOnlyList<RunningCycle> Cycles { get; set; } = [];
 
     /// <summary>Whether the part says that the team is at rest when no cycle runs.</summary>
     [Parameter]
     public bool SaysRest { get; set; }
+
+    /// <summary>
+    /// The roles of the team, each with the model that it was given, for a page that shows the
+    /// team at work as a pipeline (FR-ANI-1), or null for a page that says the steps alone.
+    /// </summary>
+    [Parameter]
+    public IReadOnlyList<LiveRole>? Team { get; set; }
+
+    /// <summary>What the part shows: each cycle, or the team at rest where the page says that, or nothing.</summary>
+    private IReadOnlyList<RunningCycle?> Shown => Cycles.Count > 0 ? Cycles : SaysRest ? Rest : [];
 }
