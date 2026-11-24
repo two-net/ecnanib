@@ -282,7 +282,7 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
             .OwnedBy(userId)
             .SingleOrDefaultAsync(stored => stored.Id == cycleId && stored.AgentId == agentId, cancellationToken);
 
-        return cycle is null ? null : (await RecordsAsync(context, userId, agentId, [cycle], cancellationToken))[0];
+        return cycle is null ? null : (await CycleRecordViews.OfAsync(context, userId, [cycle], models, called: [], cancellationToken))[0];
     }
 
     public async Task<IReadOnlyList<CycleRecord>> LatestRecordsAsync(Guid userId, Guid agentId, int count, CancellationToken cancellationToken)
@@ -305,16 +305,43 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
             .Take(count)
             .ToListAsync(cancellationToken);
 
-        return await RecordsAsync(context, userId, agentId, latest, cancellationToken);
+        return await CycleRecordViews.OfAsync(context, userId, latest, models, called: [], cancellationToken);
     }
+}
+
+/// <summary>
+/// Makes cycles the complete records that their user reads (FR-CYC-10): for the timeline of a
+/// cycle, for the decisions on the screen of an agent (FR-RPT-2), and for the export of the
+/// decisions of a user (FR-RPT-4). The three say the same of a cycle, because one rule makes all.
+/// </summary>
+internal static class CycleRecordViews
+{
+    // A call points at its model with a key that keeps the model from being deleted, so these
+    // are words for a row that nothing of the application wrote.
+    internal const string UnknownProvider = "a provider that is not in the catalog";
+    internal const string UnknownModel = "a model that is not in the catalog";
 
     /// <summary>
-    /// The complete records of some cycles of one agent of a user, in the order the cycles are
-    /// given in. Each table is read once for all of them, with the context that it is given, in
-    /// the snapshot that the context holds.
+    /// The complete records of some cycles of a user, in the order the cycles are given in. Each
+    /// table is read once for all of them, with the context that it is given, in the snapshot
+    /// that the context holds.
     /// </summary>
-    private async Task<IReadOnlyList<CycleRecord>> RecordsAsync(
-        EcnanibDbContext context, Guid userId, Guid agentId, IReadOnlyList<DecisionCycle> cycles, CancellationToken cancellationToken)
+    /// <param name="context">The context that the cycles were read with.</param>
+    /// <param name="userId">The user whose cycles they are: every part of a record is asked for by owner as well.</param>
+    /// <param name="cycles">The cycles, of one agent or of several.</param>
+    /// <param name="models">What names the model of a call, and its provider.</param>
+    /// <param name="called">
+    /// The models that were looked up before, which whoever reads many cycles in parts keeps
+    /// from one part to the next. It is added to.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    public static async Task<IReadOnlyList<CycleRecord>> OfAsync(
+        EcnanibDbContext context,
+        Guid userId,
+        IReadOnlyList<DecisionCycle> cycles,
+        ICatalogModels models,
+        Dictionary<Guid, CatalogModel?> called,
+        CancellationToken cancellationToken)
     {
         if (cycles.Count == 0)
         {
@@ -338,14 +365,16 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
             .OrderBy(check => check.Sequence)
             .ToListAsync(cancellationToken);
 
-        // An order names its cycle by the id alone, so it is asked for by its agent as well.
+        // An order names its cycle by the id alone, so it is an order of the cycle only when
+        // it is of the agent of the cycle as well.
         var orders = (await context.Set<Order>()
             .AsNoTracking()
             .OwnedBy(userId)
-            .Where(order => order.CycleId != null && ids.Contains(order.CycleId.Value) && order.AgentId == agentId)
+            .Where(order => order.CycleId != null && ids.Contains(order.CycleId.Value))
             .OrderBy(order => order.CreatedAt)
             .ThenBy(order => order.Id)
             .ToListAsync(cancellationToken))
+            .Where(order => byId[order.CycleId!.Value].AgentId == order.AgentId)
             .ToLookup(order => order.CycleId!.Value);
 
         // The versions of the templates that the calls used. A version is never changed, and
@@ -371,11 +400,12 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
 
         // A model of the catalog is never deleted, so a call finds the one that it was made
         // with, and its provider, for good.
-        var called = new Dictionary<Guid, CatalogModel?>();
-
         foreach (var modelId in outputs.SelectMany(ofCycle => ofCycle).Select(output => output.ModelId).Distinct())
         {
-            called[modelId] = await models.FindAsync(modelId, cancellationToken);
+            if (!called.ContainsKey(modelId))
+            {
+                called[modelId] = await models.FindAsync(modelId, cancellationToken);
+            }
         }
 
         return
@@ -439,9 +469,4 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
                 cycle.Kind)),
         ];
     }
-
-    // A call points at its model with a key that keeps the model from being deleted, so these
-    // are words for a row that nothing of the application wrote.
-    private const string UnknownProvider = "a provider that is not in the catalog";
-    private const string UnknownModel = "a model that is not in the catalog";
 }

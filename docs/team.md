@@ -379,7 +379,7 @@ public interface ICycleRecords
 - **The rows are their user's:** `DecisionCycle` and `RoleOutput` implement `IUserOwned`. The Decision Engine may not use Accounts, so a row carries its owner along to the row that it hangs on: `(agent_id, user_id)` points at `agents (id, user_id)`, and `(cycle_id, user_id)` at `decision_cycles (id, user_id)`. The database holds the owners to being the same. See [ownership.md](ownership.md).
 - **The record of a cycle goes with its agent,** and with the account: an agent is deleted only while it is a draft, or is stopped with nothing open.
 - **They hold no prompt, no key, and no personal data.** A model is sent nothing that says who the user is (FR-PRM-9), and the summary of a data package holds what a prompt holds. `PersonalDataRules` lists `data_package`, `rejection`, and `result` with what they hold.
-- **They are not in the export of a user's data.** A user exports their trades and decisions as CSV (FR-RPT-4), which is not built. `ExportRules` lists both tables with that.
+- **They are not in the export of a user's data, and are a download of their own.** A user exports their decisions as CSV (FR-RPT-4): a row for each cycle, with the model and the answer of each role. See [export.md](export.md). `ExportRules` lists both tables with that.
 - A table of role outputs points at the versions of the templates: `PromptRulesTests` holds every such table to it.
 
 The migration `AddCycleRecord` adds `data_package` and `no_entry`, and the index of `orders` that finds the orders of a cycle. It gave the cycles that were stored then neither: nothing kept a summary before it, and why no entry was placed was in the log alone.
@@ -599,7 +599,6 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 - The cycles before the latest 50. A cycle is shown once it is recorded, on a page of its own, and the latest five that a candle close started are on the screen of their agent as well, each with every role's output and the Risk Guard result (FR-RPT-2): see "Decision timeline" in [agent-screen.md](agent-screen.md).
 - What a role answered, while its cycle runs. A cycle that runs says the steps that it has come to on the pages of its agent, and its timeline shows what each role answered once the cycle is recorded: see "The progress of a cycle" in [cycles.md](cycles.md).
 - Why a plan that closes a position or adjusts its protection placed no order, in the record of its cycle. The record says why no entry was placed, and the log says the rest.
-- Exporting decisions as CSV (FR-RPT-4).
 - The calls that write lessons in the AI usage. They are charged to the user's key, and are recorded nowhere: see "Not built yet" in [experience.md](experience.md).
 - Keeping the usage of an agent that is deleted. Nothing of the usage is stored, so it goes with the calls.
 - What a provider charges for live searches, and for the tokens that it reads from a cache or writes to one, in the estimated cost. The searches are counted, and every token of a prompt is priced as input.

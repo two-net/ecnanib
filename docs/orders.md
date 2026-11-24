@@ -655,7 +655,7 @@ The migration `AddOrders` adds three tables of the Decision Engine, and `AddOrde
 | `equity_marks.day_began_at`, `result_at_day_start` | The start of a UTC day, and the result of the agent as that day began: as it was when it was first worked out in the day. Its loss of the day is counted from it. |
 | `equity_marks.peak_result` | The highest that the result of the agent has been, since it began or since its drawdown limit last halted it. Its drawdown is counted from it. Both are results, with no capital in them: the capital of the agent is added when they are read. |
 
-The rows are not in the export of a user's data: a user exports their trades as CSV (FR-RPT-4), which is not built. See [accounts.md](accounts.md).
+The rows are not in the export of a user's data: a user exports their trades as CSV (FR-RPT-4), a row for each closed position, with what its orders, its executions, and its funding come to. See [export.md](export.md) and [accounts.md](accounts.md).
 
 ## The log
 

@@ -260,6 +260,13 @@
 
     <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
 
+    @* The trades and the decisions of every agent, to keep (FR-RPT-4). Marked as downloads, so that the browser asks for each file once. *@
+    <p>@ExportFiles.Explained</p>
+
+    <p><a href="@WebUiModule.TradesExportPath" download>@ExportFiles.TradesLink</a></p>
+
+    <p><a href="@WebUiModule.DecisionsExportPath" download>@ExportFiles.DecisionsLink</a></p>
+
     @* What the page follows, and that the prices of what its user holds are followed for it. *@
     <LiveUpdates Follows="@Followed" Values="true" Since="@_since" />
 }

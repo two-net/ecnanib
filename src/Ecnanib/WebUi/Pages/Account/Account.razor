@@ -60,6 +60,13 @@ else
 @* Marked as a download, so that the browser asks for the file once and does not try to show it as a page. *@
 <p><a href="@WebUiModule.ExportPath" download>Download your data</a></p>
 
+@* What the agents of the user traded and decided is not in that download: it is two files of its own (FR-RPT-4). *@
+<p>@ExportFiles.Explained</p>
+
+<p><a href="@WebUiModule.TradesExportPath" download>@ExportFiles.TradesLink</a></p>
+
+<p><a href="@WebUiModule.DecisionsExportPath" download>@ExportFiles.DecisionsLink</a></p>
+
 <h2>Delete your account</h2>
 
 <p>Deleting your account removes it and everything that belongs to it, for good. You are asked to confirm that it is you first.</p>

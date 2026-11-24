@@ -120,6 +120,7 @@ A signed-in user opens the dashboard at `/dashboard`, which the bar at the top o
 | **It follows what changes** (FR-NTF-2). | When an agent of its user, what one holds, a cycle, or a notification changes, the page asks for itself again: the subjects `Agent`, `Holdings`, `Cycle`, and `Notification`. So the states, the positions, the decisions, the alerts, and the count in the bar are those of now, without a manual refresh. |
 | **It has the prices of what its user holds followed.** | The feed of the page follows the price of each symbol that an agent of its user holds a position in, while the page is open, so that the watch has them. The first time that such a price is read, the page asks for itself again, and is written with it. So a dashboard that was written with "Not known at the moment" shows its figures within a second or two. See "The feed of a page" in [live-updates.md](live-updates.md). |
 | **A figure does not move between two changes.** | A price that is read again asks for nothing. The figures are of the moment that the page was written, say the time of their prices, and are worked out anew when something that the page shows changes. |
+| **It leads to the downloads of the trades and the decisions** (FR-RPT-4). | Two links at its foot, to the CSV files of every agent of the user, in which each row says its mode. They are no part of a section of a mode: see [export.md](export.md). |
 | **It has no field to type in.** | A page that follows has none: see "The one push channel" in [live-updates.md](live-updates.md). It has buttons and links. |
 | **Its texts are in one place.** | `DashboardPages` (NFR-USA-4), with how an amount is written. The times are UTC, and say so. |
 | **The tables scroll by themselves on a narrow screen,** | also by keyboard, and the cards stand side by side as far as they fit (FR-UI-1). The look is in `app.css`: a page carries no style of its own. |
@@ -147,7 +148,6 @@ No test drives a browser. By hand:
 - What changes a figure and is said by no table that a page follows: a fee that is valued later, funding that is stored, and the UTC day that begins. The page shows it the next time that it is written.
 - The dashboard as the page that a user lands on after signing in, and the landing page of a visitor (FR-UI-2): `/` is as the template left it.
 - A setup checklist for a first-time user (FR-UI-4).
-- The export of the trades and the decisions as CSV (FR-RPT-4).
 - Animation of what changes (FR-ANI-1 to FR-ANI-7), and times in the time zone of the user (NFR-USA-3).
 - The badge of the mode on the page of the notifications: see [notifications.md](notifications.md).
 - An alert when Binance does not answer (NFR-REL-4): nothing raises one yet. See "Not built yet" in [exchange.md](exchange.md).

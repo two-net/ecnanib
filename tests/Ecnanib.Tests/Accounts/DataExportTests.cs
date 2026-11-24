@@ -70,60 +70,69 @@ internal static class ExportRules
             "The hashes of secrets, which tell their user nothing. The export says how many codes are left.",
 
         // What the teams of a user's agents decided, cycle by cycle. The Decision Engine keeps
-        // the rows, and may not use Accounts, which declares what an export is made of.
+        // the rows, and may not use Accounts, which declares what an export is made of. They are
+        // a download of their own, as CSV (FR-RPT-4): see CsvExportTests for what it holds.
         ["decision_cycles"] =
             "The cycles of a user's agents, one row for each candle close of each agent, with the summary of the data package " +
-            "that its team decided on. A user exports their trades and decisions as CSV (FR-RPT-4), which is not built, and " +
-            "reads each cycle as a timeline on the pages of the agent (FR-CYC-10).",
+            "that its team decided on. They hold no personal data, and are a download of their own: a user exports their " +
+            "decisions as CSV (FR-RPT-4), with a row for each cycle, and reads each cycle as a timeline on the pages of the " +
+            "agent (FR-CYC-10).",
         ["role_outputs"] =
-            "What the models of a user's agents answered, call by call. They hold no personal data, and are exported with " +
-            "the decisions that they belong to (FR-RPT-4), which is not built.",
+            "What the models of a user's agents answered, call by call. They hold no personal data. The model and the answer " +
+            "of each role are on the row of their decision in the CSV of the decisions (FR-RPT-4). How long a call took, and " +
+            "the tokens that it counted, are what the page of the AI usage adds up (FR-RPT-3).",
         ["risk_checks"] =
             "What the Risk Guard made of the plans of a user's agents, check by check. A user reads them on the page of the " +
-            "risk checks of the agent, and exports them with the decisions that they belong to (FR-RPT-4), which is not built.",
+            "risk checks of the agent, and the verdict of each is on the row of its decision in the CSV of the decisions " +
+            "(FR-RPT-4).",
         ["risk_check_rules"] =
             "The outcome of each rule of a check of the Risk Guard: the names of a rule and of an outcome, and two numbers. " +
-            "They are exported with their checks (FR-RPT-4), which is not built.",
+            "The rules that a plan did not pass are named on the row of its decision in the CSV of the decisions (FR-RPT-4), " +
+            "and every rule is on the page of the risk checks.",
 
-        // What the agents of a user traded. The Decision Engine keeps the rows too.
+        // What the agents of a user traded. The Decision Engine keeps the rows too, and they are
+        // the other download, as CSV (FR-RPT-4).
         ["orders"] =
-            "The orders of a user's agents at Binance, order by order. They hold no personal data. A user exports their " +
-            "trades and decisions as CSV (FR-RPT-4), which is not built, and has every order at Binance itself.",
+            "The orders of a user's agents at Binance, order by order. They hold no personal data. What a cycle placed is on " +
+            "the row of its decision, and what a position held and was closed at is on the row of its trade, in the CSV " +
+            "files (FR-RPT-4). A user has every order at Binance itself.",
         ["fills"] =
-            "The executions of those orders: prices, quantities, and fees. They are exported with the trades that they " +
-            "belong to (FR-RPT-4), which is not built.",
+            "The executions of those orders: prices, quantities, and fees. The fees of a position are on the row of its " +
+            "trade in the CSV of the trades (FR-RPT-4), as one sum, and a user has every execution at Binance itself.",
         ["positions"] =
-            "The positions of a user's agents, each from when it was opened to when it was closed. They are exported as " +
-            "the trades of the user (FR-RPT-4), which is not built.",
+            "The positions of a user's agents, each from when it was opened to when it was closed. A closed position is a " +
+            "row of the CSV of the trades (FR-RPT-4), which is a download of its own.",
         ["fundings"] =
-            "What those positions received and paid as funding on the Futures market: amounts, assets, and times. They " +
-            "are exported with the trades that they belong to (FR-RPT-4), which is not built.",
+            "What those positions received and paid as funding on the Futures market: amounts, assets, and times. The " +
+            "funding of a position is on the row of its trade in the CSV of the trades (FR-RPT-4), as one sum.",
         ["equity_marks"] =
             "What the loss limits of a user's agents are counted from: two amounts and two times for an agent in a mode, " +
-            "worked out from the trades of the agent. They hold no personal data, and the equity of an agent over time is " +
-            "exported with its trades (FR-RPT-4), which is not built.",
+            "worked out from the trades of the agent. They hold no personal data, and are in neither CSV file: the trades " +
+            "that they are worked out from are a download (FR-RPT-4).",
         ["position_roles"] =
             "The model that held each role of an agent when a position of it was opened: the name of a role and the id of " +
-            "a model of the catalog. They hold no personal data, and are exported with the trades that they belong to " +
-            "(FR-RPT-4), which is not built. The models that the roles of an agent have now are in the export.",
+            "a model of the catalog. They hold no personal data, and are on the row of their trade in the CSV of the trades " +
+            "(FR-RPT-4), each as a provider and an identifier. The models that the roles of an agent have now are in the export.",
         ["position_results"] =
             "The result of each closed position of a user's agents: its net profit or loss, its result in R, its fees, its " +
-            "funding, and how long it was held. They are exported as the trades of the user (FR-RPT-4), which is not built.",
+            "funding, and how long it was held. They are on the row of their trade in the CSV of the trades (FR-RPT-4).",
         ["equity_snapshots"] =
             "The equity of a user's agents over time: an amount, a capital, and an asset for an agent in a mode at a moment, " +
-            "worked out from the trades of the agent. They hold no personal data, and are exported with the trades " +
-            "(FR-RPT-4), which is not built.",
+            "worked out from the trades of the agent. They hold no personal data, and are in neither CSV file: the screen of " +
+            "the agent draws them (FR-RPT-2), and the trades that they are worked out from are a download (FR-RPT-4).",
 
         // What Experience scores of the decisions of a user's agents. Experience keeps the rows,
         // and may not use Accounts either.
         ["analyst_calls"] =
             "The calls of the analysts of a user's agents, each with whether the price went the way that was called: the " +
-            "name of a role, the id of a model of the catalog, a symbol, and prices. They hold no personal data, and are " +
-            "exported with the decisions that they belong to (FR-RPT-4), which is not built.",
+            "name of a role, the id of a model of the catalog, a symbol, and prices. They hold no personal data, and are in " +
+            "neither CSV file: the answers that they are scored from are in the CSV of the decisions (FR-RPT-4), and what " +
+            "they add up to is on the experience screens (FR-EXP-3).",
         ["shadow_trades"] =
             "What the plans that the Risk Managers of a user's agents vetoed would have produced: the prices of a plan, how " +
-            "it would have ended, and its result in R. They hold no personal data, and are exported with the decisions that " +
-            "they belong to (FR-RPT-4), which is not built.",
+            "it would have ended, and its result in R. They hold no personal data, and are in neither CSV file: the plans " +
+            "and the vetoes that they are worked out from are in the CSV of the decisions (FR-RPT-4), and what they add up " +
+            "to is on the experience screens (FR-EXP-5).",
     };
 }
 

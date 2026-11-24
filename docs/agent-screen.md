@@ -203,6 +203,6 @@ No test drives a browser. By hand:
 - A choice of the time that the curve is of. It is of all that was recorded in the mode. Until the equity over time is thinned to one row for a day after 90 days (NFR-DAT-5), all of it is read for each request.
 - The fees, the funding, and the margin of the open position: see "Not built yet" in [orders.md](orders.md).
 - The decisions before the latest five on this screen, and the cycles before the latest 50 on the list of the cycles.
-- The export of the trades and the decisions as CSV (FR-RPT-4).
+- A download of the trades and the decisions of this agent alone. The CSV files are of every agent of the user, and each row names its agent (FR-RPT-4): see [export.md](export.md). The account page and the dashboard lead to them, and this screen does not.
 - The times of an agent in the time zone of its user (NFR-USA-3).
 - The name of an agent in the list of the agents leads to its settings. The list has a link to this screen beside it.

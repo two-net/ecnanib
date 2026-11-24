@@ -346,7 +346,7 @@ A reverse closes the open position, and then opens one on the opposite side. It 
 - **The rows are their user's:** `RiskCheck` and `RiskCheckRule` implement `IUserOwned`, and carry their owner along: `(cycle_id, user_id)` points at `decision_cycles (id, user_id)`, and `(check_id, user_id)` at `risk_checks (id, user_id)`. They go with their cycle, and so with the agent and with the account. See [ownership.md](ownership.md).
 - **The mode is that of the cycle:** `decision_cycles.mode`, which stays as it was written when the agent is switched (FR-BIN-11).
 - **They hold no text:** names of the service's own, numbers, and a time. Nothing that a model wrote is in them, and nothing personal.
-- **They are not in the export of a user's data.** A user exports their trades and decisions as CSV (FR-RPT-4), which is not built. `ExportRules` lists both tables with that.
+- **They are not in the export of a user's data, and are in a download of their own.** A user exports their decisions as CSV (FR-RPT-4): the row of a cycle says the verdict of each of its checks, and names the rules that the plan did not pass. See [export.md](export.md). `ExportRules` lists both tables with that.
 
 The migration that added `quantity` and `leverage` gave the checks that were stored then neither: nothing computed a size before it.
 
@@ -428,5 +428,5 @@ The exchange did not give {Missing} for the Risk Guard to check the plan of agen
 - The maintenance margin in the liquidation estimate. A position that approaches the price that Binance liquidates it at, which has the maintenance margin in it, is said to its user while it is open (FR-BIN-F5): see "The margin of a position" in [orders.md](orders.md).
 - Checking a close that a user asks for: "Close position now", and the close of an agent that is stopped (FR-AGT-11, FR-AGT-12). Such a close has no cycle, so its check has no row to hang on. It is placed without a check: it opens nothing, and takes no result of the Risk Guard. See "Closing a position" in [orders.md](orders.md).
 - The rules of a market order, `MARKET_LOT_SIZE`, and whether the exchange takes a close below the least value. The least and the most quantity that an entry is held to are those of `LOT_SIZE`, for an entry at the market as well.
-- The export of decisions as CSV (FR-RPT-4). A user reads the checks on the page of the risk checks, on the timeline of a cycle, and with the latest decisions on the screen of the agent, which also says the largest drawdown of the recorded equity by the measure of the drawdown limit (FR-RPT-2): see [agent-screen.md](agent-screen.md).
+- Every rule of a check in the export of the decisions, with what it measured and what it was held to. The CSV names the rules that a plan did not pass (FR-RPT-4): see [export.md](export.md). A user reads every rule on the page of the risk checks, on the timeline of a cycle, and with the latest decisions on the screen of the agent, which also says the largest drawdown of the recorded equity by the measure of the drawdown limit (FR-RPT-2): see [agent-screen.md](agent-screen.md).
 - Retention: decision records are kept 365 days (NFR-DAT-5), and nothing deletes yet.

@@ -70,6 +70,11 @@ public static class DecisionEngineModule
         // equity over time, and its closed trades, in the mode that it is in (FR-RPT-2). It
         // only reads, and values an open position as the dashboard does.
         services.AddSingleton<IAgentReports, AgentReports>();
+
+        // The trades and the decisions of a user, every one of them, for the user to take out
+        // of the service as CSV (FR-RPT-4). It only reads, a part at a time, and says of a trade
+        // and of a cycle what the screen of its agent says.
+        services.AddSingleton<IExportedRecords, ExportedRecords>();
         services.AddSingleton<IReconciliation, OrderReconciliation>();
 
         // What watches the loss limits of an agent, at every cycle and every reconciliation:

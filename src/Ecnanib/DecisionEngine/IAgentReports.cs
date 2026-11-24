@@ -426,7 +426,7 @@ internal sealed class AgentReports(
                 Roles: [])),
             experience.MinSamples);
 
-        var trades = await TradesAsync(context, userId, closed, results, tradesPage, cancellationToken);
+        var trades = await TradesAsync(context, userId, closed, tradesPage, cancellationToken);
 
         var equity = AgentEquities.Valued(agent, rows, held, prices, clock.GetUtcNow());
         var net = equity.Equity - equity.Capital;
@@ -450,116 +450,17 @@ internal sealed class AgentReports(
         EcnanibDbContext context,
         Guid userId,
         IQueryable<Position> closed,
-        IQueryable<PositionResult> results,
         int page,
         CancellationToken cancellationToken)
     {
         var total = await closed.CountAsync(cancellationToken);
         var pages = Math.Max((total + AgentTrades.PageSize - 1) / AgentTrades.PageSize, 1);
 
-        // A position that is closed has its result some time after: until then it has none, and
-        // is a trade all the same.
-        var listed = await (
-            from position in closed
-            join result in results on position.Id equals result.PositionId into written
-            from result in written.DefaultIfEmpty()
-            orderby position.ClosedAt descending, position.Id descending
-            select new
-            {
-                position.Id,
-                position.Mode,
-                position.Market,
-                position.Symbol,
-                position.QuoteAsset,
-                position.Side,
-                position.EntryPrice,
-                position.OpenedAt,
-                position.ClosedAt,
-                position.ExitReason,
-                position.MadeAtExchange,
-                Recorded = result != null,
-                NetResult = (decimal?)result.NetResult,
-                Fees = (decimal?)result.Fees,
-                Funding = (decimal?)result.Funding,
-                ResultInR = (decimal?)result.ResultInR,
-                HoldingSeconds = (long?)result.HoldingSeconds,
-                Complete = (bool?)result.Complete,
-            })
-            .Skip((page - 1) * AgentTrades.PageSize)
-            .Take(AgentTrades.PageSize)
-            .ToListAsync(cancellationToken);
+        // By the one rule of what a list says of a trade, which the export of the trades goes by as well.
+        var listed = await ListedTrades.OfAsync(
+            context, userId, closed, (page - 1) * AgentTrades.PageSize, AgentTrades.PageSize, cancellationToken);
 
-        var ids = listed.Select(trade => trade.Id).ToList();
-
-        // What was executed of the orders of those positions: the entry of each says how much
-        // it held, and the orders that closed it say at what price.
-        var executed = (await context.Set<Order>()
-            .AsNoTracking()
-            .OwnedBy(userId)
-            .Where(order => order.PositionId != null && ids.Contains(order.PositionId.Value) && order.ExecutedQuantity > 0m)
-            .Select(order => new { PositionId = order.PositionId!.Value, order.Purpose, order.ExecutedQuantity, order.AveragePrice })
-            .ToListAsync(cancellationToken))
-            .ToLookup(order => order.PositionId);
-
-        return new AgentTrades(
-            total,
-            page,
-            pages,
-            [
-                .. listed.Select(trade =>
-                {
-                    var orders = executed[trade.Id].ToList();
-                    var exits = orders.Where(order => order.Purpose != OrderPurpose.Entry).Select(order => (order.ExecutedQuantity, order.AveragePrice)).ToList();
-
-                    return new AgentTrade(
-                        trade.Id,
-                        trade.Mode,
-                        trade.Market,
-                        trade.Symbol,
-                        trade.QuoteAsset,
-                        trade.Side,
-
-                        // A position has one entry. What it holds grows less as it is closed in
-                        // parts, so the position itself does not say how much it held.
-                        orders.Where(order => order.Purpose == OrderPurpose.Entry).Select(order => (decimal?)order.ExecutedQuantity).FirstOrDefault(),
-                        trade.EntryPrice,
-                        ExitPriceOf(exits),
-                        trade.OpenedAt,
-                        trade.ClosedAt!.Value,
-                        trade.ExitReason,
-                        trade.Recorded
-                            ? new AgentTradeResult(
-                                trade.NetResult ?? 0m,
-                                trade.Fees ?? 0m,
-                                trade.Funding ?? 0m,
-                                trade.ResultInR,
-                                TimeSpan.FromSeconds(trade.HoldingSeconds ?? 0L))
-                            : null,
-                        Estimate: trade.MadeAtExchange is not null || trade.Complete == false);
-                }),
-            ]);
-    }
-
-    /// <summary>
-    /// The average price that the orders which closed a position were executed at, by what each
-    /// executed. Null where none closed it, and where one says no price: an average of the
-    /// others would be a price that looks right, and is not.
-    /// </summary>
-    internal static decimal? ExitPriceOf(IReadOnlyList<(decimal Executed, decimal? AveragePrice)> exits)
-    {
-        if (exits.Count == 0 || exits.Any(exit => exit.AveragePrice is null))
-        {
-            return null;
-        }
-
-        return Worked(() =>
-        {
-            var executed = exits.Sum(exit => exit.Executed);
-
-            return executed > 0m
-                ? AgentResults.Rounded(exits.Sum(exit => AgentResults.Rounded(exit.Executed * exit.AveragePrice!.Value)) / executed)
-                : (decimal?)null;
-        });
+        return new AgentTrades(total, page, pages, [.. listed.Select(trade => trade.Trade)]);
     }
 
     /// <summary>What a sum works out to, or null where it is beyond what can be worked out with: nothing is said then, and nothing fails.</summary>

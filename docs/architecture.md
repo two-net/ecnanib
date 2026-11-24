@@ -319,6 +319,12 @@ The agent screen shows: live team status, the current position and protective or
 
 The figures and the curve are of the mode that the agent is in, and a trade and a decision each say the mode that they were of, as a word: the page has the one badge of its agent (FR-BIN-11, FR-UI-3). The curve is drawn on the server, as part of the page, with no script and no style of its own. The page follows what changes: the database says when the equity of an agent is recorded, by one more trigger, and the feed of the page follows the price of the position of the agent alone. Nothing of the screen is stored, and it adds no table. `ComponentRules.cs` is unchanged. See [agent-screen.md](agent-screen.md).
 
+## Export of trades and decisions
+
+A user can export their trades and decisions as CSV (FR-RPT-4). It is two downloads of the Web UI, and no component of its own, as the dashboard and the agent screen are none. The Decision Engine keeps every table that a file is made from, and reads them behind `IExportedRecords`: the closed positions and the recorded cycles of every agent of a user, a part at a time, by the rules that make the trade list and the timeline of the screen of an agent. It is handed the user who is signed in, because it may not use Accounts. The Web UI says what the columns of each file are, and writes a file as its rows are read.
+
+Every row says the mode that it was of, and a file adds nothing up (FR-BIN-11). A file holds only the rows of the user of the session, and no secret (NFR-SEC-3, FR-KEY-8). Nothing of an export is stored, and it adds no table. `ComponentRules.cs` is unchanged. See [export.md](export.md).
+
 ## Logging
 
 Components write log events through the host's `ILogger<T>` and nothing else. One rule in `ComponentRules.cs` keeps it that way: only `Platform` may use the logging library, Serilog. So every event passes the one place that masks secrets before it reaches an output (NFR-LOG-4). See [logging.md](logging.md).

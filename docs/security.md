@@ -90,6 +90,7 @@ object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 | No code sends SQL that was put together as text. | `ExecuteSqlRaw`, `SqlQueryRaw`, and `FromSqlRaw` are among the methods that no code may call, in [`ComponentRules.cs`](../tests/Ecnanib.Tests/Architecture/ComponentRules.cs). |
 | No component writes a database command of its own. | `System.Data` and the driver are reserved for `Platform`, in the same file. The statements that `Platform` sends itself, for its two locks, are fixed text with parameters. |
 | Nothing a request brings becomes a line of an email. | An email address with a space or a control character in it is not one, for registration, sign-in, and password reset alike. See "Registering" in [accounts.md](accounts.md). |
+| Nothing that a person typed, or a model wrote, becomes a formula of a spreadsheet. | A cell of a CSV file that would start as a formula does is given an apostrophe before it, and a cell that holds a comma, a quote, or the end of a line stands in quotes. See "The files" in [export.md](export.md). |
 
 The application starts no process, and builds no file path from a request. `InjectionTests` registers, signs in, and asks for a reset link with SQL in the address, in the password, and in the token of a link: each is the text it is.
 
@@ -101,7 +102,7 @@ The application starts no process, and builds no file path from a request. `Inje
 | A script that reaches a page all the same is not run. | The policy: no script in a page without the nonce, none from another site, no event handler, and no text run as code. |
 | A script could not read a cookie. | Every cookie is `HttpOnly`. See "Cookies". |
 | A link cannot lead a user from the application to another site. | `returnUrl` is followed only when it is a path of this application. See "Signing in" in [accounts.md](accounts.md). |
-| What the application serves is not taken for a page. | `nosniff`, and the export of a user's data is sent as a file to keep. |
+| What the application serves is not taken for a page. | `nosniff`, and the export of a user's data, and their trades and decisions as CSV, are sent as files to keep. |
 
 `BrowserDefenseTests` types markup into the sign-in form, and registers an address that holds markup: an address may. Both come back as text, on the form and in the bar that names the user.
 

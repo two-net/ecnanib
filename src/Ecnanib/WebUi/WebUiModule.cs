@@ -3,8 +3,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ecnanib.Accounts;
 using Ecnanib.Agents;
+using Ecnanib.DecisionEngine;
 using Ecnanib.Notifications;
 using Ecnanib.Shared;
+using Ecnanib.WebUi.Exports;
 using Ecnanib.WebUi.Live;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Server.Circuits;
@@ -19,6 +21,18 @@ public static class WebUiModule
 
     /// <summary>The path of the download of what is stored about the signed-in user (NFR-SEC-9).</summary>
     public const string ExportPath = "/account/export";
+
+    /// <summary>
+    /// The path of the download of the trades of the signed-in user as CSV: the closed positions
+    /// of every agent of theirs, each with the mode that it was of (FR-RPT-4, FR-BIN-11).
+    /// </summary>
+    public const string TradesExportPath = "/export/trades";
+
+    /// <summary>
+    /// The path of the download of the decisions of the signed-in user as CSV: the recorded
+    /// cycles of every agent of theirs, each with the mode that it was of (FR-RPT-4, FR-BIN-11).
+    /// </summary>
+    public const string DecisionsExportPath = "/export/decisions";
 
     /// <summary>The path of the page a user deletes their account on (FR-ACC-9).</summary>
     public const string DeleteAccountPath = "/account/delete";
@@ -259,6 +273,11 @@ public static class WebUiModule
         // Not a page either: the answer is a file. A visitor is sent to sign in, as on a page.
         endpoints.MapGet(ExportPath, ExportAsync).RequireAuthorization();
 
+        // Files as well: the trades and the decisions of the user, as CSV (FR-RPT-4). They are
+        // of whoever is signed in, and of nobody that the address could name.
+        endpoints.MapGet(TradesExportPath, ExportTrades).RequireAuthorization();
+        endpoints.MapGet(DecisionsExportPath, ExportDecisions).RequireAuthorization();
+
         // The framework would say on its pages that this site may frame them. Whether the
         // application may be shown in a frame is said in one place, for every answer: no site
         // may. See BrowserDefenses in Platform.
@@ -300,5 +319,45 @@ public static class WebUiModule
             JsonSerializer.SerializeToUtf8Bytes(data, ExportJson),
             "application/json",
             $"account-data-{data.ExportedAt.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}.json");
+    }
+
+    private static IResult ExportTrades(HttpContext request, IExportedRecords records, TimeProvider clock) =>
+        CsvFile(
+            request,
+            clock,
+            "trades",
+            ExportFiles.TradeColumns,
+            records.TradesOfUserAsync(SignedInUser.RequiredIdOf(request), request.RequestAborted),
+            ExportFiles.Cells);
+
+    private static IResult ExportDecisions(HttpContext request, IExportedRecords records, TimeProvider clock) =>
+        CsvFile(
+            request,
+            clock,
+            "decisions",
+            ExportFiles.DecisionColumns,
+            records.DecisionsOfUserAsync(SignedInUser.RequiredIdOf(request), request.RequestAborted),
+            ExportFiles.Cells);
+
+    /// <summary>
+    /// The rows of a user as a CSV file to keep, named after what it holds and the day it is of.
+    /// It is written as the rows are read, and is never held as a whole: a user may have more
+    /// decisions than that.
+    /// </summary>
+    private static IResult CsvFile<TRow>(
+        HttpContext request,
+        TimeProvider clock,
+        string name,
+        IReadOnlyList<string> columns,
+        IAsyncEnumerable<TRow> rows,
+        Func<TRow, IReadOnlyList<string>> cells)
+    {
+        // As what is stored about a person is: for that person, and kept by nothing on the way.
+        request.Response.Headers.CacheControl = "no-store";
+
+        return Results.Stream(
+            body => ExportFiles.WriteAsync(body, columns, rows, cells, request.RequestAborted),
+            ExportFiles.ContentType,
+            $"{name}-{clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}.csv");
     }
 }
