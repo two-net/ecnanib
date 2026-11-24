@@ -1,9 +1,19 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+@*
+    The theme of the page, which the server decides for every page that it answers with: the
+    theme of the account of a user, and the theme that the device of a visitor saved (FR-THM-3).
+    It is said here, on the first element and ahead of the stylesheets, so the page is in its
+    theme before anything of it is painted, and no script has a part in it (FR-THM-4). A page
+    that looks as the device is set says nothing, and the stylesheet follows the device
+    (FR-THM-2). See docs/themes.md.
+*@
+<html lang="en" data-theme="@PageTheme.AttributeOf(Theme)">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @* Which of light and dark the page may be, for what the browser paints before the stylesheets are there. *@
+    <meta name="color-scheme" content="@PageTheme.ColorSchemeOf(Theme)" />
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
@@ -21,11 +31,16 @@
 
 </html>
 
+@using Ecnanib.Accounts
 @using Ecnanib.Platform.Security
+@using Ecnanib.WebUi.Themes
 
 @code {
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 
     private string? Nonce => HttpContext is null ? null : BrowserDefenses.NonceOf(HttpContext);
+
+    /// <summary>The theme that the page is written in.</summary>
+    private Theme Theme => HttpContext is null ? Theme.System : PageTheme.Of(HttpContext);
 }

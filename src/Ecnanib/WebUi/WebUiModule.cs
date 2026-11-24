@@ -41,10 +41,17 @@ public static class WebUiModule
     public const string TwoFactorPath = "/account/two-factor";
 
     /// <summary>
-    /// The path of the page of the appearance among the settings (FR-UI-2). The choice of a
-    /// theme is not built yet.
+    /// The path of the page of the appearance among the settings, where a user chooses the
+    /// theme of their account: dark, light, or as their device is set (FR-UI-2, FR-THM-1).
     /// </summary>
     public const string AppearancePath = "/account/appearance";
+
+    /// <summary>
+    /// The path of the page of the appearance for a visitor, who chooses the theme of their
+    /// device there: nobody needs to be signed in for it (FR-THM-3). The foot of a page of a
+    /// visitor leads to it.
+    /// </summary>
+    public const string DeviceAppearancePath = "/appearance";
 
     /// <summary>
     /// The path of the operator status screen, which is for operators alone (FR-UI-2, FR-OPS-2).

@@ -1,11 +1,39 @@
-/* The page (FR-UI-1). It is light or dark as the device is set: a colour below is that of the
-   text around it, a colour of the system, or one that reads on both. The text is in the typeface
-   of the device and at its size, and a control is in the typeface of the text around it, so a
-   phone does not enlarge the page when a field is typed in. The page is at least as tall as the
-   screen, so its foot is at the bottom of a page that says little. */
+/* The themes (FR-THM-1 to FR-THM-5). A page is dark, light, or as the device is set, and its
+   first element says which: data-theme="dark", data-theme="light", or nothing. The server writes
+   that into the page, so the page is in its theme before anything of it is painted, and no script
+   has a part in it. A page that says nothing follows the device, and changes when the setting of
+   the device does: the browser does that by itself.
+
+   A colour below is that of the text around it, a colour of the system, one that brings its own
+   background and so reads on both, or one of the colours here. Each of these is said once, as a
+   light value and a dark one, and the browser takes the one of the theme: light-dark() follows
+   color-scheme. No rule asks the device what it is set to, because a user may have chosen
+   otherwise. Each value reads on the page of its theme with a contrast of 4.5 to 1 or more.
+   A line in one of them is first a line in the colour of the text, and then given its colour: a
+   browser that does not know light-dark() keeps the line. ThemeStyleTests holds the stylesheet
+   to all of this. See docs/themes.md. */
 :root {
     color-scheme: light dark;
+
+    /* What is wrong, or at stake: the error of a form, and the line beside what a user is told. */
+    --danger: light-dark(#b3261e, #f2b8b5);
+
+    /* What a form warns of, and does not refuse: the line beside it. */
+    --warning: light-dark(#9a6700, #d4a72c);
 }
+
+:root[data-theme="light"] {
+    color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+/* The page (FR-UI-1). The text is in the typeface of the device and at its size, and a control is
+   in the typeface of the text around it, so a phone does not enlarge the page when a field is
+   typed in. The page is at least as tall as the screen, so its foot is at the bottom of a page
+   that says little. */
 
 html {
     -webkit-text-size-adjust: 100%;
@@ -32,41 +60,6 @@ h1, h2, h3, h4 {
 
 h1:focus {
     outline: none;
-}
-
-.valid.modified:not([type=checkbox]) {
-    outline: 1px solid #26b050;
-}
-
-.invalid {
-    outline: 1px solid #e50000;
-}
-
-.validation-message {
-    color: #e50000;
-}
-
-.blazor-error-boundary {
-    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, #b32121;
-    padding: 1rem 1rem 1rem 3.7rem;
-    color: white;
-}
-
-    .blazor-error-boundary::after {
-        content: "An error has occurred."
-    }
-
-.darker-border-checkbox.form-check-input {
-    border-color: #929292;
-}
-
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-    color: var(--bs-secondary-color);
-    text-align: end;
-}
-
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-    text-align: start;
 }
 
 /* Forms: one field under another, with its hint and its error below it. */
@@ -99,14 +92,8 @@ form > button[type=submit] {
 }
 
 .field-error, .form-error {
-    color: #b3261e;
+    color: var(--danger);
     margin: 0.25rem 0 0;
-}
-
-@media (prefers-color-scheme: dark) {
-    .field-error, .form-error {
-        color: #f2b8b5;
-    }
 }
 
 /* Two-factor authentication: the QR code for an authenticator app, the key to type in its place,
@@ -507,7 +494,8 @@ fieldset {
 /* What the service has to tell a user about an agent. It says so in words, under a heading of
    its own, and is marked by a line at its side, as a warning of a form is. */
 .agent-notifications {
-    border-left: 0.25rem solid #b3261e;
+    border-left: 0.25rem solid;
+    border-left-color: var(--danger);
     list-style: none;
     margin: 0 0 1rem;
     padding-left: 0.75rem;
@@ -525,12 +513,6 @@ fieldset {
         .agent-notifications > li > form > button[type=submit] {
             margin-top: 0;
         }
-
-@media (prefers-color-scheme: dark) {
-    .agent-notifications {
-        border-left-color: #f2b8b5;
-    }
-}
 
 /* The notifications of a user (FR-NTF-1): one under another, each set apart from the one above
    it by a line. One that is not read says so in words, and is marked by a line at its side, as
@@ -555,28 +537,17 @@ fieldset {
     }
 
 .notification-unread {
-    border-left-color: #b3261e;
-}
-
-@media (prefers-color-scheme: dark) {
-    .notification-unread {
-        border-left-color: #f2b8b5;
-    }
+    border-left-color: var(--danger);
 }
 
 /* What a form warns of, and does not refuse. It says so in words, and is marked by a line at its
-   side, in a colour that reads on a light page and on a dark one: the text keeps the colour of
-   the text around it. */
+   side, in the colour of a warning, which has a value for a light page and one for a dark one:
+   the text keeps the colour of the text around it. */
 .form-warning {
-    border-left: 0.25rem solid #9a6700;
+    border-left: 0.25rem solid;
+    border-left-color: var(--warning);
     margin: 0 0 1rem;
     padding-left: 0.75rem;
-}
-
-@media (prefers-color-scheme: dark) {
-    .form-warning {
-        border-left-color: #d4a72c;
-    }
 }
 
 /* The text of a prompt, as the service wrote it (FR-PRM-7): the line breaks it has are kept, a

@@ -6,7 +6,7 @@ This is the frame that every page is written in, and the map of the screens. Wha
 
 The frame is `MainLayout.razor` in `src/Ecnanib/WebUi/Layout`, with `ScreenLink.razor`, `SettingsNav.razor`, and `NotificationsLink.razor`. What each screen is called and where it is, is `Screens.cs` there, and the paths are in `WebUiModule`. The start page is `Home.razor` in `src/Ecnanib/WebUi/Pages`, with its texts in `HomePages.cs`. The look is in `src/Ecnanib/wwwroot/app.css`. The rules below are enforced by `ScreenRuleTests` and `LayoutPageTests` in `tests/Ecnanib.Tests/Layout`, with the map in `ScreenRules.cs` there, and by `AuditRulesTests` in `tests/Ecnanib.Tests/Accounts`.
 
-How a page is kept from carrying a script or a style of its own is in [security.md](security.md), how a page follows what changes in [live-updates.md](live-updates.md), and who is an operator in [ownership.md](ownership.md).
+How a page is kept from carrying a script or a style of its own is in [security.md](security.md), how a page follows what changes in [live-updates.md](live-updates.md), how a page gets its theme in [themes.md](themes.md), and who is an operator in [ownership.md](ownership.md).
 
 ## The screens
 
@@ -23,7 +23,7 @@ How a page is kept from carrying a script or a style of its own is in [security.
 | Settings: profile | `/account` | Users | "Settings" in the bar, and "Profile" in the navigation of the settings. |
 | Settings: security | `/account/two-factor` | Users | The navigation of the settings. |
 | Settings: API keys | `/account/keys` | Users | The navigation of the settings. See [credentials.md](credentials.md). |
-| Settings: appearance | `/account/appearance` | Users | The navigation of the settings. |
+| Settings: appearance | `/account/appearance` | Users | The navigation of the settings. See [themes.md](themes.md). |
 | Settings: notifications | `/account/notifications` | Users | The navigation of the settings. See [notifications.md](notifications.md). |
 | Operator status | `/operator` | Operators | The bar of an operator. |
 
@@ -35,6 +35,7 @@ How a page is kept from carrying a script or a style of its own is in [security.
 | **The addresses of the pages that there were are as they were.** | The settings are the pages under `/account`, and an email leads to `/account/notifications`. No page was moved for the map. |
 | **The profile is the page of the account,** | which says who is signed in, what is stored about them, and where the account is deleted. **The security is the page of two-factor authentication,** which is what there is of it. |
 | **The bar leads to more than the specification names:** | the AI usage of a user, `/usage`, and their notifications, `/notifications`, with how many are not read. |
+| **The foot leads a visitor to one page more:** | `/appearance`, where a visitor chooses the theme of their device. A user chooses the theme of their account among the settings, and is sent there from that page. See [themes.md](themes.md). |
 
 ## The frame
 
@@ -45,7 +46,7 @@ Every page is written in the same frame, for a visitor and for a user, also the 
 | The link past the bar | "Skip to the content", the first link of every page. It is out of sight until it has the focus. |
 | The bar, `<header>` | The name of the service, which leads to the start page, and the navigation: see "The bar". |
 | The content, `<main id="content">` | The navigation of the settings, on a page of the settings, and the page itself, which starts with its one `<h1>`. |
-| The foot, `<footer>` | The Terms of Service, the Privacy Policy, and the risk disclosure, for a visitor and for a user. |
+| The foot, `<footer>` | The Terms of Service, the Privacy Policy, and the risk disclosure, for a visitor and for a user. Under them, for a visitor, "Appearance". |
 
 | Rule | Detail |
 |---|---|
@@ -93,11 +94,11 @@ The frame changes at one width, 48rem, which is 768 pixels at the text size that
 | **Nothing is as wide as a number of pixels says.** | What does not fit goes to the next line whole. A paragraph is no wider than reads well, 75 characters, and a table is as wide as the page lets it be. A table that is wider than a narrow screen scrolls sideways by itself, also by keyboard, as before, so the page itself never does. A word that is longer than a narrow screen is wide breaks. |
 | **The page is as wide as the device.** | `<meta name="viewport" content="width=device-width, initial-scale=1.0">` in `App.razor`. A control is in the typeface and at the size of the text around it, so a phone does not enlarge the page when a field is typed in. |
 | **The page is at least as tall as the screen.** | Its foot is at the bottom of a page that says little. |
-| **The page is light or dark as the device is set.** | `color-scheme: light dark`, with the typeface of the device. The frame has no colour of its own: a line is the colour of the text around it, thinned. The choice of a theme is not built: see "Not built yet". |
+| **The page is dark, light, or as the device is set.** | Its first element says which, and `color-scheme` follows it, with the typeface of the device: see [themes.md](themes.md). The frame has no colour of its own: a line is the colour of the text around it, thinned. |
 
 ## Browsers
 
-The UI works in the current and previous major versions of Chrome, Edge, Firefox, and Safari. It needs no script of its own for that. The stylesheet keeps to what all four have had since 2023 or before, but for one rule, which an older browser does without.
+The UI works in the current and previous major versions of Chrome, Edge, Firefox, and Safari. It needs no script of its own for that. The stylesheet keeps to what all four have had since 2023 or before, but for two rules, each of which an older browser does without.
 
 | What the frame uses | Detail |
 |---|---|
@@ -105,7 +106,8 @@ The UI works in the current and previous major versions of Chrome, Edge, Firefox
 | `::details-content`, inside `@supports selector()` | What the menu holds, shown on a wide screen whether the menu is open or not. Chrome and Edge have it since version 131, Safari since 18.4, and Firefox since 143. An older browser keeps the menu at every width. |
 | Flexible boxes with `gap` | The bar, the navigations, and the foot. |
 | `color-mix()` | The lines of the frame, as of the pages before it. |
-| `color-scheme`, and the system colours `Canvas` and `CanvasText` | A page that is light or dark as the device is set. |
+| `color-scheme`, and the system colours `Canvas` and `CanvasText` | A page that is dark, light, or as the device is set. |
+| `light-dark()` | The colours that have a light and a dark value: the error of a form, and the line beside a warning. Chrome and Edge have it since version 123, Firefox since 120, and Safari since 17.5. An older browser shows them in the colour of the text. See [themes.md](themes.md). |
 | `100dvh`, after `100vh` | The height of a page on a phone, whose bar of addresses comes and goes. A browser that does not know the first keeps the second. |
 | Logical properties, such as `margin-inline-end` | The sides of the frame. |
 
@@ -126,11 +128,10 @@ It uses no container query, no `:has()`, and no nesting.
 
 ## Screens whose feature is not built
 
-Two screens of the specification have a route and a place in the navigation, and say what they are for until their feature is built.
+One screen of the specification has a route and a place in the navigation, and says what it is for until its feature is built.
 
 | Screen | What its page says | Its feature |
 |---|---|---|
-| Appearance, `/account/appearance` | That the pages are light or dark as the device is set, and that a choice of the user's own is not built yet. It has no form. | The themes (FR-THM-1 to FR-THM-5). |
 | Operator status, `/operator` | That it is for operators, what it is to show, and that it shows nothing of any user and nothing can be done on it. It has no form, and asks the database nothing. | The status screen and the controls of an operator (FR-OPS-2 to FR-OPS-5). |
 
 **The operator status screen is no operator function.** It requires the operator policy, as an operator function does, and does nothing that the audit trail could record or that the Risk Guard would have to be told. `AuditRules.OperatorScreensThatOnlyShow` lists it with why, and `AuditRulesTests` holds it to that: the one form of its page is the button of the bar. The first form that is put on it fails that test, and anything else that requires the policy counts as an operator function as before. See "Operators" in [ownership.md](ownership.md).
@@ -140,7 +141,7 @@ Two screens of the specification have a route and a place in the navigation, and
 | Test class | What it holds |
 |---|---|
 | `ScreenRuleTests` | The map: that its screens are the ones of the specification, that each has a page at its route which says whom it opens for, that each is led to from the page and by the link that the map says, and opens there, and that nobody is led to a screen that does not open for them. |
-| `LayoutPageTests` | The frame: that every page has the link past the bar, the bar, the content, and the foot, for a visitor and for a user, that the link past the bar names its page, which link the bar and the navigation of the settings mark on each screen, what a visitor is shown, the start page with registration open and closed, the navigation of the settings and the pages that have it, the page of the appearance, the menu of a narrow screen with what it holds and the rules of the stylesheet that it rests on, the operator status screen for an operator, a user, and a visitor, and the page of an address that has none. |
+| `LayoutPageTests` | The frame: that every page has the link past the bar, the bar, the content, and the foot, for a visitor and for a user, that the link past the bar names its page, which link the bar and the navigation of the settings mark on each screen, what a visitor is shown, the start page with registration open and closed, the foot of a visitor, the navigation of the settings and the pages that have it, the page of the appearance with its form, the menu of a narrow screen with what it holds and the rules of the stylesheet that it rests on, the operator status screen for an operator, a user, and a visitor, and the page of an address that has none. |
 | `AuditRulesTests` | That a screen of an operator that only shows is listed, requires the policy, and has no form of its own, and that an operator function beside it is still seen. |
 | `BrowserDefenseTests`, `RequestForgeryTests`, `LivePageTests` | That the new pages carry no script and no style of their own, check the token of a form, and keep no connection: each finds the pages by their routes. |
 
@@ -156,7 +157,6 @@ No test drives a browser. By hand:
 ## Not built yet
 
 - The dashboard as the page that a user arrives at after signing in. A user arrives at the start page, which leads to the dashboard: `SessionAuthentication.LocalPathOrHome`.
-- The choice of a theme, saved to the account and applied before the first paint (FR-THM-1 to FR-THM-4). Until then a page follows the device, and the page of the appearance says so. The colours of a few warnings are set for a dark screen by the setting of the device, and will follow the choice.
 - What the operator status screen shows, and what an operator does (FR-OPS-2 to FR-OPS-5). The Operator role itself is still to confirm (SRS 2.2).
 - A page of the security that holds more than two-factor authentication: a change of the password by a user who is signed in, and the devices that they are signed in on. A password is changed by the link of "Forgot your password?".
 - The illustration of the team on the landing page (FR-ANI-7), the setup checklist of a first-time user (FR-UI-4), and transitions between pages (FR-ANI-3).

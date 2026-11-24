@@ -48,6 +48,13 @@ public static class SessionAuthentication
     public const string SessionClaimType = "ecnanib:session";
 
     /// <summary>
+    /// The claim that says how the pages look to the user of a request: the theme of their
+    /// account, by the name of its member (FR-THM-3). It is read with the session on every
+    /// request, so a page is written in the theme that the account has now, on every device.
+    /// </summary>
+    public const string ThemeClaimType = "ecnanib:theme";
+
+    /// <summary>
     /// What a request carries in its <c>Accept</c> header when a page asks for an address
     /// without leaving the page it is: how a page asks for itself again. The framework says it.
     /// </summary>
@@ -147,6 +154,10 @@ internal sealed class SessionAuthenticationHandler(
                 // the connection is not asked for again, so the page asks whether its session
                 // still stands. See IConnectedSession.
                 new Claim(SessionAuthentication.SessionClaimType, user.SessionId.ToString()),
+
+                // How the pages look to the user, for the page that this request is answered
+                // with. See SignedInUser.ThemeOf.
+                new Claim(SessionAuthentication.ThemeClaimType, user.Theme.ToString()),
             ],
             Scheme.Name);
 

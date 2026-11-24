@@ -73,8 +73,14 @@ public interface IExportedPart
 /// <param name="RegisteredAt">When the account was created.</param>
 /// <param name="EmailVerifiedAt">When the address was verified, or null while it is not.</param>
 /// <param name="TwoFactor">Where the account stands with two-factor authentication.</param>
+/// <param name="Theme">How the pages look to the user: a preference, which is stored with the account (FR-THM-3).</param>
 public sealed record ExportedAccount(
-    Guid Id, string Email, DateTimeOffset RegisteredAt, DateTimeOffset? EmailVerifiedAt, ExportedTwoFactor TwoFactor);
+    Guid Id,
+    string Email,
+    DateTimeOffset RegisteredAt,
+    DateTimeOffset? EmailVerifiedAt,
+    ExportedTwoFactor TwoFactor,
+    Theme Theme);
 
 /// <summary>Two-factor authentication of an account, without its key and its recovery codes.</summary>
 /// <param name="On">Whether signing in takes a code.</param>

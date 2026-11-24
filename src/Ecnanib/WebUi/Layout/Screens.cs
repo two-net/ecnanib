@@ -43,6 +43,9 @@ public static class Screens
     /// <summary>The name of the links to the legal documents at the foot of every page.</summary>
     public const string LegalNavigation = "Legal";
 
+    /// <summary>The name of what the foot of a page leads a visitor to beside them, as a screen reader says it.</summary>
+    public const string DeviceNavigation = "This device";
+
     /// <summary>The text of the link of a visitor to the page they sign in on.</summary>
     public const string SignIn = "Sign in";
 
@@ -84,6 +87,13 @@ public static class Screens
     public static readonly Screen Keys = new("API keys", WebUiModule.KeysPath, WebUiModule.KeysPath);
 
     public static readonly Screen Appearance = new("Appearance", WebUiModule.AppearancePath, WebUiModule.AppearancePath);
+
+    /// <summary>
+    /// The appearance for a visitor, who chooses the theme of their device there (FR-THM-3).
+    /// The foot of a page of a visitor leads to it. A user has <see cref="Appearance"/>.
+    /// </summary>
+    public static readonly Screen DeviceAppearance =
+        new("Appearance", WebUiModule.DeviceAppearancePath, WebUiModule.DeviceAppearancePath);
 
     /// <summary>The choice of email for critical events. What the service told a user is <see cref="Notifications"/>.</summary>
     public static readonly Screen NotificationSettings =

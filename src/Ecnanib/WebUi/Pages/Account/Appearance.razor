@@ -1,16 +1,80 @@
 @attribute [Route(WebUiModule.AppearancePath)]
 @attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.WebUi.Themes
+@inject IThemeChoice Choice
+@inject NavigationManager Navigation
 
 @*
-    The appearance among the settings (FR-UI-2). The page is where the choice of a theme will
-    be, and says how the pages look until then. It has no form, stores nothing, and follows
-    nothing. Its texts are in AppearancePages.
+    Rendered on the server for each request, and never interactive. The appearance among the
+    settings (FR-UI-2): the user who is signed in chooses Dark, Light, or System here, and the
+    choice is saved to their account, so it holds on every device that they sign in on
+    (FR-THM-1, FR-THM-3). The page that comes back is written in the theme that was chosen, as
+    every page is from then on (FR-THM-4). The choice exposes no key and moves no money, so the
+    page asks for no proof of identity. Its texts are in AppearancePages. A visitor chooses for
+    their device on a page of their own: DeviceAppearance.
 *@
 
 <PageTitle>@Screens.Appearance.Name</PageTitle>
 
 <h1>@Screens.Appearance.Name</h1>
 
-<p>@AppearancePages.FollowsDevice</p>
+<p>@AppearancePages.SavedToAccount</p>
 
-<p>@AppearancePages.NotBuiltYet</p>
+@if (_said is not null)
+{
+    <p class="form-error" role="alert">@_said</p>
+}
+
+<form method="post" @formname="@AppearancePages.Form" @onsubmit="SaveAsync">
+    <AntiforgeryToken />
+
+    <ThemeChoices Chosen="@_chosen" />
+
+    <button type="submit">@AppearancePages.Save</button>
+</form>
+
+@code {
+    private Theme _chosen;
+    private string? _said;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    /// <summary>The theme that was chosen, as the form spells it.</summary>
+    [SupplyParameterFromForm(Name = AppearancePages.Field)]
+    private string? ThemeEntry { get; set; }
+
+    protected override void OnInitialized()
+    {
+        // The theme of the account of the session, as this request was told it when it was
+        // signed in.
+        if (HttpContext is { } request)
+        {
+            _chosen = PageTheme.Of(request);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        if (PageTheme.OfWord(ThemeEntry) is not { } theme)
+        {
+            // A form that names no theme stores nothing, and comes back as it was.
+            _said = AppearancePages.ChooseOne;
+
+            return;
+        }
+
+        // The choice of the user of the session, and of no other: no form names a user.
+        await Choice.SetAsync(request, theme);
+
+        // The page as it is now, by a request that changes nothing, and in the theme that was
+        // chosen: a reload of it sends no form again.
+        Navigation.NavigateTo(WebUiModule.AppearancePath);
+    }
+}

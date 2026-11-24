@@ -90,20 +90,22 @@
     text-align: center;
 }
 
+/* White on a blue that it reads on, with a contrast of more than 4.5 to 1 (FR-THM-5). The dialog
+   is light in both themes, so the button is the same in both. */
 #components-reconnect-modal button {
     border: 0;
-    background-color: #6b9ed2;
+    background-color: #3b6ea2;
     color: white;
     padding: 4px 24px;
     border-radius: 4px;
 }
 
     #components-reconnect-modal button:hover {
-        background-color: #3b6ea2;
+        background-color: #2d5a88;
     }
 
     #components-reconnect-modal button:active {
-        background-color: #6b9ed2;
+        background-color: #3b6ea2;
     }
 
 .components-rejoining-animation {

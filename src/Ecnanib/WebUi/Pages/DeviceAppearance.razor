@@ -1,0 +1,94 @@
+@attribute [Route(WebUiModule.DeviceAppearancePath)]
+@using Ecnanib.Accounts
+@using Ecnanib.WebUi.Pages.Account
+@using Ecnanib.WebUi.Themes
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive. The appearance for a visitor:
+    whoever is not signed in chooses Dark, Light, or System here, and the choice is saved on
+    their device, in a cookie that the server alone reads (FR-THM-1, FR-THM-3). Nothing is stored
+    about the visitor. The page that comes back is written in the theme that was chosen, as every
+    page of that browser is from then on (FR-THM-4). A user who is signed in has the page among
+    the settings, and is sent there. Its texts are in AppearancePages.
+*@
+
+@if (_forVisitor)
+{
+    <PageTitle>@AppearancePages.Title</PageTitle>
+
+    <h1>@AppearancePages.Title</h1>
+
+    <p>@AppearancePages.SavedOnDevice</p>
+
+    @if (_said is not null)
+    {
+        <p class="form-error" role="alert">@_said</p>
+    }
+
+    <form method="post" @formname="@AppearancePages.Form" @onsubmit="Save">
+        <AntiforgeryToken />
+
+        <ThemeChoices Chosen="@_chosen" />
+
+        <button type="submit">@AppearancePages.Save</button>
+    </form>
+
+    <p><a href="@SessionAuthentication.SignInPath">@Screens.SignIn</a></p>
+}
+
+@code {
+    private bool _forVisitor;
+    private Theme _chosen;
+    private string? _said;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    /// <summary>The theme that was chosen, as the form spells it.</summary>
+    [SupplyParameterFromForm(Name = AppearancePages.Field)]
+    private string? ThemeEntry { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        if (SignedInUser.IdOf(request) is not null)
+        {
+            // The pages of a user follow their account, whatever their device has saved: the
+            // choice that counts for them is the one among the settings.
+            Navigation.NavigateTo(WebUiModule.AppearancePath);
+
+            return;
+        }
+
+        _forVisitor = true;
+        _chosen = DeviceTheme.Of(request.Request);
+    }
+
+    private void Save()
+    {
+        if (HttpContext is not { } request || !_forVisitor)
+        {
+            return;
+        }
+
+        if (PageTheme.OfWord(ThemeEntry) is not { } theme)
+        {
+            // A form that names no theme saves nothing, and comes back as it was.
+            _said = AppearancePages.ChooseOne;
+
+            return;
+        }
+
+        // On the device that sent the form, and nowhere else.
+        DeviceTheme.Set(request.Response, theme);
+
+        // The page as it is now, by a request that changes nothing, and in the theme that was
+        // chosen: a reload of it sends no form again.
+        Navigation.NavigateTo(WebUiModule.DeviceAppearancePath);
+    }
+}

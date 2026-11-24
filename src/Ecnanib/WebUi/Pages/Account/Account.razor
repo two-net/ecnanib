@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @using Ecnanib.Accounts
 @using Ecnanib.Notifications
+@using Ecnanib.WebUi.Themes
 @inject ITwoFactor TwoFactorAuthentication
 @inject IEmailOptIn EmailOptIn
 
@@ -50,6 +51,13 @@ else
     <p><a href="@WebUiModule.NotificationEmailPath">Turn on email for critical events</a></p>
 }
 
+<h2>Appearance</h2>
+
+@* Another preference that is stored: the theme of the account (FR-THM-3). It is chosen on a page of its own. *@
+<p>@AppearancePages.Stored(_theme)</p>
+
+<p><a href="@WebUiModule.AppearancePath">Choose how the pages look</a></p>
+
 <h2>Your data</h2>
 
 <p>What is stored about you is your email address, when you registered and verified it, the legal documents you accepted, the devices you are signed in on, the security-relevant actions of your account, which keys you stored, and what the service told you. Your password is stored only as a hash, and a key only encrypted: neither is in a download, which names a key by its last four characters.</p>
@@ -76,6 +84,7 @@ else
 @code {
     private TwoFactorState? _twoFactor;
     private bool _emailOn;
+    private Theme _theme;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -86,6 +95,9 @@ else
         {
             _twoFactor = await TwoFactorAuthentication.StateAsync(request);
             _emailOn = (await EmailOptIn.StateAsync(request)).On;
+
+            // The theme of the account, as this request was told it when it was signed in.
+            _theme = PageTheme.Of(request);
         }
     }
 }

@@ -41,6 +41,11 @@ namespace Ecnanib.Accounts;
 /// </param>
 /// <param name="twoFactorFailedCodes">How many wrong codes were entered in a row.</param>
 /// <param name="twoFactorLockedUntil">Until when every code is refused, after too many wrong ones.</param>
+/// <param name="theme">
+/// How the pages look to the user on every device they sign in on: dark, light, or as the device
+/// is set, which is what a new account has (FR-THM-1, FR-THM-3). A preference, which says nothing
+/// of who the user is.
+/// </param>
 public sealed class User(
     Guid id,
     string email,
@@ -57,7 +62,8 @@ public sealed class User(
     DateTimeOffset? twoFactorEnabledAt,
     long? twoFactorLastStep,
     int twoFactorFailedCodes,
-    DateTimeOffset? twoFactorLockedUntil)
+    DateTimeOffset? twoFactorLockedUntil,
+    Theme theme)
 {
     public Guid Id { get; } = id;
 
@@ -90,6 +96,8 @@ public sealed class User(
     public int TwoFactorFailedCodes { get; } = twoFactorFailedCodes;
 
     public DateTimeOffset? TwoFactorLockedUntil { get; } = twoFactorLockedUntil;
+
+    public Theme Theme { get; } = theme;
 }
 
 internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
@@ -118,6 +126,9 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(user => user.TwoFactorLastStep);
         builder.Property(user => user.TwoFactorFailedCodes);
         builder.Property(user => user.TwoFactorLockedUntil);
+
+        // The theme of the account, as the name of its member. It has no index either.
+        builder.Property(user => user.Theme);
 
         // One account for each address. Registration relies on it: see Registration.
         builder.HasIndex(user => user.Email).IsUnique();

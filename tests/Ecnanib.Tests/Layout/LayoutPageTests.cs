@@ -145,6 +145,14 @@ public partial class LayoutPageTests
         Assert.DoesNotContain("Sign out", page);
         Assert.DoesNotContain("settings-nav", page);
 
+        // The foot leads a visitor to where they choose how the pages look on their device,
+        // under the legal documents. A user is led there by the settings.
+        var foot = page[Footer().Match(page).Index..page.IndexOf("</footer>", StringComparison.Ordinal)];
+        Assert.Equal(
+            ["Terms of Service", "Privacy Policy", "Risk disclosure", "Appearance"],
+            LinkTexts(foot));
+        Assert.Contains($"<a href=\"{WebUiModule.DeviceAppearancePath}\">Appearance</a>", foot);
+
         // The start page says what the service is, and leads on.
         Assert.Contains("<title>AI trading agents on Binance</title>", page);
         Assert.Contains("<h1>Ecnanib</h1>", page);
@@ -228,7 +236,7 @@ public partial class LayoutPageTests
     }
 
     [Fact]
-    public async Task The_page_of_the_appearance_says_how_the_pages_look_and_takes_nothing()
+    public async Task The_page_of_the_appearance_is_among_the_settings_and_takes_the_choice_of_a_theme()
     {
         using var application = new AccountsApplication();
         using var visitor = application.CreateClient();
@@ -245,11 +253,25 @@ public partial class LayoutPageTests
 
         Assert.Contains("<h1>Appearance</h1>", page);
         Assert.Contains("The pages are light or dark as your device is set, and change when its setting does.", page);
-        Assert.Contains("is not built yet.", page);
+        Assert.DoesNotContain("is not built yet.", page);
 
-        // The choice of a theme is not built: the one form of the page is the button of the bar.
-        Assert.Contains("action=\"/sign-out\"", Assert.Single(Form().Matches(page)).Value);
-        Assert.All(Input().Matches(page), input => Assert.Contains("type=\"hidden\"", input.Value));
+        // It has the navigation of the settings above it, as every page of the settings has.
+        Assert.Single(SettingsNavigation().Matches(page));
+
+        // Two forms: the button of the bar, and the choice of a theme, which is three fields to
+        // tick and nothing to type. What the choice does is held by ThemePageTests.
+        var forms = Form().Matches(page);
+        Assert.Equal(2, forms.Count);
+        Assert.Contains("action=\"/sign-out\"", forms[0].Value);
+        Assert.Equal(
+            ["system", "dark", "light"],
+            Input().Matches(page)
+                .Where(input => input.Value.Contains("type=\"radio\"", StringComparison.Ordinal))
+                .Select(input => Regex.Match(input.Value, "value=\"([^\"]*)\"").Groups[1].Value));
+        Assert.All(
+            Input().Matches(page),
+            input => Assert.True(
+                input.Value.Contains("type=\"hidden\"", StringComparison.Ordinal) || input.Value.Contains("type=\"radio\"", StringComparison.Ordinal)));
         Assert.DoesNotContain("<select", page);
     }
 

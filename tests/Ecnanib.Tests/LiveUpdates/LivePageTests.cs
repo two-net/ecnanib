@@ -70,6 +70,7 @@ public partial class LivePageTests
             "/account",
             WebUiModule.KeysPath,
             WebUiModule.AppearancePath,
+            WebUiModule.DeviceAppearancePath,
             WebUiModule.CatalogPath,
             WebUiModule.ExperiencePath,
             WebUiModule.UsagePath,

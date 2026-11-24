@@ -47,6 +47,7 @@ Every cookie the application sets is `Secure` and `HttpOnly`, and at least `Same
 | `__Host-ecnanib-session` | The token of a session. See "Sessions" in [accounts.md](accounts.md). | `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no expiry |
 | `__Host-ecnanib-sign-in` | The token of a sign-in that waits for a code, from the page that took the password to the page that takes the code. It is set only for an account with two-factor authentication, and taken back when the code is accepted. See "Signing in with a code" in [accounts.md](accounts.md). | `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, no expiry |
 | `__Host-ecnanib-antiforgery` | One half of the token against request forgery that every form carries. | `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, no expiry |
+| `__Host-ecnanib-theme` | The theme that a visitor chose for their device: `dark` or `light`. It is set only by the page that a visitor chooses on, says nothing of who they are, and is read by the server alone. See "The cookie of a visitor" in [themes.md](themes.md). | `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, kept for one year |
 
 The `__Host-` prefix makes a browser refuse a cookie unless it was set over TLS, for the whole host, and without a domain. So a site on another subdomain of the same domain cannot plant any of these cookies.
 

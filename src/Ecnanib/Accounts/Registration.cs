@@ -225,12 +225,15 @@ internal sealed class Registration(
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
+        // A new account looks as the device of its user is set (FR-THM-1).
+        var theme = nameof(Theme.System);
+
         // Whoever inserts the row has the address. Of two requests for one address at the same
         // time, the second waits here, and then finds the account of the first.
         var inserted = await context.Database.ExecuteSqlAsync(
             $"""
-            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at, email_verification_sets_password, two_factor_failed_codes)
-            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt}, FALSE, 0)
+            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at, email_verification_sets_password, two_factor_failed_codes, theme)
+            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt}, FALSE, 0, {theme})
             ON CONFLICT (email) DO NOTHING
             """,
             cancellationToken);

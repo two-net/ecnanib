@@ -36,6 +36,23 @@ public static class SignedInUser
             : null;
     }
 
+    /// <summary>
+    /// The theme of the account that a user is signed in to, or null when they are not signed
+    /// in: how the pages look to them on every device (FR-THM-3). It is what the account said
+    /// when the request was signed in, which is on every request.
+    /// </summary>
+    /// <param name="user">The user of a request.</param>
+    public static Theme? ThemeOf(ClaimsPrincipal user)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+
+        return user.Identity is { IsAuthenticated: true }
+            && Enum.TryParse<Theme>(user.FindFirstValue(SessionAuthentication.ThemeClaimType), out var theme)
+            && Enum.IsDefined(theme)
+            ? theme
+            : null;
+    }
+
     /// <summary>The id of the account a request is signed in to, or null when it is not signed in.</summary>
     public static Guid? IdOf(HttpContext request)
     {

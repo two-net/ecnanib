@@ -1,0 +1,31 @@
+@using Ecnanib.Accounts
+@using Ecnanib.WebUi.Pages.Account
+
+@*
+    The choice of a theme, as the two pages of the appearance offer it: System, Dark, and Light,
+    one under another, each with what it means below it (FR-THM-1). It is the fields of a form
+    and no form itself: the page around it has the form, and says where the choice is saved. The
+    one that is chosen now is ticked. Its texts are in AppearancePages.
+*@
+
+<fieldset>
+    <legend>@AppearancePages.Legend</legend>
+
+    @foreach (var theme in AppearancePages.Choices)
+    {
+        var word = PageTheme.WordOf(theme);
+
+        <div class="choice">
+            <input id="theme-@(word)" type="radio" name="@AppearancePages.Field" value="@word" required
+                   checked="@(theme == Chosen)" aria-describedby="theme-@(word)-hint" />
+            <label for="theme-@(word)">@AppearancePages.NameOf(theme)</label>
+            <p id="theme-@(word)-hint" class="field-hint">@AppearancePages.Explain(theme)</p>
+        </div>
+    }
+</fieldset>
+
+@code {
+    /// <summary>The theme that is chosen now.</summary>
+    [Parameter, EditorRequired]
+    public Theme Chosen { get; set; }
+}

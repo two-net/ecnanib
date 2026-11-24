@@ -9,7 +9,8 @@
     The frame of every page (FR-UI-1, FR-UI-2): a link past the bar, the bar at the top, the
     content, and the legal documents at the foot. It is rendered on the server for each request
     and has no script: on a narrow screen the navigation opens and closes with an element that
-    the browser itself opens and closes. Its look is in app.css. See docs/layout.md.
+    the browser itself opens and closes. Its look is in app.css. See docs/layout.md. The theme
+    that it is written in is said by the page around it: see App.razor.
 *@
 
 @* The first link of a page. The browser follows it by itself, so that what a keyboard reaches next is in the content. *@
@@ -94,6 +95,20 @@
             }
         </ul>
     </nav>
+
+    @*
+        Where a visitor chooses how the pages look on their device (FR-THM-3). A user chooses
+        for their account, among the settings, which the bar leads to.
+    *@
+    <AuthorizeView>
+        <NotAuthorized>
+            <nav aria-label="@Screens.DeviceNavigation">
+                <ul>
+                    <li><ScreenLink To="Screens.DeviceAppearance" /></li>
+                </ul>
+            </nav>
+        </NotAuthorized>
+    </AuthorizeView>
 </footer>
 
 <div id="blazor-error-ui" data-nosnippet>

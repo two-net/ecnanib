@@ -98,6 +98,8 @@ A session that has ended is deleted when its cookie is next seen, and the cookie
 
 Whatever needs the user of a request asks `SignedInUser.IdOf(request)`, and asks for that user's rows with `OwnedBy`. The handler also says whether the user is an operator, for the policy that an operator function requires. See [ownership.md](ownership.md).
 
+The same query reads the theme of the account, and the user of the request says it: `SignedInUser.ThemeOf`. So a page is written in the theme that the account has now, on every device, and asks the database nothing more for it. See [themes.md](themes.md).
+
 Authentication runs ahead of the error handling, so the handler does not fail a request. When the database cannot be reached:
 
 - The request goes on as not signed in, the browser keeps its cookie, and a warning is logged.
@@ -448,7 +450,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | Section | What it holds |
 |---|---|
 | `exportedAt` | When the export was made. |
-| `account` | The id, the email address, when it was registered and verified, and whether two-factor authentication is on, since when, and how many recovery codes are left. |
+| `account` | The id, the email address, when it was registered and verified, whether two-factor authentication is on, since when, and how many recovery codes are left, and the theme of the account (FR-THM-3): `System`, `Dark`, or `Light`. |
 | `legalAcceptances` | Each document that was accepted, with its version and the time. |
 | `sessions` | Each browser that is signed in: when it signed in, and when it was last used. |
 | `auditEvents` | Each event of the account in the audit trail: the action, what it was done to, when, and the IP address it came from. |
@@ -639,7 +641,7 @@ Personal data is limited to the email address, the password hash, and preference
 |---|---|
 | The email address | `users.email` |
 | The password hash | `users.password_hash` |
-| Preferences | Two. Whether the user left the platform-wide board (FR-EXP-10) is a row of `board_opt_outs`, which Experience keeps: the id of the user and when they left, and no row for a user who did not. See "Leaving the board" in [experience.md](experience.md). Whether the user is sent email for critical events (FR-NTF-3) is a row of `email_opt_ins`, which Notifications keeps: the id of the user and when they opted in, and no row for a user who did not. See "Email for critical events" in [notifications.md](notifications.md). No column of either can say who someone is, so `PersonalDataRules` lists none of them. Each is in the export, and goes with the account. |
+| Preferences | Three. The theme of the account (FR-THM-3) is `users.theme`: `System`, `Dark`, or `Light`, which every account has, and which a new one has as `System`. See [themes.md](themes.md). Whether the user left the platform-wide board (FR-EXP-10) is a row of `board_opt_outs`, which Experience keeps: the id of the user and when they left, and no row for a user who did not. See "Leaving the board" in [experience.md](experience.md). Whether the user is sent email for critical events (FR-NTF-3) is a row of `email_opt_ins`, which Notifications keeps: the id of the user and when they opted in, and no row for a user who did not. See "Email for critical events" in [notifications.md](notifications.md). No column of the three can say who someone is, so `PersonalDataRules` lists none of them. Each is in the export, and goes with the account. |
 | **Beyond the list:** the IP address a security-relevant action came from | `audit_events.origin`. See "The audit trail". |
 
 - **The origin is the one exception,** and it is a decision: the specification lists it for an audit event, and an audit trail without it does not show a takeover. It is in the export, and goes with the account.
@@ -656,7 +658,7 @@ A user can export this data and delete it: see "Exporting your data" and "Deleti
 
 | Table | Columns |
 |---|---|
-| `users` | `id`, `email` (unique), `password_hash`, `registered_at`, `email_verified_at`, `email_verification_token_hash` (unique), `email_verification_expires_at`, `email_verification_sets_password`, `password_reset_token_hash` (unique), `password_reset_expires_at`, `two_factor_secret`, `two_factor_secret_key_id`, `two_factor_enabled_at`, `two_factor_last_step`, `two_factor_failed_codes`, `two_factor_locked_until` |
+| `users` | `id`, `email` (unique), `password_hash`, `registered_at`, `email_verified_at`, `email_verification_token_hash` (unique), `email_verification_expires_at`, `email_verification_sets_password`, `password_reset_token_hash` (unique), `password_reset_expires_at`, `two_factor_secret`, `two_factor_secret_key_id`, `two_factor_enabled_at`, `two_factor_last_step`, `two_factor_failed_codes`, `two_factor_locked_until`, `theme` |
 | `legal_acceptances` | `user_id`, `document`, `version`, `accepted_at`. The rows of an account are deleted with it. |
 | `sessions` | `id`, `user_id`, `token_hash` (unique), `created_at`, `last_active_at`, `reauthenticated_at`. The rows of an account are deleted with it. |
 | `pending_sign_ins` | `id`, `user_id`, `token_hash` (unique), `expires_at`. The rows of an account are deleted with it. |
@@ -693,7 +695,7 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
 - Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
-- Preferences, but for two. Whether a user left the platform-wide board is stored, and so is whether they are sent email for critical events, and both are in the export. The account page has no settings of its own: it says that there are those choices, and leads to the board and to the page of the email, where each is made. It is the profile among the settings, which have a navigation of their own above each of their pages: see "The settings" in [layout.md](layout.md). Neither a theme nor a preference for motion is stored: the page of the appearance says how the pages look until a theme is chosen there. When another preference is stored, it is personal data of an allowed kind, and it is in the export.
+- Preferences, but for three. Whether a user left the platform-wide board is stored, and so are whether they are sent email for critical events and the theme of their account, and all three are in the export. The account page has no settings of its own: it says that there are those choices, and leads to the board, to the page of the email, and to the page of the appearance, where each is made. It is the profile among the settings, which have a navigation of their own above each of their pages: see "The settings" in [layout.md](layout.md). A preference for motion is not stored (FR-ANI-4). When another preference is stored, it is personal data of an allowed kind, and it is in the export.
 - Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
 - The rest of the audit trail: the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.

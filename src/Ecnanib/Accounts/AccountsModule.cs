@@ -51,6 +51,10 @@ public static class AccountsModule
         services.AddSingleton<IAccountDeletion, AccountDeletion>();
         services.AddSingleton<IDataExport, DataExport>();
 
+        // The theme that a user chose, which is stored with the account (FR-THM-3). A request
+        // reads it with its session: see SessionAuthentication.ThemeClaimType.
+        services.AddSingleton<IThemeChoice, StoredThemeChoice>();
+
         // The one way a request is known to be signed in, for the Web UI and the API alike.
         services.AddAuthentication(SessionAuthentication.Scheme)
             .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthentication.Scheme, configureOptions: null);

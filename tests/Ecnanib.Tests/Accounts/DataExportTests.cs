@@ -176,7 +176,7 @@ public class DataExportTests
         // The account: the address, and when it was registered and verified. The password is
         // not in it, nor is its hash.
         var account = export.GetProperty("account");
-        Assert.Equal(["id", "email", "registeredAt", "emailVerifiedAt", "twoFactor"], NamesIn(account));
+        Assert.Equal(["id", "email", "registeredAt", "emailVerifiedAt", "twoFactor", "theme"], NamesIn(account));
         Assert.Equal(ada.Id, account.GetProperty("id").GetGuid());
         Assert.Equal(Ada, account.GetProperty("email").GetString());
         Assert.Equal(Morning, account.GetProperty("registeredAt").GetDateTimeOffset());
@@ -188,6 +188,9 @@ public class DataExportTests
         Assert.True(twoFactor.GetProperty("on").GetBoolean());
         Assert.Equal(Morning, twoFactor.GetProperty("since").GetDateTimeOffset());
         Assert.Equal(TwoFactorRules.RecoveryCodeCount - 1, twoFactor.GetProperty("recoveryCodesLeft").GetInt32());
+
+        // A preference that is stored with the account: its theme, by its name (FR-THM-3).
+        Assert.Equal("System", account.GetProperty("theme").GetString());
 
         // What was accepted, by the names of the documents and not by their numbers.
         var acceptances = export.GetProperty("legalAcceptances").EnumerateArray().ToList();

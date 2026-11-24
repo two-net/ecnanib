@@ -9,7 +9,11 @@ namespace Ecnanib.Accounts;
 /// <param name="Id">The id of the account.</param>
 /// <param name="Email">The address of the account, as it is stored.</param>
 /// <param name="IsVerified">Whether that address is verified. Only then does it say who the user is.</param>
-internal sealed record SessionUser(Guid SessionId, Guid Id, string Email, bool IsVerified);
+/// <param name="Theme">
+/// How the pages look to the user, as the account says it now (FR-THM-3). It is read with the
+/// session, so a page is written in it without asking again.
+/// </param>
+internal sealed record SessionUser(Guid SessionId, Guid Id, string Email, bool IsVerified, Theme Theme);
 
 /// <summary>
 /// What a request is to the session that it carries: whether finding the session for it is
@@ -361,7 +365,7 @@ internal sealed class Sessions(
                 .ExecuteUpdateAsync(row => row.SetProperty(session => session.LastActiveAt, now), cancellationToken);
         }
 
-        return new SessionUser(found.Id, found.UserId, found.Email, found.IsVerified);
+        return new SessionUser(found.Id, found.UserId, found.Email, found.IsVerified, found.Theme);
 
         Task<FoundSession?> ReadAsync() =>
             context.Set<Session>()
@@ -371,12 +375,13 @@ internal sealed class Sessions(
                     session => session.UserId,
                     user => user.Id,
                     (session, user) => new FoundSession(
-                        session.Id, session.LastActiveAt, user.Id, user.Email, user.EmailVerifiedAt != null))
+                        session.Id, session.LastActiveAt, user.Id, user.Email, user.EmailVerifiedAt != null, user.Theme))
                 .SingleOrDefaultAsync(cancellationToken);
     }
 
     /// <summary>A session as it was read, with the account it belongs to.</summary>
-    private sealed record FoundSession(Guid Id, DateTimeOffset LastActiveAt, Guid UserId, string Email, bool IsVerified);
+    private sealed record FoundSession(
+        Guid Id, DateTimeOffset LastActiveAt, Guid UserId, string Email, bool IsVerified, Theme Theme);
 
     /// <summary>
     /// Whether a session of a user stands: it was not ended, and is not past its period of
