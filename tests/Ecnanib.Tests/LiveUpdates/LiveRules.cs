@@ -55,7 +55,15 @@ internal static class LiveRules
             "agent_id",
             [],
             Written,
-            "The list of the cycles of an agent, and the recent decisions of the dashboard."),
+            "The list of the cycles of an agent, the decisions on the page of its state, and the recent decisions of the dashboard."),
+
+        ["equity_snapshots"] = new(
+            LiveSubject.Equity,
+            "agent_id",
+            [],
+            "INSERT",
+            "The equity curve and the performance figures of an agent, on the page of its state. A row is never changed, and the " +
+            "rows of an agent go with the agent, which its own table says."),
 
         ["notifications"] = new(
             LiveSubject.Notification,

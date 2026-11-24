@@ -163,40 +163,51 @@ internal sealed class AgentEquities(IDbContextFactory<EcnanibDbContext> contexts
 
         var now = clock.GetUtcNow();
 
-        return
-        [
-            .. read.Select(one =>
-            {
-                var (agent, rows, position) = one;
+        return [.. read.Select(one => Valued(one.Agent, one.Rows, one.Position, prices, now))];
+    }
 
-                // The price that the watch has, when a page follows it. Nothing is asked of the
-                // exchange for it, and a price that nobody follows is no error: it is not known.
-                var price = position is null
-                    ? null
-                    : prices.Latest(position.Market, position.Mode, position.Symbol, PositionValues.PriceOf(position.Market));
+    /// <summary>
+    /// The equity of an agent from what its rows say, with its open position valued at the
+    /// price that the watch has: the one rule for the dashboard and for the screen of an agent
+    /// (FR-RPT-1, FR-RPT-2).
+    /// </summary>
+    /// <param name="agent">The agent, as it is stored.</param>
+    /// <param name="rows">What its rows say of its result: see <see cref="AgentResults.RowsAsync"/>.</param>
+    /// <param name="position">Its open position as a page says it, or null when it holds none.</param>
+    /// <param name="prices">The watch, which is asked for the price that it has, and for nothing of the exchange.</param>
+    /// <param name="now">The moment, which says the UTC day that <see cref="AgentEquity.MadeToday"/> is of.</param>
+    public static AgentEquity Valued(Agent agent, AgentRows rows, OpenPosition? position, IExchangePriceWatch prices, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(prices);
 
-                var result = rows.At(price?.Price);
+        // The price that the watch has, when a page follows it. Nothing is asked of the
+        // exchange for it, and a price that nobody follows is no error: it is not known.
+        var price = position is null
+            ? null
+            : prices.Latest(position.Market, position.Mode, position.Symbol, PositionValues.PriceOf(position.Market));
 
-                if (!result.Valued)
-                {
-                    return new AgentEquity(
-                        agent.Id, agent.Mode, agent.QuoteAsset, agent.AllocatedCapital, Equity: null, MadeToday: null, position, price);
-                }
+        var result = rows.At(price?.Price);
 
-                // The result as the UTC day began, as what watches the loss limits would say it
-                // now: the daily loss limit of the agent is counted from the same.
-                var (_, atDayStart, _) = EquityMarks.At(rows.Marks, result.Net, agent.AllocatedCapital, agent.QuoteAsset, now);
+        if (!result.Valued)
+        {
+            return new AgentEquity(
+                agent.Id, agent.Mode, agent.QuoteAsset, agent.AllocatedCapital, Equity: null, MadeToday: null, position, price);
+        }
 
-                return new AgentEquity(
-                    agent.Id,
-                    agent.Mode,
-                    agent.QuoteAsset,
-                    agent.AllocatedCapital,
-                    agent.AllocatedCapital + result.Net,
-                    result.Net - atDayStart,
-                    position,
-                    price);
-            }),
-        ];
+        // The result as the UTC day began, as what watches the loss limits would say it
+        // now: the daily loss limit of the agent is counted from the same.
+        var (_, atDayStart, _) = EquityMarks.At(rows.Marks, result.Net, agent.AllocatedCapital, agent.QuoteAsset, now);
+
+        return new AgentEquity(
+            agent.Id,
+            agent.Mode,
+            agent.QuoteAsset,
+            agent.AllocatedCapital,
+            agent.AllocatedCapital + result.Net,
+            result.Net - atDayStart,
+            position,
+            price);
     }
 }

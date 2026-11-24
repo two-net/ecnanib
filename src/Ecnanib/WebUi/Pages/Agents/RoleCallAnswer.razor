@@ -1,0 +1,42 @@
+@using Ecnanib.DecisionEngine
+
+@*
+    What one call of a role came to, as a page shows it: how it ended, what was made of its
+    answer, and the structured result that the model answered with, field by field (FR-CYC-10,
+    FR-TEAM-8). The timeline of a cycle shows it for each call of that cycle, and the screen of
+    an agent for the calls of its latest decisions (FR-RPT-2). It has no heading of its own: the
+    page that shows it names the call. An outcome is said as words, and does not rely on a
+    colour. What a model wrote is written as text, like everything else on a page (NFR-SEC-4).
+    The texts are in CyclePages.
+*@
+
+<p>
+    <strong class="call-outcome">@CyclePages.Describe(Call.Outcome, Call.Validation)</strong>.
+    @CyclePages.Says(Call)
+</p>
+
+@if (CyclePages.Fields(Call.Result) is { Count: > 0 } fields)
+{
+    <dl class="role-result">
+        @foreach (var field in fields)
+        {
+            <dt>@field.Name</dt>
+
+            @foreach (var written in field.Values)
+            {
+                <dd>@written</dd>
+            }
+        }
+    </dl>
+}
+
+@if (CyclePages.Mark(Call) is { } mark)
+{
+    <p class="sentiment-mark">@mark</p>
+}
+
+@code {
+    /// <summary>The call.</summary>
+    [Parameter, EditorRequired]
+    public RoleCallView Call { get; set; } = null!;
+}

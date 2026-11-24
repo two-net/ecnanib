@@ -65,6 +65,11 @@ public static class DecisionEngineModule
         // holds, as the dashboard shows them for each mode (FR-RPT-1). It only reads, and asks
         // the exchange nothing: a position is valued at the price that a page follows.
         services.AddSingleton<IAgentEquities, AgentEquities>();
+
+        // How one agent has performed, as its screen shows it: its performance figures, its
+        // equity over time, and its closed trades, in the mode that it is in (FR-RPT-2). It
+        // only reads, and values an open position as the dashboard does.
+        services.AddSingleton<IAgentReports, AgentReports>();
         services.AddSingleton<IReconciliation, OrderReconciliation>();
 
         // What watches the loss limits of an agent, at every cycle and every reconciliation:

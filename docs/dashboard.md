@@ -70,7 +70,7 @@ The open positions of a mode are a table: for each, its agent, which leads to th
 
 ## A status card per agent
 
-Each agent of a mode has a card: its name, which leads to the page of its state, its symbol, its market, and its timeframe, its state with since when, its equity, what it made today, and what it holds.
+Each agent of a mode has a card: its name, which leads to the page of its state, which is the screen of the agent (see [agent-screen.md](agent-screen.md)), its symbol, its market, and its timeframe, its state with since when, its equity, what it made today, and what it holds.
 
 | Rule | Detail |
 |---|---|
@@ -147,7 +147,7 @@ No test drives a browser. By hand:
 - What changes a figure and is said by no table that a page follows: a fee that is valued later, funding that is stored, and the UTC day that begins. The page shows it the next time that it is written.
 - The dashboard as the page that a user lands on after signing in, and the landing page of a visitor (FR-UI-2): `/` is as the template left it.
 - A setup checklist for a first-time user (FR-UI-4).
-- The agent screen, with the equity curve, the trade list, and the performance figures (FR-RPT-2), and the export as CSV (FR-RPT-4).
+- The export of the trades and the decisions as CSV (FR-RPT-4).
 - Animation of what changes (FR-ANI-1 to FR-ANI-7), and times in the time zone of the user (NFR-USA-3).
 - The badge of the mode on the page of the notifications: see [notifications.md](notifications.md).
 - An alert when Binance does not answer (NFR-REL-4): nothing raises one yet. See "Not built yet" in [exchange.md](exchange.md).

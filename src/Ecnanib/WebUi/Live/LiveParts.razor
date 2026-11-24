@@ -18,7 +18,7 @@
 
 @if (View.Shows.HasFlag(LiveShows.Cycle))
 {
-    <LiveCycleSteps Cycles="@_shown.Cycles" />
+    <LiveCycleSteps Cycles="@_shown.Cycles" SaysRest="@View.Shows.HasFlag(LiveShows.Team)" />
 }
 
 @if (View.Shows.HasFlag(LiveShows.Position))

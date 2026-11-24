@@ -130,8 +130,8 @@ public class OpenPositionTests
         var position = await application.GiveTradeAsync(ada.Id, agent, Morning, closed: false);
 
         // The stop-loss rests, and the take-profit is still on its way: the price alone protects nothing.
-        var stopLoss = await GiveOrderAsync(application, ada.Id, agent, position, OrderPurpose.StopLoss, price: 99_000m, OrderStatus.Open);
-        var takeProfit = await GiveOrderAsync(application, ada.Id, agent, position, OrderPurpose.TakeProfit, price: 102_000m, OrderStatus.Sending);
+        var stopLoss = await application.GiveProtectionAsync(ada.Id, agent, position, OrderPurpose.StopLoss, price: 99_000m, Morning);
+        var takeProfit = await application.GiveProtectionAsync(ada.Id, agent, position, OrderPurpose.TakeProfit, price: 102_000m, Morning, OrderStatus.Sending);
 
         var held = await application.OpenPositions.OfAgentAsync(ada.Id, agent, TestContext.Current.CancellationToken);
         Assert.Equal((99_000m, (decimal?)null), (held!.StopLoss, held.TakeProfit));
@@ -172,50 +172,6 @@ public class OpenPositionTests
     {
         Assert.Equal(ExchangePriceKind.Mark, PositionValues.PriceOf(Market.Futures));
         Assert.Equal(ExchangePriceKind.LastTraded, PositionValues.PriceOf(Market.Spot));
-    }
-
-    /// <summary>Gives a position an order that protects it, stored as the application stores one.</summary>
-    private static async Task<Guid> GiveOrderAsync(
-        AccountsApplication application, Guid userId, Guid agentId, Guid positionId, OrderPurpose purpose, decimal price, OrderStatus status)
-    {
-        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
-
-        var agent = await context.Set<Agent>().AsNoTracking().SingleAsync(stored => stored.Id == agentId, TestContext.Current.CancellationToken);
-        var id = Guid.CreateVersion7();
-
-        context.Add(new Order(
-            id,
-            agentId,
-            userId,
-            agent.Mode,
-            agent.Market,
-            agent.Symbol,
-            cycleId: null,
-            positionId,
-            Order.ClientOrderIdOf(id),
-            exchangeOrderId: null,
-            purpose,
-            OrderType.Stop,
-            OrderSide.Sell,
-            price,
-            stopLoss: null,
-            takeProfit: null,
-            quantity: 0.01m,
-            status,
-            executedQuantity: 0m,
-            averagePrice: null,
-            exitReason: null,
-            sends: 1,
-            fillsRecorded: false,
-            createdAt: Morning,
-            updatedAt: Morning,
-            checkedAt: null,
-            pairId: null,
-            cancelAfter: null));
-
-        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
-
-        return id;
     }
 
     private static async Task MoveAsync(AccountsApplication application, Guid orderId, OrderStatus status)

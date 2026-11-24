@@ -149,10 +149,20 @@ public static class WebUiModule
     public static string DeleteAgentPath(Guid agentId) => $"{AgentPath(agentId)}/delete";
 
     /// <summary>
-    /// The path of the page of the state of an agent: what state it is in and why, the controls
-    /// that start, pause, and resume it, and the changes of its state (FR-AGT-10).
+    /// The path of the page of the state of an agent, which is the screen of the agent: what
+    /// state it is in and why, the controls that start, pause, and resume it, the changes of its
+    /// state, and what it does, holds, and has made (FR-AGT-10, FR-RPT-2).
     /// </summary>
     public static string AgentStatePath(Guid agentId) => $"{AgentPath(agentId)}/state";
+
+    /// <summary>The name of the choice of a page of the trades of an agent in the address of the page of its state.</summary>
+    public const string AgentTradesPageKey = "trades";
+
+    /// <summary>The path of the page of the state of an agent, with a page of its closed trades (FR-RPT-2).</summary>
+    public static string AgentStatePath(Guid agentId, int tradesPage) =>
+        tradesPage > 1
+            ? $"{AgentStatePath(agentId)}?{AgentTradesPageKey}={tradesPage.ToString(CultureInfo.InvariantCulture)}"
+            : AgentStatePath(agentId);
 
     /// <summary>
     /// The path of the page of the prompts of an agent: the templates that it uses now, which

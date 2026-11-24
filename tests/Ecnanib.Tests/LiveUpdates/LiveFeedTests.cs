@@ -5,6 +5,7 @@ using Ecnanib.ExchangeGateway;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.Agents;
+using Ecnanib.Tests.DecisionEngine;
 using Ecnanib.Tests.Experience;
 using Ecnanib.Tests.Logging;
 using Ecnanib.WebUi.Live;
@@ -417,6 +418,137 @@ public class LiveFeedTests
 
         await Wait.UntilAsync(() => feeding.Prices.Followed.Count == 1, "the feed to let go of the price of the closed position");
         Assert.Equal([BitcoinMark], feeding.Prices.Followed);
+    }
+
+    [Fact]
+    public async Task The_screen_of_an_agent_values_what_the_agent_holds_at_the_one_price_that_it_follows_and_asks_for_itself_again_when_that_is_first_read()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var holds = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Holds");
+        var futures = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Futures", market: Market.Futures);
+        var page = new StandInPage("/agents/holds/state");
+
+        await application.GiveTradeAsync(ada.User.Id, holds, Feeding.Morning, closed: false);
+        await application.GiveTradeAsync(ada.User.Id, futures, Feeding.Morning, closed: false);
+
+        // The screen of one agent (FR-RPT-2): the cycles of the agent that run, its position
+        // with its price, and its equity, which is of what the agent holds at that price.
+        await using var feed = feeding.Open(
+            ada.Connection, page, holds, [LiveSubject.Holdings], LiveShows.Cycle | LiveShows.Position | LiveShows.Team, values: true);
+
+        // As the page is written, nothing is followed.
+        await feed.ReadAsync(TestContext.Current.CancellationToken);
+        Assert.Empty(feeding.Prices.Followed);
+
+        // Once its connection is made, the price of its own position is followed, once. The
+        // price of what another agent of its user holds is not: a price that is followed is
+        // read from the exchange once a second.
+        feed.Follow();
+        await Wait.UntilAsync(() => feeding.Prices.Followed.Count == 1 && page.Shown == 1, "the feed to follow the price of the position");
+
+        Assert.Equal([Bitcoin], feeding.Prices.Followed);
+        Assert.Equal(0, page.Asked);
+
+        // The first read of that price: the page was written without it, and asks for itself
+        // again. The price is written to the page over its connection as well.
+        feeding.Prices.Say(Bitcoin, new WatchedPrice(100_250m, Feeding.Morning));
+        await AsksAsync(feeding, page, 1);
+
+        Assert.Equal(100_250m, feed.State.Price!.Price);
+
+        // What is read of it after that is written to the page, and asks for nothing.
+        for (var second = 1; second <= 3; second++)
+        {
+            feeding.Prices.Say(Bitcoin, new WatchedPrice(100_250m + second, Feeding.Morning.AddSeconds(second)));
+        }
+
+        await TakenAsync(feeding, ada.User, holds, page);
+        feeding.Clock.Advance(TimeSpan.FromSeconds(5));
+        await TakenAsync(feeding, ada.User, holds, page);
+
+        Assert.Equal(100_253m, feed.State.Price!.Price);
+        Assert.Equal(1, page.Asked);
+
+        // The price of what the other agent holds is read for someone else: this page is told nothing of it.
+        feeding.Prices.Say(BitcoinMark, new WatchedPrice(99_400m, Feeding.Morning.AddSeconds(4)));
+        await TakenAsync(feeding, ada.User, holds, page);
+        feeding.Clock.Advance(TimeSpan.FromSeconds(5));
+        await TakenAsync(feeding, ada.User, holds, page);
+
+        Assert.Equal(1, page.Asked);
+        Assert.Null(page.Failed);
+
+        // A page that is gone follows nothing.
+        await feed.DisposeAsync();
+        Assert.Empty(feeding.Prices.Followed);
+    }
+
+    [Fact]
+    public async Task The_screen_of_an_agent_that_holds_nothing_asks_for_nothing_when_the_price_of_its_symbol_is_read()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var idle = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Idle");
+        var other = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Other", symbol: "ETHUSDT");
+        var page = new StandInPage("/agents/idle/state");
+
+        // Another agent of its user holds a position, which is nothing of this page.
+        await application.GiveTradeAsync(ada.User.Id, other, Feeding.Morning, closed: false);
+
+        await using var feed = feeding.Open(
+            ada.Connection, page, idle, [LiveSubject.Holdings], LiveShows.Cycle | LiveShows.Position | LiveShows.Team, values: true);
+
+        feed.Follow();
+        await Wait.UntilAsync(() => feeding.Prices.Followed.Count == 1 && page.Shown == 1, "the feed to follow the price of the symbol of the agent");
+
+        // The price of its symbol is followed, for the part of the page that says it, and no other.
+        Assert.Equal([Bitcoin], feeding.Prices.Followed);
+
+        // No figure of an agent that holds nothing is in a price: the price is written to the
+        // page, and the page asks for nothing.
+        feeding.Prices.Say(Bitcoin, new WatchedPrice(100_250m, Feeding.Morning));
+        await TakenAsync(feeding, ada.User, idle, page);
+        feeding.Clock.Advance(TimeSpan.FromSeconds(5));
+        await TakenAsync(feeding, ada.User, idle, page);
+
+        Assert.Equal(100_250m, feed.State.Price!.Price);
+        Assert.Equal(0, page.Asked);
+    }
+
+    [Fact]
+    public async Task An_equity_that_is_recorded_has_the_page_of_its_agent_ask_for_itself_again_and_no_page_of_another_agent()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Recorded");
+        var other = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Other", symbol: "ETHUSDT");
+        var page = new StandInPage("/agents/recorded/state");
+        var otherPage = new StandInPage("/agents/other/state");
+
+        // The screens of two agents, each of which shows the equity of its agent over time (FR-RPT-2).
+        await using var feed = feeding.Open(ada.Connection, page, agent, [LiveSubject.Equity], LiveShows.Cycle);
+        await using var otherFeed = feeding.Open(ada.Connection, otherPage, other, [LiveSubject.Equity], LiveShows.Cycle);
+
+        feed.Follow();
+        otherFeed.Follow();
+        await TakenAsync(feeding, ada.User, agent, page);
+        await TakenAsync(feeding, ada.User, other, otherPage);
+
+        // The equity of the one agent is recorded, as the database says, whatever wrote it.
+        await application.GiveEquityAsync(ada.User.Id, agent, (Feeding.Morning, 1010m));
+
+        await AsksAsync(feeding, page, 1);
+
+        // The page of the other agent is told nothing of it.
+        await TakenAsync(feeding, ada.User, other, otherPage);
+        feeding.Clock.Advance(TimeSpan.FromSeconds(5));
+        await TakenAsync(feeding, ada.User, other, otherPage);
+
+        Assert.Equal((1, 0), (page.Asked, otherPage.Asked));
     }
 
     [Fact]

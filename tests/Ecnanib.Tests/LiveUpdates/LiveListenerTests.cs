@@ -52,6 +52,31 @@ public class LiveListenerTests
     }
 
     [Fact]
+    public async Task The_equity_of_an_agent_that_is_recorded_reaches_what_follows_its_user_with_its_agent()
+    {
+        using var application = new AccountsApplication();
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var grace = await application.RegisterVerifiedAsync(Grace);
+        var ofAda = await application.GiveAgentAsync(ada.Id, Morning, team: false);
+        var ofGrace = await application.GiveAgentAsync(grace.Id, Morning, team: false);
+
+        await application.LiveSignals.ListensAsync();
+        using var adaFollows = new Following(application.LiveSignals, ada.Id);
+        using var graceFollows = new Following(application.LiveSignals, grace.Id);
+
+        // Two recordings, written at once: the screen of the agent shows its equity over time (FR-RPT-2).
+        await application.GiveEquityAsync(ada.Id, ofAda, (Morning, 1010m), (Morning.AddMinutes(15), 1012m));
+        await adaFollows.HearsAsync(LiveSubject.Equity, ofAda);
+
+        await application.GiveEquityAsync(grace.Id, ofGrace, (Morning, 990m));
+        await graceFollows.HearsAsync(LiveSubject.Equity, ofGrace);
+
+        // Each hears of their own agent, and the two rows of one transaction say the same, which the database says once.
+        Assert.Equal([new(LiveSubject.Equity, ofAda)], adaFollows.Heard);
+        Assert.Equal([new(LiveSubject.Equity, ofGrace)], graceFollows.Heard);
+    }
+
+    [Fact]
     public async Task A_change_is_said_when_it_is_committed_and_one_that_is_rolled_back_is_said_to_nobody()
     {
         using var application = new AccountsApplication();

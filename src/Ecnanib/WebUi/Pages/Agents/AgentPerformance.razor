@@ -1,0 +1,80 @@
+@using Ecnanib.DecisionEngine
+@using Ecnanib.WebUi.Pages.Dashboard
+@using Ecnanib.WebUi.Pages.Experience
+
+@*
+    The performance figures of an agent, on its screen (FR-RPT-2): its equity, its net result,
+    its return, its win rate, its average R, its profit factor, its largest drawdown, its fees,
+    and its funding. They are of the mode that the agent is in, and nothing of the other mode is
+    in them (FR-BIN-11). The equity, the net result, and the return are worked out as the
+    dashboard works out the equity of an agent, with its open position at the price that the
+    watch has: a figure that is not known says so, and is never written as a number. The win
+    rate, the average R, and the profit factor are those of a track record, in R, by the rule of
+    the experience screens. The largest drawdown is counted over the recorded equity, as the
+    drawdown limit counts a drawdown. A profit and a loss are told apart by their sign
+    (FR-THM-5). Under the figures the page says what each is of. The texts are in
+    AgentReportPages. See docs/agent-screen.md.
+*@
+
+<section class="agent-performance" aria-labelledby="performance-heading">
+    <h2 id="performance-heading">@AgentReportPages.PerformanceHeading</h2>
+
+    <p>@AgentReportPages.PerformanceExplained(Equity.Mode)</p>
+
+    <dl class="dashboard-figures agent-figures">
+        <div>
+            <dt>@AgentReportPages.Equity</dt>
+            <dd>@DashboardPages.AmountOrNot(Equity.Equity, Equity.Asset)</dd>
+        </div>
+        <div>
+            <dt>@AgentReportPages.NetResult</dt>
+            <dd>@DashboardPages.SignedOrNot(Figures.NetResult, Equity.Asset)</dd>
+        </div>
+        <div>
+            <dt>@AgentReportPages.Return</dt>
+            <dd>@AgentReportPages.SignedPercent(Figures.ReturnPercent)</dd>
+        </div>
+        <div>
+            <dt>@AgentReportPages.WinRate</dt>
+            <dd>@ExperiencePages.WinRate(Figures.Record)</dd>
+        </div>
+        <div>
+            <dt>@AgentReportPages.AverageR</dt>
+            <dd>@ExperiencePages.InR(Figures.Record.AverageR)</dd>
+        </div>
+        <div>
+            <dt>@AgentReportPages.ProfitFactor</dt>
+            <dd>@ExperiencePages.ProfitFactor(Figures.Record)</dd>
+        </div>
+        <div>
+            <dt>@AgentReportPages.LargestDrawdown</dt>
+            <dd>@AgentReportPages.Drawdown(Report.Curve.LargestDrawdown)</dd>
+        </div>
+        <div>
+            <dt>@AgentReportPages.Fees</dt>
+            <dd>@DashboardPages.Amount(Figures.Fees, Equity.Asset)</dd>
+        </div>
+        <div>
+            <dt>@AgentReportPages.Funding</dt>
+            <dd>@DashboardPages.Signed(Figures.Funding, Equity.Asset)</dd>
+        </div>
+    </dl>
+
+    <p class="figures-valued">@AgentReportPages.Valued(Equity) @AgentReportPages.ReturnExplained(Equity)</p>
+
+    <p class="figures-counted">@AgentReportPages.Counted(Figures, Equity.Mode)</p>
+
+    <p class="figures-drawdown">@AgentReportPages.DrawdownExplained(Report.Curve.LargestDrawdown, Equity.Asset)</p>
+
+    <p class="figures-costs">@AgentReportPages.CostsExplained(Figures)</p>
+</section>
+
+@code {
+    /// <summary>How the agent has performed.</summary>
+    [Parameter, EditorRequired]
+    public AgentReport Report { get; set; } = null!;
+
+    private AgentEquity Equity => Report.Equity;
+
+    private AgentFigures Figures => Report.Figures;
+}

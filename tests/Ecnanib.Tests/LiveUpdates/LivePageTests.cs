@@ -161,13 +161,13 @@ public partial class LivePageTests
         var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
         var position = await application.GiveTradeAsync(ada.User.Id, agent, Feeding.Morning, closed: false);
 
-        await GiveOrderAsync(application, ada.User.Id, agent, position, OrderPurpose.StopLoss, 99_000m);
+        await application.GiveProtectionAsync(ada.User.Id, agent, position, OrderPurpose.StopLoss, 99_000m, Feeding.Morning);
 
         Assert.Contains(
             "<p>Its stop-loss rests on the exchange at 99000. No take-profit rests there for it.</p>",
             AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent))));
 
-        await GiveOrderAsync(application, ada.User.Id, agent, position, OrderPurpose.TakeProfit, 102_000m);
+        await application.GiveProtectionAsync(ada.User.Id, agent, position, OrderPurpose.TakeProfit, 102_000m, Feeding.Morning);
 
         Assert.Contains(
             "<p>Its stop-loss rests on the exchange at 99000, and its take-profit at 102000.</p>",
@@ -237,6 +237,34 @@ public partial class LivePageTests
     }
 
     [Fact]
+    public async Task The_page_of_the_state_of_an_agent_says_that_its_team_is_at_rest_while_no_cycle_of_it_runs()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
+
+        const string AtRest = "<section class=\"live-cycle\" aria-live=\"polite\"><p class=\"live-rest\">The team is at rest: no cycle of the agent runs at the moment.</p></section>";
+
+        // The screen of the agent says what its team does now, also when it does nothing
+        // (FR-RPT-2). The other pages that show the cycles which run have nothing to say then.
+        Assert.Contains(AtRest, AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent))));
+
+        foreach (var path in new[] { WebUiModule.AgentCyclesPath(agent), WebUiModule.AgentTestCyclePath(agent), WebUiModule.AgentsPath, WebUiModule.DashboardPath })
+        {
+            Assert.DoesNotContain("at rest", await ada.Browser.PageAsync(path));
+        }
+
+        // A cycle of the agent runs: its steps are said in place of that.
+        feeding.Progress.Runs(ada.User.Id, agent, Feeding.Cycle(CycleStep.Settling, CycleStep.DataPackage));
+
+        var running = AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent)));
+
+        Assert.Contains("<h2>A cycle is running</h2>", running);
+        Assert.DoesNotContain("at rest", running);
+    }
+
+    [Fact]
     public async Task A_part_of_a_page_that_fails_is_recorded_under_a_reference_and_says_the_reference_and_nothing_of_the_error()
     {
         using var application = new LoggedApplication(LoggedApplication.Settings());
@@ -283,47 +311,6 @@ public partial class LivePageTests
         WebUiModule.AgentTestCyclePath(agentId),
         WebUiModule.NotificationsPath,
     ];
-
-    /// <summary>Gives a position an order that protects it and rests on the exchange, stored as the application stores one.</summary>
-    private static async Task GiveOrderAsync(
-        AccountsApplication application, Guid userId, Guid agentId, Guid positionId, OrderPurpose purpose, decimal price)
-    {
-        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
-
-        var id = Guid.CreateVersion7();
-
-        context.Add(new Order(
-            id,
-            agentId,
-            userId,
-            TradingMode.Demo,
-            Market.Spot,
-            "BTCUSDT",
-            cycleId: null,
-            positionId,
-            Order.ClientOrderIdOf(id),
-            exchangeOrderId: "9001",
-            purpose,
-            OrderType.Stop,
-            OrderSide.Sell,
-            price,
-            stopLoss: null,
-            takeProfit: null,
-            quantity: 0.01m,
-            OrderStatus.Open,
-            executedQuantity: 0m,
-            averagePrice: null,
-            exitReason: null,
-            sends: 1,
-            fillsRecorded: false,
-            createdAt: Feeding.Morning,
-            updatedAt: Feeding.Morning,
-            checkedAt: null,
-            pairId: null,
-            cancelAfter: null));
-
-        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
-    }
 
     /// <summary>Stands for a part of a page that fails as it is written.</summary>
     private sealed class Fails : ComponentBase

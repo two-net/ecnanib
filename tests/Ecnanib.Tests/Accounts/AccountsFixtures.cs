@@ -186,6 +186,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What reads the cycles that were recorded for an agent, each as a complete record.</summary>
     public IRecordedCycles RecordedCycles => _application.Services.GetRequiredService<IRecordedCycles>();
 
+    /// <summary>What reads how one agent has performed, for the screen of the agent.</summary>
+    public IAgentReports AgentReports => _application.Services.GetRequiredService<IAgentReports>();
+
     /// <summary>What works out the AI usage of a user from the recorded calls of the roles.</summary>
     public IAiUsage AiUsage => _application.Services.GetRequiredService<IAiUsage>();
 

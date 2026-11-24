@@ -1,0 +1,111 @@
+@using Ecnanib.DecisionEngine
+@using Ecnanib.WebUi.Pages.Experience
+
+@*
+    The trade list of an agent, on its screen (FR-RPT-2): the positions that it closed, the
+    latest close first, a page of them at a time. Each says the mode that the agent was in when
+    it opened it, so a trade in Demo is listed as one in Demo for good (FR-BIN-11). It says it
+    as a word: the page has the one badge, which is that of its agent (FR-UI-3). It says how
+    much the position held, the prices that it was entered and closed at, how it was closed, and
+    its recorded result: what it made after fees and funding, with its sign, the same in R, its
+    fees, its funding, and how long it was held. A result is recorded some minutes after the
+    close: until then the trade says so. A price that no order of the agent says is not known,
+    and is said as that. The pages are links: the page has no field. The texts are in
+    AgentReportPages. See docs/agent-screen.md.
+*@
+
+<section class="agent-trades">
+    <h2 id="@AgentReportPages.TradesHeadingId">@AgentReportPages.TradesHeading</h2>
+
+    @if (Trades.Total == 0)
+    {
+        <p>@AgentReportPages.NoTrades</p>
+    }
+    else
+    {
+        <p>@AgentReportPages.Listed(Trades)</p>
+
+        @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
+        <div class="agents agent-trade-list" role="region" aria-labelledby="@AgentReportPages.TradesHeadingId" tabindex="0">
+            <table>
+                <caption>The closed trades of the agent</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Closed</th>
+                        <th scope="col">Mode</th>
+                        <th scope="col">Symbol</th>
+                        <th scope="col">Market</th>
+                        <th scope="col">Side</th>
+                        <th scope="col">Quantity</th>
+                        <th scope="col">Entry price</th>
+                        <th scope="col">Exit price</th>
+                        <th scope="col">How it closed</th>
+                        <th scope="col">Net result</th>
+                        <th scope="col">In R</th>
+                        <th scope="col">Fees</th>
+                        <th scope="col">Funding</th>
+                        <th scope="col">Opened</th>
+                        <th scope="col">Held</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var trade in Trades.Trades)
+                    {
+                        <tr>
+                            <th scope="row">@PageTimes.At(trade.ClosedAt)</th>
+                            <td>@AgentReportPages.ModeOf(trade.Mode)</td>
+                            <td><code>@trade.Symbol</code></td>
+                            <td>@trade.Market</td>
+                            <td>@AgentReportPages.Side(trade)</td>
+                            <td>@AgentReportPages.Number(trade.Quantity)</td>
+                            <td>@AgentReportPages.Number(trade.EntryPrice)</td>
+                            <td>@AgentReportPages.Number(trade.ExitPrice)</td>
+                            <td>@AgentReportPages.Describe(trade.ExitReason)</td>
+                            <td>@AgentReportPages.Result(trade)</td>
+                            <td>@AgentReportPages.InR(trade)</td>
+                            <td>@AgentReportPages.FeesOf(trade)</td>
+                            <td>@AgentReportPages.FundingOf(trade)</td>
+                            <td>@PageTimes.At(trade.OpenedAt)</td>
+                            <td>@AgentReportPages.HeldOf(trade)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (Trades.Trades.Any(trade => trade.Result is null))
+        {
+            <p>@AgentReportPages.RecordedLater</p>
+        }
+
+        @if (Trades.Trades.Any(trade => trade.Estimate))
+        {
+            <p>@ExperiencePages.EstimatesExplained</p>
+        }
+
+        @if (Trades.Pages > 1)
+        {
+            <nav class="lesson-pages" aria-label="Pages of trades">
+                @if (Trades.Page > 1)
+                {
+                    <a href="@WebUiModule.AgentStatePath(AgentId, Trades.Page - 1)">Newer trades</a>
+                }
+
+                @if (Trades.Page < Trades.Pages)
+                {
+                    <a href="@WebUiModule.AgentStatePath(AgentId, Trades.Page + 1)">Older trades</a>
+                }
+            </nav>
+        }
+    }
+</section>
+
+@code {
+    /// <summary>The agent whose trades they are, which the links to the other pages name.</summary>
+    [Parameter, EditorRequired]
+    public Guid AgentId { get; set; }
+
+    /// <summary>One page of the closed trades of the agent.</summary>
+    [Parameter, EditorRequired]
+    public AgentTrades Trades { get; set; } = null!;
+}

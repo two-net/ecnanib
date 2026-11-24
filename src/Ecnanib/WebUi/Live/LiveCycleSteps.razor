@@ -6,7 +6,9 @@
     step is what the cycle does now. A step that it will not come to is not listed: which steps
     a cycle comes to is its decision. Nothing of what a model answered is here: the timeline of
     the cycle shows that, once the cycle has ended and is recorded. A cycle that its user ran as
-    a test says so (FR-CYC-12). With no cycle that runs, there is nothing to say.
+    a test says so (FR-CYC-12). With no cycle that runs, there is nothing to say, except on
+    the screen of the agent, which says what the team does now also when it does nothing
+    (FR-RPT-2): there the part says that the team is at rest.
 *@
 
 @foreach (var cycle in Cycles)
@@ -34,8 +36,19 @@
     </section>
 }
 
+@if (SaysRest && Cycles.Count == 0)
+{
+    <section class="live-cycle" aria-live="polite">
+        <p class="live-rest">@LivePages.AtRest</p>
+    </section>
+}
+
 @code {
     /// <summary>The cycles that run, in the order that they started in.</summary>
     [Parameter, EditorRequired]
     public IReadOnlyList<RunningCycle> Cycles { get; set; } = [];
+
+    /// <summary>Whether the part says that the team is at rest when no cycle runs.</summary>
+    [Parameter]
+    public bool SaysRest { get; set; }
 }

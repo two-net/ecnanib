@@ -586,6 +586,8 @@ Agent equity is the capital the user allocated to an agent, plus the agent's net
 | **An agent has rows for each mode** | What it did in Demo is never combined with what it does in Live (FR-BIN-11). |
 | **An equity that is not known is not recorded** | Where Binance did not say the price that the open position is valued at: see "The equity of an agent". |
 | **An agent that is not evaluated has no new row** | One that its user paused or stopped, and that holds nothing. Its equity is what its newest row says. |
+| **The screen of the agent draws it** | The equity curve, in the mode that the agent is in, and the largest drawdown, which is counted over these rows as the drawdown limit counts a drawdown (FR-RPT-2): `IAgentReports`, with `EquityCurves`. See "Equity curve" in [agent-screen.md](agent-screen.md). |
+| **The database says a row that is added** | With the trigger that `AddEquitySignal` gives the table, so that the screen of the agent shows it without a manual refresh: see "What the database says" in [live-updates.md](live-updates.md). |
 
 ## One after the other
 
@@ -782,10 +784,9 @@ A check against Binance's own test environment is in `LiveBinanceTests`: see "Ch
 - Orders in the account of a user that no agent placed. They are not listed, and so not compared: what reconciles asks about the orders that have a row.
 - The leverage brackets of a symbol, by which Binance allows less leverage for a larger position. A leverage that Binance refuses for that gets no entry, and its user is told: see "The margin of Futures".
 - A fee in an asset that the configuration file names no symbol for. It is stored as Binance said it, and is in no figure: see "The value of a fee".
-- The results of the positions, and the equity of an agent over time, on the pages of the agent: its trade list, its equity curve, and its performance figures (FR-RPT-2). They are recorded, and no page of an agent shows them. The open position of an agent is on the page of its state: see "The position on a page". The track record of each provider and of each model is worked out from the results, and the experience screens show it (FR-EXP-2): see [experience.md](experience.md).
 - Thinning the equity of an agent over time to one row for a day after 90 days (NFR-DAT-5). Nothing deletes yet.
 - The equity of an agent that is not evaluated: one that its user paused or stopped, and that holds nothing, has no new row until it runs again.
-- The funding and the margin of a position on the page of its agent, and its fees: what the page says the open position would make is before fees and funding (FR-RPT-2).
+- The funding and the margin of the open position on the page of its agent, and its fees: what the page says the open position would make is before fees and funding. The fees and the funding of the agent to date are among its performance figures, and those of each closed position are on its trade list (FR-RPT-2): see [agent-screen.md](agent-screen.md).
 - Why a plan that closes a position or adjusts its protection placed no order, in the record of its cycle. The record of a cycle has its orders and why no entry was placed (FR-CYC-10): see "The timeline" in [team.md](team.md). That a position was gone before its close was due is in the log only.
 - The count of the orders that an account places, which Binance limits beside the request weight. A protective order has no turn before other calls at the limiter: one that is held back was not sent, and is settled within a minute.
 - A close by hand that failed, told its user by a notification (FR-NTF-1). The page that asked says so. One that closed the position is told as every close is, when the result of the position is recorded: see [notifications.md](notifications.md).

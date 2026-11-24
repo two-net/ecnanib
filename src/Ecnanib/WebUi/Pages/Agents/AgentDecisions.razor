@@ -1,0 +1,101 @@
+@using Ecnanib.DecisionEngine
+
+@*
+    The decision timeline of an agent, on its screen (FR-RPT-2): its latest cycles, the latest
+    first, each with every role's output and the Risk Guard result. A decision says the close of
+    the candle that its cycle was for, the mode that the agent was in then (FR-BIN-11), as a
+    word, for the page has the one badge of its agent (FR-UI-3), and how the cycle ended. Under
+    it stands each call of a role with the model that was called, how the
+    call ended, and what the model answered, field by field, then each check of the Risk Guard
+    with its verdict and the outcome of every rule (FR-RSK-9), and then the orders that the
+    cycle placed, each as it is now, or why it placed none. Everything is explained in plain
+    language, and an outcome is said as words (NFR-USA-2). Each decision leads to the timeline
+    of its cycle, which has the rest of its record: the summary of its data package, and the
+    usage and the prompt templates of each call (FR-CYC-10). A cycle that its user ran as a test
+    is not among the decisions: the list of the cycles has it. What a model wrote is written as
+    text, like everything else on a page (NFR-SEC-4). The texts are in AgentReportPages,
+    CyclePages, and RiskCheckPages. See docs/agent-screen.md.
+*@
+
+<section class="agent-decisions" aria-labelledby="decisions-heading">
+    <h2 id="decisions-heading">@AgentReportPages.DecisionsHeading</h2>
+
+    @if (Decisions.Count == 0)
+    {
+        <p>@AgentReportPages.NoDecisions</p>
+    }
+    else
+    {
+        <p>@AgentReportPages.DecisionsExplained</p>
+
+        @foreach (var cycle in Decisions)
+        {
+            <article class="decision" aria-labelledby="@AgentReportPages.Id(cycle, "heading")">
+                <h3 id="@AgentReportPages.Id(cycle, "heading")">@AgentReportPages.DecisionOf(cycle)</h3>
+
+                <p>
+                    In @AgentReportPages.ModeOf(cycle.Mode). Outcome:
+                    <strong class="cycle-outcome cycle-@(cycle.Outcome.ToString().ToLowerInvariant())">@CyclePages.Describe(cycle.Outcome)</strong>.
+                    @CyclePages.Explain(cycle.Outcome, cycle.Kind)
+                </p>
+
+                @foreach (var call in cycle.Calls)
+                {
+                    <h4>@CyclePages.Title(call)</h4>
+
+                    <p>@AgentPages.Describe(call.Role).Job Model: @CyclePages.Model(call).</p>
+
+                    <RoleCallAnswer Call="@call" />
+                }
+
+                @foreach (var check in cycle.Checks)
+                {
+                    var heading = AgentReportPages.Id(cycle, $"check-{check.Sequence}-heading");
+
+                    <h4 id="@heading">Risk Guard: @RiskCheckPages.Describe(check.Action)</h4>
+
+                    <p>
+                        <strong class="guard-verdict">@RiskCheckPages.Describe(check.Verdict)</strong>.
+                        @RiskCheckPages.Explain(check)
+                    </p>
+
+                    <RiskCheckRules Check="@check" LabelledBy="@heading" />
+                }
+
+                @if (cycle.Orders.Count == 0)
+                {
+                    <p class="no-order">@CyclePages.NoOrder(cycle)</p>
+                }
+                else
+                {
+                    <h4>@AgentReportPages.OrdersHeading</h4>
+
+                    <ul class="decision-orders">
+                        @foreach (var order in cycle.Orders)
+                        {
+                            <li>
+                                <strong>@CyclePages.Describe(order.Purpose)</strong>. @CyclePages.Says(order)
+                                <span class="order-status">@CyclePages.Describe(order.Status)</span>, as it is now.
+                                @CyclePages.Became(order)
+                            </li>
+                        }
+                    </ul>
+                }
+
+                <p><a href="@WebUiModule.AgentCyclePath(AgentId, cycle.Id)">@AgentReportPages.WholeRecord</a></p>
+            </article>
+        }
+    }
+
+    <p>@AgentReportPages.EveryCycle <a href="@WebUiModule.AgentCyclesPath(AgentId)">@CyclePages.Link</a></p>
+</section>
+
+@code {
+    /// <summary>The agent whose decisions they are, which the links to its cycles name.</summary>
+    [Parameter, EditorRequired]
+    public Guid AgentId { get; set; }
+
+    /// <summary>The latest cycles of the agent, each as a complete record, latest close first.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<CycleRecord> Decisions { get; set; } = [];
+}

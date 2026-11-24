@@ -164,30 +164,8 @@
 
                         <p>@AgentPages.Describe(call.Role).Job Model: @CyclePages.Model(call).</p>
 
-                        <p>
-                            <strong class="call-outcome">@CyclePages.Describe(call.Outcome, call.Validation)</strong>.
-                            @CyclePages.Says(call)
-                        </p>
-
-                        @if (CyclePages.Fields(call.Result) is { Count: > 0 } fields)
-                        {
-                            <dl class="role-result">
-                                @foreach (var field in fields)
-                                {
-                                    <dt>@field.Name</dt>
-
-                                    @foreach (var written in field.Values)
-                                    {
-                                        <dd>@written</dd>
-                                    }
-                                }
-                            </dl>
-                        }
-
-                        @if (CyclePages.Mark(call) is { } mark)
-                        {
-                            <p class="sentiment-mark">@mark</p>
-                        }
+                        @* How it ended and what it answered, as the screen of the agent shows it too. *@
+                        <RoleCallAnswer Call="@call" />
 
                         <p class="call-usage">@CyclePages.Usage(call)</p>
 

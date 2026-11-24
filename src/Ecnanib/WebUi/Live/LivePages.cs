@@ -23,6 +23,13 @@ public static class LivePages
     /// <summary>What a step that a cycle has left behind says.</summary>
     public const string StepDone = "done";
 
+    /// <summary>
+    /// What the screen of an agent says of its team while no cycle of the agent runs
+    /// (FR-RPT-2). The state of the agent, which the page says above it, says whether the team
+    /// is called at the next close.
+    /// </summary>
+    public const string AtRest = "The team is at rest: no cycle of the agent runs at the moment.";
+
     /// <summary>The heading of a cycle that runs, which says what started it.</summary>
     public static string Running(CycleKind kind) => kind == CycleKind.Test ? "A test cycle is running" : "A cycle is running";
 

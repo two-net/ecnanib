@@ -47,7 +47,8 @@
     /// <summary>
     /// Whether the page values the open positions of its user at their prices, as the dashboard
     /// does: their prices are followed while the page is open, and the page asks for itself
-    /// again when one of them is first read.
+    /// again when one of them is first read. A page of one agent values what that agent holds,
+    /// at the price that it follows for the position.
     /// </summary>
     [Parameter]
     public bool Values { get; set; }

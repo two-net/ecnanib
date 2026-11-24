@@ -381,16 +381,17 @@ p.cycle-kind {
         min-width: 30rem;
     }
 
-    /* The structured result of a role: the name of each field, and its value under it. What a
-       model wrote may be long, and may hold no place to break a line. */
-    .timeline-entry .role-result dt {
-        font-weight: 600;
-    }
+/* The structured result of a role, on the timeline of a cycle and among the decisions on the
+   screen of an agent: the name of each field, and its value under it. What a model wrote may be
+   long, and may hold no place to break a line. */
+.role-result dt {
+    font-weight: 600;
+}
 
-    .timeline-entry .role-result dd {
-        margin: 0 0 0.25rem 1rem;
-        overflow-wrap: anywhere;
-    }
+.role-result dd {
+    margin: 0 0 0.25rem 1rem;
+    overflow-wrap: anywhere;
+}
 
 /* The parts of a page that are written over its connection as they change (FR-NTF-2): the cycles
    of an agent that run, each with the steps that it has come to, and the position of an agent
@@ -719,6 +720,118 @@ fieldset {
 .agent-notifications > li > a {
     display: block;
     margin-top: 0.25rem;
+}
+
+/* The screen of an agent (FR-RPT-2): its team, its performance figures, its equity curve, its
+   trades, and its decisions, each a part of the page of its state, set apart from the part
+   above it by a line. Everything is said as words and numbers: a profit and a loss are told
+   apart by their sign, and nothing relies on a colour (FR-THM-5). A number is as wide as its
+   digits, so nothing moves when it changes. */
+.agent-performance, .agent-equity, .agent-trades, .agent-decisions {
+    border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    margin: 1.5rem 0 0;
+    padding-top: 0.5rem;
+}
+
+/* The roles of the team, each on a line: its name, and beside it its model, which wraps in a
+   column of its own when it is long. */
+.agent-roster {
+    margin: 0 0 1rem;
+}
+
+    .agent-roster > div {
+        display: grid;
+        grid-template-columns: minmax(8rem, 12rem) 1fr;
+        gap: 0 0.75rem;
+    }
+
+    .agent-roster dt {
+        font-weight: 600;
+    }
+
+    .agent-roster dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+
+/* The figures of an agent stand side by side as those of the dashboard do. There are more of
+   them, so each is a little smaller. */
+.agent-figures dd {
+    font-size: 1.25rem;
+}
+
+/* The equity curve: a picture that is drawn on the server, as wide as the page and of one
+   height, with what it shows said in words under it. Its line is in the colour of the text
+   around it, so it reads the same on a light page and on a dark one, and is as thick whatever
+   the width of the page. The dashed line is the capital of the agent, lighter than the curve. */
+.equity-curve {
+    margin: 0 0 1rem;
+}
+
+.equity-chart {
+    display: block;
+    width: 100%;
+    height: 12rem;
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: 0.25rem;
+}
+
+.equity-line {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.equity-capital {
+    stroke: color-mix(in srgb, currentColor 50%, transparent);
+    stroke-width: 1;
+    stroke-dasharray: 6 4;
+    vector-effect: non-scaling-stroke;
+}
+
+.equity-curve figcaption {
+    margin-top: 0.5rem;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The trades of an agent: a table as the list of the agents is, with more columns, which
+   scrolls sideways by itself. */
+.agent-trade-list table {
+    min-width: 90rem;
+}
+
+.agent-trade-list td {
+    font-variant-numeric: tabular-nums;
+}
+
+/* The decisions of an agent: one under another along a line at the side, as the entries of a
+   timeline are. Each says the close of its candle first, and then what each role answered and
+   what the Risk Guard made of the plan. */
+.decision {
+    margin: 0 0 1.5rem;
+    padding: 0 0 0.25rem 1rem;
+    border-inline-start: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+
+    .decision h3 {
+        margin: 0 0 0.5rem;
+        font-size: 1.125rem;
+    }
+
+    .decision h4 {
+        margin: 1rem 0 0.5rem;
+        font-size: 1rem;
+    }
+
+    .decision p {
+        margin: 0 0 0.5rem;
+    }
+
+.decision-orders {
+    margin: 0 0 0.5rem;
+    padding-inline-start: 1.5rem;
 }
 
 /* What happens to an open position when its agent is stopped: one choice under another, each

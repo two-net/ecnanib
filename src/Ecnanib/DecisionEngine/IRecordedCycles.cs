@@ -54,6 +54,28 @@ public interface IRecordedCycles
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns><see cref="RecentCycle.Shown"/> cycles at the most.</returns>
     Task<IReadOnlyList<RecentCycle>> LatestOfUserAsync(Guid userId, TradingMode mode, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The latest cycles of an agent of a user, latest close first, each as a complete record:
+    /// the decisions that the screen of the agent shows with every role's output and the Risk
+    /// Guard result (FR-RPT-2).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A test cycle is not among them,</b> as it is not among the recent decisions of the
+    /// dashboard: it is no decision that anything followed from (FR-CYC-12). It is on the list
+    /// of the cycles of its agent.
+    /// </para>
+    /// <para>
+    /// <b>Each says the mode that its agent was in then</b> (FR-BIN-11). The records are read at
+    /// one moment, and each is what <see cref="FindAsync"/> answers for its cycle.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">The user who is signed in.</param>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="count">How many cycles at the most: see <see cref="CycleRecord.Detailed"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    Task<IReadOnlyList<CycleRecord>> LatestRecordsAsync(Guid userId, Guid agentId, int count, CancellationToken cancellationToken);
 }
 
 /// <summary>A cycle of one of the agents of a user, as a list of the latest cycles of several agents names it.</summary>
@@ -115,7 +137,11 @@ public sealed record CycleRecord(
     IReadOnlyList<RiskCheckView> Checks,
     IReadOnlyList<CycleOrderView> Orders,
     NoEntryReason? NoEntry,
-    CycleKind Kind = CycleKind.Scheduled);
+    CycleKind Kind = CycleKind.Scheduled)
+{
+    /// <summary>How many of the latest cycles of an agent its screen shows as complete records (FR-RPT-2).</summary>
+    public const int Detailed = 5;
+}
 
 /// <summary>One call of a role in a cycle, as its user reads it (FR-TEAM-8).</summary>
 /// <param name="Role">The role that was called.</param>
@@ -256,36 +282,76 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
             .OwnedBy(userId)
             .SingleOrDefaultAsync(stored => stored.Id == cycleId && stored.AgentId == agentId, cancellationToken);
 
-        if (cycle is null)
-        {
-            return null;
-        }
+        return cycle is null ? null : (await RecordsAsync(context, userId, agentId, [cycle], cancellationToken))[0];
+    }
 
-        var outputs = await context.Set<RoleOutput>()
+    public async Task<IReadOnlyList<CycleRecord>> LatestRecordsAsync(Guid userId, Guid agentId, int count, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        // The cycles and the parts of their records as they were at one moment, as one record is read.
+        await using var snapshot = await context.BeginSnapshotAsync(cancellationToken);
+
+        // Asked for by owner: a cycle of another user's agent is not found. A test cycle is no
+        // decision that anything followed from, and is not among them.
+        var latest = await context.Set<DecisionCycle>()
             .AsNoTracking()
             .OwnedBy(userId)
-            .Where(output => output.CycleId == cycleId)
+            .Where(cycle => cycle.AgentId == agentId && cycle.Kind == CycleKind.Scheduled)
+            .OrderByDescending(cycle => cycle.ClosedAt)
+            .ThenByDescending(cycle => cycle.StartedAt)
+            .Take(count)
             .ToListAsync(cancellationToken);
+
+        return await RecordsAsync(context, userId, agentId, latest, cancellationToken);
+    }
+
+    /// <summary>
+    /// The complete records of some cycles of one agent of a user, in the order the cycles are
+    /// given in. Each table is read once for all of them, with the context that it is given, in
+    /// the snapshot that the context holds.
+    /// </summary>
+    private async Task<IReadOnlyList<CycleRecord>> RecordsAsync(
+        EcnanibDbContext context, Guid userId, Guid agentId, IReadOnlyList<DecisionCycle> cycles, CancellationToken cancellationToken)
+    {
+        if (cycles.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = cycles.Select(cycle => cycle.Id).ToList();
+        var byId = cycles.ToDictionary(cycle => cycle.Id);
+
+        var outputs = (await context.Set<RoleOutput>()
+            .AsNoTracking()
+            .OwnedBy(userId)
+            .Where(output => ids.Contains(output.CycleId))
+            .ToListAsync(cancellationToken))
+            .ToLookup(output => output.CycleId);
 
         var checks = await context.Set<RiskCheck>()
             .AsNoTracking()
             .OwnedBy(userId)
-            .Where(check => check.CycleId == cycleId)
+            .Where(check => ids.Contains(check.CycleId))
             .OrderBy(check => check.Sequence)
             .ToListAsync(cancellationToken);
 
         // An order names its cycle by the id alone, so it is asked for by its agent as well.
-        var orders = await context.Set<Order>()
+        var orders = (await context.Set<Order>()
             .AsNoTracking()
             .OwnedBy(userId)
-            .Where(order => order.CycleId == cycleId && order.AgentId == agentId)
+            .Where(order => order.CycleId != null && ids.Contains(order.CycleId.Value) && order.AgentId == agentId)
             .OrderBy(order => order.CreatedAt)
             .ThenBy(order => order.Id)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .ToLookup(order => order.CycleId!.Value);
 
         // The versions of the templates that the calls used. A version is never changed, and
         // its text is not read here: the page of the prompts shows what an agent uses now.
         var templateIds = outputs
+            .SelectMany(ofCycle => ofCycle)
             .SelectMany(output => new[] { output.RoleTemplateId, output.MarketTemplateId, output.TimeframeTemplateId, output.ProfileTemplateId })
             .Distinct()
             .ToList();
@@ -295,75 +361,83 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
             .Select(template => new { template.Id, template.Kind, template.Subject, template.Version })
             .ToDictionaryAsync(template => template.Id, template => new TemplateVersion(template.Kind, template.Subject, template.Version), cancellationToken);
 
-        var guarded = await RiskCheckViews.OfAsync(
-            context, userId, [.. checks.Select(check => (check, cycle.ClosedAt, cycle.Mode, cycle.Kind))], cancellationToken);
+        // The checks of each cycle in their order, each with the close, the mode, and the kind of its cycle.
+        var guarded = (await RiskCheckViews.OfAsync(
+            context,
+            userId,
+            [.. checks.Select(check => (check, byId[check.CycleId].ClosedAt, byId[check.CycleId].Mode, byId[check.CycleId].Kind))],
+            cancellationToken))
+            .ToLookup(check => check.CycleId);
 
         // A model of the catalog is never deleted, so a call finds the one that it was made
         // with, and its provider, for good.
         var called = new Dictionary<Guid, CatalogModel?>();
 
-        foreach (var modelId in outputs.Select(output => output.ModelId).Distinct())
+        foreach (var modelId in outputs.SelectMany(ofCycle => ofCycle).Select(output => output.ModelId).Distinct())
         {
             called[modelId] = await models.FindAsync(modelId, cancellationToken);
         }
 
-        return new CycleRecord(
-            cycle.Id,
-            cycle.ClosedAt,
-            cycle.Mode,
-            cycle.StartedAt,
-            cycle.EndedAt,
-            cycle.Outcome,
-            DataPackageSummary.Read(cycle.DataPackage),
-            [
-                // In the order the calls were made. The two analysts are called at the same
-                // moment: they stand in the order of the roles.
-                .. outputs
-                    .OrderBy(output => output.CalledAt)
-                    .ThenBy(output => output.Role)
-                    .ThenBy(output => output.Attempt)
-                    .Select(output => new RoleCallView(
-                        output.Role,
-                        output.Attempt,
-                        called[output.ModelId]?.ProviderName ?? UnknownProvider,
-                        called[output.ModelId]?.Identifier ?? UnknownModel,
-                        called[output.ModelId]?.DisplayName,
-                        [
-                            .. new[] { output.RoleTemplateId, output.MarketTemplateId, output.TimeframeTemplateId, output.ProfileTemplateId }
-                                .Where(templates.ContainsKey)
-                                .Select(id => templates[id]),
-                        ],
-                        output.CalledAt,
-                        output.LatencyMs,
-                        output.InputTokens,
-                        output.OutputTokens,
-                        output.LiveSearches,
-                        output.Outcome,
-                        output.Validation,
-                        output.Rejection,
-                        output.Result)),
-            ],
-            guarded,
-            [
-                .. orders.Select(order => new CycleOrderView(
-                    order.Purpose,
-                    order.Type,
-                    order.Side,
-                    order.Symbol,
-                    order.Price,
-                    order.StopLoss,
-                    order.TakeProfit,
-                    order.Quantity,
-                    order.Status,
-                    order.ExecutedQuantity,
-                    order.AveragePrice,
-                    order.ClientOrderId,
-                    order.ExchangeOrderId,
-                    order.CreatedAt,
-                    order.UpdatedAt)),
-            ],
-            cycle.NoEntry,
-            cycle.Kind);
+        return
+        [
+            .. cycles.Select(cycle => new CycleRecord(
+                cycle.Id,
+                cycle.ClosedAt,
+                cycle.Mode,
+                cycle.StartedAt,
+                cycle.EndedAt,
+                cycle.Outcome,
+                DataPackageSummary.Read(cycle.DataPackage),
+                [
+                    // In the order the calls were made. The two analysts are called at the same
+                    // moment: they stand in the order of the roles.
+                    .. outputs[cycle.Id]
+                        .OrderBy(output => output.CalledAt)
+                        .ThenBy(output => output.Role)
+                        .ThenBy(output => output.Attempt)
+                        .Select(output => new RoleCallView(
+                            output.Role,
+                            output.Attempt,
+                            called[output.ModelId]?.ProviderName ?? UnknownProvider,
+                            called[output.ModelId]?.Identifier ?? UnknownModel,
+                            called[output.ModelId]?.DisplayName,
+                            [
+                                .. new[] { output.RoleTemplateId, output.MarketTemplateId, output.TimeframeTemplateId, output.ProfileTemplateId }
+                                    .Where(templates.ContainsKey)
+                                    .Select(id => templates[id]),
+                            ],
+                            output.CalledAt,
+                            output.LatencyMs,
+                            output.InputTokens,
+                            output.OutputTokens,
+                            output.LiveSearches,
+                            output.Outcome,
+                            output.Validation,
+                            output.Rejection,
+                            output.Result)),
+                ],
+                [.. guarded[cycle.Id]],
+                [
+                    .. orders[cycle.Id].Select(order => new CycleOrderView(
+                        order.Purpose,
+                        order.Type,
+                        order.Side,
+                        order.Symbol,
+                        order.Price,
+                        order.StopLoss,
+                        order.TakeProfit,
+                        order.Quantity,
+                        order.Status,
+                        order.ExecutedQuantity,
+                        order.AveragePrice,
+                        order.ClientOrderId,
+                        order.ExchangeOrderId,
+                        order.CreatedAt,
+                        order.UpdatedAt)),
+                ],
+                cycle.NoEntry,
+                cycle.Kind)),
+        ];
     }
 
     // A call points at its model with a key that keeps the model from being deleted, so these

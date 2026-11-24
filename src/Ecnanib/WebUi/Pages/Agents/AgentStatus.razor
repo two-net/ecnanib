@@ -1,6 +1,9 @@
 @page "/agents/{Id:guid}/state"
 @attribute [Authorize]
+@using Ecnanib.Accounts
 @using Ecnanib.Agents
+@using Ecnanib.Catalog
+@using Ecnanib.DecisionEngine
 @using Ecnanib.Notifications
 @using Ecnanib.Platform.LiveUpdates
 @using Ecnanib.Shared
@@ -9,6 +12,9 @@
 @inject IStoredAgents Agents
 @inject IAgentControls Controls
 @inject INotifications Notifications
+@inject IAgentReports Reports
+@inject IRecordedCycles Cycles
+@inject ICatalogModels Models
 @inject ILiveSignals Live
 @inject NavigationManager Navigation
 
@@ -34,6 +40,22 @@
     to it over its connection as they change: the steps of a cycle of the agent that runs, and
     its open position with the price that it is valued at. A page that answers a form asks for
     itself again on nothing: what the form answered stays on it. See docs/live-updates.md.
+
+    It is the screen of the agent (FR-RPT-2, FR-UI-2): beside the state and the controls it shows
+    the live team status, the current position and its protective orders, an equity curve, the
+    trade list, the performance figures, and the decision timeline with every role's output and
+    the Risk Guard result. The team is the four roles with the model of each, and under them the
+    part that says what the team does now: the steps of a cycle that runs, or that the team is
+    at rest. The figures and the curve are of the mode that the agent is in, and nothing of the
+    other mode is in them. The trades and the decisions each say their mode (FR-BIN-11). They
+    are asked for by owner: the Decision Engine, which may not use Accounts, is handed the user
+    who is signed in. The equity is worked out as the dashboard works it out, with the open
+    position at the price that the watch has, and the page never waits for the exchange: a
+    figure that is not known says so, and the page asks for itself again when the price of the
+    position is first read. It asks for itself again as well when a cycle of the agent is
+    recorded and when its equity is. The trades are read a page at a time, which the address
+    names: a page that there is not is not found. The page has no field. See
+    docs/agent-screen.md.
 *@
 
 @if (_agent is not null)
@@ -102,14 +124,30 @@
         <p>@AgentPages.HaltEnds(ends)</p>
     }
 
-    @* What the agent does and holds now, written over the connection of the page as it changes. *@
+    @* The team of the agent: who decides for it, and under them what the team does now (FR-RPT-2). *@
+    <h2 id="team-heading">@AgentReportPages.TeamHeading</h2>
+
+    <p>@AgentReportPages.TeamExplained</p>
+
+    <dl class="agent-roster" aria-labelledby="team-heading">
+        @foreach (var (role, model) in _team)
+        {
+            <div>
+                <dt>@AgentPages.Describe(role).Name</dt>
+                <dd>@(model ?? AgentReportPages.NoModel)</dd>
+            </div>
+        }
+    </dl>
+
+    @* What the team does and what the agent holds now, written over the connection of the page as it changes. *@
     <LiveUpdates AgentId="@_agent.Id"
                  Follows="@Followed"
-                 Shows="@(LiveShows.Cycle | LiveShows.Position)"
+                 Shows="@(LiveShows.Cycle | LiveShows.Position | LiveShows.Team)"
                  Market="@_agent.Market"
                  Mode="@_agent.Mode"
                  Symbol="@_agent.Symbol"
                  QuoteAsset="@_agent.QuoteAsset"
+                 Values="true"
                  Since="@_since" />
 
     <h2>Controls</h2>
@@ -147,6 +185,18 @@
         <p>The agent has an open position. You can close it at any time, at the market price, in whatever state the agent is.</p>
 
         <p><a href="@WebUiModule.CloseAgentPositionPath(_agent.Id)">@AgentPages.ClosePositionNow</a></p>
+    }
+
+    @if (_report is not null)
+    {
+        @* How the agent has performed, in the mode that it is in (FR-RPT-2). *@
+        <AgentPerformance Report="@_report" />
+
+        <AgentEquityCurve Curve="@_report.Curve" Mode="@_report.Equity.Mode" Asset="@_report.Equity.Asset" />
+
+        <AgentTradeList AgentId="@_agent.Id" Trades="@_report.Trades" />
+
+        <AgentDecisions AgentId="@_agent.Id" Decisions="@_decisions" />
     }
 
     <h2>Mode</h2>
@@ -234,12 +284,17 @@
     // The controls that this page has a form for. Stopping has a page of its own.
     private static readonly AgentControl[] Moves = [AgentControl.Start, AgentControl.Pause, AgentControl.Resume];
 
-    // What the page asks for itself again on: the agent, what it holds, and what its user is told.
-    private static readonly LiveSubject[] Followed = [LiveSubject.Agent, LiveSubject.Holdings, LiveSubject.Notification];
+    // What the page asks for itself again on: the agent, what it holds, a cycle of it that is
+    // recorded, its equity as it is recorded, and what its user is told.
+    private static readonly LiveSubject[] Followed =
+        [LiveSubject.Agent, LiveSubject.Holdings, LiveSubject.Cycle, LiveSubject.Equity, LiveSubject.Notification];
 
     private long _since;
 
     private AgentView? _agent;
+    private AgentReport? _report;
+    private IReadOnlyList<CycleRecord> _decisions = [];
+    private IReadOnlyList<(Role Role, string? Model)> _team = [];
     private AgentStateHistory? _history;
     private IReadOnlyList<NotificationView>? _notifications;
     private bool _posted;
@@ -267,6 +322,16 @@
         // another user is not found, like one that does not exist.
         if (!await ReadAsync(request))
         {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // How the agent has performed, its decisions, and its team, read once for the request:
+        // a form that is answered reads the agent again, and these stay as they were read.
+        if (!await ReadReportAsync(request, _agent!))
+        {
+            _agent = null;
             Navigation.NotFound();
 
             return;
@@ -384,6 +449,58 @@
         _notifications = _agent is null ? null : await Notifications.UnreadOfAgentAsync(request, Id);
 
         return _agent is not null;
+    }
+
+    /// <summary>
+    /// Reads how the agent has performed, with the page of its trades that the address names,
+    /// its latest decisions, and its team. False when the address names a page of the trades
+    /// which there is not, and when the agent is gone since it was read.
+    /// </summary>
+    private async Task<bool> ReadReportAsync(HttpContext request, AgentView agent)
+    {
+        // An address that names a choice which there is not is not found: the page shows what
+        // its address asks for, and never something else in its place.
+        if (AgentReportPages.TradesPageOf(request.Request.Query) is not { } tradesPage)
+        {
+            return false;
+        }
+
+        // The Decision Engine may not use Accounts, so it is handed the user who is signed in,
+        // and answers with what is of that user alone.
+        var userId = SignedInUser.RequiredIdOf(request);
+        var cancellationToken = request.RequestAborted;
+
+        var report = await Reports.OfAgentAsync(userId, agent.Id, tradesPage, cancellationToken);
+
+        // A page after the last one is none that there is. The first page is always there.
+        if (report is null || tradesPage > report.Trades.Pages)
+        {
+            return false;
+        }
+
+        _report = report;
+        _decisions = await Cycles.LatestRecordsAsync(userId, agent.Id, CycleRecord.Detailed, cancellationToken);
+
+        // Each role of the team with the model that it was given, by the names that the catalog
+        // has for the model and for its provider. A model that several roles were given is
+        // asked for once. A role that was given none says so.
+        var providers = new Dictionary<Guid, string?>();
+
+        foreach (var modelId in agent.Roles.Select(given => given.ModelId).Distinct())
+        {
+            providers[modelId] = (await Models.FindAsync(modelId, cancellationToken))?.ProviderName;
+        }
+
+        _team =
+        [
+            .. Enum.GetValues<Role>().Select(role => (
+                role,
+                agent.Roles.FirstOrDefault(given => given.Role == role) is { } given
+                    ? AgentReportPages.Model(given, providers[given.ModelId])
+                    : null)),
+        ];
+
+        return true;
     }
 
     /// <summary>

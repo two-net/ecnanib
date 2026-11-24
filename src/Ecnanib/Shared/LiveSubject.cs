@@ -20,6 +20,12 @@ public enum LiveSubject
     /// <summary>A cycle of an agent was recorded.</summary>
     Cycle,
 
+    /// <summary>
+    /// The equity of an agent was recorded: what it made or lost has changed, or what its open
+    /// position is worth has. The screen of the agent shows it over time (FR-RPT-2).
+    /// </summary>
+    Equity,
+
     /// <summary>A cycle of an agent that runs started, moved on to its next step, or ended.</summary>
     CycleStep,
 

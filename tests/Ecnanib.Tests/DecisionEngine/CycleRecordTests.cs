@@ -498,6 +498,88 @@ public class CycleRecordTests
     }
 
     [Fact]
+    public async Task The_latest_cycles_of_an_agent_are_read_as_complete_records_latest_first_without_its_test_cycles()
+    {
+        using var application = new AccountsApplication(clock: new TestClock(Close));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var grace = await application.RegisterVerifiedAsync(Grace);
+        var agent = await application.GiveAgentAsync(ada.Id, Close);
+        var other = await application.GiveAgentAsync(ada.Id, Close, name: "Other", symbol: "SOLUSDT");
+        var graces = await application.GiveAgentAsync(grace.Id, Close);
+
+        var cycles = application.RecordedCycles;
+        var cancellation = TestContext.Current.CancellationToken;
+
+        // An agent that no cycle was recorded for has none.
+        Assert.Empty(await cycles.LatestRecordsAsync(ada.Id, agent, CycleRecord.Detailed, cancellation));
+
+        // Seven cycles of the agent, an hour apart. The latest but one was run by its user as a
+        // test, and the latest placed orders.
+        var ids = new List<Guid>();
+
+        for (var hour = 0; hour < 7; hour++)
+        {
+            ids.Add(await application.GiveCycleAsync(
+                ada.Id,
+                agent,
+                Close.AddHours(hour),
+                hour % 2 == 0 ? CycleOutcome.Approved : CycleOutcome.Hold,
+                orders: hour == 6,
+                kind: hour == 5 ? CycleKind.Test : CycleKind.Scheduled));
+        }
+
+        // And cycles that are none of it: of another agent of its user, and of another user.
+        await application.GiveCycleAsync(ada.Id, other, Close.AddDays(1));
+        await application.GiveCycleAsync(grace.Id, graces, Close.AddDays(1));
+
+        var before = application.RowsOf(ada.Id);
+
+        var latest = await cycles.LatestRecordsAsync(ada.Id, agent, CycleRecord.Detailed, cancellation);
+
+        // Five at the most, from the latest close down. The test cycle is not among them: it
+        // is no decision that anything followed from (FR-CYC-12).
+        Assert.Equal(5, CycleRecord.Detailed);
+        Assert.Equal([ids[6], ids[4], ids[3], ids[2], ids[1]], latest.Select(cycle => cycle.Id));
+        Assert.All(latest, cycle => Assert.Equal(CycleKind.Scheduled, cycle.Kind));
+
+        // Each is the complete record of its cycle, as one cycle is read: every role's output,
+        // the Risk Guard result with every rule, and its orders, and nothing of another cycle.
+        foreach (var cycle in latest)
+        {
+            var alone = await cycles.FindAsync(ada.Id, agent, cycle.Id, cancellation);
+
+            Assert.NotNull(alone);
+            Assert.Equal((alone.ClosedAt, alone.Mode, alone.Outcome, alone.NoEntry), (cycle.ClosedAt, cycle.Mode, cycle.Outcome, cycle.NoEntry));
+            Assert.Equal(
+                (alone.DataPackage!.BuiltAt, alone.DataPackage.Symbol, alone.DataPackage.Series.Count),
+                (cycle.DataPackage!.BuiltAt, cycle.DataPackage.Symbol, cycle.DataPackage.Series.Count));
+            Assert.Equal(alone.Calls.Select(call => (call.Role, call.ModelIdentifier, call.CalledAt, call.Result)), cycle.Calls.Select(call => (call.Role, call.ModelIdentifier, call.CalledAt, call.Result)));
+            Assert.Equal(alone.Checks.Select(check => (check.CycleId, check.Sequence, check.Verdict, check.Rules.Count)), cycle.Checks.Select(check => (check.CycleId, check.Sequence, check.Verdict, check.Rules.Count)));
+            Assert.Equal(alone.Orders, cycle.Orders);
+
+            Assert.Equal(Enum.GetValues<Role>(), cycle.Calls.Select(call => call.Role));
+            Assert.All(cycle.Calls, call => Assert.Equal(cycle.ClosedAt.AddSeconds(3), call.CalledAt));
+            Assert.Equal(cycle.Id, Assert.Single(cycle.Checks).CycleId);
+            Assert.Equal(Enum.GetValues<GuardRule>(), cycle.Checks[0].Rules.Select(rule => rule.Rule));
+        }
+
+        // The orders are those of the one cycle that placed them.
+        Assert.Equal([2, 0, 0, 0, 0], latest.Select(cycle => cycle.Orders.Count));
+
+        // Fewer are read where fewer are asked for.
+        Assert.Equal([ids[6], ids[4]], (await cycles.LatestRecordsAsync(ada.Id, agent, count: 2, cancellation)).Select(cycle => cycle.Id));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => cycles.LatestRecordsAsync(ada.Id, agent, count: 0, cancellation));
+
+        // The cycles of the agent of another user are not found, whoever asks for them as theirs (NFR-SEC-3).
+        Assert.Empty(await cycles.LatestRecordsAsync(ada.Id, graces, CycleRecord.Detailed, cancellation));
+        Assert.Empty(await cycles.LatestRecordsAsync(grace.Id, agent, CycleRecord.Detailed, cancellation));
+        Assert.Single(await cycles.LatestRecordsAsync(grace.Id, graces, CycleRecord.Detailed, cancellation));
+
+        // Reading changes nothing.
+        Assert.Equal(before, application.RowsOf(ada.Id));
+    }
+
+    [Fact]
     public async Task The_record_of_a_cycle_is_read_by_its_user_for_its_agent_and_holds_nothing_of_another_cycle()
     {
         using var application = new AccountsApplication(clock: new TestClock(Close));

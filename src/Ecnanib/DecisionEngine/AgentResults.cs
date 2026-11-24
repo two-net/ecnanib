@@ -156,7 +156,7 @@ internal sealed class AgentResults(
             .Where(order => order.AgentId == id && order.Mode == mode && order.Symbol.EndsWith(quote));
 
         var (made, priced) = await ResultSums.MadeAsync(context, positions, cancellationToken);
-        var (paid, _) = await ResultSums.FeesAsync(context, orders, cancellationToken);
+        var (paid, valued) = await ResultSums.FeesAsync(context, orders, cancellationToken);
         var funding = await ResultSums.FundingAsync(context, positions, cancellationToken);
 
         var open = await positions.SingleOrDefaultAsync(position => position.ClosedAt == null, cancellationToken);
@@ -165,7 +165,7 @@ internal sealed class AgentResults(
             .AsNoTracking()
             .SingleOrDefaultAsync(mark => mark.AgentId == id && mark.Mode == mode, cancellationToken);
 
-        return new AgentRows(made - paid + funding, open, priced, marks);
+        return new AgentRows(made - paid + funding, open, priced, marks, paid, valued, funding);
     }
 
     /// <summary>
@@ -327,7 +327,14 @@ internal static class ResultSums
 /// <param name="Open">The open position of the agent, or null when it holds none.</param>
 /// <param name="Priced">Whether every order that closed a part of a position says the price that it was executed at.</param>
 /// <param name="Marks">What the loss limits of the agent are counted from, as it is stored, or null when nothing is stored yet.</param>
-internal sealed record AgentRows(decimal Settled, Position? Open, bool Priced, EquityMark? Marks)
+/// <param name="Fees">
+/// The fees of the executions of its orders, which are in <paramref name="Settled"/>: a sum of
+/// costs, above zero. The screen of the agent says it on its own (FR-RPT-2).
+/// </param>
+/// <param name="FeesValued">Whether every execution says what its fee is worth. A fee that has no value is not in the sum.</param>
+/// <param name="Funding">What its positions received as funding, less what they paid, which is in <paramref name="Settled"/> as well.</param>
+internal sealed record AgentRows(
+    decimal Settled, Position? Open, bool Priced, EquityMark? Marks, decimal Fees = 0m, bool FeesValued = true, decimal Funding = 0m)
 {
     /// <summary>
     /// The result of the agent with its open position valued at a price: the one that the

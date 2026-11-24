@@ -1,0 +1,121 @@
+@using System.Globalization
+@using System.Text
+@using Ecnanib.DecisionEngine
+@using Ecnanib.Shared
+
+@*
+    The equity curve of an agent, on its screen (FR-RPT-2): its equity as it was recorded over
+    time, in the mode that it is in. It is drawn here, on the server, as part of the page: a
+    line that holds each recorded value until the next, over a dashed line at the capital of the
+    agent. No script draws it, and it carries no style of its own: its look is in app.css, in
+    the colour of the text around it, so it reads the same on a light page and on a dark one
+    (FR-THM-5). What the line shows is said in words under it, for whoever does not see it:
+    where the equity began, where it is, and how low and how high it was. An equity that was
+    recorded once has no line yet, and says its one value. The texts are in AgentReportPages.
+    See docs/agent-screen.md.
+*@
+
+<section class="agent-equity" aria-labelledby="equity-heading">
+    <h2 id="equity-heading">@AgentReportPages.EquityHeading</h2>
+
+    <p>@AgentReportPages.EquityExplained(Mode)</p>
+
+    @if (Curve.Recorded == 0)
+    {
+        <p>@AgentReportPages.NoEquity(Mode)</p>
+    }
+    else
+    {
+        <figure class="equity-curve">
+            @if (_line is not null)
+            {
+                <svg class="equity-chart" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 @Width @Height" preserveAspectRatio="none" role="img" aria-label="@AgentReportPages.CurveLabel" aria-describedby="equity-caption">
+                    <line class="equity-capital" x1="0" y1="@_capital" x2="@Width" y2="@_capital" />
+                    <polyline class="equity-line" points="@_line" />
+                </svg>
+            }
+
+            <figcaption id="equity-caption">@AgentReportPages.Says(Curve, Asset)</figcaption>
+        </figure>
+    }
+</section>
+
+@code {
+    // The picture, in its own units: the browser fits it to the width of the page.
+    private const int Width = 600;
+    private const int Height = 200;
+
+    // The room that is left around the line, so that its highest and its lowest point are not cut off.
+    private const decimal Room = 6m;
+
+    private string? _line;
+    private string _capital = string.Empty;
+
+    /// <summary>The equity of the agent over time.</summary>
+    [Parameter, EditorRequired]
+    public EquityCurve Curve { get; set; } = null!;
+
+    /// <summary>The mode that the equity is of.</summary>
+    [Parameter, EditorRequired]
+    public TradingMode Mode { get; set; }
+
+    /// <summary>The asset that the equity is in.</summary>
+    [Parameter, EditorRequired]
+    public string Asset { get; set; } = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        _line = null;
+
+        var points = Curve.Points;
+
+        // A line needs two recordings, at two moments.
+        if (points.Count < 2 || points[^1].At <= points[0].At)
+        {
+            return;
+        }
+
+        try
+        {
+            var from = points[0].At.UtcTicks;
+            var span = (decimal)(points[^1].At.UtcTicks - from);
+
+            // The capital is on the picture whatever the equity is: the line is read against it.
+            var capital = points[^1].Capital;
+            var low = Math.Min(points.Min(point => point.Equity), capital);
+            var high = Math.Max(points.Max(point => point.Equity), capital);
+
+            decimal Across(DateTimeOffset at) => Room + ((at.UtcTicks - from) / span * (Width - (2m * Room)));
+
+            // An equity that never moved is a line through the middle.
+            decimal Down(decimal equity) =>
+                high == low ? Height / 2m : Height - Room - ((equity - low) / (high - low) * (Height - (2m * Room)));
+
+            var line = new StringBuilder();
+
+            for (var index = 0; index < points.Count; index++)
+            {
+                var across = Across(points[index].At);
+
+                if (index > 0)
+                {
+                    // The equity holds its value until the next recording: across, and then up or down.
+                    line.Append(' ').Append(Written(across)).Append(',').Append(Written(Down(points[index - 1].Equity))).Append(' ');
+                }
+
+                line.Append(Written(across)).Append(',').Append(Written(Down(points[index].Equity)));
+            }
+
+            _capital = Written(Down(capital));
+            _line = line.ToString();
+        }
+        catch (OverflowException)
+        {
+            // Numbers that cannot be worked out with are drawn as nothing: the words under the picture say them.
+            _line = null;
+        }
+    }
+
+    /// <summary>A place on the picture, as the picture names it: with a point, whatever the language of the server.</summary>
+    private static string Written(decimal place) => place.ToString("0.##", CultureInfo.InvariantCulture);
+}

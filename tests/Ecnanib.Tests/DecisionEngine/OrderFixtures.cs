@@ -207,6 +207,81 @@ internal static class StoredOrderRows
 
         return position.Id;
     }
+
+    /// <summary>
+    /// Gives an agent of a user the equity that was recorded for it at some moments, stored as
+    /// what watches the loss limits stores it: in the mode that the agent is in, in the asset
+    /// that its symbol is priced in, under the capital that it is allocated. It is for a test of
+    /// the equity of an agent over time, which needs more of it than one evaluation writes.
+    /// </summary>
+    public static async Task GiveEquityAsync(
+        this AccountsApplication application, Guid userId, Guid agentId, params (DateTimeOffset At, decimal Equity)[] recorded)
+    {
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        var agent = await context.Set<Agent>().AsNoTracking().SingleAsync(stored => stored.Id == agentId, TestContext.Current.CancellationToken);
+
+        context.AddRange(recorded.Select(row => new EquitySnapshot(
+            agentId, userId, agent.Mode, row.At, agent.QuoteAsset, agent.AllocatedCapital, row.Equity)));
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Gives a position an order that protects it, its stop-loss or its take-profit, stored as
+    /// the application stores one: an order that rests on the exchange, unless the test says
+    /// what else has become of it.
+    /// </summary>
+    /// <returns>The id of the order.</returns>
+    public static async Task<Guid> GiveProtectionAsync(
+        this AccountsApplication application,
+        Guid userId,
+        Guid agentId,
+        Guid positionId,
+        OrderPurpose purpose,
+        decimal price,
+        DateTimeOffset at,
+        OrderStatus status = OrderStatus.Open)
+    {
+        await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
+
+        var agent = await context.Set<Agent>().AsNoTracking().SingleAsync(stored => stored.Id == agentId, TestContext.Current.CancellationToken);
+        var id = Guid.CreateVersion7();
+
+        context.Add(new Order(
+            id,
+            agentId,
+            userId,
+            agent.Mode,
+            agent.Market,
+            agent.Symbol,
+            cycleId: null,
+            positionId,
+            Order.ClientOrderIdOf(id),
+            exchangeOrderId: "9001",
+            purpose,
+            OrderType.Stop,
+            OrderSide.Sell,
+            price,
+            stopLoss: null,
+            takeProfit: null,
+            quantity: 0.01m,
+            status,
+            executedQuantity: 0m,
+            averagePrice: null,
+            exitReason: null,
+            sends: 1,
+            fillsRecorded: false,
+            createdAt: at,
+            updatedAt: at,
+            checkedAt: null,
+            pairId: null,
+            cancelAfter: null));
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return id;
+    }
 }
 
 /// <summary>What a Binance of the tests does with a call that places an order.</summary>

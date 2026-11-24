@@ -20,6 +20,13 @@ public enum LiveShows
 
     /// <summary>The open position of the agent, with the price that it is valued at.</summary>
     Position = 2,
+
+    /// <summary>
+    /// What the team of the agent does now, also when it does nothing: with
+    /// <see cref="Cycle"/>, the page says so when no cycle of the agent runs, as the screen of
+    /// the agent does (FR-RPT-2).
+    /// </summary>
+    Team = 4,
 }
 
 /// <summary>What a page follows, as the page says it when it is written.</summary>
@@ -36,7 +43,9 @@ public enum LiveShows
 /// Whether the page values the open positions of its user at their prices, as the dashboard
 /// does (FR-RPT-1): the prices of what its user holds are followed while the page is open, so
 /// that the watch has them when the page is written, and the page asks for itself again when
-/// one of them is first read.
+/// one of them is first read. A page of one agent values what that agent holds, as its screen
+/// does (FR-RPT-2): the price that the page follows for its position is the one that it asks
+/// for itself again on, and no price of another agent is followed for it.
 /// </param>
 /// <remarks>
 /// It travels with the page, sealed by the framework, to the connection that the page makes,
@@ -202,6 +211,14 @@ public sealed class LiveFeeds(
 /// price which it began to follow is read, the page asks for itself again, and is written with
 /// it. A price that is read again asks for nothing: the figures of such a page say the time of
 /// their prices, and are worked out anew when something that the page shows changes.
+/// </para>
+/// <para>
+/// <b>For a page of one agent that values what the agent holds, it follows no other price</b>
+/// than the one that the page shows with the position, which is the screen of the agent
+/// (FR-RPT-2). The first time that this price is read for a position that the agent holds, the
+/// page asks for itself again, and is written with the equity of the agent at it. The prices of
+/// what the other agents of its user hold are not followed: a price that is followed is read
+/// from the exchange once a second.
 /// </para>
 /// <para>
 /// Everything that it does, it does one thing after the other, on a line of its own: a signal
@@ -452,7 +469,9 @@ public sealed class LiveFeed : IAsyncDisposable
             await _page.ShowAsync();
         }
 
-        if (_view.Values)
+        // A page of every agent values what they all hold. A page of one agent values what
+        // that agent holds, at the price that it follows already: see FollowPrice.
+        if (_view.Values && _view.AgentId is null)
         {
             await ValueAsync(userId);
         }
@@ -506,7 +525,7 @@ public sealed class LiveFeed : IAsyncDisposable
 
         // What the agents of the user hold has changed, or may have: the prices that the page
         // values at are those of what they hold now.
-        if (_view.Values && (missed || signal.Subject == LiveSubject.Holdings))
+        if (_view.Values && _view.AgentId is null && (missed || signal.Subject == LiveSubject.Holdings))
         {
             await ValueAsync(userId);
         }
@@ -566,6 +585,21 @@ public sealed class LiveFeed : IAsyncDisposable
 
         if (followed is not null)
         {
+            if (_view.Values && _view.AgentId is not null)
+            {
+                // A page of one agent that values what the agent holds: the first read of the
+                // price of its position has the page ask for itself again, whether or not the
+                // watch had the price when the page was written. Awaited before it is
+                // followed: the watch tells the price that it has at once. A price that no
+                // position is valued at changes no figure, and is awaited by nothing.
+                _awaited.Clear();
+
+                if (State.Position is not null)
+                {
+                    _awaited.Add(followed);
+                }
+            }
+
             _pricing = _prices.Follow(
                 followed.Market, followed.Mode, followed.Symbol, followed.Kind, price => Post(new PriceRead(followed, price)));
         }

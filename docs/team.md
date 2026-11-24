@@ -596,7 +596,7 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 - Moving an agent to Attention required when a call reports that its model does not exist (FR-CAT-8). The call is recorded as `ModelNotFound`, and the cycle ends as its role says. The catalog marks a model that its provider no longer lists, which moves the agents that run with it: see "When a model goes" in [agents.md](agents.md).
 - Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A call that ends as `Failed` is not made again, and the next close calls again.
 - Recording a cycle that never started: one that was skipped, or whose agent no longer ran. It is no run of a team, and leaves its events in the log: see "Not built yet" in [cycles.md](cycles.md).
-- The decision timeline on the agent detail screen (FR-RPT-2), and the cycles before the latest 50. A cycle is shown once it is recorded, on a page of its own.
+- The cycles before the latest 50. A cycle is shown once it is recorded, on a page of its own, and the latest five that a candle close started are on the screen of their agent as well, each with every role's output and the Risk Guard result (FR-RPT-2): see "Decision timeline" in [agent-screen.md](agent-screen.md).
 - What a role answered, while its cycle runs. A cycle that runs says the steps that it has come to on the pages of its agent, and its timeline shows what each role answered once the cycle is recorded: see "The progress of a cycle" in [cycles.md](cycles.md).
 - Why a plan that closes a position or adjusts its protection placed no order, in the record of its cycle. The record says why no entry was placed, and the log says the rest.
 - Exporting decisions as CSV (FR-RPT-4).
