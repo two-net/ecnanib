@@ -1,5 +1,6 @@
 using Ecnanib.Platform.Adapters.Http;
 using Ecnanib.Platform.BackgroundWork;
+using Ecnanib.Platform.LiveUpdates;
 using Ecnanib.Platform.Logging;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
@@ -11,9 +12,9 @@ namespace Ecnanib.Platform;
 
 /// <summary>
 /// Platform: the plumbing every component builds on. That is configuration, logging, persistence,
-/// background work, how requests travel, and how stored secrets are encrypted. See
-/// docs/configuration.md, docs/logging.md, docs/persistence.md, docs/background-work.md, and
-/// docs/security.md.
+/// background work, how requests travel, how stored secrets are encrypted, and the signals that
+/// the open pages follow. See docs/configuration.md, docs/logging.md, docs/persistence.md,
+/// docs/background-work.md, docs/security.md, and docs/live-updates.md.
 /// </summary>
 public static class PlatformModule
 {
@@ -62,6 +63,10 @@ public static class PlatformModule
         builder.Services.AddPersistence();
         builder.Services.AddBackgroundWork();
         builder.Services.AddTransportSecurity(settings.Application);
+
+        // The signals that tell the open pages of a user that something of theirs changed, and
+        // what hears the database say so (FR-NTF-2).
+        builder.Services.AddLiveUpdates();
 
         // What encrypts the secrets a component stores, with the master keys of the file, and
         // what encrypts them again at startup when the active key has changed.

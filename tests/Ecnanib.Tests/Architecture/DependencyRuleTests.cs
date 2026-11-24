@@ -68,11 +68,12 @@ public class DependencyRuleTests
     {
         AssertNone(
             Checker.FindReservedNamespaceViolations(Application),
-            "A namespace reserved for Platform is used outside it. Take the typed settings instead " +
-            "of the host's configuration (docs/configuration.md), write log events through " +
-            "ILogger instead of the logging library (docs/logging.md), and reach the database " +
-            "through EcnanibDbContext instead of the driver or a command of its own " +
-            "(docs/persistence.md, docs/security.md).");
+            "A namespace reserved for Platform is used outside it, or one that nothing may use is used. " +
+            "Take the typed settings instead of the host's configuration (docs/configuration.md), write " +
+            "log events through ILogger instead of the logging library (docs/logging.md), and reach the " +
+            "database through EcnanibDbContext instead of the driver or a command of its own " +
+            "(docs/persistence.md, docs/security.md). Live updates use the one connection of a page " +
+            "that follows, and no hub or stream of the application's own (docs/live-updates.md).");
     }
 
     [Fact]
@@ -84,7 +85,8 @@ public class DependencyRuleTests
             "configuration file (docs/configuration.md), and an HTTP client comes from the host's " +
             "factory, which logs its calls (docs/logging.md). SQL takes its values as parameters, " +
             "with ExecuteSql, SqlQuery, or FromSql, and a page writes text as text, never as a " +
-            "MarkupString (docs/security.md).");
+            "MarkupString (docs/security.md). And nothing opens a push channel of its own beside the " +
+            "connection of a page that follows (docs/live-updates.md).");
     }
 
     [Fact]

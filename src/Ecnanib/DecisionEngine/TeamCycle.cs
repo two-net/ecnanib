@@ -87,6 +87,7 @@ internal sealed class TeamCycle(
     IPlanOrders orders,
     ILossLimits limits,
     ICycleRecords records,
+    RunningCycles progress,
     TradingSettings settings,
     TimeProvider clock,
     ILogger<TeamCycle> logger) : IDecisionCycle
@@ -106,9 +107,13 @@ internal sealed class TeamCycle(
         var outcome = CycleOutcome.Failed;
         var decided = false;
 
+        // The cycle runs from here until it is recorded, and says each step that it comes to,
+        // for the open pages of its user (FR-NTF-2). What it says is kept in memory alone.
+        using var running = progress.Begin(cycle, startedAt);
+
         try
         {
-            (outcome, var accepted) = await DecideAsync(cycle, kept, cancellationToken);
+            (outcome, var accepted) = await DecideAsync(cycle, kept, running, cancellationToken);
             decided = true;
 
             // Step 7: what the Risk Guard accepted is what an order is made from, and nothing
@@ -116,6 +121,8 @@ internal sealed class TeamCycle(
             // at all: it places no order (FR-CYC-12).
             if (accepted is not null && !cycle.IsTest)
             {
+                running.At(CycleStep.Orders);
+
                 // Why a plan to open a position placed no entry is kept for the record (FR-CYC-10).
                 kept.Keep(await orders.PlaceAsync(cycle, accepted, cancellationToken));
             }
@@ -136,13 +143,15 @@ internal sealed class TeamCycle(
             // Nothing of a cycle goes on after it: a check of a key that it started is over.
             await kept.SettledAsync();
 
+            running.At(CycleStep.Recording);
+
             await RecordAsync(cycle, kept, startedAt, outcome);
         }
     }
 
     /// <summary>Runs the team, and says what it decided, with what the Risk Guard accepted of it.</summary>
     private async Task<(CycleOutcome Outcome, GuardResult? Accepted)> DecideAsync(
-        CycleStart cycle, CycleCalls kept, CancellationToken cancellationToken)
+        CycleStart cycle, CycleCalls kept, RunningCycles.Running running, CancellationToken cancellationToken)
     {
         // An agent runs with its whole team (FR-TEAM-1). Asked before anything is called, so
         // that no model is paid for a cycle that cannot be completed.
@@ -159,6 +168,8 @@ internal sealed class TeamCycle(
         // Its team decides on what the records of the agent say it holds.
         if (!cycle.IsTest)
         {
+            running.At(CycleStep.Settling);
+
             // What the exchange says of the agent's orders first, so that the data package says
             // what the agent holds now.
             await orders.SettleAsync(cycle.Agent.Id, cancellationToken);
@@ -177,6 +188,8 @@ internal sealed class TeamCycle(
             }
         }
 
+        running.At(CycleStep.DataPackage);
+
         var package = await packages.BuildAsync(cycle, cancellationToken);
 
         // The record of the cycle keeps a summary of what its team decided on, however the
@@ -185,6 +198,8 @@ internal sealed class TeamCycle(
 
         // Step 3: the two analysts, at the same time. Each is given its own inputs, and neither
         // reads what the other answers.
+        running.At(CycleStep.Analysts);
+
         var analysing = roles.RunAsync(
             kept, cycle, team[Role.MarketAnalyst], package.ForMarketAnalyst(), results.ReadMarketReport, cancellationToken);
         var searching = roles.RunAsync(
@@ -207,6 +222,8 @@ internal sealed class TeamCycle(
         // Step 4: the Strategist, with both reports. A plan does what a plan may do for the
         // agent as its prompt stated it: the actions of its market, one position, protection
         // that only tightens, and at most the risk that the agent allows (FR-CYC-4 to FR-CYC-7).
+        running.At(CycleStep.Strategist);
+
         var planning = await roles.RunAsync(
             kept,
             cycle,
@@ -238,6 +255,8 @@ internal sealed class TeamCycle(
         {
             // Step 5: the Risk Manager, for a plan that opens a position. It is given the plan,
             // and neither report.
+            running.At(CycleStep.RiskManager);
+
             var reviewing = await roles.RunAsync(
                 kept,
                 cycle,
@@ -271,9 +290,14 @@ internal sealed class TeamCycle(
         // Step 6: the Risk Guard checks what goes on, after the Risk Manager and before any
         // order (FR-RSK-3), and computes the size of the order (FR-RSK-5). Every plan that goes
         // on is handed to it, and what it accepted is what an order is made from.
-        var accepted = decision.GoesOn is { } goesOn ? await checks.CheckAsync(cycle, goesOn, kept, cancellationToken) : null;
+        if (decision.GoesOn is not { } goesOn)
+        {
+            return (decision.Outcome, null);
+        }
 
-        return (decision.Outcome, accepted);
+        running.At(CycleStep.RiskGuard);
+
+        return (decision.Outcome, await checks.CheckAsync(cycle, goesOn, kept, cancellationToken));
     }
 
     /// <summary>

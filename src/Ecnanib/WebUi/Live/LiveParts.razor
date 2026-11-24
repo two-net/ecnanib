@@ -1,0 +1,100 @@
+@using System.Security.Claims
+@implements ILivePage
+@implements IAsyncDisposable
+@inject LiveFeeds Feeds
+@inject LiveCircuit Circuit
+@inject NavigationManager Navigation
+
+@*
+    The parts of a page that are written to it over its connection, and what has the page ask
+    for itself again (FR-NTF-2). It is written with the page, with what it shows then, and
+    follows once the connection of the page is made: the connection is the one push channel
+    from the application to the browser (NFR-ARC-6). What it does is LiveFeed's to say. Here is
+    what a feed asks of its page: to write its parts again, to ask for itself again, and to be
+    loaded anew when the session of the connection has ended. Its user is the one of the
+    connection, which may be signed in again when the connection is made again: the feed is
+    told, and stops for a user or a session that it was not opened for.
+*@
+
+@if (View.Shows.HasFlag(LiveShows.Cycle))
+{
+    <LiveCycleSteps Cycles="@_shown.Cycles" />
+}
+
+@if (View.Shows.HasFlag(LiveShows.Position))
+{
+    <LivePositionView Position="@_shown.Position" Followed="@_shown.Followed" Price="@_shown.Price" QuoteAsset="@View.QuoteAsset" />
+}
+
+@code {
+    private LiveFeed? _feed;
+    private LiveState _shown = LiveState.Nothing;
+
+    /// <summary>What the page follows, as the page said it when it was last written.</summary>
+    [Parameter, EditorRequired]
+    public LiveView View { get; set; } = default!;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? Authentication { get; set; }
+
+    bool ILivePage.IsConnected => Circuit.IsConnected;
+
+    string ILivePage.Address => View.Address;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // The user of the request that writes the page, and then of the connection of the page.
+        var user = Authentication is null ? new ClaimsPrincipal() : (await Authentication).User;
+
+        _feed = Feeds.Open(user, View, this);
+
+        // What the parts show as the page is written, and again as its connection is made.
+        await _feed.ReadAsync(CancellationToken.None);
+        _shown = _feed.State;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_feed is not null && Authentication is not null)
+        {
+            _feed.UserIs((await Authentication).User);
+        }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Only a page whose connection is made comes here: one that is being written does not.
+        if (firstRender && _feed is not null)
+        {
+            Circuit.Up += _feed.Connected;
+            _feed.Follow();
+        }
+    }
+
+    Task ILivePage.ShowAsync() =>
+        InvokeAsync(() =>
+        {
+            if (_feed is not null)
+            {
+                _shown = _feed.State;
+                StateHasChanged();
+            }
+        });
+
+    Task ILivePage.AskAgainAsync() => InvokeAsync(() => Navigation.Refresh());
+
+    Task ILivePage.LeaveAsync() => InvokeAsync(() => Navigation.Refresh(forceReload: true));
+
+    Task ILivePage.FailAsync(Exception error) => DispatchExceptionAsync(error);
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_feed is { } feed)
+        {
+            Circuit.Up -= feed.Connected;
+            _feed = null;
+
+            await feed.DisposeAsync();
+        }
+    }
+}

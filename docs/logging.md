@@ -104,6 +104,8 @@ Scopes nest. Work that runs outside a request, such as a scheduled cycle, opens 
 
 The scheduler that runs a component's jobs names the job in its own events, as `Job`. That is a property of those events, not a correlation property: it is not added to what the job logs. See [background-work.md](background-work.md).
 
+Work that a request starts and that outlives it, for everyone, takes nothing of that request with it. The listener of the live updates and the reads of a followed price begin with the first page that needs them, and go on for the pages of every user: they are started with the flow of the execution context suppressed, so their events carry no `RequestId` and no `UserId` of whoever came first. See [live-updates.md](live-updates.md) and "Following a price" in [exchange.md](exchange.md).
+
 ## Masking
 
 Secrets, API keys, tokens, and passwords never appear in a log (NFR-LOG-4). Every event passes one place, `MaskingSink`, before any output. It applies the rules of `SecretMask` to the event's properties at any depth, to its message text, and to the text of its exception:
@@ -196,4 +198,4 @@ To find an error a user reports, search the log file for the reference. The even
 
 In the Development environment the host shows its developer exception page instead, and the error is still logged.
 
-The first interactive component needs one more piece. An error inside an interactive component does not pass through the request pipeline, so wrap interactive content in an error boundary that calls `UnhandledErrors.Report(exception)` and shows the reference it returns. No page is interactive yet.
+An error inside the part of a page that follows what changes does not pass through the request pipeline: the part is written over the connection of the page, and by no request. `LiveErrors` in `WebUi/Live` stands around that part, takes the error, calls `UnhandledErrors.Report(exception)`, and says the reference that it returns on the page in place of the part, with nothing of the error. An error of the feed of the page, which does its work beside the page, is handed to the page and ends there as well. The rest of the page is as it was written. See "The feed of a page" in [live-updates.md](live-updates.md). An interactive part that is added later is wrapped in the same way.

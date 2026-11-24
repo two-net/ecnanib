@@ -21,6 +21,21 @@ public static class SignedInUser
             : null;
     }
 
+    /// <summary>
+    /// The id of the session that a user is signed in with, or null when they are not signed in.
+    /// It names the session, and is not its token: whoever knows it is not signed in by it.
+    /// </summary>
+    /// <param name="user">The user of a request, or of the connection of an interactive page.</param>
+    public static Guid? SessionIdOf(ClaimsPrincipal user)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+
+        return user.Identity is { IsAuthenticated: true }
+            && Guid.TryParse(user.FindFirstValue(SessionAuthentication.SessionClaimType), out var sessionId)
+            ? sessionId
+            : null;
+    }
+
     /// <summary>The id of the account a request is signed in to, or null when it is not signed in.</summary>
     public static Guid? IdOf(HttpContext request)
     {

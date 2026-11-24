@@ -392,6 +392,45 @@ p.cycle-kind {
         overflow-wrap: anywhere;
     }
 
+/* The parts of a page that are written over its connection as they change (FR-NTF-2): the cycles
+   of an agent that run, each with the steps that it has come to, and the position of an agent
+   with the price that it is valued at. Everything is said as words, so nothing relies on its
+   look: a step that is over is lighter, and the step that a cycle is at says "now". Nothing
+   moves, and nothing changes its size when a price changes: a number is as wide as its digits. */
+.live-cycle, .live-position {
+    margin: 0 0 1.5rem;
+}
+
+    .live-cycle h2, .live-position h2 {
+        margin: 0 0 0.5rem;
+        font-size: 1.125rem;
+    }
+
+    .live-cycle p, .live-position p {
+        margin: 0 0 0.5rem;
+    }
+
+.cycle-steps {
+    margin: 0 0 0.5rem;
+    padding-inline-start: 1.5rem;
+}
+
+.cycle-step-done {
+    opacity: 0.8;
+}
+
+.live-price, .live-unrealized {
+    font-variant-numeric: tabular-nums;
+}
+
+/* What a part of a page says when it stopped following because of an error: it is no error of
+   a form, and the rest of the page is as it was written. */
+.live-stopped {
+    margin: 0 0 1rem;
+    padding-inline-start: 0.75rem;
+    border-inline-start: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+
 /* The form of an agent: a choice fills its field as an input does, the button that shows the
    symbols of a market sits under the choice of the market, and the risk settings are one group. */
 .field > select {

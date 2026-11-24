@@ -136,7 +136,9 @@ internal sealed class DependencyChecker(RuleSet rules)
         {
             if (IsWithin(target.Namespace.FullName, reserved) && (originArea is null || !audience.Contains(originArea)))
             {
-                return $"only {string.Join(", ", audience.Order(StringComparer.Ordinal))} may use {reserved}";
+                return audience.Count == 0
+                    ? $"no code may use {reserved}"
+                    : $"only {string.Join(", ", audience.Order(StringComparer.Ordinal))} may use {reserved}";
             }
         }
 

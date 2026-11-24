@@ -1,0 +1,17 @@
+@*
+    What a page that follows what changes makes its connection for: the one part of the page
+    that is not written once for each request, and never again (FR-NTF-2). The page writes it
+    through LiveUpdates, which says how. An error of it is taken by LiveErrors, recorded, and
+    said on the page by its reference, because it passes nothing that records it otherwise
+    (NFR-LOG-6).
+*@
+
+<LiveErrors>
+    <LiveParts View="@View" />
+</LiveErrors>
+
+@code {
+    /// <summary>What the page follows.</summary>
+    [Parameter, EditorRequired]
+    public LiveView View { get; set; } = default!;
+}

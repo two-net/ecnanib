@@ -3,13 +3,15 @@
 @using Ecnanib.Accounts
 @using Ecnanib.Agents
 @using Ecnanib.DecisionEngine
+@using Ecnanib.Platform.LiveUpdates
 @using Ecnanib.Shared
 @inject IStoredAgents Agents
 @inject IRecordedCycles Cycles
+@inject ILiveSignals Live
 @inject NavigationManager Navigation
 
 @*
-    Rendered on the server for each request, and never interactive. The page shows one cycle of an
+    Rendered on the server for each request. The page shows one cycle of an
     agent of the user as a timeline (FR-CYC-10): the close of its candle, its start, the summary of
     its data package, every call of a role with what it answered, what the Risk Guard made of the
     plan with the outcome of every rule, the orders that the cycle placed, or why it placed none,
@@ -19,7 +21,9 @@
     of the agent is under the heading, and the cycle says the mode it ran in (FR-UI-3, FR-BIN-11).
     A test cycle, which its user ran, says so under the heading, and that it placed no orders
     (FR-CYC-12). It is run at any time after the close of its candle, so its entries say how long
-    after its start they happened.
+    after its start they happened. An order is shown as it is now, so the page follows what the
+    agent holds (FR-NTF-2): when an order of the agent changes, the page asks for itself again.
+    Nothing is written to it over its connection. See docs/live-updates.md.
 *@
 
 @if (_agent is not null && _cycle is not null)
@@ -253,6 +257,8 @@
     <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
 
     <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+
+    <LiveUpdates AgentId="@_agent.Id" Follows="@Followed" Since="@_since" />
 }
 
 @code {
@@ -278,9 +284,14 @@
         ("Average volume of 20 candles", series => CyclePages.Indicator(series.Indicators.VolumeAverage20)),
     ];
 
+    // What the page asks for itself again on: what the agent holds, which its orders are, the
+    // agent, whose mode the badge says, and the count in the bar.
+    private static readonly LiveSubject[] Followed = [LiveSubject.Holdings, LiveSubject.Agent, LiveSubject.Notification];
+
     private AgentView? _agent;
     private CycleRecord? _cycle;
     private IReadOnlyList<Entry> _entries = [];
+    private long _since;
 
     // Whether its user ran the cycle as a test, which places no order (FR-CYC-12).
     private bool IsTest => _cycle is { Kind: CycleKind.Test };
@@ -300,6 +311,9 @@
         {
             return;
         }
+
+        // Before the page reads: what changes from here on is what the page may not show.
+        _since = Live.Mark();
 
         // The agent that the path names, among those of the user of the session. An agent of
         // another user is not found, like one that does not exist.

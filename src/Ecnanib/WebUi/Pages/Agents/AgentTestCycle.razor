@@ -3,13 +3,15 @@
 @using Ecnanib.Accounts
 @using Ecnanib.Agents
 @using Ecnanib.DecisionEngine
+@using Ecnanib.Platform.LiveUpdates
 @using Ecnanib.Shared
 @inject IStoredAgents Agents
 @inject ITestCycles Tests
+@inject ILiveSignals Live
 @inject NavigationManager Navigation
 
 @*
-    Rendered on the server for each request, and never interactive. The page runs a test cycle of
+    Rendered on the server for each request. The page runs a test cycle of
     an agent of the user: one cycle, on demand, in whatever state the agent is, that produces a
     full decision record and places no orders (FR-CYC-12). It says what a test cycle is, that it
     places no order, and what it costs, before its button: the models of the roles are called on
@@ -17,7 +19,10 @@
     ended and is recorded. What kept a test cycle from running is said here, with what to do
     about it. A test cycle affects no trading, so the page asks nothing once more for an agent in
     Live (FR-UI-3): it says that nothing is placed in the real account either. The badge of the
-    mode is under the heading.
+    mode is under the heading. A cycle of the agent that runs says its steps under the button, as
+    it comes to them, over the connection of the page (FR-NTF-2): the form waits for the test
+    cycle, and the page that waits shows how far it has come. The page asks for itself again on
+    nothing: it would lose what its form answers. See docs/live-updates.md.
 *@
 
 @if (_agent is not null)
@@ -74,6 +79,9 @@
         <button type="submit">@CyclePages.TestLink</button>
     </form>
 
+    @* The cycles of the agent that run now, the test cycle that the form waits for among them. *@
+    <LiveUpdates AgentId="@_agent.Id" Shows="@LiveShows.Cycle" Since="@_since" />
+
     <p><a href="@WebUiModule.AgentCyclesPath(_agent.Id)">@CyclePages.Link</a></p>
 
     <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
@@ -87,6 +95,7 @@
     private AgentView? _agent;
     private IReadOnlyList<RoleBlock>? _roles;
     private string? _refused;
+    private long _since;
 
     [Parameter]
     public Guid Id { get; set; }
@@ -100,6 +109,9 @@
         {
             return;
         }
+
+        // Before the page reads: what changes from here on is what the page may not show.
+        _since = Live.Mark();
 
         // The agent that the path names, among those of the user of the session. An agent of
         // another user is not found, like one that does not exist.

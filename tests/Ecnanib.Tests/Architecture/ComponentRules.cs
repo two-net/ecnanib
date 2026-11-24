@@ -94,7 +94,8 @@ internal static class ComponentRules
             "MailKit",
         ],
 
-        // Namespaces outside the application that only Platform may use.
+        // Namespaces outside the application that only Platform may use, and those that
+        // nothing may use.
         ReservedNamespaces: new Dictionary<string, IReadOnlySet<string>>
         {
             // The host's configuration API. Every other area takes typed settings, which come
@@ -117,6 +118,15 @@ internal static class ComponentRules
             // context, which sends what a request brought as a parameter and never as SQL
             // (NFR-SEC-4).
             ["System.Data"] = Only(Platform),
+
+            // The framework's hubs, which nothing may use: a hub of the application's own would
+            // be a second push channel. Live UI updates use one push channel from the
+            // application to the browser, which is the connection that the framework keeps for
+            // a page that follows what changes (NFR-ARC-6). See docs/live-updates.md.
+            ["Microsoft.AspNetCore.SignalR"] = Only(),
+
+            // The events of a stream that a server sends, for the same reason.
+            ["System.Net.ServerSentEvents"] = Only(),
         },
 
         // Methods that no code may call.
@@ -144,6 +154,15 @@ internal static class ComponentRules
             // Text that a page writes as markup. Everything else a page writes is encoded, so
             // what a person typed is shown as text and is never run (NFR-SEC-4).
             "Microsoft.AspNetCore.Components.MarkupString::",
+
+            // What would open a push channel of the application's own beside the one that there
+            // is (NFR-ARC-6): an endpoint of a hub, a WebSocket that the application takes, and
+            // a stream of events that it sends. See docs/live-updates.md.
+            "Microsoft.AspNetCore.Builder.HubEndpointRouteBuilderExtensions::MapHub",
+            "Microsoft.AspNetCore.Builder.WebSocketMiddlewareExtensions::UseWebSockets",
+            "Microsoft.AspNetCore.Http.WebSocketManager::AcceptWebSocketAsync",
+            "Microsoft.AspNetCore.Http.TypedResults::ServerSentEvents",
+            "Microsoft.AspNetCore.Http.Results::ServerSentEvents",
         ]);
 
     private static IReadOnlySet<string> Only(params string[] areas) => new HashSet<string>(areas);

@@ -77,6 +77,7 @@ object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 - **Scripts and styles are files of the application.** A page carries no `<style>` element, no `style` attribute, no event handler such as `onclick`, and no script of its own: a browser would refuse each. What a page needs of them goes into a file under `wwwroot`, or beside its component.
 - **The one script that is written into a page is the framework's import map.** It carries the nonce: 16 random bytes, new for every answer, so text that reaches a page cannot know it. `App.razor` reads it with `BrowserDefenses.NonceOf`.
 - **One place says it.** By itself the framework says `X-Frame-Options: SAMEORIGIN` on a page with a form, and `frame-ancestors 'self'` on a page. Both are turned off, in `TransportSecurity` and in `WebUiModule`, and the headers above are the last word on every answer.
+- **The connection of a page that follows what changes is to this host,** which `connect-src 'self'` allows: see "The connection of a page". What is written over it is text of the application's own components, encoded as every page is, and the styles of it are in `wwwroot/app.css`.
 - **In the Development environment** `connect-src` also names `ws://localhost:*` and `wss://localhost:*`, which `dotnet watch` connects to when it reloads a page.
 
 `BrowserDefenseTests` holds each kind of answer to the four headers. It also opens every page of the application, as a visitor and as a user, and fails for one that carries what the policy refuses. The pages are found by their routes, so a page that is added later is among them.
@@ -109,11 +110,26 @@ The application starts no process, and builds no file path from a request. `Inje
 | Rule | How |
 |---|---|
 | A form is taken only with the token of a page that the application served to the same browser. | Every form carries `<AntiforgeryToken />`. The token is in two halves, one in the form and one in the cookie `__Host-ecnanib-antiforgery`, and it is made for the user the page showed. The framework refuses a form that is posted to a page without it, with status 400, before the page sees the form. |
-| An endpoint that is not a page has the check, or says why it need not. | [`ForgeryRules.cs`](../tests/Ecnanib.Tests/Security/ForgeryRules.cs) lists the endpoints that take more than a read without the framework's check, each with why. Today they are `/sign-out`, which checks the token itself for a request that is signed in, and the framework's connection of an interactive page. |
+| An endpoint that is not a page has the check, or says why it need not. | [`ForgeryRules.cs`](../tests/Ecnanib.Tests/Security/ForgeryRules.cs) lists the endpoints that take more than a read without the framework's check, each with why. Today they are `/sign-out`, which checks the token itself for a request that is signed in, and the connection of a page that follows what changes, which the framework makes: see "The connection of a page". |
 | A request that another site makes does not carry the session. | The session cookie is `SameSite=Lax`. A browser sends it when the user follows a link from another site, and not with a form that another site posts or a connection that it opens. |
 | Opening a link does nothing that a user would have to ask for. | The link of an email shows a page with a button, and the button is a form. See "Verifying the address" in [accounts.md](accounts.md). |
 
 `RequestForgeryTests` posts each form that a visitor can post, without the token and with a wrong one, and with the token of another browser: nothing is stored and nothing is sent. The forms of signed-in users have such a test beside what they do. A test holds the endpoints to `ForgeryRules`: an endpoint that is added later, and takes a post without the check, fails it until it is listed.
+
+### The connection of a page
+
+A page that follows what changes makes a connection to the application, under `/_blazor`, over which the application writes to it: see [live-updates.md](live-updates.md). It is the one thing of a page that is not a request and its answer.
+
+| Rule | How |
+|---|---|
+| A connection is made only for what the application put into a page. | The framework seals the part that a page is to connect for into the page, with what the part is to show, and takes a connection for nothing else: not for a part that a script made up, and not with other values than the page was written with. |
+| Another site cannot make one for a user. | The session cookie is `SameSite=Lax`, and a browser does not send it with a connection that another site opens. And a site that could not read a page of this application has no sealed part to connect for. |
+| Nothing is changed over it. | The part of a page that is written over the connection has no field and no button. Every form of a page is posted to the server, with the token of the page, as before. |
+| What is written over it is the user's own. | It is asked for by owner, for the user that the connection was signed in as: see [ownership.md](ownership.md). |
+| A connection does not outlive its session. | What writes over it asks whether the session still stands, and stops when it does not: see "The session of a connection" in [accounts.md](accounts.md). |
+| An error of it is recorded as every other. | Under a reference, which the page says: see "Unhandled errors" in [logging.md](logging.md). |
+
+`LivePageTests` holds the pages to one such part each, with no field. `LiveFeedTests` and `ConnectedSessionTests` hold what is written, and when it stops.
 
 ### Clickjacking
 

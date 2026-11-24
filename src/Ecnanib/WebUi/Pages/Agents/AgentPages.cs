@@ -107,13 +107,13 @@ public static class AgentPages
 
     /// <summary>
     /// The value of the button that shows the symbols of the chosen market and stores nothing.
-    /// A page is not interactive, so the list of symbols follows the market with a press of it.
+    /// The form is not interactive, so the list of symbols follows the market with a press of it.
     /// </summary>
     public const string ShowSymbols = "symbols";
 
     /// <summary>
     /// The value of the button that shows the models of the providers that are chosen for the
-    /// roles, and stores nothing. A page is not interactive, so the list of models of a role
+    /// roles, and stores nothing. The form is not interactive, so the list of models of a role
     /// follows its provider with a press of it.
     /// </summary>
     public const string ShowModels = "models";
@@ -126,7 +126,7 @@ public static class AgentPages
 
     /// <summary>
     /// The value of the button that shows the strongest candidate of each role and stores
-    /// nothing. A page is not interactive, so the candidates follow the market and the timeframe
+    /// nothing. The form is not interactive, so the candidates follow the market and the timeframe
     /// with a press of it.
     /// </summary>
     public const string ShowCandidates = "candidates";

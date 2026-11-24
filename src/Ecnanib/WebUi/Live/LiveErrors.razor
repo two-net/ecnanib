@@ -1,0 +1,31 @@
+@inherits ErrorBoundary
+@using Ecnanib.Platform.Logging
+@inject UnhandledErrors Errors
+
+@*
+    What stands around the part of a page that follows what changes, and takes an error of it.
+    An error inside such a part does not pass through the request pipeline, which is where every
+    other error that nothing handled is recorded. So it is recorded here, once, under a
+    reference, and the page says the reference and nothing of the error itself (NFR-LOG-6). The
+    part is gone then, and with it what it followed: the rest of the page is as it was written.
+*@
+
+@if (CurrentException is null)
+{
+    @ChildContent
+}
+else
+{
+    <p class="live-stopped" role="status">@LivePages.Stopped(_reference ?? string.Empty)</p>
+}
+
+@code {
+    private string? _reference;
+
+    protected override Task OnErrorAsync(Exception exception)
+    {
+        _reference = Errors.Report(exception);
+
+        return Task.CompletedTask;
+    }
+}

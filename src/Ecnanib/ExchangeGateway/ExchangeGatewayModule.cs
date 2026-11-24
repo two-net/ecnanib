@@ -57,6 +57,11 @@ public static class ExchangeGatewayModule
         // when it is asked, so it has no job.
         services.AddSingleton<IExchangeMarketData, BinanceMarketData>();
 
+        // The price of a symbol as it changes, for the pages that show it: read once a second
+        // for all who follow it, with the shared reads above, and only while the limit of its
+        // market has room (FR-NTF-2). It reads while a page follows, so it has no job either.
+        services.AddSingleton<IExchangePriceWatch, ExchangePriceWatch>();
+
         // Binance reports the request weight and the order count it has counted against the
         // service in these response headers, one per interval, such as X-MBX-USED-WEIGHT-1M.
         // Its wallet API, which the check of a key calls, reports its weight under a name of its

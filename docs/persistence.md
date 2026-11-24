@@ -162,7 +162,9 @@ This needs neither a configuration file nor a database. Read the generated file,
 - `ModelTests` fails when the model has changed and no migration has been generated. The application refuses to start in the same state, which `MigrationFailureTests` covers.
 - A migration that has been applied anywhere is never edited. A further change is a further migration.
 - A migration that drops or rewrites data needs a backup first (NFR-DAT-11). Marking such migrations is a separate feature.
-- One thing in the database is not of the model: the trigger that keeps the versions of the prompt templates as they are, with its function. The tool generated its migration empty, and the statements were written by hand. `ModelTests` cannot tell whether it is there: `PromptTemplateVersionTests` does. See [prompts.md](prompts.md).
+- Two things in the database are not of the model, each a function with its triggers. The tool generated the migration of each empty, and the statements were written by hand. `ModelTests` cannot tell whether they are there.
+  - What keeps the versions of the prompt templates as they are: `PromptTemplateVersionTests` holds the database to it. See [prompts.md](prompts.md).
+  - What says that a row of a user changed, for the pages that follow: `live_signal()`, with a trigger on each table of [`LiveRules.cs`](../tests/Ecnanib.Tests/LiveUpdates/LiveRules.cs). `LiveRuleTests` holds the database to that list. A migration that rebuilds one of those tables gives it its trigger again, and a table that a page comes to follow is given one by a migration that is written by hand. See "What the database says" in [live-updates.md](live-updates.md).
 
 ## Seed data
 

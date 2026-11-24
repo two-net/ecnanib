@@ -1,18 +1,23 @@
 @attribute [Route(WebUiModule.AgentsPath)]
 @attribute [Authorize]
 @using Ecnanib.Agents
+@using Ecnanib.Platform.LiveUpdates
 @using Ecnanib.Shared
 @inject IStoredAgents Agents
+@inject ILiveSignals Live
 @inject NavigationManager Navigation
 
 @*
-    Rendered on the server for each request, and never interactive. The page lists the agents of
+    Rendered on the server for each request. The page lists the agents of
     the user who is signed in, and no others (FR-AGT-1). A form of the page makes a copy of an
     agent: the forms are on the page whenever one is posted, for the agents that are stored then.
     Each agent leads to the page of its state, where it is started, paused, resumed, and stopped,
     and an agent that has an open position leads to the page that closes it (FR-AGT-12). The
     states are explained under the table (NFR-USA-2). Each agent has the badge of its mode
     (FR-UI-3). What a user named an agent is written as text, like everything else on a page.
+    The page follows what changes: when an agent of its user, what one holds, or a notification
+    of theirs changes, it asks for itself again, so the states and the way to close a position
+    are those of now without a manual refresh (FR-NTF-2). See docs/live-updates.md.
 *@
 
 <PageTitle>Your agents</PageTitle>
@@ -102,11 +107,17 @@
     {
         <p><a href="@WebUiModule.NewAgentPath">Create an agent</a></p>
     }
+
+    <LiveUpdates Follows="@Followed" Since="@_since" />
 }
 
 @code {
+    // What the page asks for itself again on: an agent, what one holds, and the count in the bar.
+    private static readonly LiveSubject[] Followed = [LiveSubject.Agent, LiveSubject.Holdings, LiveSubject.Notification];
+
     private StoredAgentList? _list;
     private string? _notCopied;
+    private long _since;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -115,6 +126,9 @@
     {
         if (HttpContext is { } request)
         {
+            // Before the page reads: what changes from here on is what the page may not show.
+            _since = Live.Mark();
+
             _list = await Agents.ListAsync(request);
         }
     }

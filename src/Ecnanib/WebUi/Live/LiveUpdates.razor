@@ -1,0 +1,62 @@
+@using Ecnanib.Shared
+
+@*
+    What a page writes to follow what changes without a manual refresh (FR-NTF-2): one part,
+    for which the page makes a connection once it is in the browser. The page says which
+    subjects it is to ask for itself again on, and which parts are written to it over the
+    connection. A page that answers a form asks for itself again on nothing: what the form
+    answered would be gone from it. The part is told apart by the path of the page, so that it
+    stays when the page asks for itself again, and is another one on another page. Everything
+    else of the page is rendered on the server for each request, as before.
+*@
+
+<LiveIsland @key="_page" @rendermode="InteractiveServer" View="@_view" />
+
+@code {
+    private string _page = string.Empty;
+    private LiveView _view = default!;
+
+    /// <summary>The agent that the page is of, or null for a page of every agent of its user.</summary>
+    [Parameter]
+    public Guid? AgentId { get; set; }
+
+    /// <summary>The subjects that the page asks for itself again on.</summary>
+    [Parameter]
+    public LiveSubject[] Follows { get; set; } = [];
+
+    /// <summary>The parts that are written to the page over its connection.</summary>
+    [Parameter]
+    public LiveShows Shows { get; set; }
+
+    /// <summary>The market of the agent, for the price that the page shows.</summary>
+    [Parameter]
+    public Market? Market { get; set; }
+
+    /// <summary>The mode of the agent.</summary>
+    [Parameter]
+    public TradingMode? Mode { get; set; }
+
+    /// <summary>The symbol of the agent.</summary>
+    [Parameter]
+    public string? Symbol { get; set; }
+
+    /// <summary>The asset that the symbol of the agent is priced in.</summary>
+    [Parameter]
+    public string? QuoteAsset { get; set; }
+
+    /// <summary>What ILiveSignals.Mark said before the page read what it shows.</summary>
+    [Parameter, EditorRequired]
+    public long Since { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        // A page is written for a request. Without one there is nothing to follow for.
+        var request = HttpContext?.Request ?? throw new InvalidOperationException("A page that follows is written for a request, and there is none.");
+
+        _page = request.Path.Value ?? string.Empty;
+        _view = LiveView.Of(request, AgentId, Follows, Shows, Market, Mode, Symbol, QuoteAsset, Since);
+    }
+}

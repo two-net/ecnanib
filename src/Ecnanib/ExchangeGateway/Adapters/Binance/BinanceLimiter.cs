@@ -273,6 +273,28 @@ internal sealed class BinanceLimiter(BinanceSettings settings, TimeProvider cloc
         }
     }
 
+    public bool HasRoom(Market market, TradingMode environment)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return false;
+            }
+
+            var budget = BudgetOf(market == Market.Futures ? BinanceLimit.Futures : BinanceLimit.Spot, environment);
+            var now = Now();
+
+            // What Binance itself counted, while that is of this minute, where it is more than
+            // what the limiter counted: another process at the same address shows there.
+            var reported = budget is { Reported: { } counted, ReportedAt: { } at } && clock.GetUtcNow() - at < Minute ? counted : 0;
+
+            return now >= budget.HeldUntil
+                && budget.Calls == 0
+                && Math.Max(budget.UsedAt(now), reported) * 2 < budget.Allowed;
+        }
+    }
+
     public void Dispose()
     {
         List<Waiter> waiting = [];

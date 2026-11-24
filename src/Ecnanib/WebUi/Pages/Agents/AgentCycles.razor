@@ -3,19 +3,25 @@
 @using Ecnanib.Accounts
 @using Ecnanib.Agents
 @using Ecnanib.DecisionEngine
+@using Ecnanib.Platform.LiveUpdates
+@using Ecnanib.Shared
 @inject IStoredAgents Agents
 @inject IRecordedCycles Cycles
+@inject ILiveSignals Live
 @inject NavigationManager Navigation
 
 @*
-    Rendered on the server for each request, and never interactive. The page lists the cycles
+    Rendered on the server for each request. The page lists the cycles
     that were recorded for an agent of the user, latest close first: for each the close of the
     candle that it was for, the mode that the agent was in then, how it ended, in words, and how
     long it took (FR-CYC-10). A cycle that made no decision, or placed no order, is among them.
     Each says what started it: a test cycle, which its user ran, is told apart from the cycles
     that a candle close started (FR-CYC-12). Each leads to its timeline. The page has no form: a
     test cycle is run on a page of its own, which this one leads to. The badge of the mode is
-    under the heading, and each cycle says the mode it ran in (FR-UI-3, FR-BIN-11).
+    under the heading, and each cycle says the mode it ran in (FR-UI-3, FR-BIN-11). The page
+    follows what changes (FR-NTF-2): a cycle that runs says its steps here as it comes to them,
+    over the connection of the page, and when a cycle is recorded the page asks for itself
+    again, so the cycle is on the list without a manual refresh. See docs/live-updates.md.
 *@
 
 @if (_agent is not null && _history is not null)
@@ -29,6 +35,9 @@
     <p>@CyclePages.Explained</p>
 
     <p>@CyclePages.TestsListed <a href="@WebUiModule.AgentTestCyclePath(_agent.Id)">@CyclePages.TestLink</a></p>
+
+    @* The cycles that run now, which are on no list until they are recorded. *@
+    <LiveUpdates AgentId="@_agent.Id" Follows="@Followed" Shows="@LiveShows.Cycle" Since="@_since" />
 
     @if (_history.Cycles.Count == 0)
     {
@@ -88,8 +97,13 @@
 }
 
 @code {
+    // What the page asks for itself again on: a cycle that is recorded, the agent, whose mode
+    // the badge says, and the count in the bar.
+    private static readonly LiveSubject[] Followed = [LiveSubject.Cycle, LiveSubject.Agent, LiveSubject.Notification];
+
     private AgentView? _agent;
     private CycleHistory? _history;
+    private long _since;
 
     [Parameter]
     public Guid Id { get; set; }
@@ -103,6 +117,9 @@
         {
             return;
         }
+
+        // Before the page reads: what changes from here on is what the page may not show.
+        _since = Live.Mark();
 
         // The agent that the path names, among those of the user of the session. An agent of
         // another user is not found, like one that does not exist: a user reads the cycles of

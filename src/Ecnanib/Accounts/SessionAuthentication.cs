@@ -35,6 +35,25 @@ public static class SessionAuthentication
     public const string ReturnUrlParameter = "returnUrl";
 
     /// <summary>
+    /// The path of the connection that a page which follows what changes keeps open, with the
+    /// paths under it. The framework names it. A request there is made by the page itself, and
+    /// is no activity of its user: see <see cref="IConnectedSession"/>.
+    /// </summary>
+    public const string ConnectionPath = "/_blazor";
+
+    /// <summary>
+    /// The claim that says which session a request, or the connection of a page, was signed in
+    /// with: the id of the session, which is not its token, and proves nothing.
+    /// </summary>
+    public const string SessionClaimType = "ecnanib:session";
+
+    /// <summary>
+    /// What a request carries in its <c>Accept</c> header when a page asks for an address
+    /// without leaving the page it is: how a page asks for itself again. The framework says it.
+    /// </summary>
+    internal const string AsksWithoutLeaving = "blazor-enhanced-nav=on";
+
+    /// <summary>
     /// The address of one of these pages, with where to go afterwards carried along when there
     /// is somewhere to go.
     /// </summary>
@@ -92,7 +111,7 @@ internal sealed class SessionAuthenticationHandler(
         SessionUser? user;
         try
         {
-            user = await sessions.FindAsync(token, Context.RequestAborted);
+            user = await sessions.FindAsync(token, UseOf(Request), Context.RequestAborted);
         }
         catch (OperationCanceledException) when (Context.RequestAborted.IsCancellationRequested)
         {
@@ -123,6 +142,11 @@ internal sealed class SessionAuthenticationHandler(
             [
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.Email),
+
+                // Which session it is, for the connection of a page that follows what changes:
+                // the connection is not asked for again, so the page asks whether its session
+                // still stands. See IConnectedSession.
+                new Claim(SessionAuthentication.SessionClaimType, user.SessionId.ToString()),
             ],
             Scheme.Name);
 
@@ -134,6 +158,17 @@ internal sealed class SessionAuthenticationHandler(
 
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name));
     }
+
+    /// <summary>
+    /// What a request is to its session: the connection of a page that follows, a page that
+    /// asks for itself again, or what its user did. Only the last is activity for certain.
+    /// </summary>
+    private static SessionUse UseOf(HttpRequest request) => new(
+        IsConnection: request.Path.StartsWithSegments(SessionAuthentication.ConnectionPath),
+        AsksAgain: HttpMethods.IsGet(request.Method)
+            && request.Headers.Accept.Any(accept => accept?.Contains(SessionAuthentication.AsksWithoutLeaving, StringComparison.OrdinalIgnoreCase) == true)
+            ? request.Path.ToUriComponent() + request.QueryString.ToUriComponent()
+            : null);
 
     /// <summary>Sends a visitor who asked for a page of signed-in users to the sign-in page, and from there back.</summary>
     protected override async Task HandleChallengeAsync(AuthenticationProperties properties)

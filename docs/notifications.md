@@ -93,6 +93,8 @@ That the user could not be told, because the notification could not be stored, i
 
 Every page is rendered on the server for each request, for the user who is signed in, and a visitor is sent to sign in. What a notification says is written as text, and never as markup (NFR-SEC-4). The times are UTC.
 
+**A notification shows without a manual refresh on a page that follows what changes** (FR-NTF-2): the page of the notifications, the list of the agents, and the pages of the state and the cycles of an agent. The database says when a notification of a user is raised, read, or removed, and such a page asks for itself again, so its list, its section, and the count in its bar are those of now. Nothing of a notification is written over the connection of a page. See [live-updates.md](live-updates.md).
+
 **The page of the notifications,** `/notifications`, lists every notification of its user, read and not read, the newest first, 25 to a page: what each is about, when it was raised, whether it is read, and what it says. One that is about an agent leads to the page of the state of that agent, by the name that its user gave it, while the user has the agent. With nothing to say, the page says so.
 
 | Rule | Detail |
@@ -102,7 +104,7 @@ Every page is rendered on the server for each request, for the user who is signe
 | **It comes a page at a time** | `?page=2` is the second page. An address that names a page which there is not is answered with "not found": a page after the last one, no whole number from 1, or a page twice. |
 | **Nothing names a user** | The user is the one of the session. The form of the notification of another user is the form of no page. |
 
-**The bar at the top of every page** has the link "Notifications", with how many its user has not read: "Notifications (3)". It is counted for each request, so the number is as it was when the page was written. The bar is on the page of an error as well, so a count that cannot be read fails no page: the link is then without a number, and the log has a warning.
+**The bar at the top of every page** has the link "Notifications", with how many its user has not read: "Notifications (3)". It is counted for each request, so the number is as it was when the page was written, and a page that follows what changes is written again when it changes. The bar is on the page of an error as well, so a count that cannot be read fails no page: the link is then without a number, and the log has a warning.
 
 **The page of the state of an agent,** `/agents/{id}/state`, has a section "Notifications" when its user has not read something about the agent: each notification with what it is about, when it was raised, and what it says, the latest first, 20 at most, and with a form that marks it as read, which takes it off that page. With nothing to say, the page has no such section.
 
@@ -158,5 +160,5 @@ The migration `AddOrders` adds the table of the notifications, and `AddNotificat
 - An agent whose model is reported missing by a call of a cycle, before a sync has marked it (FR-CAT-8): nothing changes its state, so nobody is told.
 - An agent that does not run when a key or a model of it goes: it is asked about them when it is started or resumed, and its user is told of the key alone.
 - A choice of which critical events are sent by email, and a link in an email that turns it off with one press.
-- Showing a notification without a reload of the page (FR-NTF-2).
+- Showing a notification without a reload on a page that does not follow what changes: the count in the bar of such a page is as it was when the page was written. See "The pages" in [live-updates.md](live-updates.md).
 - Removing notifications after the days of `Retention:NotificationDays` (NFR-DAT-5).

@@ -435,7 +435,49 @@ public sealed record TestCycleResult(TestCycleOutcome Outcome, Guid? CycleId = n
 | **A key that a provider refuses is checked again,** as in every cycle. | A key that the provider then refuses is marked invalid, and the agents that run with it move to Attention required (FR-KEY-3, FR-KEY-10): that is true of the key whatever asked, and is the one thing that a test cycle can come to change beside its record. It is done under the lock of the account, as every check of a key is. The page says so. |
 | **It is no action that the audit trail names** (NFR-LOG-7). | It places no order, and starts, pauses, and stops no agent. The log says who ran it, and its record says the rest. |
 
+**The page follows the cycle while it runs** (FR-NTF-2). The form waits for the cycle, and the page that waits says each step that the cycle comes to, under the button, over the connection of the page: see "The progress of a cycle".
+
 **The page.** `/agents/<id>/test-cycle` says what a test cycle is, that it places no order, and that its models are called on the user's own keys, where live search may add provider charges (FR-CYC-3), and has the button. The form waits for the cycle, and leads to its timeline. What kept a cycle from running is said on the page. A test cycle affects no trading, so the page asks nothing once more for an agent in Live (FR-UI-3). The pages of the cycles and of the risk checks tell the record of a test cycle apart: see "The timeline" in [team.md](team.md).
+
+## The progress of a cycle
+
+**Cycle progress updates in the UI within 2 seconds, without a manual refresh** (FR-NTF-2). A cycle is recorded once, when it ends, as a complete record: until then nothing of it is in the database. So a cycle that runs says each step that it comes to, in memory, and `ICycleProgress` answers with the cycles of an agent that run now:
+
+```csharp
+public interface ICycleProgress
+{
+    IReadOnlyList<RunningCycle> OfAgent(Guid userId, Guid agentId);
+}
+
+public sealed record RunningCycle(
+    Guid CycleId, CycleKind Kind, DateTimeOffset ClosedAt, DateTimeOffset StartedAt, IReadOnlyList<ReachedStep> Steps);
+
+public sealed record ReachedStep(CycleStep Step, DateTimeOffset At);
+```
+
+| Step | When a cycle comes to it |
+|---|---|
+| `Settling` | As it starts, unless it is a test cycle: the orders of its agent are settled with the exchange, and its loss limits are evaluated. |
+| `DataPackage` | Its data package is built. |
+| `Analysts` | The Market Analyst and the Sentiment Analyst are called, at the same time. |
+| `Strategist` | The Strategist is called. |
+| `RiskManager` | The Risk Manager is called, for a plan that opens a position and is not stale. |
+| `RiskGuard` | The Risk Guard checks what goes on of the plan. |
+| `Orders` | What the Risk Guard accepted is handed to what places the orders. A test cycle places none. |
+| `Recording` | The cycle is recorded, however it ended. |
+
+| Rule | Detail |
+|---|---|
+| **A cycle says the steps that it comes to, and no others.** | Which steps a cycle comes to is its decision: one that a loss limit ends calls no model, a plan that opens no position is not reviewed, and nothing goes on of a plan that was vetoed. So a page lists the steps so far, with the last one as what the cycle does now, and promises none. |
+| **It runs from the moment that its turn comes until it is recorded.** | `TeamCycle` begins to say it as it starts, and it is gone once its record is stored, or could not be. A cycle that waits for its turn in the queue of a close says nothing yet. |
+| **It is asked for by owner.** | The Decision Engine may not use Accounts, so a page hands it the user of its connection. The cycle of an agent of another user is not found (NFR-SEC-3). |
+| **A cycle is kept by its own id.** | A test cycle starts outside the job, so it may run beside the cycle of a close of the same agent. Each says its own steps, and says what started it. |
+| **It holds nothing of what a model answered.** | The steps and their times. The record of the cycle has the rest, and its timeline shows it: see "The timeline" in [team.md](team.md). |
+| **Each step is told to the open pages of its user.** | With a signal that the Decision Engine raises, `LiveSubject.CycleStep`: as the cycle starts, at each step, and as it ends. It names the user and the agent, and nothing else. See "Signals" in [live-updates.md](live-updates.md). |
+| **What it says is beside what it does.** | Nothing of it fails a cycle, or holds one up. |
+| **It is in memory, for this process.** | The cycles that this instance runs: a cycle of a close runs on the one instance that runs the background work, and a test cycle on the instance that took its request. Nothing of it is stored, so a cycle that is stopped with the application says nothing after the start. |
+
+The pages of the state, the cycles, and the test cycle of an agent show the cycles of the agent that run: see "The pages" in [live-updates.md](live-updates.md). `CycleProgressTests` holds the Decision Engine to the rules above.
 
 ## How long a cycle takes
 
@@ -555,7 +597,8 @@ A limit is held to through what the stand-in counted while the cycles were held,
 - A start that waits for reconciliation before it schedules anything (NFR-REL-3). The agents are reconciled as the background work starts, beside the other jobs, and an agent that is not reconciled gets no cycle: nothing is placed for it before. The other jobs do not wait.
 - Recording a cycle that never started: one that was skipped, or whose agent no longer ran. A cycle is one run of a team, and such a one ran none: it leaves its events in the log, and is on no page. A cycle that started is recorded as a complete record, however it ends (FR-CYC-10).
 - A place in the queue of a close for a test cycle. It starts outside a run of the job, and is bounded by one for a user at a time.
-- Following a test cycle while it runs (FR-NTF-2), and running one without a page that waits. The page waits for the cycle, and a browser that goes away finds it on the list of the cycles.
+- Running a test cycle without a page that waits. The page waits for the cycle, and says its steps meanwhile: a browser that goes away finds it on the list of the cycles.
+- The progress of a cycle that waits for its turn in the queue of a close, and of a cycle that another instance runs: see "The progress of a cycle".
 - A limit on how many test cycles a user runs in a day. Its models are called on the user's own keys, and one runs at a time.
 - Settling the orders of an agent before its test cycle, by reading the exchange alone. The team of a test cycle decides on the records as the job that settles the orders left them, which runs every minute for the agents that have something to settle.
 - Limits on calls. The places are of cycles: a cycle is two calls with one key while the two analysts work.

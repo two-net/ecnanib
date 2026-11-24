@@ -28,6 +28,11 @@ public static class DecisionEngineModule
         // orders.
         services.AddSingleton<IDecisionCycle, TeamCycle>();
 
+        // The cycles that run now, each with the steps that it has come to, for the open pages
+        // of its user: a cycle is recorded only when it ends (FR-NTF-2). In memory alone.
+        services.AddSingleton<RunningCycles>();
+        services.AddSingleton<ICycleProgress>(provider => provider.GetRequiredService<RunningCycles>());
+
         // The orders (SRS 3.2, step 7): what places the entry and the stop-loss of a plan that
         // the Risk Guard accepted, closes a position, and settles the orders of an agent with
         // the exchange. An order is never sent twice (FR-BIN-6), and every open position has a
@@ -52,6 +57,9 @@ public static class DecisionEngineModule
         // allocated capital plus that (FR-RSK-5, FR-RSK-8).
         services.AddSingleton<AgentResults>();
         services.AddSingleton<IAgentHoldings, StoredHoldings>();
+
+        // The open position of an agent as the page of the agent says it, for its user (FR-NTF-2).
+        services.AddSingleton<IOpenPositions, OpenPositions>();
         services.AddSingleton<IReconciliation, OrderReconciliation>();
 
         // What watches the loss limits of an agent, at every cycle and every reconciliation:

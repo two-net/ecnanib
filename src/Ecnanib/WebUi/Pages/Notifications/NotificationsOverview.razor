@@ -2,12 +2,15 @@
 @attribute [Authorize]
 @using Ecnanib.Agents
 @using Ecnanib.Notifications
+@using Ecnanib.Platform.LiveUpdates
+@using Ecnanib.Shared
 @inject INotifications Stored
 @inject IStoredAgents Agents
+@inject ILiveSignals Live
 @inject NavigationManager Navigation
 
 @*
-    Rendered on the server for each request, and never interactive. The page shows what the
+    Rendered on the server for each request. The page shows what the
     service told the user who is signed in, and nobody else (FR-NTF-1): every notification, read
     and not read, the newest first, a page of them at a time. A form of the page marks one
     notification as read, and another marks all of them: the forms are on the page whenever one
@@ -17,6 +20,9 @@
     names its agent by the name that its user gave it, where the user still has the agent. What
     a notification says is written as text, like everything else on a page (NFR-SEC-4). An
     address that names a page which there is not is answered with "not found". The times are UTC.
+    The page follows what changes (FR-NTF-2): when a notification of its user is raised or read,
+    or an agent of theirs changes, whose name a notification says, the page asks for itself
+    again, so a notification shows without a manual refresh. See docs/live-updates.md.
 *@
 
 @if (_list is not null)
@@ -98,12 +104,18 @@
     <p><a href="@WebUiModule.NotificationEmailPath">@NotificationPages.EmailTitle</a></p>
 
     <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
+
+    <LiveUpdates Follows="@Followed" Since="@_since" />
 }
 
 @code {
+    // What the page asks for itself again on: a notification, and an agent, whose name one says.
+    private static readonly LiveSubject[] Followed = [LiveSubject.Notification, LiveSubject.Agent];
+
     private NotificationList? _list;
     private IReadOnlyDictionary<Guid, string> _names = new Dictionary<Guid, string>();
     private int _page = 1;
+    private long _since;
 
     // What the form that marks all as read says the page showed.
     [SupplyParameterFromForm(Name = NotificationPages.ThroughField)]
@@ -127,6 +139,9 @@
 
             return;
         }
+
+        // Before the page reads: what changes from here on is what the page may not show.
+        _since = Live.Mark();
 
         // Asked for the user of the session: the notifications of another user are not found.
         var list = await Stored.OfUserAsync(request, page);

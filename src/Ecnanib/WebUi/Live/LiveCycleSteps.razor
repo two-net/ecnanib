@@ -1,0 +1,41 @@
+@using Ecnanib.DecisionEngine
+
+@*
+    The cycles of an agent that run now, each with the steps that it has come to so far, in
+    their order: cycle progress updates in the UI without a manual refresh (FR-NTF-2). The last
+    step is what the cycle does now. A step that it will not come to is not listed: which steps
+    a cycle comes to is its decision. Nothing of what a model answered is here: the timeline of
+    the cycle shows that, once the cycle has ended and is recorded. A cycle that its user ran as
+    a test says so (FR-CYC-12). With no cycle that runs, there is nothing to say.
+*@
+
+@foreach (var cycle in Cycles)
+{
+    <section class="live-cycle" aria-live="polite">
+        <h2>@LivePages.Running(cycle.Kind)</h2>
+
+        <p>@LivePages.RunningFor(cycle)</p>
+
+        <ol class="cycle-steps">
+            @for (var step = 0; step < cycle.Steps.Count; step++)
+            {
+                var reached = cycle.Steps[step];
+
+                @if (step == cycle.Steps.Count - 1)
+                {
+                    <li class="cycle-step cycle-step-now">@LivePages.Describe(reached.Step): <strong>@LivePages.StepNow(reached.At)</strong></li>
+                }
+                else
+                {
+                    <li class="cycle-step cycle-step-done">@LivePages.Describe(reached.Step): @LivePages.StepDone</li>
+                }
+            }
+        </ol>
+    </section>
+}
+
+@code {
+    /// <summary>The cycles that run, in the order that they started in.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<RunningCycle> Cycles { get; set; } = [];
+}

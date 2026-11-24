@@ -1,0 +1,63 @@
+@using Ecnanib.DecisionEngine
+@using Ecnanib.ExchangeGateway
+
+@*
+    The open position of an agent, with the protection that rests on the exchange for it, the
+    price that it is valued at, and what it would make at that price: positions and prices
+    update in the UI without a manual refresh (FR-NTF-2). The price is the mark price on the
+    Futures market and the price that the symbol last traded at on the Spot market, as the
+    equity of the agent is worked out. It says when Binance was asked, so a price that could
+    not be read for a while shows as the old one that it is. An agent that holds nothing says
+    so, with the price of its symbol. What it would make is said in words, and relies on no
+    colour (FR-THM-5).
+*@
+
+<section class="live-position">
+    <h2>@LivePages.PositionHeading</h2>
+
+    @if (Position is not null)
+    {
+        <p>@LivePages.Says(Position)</p>
+
+        <p>@LivePages.Protection(Position)</p>
+    }
+    else
+    {
+        <p>@LivePages.NoPosition</p>
+    }
+
+    @if (Followed is not null)
+    {
+        @if (Price is not null)
+        {
+            <p class="live-price">@LivePages.Says(Followed, Price, Position?.QuoteAsset ?? QuoteAsset)</p>
+
+            @if (Position is not null)
+            {
+                <p class="live-unrealized">@LivePages.Unrealized(Position, Price)</p>
+            }
+        }
+        else
+        {
+            <p class="live-price">@LivePages.NoPrice(Followed)</p>
+        }
+    }
+</section>
+
+@code {
+    /// <summary>The open position, or null when the agent holds none.</summary>
+    [Parameter]
+    public OpenPosition? Position { get; set; }
+
+    /// <summary>The price that is followed, or null when none is.</summary>
+    [Parameter]
+    public LivePrice? Followed { get; set; }
+
+    /// <summary>That price as it was last read, or null while none was.</summary>
+    [Parameter]
+    public WatchedPrice? Price { get; set; }
+
+    /// <summary>The asset that the symbol of the agent is priced in, for an agent that holds nothing.</summary>
+    [Parameter]
+    public string? QuoteAsset { get; set; }
+}

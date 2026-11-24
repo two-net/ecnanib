@@ -160,7 +160,7 @@ internal sealed class AgentResults(
         ArgumentNullException.ThrowIfNull(market);
         ArgumentNullException.ThrowIfNull(position);
 
-        if (position.Market == Market.Futures)
+        if (PositionValues.PriceOf(position.Market) == ExchangePriceKind.Mark)
         {
             var mark = await market.GetMarkPriceAsync(position.Mode, position.Symbol, cancellationToken);
 
@@ -319,7 +319,7 @@ internal sealed record AgentResult(decimal Settled, Position? Open, decimal? Pri
 
     /// <summary>What the open position would make at its price now, which is nothing where the agent holds none, and where the price is not known.</summary>
     public decimal Unrealized => Open is { } open && Price is { } price
-        ? (open.Side == PositionSide.Long ? price - open.EntryPrice : open.EntryPrice - price) * open.Quantity
+        ? PositionValues.Unrealized(open.Side, open.EntryPrice, open.Quantity, price)
         : 0m;
 
     /// <summary>The net profit or loss of the agent to date, with unrealized profit and loss.</summary>

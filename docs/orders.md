@@ -431,6 +431,33 @@ The Decision Engine keeps the positions and the orders, so it answers those that
 | `IAgentExposure` of Agents | An agent has an open position or orders while it has a position without a time of closing, or an order that is not over. It has an open position, as far as stopping it goes, also while an entry of it is not over: such an entry may open one. `ClosePositionAtMarketAsync` is `IPlanOrders.CloseAtMarketAsync`, and `AccountConflictAsync` is `IPlanOrders.AccountConflictAsync`: see "The account of Futures". See [agents.md](agents.md). |
 | `IAgentHoldings` | The open position, with the prices of the stop-loss and of the take-profit that rest for it, and the orders that rest: an entry that has not filled, a stop-loss, and a take-profit. A take-profit is said when an order rests for it, on either market. The equity of the agent, its equity as the UTC day began, and its peak equity: see "The equity of an agent", and "What an agent holds" in [cycles.md](cycles.md). |
 | `IReconciliation` | Whether the agent is settled, and whether it was reconciled since the application took up the background work, where it holds something from before. See "Settling" and "Reconciling". |
+| `IOpenPositions` | The open position of an agent, for the page of the agent, to its user alone. See "The position on a page". |
+
+### The position on a page
+
+Positions and prices update in the UI within 2 seconds, without a manual refresh (FR-NTF-2). The page of the state of an agent says its open position, and `IOpenPositions` reads it:
+
+```csharp
+public interface IOpenPositions
+{
+    Task<OpenPosition?> OfAgentAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+}
+
+public sealed record OpenPosition(
+    Market Market, TradingMode Mode, string Symbol, string QuoteAsset, PositionSide Side, decimal Quantity,
+    decimal EntryPrice, decimal? StopLoss, decimal? TakeProfit, DateTimeOffset OpenedAt);
+```
+
+| Rule | Detail |
+|---|---|
+| **It is asked for by owner.** | The Decision Engine may not use Accounts, so the page hands it the user of its connection. The position of an agent of another user is not found, like that of an agent that holds none (NFR-SEC-3). |
+| **It reads the records, and asks the exchange nothing.** | The position and its orders are read in one snapshot: a stop-loss that is executed writes its order and its position at once. |
+| **The protection is said as it rests on the exchange.** | The price of the stop-loss, and that of the take-profit, each when an order for it rests, and not otherwise: the price alone protects nothing. It is the rule of `IAgentHoldings`, which a cycle reads, in one place: `RestingOrders`. |
+| **What it is worth is one rule.** | `PositionValues` says which price a position is valued at, the mark price on Futures and the price that the symbol last traded at on Spot, and what a position would make at a price: how far the price is from its entry, in its direction, times what it holds. The equity of an agent is worked out with it, and so is what the page says: see "The equity of an agent". |
+| **The page works it out from a price that is followed.** | The price is read once a second for everyone who follows it, and written to the page as it is read: see "Following a price" in [exchange.md](exchange.md). What the page says the position would make is before fees and funding, and says so. |
+| **The page follows what the agent holds.** | The database says when a position or an order of the agent is written, whatever wrote it, and the page reads the position again: see "What the database says" in [live-updates.md](live-updates.md). Nothing of what places the orders says so itself. |
+
+`OpenPositionTests` holds it to the rules above, and `LivePageTests` and `LiveFeedTests` hold the page to what it says.
 
 ## The equity of an agent
 
@@ -737,10 +764,10 @@ A check against Binance's own test environment is in `LiveBinanceTests`: see "Ch
 - Orders in the account of a user that no agent placed. They are not listed, and so not compared: what reconciles asks about the orders that have a row.
 - The leverage brackets of a symbol, by which Binance allows less leverage for a larger position. A leverage that Binance refuses for that gets no entry, and its user is told: see "The margin of Futures".
 - A fee in an asset that the configuration file names no symbol for. It is stored as Binance said it, and is in no figure: see "The value of a fee".
-- The results of the positions, and the equity of an agent over time, on the pages of the agent: its trade list, its equity curve, and its performance figures (FR-RPT-2). They are recorded, and no page of an agent shows them. The track record of each provider and of each model is worked out from the results, and the experience screens show it (FR-EXP-2): see [experience.md](experience.md).
+- The results of the positions, and the equity of an agent over time, on the pages of the agent: its trade list, its equity curve, and its performance figures (FR-RPT-2). They are recorded, and no page of an agent shows them. The open position of an agent is on the page of its state: see "The position on a page". The track record of each provider and of each model is worked out from the results, and the experience screens show it (FR-EXP-2): see [experience.md](experience.md).
 - Thinning the equity of an agent over time to one row for a day after 90 days (NFR-DAT-5). Nothing deletes yet.
 - The equity of an agent that is not evaluated: one that its user paused or stopped, and that holds nothing, has no new row until it runs again.
-- The funding and the margin of a position on the page of its agent (FR-RPT-2).
+- The funding and the margin of a position on the page of its agent, and its fees: what the page says the open position would make is before fees and funding (FR-RPT-2).
 - Why a plan that closes a position or adjusts its protection placed no order, in the record of its cycle. The record of a cycle has its orders and why no entry was placed (FR-CYC-10): see "The timeline" in [team.md](team.md). That a position was gone before its close was due is in the log only.
 - The count of the orders that an account places, which Binance limits beside the request weight. A protective order has no turn before other calls at the limiter: one that is held back was not sent, and is settled within a minute.
 - A close by hand that failed, told its user by a notification (FR-NTF-1). The page that asked says so. One that closed the position is told as every close is, when the result of the position is recorded: see [notifications.md](notifications.md).

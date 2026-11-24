@@ -34,6 +34,8 @@ internal static class ForgeryRules
     };
 
     private const string Circuit =
-        "The framework's connection of an interactive page. A connection that another site opens does not carry the " +
-        "session cookie, which is SameSite=Lax, so it is a visitor's and reaches nothing of a user's.";
+        "The connection of a page that follows what changes, which the framework makes. A connection that another site " +
+        "opens does not carry the session cookie, which is SameSite=Lax, and a connection is made only for the part that " +
+        "the application sealed into a page that it served to that browser, which another site cannot read. Nothing is " +
+        "changed over it: that part of a page takes no input, and every form is posted with the token of its page.";
 }

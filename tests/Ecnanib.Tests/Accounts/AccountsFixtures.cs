@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Security.Claims;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
@@ -12,6 +13,7 @@ using Ecnanib.ExchangeGateway;
 using Ecnanib.Experience;
 using Ecnanib.Notifications;
 using Ecnanib.Platform.BackgroundWork;
+using Ecnanib.Platform.LiveUpdates;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
 using Ecnanib.Tests.BackgroundWork;
@@ -21,6 +23,7 @@ using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Ecnanib.WebUi;
+using Ecnanib.WebUi.Live;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -247,6 +250,24 @@ internal sealed class AccountsApplication : IDisposable
 
     /// <summary>What raises the in-app notifications of users, and reads them.</summary>
     public INotifications Notifications => _application.Services.GetRequiredService<INotifications>();
+
+    /// <summary>The signals that tell the open pages of a user that something of theirs changed.</summary>
+    public ILiveSignals LiveSignals => _application.Services.GetRequiredService<ILiveSignals>();
+
+    /// <summary>What a page that follows what changes asks about the session of its connection.</summary>
+    public IConnectedSession ConnectedSession => _application.Services.GetRequiredService<IConnectedSession>();
+
+    /// <summary>The cycles that run now, each with the steps that it has come to.</summary>
+    public ICycleProgress CycleProgress => _application.Services.GetRequiredService<ICycleProgress>();
+
+    /// <summary>The open position of an agent, as the page of the agent says it.</summary>
+    public IOpenPositions OpenPositions => _application.Services.GetRequiredService<IOpenPositions>();
+
+    /// <summary>The price of a symbol as it changes, for the pages that show it.</summary>
+    public IExchangePriceWatch PriceWatch => _application.Services.GetRequiredService<IExchangePriceWatch>();
+
+    /// <summary>What opens the feed of a page that follows what changes.</summary>
+    public LiveFeeds LiveFeeds => _application.Services.GetRequiredService<LiveFeeds>();
 
     /// <summary>Everything that says what an agent holds on the exchange, and closes its position.</summary>
     public IEnumerable<IAgentExposure> Exposures => _application.Services.GetServices<IAgentExposure>();
@@ -590,6 +611,19 @@ internal sealed record StoredSession(
     DateTimeOffset LastActiveAt,
     DateTimeOffset? ReauthenticatedAt)
 {
+    /// <summary>
+    /// The user of a connection that was made with this session, as the application signs a
+    /// request in: the connection of a page that follows what changes is not asked for again.
+    /// </summary>
+    /// <param name="user">The user that the connection is of, which is the user of the session unless a test says otherwise.</param>
+    public ClaimsPrincipal ConnectionOf(StoredUser user) =>
+        new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim(SessionAuthentication.SessionClaimType, Id.ToString()),
+            ],
+            SessionAuthentication.Scheme));
+
     /// <summary>Every session, oldest first.</summary>
     public static IReadOnlyList<StoredSession> All(TestDatabase database)
     {
@@ -875,6 +909,29 @@ internal static class Browser
     public static Task<(string Path, string Page)> SignInAsync(
         this HttpClient client, string email, string password = AccountsApplication.Password, string page = SessionAuthentication.SignInPath) =>
         client.SubmitAsync(page, "sign-in", ("Email", email), ("Password", password));
+
+    /// <summary>
+    /// What a request carries in its <c>Accept</c> header when a page asks for an address
+    /// without leaving the page that it is, as the framework says it.
+    /// </summary>
+    public const string WithoutLeaving = "text/html; blazor-enhanced-nav=on";
+
+    /// <summary>Asks for an address the way a page asks for itself again: without leaving the page that it is.</summary>
+    /// <param name="client">The browser.</param>
+    /// <param name="address">The path and the query.</param>
+    /// <param name="found">Whether the address is one that there is. A test of one that there is not says so.</param>
+    public static async Task<string> AskAgainAsync(this HttpClient client, string address, bool found = true)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, address);
+        request.Headers.TryAddWithoutValidation("Accept", WithoutLeaving);
+
+        using var answer = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        var page = await answer.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(!found || answer.IsSuccessStatusCode, $"GET {address} answered {(int)answer.StatusCode}:{Environment.NewLine}{page}");
+
+        return page;
+    }
 
     /// <summary>Presses the sign-out button of the start page, and follows where the answer leads.</summary>
     public static async Task<(string Path, string Page)> SignOutAsync(this HttpClient client) =>

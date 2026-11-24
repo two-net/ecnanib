@@ -15,6 +15,17 @@ public interface IExchangeLimits
     /// is used up leaves the others as they are.
     /// </summary>
     IReadOnlyList<ExchangeLimitUsage> Usage();
+
+    /// <summary>
+    /// Whether a read that nothing depends on may be made now on a market in an environment:
+    /// one that only keeps a price on a page up to date (FR-NTF-2). It may while less than half
+    /// of what the service allows itself of the limit of that market is used, no call waits for
+    /// its turn there, and the exchange has not signalled that it has had too many. So what
+    /// places and protects orders keeps its room, whatever the pages ask for.
+    /// </summary>
+    /// <param name="market">The market whose limit the read counts against.</param>
+    /// <param name="environment">The environment, which has limits of its own.</param>
+    bool HasRoom(Market market, TradingMode environment);
 }
 
 /// <summary>What the service has used of one limit on requests of the exchange.</summary>

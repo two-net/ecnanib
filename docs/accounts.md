@@ -88,13 +88,13 @@ Signing in starts a session: a row of the `sessions` table, and a cookie in the 
 | One for each browser | Signing in again on a browser ends the session it had. A user can be signed in on several browsers. |
 | Inactivity | A session ends when it has not been used for `Security:SessionIdleMinutes` (NFR-SEC-1). The setting is read at startup and applies to the sessions that exist. |
 
-Each signed-in request counts as activity. It is not written on every request: a session whose stored time is less than a minute old is left as it is (less than that when the period is under an hour). The period counts from the stored time, which is never later than the last request, so **a session never lasts longer than configured**, and can end up to a minute early.
+Each signed-in request counts as activity, but for what a page does by itself: see "The session of a connection". It is not written on every request: a session whose stored time is less than a minute old is left as it is (less than that when the period is under an hour). The period counts from the stored time, which is never later than the last request, so **a session never lasts longer than configured**, and can end up to a minute early.
 
 A session that has ended is deleted when its cookie is next seen, and the cookie is taken from the browser. So is a cookie that names no session, or that does not hold a token at all. The sessions of a user that ended on browsers which never came back are deleted when the user signs in. Those of a user who never signs in again stay until the account is deleted; a job that removes them belongs with the retention jobs.
 
 ### How a request is signed in
 
-`SessionAuthenticationHandler` is the application's one authentication scheme, registered by `AddAccounts()`. It reads the cookie, finds the session and its account with one query, and makes the account the user of the request: the name identifier is the account's id, and the name is its address. The Web UI and the API see the same user, and every log event of the request carries the id as `UserId`. See [logging.md](logging.md).
+`SessionAuthenticationHandler` is the application's one authentication scheme, registered by `AddAccounts()`. It reads the cookie, finds the session and its account with one query, and makes the account the user of the request: the name identifier is the account's id, and the name is its address. The user also names the session, by its id, which is not its token: `SignedInUser.SessionIdOf`. The Web UI and the API see the same user, and every log event of the request carries the id as `UserId`. See [logging.md](logging.md).
 
 Whatever needs the user of a request asks `SignedInUser.IdOf(request)`, and asks for that user's rows with `OwnedBy`. The handler also says whether the user is an operator, for the policy that an operator function requires. See [ownership.md](ownership.md).
 
@@ -108,6 +108,31 @@ Authentication runs ahead of the error handling, so the handler does not fail a 
 The button posts to `/sign-out`, from any page. The session is deleted from the database and the cookie is taken from the browser, so a copy of the cookie stops working too. A sign-in of the browser that waits for a code ends in the same way.
 
 A signed-in request must carry the token against request forgery. A request whose session has already ended is sent to the start page without one: the token of a page that is older than its session was made for the user the page showed.
+
+### The session of a connection
+
+A page that follows what changes keeps a connection open, over which the application writes to it: see [live-updates.md](live-updates.md). A page that is rendered for each request is checked with each request. A connection is signed in when it is made, by the handler above, and is not asked for again. And such a page makes requests that its user did not. `IConnectedSession` answers for both:
+
+```csharp
+public interface IConnectedSession
+{
+    Task<bool> StandsAsync(ClaimsPrincipal user, CancellationToken cancellationToken);
+    void ExpectsPageAgain(ClaimsPrincipal user, string address);
+}
+```
+
+| Rule | Detail |
+|---|---|
+| **What writes to a page over its connection asks whether the session of the connection still stands.** | `StandsAsync` takes the user of the connection, which names its session. The session stands while its row is there and was used within the period of inactivity. The feed of a page asks when the database says that a session of its user ended, and once a minute. |
+| **Asking is no activity, and ends nothing.** | A session that is past its period ends when a request next carries its token, as before. |
+| **A session stands for its own user alone.** | It is asked for with `OwnedBy`. A user who names no session, or whom nothing vouched for, has none that stands. |
+| **A session that does not stand ends for the page.** | Nothing more is written to it, and the browser loads it anew, which leads to the page that signs in. So signing out, a new password, and the deletion of the account end what an open page is told, as they end what a request is answered. |
+| **The connection of a page is no activity of its user.** | A request under `/_blazor` is made by the page, and made again whenever the connection was lost. It finds the session, and does not count as use of it. |
+| **A page that asks for itself again is no activity either.** | The feed of the page says `ExpectsPageAgain` first, with the path and the query of the page. The request of that session for that address which follows within 10 seconds, and asks the way a page asks without leaving the page that it is, is not written down as activity. |
+| **The word of a page is good for one request.** | Each page that says so is counted: two tabs of one address that hear the same change are both expected, and a third request counts. A request for another address, with another session, after the 10 seconds, or as a browser asks when its user follows a link, counts. |
+| **The period of inactivity holds for a page that follows.** | Whatever a request is, a session that was not used for the period has ended when the request finds it. So a page that follows keeps no browser signed in that nobody sits at (NFR-SEC-1). |
+
+What is expected is kept in memory, by each running instance for itself, as the limits on attempts are. `ConnectedSessionTests` holds Accounts to the rules above.
 
 ## Resetting a password
 
@@ -674,6 +699,7 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.
-- Ending a session inside an interactive page. A page that is rendered for each request is checked on each request. An interactive page keeps a connection open, which is not checked again after it is made. No page is interactive yet; the first one must check the session itself.
+- Sharing what a page is expected to ask for between instances. A page that follows says to the instance of its connection that it asks for itself again, and a request that another instance takes counts as activity of its user. See "The session of a connection".
+- A page that is loaded anew after its connection could not be made again. The browser asks for it as for any page, which counts as activity of its user.
 - Removing accounts that were never verified, and the sessions and waiting sign-ins of users who never come back.
 - The wording of the legal documents. The Privacy Policy is to say what goes to AI providers, under whose keys and whose terms (NFR-SEC-8): the pages of the keys and the page of an agent's prompts say it already. See [prompts.md](prompts.md).

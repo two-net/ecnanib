@@ -22,6 +22,11 @@ public static class AccountsModule
 
         services.AddSingleton<Sessions>();
         services.AddSingleton<ISignIn, SignIn>();
+
+        // What a page that follows what changes asks about the session of its connection, which
+        // is not asked for again by itself, and what makes that such a page is no activity of
+        // its user (FR-NTF-2, NFR-SEC-1).
+        services.AddSingleton<IConnectedSession, ConnectedSession>();
         services.AddSingleton<IPasswordReset, PasswordReset>();
 
         // Two-factor authentication. Its key is encrypted by the platform's StoredSecrets, and

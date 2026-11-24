@@ -93,13 +93,10 @@ internal sealed class StoredHoldings(IDbContextFactory<EcnanibDbContext> context
 
         var position = await StoredOrders.OpenPositionAsync(context, agent.Id, cancellationToken);
 
-        // The orders that rest on the exchange: what is left of each.
-        var resting = (await StoredOrders.LiveOrdersAsync(context, agent.Id, cancellationToken))
-            .Where(order => OrderStatuses.IsResting(order.Status) && order.Purpose != OrderPurpose.Close && order.Price is not null)
-            .ToList();
-
-        var stopLoss = resting.FirstOrDefault(order => order.Purpose == OrderPurpose.StopLoss && order.PositionId == position?.Id);
-        var takeProfit = resting.FirstOrDefault(order => order.Purpose == OrderPurpose.TakeProfit && order.PositionId == position?.Id);
+        // The orders that rest on the exchange: what is left of each. The page of the agent
+        // says the protection of its position by the same rule: see IOpenPositions.
+        var resting = await RestingOrders.OfAsync(context, agent.Id, cancellationToken);
+        var (stopLoss, takeProfit) = RestingOrders.Protecting(resting, position);
 
         return new AgentHoldings(
             agent.AllocatedCapital + result.Net,

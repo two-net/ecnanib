@@ -5,7 +5,9 @@ using Ecnanib.Accounts;
 using Ecnanib.Agents;
 using Ecnanib.Notifications;
 using Ecnanib.Shared;
+using Ecnanib.WebUi.Live;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 
 namespace Ecnanib.WebUi;
 
@@ -220,6 +222,14 @@ public static class WebUiModule
         // A page says who may open it, and a layout can show who is signed in.
         services.AddAuthorization();
         services.AddCascadingAuthenticationState();
+
+        // What keeps a page that follows up to date over its connection, which is the one push
+        // channel from the application to the browser (FR-NTF-2, NFR-ARC-6): the feed of each
+        // such page, and what says whether its connection is up, which there is one of for
+        // each connection.
+        services.AddSingleton<LiveFeeds>();
+        services.AddScoped<LiveCircuit>();
+        services.AddScoped<CircuitHandler>(provider => provider.GetRequiredService<LiveCircuit>());
 
         return services;
     }

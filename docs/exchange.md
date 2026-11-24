@@ -191,6 +191,8 @@ Only weight is limited. Binance also limits how many orders an account places, f
 public interface IExchangeLimits
 {
     IReadOnlyList<ExchangeLimitUsage> Usage();
+
+    bool HasRoom(Market market, TradingMode environment);
 }
 
 public sealed record ExchangeLimitUsage(
@@ -207,6 +209,8 @@ The limiter says where each limit stands, in the order of the table above, each 
 | `Reported`, `ReportedAt` | What Binance itself had counted when it last answered, and when that was. It counts by its own minute, so it is not `Used` to the digit. |
 | `Waiting` | The calls that wait for their turn. |
 | `HeldUntil` | Until when nothing is sent, after a signal of Binance. |
+
+**`HasRoom` says whether a read that nothing depends on may be made now,** on a market in an environment: one that only keeps a price on a page up to date. It may while less than half of what the service allows itself of the limit of that market is used, no call waits for its turn there, and the limit is not held. What is used is what the limiter let through in the last sixty seconds, or what Binance itself counted within the last minute, where that is more. So what places and protects orders keeps half of the part for itself, whatever the pages ask for: see "Following a price".
 
 ## The clock
 
@@ -616,6 +620,37 @@ public sealed record ExchangeSymbol(
 - **Nor does a symbol of Futures that takes no take-profit.** `TakeProfitOrders` says whether Binance takes a take-profit in the symbol as an order of its own, which is placed at the market when it is triggered: on Futures it rests beside the stop-loss of a position (FR-BIN-F3).
 - The rules of a market order, `MARKET_LOT_SIZE`, are not read.
 
+### Following a price
+
+**Prices update in the UI within 2 seconds, without a manual refresh** (FR-NTF-2). A page that shows a price follows it, and `IExchangePriceWatch` reads it for everyone who does:
+
+```csharp
+public interface IExchangePriceWatch
+{
+    IDisposable Follow(Market market, TradingMode mode, string symbol, ExchangePriceKind kind, Action<WatchedPrice> heard);
+
+    WatchedPrice? Latest(Market market, TradingMode mode, string symbol, ExchangePriceKind kind);
+}
+
+public enum ExchangePriceKind { LastTraded, Mark }
+
+public sealed record WatchedPrice(decimal Price, DateTimeOffset ReadAt);
+```
+
+| Rule | Detail |
+|---|---|
+| **A price that is followed is read once a second, for everyone who follows it.** | With `GetPriceAsync`, or `GetMarkPriceAsync` for the mark price, which only Futures has. Those reads are shared, so however many pages of however many users show a symbol, Binance is asked once. The watch waits a second after each read, and not a second from its start: what a read gave counts for a second, and a read that came a moment early would be answered with the price of the read before it. |
+| **A price that nobody follows is not read.** | The reads begin with the first follower and end with the last. The gateway reads nothing ahead, as before. |
+| **It is read only while the limit has room.** | `IExchangeLimits.HasRoom`, before each read. While the limit has none, nothing is read, and what follows keeps the price that it has. A page says when its price was read, so a price that could not be read for a while shows as the old one that it is. |
+| **What a read costs is bounded by the symbols of the file.** | A price is of a symbol, on a market, in an environment: one read a second for each that some page shows. With the two symbols of the tracked file, on both markets of the real exchange, that is 240 of the 4200 that the service allows itself on Spot in a minute, and 120 of the 1680 on Futures. A file with many symbols, whose prices are all followed, comes to the half that `HasRoom` leaves it, and no further. |
+| **A read that gives no price is left at that.** | Binance did not answer, or the symbol is one that the file no longer lists, which the position of an agent may still be in. The watch asks again a second later. A read that failed is shared for 5 seconds, as every read of the market data is. An error is said once, as a warning. |
+| **What follows is told the price that the watch has, at once.** | And then each price as it is read, with when the read was sent. What a follower throws is logged, and reaches nobody else. |
+| **A page that is written asks for what is known.** | `Latest` reads nothing: it answers with the price of the latest read, where someone follows it, and with none otherwise. So no page waits for Binance. |
+| **It reads for the pages of this instance.** | It is no job, and nothing of it is stored (NFR-DAT-6). See "One instance" in [live-updates.md](live-updates.md). |
+| **What it logs is of no request and of no user.** | The reads of a price begin on the connection of the first page that follows it, and go on for everyone who does. Nothing of that connection flows into them: their events carry no `RequestId` and no `UserId` (NFR-LOG-3). |
+
+Which price a position is valued at is for what keeps the positions to say: see "The position on a page" in [orders.md](orders.md). `PriceWatchTests` holds the watch to the rules above, on a clock that the test moves, and `RequestLimitTests` holds `HasRoom` to its rule.
+
 ### Nothing is stored
 
 The database is not a market-data warehouse (NFR-DAT-6). The gateway keeps what it read in memory, for this process, as the limiter counts and the watch on the clock watches, and writes none of it anywhere. There is no table for it: `SingleStoreTests` holds the database to the tables of the model, by name, and `CandleCacheTests` reads everything, over the close of a candle, and finds every row of every table as it was. What a cycle decided on is for the cycle to record, as a summary (FR-CYC-10).
@@ -774,10 +809,11 @@ The calls of the market data were asked of Binance itself on 16 November 2026, o
 - The positions of an account in all its symbols, in one read. The margin of each open position is read with a call of its own, in its symbol. See "Not built yet" in [orders.md](orders.md).
 - The list of three orders of Spot, in which Binance places a pair by itself when an entry at a price is executed. See "Not built yet" in [orders.md](orders.md).
 - A page that asks for prices, and a data package that holds one. What has the Risk Guard check the plan of a cycle asks for the price that the symbol last traded at, and for the rules of its symbol, which it holds the plan to (FR-RSK-4): see "The facts" in [risk-guard.md](risk-guard.md). What starts the cycles asks for the candles of an agent's own timeframe through each close, and the data package of each cycle for the candles of the higher timeframes, and on Futures for the mark price, the funding rate, and the open interest (FR-CYC-2): see "The data package" in [cycles.md](cycles.md). An agent's timeframe is one of four, `Timeframe` in `Shared`: `CandleInterval` has a member of the same name for each, which `CandleIntervals.Of` gives, and the week as well, for context alone.
-- Prices that change on a screen within two seconds (FR-NTF-2). A price is read when it is asked for, and counts for a second: a screen that asked every second for every symbol would spend much of the budget.
+- A stream of prices. A price that a page follows is read once a second, which costs of the request budget, up to the half that the limiter leaves it: see "Following a price". Binance has market streams on a WebSocket, which cost no request weight.
 - Reading the limits of "The limiter" from `exchangeInfo`, which the gateway now calls for the symbols.
 - Listing the orders that rest in an account, and the positions of an account in all its symbols. What reconciles an agent asks about each order that has a row, by its identifier, and about the position of the account in the symbol of the agent (FR-BIN-7, FR-BIN-8): see "Reconciling" in [orders.md](orders.md).
 - The account event feed for market data, and anything of an event but which symbol it is about. An event is a signal, and what changed is asked.
+- Reading the prices of every symbol of a market with one call, where many are followed. Each price that is followed is a read of its own.
 - A count of the connections that the account event feeds hold, for the operator status screen (FR-OPS-2).
 - Noticing a connection of a feed that is dead without saying so before the network does. Binance asks every connection whether it is still there, and the gateway answers, but it does not ask Binance. Until the connection breaks, what changes in the account is found by the reconciliation that runs on a schedule.
 - Breakers for repeated failures of Binance (NFR-REL-4). That a read of market data which failed is not made again for 5 seconds is none.

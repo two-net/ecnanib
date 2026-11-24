@@ -48,6 +48,8 @@ services.AddBackgroundJob<CatalogSyncJob>();
 
 That is all. The platform's scheduler runs every registered job; a component starts no hosted service of its own for scheduled work, because that would run on every instance, without the lock.
 
+**What serves the pages that an instance has open is no job.** A page that follows what changes is served by the instance that its connection is to, so each running instance listens to what the database says, with `LiveListener` in `Platform`, and reads the prices that its pages follow, with `IExchangePriceWatch` of the Exchange Gateway. Both begin with the first page that follows, need no lock of the background work, and keep nothing in the database. See [live-updates.md](live-updates.md).
+
 **What a user asks for is no job.** A test cycle of an agent runs inside the request that asked for it, on whichever instance serves the request, and returns when it has ended: it places no order, and what it stores is its own record, so it needs no lock of the background work (FR-CYC-12). See "A test cycle" in [cycles.md](cycles.md).
 
 The jobs that the application has so far:

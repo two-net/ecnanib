@@ -2,16 +2,18 @@
 @attribute [Authorize]
 @using Ecnanib.Agents
 @using Ecnanib.Notifications
+@using Ecnanib.Platform.LiveUpdates
 @using Ecnanib.Shared
 @using Ecnanib.WebUi.Pages.Account
 @using Ecnanib.WebUi.Pages.Notifications
 @inject IStoredAgents Agents
 @inject IAgentControls Controls
 @inject INotifications Notifications
+@inject ILiveSignals Live
 @inject NavigationManager Navigation
 
 @*
-    Rendered on the server for each request, and never interactive. The page says what state an
+    Rendered on the server for each request. The page says what state an
     agent of the user is in, what the state means, and why the agent is in it, and lists the
     changes of its state with their causes and times (FR-AGT-10, NFR-USA-2). Its forms start,
     pause, and resume the agent: each is offered in the states that AgentStates.After names, and
@@ -26,7 +28,12 @@
     service has to tell the user about the agent, and they have not read, is said first: that a
     stop-loss could not be placed, and what became of the position (FR-RSK-7, FR-NTF-1). Each
     has a form that marks it as read, which takes it off this page: it stays on the page of the
-    notifications.
+    notifications. The page follows what changes (FR-NTF-2): when the agent, what it holds, or a
+    notification of its user changes, the page asks for itself again, so its state, its controls,
+    and its notifications are those of now without a manual refresh. And two parts are written
+    to it over its connection as they change: the steps of a cycle of the agent that runs, and
+    its open position with the price that it is valued at. A page that answers a form asks for
+    itself again on nothing: what the form answered stays on it. See docs/live-updates.md.
 *@
 
 @if (_agent is not null)
@@ -94,6 +101,16 @@
         @* A daily loss limit halts until the next UTC day (FR-RSK-8): the page says when that is. *@
         <p>@AgentPages.HaltEnds(ends)</p>
     }
+
+    @* What the agent does and holds now, written over the connection of the page as it changes. *@
+    <LiveUpdates AgentId="@_agent.Id"
+                 Follows="@Followed"
+                 Shows="@(LiveShows.Cycle | LiveShows.Position)"
+                 Market="@_agent.Market"
+                 Mode="@_agent.Mode"
+                 Symbol="@_agent.Symbol"
+                 QuoteAsset="@_agent.QuoteAsset"
+                 Since="@_since" />
 
     <h2>Controls</h2>
 
@@ -217,6 +234,11 @@
     // The controls that this page has a form for. Stopping has a page of its own.
     private static readonly AgentControl[] Moves = [AgentControl.Start, AgentControl.Pause, AgentControl.Resume];
 
+    // What the page asks for itself again on: the agent, what it holds, and what its user is told.
+    private static readonly LiveSubject[] Followed = [LiveSubject.Agent, LiveSubject.Holdings, LiveSubject.Notification];
+
+    private long _since;
+
     private AgentView? _agent;
     private AgentStateHistory? _history;
     private IReadOnlyList<NotificationView>? _notifications;
@@ -237,6 +259,9 @@
         {
             return;
         }
+
+        // Before the page reads: what changes from here on is what the page may not show.
+        _since = Live.Mark();
 
         // The agent that the path names, among those of the user of the session. An agent of
         // another user is not found, like one that does not exist.

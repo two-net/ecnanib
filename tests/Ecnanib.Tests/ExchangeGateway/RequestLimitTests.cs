@@ -483,6 +483,104 @@ public class RequestLimitTests
     }
 
     [Fact]
+    public async Task A_read_that_nothing_depends_on_has_room_while_less_than_half_of_the_part_is_used_and_no_call_waits()
+    {
+        using var service = new Service(share: 10);
+
+        // Nothing is used. Then nine reads at once: 45 of the 240 that a minute allows the service.
+        Assert.True(service.Limits.HasRoom(Market.Futures, TradingMode.Live));
+
+        var reads = Enumerable.Range(0, ReadsAtOnce).Select(_ => service.BalancesAsync(1)).ToList();
+        await service.SettleAsync();
+
+        Assert.True(service.Limits.HasRoom(Market.Futures, TradingMode.Live));
+
+        // A tenth read waits for its turn. What waits is what an agent asked for, and goes first.
+        var waits = service.BalancesAsync(1);
+        await service.SettleAsync();
+
+        Assert.Equal(1, service.UsageOf("Futures", TradingMode.Live).Waiting);
+        Assert.False(service.Limits.HasRoom(Market.Futures, TradingMode.Live));
+
+        // Each limit is asked about on its own.
+        Assert.True(service.Limits.HasRoom(Market.Futures, TradingMode.Demo));
+        Assert.True(service.Limits.HasRoom(Market.Spot, TradingMode.Live));
+
+        // More is asked for than flows in, for half a minute, and then the calls that wait have
+        // their turn or give up: nothing waits, and half of the part is used.
+        for (var step = 0; step < 60; step++)
+        {
+            reads.Add(service.BalancesAsync(1));
+            await service.AdvanceAsync(0.5);
+        }
+
+        await service.AdvanceAsync(10);
+        await waits;
+        await Task.WhenAll(reads);
+
+        var used = service.UsageOf("Futures", TradingMode.Live);
+        Assert.Equal(0, used.Waiting);
+        Assert.InRange(used.Used, used.Allowed / 2, used.Allowed);
+        Assert.False(service.Limits.HasRoom(Market.Futures, TradingMode.Live));
+
+        // A minute later that is no longer of the minute.
+        await service.AdvanceAsync(60);
+
+        Assert.True(service.Limits.HasRoom(Market.Futures, TradingMode.Live));
+    }
+
+    [Fact]
+    public async Task A_read_that_nothing_depends_on_has_no_room_while_binance_has_had_too_many_or_has_counted_half_of_the_part()
+    {
+        var throttling = true;
+        var counted = 0;
+        using var service = new Service(share: 10, answer: request =>
+        {
+            if (request.RequestUri!.Host.StartsWith("futures-live.", StringComparison.Ordinal))
+            {
+                if (!throttling)
+                {
+                    return null;
+                }
+
+                var answer = StandInSystem.Json(HttpStatusCode.TooManyRequests, TooMany);
+                answer.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(30));
+
+                return answer;
+            }
+
+            // The test environment says what it has counted, which may be more than the limiter did.
+            var documented = Service.Documented(request);
+            documented.Headers.Add("X-MBX-USED-WEIGHT-1M", counted.ToString());
+
+            return documented;
+        });
+
+        // Binance signalled that it has had too many: the limit is held for as long as it said.
+        Assert.Equal(ExchangeCallOutcome.RateLimited, (await service.BalancesAsync(1)).Outcome);
+        Assert.False(service.Limits.HasRoom(Market.Futures, TradingMode.Live));
+
+        throttling = false;
+        await service.AdvanceAsync(30);
+
+        Assert.True(service.Limits.HasRoom(Market.Futures, TradingMode.Live));
+
+        // Binance has counted 119 of the 240, and then 120: another process at the same address.
+        counted = 119;
+        Assert.Equal(ExchangeCallOutcome.Succeeded, (await service.BalancesAsync(1, Market.Futures, TradingMode.Demo)).Outcome);
+        Assert.True(service.Limits.HasRoom(Market.Futures, TradingMode.Demo));
+
+        counted = 120;
+        Assert.Equal(ExchangeCallOutcome.Succeeded, (await service.BalancesAsync(1, Market.Futures, TradingMode.Demo)).Outcome);
+        Assert.False(service.Limits.HasRoom(Market.Futures, TradingMode.Demo));
+
+        // What it counted is of its minute, and says nothing of the next.
+        await service.AdvanceAsync(60);
+
+        Assert.True(service.Limits.HasRoom(Market.Futures, TradingMode.Demo));
+    }
+
+    [Fact]
     public async Task When_binance_has_counted_more_than_the_limiter_the_limiter_goes_by_what_binance_counts()
     {
         // More than the 240 that the service allows itself, of which the limiter has let through
