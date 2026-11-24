@@ -192,6 +192,7 @@ internal sealed class AgentHalts(
                         userId,
                         NotificationType.AgentResumed,
                         agentId,
+                        agent.Mode,
                         $"The agent in {agent.Symbol} ({agent.Mode}) runs again: the UTC day in which its daily loss limit halted it is over, " +
                         "and the service resumed it.",
                         cancellationToken);
@@ -228,6 +229,7 @@ internal sealed class AgentHalts(
                 userId,
                 NotificationType.AttentionRequired,
                 agentId,
+                kept.Mode,
                 $"The agent in {kept.Symbol} ({kept.Mode}) stays halted after the day of its daily loss limit: {keeps}. The service " +
                 "resumes it once that is put right. This is said once in a day for an agent.",
                 StaysSaidEvery,

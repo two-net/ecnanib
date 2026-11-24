@@ -522,6 +522,7 @@ internal sealed class AgentModelDependents(INotifications notifications, TimePro
                     userId,
                     NotificationType.ModelUnavailable,
                     agent.Id,
+                    agent.Mode,
                     Says(agent.Symbol, agent.Mode, roles),
                     cancellationToken);
 

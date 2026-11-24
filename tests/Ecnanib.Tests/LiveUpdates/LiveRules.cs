@@ -31,15 +31,16 @@ internal static class LiveRules
             "id",
             ["roles_reassigned_at"],
             Written,
-            "The list of the agents and the pages of an agent: its state, its mode, and its settings. When the service last gave " +
-            "a role another model is on the form of the agent alone, which follows nothing."),
+            "The dashboard, the list of the agents, and the pages of an agent: its state, its mode, and its settings. When the " +
+            "service last gave a role another model is on the form of the agent alone, which follows nothing."),
 
         ["positions"] = new(
             LiveSubject.Holdings,
             "agent_id",
             ["alerted_at", "funding_due_at"],
             Written,
-            "The position of an agent on the page of its state, and whether it has one, which the list says as well."),
+            "The position of an agent on the page of its state, and whether it has one, which the list says as well. The open " +
+            "positions of the dashboard, and the prices that are followed for it."),
 
         ["orders"] = new(
             LiveSubject.Holdings,
@@ -54,14 +55,15 @@ internal static class LiveRules
             "agent_id",
             [],
             Written,
-            "The list of the cycles of an agent."),
+            "The list of the cycles of an agent, and the recent decisions of the dashboard."),
 
         ["notifications"] = new(
             LiveSubject.Notification,
             "agent_id",
             ["email_pending", "emailed_at"],
             Written,
-            "The page of the notifications, those of an agent on the page of its state, and the count in the bar of a page that follows."),
+            "The page of the notifications, those of an agent on the page of its state, the alerts of the dashboard, and the count " +
+            "in the bar of a page that follows."),
 
         ["sessions"] = new(
             LiveSubject.Session,

@@ -165,6 +165,9 @@ internal sealed class KeyValidator(
                         userId,
                         NotificationType.KeyInvalid,
                         agentId: null,
+
+                        // A key of an AI provider is of no mode: the agents of both use it.
+                        mode: null,
                         $"Your key for {await NameOfAsync(context, provider, cancellationToken)} was refused by the provider, and is invalid. " +
                         "The agents that ran with it wait for you. Store a key that works on the page of your keys, and resume them.",
                         cancellationToken);
@@ -266,6 +269,7 @@ internal sealed class KeyValidator(
                     userId,
                     NotificationType.KeyInvalid,
                     agentId: null,
+                    environment,
                     $"Your Binance key for {environment} can withdraw, as Binance reports, so the service deleted it: it keeps no key that " +
                     "can withdraw. The agents that ran with it wait for you. Store a key without the permission to withdraw on the page " +
                     "of your keys, and resume them.",
@@ -339,6 +343,7 @@ internal sealed class KeyValidator(
                         userId,
                         NotificationType.KeyInvalid,
                         agentId: null,
+                        environment,
                         $"Your Binance key for {environment} was refused by Binance, and is invalid. The agents that ran with it wait " +
                         "for you. Store a key that works on the page of your keys, and resume them.",
                         cancellationToken);

@@ -32,6 +32,7 @@ public class LiveFeedTests
     private const string Grace = "grace@example.com";
 
     private static readonly LivePrice Bitcoin = new(Market.Spot, TradingMode.Demo, "BTCUSDT", ExchangePriceKind.LastTraded);
+    private static readonly LivePrice BitcoinMark = new(Market.Futures, TradingMode.Demo, "BTCUSDT", ExchangePriceKind.Mark);
 
     [Fact]
     public async Task When_something_that_a_page_follows_changes_the_page_asks_for_itself_again_a_moment_later()
@@ -303,6 +304,155 @@ public class LiveFeedTests
 
         // A page that is gone follows nothing.
         await feed.DisposeAsync();
+        Assert.Empty(feeding.Prices.Followed);
+    }
+
+    [Fact]
+    public async Task A_page_that_values_what_its_user_holds_has_the_prices_of_that_followed_and_asks_for_itself_again_when_each_is_first_read()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var grace = await feeding.SignedInAsync(Grace);
+        var spot = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Spot");
+        var futures = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Futures", market: Market.Futures);
+        var hers = await application.GiveAgentAsync(grace.User.Id, Feeding.Morning, name: "Hers", symbol: "ETHUSDT");
+        var page = new StandInPage("/dashboard");
+
+        await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Idle", symbol: "SOLUSDT");
+        await application.GiveTradeAsync(ada.User.Id, spot, Feeding.Morning, closed: false);
+        await application.GiveTradeAsync(ada.User.Id, futures, Feeding.Morning, closed: false);
+        await application.GiveTradeAsync(grace.User.Id, hers, Feeding.Morning, closed: false);
+
+        // The dashboard: a page of every agent of its user, which values what they hold.
+        await using var feed = feeding.Open(ada.Connection, page, shows: LiveShows.Cycle, values: true);
+
+        // As the page is written, nothing is followed: it is written with the prices that the
+        // watch has, and asks Binance for none.
+        await feed.ReadAsync(TestContext.Current.CancellationToken);
+        Assert.Empty(feeding.Prices.Followed);
+
+        // Once its connection is made, the prices of what its user holds are followed: the
+        // price that each position is valued at, of the symbols of Ada alone. An agent that
+        // holds nothing has no price here, and neither has an agent of Grace.
+        feed.Follow();
+        await Wait.UntilAsync(() => feeding.Prices.Followed.Count == 2, "the feed to follow the prices of what its user holds");
+
+        Assert.Equal([Bitcoin, BitcoinMark], feeding.Prices.Followed.OrderBy(price => price.Kind));
+        Assert.Equal(0, page.Asked);
+
+        // The first read of a price: the page was written without it, and asks for itself again.
+        feeding.Prices.Say(Bitcoin, new WatchedPrice(100_250m, Feeding.Morning));
+        await AsksAsync(feeding, page, 1);
+
+        // What is read of it after that asks for nothing: the figures of the page say the time
+        // of their prices, and are worked out anew when something that the page shows changes.
+        for (var second = 1; second <= 3; second++)
+        {
+            feeding.Prices.Say(Bitcoin, new WatchedPrice(100_250m + second, Feeding.Morning.AddSeconds(second)));
+        }
+
+        await TakenAsync(feeding, ada.User, spot, page);
+        feeding.Clock.Advance(TimeSpan.FromSeconds(5));
+        await TakenAsync(feeding, ada.User, spot, page);
+        Assert.Equal(1, page.Asked);
+
+        // The other price is read for the first time, and the page asks once more.
+        feeding.Prices.Say(BitcoinMark, new WatchedPrice(99_400m, Feeding.Morning.AddSeconds(4)));
+        await AsksAsync(feeding, page, 2);
+
+        // Nothing is written over the connection for it, and nothing fails.
+        Assert.Null(feed.State.Position);
+        Assert.Null(page.Failed);
+
+        // A page that is gone follows nothing.
+        await feed.DisposeAsync();
+        Assert.Empty(feeding.Prices.Followed);
+    }
+
+    [Fact]
+    public async Task The_prices_that_are_followed_for_a_page_are_those_of_what_its_user_holds_now()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var spot = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Spot");
+        var futures = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, name: "Futures", market: Market.Futures);
+        var page = new StandInPage("/dashboard");
+
+        var held = await application.GiveTradeAsync(ada.User.Id, spot, Feeding.Morning, closed: false);
+
+        await using var feed = feeding.Open(ada.Connection, page, shows: LiveShows.Cycle, values: true);
+        feed.Follow();
+        await Wait.UntilAsync(() => feeding.Prices.Followed.Count == 1, "the feed to follow the price of the position");
+        Assert.Equal([Bitcoin], feeding.Prices.Followed);
+
+        feeding.Prices.Say(Bitcoin, new WatchedPrice(100_250m, Feeding.Morning));
+        await AsksAsync(feeding, page, 1);
+
+        // Another agent opens a position, as the database says, whatever wrote it: its price is
+        // followed as well, and the price that is followed already stays as it is.
+        await application.GiveTradeAsync(ada.User.Id, futures, Feeding.Morning, closed: false);
+        await Wait.UntilAsync(() => feeding.Prices.Followed.Count == 2, "the feed to follow the price of the new position");
+
+        Assert.Equal([Bitcoin, BitcoinMark], feeding.Prices.Followed.OrderBy(price => price.Kind));
+
+        // Its first read asks, and a read of the one that was read before does not.
+        feeding.Prices.Say(Bitcoin, new WatchedPrice(100_300m, Feeding.Morning.AddSeconds(1)));
+        await TakenAsync(feeding, ada.User, spot, page);
+        feeding.Clock.Advance(TimeSpan.FromSeconds(5));
+        await TakenAsync(feeding, ada.User, spot, page);
+        Assert.Equal(1, page.Asked);
+
+        feeding.Prices.Say(BitcoinMark, new WatchedPrice(99_400m, Feeding.Morning.AddSeconds(2)));
+        await AsksAsync(feeding, page, 2);
+
+        // The first position is closed: its price is let go of, and the other is followed on.
+        await using (var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken))
+        {
+            await context.Set<Position>()
+                .Where(position => position.Id == held)
+                .ExecuteUpdateAsync(row => row.SetProperty(position => position.ClosedAt, (DateTimeOffset?)Feeding.Morning), TestContext.Current.CancellationToken);
+        }
+
+        await Wait.UntilAsync(() => feeding.Prices.Followed.Count == 1, "the feed to let go of the price of the closed position");
+        Assert.Equal([BitcoinMark], feeding.Prices.Followed);
+    }
+
+    [Fact]
+    public async Task No_price_is_followed_for_a_page_that_values_nothing_or_whose_session_has_ended()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
+        var list = new StandInPage("/agents");
+        var dashboard = new StandInPage("/dashboard");
+
+        await application.GiveTradeAsync(ada.User.Id, agent, Feeding.Morning, closed: false);
+
+        // The list of the agents follows what changes, and values nothing: no price is read for it.
+        await using var plain = feeding.Open(ada.Connection, list, follows: [LiveSubject.Holdings], shows: LiveShows.Cycle);
+        plain.Follow();
+        await TakenAsync(feeding, ada.User, agent, list);
+
+        Assert.Empty(feeding.Prices.Followed);
+
+        feeding.Prices.Say(Bitcoin, new WatchedPrice(100_250m, Feeding.Morning));
+        await TakenAsync(feeding, ada.User, agent, list);
+        feeding.Clock.Advance(TimeSpan.FromSeconds(5));
+        await TakenAsync(feeding, ada.User, agent, list);
+        Assert.Equal(0, list.Asked);
+
+        // The dashboard has it followed, until the session of its connection ends: then nothing
+        // of its user is followed any more, and no price is read for a page that nobody may see.
+        await using var valuing = feeding.Open(ada.Connection, dashboard, shows: LiveShows.Cycle, values: true);
+        valuing.Follow();
+        await Wait.UntilAsync(() => feeding.Prices.Followed.Count == 1, "the feed of the dashboard to follow the price");
+
+        await ada.Browser.SignOutAsync();
+        await Wait.UntilAsync(() => dashboard.Left == 1 && list.Left == 1, "the browser to be told to load the pages anew");
+
         Assert.Empty(feeding.Prices.Followed);
     }
 
@@ -613,6 +763,14 @@ public class LiveFeedTests
 
         // What the form answered stays on the page: the page would lose it by asking again.
         Assert.Equal(follows ? [LiveSubject.Agent, LiveSubject.Holdings] : [], view.Follows);
+
+        // A page says so when it values what its user holds, and no other page does. One that
+        // answers a form values nothing either: a price that is read would have it ask again.
+        Assert.False(view.Values);
+        Assert.Equal(
+            follows,
+            LiveView.Of(request, agentId: null, [LiveSubject.Holdings], LiveShows.None, market: null, mode: null, symbol: null, quoteAsset: null, since: 42, values: true)
+                .Values);
 
         // Its parts are written over its connection all the same, and it says where it is asked for.
         Assert.Equal(

@@ -7,7 +7,9 @@ namespace Ecnanib.DecisionEngine;
 
 /// <summary>
 /// The open position of an agent, for the page of the agent: positions update in the UI without
-/// a manual refresh (FR-NTF-2). See "The position on a page" in docs/orders.md.
+/// a manual refresh (FR-NTF-2). And the symbols that the agents of a user hold, for the
+/// dashboard, which follows their prices (FR-RPT-1). See "The position on a page" in
+/// docs/orders.md.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,7 +28,22 @@ public interface IOpenPositions
     /// <param name="agentId">The agent.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     Task<OpenPosition?> OfAgentAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The symbols that the agents of a user hold a position in, each once, with its market and
+    /// its mode: what a page of every agent of the user follows the prices of, so that the
+    /// positions can be valued (FR-RPT-1). It says nothing else of the positions.
+    /// </summary>
+    /// <param name="userId">The user whose agents they are.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    Task<IReadOnlyList<HeldSymbol>> HeldByUserAsync(Guid userId, CancellationToken cancellationToken);
 }
+
+/// <summary>A symbol that an agent of a user holds a position in.</summary>
+/// <param name="Market">The market that the position is on.</param>
+/// <param name="Mode">The mode that the position was opened in.</param>
+/// <param name="Symbol">The symbol.</param>
+public sealed record HeldSymbol(Market Market, TradingMode Mode, string Symbol);
 
 /// <summary>The open position of an agent, as a page says it.</summary>
 /// <param name="Market">The market that it is on.</param>
@@ -122,7 +139,46 @@ internal sealed class OpenPositions(IDbContextFactory<EcnanibDbContext> contexts
             return null;
         }
 
-        var (stopLoss, takeProfit) = RestingOrders.Protecting(await RestingOrders.OfAsync(context, agentId, cancellationToken), position);
+        return Of(position, await RestingOrders.OfAsync(context, agentId, cancellationToken));
+    }
+
+    public async Task<IReadOnlyList<HeldSymbol>> HeldByUserAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        // Asked for by owner: what the agents of another user hold is not found. A user has
+        // few open positions, which the index of their positions by when they were closed holds.
+        var held = await context.Set<Position>()
+            .AsNoTracking()
+            .OwnedBy(userId)
+            .Where(position => position.ClosedAt == null)
+            .Select(position => new { position.Market, position.Mode, position.Symbol })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return
+        [
+            .. held
+                .OrderBy(symbol => symbol.Mode)
+                .ThenBy(symbol => symbol.Market)
+                .ThenBy(symbol => symbol.Symbol, StringComparer.Ordinal)
+                .Select(symbol => new HeldSymbol(symbol.Market, symbol.Mode, symbol.Symbol)),
+        ];
+    }
+
+    /// <summary>
+    /// An open position as a page says it, with its protection among the orders of its agent
+    /// that rest on the exchange: the price of its stop-loss, and that of its take-profit, each
+    /// when an order rests for it. The page of an agent and the dashboard say it by this rule.
+    /// </summary>
+    /// <param name="position">The position, as it is stored.</param>
+    /// <param name="resting">The orders of its agent that rest on the exchange: see <see cref="RestingOrders.OfAsync"/>.</param>
+    public static OpenPosition Of(Position position, IReadOnlyList<Order> resting)
+    {
+        ArgumentNullException.ThrowIfNull(position);
+        ArgumentNullException.ThrowIfNull(resting);
+
+        var (stopLoss, takeProfit) = RestingOrders.Protecting(resting, position);
 
         return new OpenPosition(
             position.Market,

@@ -276,6 +276,7 @@ internal sealed class RoleReassignments(
                 agent.UserId,
                 NotificationType.RolesReassigned,
                 agent.Id,
+                agent.Mode,
                 Says(agent, change, recommendations.Of(change.Role, change.From?.ModelId), trading.RoleReassignmentDays, warning),
                 CancellationToken.None);
         }

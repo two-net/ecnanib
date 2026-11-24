@@ -431,7 +431,8 @@ The Decision Engine keeps the positions and the orders, so it answers those that
 | `IAgentExposure` of Agents | An agent has an open position or orders while it has a position without a time of closing, or an order that is not over. It has an open position, as far as stopping it goes, also while an entry of it is not over: such an entry may open one. `ClosePositionAtMarketAsync` is `IPlanOrders.CloseAtMarketAsync`, and `AccountConflictAsync` is `IPlanOrders.AccountConflictAsync`: see "The account of Futures". See [agents.md](agents.md). |
 | `IAgentHoldings` | The open position, with the prices of the stop-loss and of the take-profit that rest for it, and the orders that rest: an entry that has not filled, a stop-loss, and a take-profit. A take-profit is said when an order rests for it, on either market. The equity of the agent, its equity as the UTC day began, and its peak equity: see "The equity of an agent", and "What an agent holds" in [cycles.md](cycles.md). |
 | `IReconciliation` | Whether the agent is settled, and whether it was reconciled since the application took up the background work, where it holds something from before. See "Settling" and "Reconciling". |
-| `IOpenPositions` | The open position of an agent, for the page of the agent, to its user alone. See "The position on a page". |
+| `IOpenPositions` | The open position of an agent, for the page of the agent, to its user alone. And the symbols that the agents of a user hold a position in, for the dashboard, whose prices are followed. See "The position on a page". |
+| `IAgentEquities` | The equity of each agent of a user, with what it made in the UTC day and its open position, for the dashboard, to that user alone. See "The equity of an agent", and [dashboard.md](dashboard.md). |
 
 ### The position on a page
 
@@ -441,11 +442,14 @@ Positions and prices update in the UI within 2 seconds, without a manual refresh
 public interface IOpenPositions
 {
     Task<OpenPosition?> OfAgentAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<HeldSymbol>> HeldByUserAsync(Guid userId, CancellationToken cancellationToken);
 }
 
 public sealed record OpenPosition(
     Market Market, TradingMode Mode, string Symbol, string QuoteAsset, PositionSide Side, decimal Quantity,
     decimal EntryPrice, decimal? StopLoss, decimal? TakeProfit, DateTimeOffset OpenedAt);
+
+public sealed record HeldSymbol(Market Market, TradingMode Mode, string Symbol);
 ```
 
 | Rule | Detail |
@@ -456,6 +460,9 @@ public sealed record OpenPosition(
 | **What it is worth is one rule.** | `PositionValues` says which price a position is valued at, the mark price on Futures and the price that the symbol last traded at on Spot, and what a position would make at a price: how far the price is from its entry, in its direction, times what it holds. The equity of an agent is worked out with it, and so is what the page says: see "The equity of an agent". |
 | **The page works it out from a price that is followed.** | The price is read once a second for everyone who follows it, and written to the page as it is read: see "Following a price" in [exchange.md](exchange.md). What the page says the position would make is before fees and funding, and says so. |
 | **The page follows what the agent holds.** | The database says when a position or an order of the agent is written, whatever wrote it, and the page reads the position again: see "What the database says" in [live-updates.md](live-updates.md). Nothing of what places the orders says so itself. |
+
+| **The symbols that a user holds are said each once.** | `HeldByUserAsync` gives the symbols that the agents of a user hold a position in, each with its market and its mode, by owner, and nothing else of the positions. The feed of the dashboard follows the price that each is valued at, so that the watch has it when the dashboard is written: see "The feed of a page" in [live-updates.md](live-updates.md). Two agents that hold the same symbol on the same market in the same mode are one price. |
+| **The dashboard says the positions of every agent by the same rules.** | `OpenPositions.Of` makes the position of a page from its row and the orders of its agent that rest, for the page of the agent and for the dashboard alike. The dashboard reads the positions with the equity of their agents, in one snapshot: see "The equity of an agent". |
 
 `OpenPositionTests` holds it to the rules above, and `LivePageTests` and `LiveFeedTests` hold the page to what it says.
 
@@ -492,6 +499,16 @@ The result of agent {AgentId} is not known: an order that closed a part of a pos
 ```
 
 `equity_marks` keeps what the loss limits are counted from, for an agent in a mode, and `equity_snapshots` the equity itself over time: see "The equity of an agent over time" and "The record of an order".
+
+**The dashboard reads the equity of every agent of a user by the same rule** (FR-RPT-1), with `IAgentEquities`. `AgentEquityTests` holds it to what follows.
+
+| Rule | Detail |
+|---|---|
+| **What is settled is read by the one rule.** | `AgentResults.RowsAsync` reads what is settled of the result of an agent, its open position, and its marks, with the context that it is given: the reads of `AgentResults.OfAsync` and of `IAgentEquities` are the same reads. `IAgentEquities` asks it about every agent of the user in one snapshot. |
+| **The price is the one that a page follows, and not one that the exchange is asked for.** | `IExchangePriceWatch.Latest`, for the same price of the same symbol: a page never waits for Binance. The watch has the price of what someone follows, and the feed of the dashboard follows what its user holds. So the equity that the dashboard says is the equity that a cycle would find at that price. |
+| **A price that the watch does not have is an equity that is not known.** | As a price that cannot be read is, above: it is said as not known, and never as a number. It is no warning in the log: nobody has asked for that price yet. |
+| **What the agent made in the UTC day is its result now, less its result as the day began.** | By `EquityMarks.At`, which the daily loss limit is counted from: see "The loss limits" in [risk-guard.md](risk-guard.md). It writes no mark. |
+| **It is asked for by owner.** | The agents of the user are read by owner, and everything else by those agents. The Decision Engine may not use Accounts, so the page hands it the user who is signed in. |
 
 **What is counted by an estimate, and what is not counted:**
 
@@ -743,6 +760,7 @@ The job that reconciles runs in no application of the tests on a schedule either
 | Order and position changes are tracked through the exchange's account event feed where available | `AccountFeedJobTests`, and `AccountFeedTests` for the gateway |
 | Reconciliation runs at startup and every 5 minutes | `ReconciliationJobTests` |
 | Agent equity is the allocated capital plus the net profit or loss to date, with unrealized profit and loss | `AgentResultTests`, and `EquityMarkTests` for the equity as the UTC day began and the peak |
+| The dashboard shows total equity across agents, profit and loss for the day, and open positions, per mode | `AgentEquityTests` and `EquityTotalsTests`, `OpenPositionTests` for the symbols that a user holds, and `DashboardPageTests` of `tests/Ecnanib.Tests/Dashboard` for the page |
 | Fees and funding payments are taken from exchange data and included in every profit and loss figure | `AgentResultTests` and `PositionResultTests`, with a fee in the asset that was bought and one in BNB, and `MarketDataTests` and `SettingsFileTests` for the symbols that price a fee |
 | For every closed position the system records net profit or loss, the result in R, fees, funding, holding time, and exit reason | `PositionResultTests`, and `PositionResultsJobTests` for the job |
 | Each closed position is linked to its agent, market, timeframe, symbol, mode, and the model that held each role | `PositionResultTests`, and `OrderRecordTests` for whose the rows are |

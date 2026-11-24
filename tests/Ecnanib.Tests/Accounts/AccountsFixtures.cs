@@ -263,6 +263,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>The open position of an agent, as the page of the agent says it.</summary>
     public IOpenPositions OpenPositions => _application.Services.GetRequiredService<IOpenPositions>();
 
+    /// <summary>The equity of each agent of a user, as the dashboard shows it.</summary>
+    public IAgentEquities AgentEquities => _application.Services.GetRequiredService<IAgentEquities>();
+
     /// <summary>The price of a symbol as it changes, for the pages that show it.</summary>
     public IExchangePriceWatch PriceWatch => _application.Services.GetRequiredService<IExchangePriceWatch>();
 

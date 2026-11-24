@@ -1,5 +1,6 @@
 using Ecnanib.Accounts;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Shared;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.Notifications;
@@ -15,17 +16,23 @@ internal sealed class StoredNotifications(
     public const int Shown = 20;
 
     public async Task RaiseAsync(
-        Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken)
+        Guid userId, NotificationType type, Guid? agentId, TradingMode? mode, string content, CancellationToken cancellationToken)
     {
         Check(content);
 
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
 
-        await AddAsync(context, userId, type, agentId, content, cancellationToken);
+        await AddAsync(context, userId, type, agentId, mode, content, cancellationToken);
     }
 
     public async Task RaiseInAsync(
-        EcnanibDbContext context, Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken)
+        EcnanibDbContext context,
+        Guid userId,
+        NotificationType type,
+        Guid? agentId,
+        TradingMode? mode,
+        string content,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         Check(content);
@@ -37,30 +44,40 @@ internal sealed class StoredNotifications(
         }
 
         // Written inside the transaction of whoever asked, and stands for a row that is stored with it.
-        await AddAsync(context, userId, type, agentId, content, cancellationToken);
+        await AddAsync(context, userId, type, agentId, mode, content, cancellationToken);
     }
 
     public async Task<bool> RaiseOnceAsync(
-        Guid userId, NotificationType type, Guid agentId, string content, TimeSpan within, CancellationToken cancellationToken)
+        Guid userId,
+        NotificationType type,
+        Guid agentId,
+        TradingMode mode,
+        string content,
+        TimeSpan within,
+        CancellationToken cancellationToken)
     {
         var since = clock.GetUtcNow() - within;
 
         await using (var context = await contexts.CreateDbContextAsync(cancellationToken))
         {
             // Asked for by owner. Two that ask at the same moment may both raise one: it is
-            // said twice then, which loses nothing.
+            // said twice then, which loses nothing. What was said of the agent in the other
+            // mode is not the same thing said again: an agent that was switched is told anew.
             if (await context.Set<Notification>()
                 .AsNoTracking()
                 .OwnedBy(userId)
                 .AnyAsync(
-                    notification => notification.AgentId == agentId && notification.Type == type && notification.CreatedAt > since,
+                    notification => notification.AgentId == agentId
+                        && notification.Type == type
+                        && notification.Mode == mode
+                        && notification.CreatedAt > since,
                     cancellationToken))
             {
                 return false;
             }
         }
 
-        await RaiseAsync(userId, type, agentId, content, cancellationToken);
+        await RaiseAsync(userId, type, agentId, mode, content, cancellationToken);
 
         return true;
     }
@@ -111,6 +128,50 @@ internal sealed class StoredNotifications(
         var pages = Math.Max((total + NotificationList.PageSize - 1) / NotificationList.PageSize, 1);
 
         return new NotificationList(notifications, page, pages, total, unread, latest);
+    }
+
+    public async Task<UnreadByMode> UnreadByModeAsync(HttpContext request)
+    {
+        var userId = SignedInUser.RequiredIdOf(request);
+        var cancellationToken = request.RequestAborted;
+
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        // The counts and the lists as they were at one moment: a notification that is raised
+        // or read meanwhile is in all of the answer, or in none of it.
+        await using var snapshot = await context.BeginSnapshotAsync(cancellationToken);
+
+        // Asked for by owner, each of them: what another user has not read is not counted and
+        // not found. A user has few that they have not read, which an index of their own holds.
+        var unread = context.Set<Notification>().AsNoTracking().OwnedBy(userId).Where(notification => !notification.IsRead);
+
+        var totals = await unread
+            .GroupBy(notification => notification.Mode)
+            .Select(group => new { Mode = group.Key, Total = group.Count() })
+            .ToListAsync(cancellationToken);
+
+        async Task<UnreadOfMode> OfAsync(TradingMode? mode)
+        {
+            var total = totals.SingleOrDefault(counted => counted.Mode == mode)?.Total ?? 0;
+
+            if (total == 0)
+            {
+                return new UnreadOfMode([], 0);
+            }
+
+            return new UnreadOfMode(
+                await Views(
+                        unread
+                            .Where(notification => notification.Mode == mode)
+                            .OrderByDescending(notification => notification.CreatedAt)
+                            .ThenByDescending(notification => notification.Id)
+                            .Take(UnreadByMode.Shown))
+                    .ToListAsync(cancellationToken),
+                total);
+        }
+
+        // Each mode is asked for on its own, and none of them through the other (FR-BIN-11).
+        return new UnreadByMode(await OfAsync(TradingMode.Live), await OfAsync(TradingMode.Demo), await OfAsync(null));
     }
 
     public async Task<int> UnreadCountAsync(HttpContext request)
@@ -175,7 +236,13 @@ internal sealed class StoredNotifications(
 
     /// <summary>Writes the row of a notification with a context, and saves the context.</summary>
     private async Task AddAsync(
-        EcnanibDbContext context, Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken)
+        EcnanibDbContext context,
+        Guid userId,
+        NotificationType type,
+        Guid? agentId,
+        TradingMode? mode,
+        string content,
+        CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
 
@@ -185,7 +252,7 @@ internal sealed class StoredNotifications(
             && await context.Set<EmailOptIn>().AsNoTracking().OwnedBy(userId).AnyAsync(cancellationToken);
 
         context.Set<Notification>().Add(
-            new Notification(Guid.CreateVersion7(now), userId, type, agentId, content, isRead: false, now, emailPending, emailedAt: null));
+            new Notification(Guid.CreateVersion7(now), userId, type, agentId, mode, content, isRead: false, now, emailPending, emailedAt: null));
 
         await context.SaveChangesAsync(cancellationToken);
 
@@ -196,18 +263,31 @@ internal sealed class StoredNotifications(
 
     private static IQueryable<NotificationView> Views(IQueryable<Notification> notifications) =>
         notifications.Select(notification => new NotificationView(
-            notification.Id, notification.Type, notification.AgentId, notification.Content, notification.IsRead, notification.CreatedAt));
+            notification.Id,
+            notification.Type,
+            notification.AgentId,
+            notification.Content,
+            notification.IsRead,
+            notification.CreatedAt,
+            notification.Mode));
 }
 
 /// <summary>A notification of a user, as the export of their data holds it.</summary>
 /// <param name="Type">What it is about.</param>
 /// <param name="AgentId">The agent that it is about, or null when it is about none.</param>
+/// <param name="Mode">The mode that it is about, or null when it is about none.</param>
 /// <param name="Content">What it says.</param>
 /// <param name="IsRead">Whether its user has read it.</param>
 /// <param name="CreatedAt">When it was raised.</param>
 /// <param name="EmailedAt">When it was sent to the user by email as well, or null when it was not.</param>
 public sealed record ExportedNotification(
-    NotificationType Type, Guid? AgentId, string Content, bool IsRead, DateTimeOffset CreatedAt, DateTimeOffset? EmailedAt);
+    NotificationType Type,
+    Guid? AgentId,
+    TradingMode? Mode,
+    string Content,
+    bool IsRead,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? EmailedAt);
 
 /// <summary>The notifications of a user, for the export of their data (NFR-SEC-9, FR-NTF-1).</summary>
 internal sealed class NotificationsExport : IExportedPart
@@ -229,6 +309,7 @@ internal sealed class NotificationsExport : IExportedPart
             .. notifications.Select(notification => new ExportedNotification(
                 notification.Type,
                 notification.AgentId,
+                notification.Mode,
                 notification.Content,
                 notification.IsRead,
                 notification.CreatedAt,

@@ -127,6 +127,12 @@ internal sealed class DecisionCycleConfiguration : IEntityTypeConfiguration<Deci
         // of the key below.
         builder.HasIndex(cycle => new { cycle.AgentId, cycle.UserId, cycle.ClosedAt });
 
+        // The cycles of one user in a mode, in the order of their closes: the recent decisions
+        // that the dashboard lists for each mode (FR-RPT-1). No other index starts with the
+        // owner, and the one above would read every cycle of an agent that never ran in the
+        // mode that is asked for.
+        builder.HasIndex(cycle => new { cycle.UserId, cycle.Mode, cycle.ClosedAt });
+
         // The cycles of an agent go with it when it is deleted, and with the account when that
         // is. The key carries the owner along, so the cycle of an agent is its user's (NFR-DAT-9).
         builder.HasOne<Agent>()

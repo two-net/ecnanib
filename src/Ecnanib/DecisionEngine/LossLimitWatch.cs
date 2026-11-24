@@ -336,6 +336,7 @@ internal sealed class LossLimitWatch(
                 agent.UserId,
                 NotificationType.ProtectionFailure,
                 agent.Id,
+                agent.Mode,
                 $"The position of the halted agent in {agent.Symbol} ({agent.Mode}) could not be closed at market. It is open as it was, " +
                 "and the service tries again within minutes. Close it with \"Close position now\", or at Binance. " +
                 "This is said once in an hour for an agent.",
@@ -369,7 +370,7 @@ internal sealed class LossLimitWatch(
 
         try
         {
-            await notifications.RaiseAsync(agent.UserId, NotificationType.AgentHalted, agent.Id, content, CancellationToken.None);
+            await notifications.RaiseAsync(agent.UserId, NotificationType.AgentHalted, agent.Id, agent.Mode, content, CancellationToken.None);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {

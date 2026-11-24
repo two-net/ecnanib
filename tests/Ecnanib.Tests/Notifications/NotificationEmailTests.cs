@@ -67,7 +67,7 @@ public class NotificationEmailTests
         Assert.Contains("Email for critical events: off.", await client.PageAsync("/account"));
 
         // A critical event, for a user who has not opted in: it is a notification, and no email.
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, Halted, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, mode: null,Halted, Cancellation);
         await application.SendNotificationEmailsAsync();
 
         Assert.Empty(Critical(application));
@@ -103,11 +103,11 @@ public class NotificationEmailTests
 
         // Two critical events, and one that is none, a minute apart.
         clock.Set(Morning.AddMinutes(1));
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, Halted, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, mode: null,Halted, Cancellation);
         clock.Set(Morning.AddMinutes(2));
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.PositionOpened, agentId: null, Opened, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.PositionOpened, agentId: null, mode: null,Opened, Cancellation);
         clock.Set(Morning.AddMinutes(3));
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.LiquidationWarning, agentId: null, Warned, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.LiquidationWarning, agentId: null, mode: null,Warned, Cancellation);
 
         // Nothing is sent by what raises one: the job sends.
         Assert.Empty(Critical(application));
@@ -153,7 +153,7 @@ public class NotificationEmailTests
 
         // One event alone is named in the subject.
         clock.Set(Morning.AddMinutes(5));
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.KeyInvalid, agentId: null, "Your key for Claude is invalid.", Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.KeyInvalid, agentId: null, mode: null,"Your key for Claude is invalid.", Cancellation);
         await application.SendNotificationEmailsAsync();
 
         Assert.Equal($"{Service}: Key invalid", Critical(application)[^1].Subject);
@@ -178,7 +178,7 @@ public class NotificationEmailTests
         var ada = await application.RegisterVerifiedAsync(Ada);
         await application.GiveEmailOptInAsync(ada.Id, Morning);
 
-        await application.Notifications.RaiseAsync(ada.Id, type, agentId: null, "Something that happened.", Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, type, agentId: null, mode: null,"Something that happened.", Cancellation);
         await application.SendNotificationEmailsAsync();
 
         Assert.Equal(critical, NotificationTypes.IsCritical(type));
@@ -227,7 +227,7 @@ public class NotificationEmailTests
         await client.SignInAsync(Ada);
         await client.SubmitAsync(Page, OnForm);
 
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, Halted, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, mode: null,Halted, Cancellation);
         Assert.True(Assert.Single(await StoredAsync(application, ada.Id)).EmailPending);
 
         // She turns it off before the job has run.
@@ -280,7 +280,7 @@ public class NotificationEmailTests
         Assert.Null(ada.EmailVerifiedAt);
 
         await application.GiveEmailOptInAsync(ada.Id, Morning);
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, Halted, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, mode: null,Halted, Cancellation);
         await application.SendNotificationEmailsAsync();
 
         // Nothing says yet that the address is hers, so nothing about her agents goes to it.
@@ -304,9 +304,9 @@ public class NotificationEmailTests
         await application.GiveEmailOptInAsync(ada.Id, Morning);
         await application.GiveEmailOptInAsync(grace.Id, Morning);
 
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, Halted, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, mode: null,Halted, Cancellation);
         clock.Set(Morning.AddMinutes(1));
-        await application.Notifications.RaiseAsync(grace.Id, NotificationType.LiquidationWarning, agentId: null, Warned, Cancellation);
+        await application.Notifications.RaiseAsync(grace.Id, NotificationType.LiquidationWarning, agentId: null, mode: null,Warned, Cancellation);
 
         // The email delivery service is away: the run fails nothing, says so once, and leaves
         // both to be sent.
@@ -338,7 +338,7 @@ public class NotificationEmailTests
         using var application = new AccountsApplication(clock: clock);
         var ada = await application.RegisterVerifiedAsync(Ada);
         await application.GiveEmailOptInAsync(ada.Id, Morning);
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, Halted, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, mode: null,Halted, Cancellation);
 
         application.Email.Failure = new InvalidOperationException("The mail server is away.");
         await application.SendNotificationEmailsAsync();
@@ -363,7 +363,7 @@ public class NotificationEmailTests
         using var application = new AccountsApplication(clock: new TestClock(Morning));
         var ada = await application.RegisterVerifiedAsync(Ada);
         await application.GiveEmailOptInAsync(ada.Id, Morning);
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, Halted, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, mode: null,Halted, Cancellation);
         await application.SendNotificationEmailsAsync();
 
         Assert.Single(Critical(application));
@@ -416,8 +416,8 @@ public class NotificationEmailTests
         Assert.Equal(before, application.RowsOf(grace.Id));
 
         // A critical event of Ada's is sent to nobody, and one of Grace's to Grace alone.
-        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, Halted, Cancellation);
-        await application.Notifications.RaiseAsync(grace.Id, NotificationType.LiquidationWarning, agentId: null, Warned, Cancellation);
+        await application.Notifications.RaiseAsync(ada.Id, NotificationType.AgentHalted, agentId: null, mode: null,Halted, Cancellation);
+        await application.Notifications.RaiseAsync(grace.Id, NotificationType.LiquidationWarning, agentId: null, mode: null,Warned, Cancellation);
         await application.SendNotificationEmailsAsync();
 
         var message = Assert.Single(Critical(application));

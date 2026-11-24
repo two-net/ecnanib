@@ -275,6 +275,7 @@ public partial class LivePageTests
     /// <summary>The pages that follow what changes, for one agent and one cycle of it.</summary>
     private static string[] Following(Guid agentId, Guid cycleId) =>
     [
+        WebUiModule.DashboardPath,
         WebUiModule.AgentsPath,
         WebUiModule.AgentStatePath(agentId),
         WebUiModule.AgentCyclesPath(agentId),

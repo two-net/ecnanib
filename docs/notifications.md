@@ -15,11 +15,12 @@ What raises the notification is in [orders.md](orders.md), for a key in [credent
 ```csharp
 public interface INotifications
 {
-    Task RaiseAsync(Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken);
-    Task RaiseInAsync(EcnanibDbContext context, Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken);
-    Task<bool> RaiseOnceAsync(Guid userId, NotificationType type, Guid agentId, string content, TimeSpan within, CancellationToken cancellationToken);
+    Task RaiseAsync(Guid userId, NotificationType type, Guid? agentId, TradingMode? mode, string content, CancellationToken cancellationToken);
+    Task RaiseInAsync(EcnanibDbContext context, Guid userId, NotificationType type, Guid? agentId, TradingMode? mode, string content, CancellationToken cancellationToken);
+    Task<bool> RaiseOnceAsync(Guid userId, NotificationType type, Guid agentId, TradingMode mode, string content, TimeSpan within, CancellationToken cancellationToken);
     Task<IReadOnlyList<NotificationView>> UnreadOfAgentAsync(HttpContext request, Guid agentId);
     Task<NotificationList> OfUserAsync(HttpContext request, int page);
+    Task<UnreadByMode> UnreadByModeAsync(HttpContext request);
     Task<int> UnreadCountAsync(HttpContext request);
     Task MarkReadAsync(HttpContext request, Guid notificationId);
     Task<int> MarkAllReadAsync(HttpContext request, Guid through);
@@ -30,8 +31,9 @@ public interface INotifications
 |---|---|
 | **A notification belongs to one user** | `RaiseAsync` takes the user by id: it is asked by background work, where nobody is signed in, and the id is the owner of the row that the notification is about. What reads and what marks takes the request, and asks for the rows of the user of the session by owner: the notification of another user is not found, and stays as it is. See [ownership.md](ownership.md). |
 | **What is told inside a transaction is stored with it** | `RaiseInAsync` writes the row with the context of whoever asks, and refuses a context that holds no transaction. It is for what changes a key, a model, or the state of an agent in a transaction of its own: its user is told when the change is stored, and not when it is not. The others raise after what they tell of is stored, and a notification that cannot be stored then stops nothing. |
-| **What happens again and again is said once in a time** | `RaiseOnceAsync` raises nothing when the user has a notification of the same type about the same agent that was raised within the time, read or not, and says whether it raised one. It is for what repeats while nothing changes. The page of an agent shows the latest 20 that are not read, so one for each time would leave no room for the others. It asks by the type and the agent, and not by what is said: two causes of one type about one agent are said once in the time between them. Two that ask at the same moment may both raise one. |
+| **What happens again and again is said once in a time** | `RaiseOnceAsync` raises nothing when the user has a notification of the same type about the same agent that was raised within the time, read or not, and says whether it raised one. It is for what repeats while nothing changes. The page of an agent shows the latest 20 that are not read, so one for each time would leave no room for the others. It asks by the type, the agent, and the mode, and not by what is said: two causes of one type about one agent in one mode are said once in the time between them. What was said of an agent in Demo does not stand for what happens to it in Live, so an agent that was switched is told of the first time in its new mode. Two that ask at the same moment may both raise one. |
 | **It says what happened, in plain words** | The content is the service's own text, in 500 characters at most: what became of a position, or how it stands, with its symbol and its mode. Nothing that a user typed is in it, and no secret. |
+| **It says the mode that it is about** | Whoever raises a notification says the mode, as it is then: the mode of the agent, the mode that a position was opened in, or the environment of a Binance key. A key of an AI provider is of no mode, and says none. The mode is stored with the notification, and stays as it is when the agent is switched to the other mode, and when the agent is deleted. So what happened in Demo is never listed under Live (FR-BIN-11): `UnreadByModeAsync` gives what a user has not read for Live, for Demo, and for no mode, each on its own, newest first, 10 of each at the most, with how many there are. The dashboard lists them as its alerts (FR-RPT-1): see [dashboard.md](dashboard.md). Notifications may not use Agents, so it could not ask for the mode itself, and the mode that an agent is in now is not the mode that something happened in. |
 | **It names its agent by the id alone** | Notifications may not use Agents, so the row does not point at the agent's row. A notification belongs to the account, and stays when the agent is deleted. |
 | **It is not read until its user says so** | `MarkReadAsync` marks one, and `MarkAllReadAsync` those that were raised no later than the newest that the page showed: one that was raised after the page was written is not marked by a user who has not seen it. Nothing marks one as read by showing it. One that is read stays on the page of the notifications, and is off the page of its agent. |
 | **A critical event is marked for an email** | For a user who has opted in when it is raised. See "Email for critical events". |
@@ -93,7 +95,7 @@ That the user could not be told, because the notification could not be stored, i
 
 Every page is rendered on the server for each request, for the user who is signed in, and a visitor is sent to sign in. What a notification says is written as text, and never as markup (NFR-SEC-4). The times are UTC.
 
-**A notification shows without a manual refresh on a page that follows what changes** (FR-NTF-2): the page of the notifications, the list of the agents, and the pages of the state and the cycles of an agent. The database says when a notification of a user is raised, read, or removed, and such a page asks for itself again, so its list, its section, and the count in its bar are those of now. Nothing of a notification is written over the connection of a page. See [live-updates.md](live-updates.md).
+**A notification shows without a manual refresh on a page that follows what changes** (FR-NTF-2): the page of the notifications, the dashboard, the list of the agents, and the pages of the state and the cycles of an agent. The database says when a notification of a user is raised, read, or removed, and such a page asks for itself again, so its list, its section, and the count in its bar are those of now. Nothing of a notification is written over the connection of a page. See [live-updates.md](live-updates.md).
 
 **The page of the notifications,** `/notifications`, lists every notification of its user, read and not read, the newest first, 25 to a page: what each is about, when it was raised, whether it is read, and what it says. One that is about an agent leads to the page of the state of that agent, by the name that its user gave it, while the user has the agent. With nothing to say, the page says so.
 
@@ -107,6 +109,8 @@ Every page is rendered on the server for each request, for the user who is signe
 **The bar at the top of every page** has the link "Notifications", with how many its user has not read: "Notifications (3)". It is counted for each request, so the number is as it was when the page was written, and a page that follows what changes is written again when it changes. The bar is on the page of an error as well, so a count that cannot be read fails no page: the link is then without a number, and the log has a warning.
 
 **The page of the state of an agent,** `/agents/{id}/state`, has a section "Notifications" when its user has not read something about the agent: each notification with what it is about, when it was raised, and what it says, the latest first, 20 at most, and with a form that marks it as read, which takes it off that page. With nothing to say, the page has no such section.
+
+**The dashboard,** `/dashboard`, lists what its user has not read as its alerts, for Live and for Demo apart, by the mode that each notification says, the latest first, 10 of a mode at most, with how many there are in all. What is about no mode is listed above both. Each has a form that marks it as read, `mark-read-<id>`, which leads back to the dashboard, and one that is about an agent leads to the page of the state of that agent. See [dashboard.md](dashboard.md).
 
 **The page of the choice,** `/account/notifications`, says whether its user is sent email for critical events, which events those are, and which address an email goes to, and has one form that turns it on, or off. The page of the account says whether it is on, and leads there (FR-UI-2).
 
@@ -138,21 +142,23 @@ public interface IEmailOptIn
 
 ## The data
 
-The migration `AddOrders` adds the table of the notifications, and `AddNotificationEmail` its two columns for email, the indexes that the pages and the job read by, and the table of the choice.
+The migration `AddOrders` adds the table of the notifications, `AddNotificationEmail` its two columns for email, the indexes that the pages and the job read by, and the table of the choice, and `AddDashboard` the mode of a notification.
 
 | Table | Columns |
 |---|---|
-| `notifications` | `id`, `user_id`, `type`, `agent_id`, `content`, `is_read`, `created_at`, `email_pending`, `emailed_at` |
+| `notifications` | `id`, `user_id`, `type`, `agent_id`, `mode`, `content`, `is_read`, `created_at`, `email_pending`, `emailed_at` |
 | `email_opt_ins` | `user_id` (the key), `opted_in_at` |
 
 | Rule | Detail |
 |---|---|
 | **The rows go with the account** | `user_id` points at `users` in both tables, and the rows are deleted with the account (FR-ACC-9). |
-| **They are in the export** | The section `notifications` of the export of a user's data holds each, with whether it is read, and when it was sent by email (NFR-SEC-9). The section `emailOptIn` holds one row for a user who opted in, with when, and none for a user who did not: it is a preference. See [accounts.md](accounts.md). |
+| **They are in the export** | The section `notifications` of the export of a user's data holds each, with the mode that it is about, whether it is read, and when it was sent by email (NFR-SEC-9). The section `emailOptIn` holds one row for a user who opted in, with when, and none for a user who did not: it is a preference. See [accounts.md](accounts.md). |
 | **A row of the choice says that it is on** | A user with no row is sent no email. The row is found by its user, and there is one at the most. |
 | **A notification says what became of its email** | `email_pending` is set while an email is still to be sent for it, and `emailed_at` says when it was handed to the email delivery service. Neither is set for one that no email was to be sent for, or that was given up. A row from before the columns has neither. |
 | **Three indexes** | `(user_id, created_at)` for the page of the notifications, `user_id` over the rows that are not read for the count in the bar, and `created_at` over the rows that are marked for an email for the job. |
 | **The type is stored by its name** | Renaming a member of `NotificationType` needs a migration. What raises a notification adds its member when it is built. |
+| **The mode is stored by its name, or not at all** | `mode` is `Demo`, `Live`, or empty for a notification that is about no mode. It is no column that says who someone is. |
+| **A notification from before the column was given a mode where one could be told** | `AddDashboard` wrote it by hand. One about an agent was given the mode that the agent was in when the migration ran, where the agent is its user's: an agent is switched while it is stopped and holds nothing, so that is the mode that it happened in unless the agent was switched since. One about a Binance key, which names no agent, was given the environment that its text says: "Your Binance key for Demo" or "Your Binance key for Live". One about an agent that was deleted before, and one about a key of an AI provider, have none. `NotificationTests` holds the migration to it. |
 
 ## Not built yet
 
@@ -162,3 +168,4 @@ The migration `AddOrders` adds the table of the notifications, and `AddNotificat
 - A choice of which critical events are sent by email, and a link in an email that turns it off with one press.
 - Showing a notification without a reload on a page that does not follow what changes: the count in the bar of such a page is as it was when the page was written. See "The pages" in [live-updates.md](live-updates.md).
 - Removing notifications after the days of `Retention:NotificationDays` (NFR-DAT-5).
+- The badge of the mode on the page of the notifications, and on the page of the state of an agent: both say a notification by what it says, which names its mode in words, and neither lists them by mode. The dashboard does.

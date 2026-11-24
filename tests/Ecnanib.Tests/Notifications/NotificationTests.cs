@@ -1,12 +1,15 @@
 using System.Net;
 using Ecnanib.Notifications;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.WebUi.Pages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Ecnanib.Tests.Notifications;
 
@@ -32,14 +35,21 @@ public class NotificationTests
         var agent = await application.GiveAgentAsync(ada.Id, Morning);
 
         await application.Notifications.RaiseAsync(
-            ada.Id, NotificationType.ProtectionFailure, agent, StoredNotificationRows.Content, TestContext.Current.CancellationToken);
+            ada.Id,
+            NotificationType.ProtectionFailure,
+            agent,
+            TradingMode.Demo,
+            StoredNotificationRows.Content,
+            TestContext.Current.CancellationToken);
 
         await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
         var stored = await context.Set<Notification>().AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
 
+        // With the mode that whoever raised it said, which it keeps (FR-BIN-11).
         Assert.Equal(
-            (ada.Id, NotificationType.ProtectionFailure, (Guid?)agent, StoredNotificationRows.Content, false, Morning),
-            (stored.UserId, stored.Type, stored.AgentId, stored.Content, stored.IsRead, stored.CreatedAt));
+            (ada.Id, NotificationType.ProtectionFailure, (Guid?)agent, (TradingMode?)TradingMode.Demo, StoredNotificationRows.Content, false, Morning),
+            (stored.UserId, stored.Type, stored.AgentId, stored.Mode, stored.Content, stored.IsRead, stored.CreatedAt));
+        Assert.Equal("Demo", application.Database.Scalar<string>("SELECT mode FROM notifications"));
 
         // The log names what it is about, and does not repeat what it says.
         var raised = Assert.Single(application.Events(), said => said.Area == "Ecnanib.Notifications.StoredNotifications");
@@ -58,11 +68,12 @@ public class NotificationTests
         var ada = await application.RegisterVerifiedAsync(Ada);
 
         await Assert.ThrowsAnyAsync<ArgumentException>(() => application.Notifications.RaiseAsync(
-            ada.Id, NotificationType.ProtectionFailure, agentId: null, content, TestContext.Current.CancellationToken));
+            ada.Id, NotificationType.ProtectionFailure, agentId: null, mode: null, content, TestContext.Current.CancellationToken));
         await Assert.ThrowsAnyAsync<ArgumentException>(() => application.Notifications.RaiseAsync(
             ada.Id,
             NotificationType.ProtectionFailure,
             agentId: null,
+            mode: null,
             new string('x', Notification.ContentLength + 1),
             TestContext.Current.CancellationToken));
 
@@ -78,7 +89,7 @@ public class NotificationTests
         await using var context = await application.Contexts.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
         Task RaiseInAsync(string content) => application.Notifications.RaiseInAsync(
-            context, ada.Id, NotificationType.KeyInvalid, agentId: null, content, TestContext.Current.CancellationToken);
+            context, ada.Id, NotificationType.KeyInvalid, agentId: null, mode: null, content, TestContext.Current.CancellationToken);
 
         // A context that holds no transaction is refused: the notification would stand when
         // what it tells of fails.
@@ -121,8 +132,9 @@ public class NotificationTests
         var other = await application.GiveAgentAsync(ada.Id, Morning, name: "Other", symbol: "SOLUSDT");
         var day = TimeSpan.FromDays(1);
 
-        Task<bool> RaiseOnceAsync(Guid userId, NotificationType type, Guid about) =>
-            application.Notifications.RaiseOnceAsync(userId, type, about, "An entry was skipped.", day, TestContext.Current.CancellationToken);
+        Task<bool> RaiseOnceAsync(Guid userId, NotificationType type, Guid about, TradingMode mode = TradingMode.Demo) =>
+            application.Notifications.RaiseOnceAsync(
+                userId, type, about, mode, "An entry was skipped.", day, TestContext.Current.CancellationToken);
 
         // The first is raised. What happens again while nothing changes is not said again.
         Assert.True(await RaiseOnceAsync(ada.Id, NotificationType.EntrySkipped, agent));
@@ -136,12 +148,101 @@ public class NotificationTests
         Assert.True(await RaiseOnceAsync(ada.Id, NotificationType.ProtectionFailure, agent));
         Assert.True(await RaiseOnceAsync(grace.Id, NotificationType.EntrySkipped, agent));
 
+        // And once for each mode: what was said of the agent in Demo does not stand for what
+        // happens to it in Live, after it was switched (FR-BIN-11).
+        Assert.True(await RaiseOnceAsync(ada.Id, NotificationType.EntrySkipped, agent, TradingMode.Live));
+        Assert.False(await RaiseOnceAsync(ada.Id, NotificationType.EntrySkipped, agent, TradingMode.Live));
+
         // And again once the time has passed.
         clock.Set(Morning.AddDays(1));
         Assert.True(await RaiseOnceAsync(ada.Id, NotificationType.EntrySkipped, agent));
 
-        Assert.Equal(5, application.Database.Scalar<long>("SELECT count(*) FROM notifications"));
-        Assert.Equal(5, application.Events().Count(said => said.Area == "Ecnanib.Notifications.StoredNotifications"));
+        Assert.Equal(6, application.Database.Scalar<long>("SELECT count(*) FROM notifications"));
+        Assert.Equal(6, application.Events().Count(said => said.Area == "Ecnanib.Notifications.StoredNotifications"));
+        Assert.Equal(1L, application.Database.Scalar<long>("SELECT count(*) FROM notifications WHERE mode = 'Live'"));
+    }
+
+    [Fact]
+    public async Task A_notification_that_was_stored_before_notifications_said_their_mode_is_given_one_where_it_can_be_told()
+    {
+        using var application = new AccountsApplication(clock: new TestClock(Morning));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var grace = await application.RegisterVerifiedAsync(Grace);
+        var demo = await application.GiveAgentAsync(ada.Id, Morning, name: "In Demo");
+        var live = await application.GiveAgentAsync(ada.Id, Morning, name: "In Live", symbol: "ETHUSDT", mode: TradingMode.Live);
+
+        // What was stored before: every one of them without a mode, whatever it is about.
+        var ofDemo = await application.GiveNotificationAsync(ada.Id, demo, Morning, "About the agent in Demo.");
+        var ofLive = await application.GiveNotificationAsync(ada.Id, live, Morning, "About the agent in Live.");
+        var ofDeleted = await application.GiveNotificationAsync(ada.Id, Guid.CreateVersion7(), Morning, "About an agent that is deleted since.");
+        var ofAnothers = await application.GiveNotificationAsync(grace.Id, live, Morning, "About an agent of another user.");
+        var demoKey = await application.GiveNotificationAsync(
+            ada.Id,
+            agentId: null,
+            Morning,
+            "Your Binance key for Demo was refused by Binance, and is invalid. The agents that ran with it wait for you.",
+            NotificationType.KeyInvalid);
+        var liveKey = await application.GiveNotificationAsync(
+            ada.Id,
+            agentId: null,
+            Morning,
+            "Your Binance key for Live can withdraw, as Binance reports, so the service deleted it: it keeps no key that can withdraw.",
+            NotificationType.KeyInvalid);
+        var aiKey = await application.GiveNotificationAsync(
+            ada.Id, agentId: null, Morning, "Your key for Claude was refused by the provider, and is invalid.", NotificationType.KeyInvalid);
+
+        // The database of the version before, with these rows in it, and then of this version.
+        using (var context = application.Database.Context())
+        {
+            var migrator = context.GetService<IMigrator>();
+
+            migrator.Migrate("20261123180945_AddLiveSignals");
+            migrator.Migrate();
+        }
+
+        const string None = "none";
+
+        string ModeOf(Guid notificationId) =>
+            application.Database.Scalar<string>($"SELECT coalesce(mode, '{None}') FROM notifications WHERE id = '{notificationId}'");
+
+        // One about an agent is of the mode that the agent is in, where the agent is its user's.
+        Assert.Equal("Demo", ModeOf(ofDemo));
+        Assert.Equal("Live", ModeOf(ofLive));
+        Assert.Equal(None, ModeOf(ofDeleted));
+        Assert.Equal(None, ModeOf(ofAnothers));
+
+        // One about a Binance key says its environment, and a key of an AI provider is of none.
+        Assert.Equal("Demo", ModeOf(demoKey));
+        Assert.Equal("Live", ModeOf(liveKey));
+        Assert.Equal(None, ModeOf(aiKey));
+    }
+
+    [Fact]
+    public async Task The_export_of_a_user_says_the_mode_of_each_notification()
+    {
+        var clock = new TestClock(Morning);
+        using var application = new AccountsApplication(clock: clock);
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.Id, Morning, mode: TradingMode.Live);
+        using var client = application.CreateClient();
+        await client.SignInAsync(Ada);
+
+        await application.Notifications.RaiseAsync(
+            ada.Id, NotificationType.PositionOpened, agent, TradingMode.Live, "A position in BTCUSDT (Live) was opened.", TestContext.Current.CancellationToken);
+
+        // A minute later: the export has them in the order that they were raised in.
+        clock.Set(Morning.AddMinutes(1));
+        await application.Notifications.RaiseAsync(
+            ada.Id, NotificationType.KeyInvalid, agentId: null, mode: null, "Your key for Claude was refused.", TestContext.Current.CancellationToken);
+
+        // What is stored about a notification is in the export, with the mode as a word, and
+        // with none for one that is about no mode (NFR-SEC-9).
+        var export = System.Text.Json.JsonDocument.Parse(await client.PageAsync("/account/export"));
+        var notifications = export.RootElement.GetProperty("notifications").EnumerateArray().ToList();
+
+        Assert.Equal(
+            [("PositionOpened", "Live"), ("KeyInvalid", null)],
+            notifications.Select(notification => (notification.GetProperty("type").GetString(), notification.GetProperty("mode").GetString())));
     }
 
     [Fact]
@@ -156,7 +257,8 @@ public class NotificationTests
         // One of every kind: a kind that the page has no words for would fail the page.
         foreach (var type in Enum.GetValues<NotificationType>())
         {
-            await application.Notifications.RaiseAsync(ada.Id, type, agent, $"Something of the kind {type}.", TestContext.Current.CancellationToken);
+            await application.Notifications.RaiseAsync(
+                ada.Id, type, agent, TradingMode.Demo, $"Something of the kind {type}.", TestContext.Current.CancellationToken);
         }
 
         var page = AgentBrowser.Read(await client.PageAsync(AgentBrowser.AgentStatePage(agent)));

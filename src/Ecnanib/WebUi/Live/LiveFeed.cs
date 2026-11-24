@@ -32,6 +32,12 @@ public enum LiveShows
 /// <param name="QuoteAsset">The asset that the symbol of the agent is priced in, which a price is said in.</param>
 /// <param name="Since">What <see cref="ILiveSignals.Mark"/> said before the page read what it shows.</param>
 /// <param name="Address">The path and the query that the page was asked for at, as the browser sent them.</param>
+/// <param name="Values">
+/// Whether the page values the open positions of its user at their prices, as the dashboard
+/// does (FR-RPT-1): the prices of what its user holds are followed while the page is open, so
+/// that the watch has them when the page is written, and the page asks for itself again when
+/// one of them is first read.
+/// </param>
 /// <remarks>
 /// It travels with the page, sealed by the framework, to the connection that the page makes,
 /// so it holds what can be written as text and read again.
@@ -45,7 +51,8 @@ public sealed record LiveView(
     string? Symbol,
     string? QuoteAsset,
     long Since,
-    string Address)
+    string Address,
+    bool Values = false)
 {
     /// <summary>
     /// What a page follows, as the request that writes the page makes it. A page that answers
@@ -61,6 +68,11 @@ public sealed record LiveView(
     /// <param name="symbol">The symbol of the agent.</param>
     /// <param name="quoteAsset">The asset that the symbol of the agent is priced in.</param>
     /// <param name="since">What <see cref="ILiveSignals.Mark"/> said before the page read what it shows.</param>
+    /// <param name="values">
+    /// Whether the page values the open positions of its user at their prices, when it was
+    /// asked for: a price that is read has the page ask for itself again, which a page that
+    /// answers a form does on nothing.
+    /// </param>
     public static LiveView Of(
         HttpRequest request,
         Guid? agentId,
@@ -70,21 +82,25 @@ public sealed record LiveView(
         TradingMode? mode,
         string? symbol,
         string? quoteAsset,
-        long since)
+        long since,
+        bool values = false)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(follows);
 
+        var asked = HttpMethods.IsGet(request.Method);
+
         return new LiveView(
             agentId,
-            HttpMethods.IsGet(request.Method) ? follows : [],
+            asked ? follows : [],
             shows,
             market,
             mode,
             symbol,
             quoteAsset,
             since,
-            request.Path.ToUriComponent() + request.QueryString.ToUriComponent());
+            request.Path.ToUriComponent() + request.QueryString.ToUriComponent(),
+            asked && values);
     }
 }
 
@@ -178,6 +194,16 @@ public sealed class LiveFeeds(
 /// the connection is back.
 /// </para>
 /// <para>
+/// <b>For a page that values what its user holds, it follows the prices of that,</b> which is
+/// the dashboard (FR-RPT-1): the symbols that the agents of its user hold a position in, asked
+/// for by owner, when it begins and each time that what they hold changes. A page is written
+/// with the price that the watch has, and never waits for the exchange, so someone has to
+/// follow a price for the watch to have it: the feed of the page does. The first time that a
+/// price which it began to follow is read, the page asks for itself again, and is written with
+/// it. A price that is read again asks for nothing: the figures of such a page say the time of
+/// their prices, and are worked out anew when something that the page shows changes.
+/// </para>
+/// <para>
 /// Everything that it does, it does one thing after the other, on a line of its own: a signal
 /// is told to it by whoever raised it, who is not kept waiting.
 /// </para>
@@ -213,6 +239,12 @@ public sealed class LiveFeed : IAsyncDisposable
     private IDisposable? _pricing;
     private ITimer? _sessionTimer;
     private ITimer? _askTimer;
+
+    // The prices that are followed for a page that values what its user holds, and those of
+    // them that were not read yet since they were first followed. Only the line of the feed
+    // touches them.
+    private readonly Dictionary<LivePrice, IDisposable> _valuing = [];
+    private readonly HashSet<LivePrice> _awaited = [];
 
     // Whether the page is to ask for itself again, and when it last did.
     private bool _asks;
@@ -363,9 +395,21 @@ public sealed class LiveFeed : IAsyncDisposable
                 await HearAsync(heard.Signal);
                 break;
 
-            case PriceRead read when read.Of == State.Followed:
-                Volatile.Write(ref _state, State with { Price = read.Price });
-                await _page.ShowAsync();
+            case PriceRead read:
+                if (read.Of == State.Followed)
+                {
+                    Volatile.Write(ref _state, State with { Price = read.Price });
+                    await _page.ShowAsync();
+                }
+
+                // The first read of a price that the page values at: the page was written
+                // without it, or with an older one, and is written again with it. What is read
+                // after that is on the page the next time that it is written.
+                if (_awaited.Remove(read.Of))
+                {
+                    AskSoon();
+                }
+
                 break;
 
             case AskDue:
@@ -406,6 +450,11 @@ public sealed class LiveFeed : IAsyncDisposable
             Volatile.Write(ref _state, State with { Position = position });
             FollowPrice(followed);
             await _page.ShowAsync();
+        }
+
+        if (_view.Values)
+        {
+            await ValueAsync(userId);
         }
     }
 
@@ -453,6 +502,13 @@ public sealed class LiveFeed : IAsyncDisposable
         if (shows)
         {
             await _page.ShowAsync();
+        }
+
+        // What the agents of the user hold has changed, or may have: the prices that the page
+        // values at are those of what they hold now.
+        if (_view.Values && (missed || signal.Subject == LiveSubject.Holdings))
+        {
+            await ValueAsync(userId);
         }
 
         if (missed ? _view.Follows.Count > 0 : _view.Follows.Contains(signal.Subject))
@@ -512,6 +568,38 @@ public sealed class LiveFeed : IAsyncDisposable
         {
             _pricing = _prices.Follow(
                 followed.Market, followed.Mode, followed.Symbol, followed.Kind, price => Post(new PriceRead(followed, price)));
+        }
+    }
+
+    /// <summary>
+    /// Follows the prices that the open positions of the agents of the user are valued at, in
+    /// place of those that were followed: for a page that values what its user holds. A price
+    /// of something that is no longer held is let go of, and one that is followed already stays
+    /// as it is. Each that is followed anew is awaited: its first read has the page ask for
+    /// itself again, whether or not the watch had it when the page was written, because another
+    /// page may have begun to follow it in between.
+    /// </summary>
+    private async Task ValueAsync(Guid userId)
+    {
+        // Asked for by owner, as a page asks: what the agents of another user hold is not found.
+        var held = await _positions.HeldByUserAsync(userId, _stop.Token);
+
+        var wanted = held
+            .Select(symbol => new LivePrice(symbol.Market, symbol.Mode, symbol.Symbol, PositionValues.PriceOf(symbol.Market)))
+            .ToHashSet();
+
+        foreach (var gone in _valuing.Keys.Where(followed => !wanted.Contains(followed)).ToList())
+        {
+            _valuing.Remove(gone, out var following);
+            following?.Dispose();
+            _awaited.Remove(gone);
+        }
+
+        foreach (var price in wanted.Where(price => !_valuing.ContainsKey(price)))
+        {
+            // Awaited before it is followed: the watch tells the price that it has at once.
+            _awaited.Add(price);
+            _valuing[price] = _prices.Follow(price.Market, price.Mode, price.Symbol, price.Kind, read => Post(new PriceRead(price, read)));
         }
     }
 
@@ -577,6 +665,15 @@ public sealed class LiveFeed : IAsyncDisposable
         _following = null;
         _pricing?.Dispose();
         _pricing = null;
+
+        foreach (var following in _valuing.Values)
+        {
+            following.Dispose();
+        }
+
+        _valuing.Clear();
+        _awaited.Clear();
+
         _sessionTimer?.Dispose();
         _sessionTimer = null;
         _askTimer?.Dispose();

@@ -1,5 +1,6 @@
 using Ecnanib.Accounts;
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -18,11 +19,19 @@ namespace Ecnanib.Notifications;
 /// Notifications may not use Agents. A notification belongs to the account, and stays when the
 /// agent is deleted.
 /// </para>
+/// <para>
+/// <b>It says the mode that it is about,</b> as whoever raised it said it then: the mode of the
+/// agent, of the position, or of the Binance key. It keeps that mode when the agent is switched,
+/// and when the agent is deleted, so what happened in Demo is told apart from what happened in
+/// Live for good (FR-BIN-11). One that is about no mode, such as a key of an AI provider, says
+/// none.
+/// </para>
 /// </remarks>
 /// <param name="id">The id of the notification, which what raised it assigned.</param>
 /// <param name="userId">The user whose notification it is.</param>
 /// <param name="type">What it is about.</param>
 /// <param name="agentId">The agent that it is about, or null when it is about none.</param>
+/// <param name="mode">The mode that it is about, or null when it is about none.</param>
 /// <param name="content">What it says, in plain words.</param>
 /// <param name="isRead">Whether its user has read it.</param>
 /// <param name="createdAt">When it was raised.</param>
@@ -36,6 +45,7 @@ public sealed class Notification(
     Guid userId,
     NotificationType type,
     Guid? agentId,
+    TradingMode? mode,
     string content,
     bool isRead,
     DateTimeOffset createdAt,
@@ -52,6 +62,8 @@ public sealed class Notification(
     public NotificationType Type { get; } = type;
 
     public Guid? AgentId { get; } = agentId;
+
+    public TradingMode? Mode { get; } = mode;
 
     public string Content { get; } = content;
 
@@ -165,6 +177,7 @@ internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notif
         builder.Property(notification => notification.UserId);
         builder.Property(notification => notification.Type);
         builder.Property(notification => notification.AgentId);
+        builder.Property(notification => notification.Mode);
         builder.Property(notification => notification.Content).HasMaxLength(Notification.ContentLength);
         builder.Property(notification => notification.IsRead);
         builder.Property(notification => notification.CreatedAt);

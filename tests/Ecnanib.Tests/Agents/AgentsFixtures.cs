@@ -688,7 +688,9 @@ internal static class StoredAgentRows
         bool team = true,
         Timeframe timeframe = Timeframe.OneHour,
         bool reassignsRoles = false,
-        DateTimeOffset? rolesReassignedAt = null)
+        DateTimeOffset? rolesReassignedAt = null,
+        string quoteAsset = "USDT",
+        decimal capital = 1000m)
     {
         var id = Guid.CreateVersion7();
 
@@ -701,9 +703,9 @@ internal static class StoredAgentRows
             mode,
             market,
             symbol,
-            quoteAsset: "USDT",
+            quoteAsset,
             timeframe,
-            allocatedCapital: 1000m,
+            allocatedCapital: capital,
             riskPerTradePercent: 1.5m,
             minRewardToRisk: 1.75m,
             leverageCap: 4,

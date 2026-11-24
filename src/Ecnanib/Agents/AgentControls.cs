@@ -573,6 +573,7 @@ internal sealed class AgentKeyDependents(INotifications notifications, TimeProvi
                 userId,
                 NotificationType.AttentionRequired,
                 agent.Id,
+                environment,
                 Says(agent.Symbol, environment, cause, $"its Binance key for {environment}"),
                 cancellationToken);
 
@@ -628,6 +629,7 @@ internal sealed class AgentKeyDependents(INotifications notifications, TimeProvi
                 userId,
                 NotificationType.AttentionRequired,
                 agent.Id,
+                agent.Mode,
                 Says(agent.Symbol, agent.Mode, cause, $"your key for the AI provider of its {RoleNames.Listed(roles)}"),
                 cancellationToken);
 

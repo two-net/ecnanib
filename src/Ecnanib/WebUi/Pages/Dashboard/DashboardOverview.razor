@@ -1,0 +1,355 @@
+@attribute [Route(WebUiModule.DashboardPath)]
+@attribute [Authorize]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.DecisionEngine
+@using Ecnanib.Notifications
+@using Ecnanib.Platform.LiveUpdates
+@using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Agents
+@using Ecnanib.WebUi.Pages.Notifications
+@inject IStoredAgents Agents
+@inject IAgentEquities Equities
+@inject IRecordedCycles Cycles
+@inject INotifications Notifications
+@inject ILiveSignals Live
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request. The dashboard: every agent of the user who is
+    signed in, at a glance, per mode (FR-RPT-1, FR-UI-2). It has a section for Live and one for
+    Demo, each under the badge of its mode, and each with its own total equity, profit and loss
+    for the day, open positions, a card for each agent, recent decisions, and alerts. Nothing of
+    one mode is added to anything of the other, and nothing of one asset to anything of another
+    (FR-BIN-11). The alerts are what the service told its user and they have not read, by the
+    mode that each says: those that are about no mode, such as a key of an AI provider, are
+    listed above both. Each has a form that marks it as read. Everything is asked for by owner:
+    Agents and Notifications take the request, and the Decision Engine, which may not use
+    Accounts, is handed the user who is signed in. An open position is valued at the price that
+    the watch has, and the page never waits for the exchange: a figure that is not known says
+    so, and is never written as a number. A profit and a loss are told apart by their sign
+    (FR-THM-5). The page follows what changes (FR-NTF-2): when an agent, what one holds, a cycle,
+    or a notification of its user changes, it asks for itself again. And it has the prices of
+    what its user holds followed while it is open, so that the watch has them: it asks for
+    itself again when one of them is first read. A page that answers a form asks for itself
+    again on nothing. See docs/dashboard.md and docs/live-updates.md.
+*@
+
+@if (_agents is not null && _equities is not null && _totals is not null && _unread is not null)
+{
+    <PageTitle>@DashboardPages.Title</PageTitle>
+
+    <h1>@DashboardPages.Title</h1>
+
+    <p>@DashboardPages.Explained @DashboardPages.Apart</p>
+
+    <p>@DashboardPages.FiguresExplained</p>
+
+    @if (_unread.OfNoMode.Total > 0)
+    {
+        <section class="dashboard-account" aria-labelledby="dashboard-account-alerts">
+            <h2 id="dashboard-account-alerts">@DashboardPages.AccountAlertsHeading</h2>
+
+            <p>@DashboardPages.AccountAlertsExplained @DashboardPages.Listed(_unread.OfNoMode)</p>
+
+            <ul class="agent-notifications" aria-labelledby="dashboard-account-alerts">
+                @foreach (var notification in _unread.OfNoMode.Latest)
+                {
+                    @Alert(notification)
+                }
+            </ul>
+
+            <p><a href="@WebUiModule.NotificationsPath">@NotificationPages.AllLink</a></p>
+        </section>
+    }
+
+    @foreach (var mode in DashboardPages.Modes)
+    {
+        var agents = _agents.Where(agent => agent.Mode == mode).ToList();
+        var equities = _equities.Values.Where(equity => equity.Mode == mode).ToList();
+        var held = agents.Where(agent => _equities.GetValueOrDefault(agent.Id) is { Mode: var of, Position: not null } && of == mode).ToList();
+        var cycles = _cycles.GetValueOrDefault(mode) ?? [];
+        var unread = _unread.Of(mode);
+
+        <section class="dashboard-mode" aria-labelledby="@DashboardPages.Id(mode, "heading")">
+            <h2 id="@DashboardPages.Id(mode, "heading")">@DashboardPages.Heading(mode)</h2>
+
+            <p>Mode: <ModeBadge Mode="@mode" /> @DashboardPages.ModeExplained(mode)</p>
+
+            @if (agents.Count == 0)
+            {
+                <p>@DashboardPages.NoAgents(mode)</p>
+            }
+            else
+            {
+                @* One total for each asset that an agent of the mode is in: a user has one, as a rule. *@
+                @foreach (var total in _totals.Where(total => total.Mode == mode))
+                {
+                    <dl class="dashboard-figures">
+                        <div>
+                            <dt>@DashboardPages.TotalEquity</dt>
+                            <dd>@DashboardPages.AmountOrNot(total.Equity, total.Asset)</dd>
+                        </div>
+                        <div>
+                            <dt>@DashboardPages.MadeToday</dt>
+                            <dd>@DashboardPages.SignedOrNot(total.MadeToday, total.Asset)</dd>
+                        </div>
+                    </dl>
+
+                    <p>@DashboardPages.Counted(total) @DashboardPages.Valued(total, equities.Where(equity => equity.Asset == total.Asset))</p>
+                }
+
+                <h3 id="@DashboardPages.Id(mode, "positions")">@DashboardPages.PositionsHeading</h3>
+
+                @if (held.Count == 0)
+                {
+                    <p>@DashboardPages.NoPositions(mode)</p>
+                }
+                else
+                {
+                    @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
+                    <div class="agents dashboard-positions" role="region" aria-labelledby="@DashboardPages.Id(mode, "positions")" tabindex="0">
+                        <table>
+                            <caption>@DashboardPages.PositionsCaption(mode)</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Agent</th>
+                                    <th scope="col">Symbol</th>
+                                    <th scope="col">Market</th>
+                                    <th scope="col">Side</th>
+                                    <th scope="col">Quantity</th>
+                                    <th scope="col">Entry price</th>
+                                    <th scope="col">Stop-loss</th>
+                                    <th scope="col">Take-profit</th>
+                                    <th scope="col">@DashboardPages.PriceHeading</th>
+                                    <th scope="col">Would make now</th>
+                                    <th scope="col">Open since</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var agent in held)
+                                {
+                                    var equity = _equities[agent.Id];
+                                    var position = equity.Position!;
+
+                                    <tr>
+                                        <th scope="row"><a href="@WebUiModule.AgentStatePath(agent.Id)">@agent.Name</a></th>
+                                        <td><code>@position.Symbol</code></td>
+                                        <td>@position.Market</td>
+                                        <td>@DashboardPages.Side(position)</td>
+                                        <td>@AgentPages.Number(position.Quantity)</td>
+                                        <td>@AgentPages.Number(position.EntryPrice)</td>
+                                        <td>@DashboardPages.Rests(position.StopLoss)</td>
+                                        <td>@DashboardPages.Rests(position.TakeProfit)</td>
+                                        <td>@DashboardPages.PriceOf(equity)</td>
+                                        <td>@DashboardPages.WouldMake(equity)</td>
+                                        <td>@PageTimes.At(position.OpenedAt)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>@DashboardPages.PricesExplained</p>
+                }
+
+                <h3 id="@DashboardPages.Id(mode, "agents")">@DashboardPages.AgentsHeading</h3>
+
+                <ul class="agent-cards" aria-labelledby="@DashboardPages.Id(mode, "agents")">
+                    @foreach (var agent in agents)
+                    {
+                        // The figures of the agent in this mode. An agent that was created or
+                        // switched between the reads of the page has none here yet.
+                        var equity = _equities.GetValueOrDefault(agent.Id) is { } read && read.Mode == mode ? read : null;
+
+                        <li class="agent-card">
+                            <h4><a href="@WebUiModule.AgentStatePath(agent.Id)">@agent.Name</a></h4>
+
+                            <p><code>@agent.Symbol</code> @DashboardPages.Trades(agent.Market, agent.Timeframe)</p>
+
+                            <dl>
+                                <div>
+                                    <dt>State</dt>
+                                    <dd>@DashboardPages.StateOf(agent.State, agent.StateChangedAt)</dd>
+                                </div>
+                                <div>
+                                    <dt>Equity</dt>
+                                    <dd>@DashboardPages.AmountOrNot(equity?.Equity, agent.QuoteAsset)</dd>
+                                </div>
+                                <div>
+                                    <dt>Today</dt>
+                                    <dd>@DashboardPages.SignedOrNot(equity?.MadeToday, agent.QuoteAsset)</dd>
+                                </div>
+                                <div>
+                                    <dt>Position</dt>
+                                    <dd>@(equity?.Position is { } holds ? DashboardPages.Holds(holds) : DashboardPages.HoldsNothing)</dd>
+                                </div>
+                            </dl>
+
+                            @if (DashboardPages.SaysWhy(agent.State))
+                            {
+                                <p>@AgentPages.Says(agent.StateCause)</p>
+
+                                @if (AgentStates.HaltEnds(agent.State, agent.StateCause, agent.StateChangedAt) is { } ends)
+                                {
+                                    @* A daily loss limit halts until the next UTC day (FR-RSK-8): the card says when that is. *@
+                                    <p>@AgentPages.HaltEnds(ends)</p>
+                                }
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+
+            <h3 id="@DashboardPages.Id(mode, "decisions")">@DashboardPages.DecisionsHeading</h3>
+
+            @if (cycles.Count == 0)
+            {
+                <p>@DashboardPages.NoDecisions(mode)</p>
+            }
+            else
+            {
+                <p>@DashboardPages.DecisionsExplained(mode)</p>
+
+                <div class="agents dashboard-decisions" role="region" aria-labelledby="@DashboardPages.Id(mode, "decisions")" tabindex="0">
+                    <table>
+                        <caption>@DashboardPages.DecisionsCaption(mode)</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Candle close</th>
+                                <th scope="col">Agent</th>
+                                <th scope="col">Outcome</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var cycle in cycles)
+                            {
+                                <tr>
+                                    @* The time leads to the timeline of the cycle, which says what each role answered. *@
+                                    <th scope="row"><a href="@WebUiModule.AgentCyclePath(cycle.AgentId, cycle.Cycle.Id)">@PageTimes.At(cycle.Cycle.ClosedAt)</a></th>
+                                    <td>@NameOf(cycle.AgentId)</td>
+                                    <td>@CyclePages.Describe(cycle.Cycle.Outcome)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <h3 id="@DashboardPages.Id(mode, "alerts")">@DashboardPages.AlertsHeading</h3>
+
+            @if (unread.Total == 0)
+            {
+                <p>@DashboardPages.NoAlerts(mode)</p>
+            }
+            else
+            {
+                <p>@DashboardPages.AlertsExplained(mode, unread)</p>
+
+                <ul class="agent-notifications" aria-labelledby="@DashboardPages.Id(mode, "alerts")">
+                    @foreach (var notification in unread.Latest)
+                    {
+                        @Alert(notification)
+                    }
+                </ul>
+
+                <p><a href="@WebUiModule.NotificationsPath">@NotificationPages.AllLink</a></p>
+            }
+        </section>
+    }
+
+    <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
+
+    @* What the page follows, and that the prices of what its user holds are followed for it. *@
+    <LiveUpdates Follows="@Followed" Values="true" Since="@_since" />
+}
+
+@code {
+    // What the page asks for itself again on: an agent, what one holds, a cycle that is
+    // recorded, and what its user is told, which is also the count in the bar.
+    private static readonly LiveSubject[] Followed =
+        [LiveSubject.Agent, LiveSubject.Holdings, LiveSubject.Cycle, LiveSubject.Notification];
+
+    private readonly Dictionary<TradingMode, IReadOnlyList<RecentCycle>> _cycles = [];
+
+    private IReadOnlyList<AgentView>? _agents;
+    private Dictionary<Guid, AgentEquity>? _equities;
+    private IReadOnlyList<EquityTotal>? _totals;
+    private UnreadByMode? _unread;
+    private long _since;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // Before the page reads: what changes from here on is what the page may not show.
+        _since = Live.Mark();
+
+        // The Decision Engine may not use Accounts, so it is handed the user who is signed in.
+        var userId = SignedInUser.RequiredIdOf(request);
+        var cancellationToken = request.RequestAborted;
+
+        _agents = (await Agents.ListAsync(request)).Agents;
+
+        var equities = await Equities.OfUserAsync(userId, cancellationToken);
+
+        _equities = equities.ToDictionary(equity => equity.AgentId);
+
+        // Each mode and each asset on its own: nothing of one is added to anything of another
+        // (FR-BIN-11).
+        _totals = EquityTotals.Of(equities);
+
+        foreach (var mode in DashboardPages.Modes)
+        {
+            _cycles[mode] = await Cycles.LatestOfUserAsync(userId, mode, cancellationToken);
+        }
+
+        _unread = await Notifications.UnreadByModeAsync(request);
+    }
+
+    private async Task MarkReadAsync(Guid notificationId)
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // Asked for by owner again: the notification that the form names, among those of the
+        // user of the session.
+        await Notifications.MarkReadAsync(request, notificationId);
+
+        // The page as it is now, by a request that changes nothing: a reload of it sends no
+        // form again.
+        Navigation.NavigateTo(WebUiModule.DashboardPath);
+    }
+
+    /// <summary>The name of an agent of the user, or nothing for one that was deleted since its cycle was read.</summary>
+    private string NameOf(Guid agentId) => _agents?.FirstOrDefault(agent => agent.Id == agentId)?.Name ?? string.Empty;
+
+    /// <summary>
+    /// One alert: what a notification says, with a link to the agent that it is about, and the
+    /// form that marks it as read. A notification is on the page once, so its form is.
+    /// </summary>
+    private RenderFragment Alert(NotificationView notification) =>
+        @<li>
+            <span id="@NotificationPages.TextId(notification.Id)"><strong>@NotificationTypes.Describe(notification.Type)</strong>, @PageTimes.At(notification.CreatedAt). @notification.Content</span>
+
+            @if (_agents?.FirstOrDefault(agent => agent.Id == notification.AgentId) is { } about)
+            {
+                <a href="@WebUiModule.AgentStatePath(about.Id)">@DashboardPages.StateLink(about.Name)</a>
+            }
+
+            <form method="post" @formname="@NotificationPages.MarkReadForm(notification.Id)" @onsubmit="() => MarkReadAsync(notification.Id)">
+                <AntiforgeryToken />
+
+                @* Every such button says the same: it is described by what its notification says. *@
+                <button type="submit" aria-describedby="@NotificationPages.TextId(notification.Id)">@NotificationPages.MarkRead</button>
+            </form>
+        </li>;
+}

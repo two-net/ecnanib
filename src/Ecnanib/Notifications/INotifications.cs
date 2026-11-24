@@ -1,4 +1,5 @@
 using Ecnanib.Platform.Persistence;
+using Ecnanib.Shared;
 
 namespace Ecnanib.Notifications;
 
@@ -14,6 +15,12 @@ namespace Ecnanib.Notifications;
 /// given another model, and an agent that runs again after a halt. What raises each is in
 /// docs/notifications.md. A notification about a critical event is sent by email as well, to a
 /// user who opted in: see <see cref="IEmailOptIn"/>.
+/// <para>
+/// <b>Whoever raises a notification says the mode that it is about:</b> the mode of the agent,
+/// of the position, or of the Binance key, as it is then, and none for what is about no mode. It
+/// is stored with the notification, so what happened in Demo is never listed under Live
+/// (FR-BIN-11): the dashboard lists what a user has not read for each mode (FR-RPT-1).
+/// </para>
 /// </remarks>
 public interface INotifications
 {
@@ -26,12 +33,14 @@ public interface INotifications
     /// <param name="userId">The user who is told.</param>
     /// <param name="type">What it is about.</param>
     /// <param name="agentId">The agent that it is about, or null when it is about none.</param>
+    /// <param name="mode">The mode that it is about, or null when it is about none.</param>
     /// <param name="content">
     /// What it says, in plain words, in <see cref="Notification.ContentLength"/> characters at
     /// most. It holds no secret.
     /// </param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    Task RaiseAsync(Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken);
+    Task RaiseAsync(
+        Guid userId, NotificationType type, Guid? agentId, TradingMode? mode, string content, CancellationToken cancellationToken);
 
     /// <summary>
     /// Raises a notification for a user inside the transaction of whoever asks: it is stored
@@ -46,6 +55,7 @@ public interface INotifications
     /// <param name="userId">The user who is told.</param>
     /// <param name="type">What it is about.</param>
     /// <param name="agentId">The agent that it is about, or null when it is about none.</param>
+    /// <param name="mode">The mode that it is about, or null when it is about none.</param>
     /// <param name="content">What it says, as for <see cref="RaiseAsync"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <exception cref="InvalidOperationException">
@@ -53,22 +63,40 @@ public interface INotifications
     /// when what it tells of fails.
     /// </exception>
     Task RaiseInAsync(
-        EcnanibDbContext context, Guid userId, NotificationType type, Guid? agentId, string content, CancellationToken cancellationToken);
+        EcnanibDbContext context,
+        Guid userId,
+        NotificationType type,
+        Guid? agentId,
+        TradingMode? mode,
+        string content,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Raises a notification about an agent, unless one of the same type about the same agent
-    /// was raised within a time: for what happens again and again while nothing changes, and is
-    /// worth saying once in that time.
+    /// in the same mode was raised within a time: for what happens again and again while nothing
+    /// changes, and is worth saying once in that time.
     /// </summary>
+    /// <remarks>
+    /// What was said of an agent in Demo does not stand for what happens to it in Live: an
+    /// agent that was switched is told of the first time in its new mode, whatever was said in
+    /// the mode before.
+    /// </remarks>
     /// <param name="userId">The user who is told.</param>
     /// <param name="type">What it is about.</param>
     /// <param name="agentId">The agent that it is about.</param>
+    /// <param name="mode">The mode that it is about, which is that of the agent, or of its position.</param>
     /// <param name="content">What it says, as for <see cref="RaiseAsync"/>.</param>
     /// <param name="within">The time in which it is said once.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Whether it was raised. It was not when one was raised within the time.</returns>
     Task<bool> RaiseOnceAsync(
-        Guid userId, NotificationType type, Guid agentId, string content, TimeSpan within, CancellationToken cancellationToken);
+        Guid userId,
+        NotificationType type,
+        Guid agentId,
+        TradingMode mode,
+        string content,
+        TimeSpan within,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// The notifications about one agent that the signed-in user has not read, newest first.
@@ -84,6 +112,15 @@ public interface INotifications
     /// <param name="request">The request, which says who is signed in.</param>
     /// <param name="page">Which page, from 1. A page after the last one holds none.</param>
     Task<NotificationList> OfUserAsync(HttpContext request, int page);
+
+    /// <summary>
+    /// The notifications that the signed-in user has not read, by the mode that each is about:
+    /// those of Live, those of Demo, and those that are about no mode, each newest first, and
+    /// each with how many there are. The dashboard lists them as its alerts, for each mode on its
+    /// own (FR-RPT-1, FR-BIN-11).
+    /// </summary>
+    /// <param name="request">The request, which says who is signed in.</param>
+    Task<UnreadByMode> UnreadByModeAsync(HttpContext request);
 
     /// <summary>How many notifications the signed-in user has not read.</summary>
     /// <param name="request">The request, which says who is signed in.</param>
@@ -115,8 +152,33 @@ public interface INotifications
 /// <param name="Content">What it says.</param>
 /// <param name="IsRead">Whether its user has read it.</param>
 /// <param name="CreatedAt">When it was raised.</param>
+/// <param name="Mode">The mode that it is about, as it was said when it was raised, or null when it is about none.</param>
 public sealed record NotificationView(
-    Guid Id, NotificationType Type, Guid? AgentId, string Content, bool IsRead, DateTimeOffset CreatedAt);
+    Guid Id, NotificationType Type, Guid? AgentId, string Content, bool IsRead, DateTimeOffset CreatedAt, TradingMode? Mode = null);
+
+/// <summary>
+/// The notifications that a user has not read, by the mode that each is about. What is about
+/// one mode is never listed with what is about the other (FR-BIN-11).
+/// </summary>
+/// <param name="Live">Those that are about Live.</param>
+/// <param name="Demo">Those that are about Demo.</param>
+/// <param name="OfNoMode">
+/// Those that are about no mode: a key of an AI provider, and one that was raised before
+/// notifications said their mode, about an agent that is deleted since.
+/// </param>
+public sealed record UnreadByMode(UnreadOfMode Live, UnreadOfMode Demo, UnreadOfMode OfNoMode)
+{
+    /// <summary>The most notifications that are listed for a mode.</summary>
+    public const int Shown = 10;
+
+    /// <summary>Those that are about a mode.</summary>
+    public UnreadOfMode Of(TradingMode mode) => mode == TradingMode.Live ? Live : Demo;
+}
+
+/// <summary>The notifications about one mode that a user has not read.</summary>
+/// <param name="Latest">The newest of them, newest first: <see cref="UnreadByMode.Shown"/> at the most.</param>
+/// <param name="Total">How many there are in all.</param>
+public sealed record UnreadOfMode(IReadOnlyList<NotificationView> Latest, int Total);
 
 /// <summary>One page of the notifications of a user, newest first.</summary>
 /// <param name="Notifications">The notifications of the page.</param>

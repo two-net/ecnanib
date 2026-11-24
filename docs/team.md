@@ -424,7 +424,10 @@ public interface IRecordedCycles
     Task<CycleHistory> LatestAsync(Guid userId, Guid agentId, CancellationToken cancellationToken);
 
     Task<CycleRecord?> FindAsync(Guid userId, Guid agentId, Guid cycleId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<RecentCycle>> LatestOfUserAsync(Guid userId, TradingMode mode, CancellationToken cancellationToken);
 }
+
+public sealed record RecentCycle(Guid AgentId, CycleListing Cycle);
 
 public sealed record CycleRecord(
     Guid Id, DateTimeOffset ClosedAt, TradingMode Mode, DateTimeOffset StartedAt, DateTimeOffset EndedAt, CycleOutcome Outcome,
@@ -471,6 +474,16 @@ public sealed record CycleRecord(
 | **The pages have no form.** | A user reads the record of a cycle, and changes none. A test cycle is run on a page of its own, which the list leads to: see "A test cycle" in [cycles.md](cycles.md). |
 
 The page of the state of an agent leads to the list, and so does the page of its risk checks, which leads from each check to the timeline of its cycle.
+
+**The dashboard lists the recent decisions of each mode** (FR-RPT-1), and leads from each to its timeline. `LatestOfUserAsync` reads them: the latest 10 cycles of the agents of a user that a candle close started in one mode, latest close first, each with its agent and how it ended.
+
+| Rule | Detail |
+|---|---|
+| **A cycle is of the mode that its row says.** | The mode that its agent was in then, and not the one that the agent is in now: what was decided in Demo is never listed under Live (FR-BIN-11). |
+| **A test cycle is not among them.** | It placed no orders, whatever its team decided (FR-CYC-12): it is on the list of the cycles of its agent, told apart there. |
+| **It is asked for by owner, across the agents of the user.** | With the index `(user_id, mode, closed_at)` of `decision_cycles`, which the migration `AddDashboard` adds: the other index of the cycles starts with the agent, and would read every cycle of an agent that never ran in the mode that is asked for. |
+
+`CycleRecordTests` holds it to these, and `DashboardPageTests` of `tests/Ecnanib.Tests/Dashboard` holds the page to what it says. See [dashboard.md](dashboard.md).
 
 ## AI usage
 

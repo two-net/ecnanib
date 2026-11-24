@@ -85,41 +85,16 @@ internal sealed class AgentResults(
         ArgumentNullException.ThrowIfNull(agent);
 
         var id = agent.Id;
-        var mode = agent.Mode;
-        var quote = agent.QuoteAsset;
 
-        decimal made;
-        bool priced;
-        decimal paid;
-        decimal funding;
-        Position? open;
-        EquityMark? marks;
+        AgentRows rows;
 
         await using (var context = await contexts.CreateDbContextAsync(cancellationToken))
         await using (await context.BeginSnapshotAsync(cancellationToken))
         {
-            // The positions of the agent in its mode, in the asset that its symbol is priced in.
-            var positions = context.Set<Position>()
-                .AsNoTracking()
-                .Where(position => position.AgentId == id && position.Mode == mode && position.QuoteAsset == quote);
-
-            // Every order of the agent there, also an entry that opened nothing: its fee is paid.
-            var orders = context.Set<Order>()
-                .AsNoTracking()
-                .Where(order => order.AgentId == id && order.Mode == mode && order.Symbol.EndsWith(quote));
-
-            (made, priced) = await ResultSums.MadeAsync(context, positions, cancellationToken);
-            (paid, _) = await ResultSums.FeesAsync(context, orders, cancellationToken);
-            funding = await ResultSums.FundingAsync(context, positions, cancellationToken);
-
-            open = await positions.SingleOrDefaultAsync(position => position.ClosedAt == null, cancellationToken);
-
-            marks = await context.Set<EquityMark>()
-                .AsNoTracking()
-                .SingleOrDefaultAsync(mark => mark.AgentId == id && mark.Mode == mode, cancellationToken);
+            rows = await RowsAsync(context, agent, cancellationToken);
         }
 
-        if (!priced)
+        if (!rows.Priced)
         {
             logger.LogWarning(
                 "The result of agent {AgentId} is not known: an order that closed a part of a position of it says no price that it was " +
@@ -129,7 +104,7 @@ internal sealed class AgentResults(
 
         decimal? price = null;
 
-        if (open is not null)
+        if (rows.Open is { } open)
         {
             // Asked only for a position that is open: an agent that holds none is valued by its rows alone.
             (price, var outcome) = await PriceOfAsync(market, open, cancellationToken);
@@ -144,7 +119,53 @@ internal sealed class AgentResults(
             }
         }
 
-        return new AgentResult(made - paid + funding, open, price, priced, marks);
+        return rows.At(price);
+    }
+
+    /// <summary>
+    /// What the rows say of the result of an agent: what is settled of it, its open position,
+    /// and the marks that its loss limits are counted from. It asks the exchange nothing: what
+    /// the open position is worth is for whoever asks to say, with a price. See
+    /// <see cref="AgentRows.At"/>.
+    /// </summary>
+    /// <remarks>
+    /// It reads with the context that it is given, in the transaction that the context holds:
+    /// the reads agree with each other in a snapshot, which whoever asks begins. So what asks
+    /// for the results of several agents at one moment asks for them in one.
+    /// </remarks>
+    /// <param name="context">The context, which holds a snapshot.</param>
+    /// <param name="agent">The agent, as it is stored: its mode and the asset that its symbol is priced in say what is counted.</param>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    public static async Task<AgentRows> RowsAsync(EcnanibDbContext context, Agent agent, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(agent);
+
+        var id = agent.Id;
+        var mode = agent.Mode;
+        var quote = agent.QuoteAsset;
+
+        // The positions of the agent in its mode, in the asset that its symbol is priced in.
+        var positions = context.Set<Position>()
+            .AsNoTracking()
+            .Where(position => position.AgentId == id && position.Mode == mode && position.QuoteAsset == quote);
+
+        // Every order of the agent there, also an entry that opened nothing: its fee is paid.
+        var orders = context.Set<Order>()
+            .AsNoTracking()
+            .Where(order => order.AgentId == id && order.Mode == mode && order.Symbol.EndsWith(quote));
+
+        var (made, priced) = await ResultSums.MadeAsync(context, positions, cancellationToken);
+        var (paid, _) = await ResultSums.FeesAsync(context, orders, cancellationToken);
+        var funding = await ResultSums.FundingAsync(context, positions, cancellationToken);
+
+        var open = await positions.SingleOrDefaultAsync(position => position.ClosedAt == null, cancellationToken);
+
+        var marks = await context.Set<EquityMark>()
+            .AsNoTracking()
+            .SingleOrDefaultAsync(mark => mark.AgentId == id && mark.Mode == mode, cancellationToken);
+
+        return new AgentRows(made - paid + funding, open, priced, marks);
     }
 
     /// <summary>
@@ -293,6 +314,27 @@ internal static class ResultSums
             select Math.Round(row.Amount, AgentResults.Places))
             .SumAsync(cancellationToken);
     }
+}
+
+/// <summary>
+/// What the rows say of the result of an agent at a moment, before its open position is valued.
+/// See <see cref="AgentResults.RowsAsync"/>.
+/// </summary>
+/// <param name="Settled">
+/// What is settled of it: what its positions made by the orders that closed them, less the fees
+/// of its executions, with the funding that its positions received and paid.
+/// </param>
+/// <param name="Open">The open position of the agent, or null when it holds none.</param>
+/// <param name="Priced">Whether every order that closed a part of a position says the price that it was executed at.</param>
+/// <param name="Marks">What the loss limits of the agent are counted from, as it is stored, or null when nothing is stored yet.</param>
+internal sealed record AgentRows(decimal Settled, Position? Open, bool Priced, EquityMark? Marks)
+{
+    /// <summary>
+    /// The result of the agent with its open position valued at a price: the one that the
+    /// exchange said, or the one that a page follows. Null where the price is not known, which
+    /// is a result that is not known while the agent holds a position.
+    /// </summary>
+    public AgentResult At(decimal? price) => new(Settled, Open, Open is null ? null : price, Priced, Marks);
 }
 
 /// <summary>The result of an agent at a moment. See <see cref="AgentResults"/>.</summary>

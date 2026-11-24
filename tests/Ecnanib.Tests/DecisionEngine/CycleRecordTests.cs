@@ -421,6 +421,83 @@ public class CycleRecordTests
     }
 
     [Fact]
+    public async Task The_latest_cycles_of_a_user_in_a_mode_are_those_that_a_close_started_in_that_mode_whatever_agent_ran_them()
+    {
+        using var application = new AccountsApplication(clock: new TestClock(Close));
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var grace = await application.RegisterVerifiedAsync(Grace);
+        var first = await application.GiveAgentAsync(ada.Id, Close, name: "First");
+        var second = await application.GiveAgentAsync(ada.Id, Close, name: "Second", symbol: "ETHUSDT");
+        var hers = await application.GiveAgentAsync(grace.Id, Close, name: "Hers");
+
+        // A user who has no cycle has no recent decision, in either mode.
+        Assert.Empty(await application.RecordedCycles.LatestOfUserAsync(ada.Id, TradingMode.Demo, TestContext.Current.CancellationToken));
+
+        Task StoreAsync(Guid agentId, Guid userId, TradingMode mode, int hour, CycleOutcome outcome, CycleKind kind = CycleKind.Scheduled) =>
+            application.CycleRecords.StoreAsync(
+                new DecisionCycle(
+                    Guid.CreateVersion7(),
+                    agentId,
+                    userId,
+                    mode,
+                    Close.AddHours(hour),
+                    Close.AddHours(hour).AddSeconds(2),
+                    Close.AddHours(hour).AddSeconds(30),
+                    outcome,
+                    dataPackage: null,
+                    noEntry: null,
+                    kind),
+                [],
+                [],
+                TestContext.Current.CancellationToken);
+
+        // Twelve cycles in Demo, an hour apart, of the two agents in turn.
+        for (var hour = 0; hour < 12; hour++)
+        {
+            await StoreAsync(hour % 2 == 0 ? first : second, ada.Id, TradingMode.Demo, hour, hour % 3 == 0 ? CycleOutcome.Vetoed : CycleOutcome.Hold);
+        }
+
+        // Later than all of them: a test cycle, a cycle that the first agent ran in Live, and a
+        // cycle of an agent of another user.
+        await StoreAsync(first, ada.Id, TradingMode.Demo, 20, CycleOutcome.Approved, CycleKind.Test);
+        await StoreAsync(first, ada.Id, TradingMode.Live, 21, CycleOutcome.Approved);
+        await StoreAsync(hers, grace.Id, TradingMode.Demo, 22, CycleOutcome.Reduced);
+
+        var demo = await application.RecordedCycles.LatestOfUserAsync(ada.Id, TradingMode.Demo, TestContext.Current.CancellationToken);
+
+        // The latest ten of Demo, from the latest close down, each with its agent and how it
+        // ended. The test cycle is not among them, and neither is anything of Live or of Grace.
+        Assert.Equal(RecentCycle.Shown, demo.Count);
+        Assert.Equal(
+            Enumerable.Range(2, 10).Reverse().Select(hour => (
+                hour % 2 == 0 ? first : second,
+                Close.AddHours(hour),
+                hour % 3 == 0 ? CycleOutcome.Vetoed : CycleOutcome.Hold,
+                TradingMode.Demo,
+                CycleKind.Scheduled)),
+            demo.Select(cycle => (cycle.AgentId, cycle.Cycle.ClosedAt, cycle.Cycle.Outcome, cycle.Cycle.Mode, cycle.Cycle.Kind)));
+
+        // A cycle is of the mode that its row says: the one of Live is listed for Live, whatever
+        // mode its agent is in now (FR-BIN-11).
+        var live = Assert.Single(await application.RecordedCycles.LatestOfUserAsync(ada.Id, TradingMode.Live, TestContext.Current.CancellationToken));
+
+        Assert.Equal((first, Close.AddHours(21), CycleOutcome.Approved), (live.AgentId, live.Cycle.ClosedAt, live.Cycle.Outcome));
+
+        // And Grace is told her own alone.
+        Assert.Equal(
+            [hers],
+            (await application.RecordedCycles.LatestOfUserAsync(grace.Id, TradingMode.Demo, TestContext.Current.CancellationToken))
+            .Select(cycle => cycle.AgentId));
+        Assert.Empty(await application.RecordedCycles.LatestOfUserAsync(grace.Id, TradingMode.Live, TestContext.Current.CancellationToken));
+
+        // An index of the cycles of a user in a mode, by their closes, serves the read.
+        Assert.Equal(
+            1L,
+            application.Database.Scalar<long>(
+                "SELECT count(*) FROM pg_indexes WHERE tablename = 'decision_cycles' AND indexname = 'ix_decision_cycles_user_id_mode_closed_at'"));
+    }
+
+    [Fact]
     public async Task The_record_of_a_cycle_is_read_by_its_user_for_its_agent_and_holds_nothing_of_another_cycle()
     {
         using var application = new AccountsApplication(clock: new TestClock(Close));

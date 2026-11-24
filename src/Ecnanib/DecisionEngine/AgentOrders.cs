@@ -521,6 +521,7 @@ internal sealed class AgentOrders(
                 agent.UserId,
                 NotificationType.AttentionRequired,
                 agent.Id,
+                agent.Mode,
                 $"An entry in {agent.Symbol} ({agent.Mode}) was skipped, and the agent waits for you: {toChange}, and resume the agent.",
                 CancellationToken.None);
         }
@@ -660,7 +661,7 @@ internal sealed class AgentOrders(
         try
         {
             await notifications.RaiseOnceAsync(
-                agent.UserId, NotificationType.EntrySkipped, agent.Id, content, SkippedSaidEvery, CancellationToken.None);
+                agent.UserId, NotificationType.EntrySkipped, agent.Id, agent.Mode, content, SkippedSaidEvery, CancellationToken.None);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
@@ -2678,7 +2679,7 @@ internal sealed class AgentOrders(
     {
         try
         {
-            await notifications.RaiseAsync(position.UserId, type, position.AgentId, content, CancellationToken.None);
+            await notifications.RaiseAsync(position.UserId, type, position.AgentId, position.Mode, content, CancellationToken.None);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {

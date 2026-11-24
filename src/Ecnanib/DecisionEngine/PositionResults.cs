@@ -216,8 +216,14 @@ internal sealed class PositionResults(
     {
         try
         {
+            // In the mode that the position was opened in, which it keeps when its agent is switched (FR-BIN-11).
             await notifications.RaiseAsync(
-                position.UserId, NotificationType.PositionClosed, position.AgentId, ClosedSays(position, result), CancellationToken.None);
+                position.UserId,
+                NotificationType.PositionClosed,
+                position.AgentId,
+                position.Mode,
+                ClosedSays(position, result),
+                CancellationToken.None);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {

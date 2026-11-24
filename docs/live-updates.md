@@ -2,7 +2,7 @@
 
 Agent status, positions, prices, and cycle progress update in the UI within 2 seconds, without a manual refresh (FR-NTF-2). Live UI updates use one push channel from the application to the browser (NFR-ARC-6). A user receives updates only for their own agents.
 
-What is built is that, for the pages that show those things: the list of the agents, the pages of the state, the cycles, and a cycle of an agent, the page that runs a test cycle, and the page of the notifications. A page that follows is still rendered on the server for each request, with its forms as before. It carries one part for which it makes a connection, and over that connection the application says two things: that something which the page shows has changed, upon which the page asks for itself again, and the values that tick, which are written to the page as they change.
+What is built is that, for the pages that show those things: the dashboard, the list of the agents, the pages of the state, the cycles, and a cycle of an agent, the page that runs a test cycle, and the page of the notifications. A page that follows is still rendered on the server for each request, with its forms as before. It carries one part for which it makes a connection, and over that connection the application says two things: that something which the page shows has changed, upon which the page asks for itself again, and the values that tick, which are written to the page as they change.
 
 The signals are in `src/Ecnanib/Platform/LiveUpdates`, with the subjects in `src/Ecnanib/Shared/LiveSubject.cs` and the triggers of the database in the migration `AddLiveSignals`. What a page does with them is in `src/Ecnanib/WebUi/Live`. What it asks of the components is `IConnectedSession` in `src/Ecnanib/Accounts`, `ICycleProgress` and `IOpenPositions` in `src/Ecnanib/DecisionEngine`, and `IExchangePriceWatch` in `src/Ecnanib/ExchangeGateway`. The rules below are enforced by the tests in `tests/Ecnanib.Tests/LiveUpdates`, by `ConnectedSessionTests` in `tests/Ecnanib.Tests/Accounts`, by `CycleProgressTests` and `OpenPositionTests` in `tests/Ecnanib.Tests/DecisionEngine`, by `PriceWatchTests` and `RequestLimitTests` in `tests/Ecnanib.Tests/ExchangeGateway`, and by the reserved namespaces of [`ComponentRules.cs`](../tests/Ecnanib.Tests/Architecture/ComponentRules.cs).
 
@@ -34,13 +34,13 @@ The channel is the connection that the framework keeps for a page with an intera
 | Rule | Detail |
 |---|---|
 | **There is no other channel.** | The application has no hub of its own, no WebSocket endpoint, and no stream of server-sent events, and no script of a page polls. `ComponentRules.cs` reserves the namespaces of the framework's hubs and of server-sent events for nobody, and lists what maps a hub, takes a WebSocket, or sends a stream of events among the methods that no code may call. Code that would add a channel fails `DependencyRuleTests`. |
-| **A page makes the connection only when it follows.** | The framework's script is on every page, and connects only for a page that has an interactive part. `LivePageTests` holds the six pages to having one, and other pages to having none. |
+| **A page makes the connection only when it follows.** | The framework's script is on every page, and connects only for a page that has an interactive part. `LivePageTests` holds the seven pages to having one, and other pages to having none. |
 | **Two things go over it.** | That the page is to ask for itself again, and the parts that tick: the steps of a cycle that runs, and the position of an agent with its price. Nothing else of the application is interactive. |
 | **A page that follows is rendered on the server for each request, as before.** | Its forms are posted to the server with the token of the page, are answered by a request, and are recorded with where the request came from: see [security.md](security.md) and "The audit trail" in [accounts.md](accounts.md). So the page is not written over the connection. It is asked for again, and the browser changes what differs: the buttons, the tables, and the count in the bar are those of now, and nothing is drawn twice by two pieces of code. |
 | **The part is written with the page.** | What it shows is in the page as the server writes it, so the page reads the same before its connection is made, and for a browser that runs no script, which then shows the page as it was written. |
 | **The part of a page stays when the page asks for itself again.** | `LiveUpdates` gives it the path of the page as its key. On another page it is another part, with a feed of its own. |
 | **A page that answers a form asks for itself again on nothing.** | What the form answered, such as why an agent was not started, would be gone from it. `LiveView.Of` leaves the subjects out for a request that is not a GET. Its parts are written all the same. |
-| **A page that follows has no field to type in.** | A page that is asked for again is written anew around its user, and what they had typed would be lost. The six pages have buttons and links. `LivePageTests` holds them to it. |
+| **A page that follows has no field to type in.** | A page that is asked for again is written anew around its user, and what they had typed would be lost. The seven pages have buttons and links. `LivePageTests` holds them to it. |
 
 ## Signals
 
@@ -116,6 +116,8 @@ These are events of the instance. The listener begins with the request of whoeve
 | **A page of one agent is told nothing of another.** | A signal that names another agent is left alone. One that names none is about none, or about all of them, and a page of every agent follows each. |
 | **The page asks for itself again a moment after a change that it shows,** and at most once a second. | It waits 150 milliseconds for what else changes, so a burst is one request: an order that is executed writes its row, its position, and the state of its agent. A change that comes within a second of a request is asked for when the second is over. |
 | **The parts that tick are written at once.** | A step of a cycle, a position, and each price that the watch reads. |
+| **For a page that values what its user holds, it follows the prices of that.** | The dashboard says so with `Values`: its figures count each open position at the price that the watch has, and the watch has the price of what someone follows. The feed asks for the symbols that the agents of its user hold a position in, by owner, with `IOpenPositions.HeldByUserAsync`, when it begins and each time that the database says that what they hold changed, and follows the price that each is valued at: the mark price on Futures, and the price that the symbol last traded at on Spot. A price of something that is no longer held is let go of. Two agents that hold the same symbol are one price. |
+| **The first read of such a price has the page ask for itself again,** and a later read asks for nothing. | The page was written without the price, or with an older one, and is written again with it, a moment later, as after any change. This holds for every price that the feed begins to follow, whether or not the watch had it when the page was written: another page may have begun to follow it in between. A price that is read again is on the page the next time that the page is written. Nothing of it is written over the connection. A page that answers a form values nothing, as it follows nothing. |
 | **It asks whether the session of its connection stands,** when a session of its user ended, when something was missed, and once a minute. | See "The session of a connection". When it does not, nothing more is written, what was shown is taken back, and the browser loads the page anew, which leads to the page that signs in. |
 | **Nothing is asked of a page whose connection is down.** | A browser that sleeps loses its connection for a while, and the framework keeps the page for it. `LiveCircuit` says whether the connection is up. What the page owes, it does when the connection is back. |
 | **A connection that is lost is made again by the framework.** | While it is lost, the framework's script says so in a dialog over the page, and tries again by itself. A connection that comes back while the server still keeps the page goes on where it was. Otherwise, as after the application was started again, the browser loads the page anew once the application answers, and the page follows again. The dialog is the framework's own, with its own words, and it shows under the content security policy of the pages as it is. |
@@ -127,6 +129,7 @@ These are events of the instance. The listener begins with the request of whoeve
 
 | Page | It asks for itself again on | Written to it over the connection |
 |---|---|---|
+| `/dashboard` | `Agent`, `Holdings`, `Cycle`, `Notification`, and the first read of each price of what its user holds | |
 | `/agents` | `Agent`, `Holdings`, `Notification` | |
 | `/agents/<id>/state` | `Agent`, `Holdings`, `Notification` | The cycles of the agent that run, and its position with its price. |
 | `/agents/<id>/cycles` | `Cycle`, `Agent`, `Notification` | The cycles of the agent that run. |
@@ -142,6 +145,8 @@ These are events of the instance. The listener begins with the request of whoeve
 **The position** of an agent says what it holds, the price that it was entered at, and since when, and on the Futures market its side. It says its stop-loss and its take-profit as they rest on the exchange, and says so where none rests: the price alone protects nothing. Under it is the price that the position is valued at, with when Binance was asked, and what the position would make at that price, before fees and funding, in words: a loss is said as a loss, and relies on no colour (FR-THM-5). An agent that holds nothing says so, with the price of its symbol. See "The position on a page" in [orders.md](orders.md) and "Following a price" in [exchange.md](exchange.md).
 
 **The page never waits for Binance.** It is written with the price that the watch has, when another page follows it already, and otherwise says that the price is not known at the moment. The connection brings it within a second.
+
+**The dashboard** values every open position of its user by the same rule, and adds them into the equity of each mode: see [dashboard.md](dashboard.md). It has no part that ticks. A figure that a price is in is not known while the watch has no such price, and says so. The feed of the page follows the prices of what its user holds, and the page asks for itself again when each is first read, so a dashboard that was written with a figure that is not known shows it within a second or two. After that its figures are of the moment that the page was written, and say the time of their prices.
 
 ## The session of a connection
 
@@ -172,6 +177,7 @@ Version 1 targets a single running instance: see [background-work.md](background
 | What the database says | Reaches the pages of both: each has its listener. |
 | The steps of a cycle that runs | Reach the pages of the instance that runs the cycle. A page of the other shows the cycle once it is recorded. |
 | A price | Each instance reads for its own pages, so a price that both follow is read twice a second. |
+| The prices of a dashboard | Are followed by the instance of its connection. A request for the page that the other instance takes is written with the prices that that instance has, which may be none. |
 | That a page asks for itself again | Is announced to the instance of its connection. A request that the other instance takes counts as activity. |
 
 ## Testing
@@ -181,8 +187,8 @@ Version 1 targets a single running instance: see [background-work.md](background
 | `LiveSignalTests` | A follower hears the signals of its user alone. What begins to follow is told what was heard since it read, or that it missed something. A follower that fails fails nobody. |
 | `LiveListenerTests` | The whole way, on PostgreSQL: a write, the trigger, the listener, and the follower, for two users. A change that is rolled back is said to nobody, and neither is a routine write. |
 | `LiveRuleTests` | The triggers of the database are those of `LiveRules.cs`. |
-| `LiveFeedTests` | What a feed asks of its page, with a stand-in for the page: when it asks again, what it writes, whom it tells nothing, when it stops. |
-| `LivePageTests` | The six pages carry one part each, and no field. What a page says of a cycle that runs and of a position, as it is written. |
+| `LiveFeedTests` | What a feed asks of its page, with a stand-in for the page: when it asks again, what it writes, whom it tells nothing, when it stops. Which prices it follows for a page that values what its user holds, and that the first read of each has the page ask again. |
+| `LivePageTests` | The seven pages carry one part each, and no field. What a page says of a cycle that runs and of a position, as it is written. |
 | `ConnectedSessionTests` | When the session of a connection stands, and which requests are no activity. |
 | `CycleProgressTests`, `OpenPositionTests` | The steps of a cycle as it runs, and the position of an agent, each for its user alone. |
 | `PriceWatchTests`, `RequestLimitTests` | One read a second for all who follow a price, none without a follower or without room. |
@@ -199,7 +205,8 @@ No test drives a browser. What the browser does with a page that asks for itself
 - Saying a change without a turn at the commit: see "What the database says". A table of what changed, which the listener reads, would say it without one, and is not built.
 - A stream of prices from Binance. A price that is followed is read once a second, which costs of the request budget: see "Following a price" in [exchange.md](exchange.md).
 - The steps of a cycle that runs, on a page that another instance serves, and a cycle that still waits for its turn in the queue of a close: it says its steps from the moment that its turn comes.
-- Pages that follow beyond the six: the dashboard (FR-RPT-1), the trades and the equity of an agent (FR-RPT-2), the experience screens, and the pages of the keys. The count of the notifications in the bar follows only on a page that follows.
+- Pages that follow beyond the seven: the trades and the equity of an agent (FR-RPT-2), the experience screens, and the pages of the keys. The count of the notifications in the bar follows only on a page that follows.
+- Figures of the dashboard that move with the price: its equity and what its positions would make are of the moment that the page was written, and are worked out anew when something that it shows changes. And what changes a figure and is said by no table that a page follows: a fee that is valued later, funding, and the UTC day that begins. See "Not built yet" in [dashboard.md](dashboard.md).
 - Animation of what changes (FR-ANI-1 to FR-ANI-7). A part that changes is written anew, as text.
 - A form that is answered over the connection. Every form is posted to the server and answered by a request.
 - Announcing a request to another instance: see "One instance".

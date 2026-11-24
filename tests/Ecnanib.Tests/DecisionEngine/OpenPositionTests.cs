@@ -79,6 +79,49 @@ public class OpenPositionTests
     }
 
     [Fact]
+    public async Task The_symbols_that_the_agents_of_a_user_hold_are_said_each_once_and_to_that_user_alone()
+    {
+        using var application = new AccountsApplication();
+        var ada = await application.RegisterVerifiedAsync(Ada);
+        var grace = await application.RegisterVerifiedAsync(Grace);
+
+        // Ada has nothing open yet.
+        Assert.Empty(await application.OpenPositions.HeldByUserAsync(ada.Id, TestContext.Current.CancellationToken));
+
+        var spot = await application.GiveAgentAsync(ada.Id, Morning, name: "Spot");
+        var futures = await application.GiveAgentAsync(ada.Id, Morning, name: "Futures", market: Market.Futures);
+        var live = await application.GiveAgentAsync(ada.Id, Morning, name: "Live", mode: TradingMode.Live);
+        var ether = await application.GiveAgentAsync(ada.Id, Morning, name: "Ether", symbol: "ETHUSDT", state: AgentState.Stopped);
+        var again = await application.GiveAgentAsync(ada.Id, Morning, name: "Again", symbol: "ETHUSDT", state: AgentState.Stopped);
+        var held = await application.GiveAgentAsync(ada.Id, Morning, name: "Held", symbol: "SOLUSDT");
+        var hers = await application.GiveAgentAsync(grace.Id, Morning, name: "Hers", symbol: "BNBUSDT");
+
+        foreach (var agent in new[] { spot, futures, live, ether, again })
+        {
+            await application.GiveTradeAsync(ada.Id, agent, Morning, closed: false);
+        }
+
+        // A position that is over is held no longer, and one of another user is not Ada's.
+        await application.GiveTradeAsync(ada.Id, held, Morning.AddHours(-1));
+        await application.GiveTradeAsync(grace.Id, hers, Morning, closed: false);
+
+        // Each symbol once, on its market, in its mode: two agents that hold the same are one
+        // price to follow. Nothing else of a position is said.
+        Assert.Equal(
+            [
+                new HeldSymbol(Market.Spot, TradingMode.Demo, "BTCUSDT"),
+                new HeldSymbol(Market.Spot, TradingMode.Demo, "ETHUSDT"),
+                new HeldSymbol(Market.Futures, TradingMode.Demo, "BTCUSDT"),
+                new HeldSymbol(Market.Spot, TradingMode.Live, "BTCUSDT"),
+            ],
+            await application.OpenPositions.HeldByUserAsync(ada.Id, TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            [new HeldSymbol(Market.Spot, TradingMode.Demo, "BNBUSDT")],
+            await application.OpenPositions.HeldByUserAsync(grace.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task The_protection_of_a_position_is_said_while_an_order_for_it_rests_on_the_exchange_and_not_otherwise()
     {
         using var application = new AccountsApplication();

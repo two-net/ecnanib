@@ -292,10 +292,12 @@ internal sealed class Feeding : IDisposable
         Guid? agentId = null,
         LiveSubject[]? follows = null,
         LiveShows shows = LiveShows.None,
-        long? since = null) =>
+        long? since = null,
+        bool values = false) =>
         Application.LiveFeeds.Open(
             connection,
-            new LiveView(agentId, follows ?? [], shows, Market.Spot, TradingMode.Demo, "BTCUSDT", "USDT", since ?? Signals.Mark(), page.Address),
+            new LiveView(
+                agentId, follows ?? [], shows, Market.Spot, TradingMode.Demo, "BTCUSDT", "USDT", since ?? Signals.Mark(), page.Address, values),
             page);
 
     /// <summary>A cycle that runs, at its first step.</summary>

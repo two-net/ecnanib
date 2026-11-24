@@ -626,6 +626,101 @@ fieldset {
     color: #ffffff;
 }
 
+/* The dashboard (FR-RPT-1): a section for each mode, set apart from the one above it by a line,
+   so that what is of Live and what is of Demo are seen to be apart (FR-BIN-11). Each says its
+   mode with the badge, as a word. The figures of a mode stand side by side, and one under
+   another on a narrow screen. A number is as wide as its digits, so nothing moves when it
+   changes. A profit and a loss are told apart by their sign, and have no colour of their own
+   (FR-THM-5). */
+.dashboard-mode, .dashboard-account {
+    border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    margin: 1.5rem 0 0;
+    padding-top: 0.5rem;
+}
+
+.dashboard-figures {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2.5rem;
+    margin: 1rem 0 0.5rem;
+}
+
+    .dashboard-figures dt {
+        font-size: 0.875rem;
+    }
+
+    .dashboard-figures dd {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+
+/* The open positions and the recent decisions of a mode: tables as the list of the agents is,
+   which scroll sideways by themselves on a narrow screen. The decisions need less room. */
+.dashboard-positions td {
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard-decisions table {
+    min-width: 30rem;
+}
+
+/* A card for each agent of a mode: as many side by side as fit, each at least as wide as its
+   longest line needs, and one under another on a narrow screen. A card is an outline in the
+   colour of the text around it, on a light page and on a dark one. */
+.agent-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+    gap: 1rem;
+    list-style: none;
+    margin: 0 0 1.5rem;
+    padding: 0;
+}
+
+.agent-card {
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    overflow-wrap: anywhere;
+}
+
+    .agent-card h4 {
+        margin: 0 0 0.25rem;
+        font-size: 1.125rem;
+    }
+
+    .agent-card p {
+        margin: 0 0 0.5rem;
+    }
+
+    .agent-card dl {
+        margin: 0 0 0.5rem;
+    }
+
+    /* What a card says of its agent, each on a line: its name, and beside it what it is, which
+       wraps in a column of its own when it is long. */
+    .agent-card dl > div {
+        display: grid;
+        grid-template-columns: 4.5rem 1fr;
+        gap: 0 0.5rem;
+    }
+
+    .agent-card dt {
+        font-weight: 600;
+    }
+
+    .agent-card dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+    }
+
+/* What leads from an alert to its agent, under what the alert says. */
+.agent-notifications > li > a {
+    display: block;
+    margin-top: 0.25rem;
+}
+
 /* What happens to an open position when its agent is stopped: one choice under another, each
    with what it means below it. */
 .choice {

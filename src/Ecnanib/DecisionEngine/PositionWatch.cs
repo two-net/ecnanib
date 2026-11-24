@@ -211,6 +211,7 @@ internal sealed class PositionWatch(
                 position.UserId,
                 NotificationType.LiquidationWarning,
                 position.AgentId,
+                position.Mode,
                 WarningOf(position, mark, liquidation),
                 WarnedEvery,
                 CancellationToken.None);

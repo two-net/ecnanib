@@ -60,6 +60,11 @@ public static class DecisionEngineModule
 
         // The open position of an agent as the page of the agent says it, for its user (FR-NTF-2).
         services.AddSingleton<IOpenPositions, OpenPositions>();
+
+        // The equity of each agent of a user, with what it made in the UTC day and what it
+        // holds, as the dashboard shows them for each mode (FR-RPT-1). It only reads, and asks
+        // the exchange nothing: a position is valued at the price that a page follows.
+        services.AddSingleton<IAgentEquities, AgentEquities>();
         services.AddSingleton<IReconciliation, OrderReconciliation>();
 
         // What watches the loss limits of an agent, at every cycle and every reconciliation:

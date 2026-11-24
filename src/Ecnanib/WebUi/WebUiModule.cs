@@ -42,6 +42,13 @@ public static class WebUiModule
     /// <summary>The path of the page a user deletes their Binance credential for an environment on.</summary>
     public static string DeleteExchangeKeyPath(TradingMode environment) => $"{ExchangeKeyPath(environment)}/delete";
 
+    /// <summary>
+    /// The path of the dashboard: every agent of a user at a glance, with total equity, profit
+    /// and loss for the day, open positions, a status card per agent, recent decisions, and
+    /// alerts, for Demo and for Live apart (FR-RPT-1, FR-UI-2).
+    /// </summary>
+    public const string DashboardPath = "/dashboard";
+
     /// <summary>The path of the page that lists the catalog of models by provider (FR-CAT-10).</summary>
     public const string CatalogPath = "/catalog";
 

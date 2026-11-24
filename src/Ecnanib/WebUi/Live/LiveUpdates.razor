@@ -44,6 +44,14 @@
     [Parameter]
     public string? QuoteAsset { get; set; }
 
+    /// <summary>
+    /// Whether the page values the open positions of its user at their prices, as the dashboard
+    /// does: their prices are followed while the page is open, and the page asks for itself
+    /// again when one of them is first read.
+    /// </summary>
+    [Parameter]
+    public bool Values { get; set; }
+
     /// <summary>What ILiveSignals.Mark said before the page read what it shows.</summary>
     [Parameter, EditorRequired]
     public long Since { get; set; }
@@ -57,6 +65,6 @@
         var request = HttpContext?.Request ?? throw new InvalidOperationException("A page that follows is written for a request, and there is none.");
 
         _page = request.Path.Value ?? string.Empty;
-        _view = LiveView.Of(request, AgentId, Follows, Shows, Market, Mode, Symbol, QuoteAsset, Since);
+        _view = LiveView.Of(request, AgentId, Follows, Shows, Market, Mode, Symbol, QuoteAsset, Since, Values);
     }
 }

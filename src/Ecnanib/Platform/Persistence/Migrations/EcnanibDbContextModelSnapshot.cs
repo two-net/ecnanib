@@ -798,6 +798,9 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.HasIndex("AgentId", "UserId", "ClosedAt")
                         .HasDatabaseName("ix_decision_cycles_agent_id_user_id_closed_at");
 
+                    b.HasIndex("UserId", "Mode", "ClosedAt")
+                        .HasDatabaseName("ix_decision_cycles_user_id_mode_closed_at");
+
                     b.ToTable("decision_cycles", (string)null);
                 });
 
@@ -2231,6 +2234,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.Property<bool>("IsRead")
                         .HasColumnType("boolean")
                         .HasColumnName("is_read");
+
+                    b.Property<string>("Mode")
+                        .HasColumnType("text")
+                        .HasColumnName("mode");
 
                     b.Property<string>("Type")
                         .IsRequired()

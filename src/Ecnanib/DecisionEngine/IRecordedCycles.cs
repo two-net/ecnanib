@@ -32,6 +32,37 @@ public interface IRecordedCycles
     /// <param name="cycleId">The cycle.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     Task<CycleRecord?> FindAsync(Guid userId, Guid agentId, Guid cycleId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The latest cycles of the agents of a user in one mode, latest close first: the recent
+    /// decisions that the dashboard lists for that mode (FR-RPT-1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A cycle is of the mode that its agent was in then,</b> which its row says, and not of
+    /// the mode that the agent is in now: what was decided in Demo is never listed under Live
+    /// (FR-BIN-11).
+    /// </para>
+    /// <para>
+    /// <b>A test cycle is not among them.</b> Its user ran it to see what the team would
+    /// decide, and it placed no orders (FR-CYC-12): it is on the list of the cycles of its
+    /// agent, and is no decision that anything followed from.
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">The user who is signed in.</param>
+    /// <param name="mode">The mode.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns><see cref="RecentCycle.Shown"/> cycles at the most.</returns>
+    Task<IReadOnlyList<RecentCycle>> LatestOfUserAsync(Guid userId, TradingMode mode, CancellationToken cancellationToken);
+}
+
+/// <summary>A cycle of one of the agents of a user, as a list of the latest cycles of several agents names it.</summary>
+/// <param name="AgentId">The agent whose cycle it is.</param>
+/// <param name="Cycle">The cycle.</param>
+public sealed record RecentCycle(Guid AgentId, CycleListing Cycle)
+{
+    /// <summary>How many cycles of a mode the dashboard lists.</summary>
+    public const int Shown = 10;
 }
 
 /// <summary>The cycles of an agent that a page lists.</summary>
@@ -184,6 +215,30 @@ internal sealed class RecordedCycles(IDbContextFactory<EcnanibDbContext> context
             .ToListAsync(cancellationToken);
 
         return new CycleHistory(total, latest);
+    }
+
+    public async Task<IReadOnlyList<RecentCycle>> LatestOfUserAsync(Guid userId, TradingMode mode, CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        // Asked for by owner, and by the mode that each cycle says: an index of the cycles of a
+        // user in a mode, in the order of their closes, gives the latest of them.
+        var latest = await context.Set<DecisionCycle>()
+            .AsNoTracking()
+            .OwnedBy(userId)
+            .Where(cycle => cycle.Mode == mode && cycle.Kind == CycleKind.Scheduled)
+            .OrderByDescending(cycle => cycle.ClosedAt)
+            .ThenByDescending(cycle => cycle.StartedAt)
+            .Take(RecentCycle.Shown)
+            .Select(cycle => new { cycle.AgentId, cycle.Id, cycle.ClosedAt, cycle.Mode, cycle.StartedAt, cycle.EndedAt, cycle.Outcome, cycle.Kind })
+            .ToListAsync(cancellationToken);
+
+        return
+        [
+            .. latest.Select(cycle => new RecentCycle(
+                cycle.AgentId,
+                new CycleListing(cycle.Id, cycle.ClosedAt, cycle.Mode, cycle.StartedAt, cycle.EndedAt, cycle.Outcome, cycle.Kind))),
+        ];
     }
 
     public async Task<CycleRecord?> FindAsync(Guid userId, Guid agentId, Guid cycleId, CancellationToken cancellationToken)
