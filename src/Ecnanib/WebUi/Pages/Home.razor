@@ -1,12 +1,23 @@
 ﻿@page "/"
 @using Ecnanib.Accounts
+@using Ecnanib.Agents
+@using Ecnanib.Catalog
+@using Ecnanib.Platform.Settings
+@using Ecnanib.Shared
 @using Ecnanib.WebUi.Pages.Legal
 @inject IRegistration Registration
+@inject ICatalogModels Catalog
+@inject TradingSettings Trading
 
 @*
     The start page (FR-UI-2): the landing page of a visitor, with the ways to register and to
     sign in. A user arrives here after signing in, and is shown the way to their dashboard. It
-    has no form and follows nothing. Its texts are in HomePages.
+    has no form, stores nothing, and follows nothing. Its texts are in HomePages.
+
+    Under what it says of the team, it presents the team as an illustration (FR-ANI-7): the
+    four roles, each with the provider that the configuration file gives it on a new agent
+    (FR-TEAM-2, FR-TEAM-3), by the name that the catalog has for the provider. That name is all
+    that the page reads. See TeamIllustration, and docs/motion.md.
 *@
 
 <PageTitle>@HomePages.Title</PageTitle>
@@ -16,6 +27,11 @@
 <p>@HomePages.What</p>
 
 <p>@HomePages.Who</p>
+
+@if (_team is { } team)
+{
+    <TeamIllustration Providers="team" />
+}
 
 <p>@HomePages.Risk <a href="@LegalPages.RiskDisclosurePath">@HomePages.RiskLink</a>.</p>
 
@@ -38,3 +54,24 @@
         <p><a href="@SessionAuthentication.SignInPath">@HomePages.SignInLink</a></p>
     </NotAuthorized>
 </AuthorizeView>
+
+@code {
+    // The name of the provider that fills each role on a new agent, once it is read.
+    private IReadOnlyDictionary<Role, string>? _team;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is { } request)
+        {
+            var names = await Catalog.ProviderNamesAsync(request.RequestAborted);
+
+            _team = AgentRoleRules.All.ToDictionary(role => role, role => NameOf(Trading.DefaultRoles.Of(role)));
+
+            // A provider that the catalog has no name for is named by its code, as the form of an agent names it.
+            string NameOf(AiProviderCode provider) => names.GetValueOrDefault(provider, provider.Value);
+        }
+    }
+}

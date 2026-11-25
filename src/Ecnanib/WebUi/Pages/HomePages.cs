@@ -3,7 +3,9 @@ namespace Ecnanib.WebUi.Pages;
 /// <summary>
 /// The texts of the start page, in one place (NFR-USA-4): the landing page of a visitor, which a
 /// user who is signed in sees too, with the way to their dashboard (FR-UI-2). The providers and
-/// the exchange are named only to say which they are (NFR-LEG-4). See docs/layout.md.
+/// the exchange are named only to say which they are (NFR-LEG-4): by their names as text, with
+/// no logo and nothing that says more of them than whose model fills a role. See docs/layout.md,
+/// and for the illustration of the team (FR-ANI-7) docs/motion.md.
 /// </summary>
 public static class HomePages
 {
@@ -19,6 +21,22 @@ public static class HomePages
     public const string Who =
         "A team of four AI roles runs each agent, with models of Claude, Gemini, GPT, and Grok, and with your own API keys. " +
         "Every plan of the team is checked against fixed limits, which the AI cannot override.";
+
+    /// <summary>
+    /// What the illustration of the team says under it (FR-ANI-7): whose team it is, and the
+    /// order that the roles work in, in words, so that nothing relies on what moves (FR-THM-5).
+    /// It holds for whatever provider the configuration file gives a role, also when it gives
+    /// one provider two roles.
+    /// </summary>
+    public const string TeamCaption =
+        "The team of a new agent. The Market Analyst and the Sentiment Analyst work at the same time, " +
+        "then the Strategist, then the Risk Manager. You choose the model of each role, and can give a role to another provider.";
+
+    /// <summary>
+    /// Whose model fills a role of that team, by the name of the provider as the catalog has it:
+    /// <c>A model of Claude</c>. The name says which provider it is, and nothing else (NFR-LEG-4).
+    /// </summary>
+    public static string ModelOf(string providerName) => $"A model of {providerName}";
 
     /// <summary>What is at stake, before the link to the risk disclosure.</summary>
     public const string Risk =

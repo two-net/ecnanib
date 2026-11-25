@@ -53,6 +53,16 @@ internal sealed class CatalogModels(ModelEligibility eligibility, IDbContextFact
         return catalogs;
     }
 
+    public async Task<IReadOnlyDictionary<AiProviderCode, string>> ProviderNamesAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        // The rows of the providers, which are few and seeded: nothing of their models is read.
+        return await context.Set<AiProvider>()
+            .AsNoTracking()
+            .ToDictionaryAsync(provider => provider.Code, provider => provider.DisplayName, cancellationToken);
+    }
+
     public async Task<CatalogModel?> FindAsync(Guid modelId, CancellationToken cancellationToken)
     {
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);

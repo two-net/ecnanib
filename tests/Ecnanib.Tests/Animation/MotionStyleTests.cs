@@ -7,13 +7,15 @@ namespace Ecnanib.Tests.Animation;
 /// <summary>
 /// What moves on the pages is in the stylesheet of the pages alone: the team at work
 /// (FR-ANI-1), a figure that counts and the equity curve that unfolds (FR-ANI-2), a page, a
-/// state, an item of a list, and the dialog that rejoins the server (FR-ANI-3). No page carries
-/// a style for it, and the script of the pages says when something moves and never how. These
-/// tests hold the stylesheet to what all of it rests on: that nothing moves for a device that
-/// asks for reduced motion, nor for an account that reduced it (FR-ANI-4), that a change is
-/// short, that what moves for as long as its state lasts is of a state that is live and stands
-/// still in a tab that nobody sees (FR-ANI-5, FR-ANI-6), and that only how far something shows
-/// and how large it is drawn are changed (FR-ANI-6). See docs/motion.md.
+/// state, an item of a list, and the dialog that rejoins the server (FR-ANI-3), and the
+/// illustration of the team on the start page (FR-ANI-7). No page carries a style for it, and
+/// the script of the pages says when something moves and never how. These tests hold the
+/// stylesheet to what all of it rests on: that nothing moves for a device that asks for reduced
+/// motion, nor for an account that reduced it (FR-ANI-4), that a change is short, that what
+/// moves for as long as its state lasts is of a state that is live and stands still in a tab
+/// that nobody sees (FR-ANI-5, FR-ANI-6), that only how far something shows and how large it
+/// is drawn are changed (FR-ANI-6), and that the illustration is played once, in steps that are
+/// each a change, and stands still while nobody sees it. See docs/motion.md.
 /// </summary>
 /// <remarks>
 /// No test drives a browser: that what moves looks right is seen by hand, as docs/motion.md
@@ -41,6 +43,32 @@ public partial class MotionStyleTests
     [
         $"{NotReduced} .components-rejoining-animation div",
         $"{NotReduced} .role-working .role-marker::before",
+    ];
+
+    // The illustration of the team on the start page (FR-ANI-7), and its three stages: the two
+    // analysts, the Strategist, and the Risk Manager.
+    private const string Illustration = NotReduced + " .team-illustration";
+    private const string Analysts = Illustration + " .pipeline-stage:nth-child(1)";
+    private const string Strategist = Illustration + " .pipeline-stage:nth-child(2)";
+    private const string RiskManager = Illustration + " .pipeline-stage:nth-child(3)";
+
+    // The longest that the illustration is played for, from when it is shown to its last step.
+    private static readonly TimeSpan LongestRun = TimeSpan.FromSeconds(5);
+
+    // The illustration step by step, in the order that the team works in. The parts of a step
+    // move together: a role takes up its work as a dot in its ring and the second outline of its
+    // card, and is done as the disc over the dot while the outline goes. Between two stages the
+    // line into the next one is drawn through.
+    private static readonly string[] Run =
+    [
+        $"{Analysts} .role-marker::after, {Analysts} .role-turn",
+        $"{Analysts} .role-marker::before, {Analysts} .role-turn::before",
+        $"{Strategist}::after",
+        $"{Strategist} .role-marker::after, {Strategist} .role-turn",
+        $"{Strategist} .role-marker::before, {Strategist} .role-turn::before",
+        $"{RiskManager}::after",
+        $"{RiskManager} .role-marker::after, {RiskManager} .role-turn",
+        $"{RiskManager} .role-marker::before, {RiskManager} .role-turn::before",
     ];
 
     [Fact]
@@ -123,17 +151,23 @@ public partial class MotionStyleTests
         Assert.Contains(changes, change => RuleOf(motion, change.Index) == $"{NotReduced} .pipeline-stage + .pipeline-stage::after");
 
         // An animation that ends is a change, and is as short as one: the first time that it
-        // says is how long it takes. The dialog alone waits before it, for as long again.
+        // says is how long it takes. So is each step of the illustration of the start page.
         var ending = Animated(motion).Where(animation => !animation.Lasts).ToList();
 
         Assert.NotEmpty(ending);
         Assert.All(ending, animation => Assert.True(
             animation.Takes >= Shortest && animation.Takes <= Longest,
             $"{animation.Rule} moves for {animation.Takes.TotalMilliseconds} ms."));
+
+        // The dialog alone waits before it, for as long again. The steps of the illustration
+        // wait too, each until the step before it is over: that is what makes it one run, and
+        // it is held to rules of its own below. Nothing else may wait.
+        var others = ending.Where(animation => !OfTheRun(animation.Rule)).ToList();
+
         Assert.Equal(
             [$"{NotReduced} #components-reconnect-modal[open]"],
-            ending.Where(animation => animation.Waits > TimeSpan.Zero).Select(animation => animation.Rule));
-        Assert.All(ending, animation => Assert.InRange(animation.Waits, TimeSpan.Zero, Longest));
+            others.Where(animation => animation.Waits > TimeSpan.Zero).Select(animation => animation.Rule));
+        Assert.All(others, animation => Assert.InRange(animation.Waits, TimeSpan.Zero, Longest));
     }
 
     [Fact]
@@ -195,6 +229,99 @@ public partial class MotionStyleTests
         // An animation whose steps are not there moves nothing, and says nothing of it.
         Assert.Equal(steps, named);
         Assert.Equal(steps.Distinct(), steps);
+    }
+
+    [Fact]
+    public async Task An_animation_says_its_times_in_one_place_so_none_of_them_is_left_unread()
+    {
+        var (motion, _) = await MotionAsync();
+
+        // How long an animation takes, how long it waits, and whether it goes on, are read
+        // above from where the animation is given. A time that is said apart from it would be
+        // read by no test: so none is, but the one that has the second ring of the dialog come
+        // after the first, which is no wait. Whether an animation plays is no time.
+        Assert.Equal(
+            [$"{NotReduced} .components-rejoining-animation div:nth-child(2) {{ animation-delay: -0.5s }}"],
+            Apart().Matches(motion).Select(said => $"{RuleOf(motion, said.Index)} {{ {said.Value.Trim()} }}"));
+    }
+
+    [Fact]
+    public async Task The_team_on_the_start_page_is_played_once_in_the_order_that_it_works_in_and_ends_as_the_picture_that_stands_still()
+    {
+        var (motion, rest) = await MotionAsync();
+
+        var parts = Animated(motion).Where(animation => OfTheRun(animation.Rule)).ToList();
+
+        // Each part is given its steps, how long they take, how long it waits, and that it is
+        // as its first step until then, and nothing else: so it is played once, and never again.
+        var given = Animation().Matches(motion).Where(animation => OfTheRun(RuleOf(motion, animation.Index))).ToList();
+
+        Assert.NotEmpty(given);
+        Assert.All(given, animation => Assert.Matches(@"^[\w-]+ \d+ms ease-out \d+ms backwards$", animation.Groups[1].Value.Trim()));
+
+        // Its steps say what a part comes from and never what it goes to: a part ends as the
+        // rules outside say it, which is the picture that a device with reduced motion is shown.
+        var names = parts.Select(part => part.Name).Distinct().ToList();
+
+        Assert.All(
+            Keyframes().Matches(motion).Where(moving => names.Contains(moving.Groups["name"].Value)),
+            moving => Assert.Matches(@"^\s*from\s*\{[^{}]*\}\s*$", moving.Groups["steps"].Value));
+
+        // What moves is drawn for the eye alone: the marker of a role, the second outline of
+        // its card, and the line into a stage. No card and no text of one moves or waits.
+        Assert.All(
+            parts.SelectMany(part => part.Rule.Split(',')).Select(Spaced),
+            part => Assert.Matches(@"(?:::before|::after| \.role-turn)$", part));
+
+        // The steps, in the order that the team works in (SRS 3.2): the two analysts at the
+        // same time, then the Strategist, then the Risk Manager, with the hand-off between.
+        var steps = parts
+            .GroupBy(part => (part.Waits, part.Takes))
+            .OrderBy(step => step.Key.Waits)
+            .Select(step => (
+                step.Key.Waits,
+                step.Key.Takes,
+                Parts: string.Join(", ", step.Select(part => part.Rule).Order(StringComparer.Ordinal))))
+            .ToList();
+
+        Assert.Equal(Run, steps.Select(step => step.Parts));
+
+        // A step waits until the one before it is over, and the first until the page has faded
+        // in. The whole is over in seconds.
+        Assert.All(steps.Zip(steps.Skip(1)), turn => Assert.True(
+            turn.Second.Waits >= turn.First.Waits + turn.First.Takes,
+            $"{turn.Second.Parts} moves before the step before it is over."));
+
+        var page = Assert.Single(Animated(motion), animation => animation.Rule == $"{NotReduced} main");
+
+        Assert.True(steps[0].Waits >= page.Takes);
+        Assert.True(steps[^1].Waits + steps[^1].Takes <= LongestRun);
+
+        // It stands still while nobody sees it (FR-ANI-6). The figure says so to its parts by
+        // a property, in a tab in the background and off the screen, and each step takes
+        // whether it plays from that, after its animation: the animation says "running" with
+        // everything else that it says, so a rule that only named the figure would not hold.
+        var rules = Rule().Matches(Keyframes().Replace(motion, string.Empty));
+
+        Assert.All(
+            rules.Where(rule => OfTheRun(Spaced(rule.Groups["selectors"].Value))),
+            rule => Assert.Matches(
+                @"^\s*animation:[^;]*;\s*animation-play-state:\s*var\(--team-run, running\);\s*$", rule.Groups["body"].Value));
+
+        var stills = Assert.Single(rules, rule => rule.Groups["body"].Value.Contains("--team-run:", StringComparison.Ordinal));
+
+        Assert.Matches(@"^\s*--team-run:\s*paused;\s*$", stills.Groups["body"].Value);
+        Assert.Equal(
+            [$"{NotReduced}[data-hidden] .team-illustration", $"{Illustration}[data-offscreen]"],
+            stills.Groups["selectors"].Value.Split(',').Select(Spaced));
+        Assert.DoesNotContain("--team-run", rest, StringComparison.Ordinal);
+
+        // The picture that stands still is outside, for every device: the disc of a role that
+        // is done with the dot under it, the second outline at rest, and the lines drawn
+        // through, which the first test of this class holds.
+        Assert.Matches(@"\.role-done \.role-marker::before\s*\{\s*opacity:\s*1;\s*transform:\s*scale\(1\.4\);", rest);
+        Assert.Matches(@"\.team-illustration \.role-marker::after\s*\{[^{}]*opacity:\s*1;\s*transform:\s*scale\(0\.5\);", rest);
+        Assert.Matches(@"\.role-turn::before\s*\{[^{}]*opacity:\s*0;", rest);
     }
 
     [Fact]
@@ -275,6 +402,10 @@ public partial class MotionStyleTests
 
                 Assert.True(times.Count is 1 or 2, $"An animation says how long it takes, and how long it waits at the most: {said}");
 
+                // And it is given by itself: of two in one place, the times of the second
+                // would be read as the wait of the first.
+                Assert.False(Bracketed().Replace(said, string.Empty).Contains(','), $"An animation is given by itself: {said}");
+
                 return (
                     RuleOf(styles, animation.Index),
                     said.Split(' ')[0],
@@ -283,6 +414,9 @@ public partial class MotionStyleTests
                     said.Split(' ').Contains("infinite"));
             }),
     ];
+
+    /// <summary>Whether a rule is of the illustration of the start page: one of the steps of its run.</summary>
+    private static bool OfTheRun(string rule) => rule.StartsWith(Illustration + " ", StringComparison.Ordinal);
 
     /// <summary>The selector of the rule that a place in a stylesheet is in, on one line.</summary>
     private static string RuleOf(string styles, int index) => Spaced(Stylesheets.RuleOf(styles, index));
@@ -312,6 +446,14 @@ public partial class MotionStyleTests
 
     [GeneratedRegex(@"(?<![-\w])animation\s*:([^;}]*)")]
     private static partial Regex Animation();
+
+    // What is said of an animation apart from where it is given, but whether it plays.
+    [GeneratedRegex(@"(?<![-\w])animation-(?!play-state\b)[a-z-]+\s*:[^;}]*")]
+    private static partial Regex Apart();
+
+    // What is in brackets, such as the points of a curve that an animation eases by.
+    [GeneratedRegex(@"\([^()]*\)")]
+    private static partial Regex Bracketed();
 
     [GeneratedRegex(@"(?<![\w.-])(\d*\.?\d+)(ms|s)\b")]
     private static partial Regex Time();

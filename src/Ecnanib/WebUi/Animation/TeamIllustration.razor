@@ -1,0 +1,59 @@
+@using Ecnanib.DecisionEngine
+@using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages
+@using Ecnanib.WebUi.Pages.Agents
+
+@*
+    The team of an agent on the start page, as an illustration (FR-ANI-7): the four roles as the
+    screen of an agent draws them, in the order that they work in and in three stages, each with
+    the provider whose model fills it on a new agent and with its job. It is the pipeline of
+    that screen as it is once a cycle has gone through it: every role is done, and the work was
+    handed to each stage. So it is drawn by the rules of the pipeline, and reads the same in both
+    themes (FR-THM-5).
+
+    A provider is named by its name as text, to say whose model fills a role, and by nothing
+    else: no logo, no picture, and no colour of its own (NFR-LEG-4). The caption says in words
+    what the picture shows, so nothing relies on what moves.
+
+    What moves is in the stylesheet alone, for a device that asks for no reduced motion and an
+    account that did not reduce it (FR-ANI-4): the picture is played once, as one cycle, and
+    stays as it is written here. The cards and their texts never move and are never hidden: what
+    moves is the marker of a role, the second outline of a card whose role works, which is the
+    empty element at the start of a card, and the line into a stage. The part says that
+    something of it moves, so the script of the pages has it stand still while it is off the
+    screen (FR-ANI-6). It carries no style and no script. See docs/motion.md.
+*@
+
+<figure class="team-illustration" data-moves>
+    <ol class="team-pipeline">
+        <li class="pipeline-stage">
+            @* The two analysts work at the same time. *@
+            <ul class="pipeline-parallel">
+                <li>@Card(Role.MarketAnalyst)</li>
+                <li>@Card(Role.SentimentAnalyst)</li>
+            </ul>
+        </li>
+        <li class="pipeline-stage stage-handed">@Card(Role.Strategist)</li>
+        <li class="pipeline-stage stage-handed">@Card(Role.RiskManager)</li>
+    </ol>
+
+    <figcaption>@HomePages.TeamCaption</figcaption>
+</figure>
+
+@code {
+    /// <summary>The name of the provider that fills each role on a new agent, as users read it.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyDictionary<Role, string> Providers { get; set; } = new Dictionary<Role, string>();
+
+    /// <summary>
+    /// A role as a card: its name, whose model fills it, and its job. The card is the one of a
+    /// role that is done, by the name that the stylesheet knows that by.
+    /// </summary>
+    private RenderFragment Card(Role role) =>
+        @<div class="pipeline-role @LivePages.ClassOf(RoleState.Done)">
+            <span class="role-turn" aria-hidden="true"></span>
+            <span class="role-name">@AgentPages.Describe(role).Name</span>
+            <span class="role-state"><span class="role-marker" aria-hidden="true"></span>@HomePages.ModelOf(Providers[role])</span>
+            <span class="role-job">@AgentPages.Describe(role).Job</span>
+        </div>;
+}

@@ -225,11 +225,15 @@ public interface ICatalogModels
 {
     Task<IReadOnlyList<ProviderCatalog>> ListAsync(CancellationToken cancellationToken);
 
+    Task<IReadOnlyDictionary<AiProviderCode, string>> ProviderNamesAsync(CancellationToken cancellationToken);
+
     Task<CatalogModel?> FindAsync(Guid modelId, CancellationToken cancellationToken);
 }
 ```
 
 A `ProviderCatalog` is a provider with its name, when it was last synced, when its latest sync failed if it did, and its models. A `CatalogModel` is a model as its row holds it, with whether it can be selected and whether it can search live. What the provider did not say is null in it: how unknown is worded is the page's, in `CatalogPages.cs`.
+
+`ProviderNamesAsync` is the name of every provider as users read it, by its code. It reads the rows of the providers and nothing else, for a page that only names them: the start page, which anyone can open, names the provider of each role of a new team with it. See "The illustration of the start page" in [motion.md](motion.md).
 
 The syncs of a provider are read by their index, the newest row first, and no other row of `catalog_sync_runs` is read: the table has a row for every sync there ever was.
 

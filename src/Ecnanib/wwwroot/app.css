@@ -981,6 +981,159 @@ fieldset {
     }
 }
 
+/* The team on the start page, as an illustration (FR-ANI-7): the pipeline above as it is once a
+   cycle has gone through it, each role with the provider whose model fills it on a new agent
+   and with its job. Every role is done and the work was handed to each stage, so the rules
+   above draw it: a disc beside each provider, and both lines drawn through. A caption under it
+   says the same in words. A provider is its name, as text: it has no logo and no colour of its
+   own here (NFR-LEG-4), and everything is in the colour of the text around it (FR-THM-5).
+
+   Two things are there for what moves, and neither is seen in the picture that stands still.
+   The marker has the dot of a role that works in place of the cross, over its disc and in the
+   colour of the disc. And a card has the second outline of a role that works as an element of
+   its own, at its start: the outline shows as far as the element and what is drawn in it both
+   show, so it can come once and go once. What moves is below, for a device that does not ask
+   for reduced motion. */
+.team-illustration {
+    margin: 1.5rem 0;
+}
+
+    .team-illustration .team-pipeline {
+        margin-bottom: 0.5rem;
+    }
+
+    .team-illustration figcaption {
+        max-width: 75ch;
+    }
+
+.role-job {
+    font-size: 0.875em;
+}
+
+.team-illustration .role-marker::after {
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 1;
+    transform: scale(0.5);
+}
+
+.role-turn {
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+    .role-turn::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 2px solid currentColor;
+        border-radius: inherit;
+        opacity: 0;
+    }
+
+/* What moves of it (FR-ANI-7), for a device that does not ask for reduced motion and an account
+   that did not reduce it: on any other the picture stands still, as it is drawn above
+   (FR-ANI-4). It is played once, as one cycle, and never again by itself: it is of no state
+   that is live (FR-ANI-5). The two analysts take up their work at the same time and are done,
+   the work is handed to the Strategist, who works and is done, and then to the Risk Manager.
+
+   Each step is a change of 150 to 400 milliseconds, and waits until the step before it is
+   over: the first until the page has faded in. A step says what a part comes from and never
+   what it goes to, and holds that until its turn, so the run ends as the picture that stands
+   still. Only how far something shows and how large it is drawn are changed (FR-ANI-6).
+
+   While nobody sees it, it stands still: the script of the pages says when its figure is off
+   the screen and when the tab is in the background, the figure says so to its parts by a
+   property, and each step takes whether it plays from that. A step says so after its
+   animation, which would have it play otherwise. So a figure below the first screen is played
+   when it is scrolled to. MotionStyleTests holds the stylesheet to all of this. See
+   docs/motion.md. */
+@media (prefers-reduced-motion: no-preference) {
+    /* The two analysts take up their work: a dot in the ring, and the second outline of a card. */
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(1) .role-marker::after,
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(1) .role-turn {
+        animation: shows 200ms ease-out 400ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    /* They are done: the disc grows from under the dot, and the second outline goes. */
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(1) .role-marker::before {
+        animation: grows 200ms ease-out 1200ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(1) .role-turn::before {
+        animation: rests 200ms ease-out 1200ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    /* The work is handed to the Strategist: the line is drawn through, from the analysts. */
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(2)::after {
+        animation: grows 300ms ease-out 1400ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(2) .role-marker::after,
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(2) .role-turn {
+        animation: shows 200ms ease-out 1700ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(2) .role-marker::before {
+        animation: grows 200ms ease-out 2500ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(2) .role-turn::before {
+        animation: rests 200ms ease-out 2500ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    /* And to the Risk Manager. */
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(3)::after {
+        animation: grows 300ms ease-out 2700ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(3) .role-marker::after,
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(3) .role-turn {
+        animation: shows 200ms ease-out 3000ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(3) .role-marker::before {
+        animation: grows 200ms ease-out 3800ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    :root:not([data-motion="reduced"]) .team-illustration .pipeline-stage:nth-child(3) .role-turn::before {
+        animation: rests 200ms ease-out 3800ms backwards;
+        animation-play-state: var(--team-run, running);
+    }
+
+    /* While nobody sees it, it stands still. The script of the pages says when that is. */
+    :root:not([data-motion="reduced"])[data-hidden] .team-illustration,
+    :root:not([data-motion="reduced"]) .team-illustration[data-offscreen] {
+        --team-run: paused;
+    }
+
+    /* A disc, and a line, from nothing. Where it grows from is said with what it is. */
+    @keyframes grows {
+        from {
+            transform: scale(0);
+        }
+    }
+
+    /* The second outline of a card, which showed while its role worked. */
+    @keyframes rests {
+        from {
+            opacity: 1;
+        }
+    }
+}
+
 /* The figures of an agent stand side by side as those of the dashboard do. There are more of
    them, so each is a little smaller. */
 .agent-figures dd {

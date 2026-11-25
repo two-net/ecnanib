@@ -23,6 +23,14 @@ public interface ICatalogModels
     Task<IReadOnlyList<ProviderCatalog>> ListAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// The name of every AI provider as users read it, such as "Claude", by the provider's code.
+    /// It reads the providers and nothing else: no model, and no sync. So a page that only names
+    /// the providers, as the start page does, asks for no more than that.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the question.</param>
+    Task<IReadOnlyDictionary<AiProviderCode, string>> ProviderNamesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// A model of the catalog, whatever its status, or null when the catalog holds no model with
     /// this id. A model is never deleted, so what points at one finds it here for good.
     /// </summary>

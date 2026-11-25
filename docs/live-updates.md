@@ -213,7 +213,6 @@ No test drives a browser. What the browser does with a page that asks for itself
 - The steps of a cycle that runs, on a page that another instance serves, and a cycle that still waits for its turn in the queue of a close: it says its steps from the moment that its turn comes.
 - Pages that follow beyond the seven: the experience screens, and the pages of the keys. The count of the notifications in the bar follows only on a page that follows.
 - Figures of the dashboard that move with the price: its equity and what its positions would make are of the moment that the page was written, and are worked out anew when something that it shows changes. And what changes a figure and is said by no table that a page follows: a fee that is valued later, funding, and the UTC day that begins. See "Not built yet" in [dashboard.md](dashboard.md).
-- The animated illustration of the team on the landing page (FR-ANI-7). What changes on a page moves as [motion.md](motion.md) says.
 - A form that is answered over the connection. Every form is posted to the server and answered by a request.
 - Announcing a request to another instance: see "One instance".
 - A page that is loaded anew after its connection could not be made again counts as activity of its user: the browser asks for it as for any page.

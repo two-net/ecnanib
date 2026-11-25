@@ -11,7 +11,8 @@
 //   <data class="figure" value="…">   a number that counts from its old value to its new one
 //   data-change="…"                   what an element shows now, such as the state of an agent
 //   data-key="…"                      which item of a list an element is
-//   data-moves                        a part in which something moves for as long as a state lasts
+//   data-moves                        a part in which something moves by itself: for as long as a
+//                                     state lasts, or once, as the illustration of the start page
 //
 // And this script marks, for the stylesheet:
 //   data-changed, data-entered        what changed, and an item that entered a list, once each
@@ -190,7 +191,7 @@ function count(figure, before) {
     run.frame = requestAnimationFrame(step);
 }
 
-// Parts in which something moves for as long as a state lasts, and which are off the screen.
+// Parts in which something moves by itself, and which are off the screen.
 const away = new Set();
 
 const seen = new IntersectionObserver(entries => {

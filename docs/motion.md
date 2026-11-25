@@ -1,12 +1,12 @@
 # Motion
 
-Changing figures (price, profit and loss, equity) animate from the old value to the new one, and charts animate when they load and when new data arrives (FR-ANI-2). Agent state changes, navigation, dialogs, and list changes use short transitions, and content areas show skeleton placeholders while loading (FR-ANI-3). When the device asks for reduced motion, non-essential animation is replaced by instant changes, and the user can also reduce animation in settings (FR-ANI-4). Animation never blocks input, interface transitions last 150 to 400 ms, continuous animation is used only for states that are live, and nothing flashes more than three times per second (FR-ANI-5). Animations cause no layout shift, and pause when off screen or in a background tab (FR-ANI-6). The team at work, which is the animated pipeline of the agent screen (FR-ANI-1), is in [agent-screen.md](agent-screen.md) and follows the same rules.
+Changing figures (price, profit and loss, equity) animate from the old value to the new one, and charts animate when they load and when new data arrives (FR-ANI-2). Agent state changes, navigation, dialogs, and list changes use short transitions, and content areas show skeleton placeholders while loading (FR-ANI-3). When the device asks for reduced motion, non-essential animation is replaced by instant changes, and the user can also reduce animation in settings (FR-ANI-4). Animation never blocks input, interface transitions last 150 to 400 ms, continuous animation is used only for states that are live, and nothing flashes more than three times per second (FR-ANI-5). Animations cause no layout shift, and pause when off screen or in a background tab (FR-ANI-6). The team at work, which is the animated pipeline of the agent screen (FR-ANI-1), is in [agent-screen.md](agent-screen.md) and follows the same rules. The public landing page presents the four-provider team with an animated illustration (FR-ANI-7): see "The illustration of the start page".
 
-What moves and for how long is in `src/Ecnanib/wwwroot/app.css`, and nowhere else. When something moves is said by the one script of the application, `src/Ecnanib/wwwroot/motion.js`, which `App.razor` names on every page. What a page holds is marked by the server: a figure by `PageFigure` and `FigureText.razor` in `src/Ecnanib/WebUi/Animation`, and a state, an item of a list, and a part that moves by an attribute on its element. How much moves for a user is `Motion`, `IMotionChoice`, and the `motion` column of `users`, in `src/Ecnanib/Accounts`, with `PageMotion` and `MotionChoices.razor` in `src/Ecnanib/WebUi/Animation`, and it is chosen on `Appearance.razor`. The rules below are enforced by `MotionStyleTests`, `MotionScriptTests`, `MotionMarkupTests`, and `MotionPageTests` in `tests/Ecnanib.Tests/Animation`.
+What moves and for how long is in `src/Ecnanib/wwwroot/app.css`, and nowhere else. When something moves is said by the one script of the application, `src/Ecnanib/wwwroot/motion.js`, which `App.razor` names on every page. What a page holds is marked by the server: a figure by `PageFigure` and `FigureText.razor` in `src/Ecnanib/WebUi/Animation`, and a state, an item of a list, and a part that moves by an attribute on its element. How much moves for a user is `Motion`, `IMotionChoice`, and the `motion` column of `users`, in `src/Ecnanib/Accounts`, with `PageMotion` and `MotionChoices.razor` in `src/Ecnanib/WebUi/Animation`, and it is chosen on `Appearance.razor`. The illustration of the start page is `TeamIllustration.razor` in `src/Ecnanib/WebUi/Animation`, on `Home.razor` in `src/Ecnanib/WebUi/Pages`, with its texts in `HomePages.cs`. The rules below are enforced by `MotionStyleTests`, `MotionScriptTests`, `MotionMarkupTests`, `MotionPageTests`, and `TeamIllustrationPageTests` in `tests/Ecnanib.Tests/Animation`.
 
 How a page changes without a reload is in [live-updates.md](live-updates.md), the theme that is chosen on the same page is in [themes.md](themes.md), and how a page is kept from carrying a script or a style of its own is in [security.md](security.md).
 
-"Animation" is read as the specification assumes it (A4): motion that shows live state, which is the team at work, changing values, and transitions. Whether that reading is right is an open question of the specification (Q2).
+"Animation" is read as the specification assumes it (A4): motion that shows live state, which is the team at work, changing values, and transitions. Whether that reading is right is an open question of the specification (Q2). The illustration of the start page shows no state that is live: it shows how a team works, once. So it is read as a run of changes, each as short as any other, and as no continuous animation, which is for states that are live (FR-ANI-5).
 
 ## What moves
 
@@ -20,6 +20,7 @@ How a page changes without a reload is in [live-updates.md](live-updates.md), th
 | The dialog that rejoins the server | It rises and fades in over a page that dims, 300 milliseconds after the connection was lost, and closes at once. Its two rings grow and fade one after the other. | 300 milliseconds, and the page under it 200. The rings once in 1.5 seconds, for as long as the server is being rejoined. |
 | The placeholder of the content | It fades in. It is gone at once when the page is there. | 200 milliseconds. |
 | The team at work | See "What moves" in [agent-screen.md](agent-screen.md). | |
+| The team on the start page | See "The illustration of the start page". | |
 
 The figures that count are the price and what the position would make on the screen of an agent, its equity, its net result, and its return there, and on the dashboard the total equity and the profit and loss of the day of each mode, the price and what each open position would make now, and the equity and the day of each agent.
 
@@ -27,13 +28,13 @@ The figures that count are the price and what the position would make on the scr
 |---|---|
 | **When the device asks for reduced motion, nothing moves** (FR-ANI-4). | Everything in the table is inside `@media (prefers-reduced-motion: no-preference)`. On a device that asks for reduced motion a figure shows its new value at once, a page is there at once, and the rings of the dialog stand still. Nothing is taken back for such a device: nothing is given to it. |
 | **When the account reduced it, nothing moves either.** | Every rule inside that block says `:root:not([data-motion="reduced"])` of the page first, each selector by itself. A page whose user chose Reduced says `data-motion="reduced"` on its first element, and is given none of them, whatever the device asks. A device that asks for reduced motion is never overruled: there is no choice that has the pages move regardless. |
-| **A change takes between 150 and 400 milliseconds** (FR-ANI-5). | Also the count of a figure, whose time the stylesheet says as `--figure-change`. The dialog waits 300 milliseconds before it rises, as it did before, so a connection that is back at once shows no dialog. |
-| **Two things move for as long as a state lasts, each of a state that is live.** | The dot of a role that works, and the rings of the dialog while the server is being rejoined. Each comes and goes once in 1.5 seconds, so nothing flashes. The placeholder does not move by itself. |
+| **A change takes between 150 and 400 milliseconds** (FR-ANI-5). | Also the count of a figure, whose time the stylesheet says as `--figure-change`. The dialog waits 300 milliseconds before it rises, as it did before, so a connection that is back at once shows no dialog. The steps of the illustration of the start page wait too, each until the step before it is over, and nothing else waits. |
+| **Two things move for as long as a state lasts, each of a state that is live.** | The dot of a role that works, and the rings of the dialog while the server is being rejoined. Each comes and goes once in 1.5 seconds, so nothing flashes. The placeholder does not move by itself. The illustration of the start page is of no state: it is played once, and then stands still. |
 | **Only how far something shows and how large it is drawn are changed** (FR-ANI-6). | `opacity` and `transform`, and nothing else: the browser lays nothing out again for them. A figure is as wide as its digits at every step of its count (`font-variant-numeric: tabular-nums`), and counts with as many decimal places as the longer of its two values has. The placeholder is drawn over the content, which keeps its room. |
-| **What nobody sees stands still.** | The dot of a role that works is paused while its pipeline is off the screen, and the dot and the rings while the tab is in the background. A figure that is off the screen or in such a tab is not counted: it shows its new value at once. A figure that is on its way when the tab goes to the background ends at its new value then. |
+| **What nobody sees stands still.** | The dot of a role that works is paused while its pipeline is off the screen, and the dot and the rings while the tab is in the background. A figure that is off the screen or in such a tab is not counted: it shows its new value at once. A figure that is on its way when the tab goes to the background ends at its new value then. The illustration of the start page stands still where it is while its figure is off the screen or its tab is in the background, and goes on from there. |
 | **Nothing that moves takes a click or a key.** | What moves is the element itself, never a layer over it, and it can be clicked and reached by keyboard at every step. The placeholder is the one thing that covers anything, and what it covers is the page that is being left. |
 | **Nothing relies on what moves** (FR-THM-5). | A value, a state, and an item are said as text, and are the same text on a page where nothing moves. |
-| **`MotionStyleTests` holds `app.css` to all of this.** | A rule that moves something for every device or for an account that reduced it, a change that takes a second, a third thing that moves by itself, a change of a width or a colour, an animation without its steps, and anything that moves in the other stylesheet each fail it. |
+| **`MotionStyleTests` holds `app.css` to all of this.** | A rule that moves something for every device or for an account that reduced it, a change that takes a second, a third thing that moves by itself, a wait that is neither the dialog's nor a step's of the illustration, a time that is said apart from its animation, a change of a width or a colour, an animation without its steps, and anything that moves in the other stylesheet each fail it. |
 
 ## How a page says what may move
 
@@ -44,7 +45,7 @@ The server marks what a page holds. The marks are attributes and one element, so
 | `<data class="figure" value="…">` | Around the number of a figure, inside the sentence that says it. | The number as a script reads it: digits and a decimal point, with a minus for what is less than nothing and no plus. |
 | `data-change="…"` | On what says the state of an agent, by the name of the state, and on the equity curve, by the time of its latest value. | What the element shows now. |
 | `data-key="…"` | On each item of a list that changes: the agents, the open positions, the decisions and the alerts of the dashboard, the rows of the agent list, the notifications, the trades, the decisions, the changes of state and the cycles of an agent, and the totals of the dashboard by their asset. | Which item the element is: the id of the row that it shows. |
-| `data-moves` | On the pipeline of the team. | That something in it moves for as long as a state lasts. |
+| `data-moves` | On the pipeline of the team, and on the illustration of the start page. | That something in it moves by itself: for as long as a state lasts, or once. |
 | `data-motion="reduced"` | On the first element of the page, beside the theme. | That the account of the user reduced what moves. |
 
 | Rule | Detail |
@@ -65,7 +66,7 @@ The server marks what a page holds. The marks are attributes and one element, so
 | `data-change` | Marks the element `data-changed`, which the stylesheet plays once, and has what moved when the element was first shown move again, which is how the curve unfolds anew. |
 | `data-key` | Keeps the keys of each list, and marks an item whose key is new to its list `data-entered`. |
 | The browser going to a page without leaving the one that it is | For another address: takes in what the page holds without moving anything, has the page fade in again, and marks the content `aria-busy="true"` when the page is not there after `--loading-after`. For the same address, which is a page that asks for itself again: none of that, and what changed moves. |
-| What is on the screen, and whether the tab shows | Marks a part that says `data-moves` with `data-offscreen` while it is off the screen, and the first element of the page with `data-hidden` while the tab is in the background. |
+| What is on the screen, and whether the tab shows | Marks a part that says `data-moves` with `data-offscreen` while it is off the screen, and the first element of the page with `data-hidden` while the tab is in the background. It does so for any such part, and knows nothing of the illustration. |
 
 | Rule | Detail |
 |---|---|
@@ -89,6 +90,56 @@ A page is complete when it arrives: the server reads everything before it answer
 | **A page that asks for itself again shows none.** | It is there already, and what changed on it moves. |
 | **It goes when the page is there, and when it will not come.** | With the page, and when a page is shown again from the memory of the browser. The framework says nothing of a page that does not come, as when the device is offline: the script hears the request that failed, and gives the content back. It gives it back in any case after 8 seconds, `--loading-longest`, so no page keeps its bars. |
 | **The pages are not sent in parts.** | A page that is sent as a placeholder first and filled in afterwards would show its placeholder each time it asks for itself again, which a page that follows does about once a second. |
+
+## The illustration of the start page
+
+Under what the start page says of the team, it presents the team as an illustration (FR-ANI-7): the four roles as the screen of an agent draws them, each with the provider whose model fills it, played once as one cycle.
+
+```
+┌─────────────────────┐
+│ Market Analyst      │
+│ ● A model of GPT    │ ─┐
+│ Reads price, …      │  │   ┌─────────────────────┐       ┌─────────────────────┐
+└─────────────────────┘  ├──▶│ Strategist          │ ────▶ │ Risk Manager        │
+┌─────────────────────┐  │   │ ● A model of Gemini │       │ ● A model of Claude │
+│ Sentiment Analyst   │ ─┘   │ Combines both …     │       │ Reviews the plan …  │
+│ ● A model of Grok   │      └─────────────────────┘       └─────────────────────┘
+│ Reads news and …    │
+└─────────────────────┘
+The team of a new agent. The Market Analyst and the Sentiment Analyst work at the same time, …
+```
+
+| Rule | Detail |
+|---|---|
+| **It is the team of a new agent.** | Each role has the provider that the configuration file gives it, `Trading:DefaultRoles` (FR-TEAM-2, FR-TEAM-3), by the name that the catalog has for the provider: `ICatalogModels.ProviderNamesAsync`, which reads the rows of the providers and nothing else. The name and the job of a role are those of the form of an agent, `AgentPages.Describe`. A mapping that the file changes is the one that the page shows, also one that gives a provider two roles. |
+| **It is the pipeline of the agent screen, as it is once a cycle has gone through it.** | The same three stages, cards, markers, and lines, by the same rules of the stylesheet: see "The team at work" in [agent-screen.md](agent-screen.md). Every role is done, and the work was handed to each stage. `TeamIllustration.razor` writes it as a figure, which no other page has. |
+| **A provider is named as text, to say which it is, and by nothing else** (NFR-LEG-4). | "A model of GPT". The page has no logo and no picture, and a provider has no colour of its own. It names no company behind a provider, and says nothing that would have a provider stand behind the service. An official logo is used only where the terms of its brand allow it: none is used. |
+| **A caption says what the picture shows.** | Whose team it is, and the order that the roles work in, in words. Nothing relies on what moves, or on a colour (FR-THM-5). |
+| **The cards and their texts never move, and are never hidden.** | What moves is drawn for the eye alone and hidden from a screen reader: the marker of a role, the second outline of its card, which is an empty element at the start of the card, and the line into a stage. So a page without the script, and a browser that lacks something of it, show the whole picture. |
+| **A visitor and a user see the same.** | The start page is one page. For a user who reduced what moves it stands still, as every page does. It stores nothing and follows nothing. |
+
+### What moves
+
+| Step | How | For how long | It waits |
+|---|---|---|---|
+| The two analysts take up their work, at the same time | A dot shows in the ring of each, and the second outline of its card. | 200 milliseconds. | 400 milliseconds. |
+| They are done | The disc grows from under the dot, and the second outline goes. | 200 milliseconds. | 1.2 seconds. |
+| The work is handed to the Strategist | The line into its stage is drawn through. | 300 milliseconds. | 1.4 seconds. |
+| The Strategist takes up its work, and is done | As the analysts. | 200 milliseconds each. | 1.7 and 2.5 seconds. |
+| The work is handed to the Risk Manager | The line into its stage is drawn through. | 300 milliseconds. | 2.7 seconds. |
+| The Risk Manager takes up its work, and is done | As the analysts. | 200 milliseconds each. | 3 and 3.8 seconds. |
+
+| Rule | Detail |
+|---|---|
+| **It is played once, as one cycle, and then stands still** (FR-ANI-5). | It is of no state that is live, so nothing of it goes on by itself. After 4 seconds it is the picture that the page was sent. It is played again when the page is shown again, and not when the page is asked for where it is. |
+| **Each step is a change of 150 to 400 milliseconds, and waits until the step before it is over.** | The first waits until the page has faded in. The waits are what make it one run: they are the one thing of it that a change of the interface does not have. |
+| **A step says what a part comes from, and never what it goes to.** | And holds that until its turn. So the run ends as the rules outside it say, which is the picture that stands still, by construction: no rule says the end twice. |
+| **When the device asks for reduced motion, or the account reduced it, the picture stands still** (FR-ANI-4). | The run is inside `@media (prefers-reduced-motion: no-preference)`, each rule behind `:root:not([data-motion="reduced"])`, as everything that moves is. Such a page is given the whole picture at once. |
+| **It stands still while nobody sees it** (FR-ANI-6). | The figure says `data-moves`, so the script marks it `data-offscreen` while it is off the screen, and the page `data-hidden` in a tab in the background. The figure says so to its parts by a property, `--team-run`, and each step takes whether it plays from that, after its animation. An animation says "running" with everything else that it says, so a rule that only named the figure would lose to the rule of a step, and nothing would say so. |
+| **So a figure below the first screen is played when it is scrolled to.** | It is held before its first step. Where the script arrives later than that step waits, the first steps are played unseen, and without the script all of it is: the picture is whole in either case. |
+| **Only how far something shows and how large it is drawn are changed** (FR-ANI-6). | The second outline comes once and goes once, by how far its element shows and how far what is drawn in it shows. Nothing around a card moves. |
+| **Nothing of it takes a click or a key.** | The figure holds no link and no control. |
+| **`MotionStyleTests` holds `app.css` to these.** | The steps by their rules, in the order that the team works in, each played once and as its first step until its turn, that only what is drawn for the eye moves, that a step waits for the one before it and the whole is over in 5 seconds, that each step takes whether it plays from its figure, and that the picture that stands still is outside. |
 
 ## Choosing how much moves
 
@@ -117,9 +168,10 @@ The stylesheet and the script keep to what the current and the previous major ve
 
 | Test class | What it holds |
 |---|---|
-| `MotionStyleTests` | What moves, in `app.css`: nothing for a device that asks for reduced motion, nothing for an account that reduced it, nothing in the other stylesheet, a change of 150 to 400 milliseconds, the two things that move by themselves and that each stands still in a tab that nobody sees, only `opacity` and `transform`, the steps of every animation, and the times that the script reads. |
+| `MotionStyleTests` | What moves, in `app.css`: nothing for a device that asks for reduced motion, nothing for an account that reduced it, nothing in the other stylesheet, a change of 150 to 400 milliseconds, what may wait, the two things that move by themselves and that each stands still in a tab that nobody sees, only `opacity` and `transform`, the steps of every animation, that the times of an animation are said where it is given, the run of the illustration of the start page, and the times that the script reads. |
 | `MotionScriptTests` | The script as it is written and served: every page names it once, after its stylesheets; it asks the server for nothing and polls nothing; it writes no markup and no style; it holds no time, and reads the ones that the stylesheet says; and what it marks is what the stylesheet reads. |
 | `MotionMarkupTests` | What the server writes for a figure: its value from its number, the sentences as they were, no number for what is not known, a loss that words say, the element as a page writes it, and that a figure which changes on the connection of a page is changed in its place. |
+| `TeamIllustrationPageTests` | The illustration as the start page is sent: the four roles in their order and their stages, each with the provider of the configuration file by the name of the catalog, a file and a name that change, a provider as text in one sentence and no picture on the page or in a stylesheet, that the figure says that it moves and carries no style, no script, and nothing to click, and that a user, and one who reduced what moves, is sent the same picture. |
 | `MotionPageTests` | The choice: its two names and the default, an account from before it, a choice that every page says ahead of its stylesheets, on every device and on none once signed out, the export, each form by itself, another user, a form that names no choice, and a form without its token. |
 | `DashboardPageTests`, `AgentScreenPageTests`, `LivePageTests` | The marks as the pages write them: the figures of the dashboard with their elements, the keys of its totals, positions, agents, and decisions, the state of an agent by its name, the time of the latest value on the curve, and the price and what a position would make on the screen of an agent. |
 | `LayoutPageTests`, `DataExportTests` | The forms of the page of the appearance, and the choice in the export. |
@@ -132,12 +184,14 @@ No test drives a browser, and none runs the script. A figure that is below the f
 4. Slow the network down in the developer tools and follow a link: after a moment the content shows its bars, nothing shifts, and the page comes. Go offline and follow a link: the content is back at once. Follow one link and then another before the first page is there: the second page shows, with no bars left.
 5. Ask the browser to emulate reduced motion, in the rendering panel of its developer tools: nothing moves, and every value changes at once. Turn that off, choose Reduced on the page of the appearance, and the same holds. Choose System again, and the pages move.
 6. Hide the tab while a figure counts, and come back: it says its new value. Scroll the pipeline of a running cycle off the screen: the dot of a role that works is paused, as the animations panel of the developer tools shows.
-7. Stop the application while a page that follows is open: the page dims, the dialog rises with its rings, and with Reduced it is there at once with rings that stand still.
-8. Do the same in Chrome or Edge, in Firefox, and in Safari, on a light and on a dark screen, and at the width of a phone. The console of the browser shows no report of the content security policy.
+7. Open `/`, signed out: under what the page says of the team, the two analysts take up their work, are done, the line into the Strategist is drawn, and so on to the Risk Manager, once. Then nothing moves. Load it again at the width and the height of a small phone, where the figure is below the first screen: it is played when it is scrolled to, and stands still when it is scrolled away or its tab is hidden. With reduced motion, of the device or of the account, the whole picture is there at once. Follow a link to `/` from another page: it is played once.
+8. Stop the application while a page that follows is open: the page dims, the dialog rises with its rings, and with Reduced it is there at once with rings that stand still.
+9. Do the same in Chrome or Edge, in Firefox, and in Safari, on a light and on a dark screen, and at the width of a phone. The console of the browser shows no report of the content security policy.
 
 ## Not built yet
 
-- The animated illustration of the team on the landing page (FR-ANI-7).
+- The illustration of the start page played again on request. It is played once each time that the page is shown.
+- A logo of a provider, on the start page or anywhere else. A provider is its name as text, until the terms of its brand are read and allow more (NFR-LEG-4).
 - An item that leaves a list moving as it goes. It is gone at once.
 - A placeholder on a page that is loaded whole: after a form, and on the first page of a visit. The browser shows the page before until the next one is there.
 - A placeholder in the shape of the page that is on its way. It is the same bars for every page.

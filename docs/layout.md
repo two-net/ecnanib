@@ -120,9 +120,10 @@ It uses no container query, no `:has()`, and no nesting.
 | Rule | Detail |
 |---|---|
 | **It says what the service is, in three sentences.** | AI trading agents on Binance, a team of four AI roles with the user's own keys inside fixed limits, and that Demo uses no real funds and Live can lose money, with a link to the risk disclosure. The AI providers and the exchange are named only to say which they are (NFR-LEG-4). |
+| **It presents the team as an illustration** (FR-ANI-7). | Under what it says of the team: the four roles as the screen of an agent draws them, each with the provider that the configuration file gives it on a new agent, played once as one cycle. See "The illustration of the start page" in [motion.md](motion.md). |
 | **A visitor is led to register and to sign in.** | While registration is closed, the page says so, and does not lead to it. |
 | **A user is led to their dashboard and to their agents.** | The bar is around the page, as around every page. |
-| **It has no form, stores nothing, and follows nothing.** | Its texts are in `HomePages`. |
+| **It has no form, stores nothing, and follows nothing.** | Its texts are in `HomePages`. It reads the names of the providers, for the illustration, and nothing else. |
 
 **An address that has no page** is answered with "Page not found", with the frame around it, so there is a way on. A page that is not for the user who asked for it, such as the operator status screen, is answered with the same page and the status 403. The address of the browser stays the one that was asked for, and the link past the bar names that one.
 
@@ -148,7 +149,7 @@ One screen of the specification has a route and a place in the navigation, and s
 No test drives a browser. By hand:
 
 1. `docker compose up -d`, and run the application.
-2. Open `/` at the width of a phone and at the width of a desk, on a light and on a dark screen: the bar of a visitor, the start page, and the foot. The page does not scroll sideways at either width.
+2. Open `/` at the width of a phone and at the width of a desk, on a light and on a dark screen: the bar of a visitor, the start page with the illustration of the team, and the foot. The page does not scroll sideways at either width.
 3. Register, sign in, and open each screen of the map at both widths. On the phone, "Menu" opens and closes the navigation, by a pointer and by the keyboard, in any order of the two, and a page that is opened from it has it closed. The link of the open screen is marked.
 4. With the keyboard alone: a page that opens has the focus at its heading, so the first Tab is in the content. Shift and Tab from there go back through the bar to "Skip to the content", which shows while it has the focus. Enter follows it, and the next Tab is in the content again. In Safari, a link is a stop of the keyboard with Option and Tab.
 5. Do the same in Chrome or Edge, in Firefox, and in Safari. The console of the browser shows no report of the content security policy.
@@ -159,6 +160,6 @@ No test drives a browser. By hand:
 - The dashboard as the page that a user arrives at after signing in. A user arrives at the start page, which leads to the dashboard: `SessionAuthentication.LocalPathOrHome`.
 - What the operator status screen shows, and what an operator does (FR-OPS-2 to FR-OPS-5). The Operator role itself is still to confirm (SRS 2.2).
 - A page of the security that holds more than two-factor authentication: a change of the password by a user who is signed in, and the devices that they are signed in on. A password is changed by the link of "Forgot your password?".
-- The illustration of the team on the landing page (FR-ANI-7), and the setup checklist of a first-time user (FR-UI-4).
+- The setup checklist of a first-time user (FR-UI-4).
 - An accessibility check and a keyboard walk-through of each screen (NFR-USA-1). The frame has its landmarks, its link past the bar, and its marks of the open screen.
 - The texts of the pages of the account and of two-factor authentication in one place, as the newer pages have them (NFR-USA-4).
