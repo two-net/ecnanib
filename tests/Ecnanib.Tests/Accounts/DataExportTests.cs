@@ -176,7 +176,9 @@ public class DataExportTests
         // The account: the address, and when it was registered and verified. The password is
         // not in it, nor is its hash.
         var account = export.GetProperty("account");
-        Assert.Equal(["id", "email", "registeredAt", "emailVerifiedAt", "twoFactor", "theme", "motion"], NamesIn(account));
+        Assert.Equal(
+            ["id", "email", "registeredAt", "emailVerifiedAt", "twoFactor", "theme", "motion", "decisionsReviewedAt", "liveConsideredAt"],
+            NamesIn(account));
         Assert.Equal(ada.Id, account.GetProperty("id").GetGuid());
         Assert.Equal(Ada, account.GetProperty("email").GetString());
         Assert.Equal(Morning, account.GetProperty("registeredAt").GetDateTimeOffset());
@@ -193,6 +195,11 @@ public class DataExportTests
         // (FR-THM-3), and how much of the pages moves (FR-ANI-4).
         Assert.Equal("System", account.GetProperty("theme").GetString());
         Assert.Equal("System", account.GetProperty("motion").GetString());
+
+        // What the user said on the setup checklist of a first-time user, each with when
+        // (FR-UI-4): nothing yet, which the file says as it is.
+        Assert.Equal(JsonValueKind.Null, account.GetProperty("decisionsReviewedAt").ValueKind);
+        Assert.Equal(JsonValueKind.Null, account.GetProperty("liveConsideredAt").ValueKind);
 
         // What was accepted, by the names of the documents and not by their numbers.
         var acceptances = export.GetProperty("legalAcceptances").EnumerateArray().ToList();

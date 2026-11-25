@@ -59,6 +59,11 @@ public static class AccountsModule
         // is (FR-ANI-4). A request reads it with its session: see SessionAuthentication.MotionClaimType.
         services.AddSingleton<IMotionChoice, StoredMotionChoice>();
 
+        // What a user said on the setup checklist of a first-time user, which is stored with the
+        // account (FR-UI-4). Only the dashboard reads it, so it is read there and not with the
+        // session.
+        services.AddSingleton<ISetupMarks, StoredSetupMarks>();
+
         // The one way a request is known to be signed in, for the Web UI and the API alike.
         services.AddAuthentication(SessionAuthentication.Scheme)
             .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthentication.Scheme, configureOptions: null);

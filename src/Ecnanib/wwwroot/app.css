@@ -643,11 +643,33 @@ fieldset {
    another on a narrow screen. A number is as wide as its digits, so nothing moves when it
    changes. A profit and a loss are told apart by their sign, and have no colour of their own
    (FR-THM-5). */
-.dashboard-mode, .dashboard-account {
+.dashboard-mode, .dashboard-account, .setup-checklist {
     border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
     margin: 1.5rem 0 0;
     padding-top: 0.5rem;
 }
+
+/* The setup checklist of a first-time user, above the sections of the modes (FR-UI-4): its four
+   steps in their order, each with its number, its name, and what it says under it. A step says
+   that it is done as a word, and has no colour and no mark of its own for it (FR-THM-5). */
+.setup-steps {
+    margin: 0 0 1rem;
+    padding-inline-start: 1.5rem;
+}
+
+.setup-step {
+    margin: 0 0 0.75rem;
+}
+
+    /* The name of a step is in line with its number, at the size of the text. */
+    .setup-step h3 {
+        margin: 0 0 0.25rem;
+        font-size: 1rem;
+    }
+
+    .setup-step p, .setup-step form {
+        margin: 0 0 0.25rem;
+    }
 
 .dashboard-figures {
     display: flex;

@@ -160,6 +160,5 @@ No test drives a browser. By hand:
 - The dashboard as the page that a user arrives at after signing in. A user arrives at the start page, which leads to the dashboard: `SessionAuthentication.LocalPathOrHome`.
 - What the operator status screen shows, and what an operator does (FR-OPS-2 to FR-OPS-5). The Operator role itself is still to confirm (SRS 2.2).
 - A page of the security that holds more than two-factor authentication: a change of the password by a user who is signed in, and the devices that they are signed in on. A password is changed by the link of "Forgot your password?".
-- The setup checklist of a first-time user (FR-UI-4).
 - An accessibility check and a keyboard walk-through of each screen (NFR-USA-1). The frame has its landmarks, its link past the bar, and its marks of the open screen.
 - The texts of the pages of the account and of two-factor authentication in one place, as the newer pages have them (NFR-USA-4).

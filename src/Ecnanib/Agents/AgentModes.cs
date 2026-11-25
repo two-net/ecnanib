@@ -151,6 +151,14 @@ internal sealed class AgentModes(
             AuditOrigin.Of(request),
             cancellationToken);
 
+        if (to == TradingMode.Live)
+        {
+            // Whoever switches an agent to Live has considered Live: the last step of the setup
+            // checklist of a first-time user is done by it, with the switch (FR-UI-4). The first
+            // time stands, so a second switch writes nothing. See docs/dashboard.md.
+            await SetupMarking.RecordAsync(context, userId, SetupMark.LiveConsidered, clock.GetUtcNow(), cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
 
         logger.LogInformation("User {UserId} switched agent {AgentId} from {PreviousTradingMode} to {TradingMode}", userId, agentId, agent.Mode, to);

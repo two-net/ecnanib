@@ -181,6 +181,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset?>("DecisionsReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decisions_reviewed_at");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasColumnType("text")
@@ -201,6 +205,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.Property<DateTimeOffset?>("EmailVerifiedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("email_verified_at");
+
+                    b.Property<DateTimeOffset?>("LiveConsideredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("live_considered_at");
 
                     b.Property<string>("Motion")
                         .IsRequired()

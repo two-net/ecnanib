@@ -260,6 +260,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What a page that follows what changes asks about the session of its connection.</summary>
     public IConnectedSession ConnectedSession => _application.Services.GetRequiredService<IConnectedSession>();
 
+    /// <summary>What the signed-in user said on the setup checklist of a first-time user.</summary>
+    public ISetupMarks SetupMarks => _application.Services.GetRequiredService<ISetupMarks>();
+
     /// <summary>The cycles that run now, each with the steps that it has come to.</summary>
     public ICycleProgress CycleProgress => _application.Services.GetRequiredService<ICycleProgress>();
 

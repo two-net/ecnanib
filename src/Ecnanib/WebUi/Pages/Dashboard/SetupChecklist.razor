@@ -1,0 +1,96 @@
+@using Ecnanib.Accounts
+@using Ecnanib.WebUi.Pages.Legal
+@inject ISetupMarks Marks
+@inject NavigationManager Navigation
+
+@*
+    The setup checklist of a first-time user, on the dashboard (FR-UI-4): add keys, create a Demo
+    agent, review its decisions, then consider Live. Each step says whether it is done, as a
+    word (FR-THM-5), and what there is to do for it. The first two are read from the keys and
+    the agents of the user. The last two are what the user says, with a form each, which has a
+    button and no field: the dashboard follows what changes, and such a page has no field. A
+    form is on the page only while its step can be marked, so a form that is not on the page
+    marks nothing. The dashboard shows the checklist until both are marked, and hands it where
+    its user stands. See "The setup checklist" in docs/dashboard.md.
+*@
+
+<section class="setup-checklist" aria-labelledby="@SetupPages.HeadingId">
+    <h2 id="@SetupPages.HeadingId">@SetupPages.Heading</h2>
+
+    @* What changes is told by what it says now, here how many are done: see docs/motion.md. *@
+    <p>@SetupPages.Explained <strong data-change="@Progress.Done">@SetupPages.Counted(Progress.Done)</strong></p>
+
+    <ol class="setup-steps">
+        @foreach (var step in SetupProgress.Steps)
+        {
+            var done = Progress.IsDone(step);
+
+            <li class="setup-step" data-key="@SetupPages.Key(step)">
+                <h3>@SetupPages.Name(step)</h3>
+
+                <p><strong data-change="@SetupPages.State(done)">@SetupPages.State(done).</strong> @SetupPages.Says(step, Progress)</p>
+
+                @if (!done)
+                {
+                    @switch (step)
+                    {
+                        case SetupStep.Keys:
+                            <p><a href="@WebUiModule.KeysPath">@SetupPages.KeysLink</a></p>
+                            break;
+
+                        case SetupStep.Agent:
+                            <p><a href="@WebUiModule.NewAgentPath">@SetupPages.AgentLink</a></p>
+                            break;
+
+                        case SetupStep.Decisions when Progress.CanMarkReviewed && Progress.Decided is { } agent:
+                            <p><a href="@WebUiModule.AgentStatePath(agent.Id)">@SetupPages.DecisionsLink(agent.Name)</a></p>
+
+                            <form method="post" @formname="@SetupPages.ReviewedForm" @onsubmit="() => MarkAsync(SetupMark.DecisionsReviewed)">
+                                <AntiforgeryToken />
+
+                                <button type="submit">@SetupPages.MarkReviewed</button>
+                            </form>
+                            break;
+
+                        case SetupStep.Live when Progress.CanMarkConsidered:
+                            <p><a href="@WebUiModule.AgentsPath">@SetupPages.AgentsLink</a></p>
+
+                            <p><a href="@LegalPages.RiskDisclosurePath">@SetupPages.RiskLink</a></p>
+
+                            <form method="post" @formname="@SetupPages.ConsideredForm" @onsubmit="() => MarkAsync(SetupMark.LiveConsidered)">
+                                <AntiforgeryToken />
+
+                                <button type="submit">@SetupPages.MarkConsidered</button>
+                            </form>
+                            break;
+                    }
+                }
+            </li>
+        }
+    </ol>
+</section>
+
+@code {
+    /// <summary>Where the user stands, as the dashboard read it.</summary>
+    [Parameter, EditorRequired]
+    public SetupProgress Progress { get; set; } = default!;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private async Task MarkAsync(SetupMark mark)
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // For the user of the session, and no other: the form names nobody. The first time
+        // stands, so a form that is sent twice changes nothing the second time.
+        await Marks.SetAsync(request, mark);
+
+        // The page as it is now, by a request that changes nothing: a reload of it sends no
+        // form again.
+        Navigation.NavigateTo(WebUiModule.DashboardPath);
+    }
+}

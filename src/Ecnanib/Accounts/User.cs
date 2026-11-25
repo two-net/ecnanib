@@ -50,6 +50,14 @@ namespace Ecnanib.Accounts;
 /// How much of the pages moves for the user on every device they sign in on: as the device asks,
 /// which is what a new account has, or reduced (FR-ANI-4). A preference, as the theme is.
 /// </param>
+/// <param name="decisionsReviewedAt">
+/// When the user said, on the setup checklist, that they reviewed what a team of theirs decided,
+/// or null while they have not (FR-UI-4). See <see cref="SetupMark.DecisionsReviewed"/>.
+/// </param>
+/// <param name="liveConsideredAt">
+/// When the user said, on the setup checklist, that they considered Live, or first switched an
+/// agent to Live, or null while they did neither (FR-UI-4). See <see cref="SetupMark.LiveConsidered"/>.
+/// </param>
 public sealed class User(
     Guid id,
     string email,
@@ -68,7 +76,9 @@ public sealed class User(
     int twoFactorFailedCodes,
     DateTimeOffset? twoFactorLockedUntil,
     Theme theme,
-    Motion motion)
+    Motion motion,
+    DateTimeOffset? decisionsReviewedAt,
+    DateTimeOffset? liveConsideredAt)
 {
     public Guid Id { get; } = id;
 
@@ -105,6 +115,10 @@ public sealed class User(
     public Theme Theme { get; } = theme;
 
     public Motion Motion { get; } = motion;
+
+    public DateTimeOffset? DecisionsReviewedAt { get; } = decisionsReviewedAt;
+
+    public DateTimeOffset? LiveConsideredAt { get; } = liveConsideredAt;
 }
 
 internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
@@ -139,6 +153,11 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         // How much moves for the account, as the name of its member. No index, as the theme has none.
         builder.Property(user => user.Motion);
+
+        // What the user said on the setup checklist, each with when. Empty for a new account,
+        // and no index: they are read with the account, by its id.
+        builder.Property(user => user.DecisionsReviewedAt);
+        builder.Property(user => user.LiveConsideredAt);
 
         // One account for each address. Registration relies on it: see Registration.
         builder.HasIndex(user => user.Email).IsUnique();

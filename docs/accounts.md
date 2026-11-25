@@ -450,7 +450,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | Section | What it holds |
 |---|---|
 | `exportedAt` | When the export was made. |
-| `account` | The id, the email address, when it was registered and verified, whether two-factor authentication is on, since when, and how many recovery codes are left, the theme of the account (FR-THM-3): `System`, `Dark`, or `Light`, and how much of its pages moves (FR-ANI-4): `System` or `Reduced`. |
+| `account` | The id, the email address, when it was registered and verified, whether two-factor authentication is on, since when, and how many recovery codes are left, the theme of the account (FR-THM-3): `System`, `Dark`, or `Light`, how much of its pages moves (FR-ANI-4): `System` or `Reduced`, and what the user said on the setup checklist (FR-UI-4): when they marked the decisions as reviewed, and when they considered Live, each empty while they have not. |
 | `legalAcceptances` | Each document that was accepted, with its version and the time. |
 | `sessions` | Each browser that is signed in: when it signed in, and when it was last used. |
 | `auditEvents` | Each event of the account in the audit trail: the action, what it was done to, when, and the IP address it came from. |
@@ -571,6 +571,41 @@ What a user does to an agent is recorded: risk setting changes, starts, pauses, 
 
 `AuditRulesTests` fails for an action that still waits once what it waits for is built. For the operator actions, that is once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`. A screen of an operator that only shows is left out: the operator status screen is listed in `AuditRules.OperatorScreensThatOnlyShow`, and the same tests hold it to having no form of its own. See "Operators" in [ownership.md](ownership.md). It also fails for a member of `AuditAction` that no marked test shows being recorded.
 
+## The setup marks
+
+A first-time user sees a setup checklist on the dashboard: add keys, create a Demo agent, review its decisions, then consider Live (FR-UI-4). Its first two steps are read from the keys and the agents of the user. Its last two are what the user says of themself, and Accounts stores them with the account: `ISetupMarks`, in `SetupMarks.cs`. What the checklist makes of them is in "The setup checklist" in [dashboard.md](dashboard.md).
+
+```csharp
+public interface ISetupMarks
+{
+    Task<SetupMarks> ReadAsync(HttpContext request);
+    Task SetAsync(HttpContext request, SetupMark mark);
+}
+
+public enum SetupMark { DecisionsReviewed, LiveConsidered }
+
+public sealed record SetupMarks(DateTimeOffset? DecisionsReviewedAt, DateTimeOffset? LiveConsideredAt);
+
+public static class SetupMarking
+{
+    public static Task<bool> RecordAsync(
+        EcnanibDbContext context, Guid userId, SetupMark mark, DateTimeOffset at, CancellationToken cancellationToken);
+}
+```
+
+| Rule | Detail |
+|---|---|
+| **A mark is a time in the row of the account.** | `users.decisions_reviewed_at` and `users.live_considered_at`, each empty until its user says so. A new account has neither. |
+| **The first time stands.** | A mark is written only where it is empty: one that is set again changes nothing, and none is taken back. |
+| **It is of the user of the session, and of no other** (NFR-SEC-3). | `ISetupMarks` takes the request, and no path and no form names a user. It fails for a request that is not signed in. An account that was deleted since the request was signed in said nothing. |
+| **It is read where it is needed, and not with the session.** | The dashboard alone reads the marks, so a request is not told them as it is signed in, as it is told the theme. |
+| **Whoever does what a mark says records it with their own transaction.** | `SetupMarking.RecordAsync`, as `AuditTrail.RecordAsync` is for an event: Agents stores that Live was considered with the switch of an agent to Live, so the mark is stored when the switch is, and not when it is not. See "The switch to Live" in [agents.md](agents.md). |
+| **It asks for no proof of identity, and is in no event of the audit trail.** | A mark exposes no key and moves no money. The log says it, by the id of the user: "User {UserId} marked {SetupMark} on the setup checklist", once, when it is stored. |
+| **It is in the export, and goes with the account.** | `decisionsReviewedAt` and `liveConsideredAt` of the section `account`. |
+| **An account from before has considered Live if it switched an agent to Live.** | The migration `AddSetupMarks` adds the two columns, and gives such an account the time of its first switch, as the audit trail holds it. Nothing says that anyone reviewed decisions before, so no account did. |
+
+`SetupMarkTests` in `tests/Ecnanib.Tests/Accounts` holds the application to it.
+
 ## Passwords
 
 A password is stored only as a salted hash from Argon2id, a memory-hard algorithm (NFR-SEC-2). `PasswordHasher` makes and verifies the hashes, with the package `Konscious.Security.Cryptography.Argon2`, because .NET has no memory-hard algorithm of its own.
@@ -647,7 +682,7 @@ Personal data is limited to the email address, the password hash, and preference
 - **The origin is the one exception,** and it is a decision: the specification lists it for an audit event, and an audit trail without it does not show a takeover. It is in the export, and goes with the account.
 - [`PersonalDataRules.cs`](../tests/Ecnanib.Tests/Persistence/PersonalDataRules.cs) is the source of truth. It lists every column of `users` and of the tables of users' rows with what it holds, unless the type of the column cannot say who someone is: an id, a flag, a number, a time, or one of a fixed set of names.
 - `PersonalDataTests` reads the model. A column that is added and not listed fails it, so what is kept about a person is decided in one visible place. The two lists of personal data are pinned there.
-- The rule reads types and not meanings. A time, such as when a session was last used, is listed nowhere. It is in the export, and goes with the account.
+- The rule reads types and not meanings. A time, such as when a session was last used, or when a user marked a step of the setup checklist, is listed nowhere. It is in the export, and goes with the account.
 - **The name of an agent is what its user typed,** to tell their agents apart, and is listed as that. Nothing asks a user for anything about themselves in it. It is shown to its user alone, is in the export, is in no log event, and goes with the account. See [agents.md](agents.md).
 - The id of an account tells nothing about the person, so it is not personal data. See [ownership.md](ownership.md).
 - The logs hold neither an address nor an origin: they name an account by its id. See [logging.md](logging.md).
@@ -658,7 +693,7 @@ A user can export this data and delete it: see "Exporting your data" and "Deleti
 
 | Table | Columns |
 |---|---|
-| `users` | `id`, `email` (unique), `password_hash`, `registered_at`, `email_verified_at`, `email_verification_token_hash` (unique), `email_verification_expires_at`, `email_verification_sets_password`, `password_reset_token_hash` (unique), `password_reset_expires_at`, `two_factor_secret`, `two_factor_secret_key_id`, `two_factor_enabled_at`, `two_factor_last_step`, `two_factor_failed_codes`, `two_factor_locked_until`, `theme`, `motion` |
+| `users` | `id`, `email` (unique), `password_hash`, `registered_at`, `email_verified_at`, `email_verification_token_hash` (unique), `email_verification_expires_at`, `email_verification_sets_password`, `password_reset_token_hash` (unique), `password_reset_expires_at`, `two_factor_secret`, `two_factor_secret_key_id`, `two_factor_enabled_at`, `two_factor_last_step`, `two_factor_failed_codes`, `two_factor_locked_until`, `theme`, `motion`, `decisions_reviewed_at`, `live_considered_at` |
 | `legal_acceptances` | `user_id`, `document`, `version`, `accepted_at`. The rows of an account are deleted with it. |
 | `sessions` | `id`, `user_id`, `token_hash` (unique), `created_at`, `last_active_at`, `reauthenticated_at`. The rows of an account are deleted with it. |
 | `pending_sign_ins` | `id`, `user_id`, `token_hash` (unique), `expires_at`. The rows of an account are deleted with it. |

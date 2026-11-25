@@ -2,9 +2,11 @@
 
 The dashboard shows, per mode: total equity across agents, profit and loss for the day, open positions, a status card per agent, recent decisions, and alerts (FR-RPT-1). Demo results are labeled as Demo everywhere and are never combined with Live results (FR-BIN-11): the dashboard has a section for Live and one for Demo, and nothing of one is added to anything of the other.
 
-It is one screen for all of the agents of the user who is signed in (FR-UI-2). Nothing of it is stored: every figure is worked out from the rows of that user each time the page is asked for.
+It is one screen for all of the agents of the user who is signed in (FR-UI-2). Nothing of its figures is stored: each is worked out from the rows of that user each time the page is asked for.
 
-The page is `DashboardOverview.razor` in `src/Ecnanib/WebUi/Pages/Dashboard`, with its texts in `DashboardPages.cs`. What it reads is `IStoredAgents` in `src/Ecnanib/Agents`, `IAgentEquities` and `IRecordedCycles` in `src/Ecnanib/DecisionEngine`, and `INotifications` in `src/Ecnanib/Notifications`. What keeps the prices followed for it is `LiveFeed` in `src/Ecnanib/WebUi/Live`, with `IOpenPositions` of the Decision Engine and `IExchangePriceWatch` of the Exchange Gateway. The rules below are enforced by `DashboardPageTests` in `tests/Ecnanib.Tests/Dashboard`, by `AgentEquityTests`, `EquityTotalsTests`, `OpenPositionTests`, and `CycleRecordTests` in `tests/Ecnanib.Tests/DecisionEngine`, by `LiveFeedTests` and `LivePageTests` in `tests/Ecnanib.Tests/LiveUpdates`, and by `NotificationTests` in `tests/Ecnanib.Tests/Notifications`.
+A first-time user sees a setup checklist above them: add keys, create a Demo agent, review its decisions, then consider Live (FR-UI-4). Each step shows as done once its user has completed it. What the user says on it is the one thing that the page stores: see "The setup checklist".
+
+The page is `DashboardOverview.razor` in `src/Ecnanib/WebUi/Pages/Dashboard`, with its texts in `DashboardPages.cs`. What it reads is `IStoredAgents` in `src/Ecnanib/Agents`, `IAgentEquities` and `IRecordedCycles` in `src/Ecnanib/DecisionEngine`, and `INotifications` in `src/Ecnanib/Notifications`. The setup checklist is `SetupChecklist.razor` beside the page, with `SetupProgress.cs` and its texts in `SetupPages.cs`, and reads `IStoredKeys` in `src/Ecnanib/Credentials` and `ISetupMarks` in `src/Ecnanib/Accounts` as well. What keeps the prices followed for it is `LiveFeed` in `src/Ecnanib/WebUi/Live`, with `IOpenPositions` of the Decision Engine and `IExchangePriceWatch` of the Exchange Gateway. The rules below are enforced by `DashboardPageTests` in `tests/Ecnanib.Tests/Dashboard`, by `AgentEquityTests`, `EquityTotalsTests`, `OpenPositionTests`, and `CycleRecordTests` in `tests/Ecnanib.Tests/DecisionEngine`, by `LiveFeedTests` and `LivePageTests` in `tests/Ecnanib.Tests/LiveUpdates`, by `NotificationTests` in `tests/Ecnanib.Tests/Notifications`, and for the setup checklist by `SetupChecklistPageTests` and `SetupProgressTests` in `tests/Ecnanib.Tests/Dashboard` and `SetupMarkTests` in `tests/Ecnanib.Tests/Accounts`.
 
 What the equity of an agent is, is in "The equity of an agent" in [orders.md](orders.md), and what a loss limit counts from in "The loss limits" in [risk-guard.md](risk-guard.md). What a cycle is and how it ends is in [team.md](team.md), what a notification is in [notifications.md](notifications.md), how a page follows what changes in [live-updates.md](live-updates.md), and whose rows a request reaches in [ownership.md](ownership.md).
 
@@ -109,6 +111,47 @@ The alerts of a mode are what the service told its user about that mode and they
 | **One that is about an agent leads to the page of the state of that agent,** | while its user has the agent. |
 | **The link "All your notifications" leads to all of them,** | read and not read. |
 
+## The setup checklist
+
+A first-time user sees a setup checklist: add keys, create a Demo agent, review its decisions, then consider Live (FR-UI-4). It is a section of the dashboard, "Getting started", under what the page says of itself and above the alerts and the sections of the modes. It says how many of its four steps are done, and each step, in the order of the requirement, says whether it is done and what there is to do for it. `SetupProgress` works out where a user stands from what the page reads:
+
+```csharp
+public sealed record SetupProgress(bool AiKeyStored, bool DemoKeyStored, bool AgentCreated, AgentView? Decided, SetupMarks Marks)
+{
+    public static SetupProgress Of(
+        StoredKeysState keys, IReadOnlyList<AgentView> agents,
+        IReadOnlyList<RecentCycle> demoDecisions, IReadOnlyList<RecentCycle> liveDecisions, SetupMarks marks);
+
+    public bool IsDone(SetupStep step);
+    public bool CanMarkReviewed { get; }
+    public bool CanMarkConsidered { get; }
+    public bool Finished { get; }
+}
+```
+
+| Step | Done when | While it is not done |
+|---|---|---|
+| Add keys | Its user has a key of at least one AI provider and a Binance key for Demo. | It says which of the two is missing, and leads to the API keys. |
+| Create a Demo agent | Its user has an agent. Every agent is created in Demo (FR-AGT-7). | It leads to the form of a new agent. |
+| Review its decisions | Its user said so, with the button "Mark as reviewed". | While no team of theirs has decided, it says so. Once one has, it names the agent, leads to the screen of that agent, where its decisions are, and has the button. |
+| Consider Live | Its user said so, with the button "I have considered Live", or switched an agent to Live. | Before the review, it says that it comes after it. After the review, it says what Live is and what a switch takes (FR-AGT-7), leads to the agents and to the risk disclosure, and has the button. |
+
+| Rule | Detail |
+|---|---|
+| **The first two steps say the account as it is now.** | They are read from the keys and the agents each time the page is written, `IStoredKeys.StateAsync` and `IStoredAgents.ListAsync`, and nothing is stored for them. A key that is deleted is a step that is open again, while the checklist is shown. A key counts while it is stored, whatever its last check found: a key that its provider refuses is told to its user by a notification. |
+| **The Binance key is the one for Demo.** | It is what a Demo agent trades with, and a key for Live alone does not do the step. A key of one AI provider does: a user can give all four roles models of one provider (FR-AGT-5). |
+| **The last two steps are what the user says.** | Nothing that is stored tells that someone read a decision, or weighed going to Live, and opening a page proves neither. So each has a form with a button, as a notification has one that marks it as read, and no page marks anything by being opened. |
+| **A mark is stored with the account, with when it was set.** | `users.decisions_reviewed_at` and `users.live_considered_at`, behind `ISetupMarks` of Accounts: see "The setup marks" in [accounts.md](accounts.md). The first time stands, and no mark is taken back. Both are in the export of the account. |
+| **There is a decision to review once a team of the user has decided.** | A cycle that the close of a candle started, among the latest that the page lists: one of Demo first, as the checklist leads there, and one of Live for a user who has none in Demo, so that whoever went straight to Live can finish the checklist. A cycle that its user ran as a test is no decision (FR-CYC-12). A decision alone does not do the step. |
+| **Live is offered after the review.** | "Then consider Live": its button is on the page once the decisions are marked as reviewed. Staying in Demo is a choice too, and the step says so: the button says that Live was considered, and not that it was chosen. |
+| **A switch of an agent to Live does the last step.** | Whoever switched an agent to Live has considered it. `AgentModes` stores the mark in the transaction of the switch, with `SetupMarking.RecordAsync`, beside the event of the audit trail: see "The switch to Live" in [agents.md](agents.md). An account that switched an agent to Live before there was a checklist is given the time of its first switch by the migration `AddSetupMarks`, from the audit trail. |
+| **The checklist is shown until both marks are set, and then no more.** | Whoever reviewed decisions and considered Live is no first-time user. In the order of the checklist, all four steps are done by then. It does not come back when its user deletes a key or an agent later. For a user who has set both, the page reads the two marks, and nothing else for the checklist. |
+| **The steps do not wait for one another,** | except Live for the review. A user who has no key yet creates an agent all the same: see [agents.md](agents.md). |
+| **A form is on the page only while its step can be marked.** | `setup-reviewed` and `setup-considered`. One that is posted while it is not on the page is answered with "bad request", and marks nothing, as is one without the token of the page. Each leads back to the dashboard, by a request that changes nothing. They are the forms of `SetupChecklist.razor`, a part of the page, which answers them itself. |
+| **Whether a step is done is said as a word** (FR-THM-5). | "Done" or "Not done yet", ahead of what the step says. A step has no colour and no mark of its own for it. The word, and how many steps are done, are told to the script of the pages as what they say now, so each fades in when it changes (FR-ANI-3): see [motion.md](motion.md). |
+| **It changes as the page does.** | The page asks for itself again when an agent or a cycle of its user changes, so an agent that is created and a team that decides show with no reload. A key says nothing to a page that follows: the step of the keys is as of when the page was written, which is when its user comes back from the keys. See [live-updates.md](live-updates.md). |
+| **It is on the dashboard alone.** | The start page, which a user arrives at after signing in, leads to the dashboard and reads nothing of the account: see "The start page" in [layout.md](layout.md). |
+
 ## The page
 
 A signed-in user opens the dashboard at `/dashboard`, which the bar at the top of every page leads to. A visitor is sent to sign in.
@@ -122,8 +165,8 @@ A signed-in user opens the dashboard at `/dashboard`, which the bar at the top o
 | **A figure stays as it was written between two changes.** | A price that is read again asks for nothing. The figures are of the moment that the page was written, say the time of their prices, and are worked out anew when something that the page shows changes. |
 | **A figure that changes counts to its new value** (FR-ANI-2). | The total equity and the day of each mode, the price and what each open position would make now, and the equity and the day of each agent: each number is set apart in its text, and the script of the pages counts it from its old value to its new one when the page is written again. The state of an agent fades in when it is another, and so does an agent, a position, a decision, or an alert that entered its list (FR-ANI-3). Nothing of it moves for a device that asks for reduced motion, nor for an account that reduced it. See [motion.md](motion.md). |
 | **It leads to the downloads of the trades and the decisions** (FR-RPT-4). | Two links at its foot, to the CSV files of every agent of the user, in which each row says its mode. They are no part of a section of a mode: see [export.md](export.md). |
-| **It has no field to type in.** | A page that follows has none: see "The one push channel" in [live-updates.md](live-updates.md). It has buttons and links. |
-| **Its texts are in one place.** | `DashboardPages` (NFR-USA-4), with how an amount is written. The times are UTC, and say so. |
+| **It has no field to type in.** | A page that follows has none: see "The one push channel" in [live-updates.md](live-updates.md). It has buttons and links: the forms of the alerts and the two of the setup checklist each have a button alone. |
+| **Its texts are in one place.** | `DashboardPages` (NFR-USA-4), with how an amount is written, and `SetupPages` for the setup checklist. The times are UTC, and say so. |
 | **The tables scroll by themselves on a narrow screen,** | also by keyboard, and the cards stand side by side as far as they fit (FR-UI-1). The look is in `app.css`: a page carries no style of its own. |
 
 ## Testing
@@ -136,19 +179,22 @@ A signed-in user opens the dashboard at `/dashboard`, which the bar at the top o
 | `OpenPositionTests`, `CycleRecordTests` | The symbols that the agents of a user hold, and the latest cycles of a user in a mode. |
 | `LiveFeedTests`, `LivePageTests` | That the prices of what a user holds are followed for the page, and when the page asks for itself again. That the dashboard carries one part for its connection, and no field. |
 | `NotificationTests` | That a notification is stored with its mode, and what the migration made of those from before. |
+| `SetupChecklistPageTests` | The setup checklist on the page: the four steps in their order with none done, each step as it is done, the two forms and what they store, that the checklist is gone for good once both are marked, a form that is not on the page, that nothing of another user counts, and a switch to Live. |
+| `SetupProgressTests` | Where a user stands, with no database: what does each step, which decisions there are to review, when each button is offered, when the checklist is finished, and what each step says. |
+| `SetupMarkTests` | The marks of Accounts: by owner, that the first time stands, a request that is not signed in, a mark in a transaction, and what the migration made of an account that switched an agent to Live before. |
 
 No test drives a browser. By hand:
 
 1. `docker compose up -d`, and run the application.
-2. Sign in, create two agents, and open `/dashboard`: Live and then Demo, each with its badge, and an equity that is the capital.
+2. Sign in, and open `/dashboard`: "Getting started", with none of the 4 steps done. Create two agents, and open it again: the second step is done, and under the checklist are Live and then Demo, each with its badge, and an equity that is the capital.
 3. Change a row at the database, such as `UPDATE agents SET state = 'Paused' WHERE id = '...'`: the card says the state within two seconds, with no reload.
+4. Set both marks, `UPDATE users SET decisions_reviewed_at = now(), live_considered_at = now() WHERE email = '...'`, and load the page again: the checklist is gone.
 
 ## Not built yet
 
 - Figures that move with the price between two changes: the total equity, the day, and what a position would make are of the moment that the page was written. Writing them over the connection, as the page of an agent writes its one position, needs the parts of the dashboard that hold a figure to be parts of that kind.
 - What changes a figure and is said by no table that a page follows: a fee that is valued later, funding that is stored, and the UTC day that begins. The page shows it the next time that it is written.
 - The dashboard as the page that a user lands on after signing in. A user arrives at the start page, `/`, which leads to the dashboard: see "The start page" in [layout.md](layout.md).
-- A setup checklist for a first-time user (FR-UI-4).
 - Times in the time zone of the user (NFR-USA-3).
 - The badge of the mode on the page of the notifications: see [notifications.md](notifications.md).
 - An alert when Binance does not answer (NFR-REL-4): nothing raises one yet. See "Not built yet" in [exchange.md](exchange.md).

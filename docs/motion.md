@@ -43,8 +43,8 @@ The server marks what a page holds. The marks are attributes and one element, so
 | Mark | Where | What it says |
 |---|---|---|
 | `<data class="figure" value="…">` | Around the number of a figure, inside the sentence that says it. | The number as a script reads it: digits and a decimal point, with a minus for what is less than nothing and no plus. |
-| `data-change="…"` | On what says the state of an agent, by the name of the state, and on the equity curve, by the time of its latest value. | What the element shows now. |
-| `data-key="…"` | On each item of a list that changes: the agents, the open positions, the decisions and the alerts of the dashboard, the rows of the agent list, the notifications, the trades, the decisions, the changes of state and the cycles of an agent, and the totals of the dashboard by their asset. | Which item the element is: the id of the row that it shows. |
+| `data-change="…"` | On what says the state of an agent, by the name of the state, on the equity curve, by the time of its latest value, and on the setup checklist of the dashboard: on what says whether a step is done, by that word, and on how many steps are done, by their number. | What the element shows now. |
+| `data-key="…"` | On each item of a list that changes: the agents, the open positions, the decisions and the alerts of the dashboard, the rows of the agent list, the notifications, the trades, the decisions, the changes of state and the cycles of an agent, the totals of the dashboard by their asset, and the steps of its setup checklist by their names. | Which item the element is: the id of the row that it shows. |
 | `data-moves` | On the pipeline of the team, and on the illustration of the start page. | That something in it moves by itself: for as long as a state lasts, or once. |
 | `data-motion="reduced"` | On the first element of the page, beside the theme. | That the account of the user reduced what moves. |
 

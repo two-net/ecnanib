@@ -451,6 +451,7 @@ In Live an agent trades with real money, so `SwitchToLiveAsync` asks for more. I
 - **Otherwise the page is shown to a user who has just proved who they are, and to nobody else.** It sends anyone else to `/confirm-identity`, and from there back, as the pages of the keys do. A form that is posted without the proof switches nothing, and leads there as well. See "Re-authentication" in [accounts.md](accounts.md).
 - The page says what is at stake in plain language, with `AgentPages.LiveRisks`, and leads to the risk disclosure (NFR-LEG-1).
 - **The confirmation is not stored on its own.** No agent is switched without it, so the event of the switch in the audit trail stands for it.
+- **A switch to Live does the last step of the setup checklist** (FR-UI-4). Whoever switched an agent to Live has considered Live: the switch stores so with the account, in its own transaction, with `SetupMarking.RecordAsync` of Accounts. The first switch of an account stands, and a switch back to Demo takes nothing back. See "The setup checklist" in [dashboard.md](dashboard.md).
 
 ### The badge
 

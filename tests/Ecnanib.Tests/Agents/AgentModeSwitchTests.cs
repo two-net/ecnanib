@@ -87,6 +87,12 @@ public class AgentModeSwitchTests
         Assert.Equal(agent with { Mode = "Live" }, StoredAgent.All(application.Database).Single());
         Assert.Equal(["Draft: Created"], StoredAgentStateChange.Told(application.Database, agent.Id));
 
+        // Whoever switches an agent to Live has considered Live: the account says so, as of the
+        // switch, which does the last step of the setup checklist (FR-UI-4).
+        Assert.Equal(
+            Morning.AddMinutes(5).UtcDateTime,
+            application.Database.Scalar<DateTime>($"SELECT live_considered_at FROM users WHERE id = '{user.Id}'"));
+
         Assert.Contains($"<p>Mode: {AgentBrowser.Badge(TradingMode.Live)} The agent trades <code>BTCUSDT</code> on Spot in your real Binance account.</p>", state);
         Assert.Contains($"<a href=\"{AgentBrowser.SwitchToDemoPage(agent.Id)}\">Switch the agent to Demo</a>", state);
 

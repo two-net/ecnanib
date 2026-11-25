@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @using Ecnanib.Accounts
 @using Ecnanib.Agents
+@using Ecnanib.Credentials
 @using Ecnanib.DecisionEngine
 @using Ecnanib.Notifications
 @using Ecnanib.Platform.LiveUpdates
@@ -12,6 +13,8 @@
 @inject IAgentEquities Equities
 @inject IRecordedCycles Cycles
 @inject INotifications Notifications
+@inject IStoredKeys Keys
+@inject ISetupMarks Setup
 @inject ILiveSignals Live
 @inject NavigationManager Navigation
 
@@ -32,7 +35,10 @@
     or a notification of its user changes, it asks for itself again. And it has the prices of
     what its user holds followed while it is open, so that the watch has them: it asks for
     itself again when one of them is first read. A page that answers a form asks for itself
-    again on nothing. See docs/dashboard.md and docs/live-updates.md.
+    again on nothing. Above it all, a first-time user is shown the setup checklist, until they
+    have marked its last two steps (FR-UI-4): where they stand on it is worked out from the keys,
+    the agents, and the decisions of the user, with what they said. See docs/dashboard.md and
+    docs/live-updates.md.
 *@
 
 @if (_agents is not null && _equities is not null && _totals is not null && _unread is not null)
@@ -44,6 +50,12 @@
     <p>@DashboardPages.Explained @DashboardPages.Apart</p>
 
     <p>@DashboardPages.FiguresExplained</p>
+
+    @if (_setup is not null)
+    {
+        @* For a first-time user alone: whoever marked its last two steps is shown it no more. *@
+        <SetupChecklist Progress="@_setup" />
+    }
 
     @if (_unread.OfNoMode.Total > 0)
     {
@@ -284,6 +296,10 @@
     private Dictionary<Guid, AgentEquity>? _equities;
     private IReadOnlyList<EquityTotal>? _totals;
     private UnreadByMode? _unread;
+
+    // Where a first-time user stands on the setup checklist, or nothing for a user who has
+    // marked its last two steps.
+    private SetupProgress? _setup;
     private long _since;
 
     [CascadingParameter]
@@ -316,6 +332,17 @@
         foreach (var mode in DashboardPages.Modes)
         {
             _cycles[mode] = await Cycles.LatestOfUserAsync(userId, mode, cancellationToken);
+        }
+
+        // The setup checklist of a first-time user (FR-UI-4). What its user said is read first:
+        // for whoever marked its last two steps, nothing else is read for it. Otherwise the
+        // keys, with the agents and the decisions that the page has read above.
+        var marks = await Setup.ReadAsync(request);
+
+        if (!marks.Both)
+        {
+            _setup = SetupProgress.Of(
+                await Keys.StateAsync(request), _agents, _cycles[TradingMode.Demo], _cycles[TradingMode.Live], marks);
         }
 
         _unread = await Notifications.UnreadByModeAsync(request);
