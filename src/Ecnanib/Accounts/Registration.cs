@@ -228,12 +228,15 @@ internal sealed class Registration(
         // A new account looks as the device of its user is set (FR-THM-1).
         var theme = nameof(Theme.System);
 
+        // And its pages move as that device asks (FR-ANI-4).
+        var motion = nameof(Motion.System);
+
         // Whoever inserts the row has the address. Of two requests for one address at the same
         // time, the second waits here, and then finds the account of the first.
         var inserted = await context.Database.ExecuteSqlAsync(
             $"""
-            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at, email_verification_sets_password, two_factor_failed_codes, theme)
-            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt}, FALSE, 0, {theme})
+            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at, email_verification_sets_password, two_factor_failed_codes, theme, motion)
+            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt}, FALSE, 0, {theme}, {motion})
             ON CONFLICT (email) DO NOTHING
             """,
             cancellationToken);

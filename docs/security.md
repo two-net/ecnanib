@@ -75,7 +75,7 @@ default-src 'self'; script-src 'self' 'nonce-<nonce>'; style-src 'self'; connect
 object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 ```
 
-- **Scripts and styles are files of the application.** A page carries no `<style>` element, no `style` attribute, no event handler such as `onclick`, and no script of its own: a browser would refuse each. What a page needs of them goes into a file under `wwwroot`, or beside its component.
+- **Scripts and styles are files of the application.** A page carries no `<style>` element, no `style` attribute, no event handler such as `onclick`, and no script of its own: a browser would refuse each. What a page needs of them goes into a file under `wwwroot`, or beside its component. The application has one script of its own, `wwwroot/motion.js`, for what moves on a page: it makes no request, and writes no markup and no style. See "The script" in [motion.md](motion.md).
 - **The one script that is written into a page is the framework's import map.** It carries the nonce: 16 random bytes, new for every answer, so text that reaches a page cannot know it. `App.razor` reads it with `BrowserDefenses.NonceOf`.
 - **One place says it.** By itself the framework says `X-Frame-Options: SAMEORIGIN` on a page with a form, and `frame-ancestors 'self'` on a page. Both are turned off, in `TransportSecurity` and in `WebUiModule`, and the headers above are the last word on every answer.
 - **The connection of a page that follows what changes is to this host,** which `connect-src 'self'` allows: see "The connection of a page". What is written over it is text of the application's own components, encoded as every page is, and the styles of it are in `wwwroot/app.css`.

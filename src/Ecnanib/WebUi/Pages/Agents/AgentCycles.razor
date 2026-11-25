@@ -72,7 +72,7 @@
                 <tbody>
                     @foreach (var cycle in _history.Cycles)
                     {
-                        <tr>
+                        <tr data-key="@cycle.Id">
                             <th scope="row">@PageTimes.At(cycle.ClosedAt)</th>
                             <td><span class="cycle-kind cycle-kind-@(cycle.Kind.ToString().ToLowerInvariant())">@CyclePages.Describe(cycle.Kind)</span></td>
                             <td><ModeBadge Mode="@cycle.Mode" /></td>

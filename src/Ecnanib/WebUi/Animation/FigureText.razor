@@ -1,0 +1,26 @@
+@*
+    A text in which one number is a figure that changes (FR-ANI-2): what is before the number,
+    the number in an element of its own that says its value, and what is after it. The script
+    of the pages counts the number from its old value to its new one when the value changes,
+    and a page without the script shows the new number at once. A figure that is not known has
+    no number: the page then says what it says otherwise, as plain text. Nothing but the text
+    and the one element is written, so a number is not parted from its unit. See docs/motion.md.
+*@
+@if (Of is { } figure)
+{
+    <text>@figure.Before</text><data class="figure" value="@figure.Value">@figure.Number</data><text>@figure.After</text>
+}
+else
+{
+    <text>@Otherwise</text>
+}
+
+@code {
+    /// <summary>The text with its figure, or null when the figure is not known.</summary>
+    [Parameter]
+    public PageFigure? Of { get; set; }
+
+    /// <summary>What the page says when the figure is not known.</summary>
+    [Parameter]
+    public string? Otherwise { get; set; }
+}

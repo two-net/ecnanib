@@ -62,7 +62,7 @@ public class AgentControlTests
 
         Assert.Contains("<h1>State of the agent Swing</h1>", draft);
         Assert.Contains(
-            $"<p>State: <strong>Draft</strong>, since 12 November 2026, 09:00 UTC. {AgentPages.Explain(AgentState.Draft)}</p>", draft);
+            $"<p data-change=\"Draft\">State: <strong>Draft</strong>, since 12 November 2026, 09:00 UTC. {AgentPages.Explain(AgentState.Draft)}</p>", draft);
         Assert.Contains("<p>You created the agent.</p>", draft);
         Assert.Contains(StartButton, draft);
         Assert.DoesNotContain(PauseButton, draft);
@@ -642,7 +642,7 @@ public class AgentControlTests
         return Regex
             .Matches(
                 table.Value,
-                @"<tr>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*</tr>",
+                @"<tr[^>]*>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*</tr>",
                 RegexOptions.Singleline)
             .ToList();
     }

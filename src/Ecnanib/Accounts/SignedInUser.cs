@@ -53,6 +53,23 @@ public static class SignedInUser
             : null;
     }
 
+    /// <summary>
+    /// How much of the pages moves for the account that a user is signed in to, or null when
+    /// they are not signed in (FR-ANI-4). It is what the account said when the request was
+    /// signed in, which is on every request.
+    /// </summary>
+    /// <param name="user">The user of a request.</param>
+    public static Motion? MotionOf(ClaimsPrincipal user)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+
+        return user.Identity is { IsAuthenticated: true }
+            && Enum.TryParse<Motion>(user.FindFirstValue(SessionAuthentication.MotionClaimType), out var motion)
+            && Enum.IsDefined(motion)
+            ? motion
+            : null;
+    }
+
     /// <summary>The id of the account a request is signed in to, or null when it is not signed in.</summary>
     public static Guid? IdOf(HttpContext request)
     {

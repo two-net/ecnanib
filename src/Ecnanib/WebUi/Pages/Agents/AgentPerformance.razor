@@ -13,7 +13,9 @@
     the experience screens. The largest drawdown is counted over the recorded equity, as the
     drawdown limit counts a drawdown. A profit and a loss are told apart by their sign
     (FR-THM-5). Under the figures the page says what each is of. The texts are in
-    AgentReportPages. See docs/agent-screen.md.
+    AgentReportPages. See docs/agent-screen.md. The equity, the net result, and the return
+    count from their old value to their new one as the page asks for itself again (FR-ANI-2):
+    see docs/motion.md.
 *@
 
 <section class="agent-performance" aria-labelledby="performance-heading">
@@ -24,15 +26,15 @@
     <dl class="dashboard-figures agent-figures">
         <div>
             <dt>@AgentReportPages.Equity</dt>
-            <dd>@DashboardPages.AmountOrNot(Equity.Equity, Equity.Asset)</dd>
+            <dd><FigureText Of="@DashboardPages.AmountFigureOrNot(Equity.Equity, Equity.Asset)" Otherwise="@DashboardPages.NotKnown" /></dd>
         </div>
         <div>
             <dt>@AgentReportPages.NetResult</dt>
-            <dd>@DashboardPages.SignedOrNot(Figures.NetResult, Equity.Asset)</dd>
+            <dd><FigureText Of="@DashboardPages.SignedFigureOrNot(Figures.NetResult, Equity.Asset)" Otherwise="@DashboardPages.NotKnown" /></dd>
         </div>
         <div>
             <dt>@AgentReportPages.Return</dt>
-            <dd>@AgentReportPages.SignedPercent(Figures.ReturnPercent)</dd>
+            <dd><FigureText Of="@AgentReportPages.SignedPercentFigure(Figures.ReturnPercent)" Otherwise="@DashboardPages.NotKnown" /></dd>
         </div>
         <div>
             <dt>@AgentReportPages.WinRate</dt>

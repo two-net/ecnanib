@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @using Ecnanib.Accounts
 @using Ecnanib.Notifications
+@using Ecnanib.WebUi.Animation
 @using Ecnanib.WebUi.Themes
 @inject ITwoFactor TwoFactorAuthentication
 @inject IEmailOptIn EmailOptIn
@@ -56,6 +57,9 @@ else
 @* Another preference that is stored: the theme of the account (FR-THM-3). It is chosen on a page of its own. *@
 <p>@AppearancePages.Stored(_theme)</p>
 
+@* And how much of the pages moves (FR-ANI-4), which is chosen on the same page. *@
+<p>@AppearancePages.Stored(_motion)</p>
+
 <p><a href="@WebUiModule.AppearancePath">Choose how the pages look</a></p>
 
 <h2>Your data</h2>
@@ -85,6 +89,7 @@ else
     private TwoFactorState? _twoFactor;
     private bool _emailOn;
     private Theme _theme;
+    private Motion _motion;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -96,8 +101,10 @@ else
             _twoFactor = await TwoFactorAuthentication.StateAsync(request);
             _emailOn = (await EmailOptIn.StateAsync(request)).On;
 
-            // The theme of the account, as this request was told it when it was signed in.
+            // The theme of the account, and how much of its pages moves, as this request was
+            // told them when it was signed in.
             _theme = PageTheme.Of(request);
+            _motion = PageMotion.Of(request);
         }
     }
 }

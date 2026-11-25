@@ -20,6 +20,9 @@
 }
 
 
+/* The dialog as it is, for every device: nothing of it waits for something that moves to show
+   it. What moves when it opens is in app.css, with everything else that moves, for a device
+   and an account that do not ask for less (FR-ANI-3, FR-ANI-4). See docs/motion.md. */
 #components-reconnect-modal {
     /* It brings a white background of its own, so its text stays dark on a dark page too. */
     color-scheme: light only;
@@ -30,52 +33,10 @@
     border: 0;
     border-radius: 0.5rem;
     box-shadow: 0 3px 6px 2px rgba(0, 0, 0, 0.3);
-    opacity: 0;
-    transition: display 0.5s allow-discrete, overlay 0.5s allow-discrete;
-    animation: components-reconnect-modal-fadeOutOpacity 0.5s both;
-    &[open]
-
-{
-    animation: components-reconnect-modal-slideUp 1.5s cubic-bezier(.05, .89, .25, 1.02) 0.3s, components-reconnect-modal-fadeInOpacity 0.5s ease-in-out 0.3s;
-    animation-fill-mode: both;
-}
-
 }
 
 #components-reconnect-modal::backdrop {
     background-color: rgba(0, 0, 0, 0.4);
-    animation: components-reconnect-modal-fadeInOpacity 0.5s ease-in-out;
-    opacity: 1;
-}
-
-@keyframes components-reconnect-modal-slideUp {
-    0% {
-        transform: translateY(30px) scale(0.95);
-    }
-
-    100% {
-        transform: translateY(0);
-    }
-}
-
-@keyframes components-reconnect-modal-fadeInOpacity {
-    0% {
-        opacity: 0;
-    }
-
-    100% {
-        opacity: 1;
-    }
-}
-
-@keyframes components-reconnect-modal-fadeOutOpacity {
-    0% {
-        opacity: 1;
-    }
-
-    100% {
-        opacity: 0;
-    }
 }
 
 .components-reconnect-container {
@@ -108,6 +69,9 @@
         background-color: #3b6ea2;
     }
 
+/* Two rings, one inside the other, which stand still here. In app.css they grow and fade one
+   after the other for as long as the server is being rejoined, which is a state that is live
+   (FR-ANI-5): only how large a ring is drawn and how far it shows are changed (FR-ANI-6). */
 .components-rejoining-animation {
     position: relative;
     width: 80px;
@@ -116,46 +80,14 @@
 
     .components-rejoining-animation div {
         position: absolute;
+        inset: 0;
+        box-sizing: border-box;
         border: 3px solid #0087ff;
-        opacity: 1;
         border-radius: 50%;
-        animation: components-rejoining-animation 1.5s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+        opacity: 0.4;
     }
 
         .components-rejoining-animation div:nth-child(2) {
-            animation-delay: -0.5s;
+            opacity: 1;
+            transform: scale(0.5);
         }
-
-@keyframes components-rejoining-animation {
-    0% {
-        top: 40px;
-        left: 40px;
-        width: 0;
-        height: 0;
-        opacity: 0;
-    }
-
-    4.9% {
-        top: 40px;
-        left: 40px;
-        width: 0;
-        height: 0;
-        opacity: 0;
-    }
-
-    5% {
-        top: 40px;
-        left: 40px;
-        width: 0;
-        height: 0;
-        opacity: 1;
-    }
-
-    100% {
-        top: 0px;
-        left: 0px;
-        width: 80px;
-        height: 80px;
-        opacity: 0;
-    }
-}

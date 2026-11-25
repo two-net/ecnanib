@@ -818,7 +818,7 @@ public partial class CycleTimelinePageTests
     private static partial Regex RuleNames();
 
     [GeneratedRegex(
-        @"<tr>\s*<th scope=""row"">([^<]*)</th>\s*<td><span class=""cycle-kind cycle-kind-[a-z]+"">(?<kind>[^<]*)</span></td>\s*" +
+        @"<tr[^>]*>\s*<th scope=""row"">([^<]*)</th>\s*<td><span class=""cycle-kind cycle-kind-[a-z]+"">(?<kind>[^<]*)</span></td>\s*" +
         @"<td><span class=""mode-badge mode-[a-z]+"">(Demo|Live)</span></td>\s*" +
         @"<td><span class=""cycle-outcome cycle-[a-z]+"">([^<]*)</span></td>\s*<td>([^<]*)</td>\s*<td>([^<]*)</td>\s*" +
         @"<td><a href=""([^""]*)"">Timeline</a></td>\s*</tr>")]

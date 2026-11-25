@@ -85,14 +85,15 @@
                 @* One total for each asset that an agent of the mode is in: a user has one, as a rule. *@
                 @foreach (var total in _totals.Where(total => total.Mode == mode))
                 {
-                    <dl class="dashboard-figures">
+                    @* What moves is told what a part is of by its key, here the asset: see docs/motion.md. *@
+                    <dl class="dashboard-figures" data-key="@total.Asset">
                         <div>
                             <dt>@DashboardPages.TotalEquity</dt>
-                            <dd>@DashboardPages.AmountOrNot(total.Equity, total.Asset)</dd>
+                            <dd><FigureText Of="@DashboardPages.AmountFigureOrNot(total.Equity, total.Asset)" Otherwise="@DashboardPages.NotKnown" /></dd>
                         </div>
                         <div>
                             <dt>@DashboardPages.MadeToday</dt>
-                            <dd>@DashboardPages.SignedOrNot(total.MadeToday, total.Asset)</dd>
+                            <dd><FigureText Of="@DashboardPages.SignedFigureOrNot(total.MadeToday, total.Asset)" Otherwise="@DashboardPages.NotKnown" /></dd>
                         </div>
                     </dl>
 
@@ -132,7 +133,7 @@
                                     var equity = _equities[agent.Id];
                                     var position = equity.Position!;
 
-                                    <tr>
+                                    <tr data-key="@agent.Id">
                                         <th scope="row"><a href="@WebUiModule.AgentStatePath(agent.Id)">@agent.Name</a></th>
                                         <td><code>@position.Symbol</code></td>
                                         <td>@position.Market</td>
@@ -141,8 +142,8 @@
                                         <td>@AgentPages.Number(position.EntryPrice)</td>
                                         <td>@DashboardPages.Rests(position.StopLoss)</td>
                                         <td>@DashboardPages.Rests(position.TakeProfit)</td>
-                                        <td>@DashboardPages.PriceOf(equity)</td>
-                                        <td>@DashboardPages.WouldMake(equity)</td>
+                                        <td><FigureText Of="@DashboardPages.PriceFigure(equity)" Otherwise="@DashboardPages.NotKnown" /></td>
+                                        <td><FigureText Of="@DashboardPages.WouldMakeFigure(equity)" Otherwise="@DashboardPages.NotKnown" /></td>
                                         <td>@PageTimes.At(position.OpenedAt)</td>
                                     </tr>
                                 }
@@ -162,7 +163,7 @@
                         // switched between the reads of the page has none here yet.
                         var equity = _equities.GetValueOrDefault(agent.Id) is { } read && read.Mode == mode ? read : null;
 
-                        <li class="agent-card">
+                        <li class="agent-card" data-key="@agent.Id">
                             <h4><a href="@WebUiModule.AgentStatePath(agent.Id)">@agent.Name</a></h4>
 
                             <p><code>@agent.Symbol</code> @DashboardPages.Trades(agent.Market, agent.Timeframe)</p>
@@ -170,15 +171,15 @@
                             <dl>
                                 <div>
                                     <dt>State</dt>
-                                    <dd>@DashboardPages.StateOf(agent.State, agent.StateChangedAt)</dd>
+                                    <dd data-change="@agent.State">@DashboardPages.StateOf(agent.State, agent.StateChangedAt)</dd>
                                 </div>
                                 <div>
                                     <dt>Equity</dt>
-                                    <dd>@DashboardPages.AmountOrNot(equity?.Equity, agent.QuoteAsset)</dd>
+                                    <dd><FigureText Of="@DashboardPages.AmountFigureOrNot(equity?.Equity, agent.QuoteAsset)" Otherwise="@DashboardPages.NotKnown" /></dd>
                                 </div>
                                 <div>
                                     <dt>Today</dt>
-                                    <dd>@DashboardPages.SignedOrNot(equity?.MadeToday, agent.QuoteAsset)</dd>
+                                    <dd><FigureText Of="@DashboardPages.SignedFigureOrNot(equity?.MadeToday, agent.QuoteAsset)" Otherwise="@DashboardPages.NotKnown" /></dd>
                                 </div>
                                 <div>
                                     <dt>Position</dt>
@@ -224,7 +225,7 @@
                         <tbody>
                             @foreach (var cycle in cycles)
                             {
-                                <tr>
+                                <tr data-key="@cycle.Cycle.Id">
                                     @* The time leads to the timeline of the cycle, which says what each role answered. *@
                                     <th scope="row"><a href="@WebUiModule.AgentCyclePath(cycle.AgentId, cycle.Cycle.Id)">@PageTimes.At(cycle.Cycle.ClosedAt)</a></th>
                                     <td>@NameOf(cycle.AgentId)</td>
@@ -344,7 +345,7 @@
     /// form that marks it as read. A notification is on the page once, so its form is.
     /// </summary>
     private RenderFragment Alert(NotificationView notification) =>
-        @<li>
+        @<li data-key="@notification.Id">
             <span id="@NotificationPages.TextId(notification.Id)"><strong>@NotificationTypes.Describe(notification.Type)</strong>, @PageTimes.At(notification.CreatedAt). @notification.Content</span>
 
             @if (_agents?.FirstOrDefault(agent => agent.Id == notification.AgentId) is { } about)

@@ -128,6 +128,22 @@ public partial class DashboardPageTests
         Assert.Contains("<p>No agent in Live holds a position.</p>", ofLive);
         Assert.False(ExperienceBrowser.HasTable(page, "The open positions of your agents in Live"));
 
+        // What moves is told what the page holds (FR-ANI-2, FR-ANI-3): a figure by the element
+        // around its number, which says its value, an item of a list by its key, and the state
+        // of an agent by its name. See docs/motion.md.
+        Assert.Contains("<dd><data class=\"figure\" value=\"1991.8\">1991.8</data> USDT</dd>", ofDemo);
+        Assert.Contains("<dd><data class=\"figure\" value=\"-8.2\">-8.2</data> USDT</dd>", ofDemo);
+        Assert.Contains("<td><data class=\"figure\" value=\"100250\">100250</data>, as of 24 November 2026, 08:59:57 UTC</td>", ofDemo);
+        Assert.Contains("<td><data class=\"figure\" value=\"2.5\">+2.5</data> USDT</td>", ofDemo);
+        Assert.Contains("<dl class=\"dashboard-figures\" data-key=\"USDT\">", ofDemo);
+        Assert.Contains($"<tr data-key=\"{runner}\">", ofDemo);
+        Assert.Contains($"<li class=\"agent-card\" data-key=\"{runner}\">", ofDemo);
+        Assert.Contains($"<li class=\"agent-card\" data-key=\"{live}\">", ofLive);
+        Assert.Contains("<dd data-change=\"Running\">Running, since 21 November 2026, 09:00 UTC</dd>", ofDemo);
+        Assert.Contains("<dd data-change=\"Halted\">", ofLive);
+        Assert.Contains($"<tr data-key=\"{vetoed}\">", ofDemo);
+        Assert.Contains($"<tr data-key=\"{approved}\">", ofLive);
+
         // A card for each agent, in the section of its mode: its state, its equity, its day,
         // and what it holds. One that is halted says why, and until when.
         Assert.Equal(
@@ -500,15 +516,21 @@ public partial class DashboardPageTests
     private static IReadOnlyList<(string Name, string Value)> FiguresOf(string section) =>
         [
             .. Figures().Matches(section).SelectMany(figures => Named().Matches(figures.Groups[1].Value))
-                .Select(named => (named.Groups[1].Value.Trim(), named.Groups[2].Value.Trim())),
+                .Select(named => (named.Groups[1].Value.Trim(), Said(named.Groups[2].Value))),
         ];
+
+    /// <summary>
+    /// What a figure says, as it is read: a number that counts when it changes is in an element
+    /// of its own (FR-ANI-2), which says nothing by itself. MotionMarkupTests holds that element.
+    /// </summary>
+    private static string Said(string value) => Regex.Replace(value, "<[^>]+>", string.Empty).Trim();
 
     /// <summary>The cards of the agents of a section, in the order that they are on it.</summary>
     private static IReadOnlyList<Card> CardsOf(string section) =>
         [
             .. CardOfAgent().Matches(section).Select(card =>
             {
-                var said = Named().Matches(card.Groups[1].Value).ToDictionary(named => named.Groups[1].Value.Trim(), named => named.Groups[2].Value.Trim());
+                var said = Named().Matches(card.Groups[1].Value).ToDictionary(named => named.Groups[1].Value.Trim(), named => Said(named.Groups[2].Value));
 
                 return new Card(
                     Regex.Match(card.Groups[1].Value, "<h4><a[^>]*>(.*?)</a></h4>").Groups[1].Value,
@@ -538,12 +560,12 @@ public partial class DashboardPageTests
     /// <summary>What the card of an agent says.</summary>
     private sealed record Card(string Name, string Trades, string State, string Equity, string Today, string Position);
 
-    [GeneratedRegex("<dl class=\"dashboard-figures\">(.*?)</dl>", RegexOptions.Singleline)]
+    [GeneratedRegex("<dl class=\"dashboard-figures\"[^>]*>(.*?)</dl>", RegexOptions.Singleline)]
     private static partial Regex Figures();
 
-    [GeneratedRegex(@"<dt>(.*?)</dt>\s*<dd>(.*?)</dd>", RegexOptions.Singleline)]
+    [GeneratedRegex(@"<dt>(.*?)</dt>\s*<dd[^>]*>(.*?)</dd>", RegexOptions.Singleline)]
     private static partial Regex Named();
 
-    [GeneratedRegex("<li class=\"agent-card\">(.*?)</li>", RegexOptions.Singleline)]
+    [GeneratedRegex("<li class=\"agent-card\"[^>]*>(.*?)</li>", RegexOptions.Singleline)]
     private static partial Regex CardOfAgent();
 }

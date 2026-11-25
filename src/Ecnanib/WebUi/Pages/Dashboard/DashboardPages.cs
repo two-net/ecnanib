@@ -3,6 +3,7 @@ using Ecnanib.Agents;
 using Ecnanib.DecisionEngine;
 using Ecnanib.Notifications;
 using Ecnanib.Shared;
+using Ecnanib.WebUi.Animation;
 using Ecnanib.WebUi.Pages.Agents;
 
 namespace Ecnanib.WebUi.Pages.Dashboard;
@@ -175,21 +176,33 @@ public static class DashboardPages
     }
 
     /// <summary>An amount of an asset, to 2 decimal places: <c>1012.4 USDT</c>.</summary>
-    public static string Amount(decimal amount, string asset) =>
-        $"{Rounded(amount).ToString("0.##", CultureInfo.InvariantCulture)} {asset}";
+    public static string Amount(decimal amount, string asset) => AmountFigure(amount, asset).Text;
+
+    /// <summary>That amount as a figure that counts when it changes (FR-ANI-2): the number, and the asset after it.</summary>
+    public static PageFigure AmountFigure(decimal amount, string asset) =>
+        PageFigure.Of(Rounded(amount).ToString("0.##", CultureInfo.InvariantCulture), after: $" {asset}");
 
     /// <summary>
     /// A profit or a loss in an asset, to 2 decimal places, with its sign, so that it is told
     /// apart without its colour (FR-THM-5): <c>+12.4 USDT</c>, <c>-5.99 USDT</c>, <c>0 USDT</c>.
     /// </summary>
-    public static string Signed(decimal amount, string asset) =>
-        $"{Rounded(amount).ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture)} {asset}";
+    public static string Signed(decimal amount, string asset) => SignedFigure(amount, asset).Text;
+
+    /// <summary>That profit or loss as a figure that counts when it changes (FR-ANI-2): the number with its sign, and the asset after it.</summary>
+    public static PageFigure SignedFigure(decimal amount, string asset) =>
+        PageFigure.Of(Rounded(amount).ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture), after: $" {asset}");
 
     /// <summary>An amount that may not be known: the amount, or that it is not known, and never nothing.</summary>
-    public static string AmountOrNot(decimal? amount, string asset) => amount is { } known ? Amount(known, asset) : NotKnown;
+    public static string AmountOrNot(decimal? amount, string asset) => AmountFigureOrNot(amount, asset)?.Text ?? NotKnown;
+
+    /// <summary>That amount as a figure, or null when it is not known: the page then says <see cref="NotKnown"/>.</summary>
+    public static PageFigure? AmountFigureOrNot(decimal? amount, string asset) => amount is { } known ? AmountFigure(known, asset) : null;
 
     /// <summary>A profit or a loss that may not be known.</summary>
-    public static string SignedOrNot(decimal? amount, string asset) => amount is { } known ? Signed(known, asset) : NotKnown;
+    public static string SignedOrNot(decimal? amount, string asset) => SignedFigureOrNot(amount, asset)?.Text ?? NotKnown;
+
+    /// <summary>That profit or loss as a figure, or null when it is not known.</summary>
+    public static PageFigure? SignedFigureOrNot(decimal? amount, string asset) => amount is { } known ? SignedFigure(known, asset) : null;
 
     /// <summary>The market, the symbol, and the timeframe of an agent, as its card says them.</summary>
     public static string Trades(Market market, Timeframe timeframe) => $"on {market}, {timeframe.Code()}";
@@ -230,12 +243,30 @@ public static class DashboardPages
         return SignedOrNot(equity.Unrealized, equity.Asset);
     }
 
+    /// <summary>That as a figure, or null when it is not known.</summary>
+    public static PageFigure? WouldMakeFigure(AgentEquity equity)
+    {
+        ArgumentNullException.ThrowIfNull(equity);
+
+        return SignedFigureOrNot(equity.Unrealized, equity.Asset);
+    }
+
     /// <summary>The price that an open position is valued at, with when it was read, or that it is not known.</summary>
     public static string PriceOf(AgentEquity equity)
     {
         ArgumentNullException.ThrowIfNull(equity);
 
-        return equity.Price is { } price ? $"{AgentPages.Number(price.Price)}, as of {PageTimes.AtSecond(price.ReadAt)}" : NotKnown;
+        return PriceFigure(equity)?.Text ?? NotKnown;
+    }
+
+    /// <summary>That price as a figure, with when it was read after it, or null when it is not known.</summary>
+    public static PageFigure? PriceFigure(AgentEquity equity)
+    {
+        ArgumentNullException.ThrowIfNull(equity);
+
+        return equity.Price is { } price
+            ? PageFigure.Of(AgentPages.Number(price.Price), after: $", as of {PageTimes.AtSecond(price.ReadAt)}")
+            : null;
     }
 
     /// <summary>The text of the link from an alert to the page of the state of the agent that it is about.</summary>

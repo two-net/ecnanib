@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.Animation;
 using Ecnanib.Tests.Logging;
 
 namespace Ecnanib.Tests.Themes;

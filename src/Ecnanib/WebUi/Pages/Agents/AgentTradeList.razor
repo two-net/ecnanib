@@ -51,7 +51,7 @@
                 <tbody>
                     @foreach (var trade in Trades.Trades)
                     {
-                        <tr>
+                        <tr data-key="@trade.PositionId">
                             <th scope="row">@PageTimes.At(trade.ClosedAt)</th>
                             <td>@AgentReportPages.ModeOf(trade.Mode)</td>
                             <td><code>@trade.Symbol</code></td>

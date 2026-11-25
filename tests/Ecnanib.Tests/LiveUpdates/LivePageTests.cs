@@ -138,16 +138,26 @@ public partial class LivePageTests
 
         page = AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(holds)));
 
-        Assert.Contains("<p class=\"live-price\">BTCUSDT last traded at 100250 USDT, as of 24 November 2026, 09:00:07 UTC.</p>", page);
-        Assert.Contains("<p class=\"live-unrealized\">At that price the position would make 2.5 USDT, before fees and funding.</p>", page);
+        Assert.Contains("<p class=\"live-price\">BTCUSDT last traded at 100250 USDT, as of 24 November 2026, 09:00:07 UTC.</p>", Plain(page));
+        Assert.Contains("<p class=\"live-unrealized\">At that price the position would make 2.5 USDT, before fees and funding.</p>", Plain(page));
+
+        // The price and what the position would make are figures: each number is in an element
+        // of its own, which says its value, so it counts from its old value to its new one
+        // when the connection of the page writes another (FR-ANI-2).
+        Assert.Contains("last traded at <data class=\"figure\" value=\"100250\">100250</data> USDT, as of", page);
+        Assert.Contains("would make <data class=\"figure\" value=\"2.5\">2.5</data> USDT, before", page);
 
         // A position of the Futures market says its side, and is valued at the mark price. What
         // it would make is said in words, and a loss as a loss.
         page = AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(shorts)));
 
         Assert.Contains("<p>A long position of 0.01 in BTCUSDT, entered at 100000 USDT, open since 24 November 2026, 08:50 UTC.</p>", page);
-        Assert.Contains("<p class=\"live-price\">The mark price of BTCUSDT is 99400.5 USDT, as of 24 November 2026, 09:00:08 UTC.</p>", page);
-        Assert.Contains("<p class=\"live-unrealized\">At that price the position would lose 5.995 USDT, before fees and funding.</p>", page);
+        Assert.Contains("<p class=\"live-price\">The mark price of BTCUSDT is 99400.5 USDT, as of 24 November 2026, 09:00:08 UTC.</p>", Plain(page));
+        Assert.Contains("<p class=\"live-unrealized\">At that price the position would lose 5.995 USDT, before fees and funding.</p>", Plain(page));
+
+        // The value of a loss is less than nothing, though its number is written without a
+        // sign: the words say the loss, and the figure does not count across the two.
+        Assert.Contains("would lose <data class=\"figure\" value=\"-5.995\">5.995</data> USDT, before", page);
 
         // An agent that holds nothing says so, with the price of its own symbol, when one is known.
         page = AgentBrowser.Read(await ada.Browser.PageAsync(WebUiModule.AgentStatePath(idle)));
@@ -575,4 +585,10 @@ public partial class LivePageTests
 
     /// <summary>A page with nothing between one element and the next, for what is asked of the order of its elements.</summary>
     private static string Flat(string page) => Between().Replace(page, "><");
+
+    /// <summary>A page without the elements that set a figure apart in its sentence (FR-ANI-2), for what is asked of the sentence.</summary>
+    private static string Plain(string page) => Figure().Replace(page, string.Empty);
+
+    [GeneratedRegex("<data class=\"figure\" value=\"[^\"]*\">|</data>")]
+    private static partial Regex Figure();
 }

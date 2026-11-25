@@ -151,7 +151,7 @@ public class AgentHaltTests
         // The state, since when, what it means, and why (FR-AGT-10), and for a daily loss
         // limit until when: the next UTC day.
         Assert.Contains(
-            $"<p>State: <strong>Halted</strong>, since 12 November 2026, 09:00 UTC. {AgentPages.Explain(AgentState.Halted)}</p>", page);
+            $"<p data-change=\"Halted\">State: <strong>Halted</strong>, since 12 November 2026, 09:00 UTC. {AgentPages.Explain(AgentState.Halted)}</p>", page);
         Assert.Contains($"<p>{AgentPages.Says(AgentStateCause.DailyLossLimitReached)}</p>", page);
         Assert.Contains(
             "<p>The agent is halted until 13 November 2026, 00:00 UTC, and cannot be resumed before. From then on the service resumes " +

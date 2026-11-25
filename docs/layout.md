@@ -6,7 +6,7 @@ This is the frame that every page is written in, and the map of the screens. Wha
 
 The frame is `MainLayout.razor` in `src/Ecnanib/WebUi/Layout`, with `ScreenLink.razor`, `SettingsNav.razor`, and `NotificationsLink.razor`. What each screen is called and where it is, is `Screens.cs` there, and the paths are in `WebUiModule`. The start page is `Home.razor` in `src/Ecnanib/WebUi/Pages`, with its texts in `HomePages.cs`. The look is in `src/Ecnanib/wwwroot/app.css`. The rules below are enforced by `ScreenRuleTests` and `LayoutPageTests` in `tests/Ecnanib.Tests/Layout`, with the map in `ScreenRules.cs` there, and by `AuditRulesTests` in `tests/Ecnanib.Tests/Accounts`.
 
-How a page is kept from carrying a script or a style of its own is in [security.md](security.md), how a page follows what changes in [live-updates.md](live-updates.md), how a page gets its theme in [themes.md](themes.md), and who is an operator in [ownership.md](ownership.md).
+How a page is kept from carrying a script or a style of its own is in [security.md](security.md), how a page follows what changes in [live-updates.md](live-updates.md), how a page gets its theme in [themes.md](themes.md), what moves on a page in [motion.md](motion.md), and who is an operator in [ownership.md](ownership.md).
 
 ## The screens
 
@@ -23,7 +23,7 @@ How a page is kept from carrying a script or a style of its own is in [security.
 | Settings: profile | `/account` | Users | "Settings" in the bar, and "Profile" in the navigation of the settings. |
 | Settings: security | `/account/two-factor` | Users | The navigation of the settings. |
 | Settings: API keys | `/account/keys` | Users | The navigation of the settings. See [credentials.md](credentials.md). |
-| Settings: appearance | `/account/appearance` | Users | The navigation of the settings. See [themes.md](themes.md). |
+| Settings: appearance | `/account/appearance` | Users | The navigation of the settings. See [themes.md](themes.md), and [motion.md](motion.md) for how much of the pages moves, which is chosen there too. |
 | Settings: notifications | `/account/notifications` | Users | The navigation of the settings. See [notifications.md](notifications.md). |
 | Operator status | `/operator` | Operators | The bar of an operator. |
 
@@ -50,7 +50,7 @@ Every page is written in the same frame, for a visitor and for a user, also the 
 
 | Rule | Detail |
 |---|---|
-| **It is rendered on the server for each request, and has no script.** | No part of it keeps a connection: a page that follows what changes has its one part for that, and a page that follows nothing has none. See [live-updates.md](live-updates.md). |
+| **It is rendered on the server for each request, and no script of it keeps a connection.** | A page that follows what changes has its one part for that, and a page that follows nothing has none. See [live-updates.md](live-updates.md). The one script of the application is for what moves on a page, and the frame works without it: see [motion.md](motion.md). |
 | **The link past the bar names its page.** | The pages share one base address, so a link to a part of a page says the address of the page too, with what follows its question mark. The browser follows it by itself, and not the framework: what a keyboard reaches next is then in the content. The content takes the focus for that, and is no stop of the keyboard otherwise. |
 | **A page that opens takes the focus at its heading,** | as before: `FocusOnNavigate` in `Routes.razor`, for a page that is opened by a link and for one that is loaded anew. So the next stop of a keyboard is in the content, and every page has an `<h1>`, also the page that says there is none at an address. The link past the bar is for whoever goes back to the top of a page, or reads it from the top. |
 | **Its texts are in one place.** | `Screens` (NFR-USA-4): the names of the links, of the menu, and of the navigations as a screen reader says them. |
@@ -98,7 +98,7 @@ The frame changes at one width, 48rem, which is 768 pixels at the text size that
 
 ## Browsers
 
-The UI works in the current and previous major versions of Chrome, Edge, Firefox, and Safari. It needs no script of its own for that. The stylesheet keeps to what all four have had since 2023 or before, but for two rules, each of which an older browser does without.
+The UI works in the current and previous major versions of Chrome, Edge, Firefox, and Safari. The frame needs no script of its own for that. The stylesheet keeps to what all four have had since 2023 or before, but for two rules, each of which an older browser does without.
 
 | What the frame uses | Detail |
 |---|---|
@@ -141,7 +141,7 @@ One screen of the specification has a route and a place in the navigation, and s
 | Test class | What it holds |
 |---|---|
 | `ScreenRuleTests` | The map: that its screens are the ones of the specification, that each has a page at its route which says whom it opens for, that each is led to from the page and by the link that the map says, and opens there, and that nobody is led to a screen that does not open for them. |
-| `LayoutPageTests` | The frame: that every page has the link past the bar, the bar, the content, and the foot, for a visitor and for a user, that the link past the bar names its page, which link the bar and the navigation of the settings mark on each screen, what a visitor is shown, the start page with registration open and closed, the foot of a visitor, the navigation of the settings and the pages that have it, the page of the appearance with its form, the menu of a narrow screen with what it holds and the rules of the stylesheet that it rests on, the operator status screen for an operator, a user, and a visitor, and the page of an address that has none. |
+| `LayoutPageTests` | The frame: that every page has the link past the bar, the bar, the content, and the foot, for a visitor and for a user, that the link past the bar names its page, which link the bar and the navigation of the settings mark on each screen, what a visitor is shown, the start page with registration open and closed, the foot of a visitor, the navigation of the settings and the pages that have it, the page of the appearance with its two forms, the menu of a narrow screen with what it holds and the rules of the stylesheet that it rests on, the operator status screen for an operator, a user, and a visitor, and the page of an address that has none. |
 | `AuditRulesTests` | That a screen of an operator that only shows is listed, requires the policy, and has no form of its own, and that an operator function beside it is still seen. |
 | `BrowserDefenseTests`, `RequestForgeryTests`, `LivePageTests` | That the new pages carry no script and no style of their own, check the token of a form, and keep no connection: each finds the pages by their routes. |
 
@@ -159,6 +159,6 @@ No test drives a browser. By hand:
 - The dashboard as the page that a user arrives at after signing in. A user arrives at the start page, which leads to the dashboard: `SessionAuthentication.LocalPathOrHome`.
 - What the operator status screen shows, and what an operator does (FR-OPS-2 to FR-OPS-5). The Operator role itself is still to confirm (SRS 2.2).
 - A page of the security that holds more than two-factor authentication: a change of the password by a user who is signed in, and the devices that they are signed in on. A password is changed by the link of "Forgot your password?".
-- The illustration of the team on the landing page (FR-ANI-7), the setup checklist of a first-time user (FR-UI-4), and transitions between pages (FR-ANI-3).
+- The illustration of the team on the landing page (FR-ANI-7), and the setup checklist of a first-time user (FR-UI-4).
 - An accessibility check and a keyboard walk-through of each screen (NFR-USA-1). The frame has its landmarks, its link past the bar, and its marks of the open screen.
 - The texts of the pages of the account and of two-factor authentication in one place, as the newer pages have them (NFR-USA-4).

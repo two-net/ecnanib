@@ -107,8 +107,10 @@ public partial class ThemeStyleTests
     public async Task The_button_of_the_dialog_that_rejoins_the_server_reads()
     {
         // The dialog is light in both themes, and brings its own colours. Its button is white
-        // on a blue, also under a pointer and while it is pressed.
-        var styles = (await StylesheetsAsync()).Single(sheet => sheet.Styles.Contains("#components-reconnect-modal", StringComparison.Ordinal)).Styles;
+        // on a blue, also under a pointer and while it is pressed. Its look is in the stylesheet
+        // of the styles beside a component: the one of the pages names the dialog too, for what
+        // moves of it, and says nothing of its button.
+        var styles = (await StylesheetsAsync()).Single(sheet => sheet.Styles.Contains("#components-reconnect-modal button", StringComparison.Ordinal)).Styles;
 
         Assert.Matches(@"#components-reconnect-modal(\[[^\]]*\])?\s*\{[^}]*color-scheme:\s*light only;", styles);
 

@@ -12,7 +12,9 @@
     (FR-THM-5). What the line shows is said in words under it, for whoever does not see it:
     where the equity began, where it is, and how low and how high it was. An equity that was
     recorded once has no line yet, and says its one value. The texts are in AgentReportPages.
-    See docs/agent-screen.md.
+    See docs/agent-screen.md. The line unfolds as it is shown, and again when a value is
+    recorded (FR-ANI-2): what moves is in the stylesheet, and the script of the pages says when.
+    See docs/motion.md.
 *@
 
 <section class="agent-equity" aria-labelledby="equity-heading">
@@ -26,7 +28,8 @@
     }
     else
     {
-        <figure class="equity-curve">
+        @* The time of the latest value, by which what moves is told that another was recorded. *@
+        <figure class="equity-curve" data-change="@Curve.Latest?.At.UtcTicks">
             @if (_line is not null)
             {
                 <svg class="equity-chart" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 @Width @Height" preserveAspectRatio="none" role="img" aria-label="@AgentReportPages.CurveLabel" aria-describedby="equity-caption">

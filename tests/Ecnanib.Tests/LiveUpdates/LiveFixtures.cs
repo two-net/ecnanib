@@ -110,7 +110,7 @@ internal static partial class TeamPipeline
     public static IReadOnlyList<bool> HandedOf(string pipeline) =>
         [.. Stage().Matches(pipeline).Select(stage => stage.Groups[1].Success)];
 
-    [GeneratedRegex("<ol class=\"team-pipeline\" aria-labelledby=\"team-heading\">.*?</ol>", RegexOptions.Singleline)]
+    [GeneratedRegex("<ol class=\"team-pipeline\" aria-labelledby=\"team-heading\" data-moves>.*?</ol>", RegexOptions.Singleline)]
     private static partial Regex Pipeline();
 
     [GeneratedRegex(

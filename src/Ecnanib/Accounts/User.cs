@@ -46,6 +46,10 @@ namespace Ecnanib.Accounts;
 /// is set, which is what a new account has (FR-THM-1, FR-THM-3). A preference, which says nothing
 /// of who the user is.
 /// </param>
+/// <param name="motion">
+/// How much of the pages moves for the user on every device they sign in on: as the device asks,
+/// which is what a new account has, or reduced (FR-ANI-4). A preference, as the theme is.
+/// </param>
 public sealed class User(
     Guid id,
     string email,
@@ -63,7 +67,8 @@ public sealed class User(
     long? twoFactorLastStep,
     int twoFactorFailedCodes,
     DateTimeOffset? twoFactorLockedUntil,
-    Theme theme)
+    Theme theme,
+    Motion motion)
 {
     public Guid Id { get; } = id;
 
@@ -98,6 +103,8 @@ public sealed class User(
     public DateTimeOffset? TwoFactorLockedUntil { get; } = twoFactorLockedUntil;
 
     public Theme Theme { get; } = theme;
+
+    public Motion Motion { get; } = motion;
 }
 
 internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
@@ -129,6 +136,9 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         // The theme of the account, as the name of its member. It has no index either.
         builder.Property(user => user.Theme);
+
+        // How much moves for the account, as the name of its member. No index, as the theme has none.
+        builder.Property(user => user.Motion);
 
         // One account for each address. Registration relies on it: see Registration.
         builder.HasIndex(user => user.Email).IsUnique();

@@ -85,7 +85,7 @@ public partial class AgentScreenPageTests
         // four roles in the order that they work in, each with its model and the provider of
         // the model, and with what it does now, which is written over the connection of the
         // page as it changes (FR-ANI-1). No cycle runs, so each waits.
-        Assert.Contains("<p>State: <strong>Running</strong>, since 21 November 2026, 09:00 UTC.", page);
+        Assert.Contains("<p data-change=\"Running\">State: <strong>Running</strong>, since 21 November 2026, 09:00 UTC.", page);
         Assert.Equal(
             [
                 ("Market Analyst", $"{StoredAgentRows.TeamModel}, of Claude", "waiting", "role-waiting"),
@@ -99,7 +99,9 @@ public partial class AgentScreenPageTests
         // The current position and its protective orders, as they rest on the exchange.
         Assert.Contains("<p>A position of 0.01 in BTCUSDT, entered at 100000 USDT, open since 24 November 2026, 08:50 UTC.</p>", page);
         Assert.Contains("<p>Its stop-loss rests on the exchange at 99000. No take-profit rests there for it.</p>", page);
-        Assert.Contains("<p class=\"live-unrealized\">At that price the position would make 2.5 USDT, before fees and funding.</p>", page);
+        Assert.Contains(
+            "<p class=\"live-unrealized\">At that price the position would make <data class=\"figure\" value=\"2.5\">2.5</data> USDT, before fees and funding.</p>",
+            page);
 
         // The performance figures, in Demo: 1000 less the 10.7 that its orders settled, with
         // the 2.5 that its position would make at 100250. The trades are -1.07 R and 2 R. The
@@ -131,6 +133,10 @@ public partial class AgentScreenPageTests
         // The equity curve, drawn on the server: a line that holds each recorded value until the
         // next, over the line of the capital. It is said in words as well.
         Assert.Contains("<h2 id=\"equity-heading\">Equity curve</h2>", page);
+
+        // The picture says the time of its latest value, by which what moves is told that
+        // another was recorded: the line then unfolds again (FR-ANI-2). See docs/motion.md.
+        Assert.Matches("<figure class=\"equity-curve\" data-change=\"\\d+\">", page);
         Assert.Contains(
             "<svg class=\"equity-chart\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 600 200\" preserveAspectRatio=\"none\" role=\"img\" " +
             "aria-label=\"The equity of the agent over time\" aria-describedby=\"equity-caption\">",
@@ -311,8 +317,10 @@ public partial class AgentScreenPageTests
             "figures once it is read.",
             unknown);
 
-        // The equity as it is settled is not written in its place.
-        Assert.DoesNotContain("<dd>989.3 USDT</dd>", unknown);
+        // The equity as it is settled is not written in its place, and a figure that is not
+        // known is no number that could count to another (FR-ANI-2).
+        Assert.DoesNotContain("989.3", Figures().Match(unknown).Value);
+        Assert.DoesNotContain("<data", Figures().Match(unknown).Value[..Figures().Match(unknown).Value.IndexOf("Win rate", StringComparison.Ordinal)]);
 
         // The watch has read the price by now, for the page that follows it: 2.5 more.
         feeding.Prices.Say(Bitcoin, new WatchedPrice(100_250m, Morning.AddSeconds(4)));
@@ -491,12 +499,14 @@ public partial class AgentScreenPageTests
     private static IReadOnlyList<(string Name, string Value)> FiguresOf(string page) =>
         [
             .. Named().Matches(Figures().Match(page).Groups[1].Value)
-                .Select(named => (named.Groups[1].Value.Trim(), named.Groups[2].Value.Trim())),
+                .Select(named => (named.Groups[1].Value.Trim(), Regex.Replace(named.Groups[2].Value, "<[^>]+>", string.Empty).Trim())),
         ];
 
     [GeneratedRegex("<dl class=\"dashboard-figures agent-figures\">(.*?)</dl>", RegexOptions.Singleline)]
     private static partial Regex Figures();
 
+    // What a figure says is read without the element that a number which counts is in
+    // (FR-ANI-2): MotionMarkupTests holds that element.
     [GeneratedRegex(@"<dt>(.*?)</dt>\s*<dd>(.*?)</dd>", RegexOptions.Singleline)]
     private static partial Regex Named();
 

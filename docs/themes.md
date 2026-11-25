@@ -4,7 +4,7 @@ The user can choose Dark, Light, or System, and System is the default for new us
 
 The theme of an account is `Theme`, `IThemeChoice`, and the `theme` column of `users`, in `src/Ecnanib/Accounts`. What decides the theme of a page, and the cookie of a visitor, are `PageTheme` and `DeviceTheme` in `src/Ecnanib/WebUi/Themes`, with the fields of the choice in `ThemeChoices.razor` there. The two pages are `Appearance.razor` in `src/Ecnanib/WebUi/Pages/Account` and `DeviceAppearance.razor` in `src/Ecnanib/WebUi/Pages`, with their texts in `AppearancePages.cs`. The look is in `src/Ecnanib/wwwroot/app.css`. The rules below are enforced by `ThemePageTests` and `ThemeStyleTests` in `tests/Ecnanib.Tests/Themes`.
 
-The frame that every page is written in is in [layout.md](layout.md), how a page is kept from carrying a script or a style of its own is in [security.md](security.md), and what is stored about a person is in [accounts.md](accounts.md).
+The frame that every page is written in is in [layout.md](layout.md), how a page is kept from carrying a script or a style of its own is in [security.md](security.md), and what is stored about a person is in [accounts.md](accounts.md). How much of the pages moves is chosen on the page of the appearance of a user too, in a form of its own, and is in [motion.md](motion.md).
 
 ## How a page gets its theme
 
@@ -117,7 +117,6 @@ No test drives a browser. By hand:
 
 ## Not built yet
 
-- A preference for reduced motion (FR-ANI-4), which the specification stores with the account beside the theme. What moves is the team at work on the screen of an agent, and it follows what the device asks for: see "What moves" in [agent-screen.md](agent-screen.md).
 - A colour for a profit and one for a loss. They are told apart by their sign, which the specification asks for, and by nothing else.
 - Taking the theme that a visitor chose on their device into the account that they then register. A new account has System.
 - A check of every screen by a tool that measures contrast in a browser (NFR-USA-1). The contrast of the colours that the stylesheet writes out is computed by a test, and the rest are the colours of the browser.

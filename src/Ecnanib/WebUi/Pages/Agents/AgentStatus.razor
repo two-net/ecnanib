@@ -101,7 +101,7 @@
         <ul class="agent-notifications" aria-labelledby="notifications-heading">
             @foreach (var notification in _notifications)
             {
-                <li>
+                <li data-key="@notification.Id">
                     <span id="@NotificationPages.TextId(notification.Id)"><strong>@NotificationTypes.Describe(notification.Type)</strong>, @PageTimes.At(notification.CreatedAt). @notification.Content</span>
 
                     <form method="post" @formname="@NotificationPages.MarkReadForm(notification.Id)" @onsubmit="() => MarkReadAsync(notification.Id)">
@@ -117,7 +117,8 @@
         <p><a href="@WebUiModule.NotificationsPath">@NotificationPages.AllLink</a></p>
     }
 
-    <p>State: <strong>@AgentPages.Describe(_agent.State)</strong>, since @PageTimes.At(_agent.StateChangedAt). @AgentPages.Explain(_agent.State)</p>
+    @* The state by its name, so that what moves shows a change of it as one (FR-ANI-3): see docs/motion.md. *@
+    <p data-change="@_agent.State">State: <strong>@AgentPages.Describe(_agent.State)</strong>, since @PageTimes.At(_agent.StateChangedAt). @AgentPages.Explain(_agent.State)</p>
 
     <p>@AgentPages.Says(_agent.StateCause)</p>
 
@@ -245,7 +246,7 @@
                 <tbody>
                     @foreach (var change in _history.Changes)
                     {
-                        <tr>
+                        <tr data-key="@change.ChangedAt.UtcTicks">
                             <td>@PageTimes.At(change.ChangedAt)</td>
                             <td><ModeBadge Mode="@change.Mode" /></td>
                             <td>@AgentPages.Describe(change.State)</td>

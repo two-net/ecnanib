@@ -9,7 +9,9 @@
     equity of the agent is worked out. It says when Binance was asked, so a price that could
     not be read for a while shows as the old one that it is. An agent that holds nothing says
     so, with the price of its symbol. What it would make is said in words, and relies on no
-    colour (FR-THM-5).
+    colour (FR-THM-5). The price and what the position would make are figures: each number is
+    set apart in its sentence, and counts from its old value to its new one (FR-ANI-2). See
+    docs/motion.md.
 *@
 
 <section class="live-position">
@@ -30,11 +32,11 @@
     {
         @if (Price is not null)
         {
-            <p class="live-price">@LivePages.Says(Followed, Price, Position?.QuoteAsset ?? QuoteAsset)</p>
+            <p class="live-price"><FigureText Of="@LivePages.PriceFigure(Followed, Price, Position?.QuoteAsset ?? QuoteAsset)" /></p>
 
             @if (Position is not null)
             {
-                <p class="live-unrealized">@LivePages.Unrealized(Position, Price)</p>
+                <p class="live-unrealized"><FigureText Of="@LivePages.UnrealizedFigure(Position, Price)" Otherwise="@LivePages.NothingMade" /></p>
             }
         }
         else

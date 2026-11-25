@@ -55,6 +55,13 @@ public static class SessionAuthentication
     public const string ThemeClaimType = "ecnanib:theme";
 
     /// <summary>
+    /// The claim that says how much of the pages moves for the user of a request: what their
+    /// account says, by the name of its member (FR-ANI-4). It is read with the session on every
+    /// request, as the theme is.
+    /// </summary>
+    public const string MotionClaimType = "ecnanib:motion";
+
+    /// <summary>
     /// What a request carries in its <c>Accept</c> header when a page asks for an address
     /// without leaving the page it is: how a page asks for itself again. The framework says it.
     /// </summary>
@@ -158,6 +165,9 @@ internal sealed class SessionAuthenticationHandler(
                 // How the pages look to the user, for the page that this request is answered
                 // with. See SignedInUser.ThemeOf.
                 new Claim(SessionAuthentication.ThemeClaimType, user.Theme.ToString()),
+
+                // And how much of them moves. See SignedInUser.MotionOf.
+                new Claim(SessionAuthentication.MotionClaimType, user.Motion.ToString()),
             ],
             Scheme.Name);
 

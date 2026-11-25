@@ -55,6 +55,10 @@ public static class AccountsModule
         // reads it with its session: see SessionAuthentication.ThemeClaimType.
         services.AddSingleton<IThemeChoice, StoredThemeChoice>();
 
+        // How much of the pages moves for a user, which is stored with the account as the theme
+        // is (FR-ANI-4). A request reads it with its session: see SessionAuthentication.MotionClaimType.
+        services.AddSingleton<IMotionChoice, StoredMotionChoice>();
+
         // The one way a request is known to be signed in, for the Web UI and the API alike.
         services.AddAuthentication(SessionAuthentication.Scheme)
             .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthentication.Scheme, configureOptions: null);

@@ -32,6 +32,7 @@ internal sealed class DataExport(
                 user.EmailVerifiedAt,
                 user.TwoFactorEnabledAt,
                 user.Theme,
+                user.Motion,
             })
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -86,7 +87,8 @@ internal sealed class DataExport(
                 account.RegisteredAt,
                 account.EmailVerifiedAt,
                 new ExportedTwoFactor(account.TwoFactorEnabledAt is not null, account.TwoFactorEnabledAt, recoveryCodesLeft),
-                account.Theme),
+                account.Theme,
+                account.Motion),
             acceptances,
             sessions,
             events)

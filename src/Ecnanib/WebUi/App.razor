@@ -6,8 +6,12 @@
     theme before anything of it is painted, and no script has a part in it (FR-THM-4). A page
     that looks as the device is set says nothing, and the stylesheet follows the device
     (FR-THM-2). See docs/themes.md.
+
+    Beside it the page says "reduced" when its user chose that less of the pages moves
+    (FR-ANI-4), and nothing otherwise: the stylesheet then gives what moves to a device that
+    does not ask for reduced motion. See docs/motion.md.
 *@
-<html lang="en" data-theme="@PageTheme.AttributeOf(Theme)">
+<html lang="en" data-theme="@PageTheme.AttributeOf(Theme)" data-motion="@PageMotion.AttributeOf(Motion)">
 
 <head>
     <meta charset="utf-8" />
@@ -27,12 +31,19 @@
     <Routes />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    @*
+        The one script of the application itself, for what moves and a stylesheet cannot do alone
+        (FR-ANI-2 to FR-ANI-6). It is a file of this site, which the policy of the answer lets a
+        browser run, and it starts once the page is read. A page works without it. See docs/motion.md.
+    *@
+    <script type="module" src="@Assets["motion.js"]"></script>
 </body>
 
 </html>
 
 @using Ecnanib.Accounts
 @using Ecnanib.Platform.Security
+@using Ecnanib.WebUi.Animation
 @using Ecnanib.WebUi.Themes
 
 @code {
@@ -43,4 +54,7 @@
 
     /// <summary>The theme that the page is written in.</summary>
     private Theme Theme => HttpContext is null ? Theme.System : PageTheme.Of(HttpContext);
+
+    /// <summary>How much of the page moves.</summary>
+    private Motion Motion => HttpContext is null ? Motion.System : PageMotion.Of(HttpContext);
 }

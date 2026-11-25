@@ -1,0 +1,31 @@
+@using Ecnanib.Accounts
+@using Ecnanib.WebUi.Pages.Account
+
+@*
+    The choice of how much of the pages moves, as the page of the appearance offers it: System
+    and Reduced, one under another, each with what it means below it (FR-ANI-4). It is the
+    fields of a form and no form itself, as the choice of a theme is: the page around it has the
+    form. The one that is chosen now is ticked. Its texts are in AppearancePages.
+*@
+
+<fieldset>
+    <legend>@AppearancePages.MotionLegend</legend>
+
+    @foreach (var motion in AppearancePages.MotionChoices)
+    {
+        var word = PageMotion.WordOf(motion);
+
+        <div class="choice">
+            <input id="motion-@(word)" type="radio" name="@AppearancePages.MotionField" value="@word" required
+                   checked="@(motion == Chosen)" aria-describedby="motion-@(word)-hint" />
+            <label for="motion-@(word)">@AppearancePages.NameOf(motion)</label>
+            <p id="motion-@(word)-hint" class="field-hint">@AppearancePages.Explain(motion)</p>
+        </div>
+    }
+</fieldset>
+
+@code {
+    /// <summary>What is chosen now.</summary>
+    [Parameter, EditorRequired]
+    public Motion Chosen { get; set; }
+}

@@ -5,7 +5,8 @@ namespace Ecnanib.WebUi.Pages.Account;
 /// <summary>
 /// The texts of the two pages of the appearance, in one place (NFR-USA-4): the one among the
 /// settings, where a user chooses the theme of their account, and the one of a visitor, who
-/// chooses the theme of their device (FR-THM-1, FR-THM-3, FR-UI-2). See docs/themes.md.
+/// chooses the theme of their device (FR-THM-1, FR-THM-3, FR-UI-2). See docs/themes.md. The page
+/// of a user also takes how much of the pages moves (FR-ANI-4). See docs/motion.md.
 /// </summary>
 public static class AppearancePages
 {
@@ -58,4 +59,37 @@ public static class AppearancePages
     /// <summary>What the page of the account says of the theme that is stored with it.</summary>
     public static string Stored(Theme theme) =>
         $"Theme: {NameOf(theme)}. Your choice is stored with your account, and is in a download.";
+
+    /// <summary>The name of the form that saves how much of the pages moves.</summary>
+    public const string MotionForm = "motion";
+
+    /// <summary>The name of the field of that form that says what was chosen.</summary>
+    public const string MotionField = "Motion";
+
+    /// <summary>What those choices are a choice of.</summary>
+    public const string MotionLegend = "Animation";
+
+    /// <summary>What a form is told that names no such choice.</summary>
+    public const string ChooseMotion = "Choose System or Reduced.";
+
+    /// <summary>The choices, in the order that the page offers them: the one of a new user first.</summary>
+    public static readonly IReadOnlyList<Motion> MotionChoices = [Motion.System, Motion.Reduced];
+
+    /// <summary>What a choice of how much moves is called.</summary>
+    public static string NameOf(Motion motion) => motion switch
+    {
+        Motion.Reduced => "Reduced",
+        _ => "System",
+    };
+
+    /// <summary>What choosing it means.</summary>
+    public static string Explain(Motion motion) => motion switch
+    {
+        Motion.Reduced => "A change shows at once and nothing moves by itself, whatever your device asks for.",
+        _ => "The pages move as they change, unless your device asks for reduced motion.",
+    };
+
+    /// <summary>What the page of the account says of the choice that is stored with it.</summary>
+    public static string Stored(Motion motion) =>
+        $"Animation: {NameOf(motion)}. Your choice is stored with your account, and is in a download.";
 }

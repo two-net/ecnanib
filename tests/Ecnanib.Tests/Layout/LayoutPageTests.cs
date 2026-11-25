@@ -236,7 +236,7 @@ public partial class LayoutPageTests
     }
 
     [Fact]
-    public async Task The_page_of_the_appearance_is_among_the_settings_and_takes_the_choice_of_a_theme()
+    public async Task The_page_of_the_appearance_is_among_the_settings_and_takes_the_choices_of_a_theme_and_of_what_moves()
     {
         using var application = new AccountsApplication();
         using var visitor = application.CreateClient();
@@ -258,13 +258,14 @@ public partial class LayoutPageTests
         // It has the navigation of the settings above it, as every page of the settings has.
         Assert.Single(SettingsNavigation().Matches(page));
 
-        // Two forms: the button of the bar, and the choice of a theme, which is three fields to
-        // tick and nothing to type. What the choice does is held by ThemePageTests.
+        // Three forms: the button of the bar, the choice of a theme, which is three fields to
+        // tick, and the choice of how much moves, which is two. Nothing is typed. What the
+        // choices do is held by ThemePageTests and MotionPageTests.
         var forms = Form().Matches(page);
-        Assert.Equal(2, forms.Count);
+        Assert.Equal(3, forms.Count);
         Assert.Contains("action=\"/sign-out\"", forms[0].Value);
         Assert.Equal(
-            ["system", "dark", "light"],
+            ["system", "dark", "light", "system", "reduced"],
             Input().Matches(page)
                 .Where(input => input.Value.Contains("type=\"radio\"", StringComparison.Ordinal))
                 .Select(input => Regex.Match(input.Value, "value=\"([^\"]*)\"").Groups[1].Value));

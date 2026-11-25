@@ -202,6 +202,11 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("email_verified_at");
 
+                    b.Property<string>("Motion")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("motion");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text")

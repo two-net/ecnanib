@@ -2,6 +2,7 @@ using System.Globalization;
 using Ecnanib.Agents;
 using Ecnanib.DecisionEngine;
 using Ecnanib.Shared;
+using Ecnanib.WebUi.Animation;
 using Ecnanib.WebUi.Pages.Dashboard;
 using Ecnanib.WebUi.Pages.Experience;
 
@@ -218,10 +219,13 @@ public static class AgentReportPages
     }
 
     /// <summary>A share in percent, with its sign, so that a profit is told from a loss without a colour (FR-THM-5): <c>+1.25 percent</c>.</summary>
-    public static string SignedPercent(decimal? percent) =>
+    public static string SignedPercent(decimal? percent) => SignedPercentFigure(percent)?.Text ?? DashboardPages.NotKnown;
+
+    /// <summary>That share as a figure that counts when it changes (FR-ANI-2), or null when it is not known.</summary>
+    public static PageFigure? SignedPercentFigure(decimal? percent) =>
         percent is { } known
-            ? $"{Rounded(known).ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture)} percent"
-            : DashboardPages.NotKnown;
+            ? PageFigure.Of(Rounded(known).ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture), after: " percent")
+            : null;
 
     /// <summary>The largest drawdown as the fall that it is, in percent of the peak: <c>4.2 percent</c>.</summary>
     public static string Drawdown(EquityDrawdown? drawdown) =>

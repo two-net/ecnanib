@@ -86,6 +86,12 @@ form > button[type=submit] {
     margin-top: 1rem;
 }
 
+/* One form under another, each with a button of its own, has room between the two: the theme
+   and what moves, on the page of the appearance. */
+form + form {
+    margin-top: 2rem;
+}
+
 .field-hint {
     margin: 0.25rem 0 0;
     opacity: 0.75;
@@ -929,25 +935,37 @@ fieldset {
     }
 }
 
-/* What moves (FR-ANI-1), for a device that does not ask for reduced motion: on one that does,
-   nothing here holds, and a role goes from one state to the next at once (FR-ANI-4). A change
+/* What moves (FR-ANI-1), for a device that does not ask for reduced motion and an account that
+   did not reduce it: on any other, nothing here holds, and a role goes from one state to the
+   next at once (FR-ANI-4). Each rule says so of the page before it says what moves. A change
    takes between 150 and 400 milliseconds. One thing moves for as long as its state lasts, the
-   dot of a role that works, which is the one state that is live, and it comes and goes once in
-   a second and a half (FR-ANI-5). Only how far something shows and how large it is drawn are
-   changed, so the browser moves nothing else for it (FR-ANI-6). MotionStyleTests holds the
-   stylesheet to all of this. */
+   dot of a role that works, which is a state that is live, and it comes and goes once in a
+   second and a half (FR-ANI-5). Only how far something shows and how large it is drawn are
+   changed, so the browser moves nothing else for it, and the dot stands still while its
+   pipeline is off the screen or its tab is in the background (FR-ANI-6). MotionStyleTests
+   holds the stylesheet to all of this. What moves on the other pages is at the end of this
+   file. See docs/motion.md. */
 @media (prefers-reduced-motion: no-preference) {
     /* The hand-off: the line is drawn through, from the stage before to this one. */
-    .pipeline-stage + .pipeline-stage::after {
+    :root:not([data-motion="reduced"]) .pipeline-stage + .pipeline-stage::after {
         transition: transform 300ms ease-out;
     }
 
-    .pipeline-role::after, .role-marker, .role-marker::before, .role-marker::after {
+    :root:not([data-motion="reduced"]) .pipeline-role::after,
+    :root:not([data-motion="reduced"]) .role-marker,
+    :root:not([data-motion="reduced"]) .role-marker::before,
+    :root:not([data-motion="reduced"]) .role-marker::after {
         transition: opacity 200ms ease-out, transform 200ms ease-out;
     }
 
-    .role-working .role-marker::before {
+    :root:not([data-motion="reduced"]) .role-working .role-marker::before {
         animation: role-working 1.5s ease-in-out infinite;
+    }
+
+    /* While nobody sees it, it stands still. The script of the pages says when that is. */
+    :root:not([data-motion="reduced"])[data-hidden] .role-working .role-marker::before,
+    :root:not([data-motion="reduced"]) [data-offscreen] .role-working .role-marker::before {
+        animation-play-state: paused;
     }
 
     @keyframes role-working {
@@ -1269,5 +1287,176 @@ main {
 
     main {
         padding-inline: 1.5rem;
+    }
+}
+
+/* What moves on every page (FR-ANI-2 to FR-ANI-6): a figure that counts to its new value, the
+   equity curve that unfolds, a page that fades in, a state that changed, an item that entered
+   a list, and the dialog that rejoins the server. The team at work has its own part above.
+
+   The stylesheet says what moves and for how long, and the script of the pages, motion.js,
+   says when: it names a state on an element, and reads the two times that it needs from here.
+   It holds no look and no time of its own. A page without the script shows everything at
+   once, and nothing here waits for the script to be seen. See docs/motion.md. */
+
+/* How long a page that was asked for may be on its way before the content shows its
+   placeholder, and how long the placeholder stays at the most: a page that never comes gives
+   the content back. They are times and nothing that moves, so they hold for every device. */
+:root {
+    --loading-after: 250ms;
+    --loading-longest: 8s;
+}
+
+/* A figure that counts is as wide as its digits at every step, so nothing beside it moves. */
+data.figure {
+    font-variant-numeric: tabular-nums;
+}
+
+/* The placeholder of the content (FR-ANI-3), while a page that was asked for is on its way for
+   longer than that: bars where a heading and its lines will be, in the colour of the text and
+   faint. What the content held keeps its room and is not shown, so nothing shifts when the
+   placeholder comes and when the page does (FR-ANI-6). The bar and the foot stay as they are. */
+main[aria-busy="true"] {
+    position: relative;
+}
+
+    main[aria-busy="true"] > * {
+        visibility: hidden;
+    }
+
+    main[aria-busy="true"]::before {
+        content: "";
+        position: absolute;
+        inset: 1rem 1rem auto;
+        max-width: 75ch;
+        height: 9rem;
+        background:
+            linear-gradient(currentColor, currentColor) 0 0 / 40% 2rem no-repeat,
+            linear-gradient(currentColor, currentColor) 0 3.5rem / 100% 1rem no-repeat,
+            linear-gradient(currentColor, currentColor) 0 5.5rem / 100% 1rem no-repeat,
+            linear-gradient(currentColor, currentColor) 0 7.5rem / 70% 1rem no-repeat;
+        border-radius: 0.25rem;
+        opacity: 0.15;
+    }
+
+/* On a wide screen it is as far from the sides as the content is. */
+@media (min-width: 48rem) {
+    main[aria-busy="true"]::before {
+        inset-inline: 1.5rem;
+    }
+}
+
+/* What moves, for a device that does not ask for reduced motion and an account that did not
+   reduce it (FR-ANI-4): on any other nothing here holds, and every change shows at once. A
+   change takes between 150 and 400 milliseconds, and what moves for as long as its state lasts
+   are the rings of the dialog, while the server is being rejoined (FR-ANI-5). Only how far
+   something shows and how large it is drawn are changed (FR-ANI-6). Nothing that moves takes a
+   click or a key from what is under it. MotionStyleTests holds the stylesheet to all of this. */
+@media (prefers-reduced-motion: no-preference) {
+    /* How long a figure counts from its old value to its new one. The script reads it, and
+       writes the new value at once where it finds none. */
+    :root:not([data-motion="reduced"]) {
+        --figure-change: 300ms;
+    }
+
+    /* A page fades in as it is shown. The script has it do so again when the browser goes to
+       another page without leaving the one that it is. */
+    :root:not([data-motion="reduced"]) main {
+        animation: shows 200ms ease-out;
+    }
+
+    /* What changed, which the script marks for as long as this takes: the state of an agent. */
+    :root:not([data-motion="reduced"]) [data-changed] {
+        animation: shows 200ms ease-out;
+    }
+
+    /* An item that entered a list, which the script marks by the key of the item. */
+    :root:not([data-motion="reduced"]) [data-entered] {
+        animation: enters 200ms ease-out;
+    }
+
+    /* The equity curve unfolds from its first value as it is shown, and again when the script
+       says that a value was recorded. */
+    :root:not([data-motion="reduced"]) .equity-line {
+        animation: unfolds 400ms ease-out;
+    }
+
+    /* The placeholder fades in, and is gone at once when the page is there. */
+    :root:not([data-motion="reduced"]) main[aria-busy="true"]::before {
+        animation: shows 200ms ease-out;
+    }
+
+    /* The dialog that rejoins the server rises as it opens, over a page that dims, and closes
+       at once. It waits for as long again before it rises, as it did before, so a connection
+       that is back at once shows no dialog. Its look is beside its component. */
+    :root:not([data-motion="reduced"]) #components-reconnect-modal[open] {
+        animation: dialog-opens 300ms ease-out 300ms both;
+    }
+
+    :root:not([data-motion="reduced"]) #components-reconnect-modal[open]::backdrop {
+        animation: shows 200ms ease-out;
+    }
+
+    :root:not([data-motion="reduced"]) .components-rejoining-animation div {
+        animation: rejoining 1.5s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+    }
+
+    :root:not([data-motion="reduced"]) .components-rejoining-animation div:nth-child(2) {
+        animation-delay: -0.5s;
+    }
+
+    :root:not([data-motion="reduced"])[data-hidden] .components-rejoining-animation div {
+        animation-play-state: paused;
+    }
+
+    /* How the script has something move again: it stands still for a moment, and then moves
+       as it did when it was first shown. */
+    :root:not([data-motion="reduced"]) main[data-still],
+    :root:not([data-motion="reduced"]) [data-still] .equity-line {
+        animation: none;
+    }
+
+    @keyframes shows {
+        from {
+            opacity: 0;
+        }
+    }
+
+    @keyframes enters {
+        from {
+            opacity: 0;
+            transform: translateY(-0.25rem);
+        }
+    }
+
+    @keyframes unfolds {
+        from {
+            opacity: 0;
+            transform: scaleX(0);
+        }
+    }
+
+    @keyframes dialog-opens {
+        from {
+            opacity: 0;
+            transform: translateY(1rem) scale(0.95);
+        }
+    }
+
+    @keyframes rejoining {
+        0% {
+            opacity: 0;
+            transform: scale(0);
+        }
+
+        5% {
+            opacity: 1;
+            transform: scale(0);
+        }
+
+        100% {
+            opacity: 0;
+            transform: scale(1);
+        }
     }
 }

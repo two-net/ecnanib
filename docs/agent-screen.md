@@ -60,7 +60,7 @@ Under the state of the agent, with since when and why, the page has a part "Team
 |---|---|
 | **Nothing relies on a colour, or on what moves** (FR-THM-5). | The word says what a role does. The marker beside it is for the eye alone, differs by its shape, and is hidden from a screen reader. A card whose role works or has failed has a second outline, and the one of a role that has failed is in `--danger`, which has a value for each theme: see "Colours" in [themes.md](themes.md). Everything else is in the colour of the text around it. |
 | **A change is read out with its role.** | The part is announced as it changes, as the steps of a cycle are, and a card is announced whole: "Strategist, …, working", and not "working" alone. |
-| **The page carries no style and no script for it.** | The content security policy allows neither: see [security.md](security.md). A card names its state, `role-working`, a stage names that the work was handed to it, `stage-handed`, and the look and what moves are in `app.css`. The browser changes the name of a card in its place, because the part of a cycle and the part of the team at rest are one part of the page: that is what lets a change be shown as one. |
+| **The page carries no style and no script for it.** | The content security policy allows neither: see [security.md](security.md). A card names its state, `role-working`, a stage names that the work was handed to it, `stage-handed`, and the look and what moves are in `app.css`. The one script of the application has no part in what a role does: it says only that the pipeline is off the screen. The browser changes the name of a card in its place, because the part of a cycle and the part of the team at rest are one part of the page: that is what lets a change be shown as one. |
 
 ### What moves
 
@@ -73,9 +73,11 @@ Under the state of the agent, with since when and why, the page has a part "Team
 | Rule | Detail |
 |---|---|
 | **When the device asks for reduced motion, nothing moves** (FR-ANI-4). | Everything in the table is inside `@media (prefers-reduced-motion: no-preference)`. On a device that asks for reduced motion a role goes from one state to the next at once, and a role that works shows by its word and by the dot in its ring, which stands still. Nothing is taken back for such a device: nothing is given to it. |
-| **A change takes between 150 and 400 milliseconds, and one thing moves by itself** (FR-ANI-5). | The dot of a role that works, which is the one state that is live. It comes and goes less than once a second, so nothing flashes. Nothing that moves holds up a click or a key. |
+| **Nor when the user reduced it.** | Each rule says `:root:not([data-motion="reduced"])` of the page first, and a page whose user chose Reduced says `data-motion="reduced"`: see "Choosing how much moves" in [motion.md](motion.md). |
+| **A change takes between 150 and 400 milliseconds, and one thing of the pipeline moves by itself** (FR-ANI-5). | The dot of a role that works, which is a state that is live. It comes and goes less than once a second, so nothing flashes. Nothing that moves holds up a click or a key. |
+| **The dot stands still while nobody sees it** (FR-ANI-6). | The pipeline says `data-moves`, and the script of the pages marks it `data-offscreen` while it is off the screen, and the page `data-hidden` while its tab is in the background. The stylesheet pauses the dot for either. |
 | **Only how far something shows and how large it is drawn are changed** (FR-ANI-6). | `opacity` and `transform`, and nothing else: the browser lays nothing out again for them, so nothing around a card moves when its role goes on. A card is as large in one state as in another. |
-| **`MotionStyleTests` holds `app.css` to these three.** | A rule that moves something for every device, a change that takes a second, a second thing that moves by itself, and a change of a width or a colour each fail it. |
+| **`MotionStyleTests` holds `app.css` to these.** | A rule that moves something for every device or for an account that reduced it, a change that takes a second, a thing that moves by itself and is of no state that is live, and a change of a width or a colour each fail it. The rules are those of everything that moves: see [motion.md](motion.md). |
 
 ## The current position and its protective orders
 
@@ -154,7 +156,7 @@ public sealed record EquityCurve(
 
 | Rule | Detail |
 |---|---|
-| **It is drawn on the server, as part of the page.** | An inline picture of two shapes: a line of the equity, and a dashed line at the capital of the agent. No script draws it, and no library is loaded for it. |
+| **It is drawn on the server, as part of the page.** | An inline picture of two shapes: a line of the equity, and a dashed line at the capital of the agent. No script draws it, and no library is loaded for it. The line unfolds as it is shown, and again when a value is recorded, which is of the stylesheet: see [motion.md](motion.md). |
 | **It carries no style of its own.** | The content security policy allows no style in a page: see [security.md](security.md). The shapes name their places, and their look is in `app.css`. |
 | **It is in the colour of the text around it.** | So it reads the same on a light page and on a dark one (FR-THM-5). It has no colour for a profit and none for a loss. |
 | **The line holds each value until the next.** | The equity is recorded when it changes, and once in a quarter of an hour while a price moves it. Between two recordings it is what the earlier one says. |
@@ -220,7 +222,8 @@ A signed-in user opens the screen of an agent at `/agents/<id>/state`. A visitor
 | **It follows what changes** (FR-NTF-2). | When the agent, what it holds, a cycle of it that is recorded, its equity as it is recorded, or a notification of its user changes, the page asks for itself again: the subjects `Agent`, `Holdings`, `Cycle`, `Equity`, and `Notification`. So the trades, the figures, the curve, and the decisions are those of now without a manual refresh. |
 | **The equity of an agent says when it is recorded.** | A trigger of `equity_snapshots` says a row that is added, with its agent: see "What the database says" in [live-updates.md](live-updates.md). The result of a position is recorded with a notification of its user, which the page follows, and the loss limits of its agent are evaluated after it, which records its equity. |
 | **It asks for itself again when the price of its position is first read.** | The page was written without that price, or with an older one. The feed of the page follows the price of the position of the agent for the part that says it, and of no other agent: see "The feed of a page" in [live-updates.md](live-updates.md). |
-| **A figure does not move between two changes.** | The position and its price are written over the connection as they change. The figures are of the moment that the page was written, and say the time of their price. |
+| **A figure stays as it was written between two changes.** | The position and its price are written over the connection as they change. The figures are of the moment that the page was written, and say the time of their price. |
+| **A figure that changes counts to its new value** (FR-ANI-2). | The price of the position and what it would make, as the connection of the page writes them, and the equity, the net result, and the return, as the page asks for itself again. The curve unfolds as it is shown, and again when a value is recorded. The state of the agent fades in when it is another, and so does a notification, a change of its state, a trade, or a decision that entered its list (FR-ANI-3). See [motion.md](motion.md). |
 | **It has no field to type in.** | A page that follows has none. It has buttons and links, and the pages of the trades are links. |
 | **Its texts are in one place.** | `AgentReportPages` for the parts of this screen, with `AgentPages`, `CyclePages`, `RiskCheckPages`, `LivePages`, which has the words of what a role does, and the amounts of `DashboardPages` and the measures of `ExperiencePages` (NFR-USA-4). The times are UTC, and say so. |
 | **The tables scroll by themselves on a narrow screen,** | also by keyboard, and the figures stand side by side as far as they fit (FR-UI-1). The look is in `app.css`: a page carries no style of its own. |
@@ -235,7 +238,7 @@ A signed-in user opens the screen of an agent at `/agents/<id>/state`. A visitor
 | `CycleRecordTests` | The latest cycles of an agent as complete records: the latest first, five at the most, no test cycle, by owner, and each as one cycle is read. |
 | `LiveFeedTests`, `LivePageTests` | That the screen of an agent has the one price of its position followed and asks for itself again when that is first read, that an equity which is recorded has the page of its agent ask again, and that the page says when its team is at rest. The pipeline as the page is written: the four roles in their order with their models, what each does, a role that failed, the stages that the work was handed to, a cycle that has ended, and that no other page has one. That the feed shows a cycle which has ended for its 5 seconds and reads the cycles again then, and tells a page without the pipeline none that has ended. |
 | `CycleProgressTests` | What the roles of a cycle do as it runs: one analyst that is done while the other works, a role that failed, a role that the cycle never came to, and the cycle as it is kept once it has ended. |
-| `MotionStyleTests` | What moves, in `app.css`: nothing for a device that asks for reduced motion, a change of 150 to 400 milliseconds, one thing that moves by itself, and only `opacity` and `transform`. |
+| `MotionStyleTests`, `MotionScriptTests`, `MotionMarkupTests` | What moves, in `app.css`, the script that says when, and what the page writes for a figure: see "Testing" in [motion.md](motion.md). |
 | `LiveListenerTests`, `LiveRuleTests` | That the database says an equity that is recorded, with its agent, and that the trigger is the one of `LiveRules.cs`. |
 | `AgentModeBadgeTests` | That the page has the badge of its agent, and no badge of the other mode. |
 
@@ -246,13 +249,10 @@ No test drives a browser. By hand:
 3. Open the page that runs a test cycle in another window, and run one. On the screen of the agent the two analysts work, each is done in its own time, the line into the Strategist is drawn through, and so on to the Risk Manager. The cycle stays for 5 seconds once it has ended, and then the team is at rest. With a key that its provider refuses, a role says "failed".
 4. Ask the browser to emulate reduced motion, in the rendering panel of its developer tools, and run another: each role says what it does, and nothing moves.
 5. Once it has traded, look at the curve and at the pipeline on a light and on a dark screen, and at the width of a phone. The console of the browser shows no report of the content security policy.
-6. Add a row at the database, such as `INSERT INTO equity_snapshots (agent_id, user_id, mode, at, asset, capital, equity) VALUES (...)`: the curve shows it within two seconds, with no reload.
+6. Add a row at the database, such as `INSERT INTO equity_snapshots (agent_id, user_id, mode, at, asset, capital, equity) VALUES (...)`: the curve shows it within two seconds, with no reload, and unfolds again.
 
 ## Not built yet
 
-- Figures and a chart that animate (FR-ANI-2), and short transitions of the rest of the screen (FR-ANI-3). The pipeline is what moves.
-- A setting that reduces animation (FR-ANI-4). The pipeline follows what the device asks for, and no preference is stored: see "Not built yet" in [themes.md](themes.md).
-- Pausing what moves while it is off screen (FR-ANI-6). A browser draws nothing of a tab in the background, and what moves here is `opacity` and `transform` of one small dot.
 - The pipeline on the list of the cycles and on the page that runs a test cycle, which say the steps as words, and the steps of the service as stages of the pipeline.
 - How the latest cycle went, on the pipeline of a team at rest. A cycle is shown for 5 seconds after it has ended, and the decisions under the team say the rest.
 - Figures that move with the price between two changes: the equity, the net result, and the return are of the moment that the page was written. The position and its price are written over the connection.

@@ -30,7 +30,7 @@
 
         @foreach (var cycle in Decisions)
         {
-            <article class="decision" aria-labelledby="@AgentReportPages.Id(cycle, "heading")">
+            <article class="decision" aria-labelledby="@AgentReportPages.Id(cycle, "heading")" data-key="@cycle.Id">
                 <h3 id="@AgentReportPages.Id(cycle, "heading")">@AgentReportPages.DecisionOf(cycle)</h3>
 
                 <p>

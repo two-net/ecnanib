@@ -1,6 +1,7 @@
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Shared;
+using Ecnanib.WebUi.Animation;
 using Ecnanib.WebUi.Pages;
 using Ecnanib.WebUi.Pages.Agents;
 
@@ -135,16 +136,24 @@ public static class LivePages
     }
 
     /// <summary>A price that is followed, with when Binance was asked for it.</summary>
-    public static string Says(LivePrice followed, WatchedPrice price, string? quoteAsset)
+    public static string Says(LivePrice followed, WatchedPrice price, string? quoteAsset) =>
+        PriceFigure(followed, price, quoteAsset).Text;
+
+    /// <summary>
+    /// That sentence with the price as a figure that counts when it changes (FR-ANI-2). The
+    /// words before it and after it are the ones of <see cref="Says(LivePrice, WatchedPrice, string?)"/>.
+    /// </summary>
+    public static PageFigure PriceFigure(LivePrice followed, WatchedPrice price, string? quoteAsset)
     {
         ArgumentNullException.ThrowIfNull(followed);
         ArgumentNullException.ThrowIfNull(price);
 
-        var amount = quoteAsset is null ? AgentPages.Number(price.Price) : $"{AgentPages.Number(price.Price)} {quoteAsset}";
+        var asset = quoteAsset is null ? string.Empty : $" {quoteAsset}";
+        var read = $"{asset}, as of {PageTimes.AtSecond(price.ReadAt)}.";
 
         return followed.Kind == ExchangePriceKind.Mark
-            ? $"The mark price of {followed.Symbol} is {amount}, as of {PageTimes.AtSecond(price.ReadAt)}."
-            : $"{followed.Symbol} last traded at {amount}, as of {PageTimes.AtSecond(price.ReadAt)}.";
+            ? PageFigure.Of(AgentPages.Number(price.Price), $"The mark price of {followed.Symbol} is ", read)
+            : PageFigure.Of(AgentPages.Number(price.Price), $"{followed.Symbol} last traded at ", read);
     }
 
     /// <summary>What the page says while no price of a symbol is known: none was read yet, or Binance gave none.</summary>
@@ -161,18 +170,31 @@ public static class LivePages
     /// What a position would make at the price that is followed, before fees and funding. It
     /// says whether that is a profit or a loss in words.
     /// </summary>
-    public static string Unrealized(OpenPosition position, WatchedPrice price)
+    public static string Unrealized(OpenPosition position, WatchedPrice price) =>
+        UnrealizedFigure(position, price)?.Text ?? NothingMade;
+
+    /// <summary>What the page says of a position that would make nothing and lose nothing: it has no figure.</summary>
+    public const string NothingMade = "At that price the position would make nothing and lose nothing, before fees and funding.";
+
+    /// <summary>
+    /// That sentence with what the position would make as a figure that counts when it changes
+    /// (FR-ANI-2), or null for a position that would make nothing and lose nothing. The number
+    /// is written without a sign, and the words say whether it is a profit or a loss: the value
+    /// of a loss is less than nothing, so a figure does not count across the two.
+    /// </summary>
+    public static PageFigure? UnrealizedFigure(OpenPosition position, WatchedPrice price)
     {
         ArgumentNullException.ThrowIfNull(position);
         ArgumentNullException.ThrowIfNull(price);
 
         var made = Math.Round(position.UnrealizedAt(price.Price), 8, MidpointRounding.AwayFromZero);
+        var after = $" {position.QuoteAsset}, before fees and funding.";
 
         return made switch
         {
-            > 0m => $"At that price the position would make {AgentPages.Number(made)} {position.QuoteAsset}, before fees and funding.",
-            < 0m => $"At that price the position would lose {AgentPages.Number(-made)} {position.QuoteAsset}, before fees and funding.",
-            _ => "At that price the position would make nothing and lose nothing, before fees and funding.",
+            > 0m => PageFigure.Of(AgentPages.Number(made), "At that price the position would make ", after),
+            < 0m => PageFigure.Of(AgentPages.Number(-made), "At that price the position would lose ", after, isLoss: true),
+            _ => null,
         };
     }
 

@@ -58,7 +58,8 @@
                 <tbody>
                     @foreach (var agent in _list.Agents)
                     {
-                        <tr>
+                        @* Its key and its state by name, for what moves: a row that enters, and a state that changed. See docs/motion.md. *@
+                        <tr data-key="@agent.Id" data-change="@agent.State">
                             <th scope="row"><a href="@WebUiModule.AgentPath(agent.Id)">@agent.Name</a></th>
                             <td><ModeBadge Mode="@agent.Mode" /></td>
                             <td>@agent.Market</td>
