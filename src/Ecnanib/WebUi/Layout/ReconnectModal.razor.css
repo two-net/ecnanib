@@ -27,7 +27,11 @@
     /* It brings a white background of its own, so its text stays dark on a dark page too. */
     color-scheme: light only;
     background-color: white;
-    width: 20rem;
+    /* As wide as before on a wide screen, and never wider than a narrow one, so the page does
+       not scroll sideways under it (NFR-USA-1). */
+    box-sizing: border-box;
+    width: 24rem;
+    max-width: calc(100% - 2rem);
     margin: 20vh auto;
     padding: 2rem;
     border: 0;

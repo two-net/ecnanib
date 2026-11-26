@@ -86,7 +86,7 @@ Signing in starts a session: a row of the `sessions` table, and a cookie in the 
 | The token | 32 random bytes, in the cookie. The table keeps only its SHA-256 hash, so reading the database gives nobody a session. |
 | The cookie | `__Host-ecnanib-session`: `Secure`, `HttpOnly`, `SameSite=Lax`, for the whole host, with no expiry date. It ends with the browser. The `__Host-` prefix makes a browser refuse it unless this host set it over TLS. |
 | One for each browser | Signing in again on a browser ends the session it had. A user can be signed in on several browsers. |
-| Inactivity | A session ends when it has not been used for `Security:SessionIdleMinutes` (NFR-SEC-1). The setting is read at startup and applies to the sessions that exist. |
+| Inactivity | A session ends when it has not been used for `Security:SessionIdleMinutes` (NFR-SEC-1). The setting is read at startup and applies to the sessions that exist. A page says so shortly before: see "The notice before a session ends". |
 
 Each signed-in request counts as activity, but for what a page does by itself: see "The session of a connection". It is not written on every request: a session whose stored time is less than a minute old is left as it is (less than that when the period is under an hour). The period counts from the stored time, which is never later than the last request, so **a session never lasts longer than configured**, and can end up to a minute early.
 
@@ -110,6 +110,42 @@ Authentication runs ahead of the error handling, so the handler does not fail a 
 The button posts to `/sign-out`, from any page. The session is deleted from the database and the cookie is taken from the browser, so a copy of the cookie stops working too. A sign-in of the browser that waits for a code ends in the same way.
 
 A signed-in request must carry the token against request forgery. A request whose session has already ended is sent to the start page without one: the token of a page that is older than its session was made for the user the page showed.
+
+### The notice before a session ends
+
+A session ends after its period of inactivity, and it used to end without a word: a form that was filled in for longer than the period was sent to nobody. So a page of a user says shortly before that they are about to be signed out, and they can say that they are still there (NFR-USA-1; WCAG 2.1, 2.2.1). The session ends as before for a user who says nothing.
+
+| What | Detail |
+|---|---|
+| When | `SessionAuthentication.WarnsBefore`: a quarter of the period before the end, two minutes at the most, and never less than half a minute. With the period of an hour, two minutes before. |
+| What it is | A dialog over the page, `SessionNotice.razor` in `src/Ecnanib/WebUi/Layout`, which names why and when: "… you will be signed out in about 2 minutes, at 14:32 UTC …". The time is said once and does not count down, so a screen reader reads it once. Its texts are in `SessionPages`. |
+| "Stay signed in" | Sends the form of the bar that signs out to `/session/stay` in its place. That is a request of the user, so it is activity, and the period starts anew. The key that closes a dialog says the same. |
+| "Sign out now" | The button of the bar, said again in the dialog. |
+| A user who says nothing | Is signed out when the period is over, as before. The page then asks for itself anew, which leads to the page that signs in, and from there back. |
+
+```csharp
+public interface ISessionEnd
+{
+    SessionEnd? Of(ClaimsPrincipal user);
+}
+
+public readonly record struct SessionEnd(DateTimeOffset At, TimeSpan Left, TimeSpan WarnsBefore);
+```
+
+| Rule | Detail |
+|---|---|
+| **A page is told how long its session has left, in seconds that the server counted.** | The query that signs a request in says when the session ends if nothing more is done with it, which the user of the request carries: `SignedInUser.SessionEndsOf`, as it carries the theme. `ISessionEnd` makes of it what is left, and the page writes that with the seconds of notice and where to ask: `data-left`, `data-warn`, and `data-ask` on the part around the dialog. The clock of the device has no part in it. A page of a visitor has no notice, and no dialog. |
+| **The page asks again before it says anything.** | What it was told is of when it was written, and another window of the same browser may have used the session since. So the script asks at `/session/left` when the moment has come, and shows the dialog only when the answer says that little is left. It asks once more when the session is to have ended. |
+| **Asking how long is left is no activity.** | A request for `/session/left` finds the session and does not count as use of it, as the connection of a page does not. An answer that kept the session would make the question pointless. |
+| **"Stay signed in" does nothing but be a request.** | `/session/stay` answers how long is left now, which is the whole period. It checks the token against request forgery for a request that is signed in, as signing out does, and is listed in `ForgeryRules` with why. |
+| **Neither address is a page, and neither sends anyone to sign in.** | A visitor and a session that has ended are answered `{"left":0}`, and whatever is signed in `{"left":118,"says":"…"}`, in whole seconds rounded down and with the sentence of the dialog. A session that stands is never said to have ended. Neither answer is kept by a browser. |
+| **The dialog adds no form and no heading to a page.** | Its two buttons name the form of the bar, `form="sign-out"`, and the first sends it to another address. So the script needs no token of its own, a page that offers no way to change anything still has one form, and the outline of a page is as it was. |
+| **A dialog that is open stays open while its page asks for itself again.** | The part around it is marked `data-permanent`, which the framework leaves as it is: only the three figures on it are written anew. A page that follows what changes asks for itself again without activity, so what it says is left falls, and the notice comes on it as on any page. |
+| **The script holds no address, no text, and no time of day.** | `wwwroot/session.js`: it waits once, asks at the two addresses that the page names, shows and hides what the page wrote, and writes the sentence that the server said, as text. It polls nothing, reads no cookie, and stores nothing. `SessionScriptTests` holds it to that, as it is written. |
+| **When the server gives no answer, nothing is said of the session.** | The dialog shows with a line that says the server could not be reached, and the script asks again after a quarter of a minute. A session is never said to have ended by the script alone. |
+| **A page works without the script.** | Its session then ends as it always did. The dialog is in the page and is never shown. |
+
+`SessionNoticeTests` holds the server to these, and `AccessibilityBrowserTests` the dialog in a browser, when a run is told to: see [accessibility.md](accessibility.md).
 
 ### The session of a connection
 
@@ -539,6 +575,7 @@ Two actions are recorded though the requirement does not name them. A re-authent
 |---|---|
 | A sign-in that fails, and a code that is not right | An event belongs to an account, and an address without an account has none to belong to. Recording only for the addresses that have one would make a failed sign-in do other work for them, and so tell whether an address has an account. They are in the log, and wrong codes are counted on the account. |
 | Signing out | A session also ends by staying away, which is nobody's action. |
+| Staying signed in, from the notice before a session ends | It is use of a session, as any request of its user is. |
 | Registering, and verifying an address with a first link | They sign nobody in, and change no password. |
 | Deleting the account | The events of an account go with it. |
 

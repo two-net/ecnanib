@@ -682,7 +682,7 @@ public class RoleReassignmentTests
         var (path, asks) = await client.SaveAgentAsync(agent, [.. entry, AgentBrowser.Reassigns]);
 
         Assert.Equal(AgentBrowser.AgentPage(agent), path);
-        Assert.Contains($"<p class=\"form-error\" role=\"alert\">{AgentPages.ConfirmSaveForLive}</p>", AgentBrowser.Read(asks));
+        Assert.Contains($"<p class=\"form-warning\" role=\"alert\" tabindex=\"-1\" autofocus>{AgentPages.ConfirmSaveForLive}</p>", AgentBrowser.Read(asks));
         Assert.Contains("whether the roles are reassigned automatically", AgentPages.ConfirmSaveForLive);
         Assert.True(AgentBrowser.ReassignsOn(asks));
         Assert.False(StoredAgent.Named(application.Database, "Swing").ReassignsRoles);

@@ -13,6 +13,7 @@ using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Notifications;
 using Ecnanib.WebUi;
 using Ecnanib.WebUi.Live;
+using Ecnanib.WebUi.Pages.Notifications;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
@@ -485,10 +486,221 @@ public partial class LivePageTests
 
         Assert.Matches("^[A-Z2-9]{10}$", reference);
         Assert.Equal(
-            $"<p class=\"live-stopped\" role=\"status\">{LivePages.Stopped(reference!)}</p>",
+            $"<p class=\"live-stopped\" role=\"alert\">{LivePages.Stopped(reference!)}</p>",
             written.Trim());
         Assert.DoesNotContain(Fails.Secret, written);
     }
+
+    [Fact]
+    public async Task Every_page_that_follows_offers_to_pause_under_its_heading_and_no_other_page_does()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
+        var cycle = await application.GiveCycleAsync(ada.User.Id, agent, Feeding.Morning);
+
+        foreach (var path in Following(agent, cycle))
+        {
+            var page = await ada.Browser.PageAsync(path);
+
+            // A page that changes by itself says so, with a link that stops it (NFR-USA-1):
+            // one of them, which leads to the same page with the choice in its address.
+            var pause = Assert.Single(PauseOn(page));
+
+            Assert.Equal((LivePages.Follows, $"{path}?live=paused", LivePages.Pause), pause);
+
+            // It stands in the content, after the heading of the page and ahead of what follows.
+            var at = page.IndexOf("<p class=\"live-pause\">", StringComparison.Ordinal);
+
+            Assert.InRange(at, page.IndexOf("</h1>", StringComparison.Ordinal), ConnectedPart().Match(page).Index);
+        }
+
+        foreach (var path in new[]
+        {
+            "/",
+            "/account",
+            WebUiModule.KeysPath,
+            WebUiModule.CatalogPath,
+            WebUiModule.ExperiencePath,
+            WebUiModule.UsagePath,
+            WebUiModule.AgentPromptsPath(agent),
+            WebUiModule.AgentRiskChecksPath(agent),
+            WebUiModule.StopAgentPath(agent),
+        })
+        {
+            // A page that does not change by itself has nothing to pause, also when it is asked to.
+            Assert.DoesNotContain("live-pause", await ada.Browser.PageAsync(path));
+            Assert.DoesNotContain("live-pause", await ada.Browser.PageAsync($"{path}?live=paused"));
+        }
+    }
+
+    [Fact]
+    public async Task A_page_that_is_paused_carries_no_part_for_a_connection_says_when_it_was_written_and_offers_to_resume()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
+        var cycle = await application.GiveCycleAsync(ada.User.Id, agent, Feeding.Morning);
+
+        // The two pages that show prices, which are read for a page that follows and for no other.
+        string[] withPrices = [WebUiModule.DashboardPath, WebUiModule.AgentStatePath(agent)];
+
+        foreach (var path in Following(agent, cycle))
+        {
+            var page = await ada.Browser.PageAsync($"{path}?live=paused");
+
+            // No part that the page would make a connection for: nothing is followed for it, so
+            // it changes no more by itself.
+            Assert.Empty(ConnectedPart().Matches(page));
+
+            // It says since when it is as it is, and leads back to the page that follows.
+            var said = LivePages.PausedAt(Feeding.Morning) + (withPrices.Contains(path) ? $" {LivePages.PausedPrices}" : string.Empty);
+
+            Assert.Equal((said, path, LivePages.Resume), Assert.Single(PauseOn(page)));
+            Assert.Contains("24 November 2026, 09:00:00 UTC", said);
+        }
+    }
+
+    [Fact]
+    public async Task A_page_that_is_paused_is_written_with_what_its_parts_showed_and_follows_nothing()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning, state: AgentState.Running);
+
+        await application.GiveTradeAsync(ada.User.Id, agent, Feeding.Morning, holdingSeconds: 600, closed: false);
+        feeding.Prices.Say(Bitcoin, new WatchedPrice(100_250m, Feeding.Morning.AddSeconds(7)));
+        feeding.Progress.Runs(ada.User.Id, agent, Feeding.Cycle(CycleStep.Settling, CycleStep.DataPackage, CycleStep.Analysts));
+
+        var page = AgentBrowser.Read(await ada.Browser.PageAsync($"{WebUiModule.AgentStatePath(agent)}?live=paused"));
+
+        // The parts of the page are there, written once, with what they showed as it was
+        // written: the cycle that runs with its team, the position, and the price that the
+        // watch had. They are marked, so nothing in them moves for as long as a state lasts.
+        Assert.Empty(ConnectedPart().Matches(page));
+        Assert.Contains("<div class=\"live-parts\" data-live=\"paused\">", page);
+        Assert.Contains("<h2>A cycle is running</h2>", page);
+        Assert.Contains("aria-labelledby=\"team-heading\"", page);
+        Assert.Contains("<h2>Position</h2>", page);
+        Assert.Contains("<p class=\"live-price\">BTCUSDT last traded at 100250 USDT, as of 24 November 2026, 09:00:07 UTC.</p>", Plain(page));
+
+        // Writing it followed no price, and the page that follows is not marked.
+        Assert.Empty(feeding.Prices.Followed);
+        Assert.DoesNotContain("data-live=", await ada.Browser.PageAsync(WebUiModule.AgentStatePath(agent)));
+
+        // A page that shows no part writes nothing in their place.
+        Assert.DoesNotContain("data-live=", await ada.Browser.PageAsync($"{WebUiModule.AgentsPath}?live=paused"));
+    }
+
+    [Fact]
+    public async Task Pausing_stays_beside_the_other_choices_of_an_address_and_through_the_pages_of_a_list()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
+
+        // More than a page of notifications holds.
+        for (var told = 0; told < 26; told++)
+        {
+            await application.GiveNotificationAsync(ada.User.Id, agent, Feeding.Morning.AddMinutes(-told));
+        }
+
+        // The second page, following: it is paused as the second page.
+        var second = await ada.Browser.PageAsync($"{WebUiModule.NotificationsPath}?page=2");
+
+        Assert.Equal($"{WebUiModule.NotificationsPath}?page=2&amp;live=paused", Assert.Single(PauseOn(second)).Address);
+        Assert.Contains($"<a href=\"{WebUiModule.NotificationsPath}\">Newer notifications</a>", second);
+
+        // Paused, it leads to the other pages of the list paused, and back to itself following.
+        var paused = await ada.Browser.PageAsync($"{WebUiModule.NotificationsPath}?page=2&live=paused");
+
+        Assert.Equal($"{WebUiModule.NotificationsPath}?page=2", Assert.Single(PauseOn(paused)).Address);
+        Assert.Contains($"<a href=\"{WebUiModule.NotificationsPath}?live=paused\">Newer notifications</a>", paused);
+
+        var first = await ada.Browser.PageAsync($"{WebUiModule.NotificationsPath}?live=paused");
+
+        Assert.Contains($"<a href=\"{WebUiModule.NotificationsPath}?page=2&amp;live=paused\">Older notifications</a>", first);
+
+        // The choice stands last, whatever order the address came in, and is said once.
+        var turned = await ada.Browser.PageAsync($"{WebUiModule.NotificationsPath}?live=paused&page=2");
+
+        Assert.Equal($"{WebUiModule.NotificationsPath}?page=2", Assert.Single(PauseOn(turned)).Address);
+
+        // A link to another screen carries none: the bar leads to pages that follow.
+        Assert.DoesNotContain($"{WebUiModule.DashboardPath}?live", paused);
+    }
+
+    [Fact]
+    public async Task A_form_of_a_page_that_is_paused_leads_back_to_the_page_paused()
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
+
+        // What its user does on a page that they paused does not have it follow behind their
+        // back: marking a notification as read leads back to the page as it was, paused.
+        foreach (var path in new[] { WebUiModule.NotificationsPath, WebUiModule.DashboardPath, WebUiModule.AgentStatePath(agent) })
+        {
+            var told = await application.GiveNotificationAsync(ada.User.Id, agent, Feeding.Morning);
+            var paused = $"{path}?live=paused";
+            var token = Browser.AntiforgeryTokenIn(await ada.Browser.PageAsync(paused));
+
+            using var answer = await ada.Browser.SendFormAsync(paused, NotificationPages.MarkReadForm(told), token);
+            var page = await answer.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
+            Assert.Equal(paused, answer.RequestMessage!.RequestUri!.PathAndQuery);
+            Assert.Equal(LivePages.Resume, Assert.Single(PauseOn(page)).Link);
+            Assert.Empty(ConnectedPart().Matches(page));
+        }
+
+        // The same form of a page that follows leads back to the page that follows.
+        var last = await application.GiveNotificationAsync(ada.User.Id, agent, Feeding.Morning);
+        var following = Browser.AntiforgeryTokenIn(await ada.Browser.PageAsync(WebUiModule.NotificationsPath));
+
+        using var back = await ada.Browser.SendFormAsync(WebUiModule.NotificationsPath, NotificationPages.MarkReadForm(last), following);
+
+        Assert.Equal(WebUiModule.NotificationsPath, back.RequestMessage!.RequestUri!.PathAndQuery);
+    }
+
+    [Theory]
+    [InlineData("live=on")]
+    [InlineData("live=PAUSED")]
+    [InlineData("live=paused&live=paused")]
+    [InlineData("live=paused&live=")]
+    public async Task An_address_that_names_a_choice_of_following_which_there_is_not_is_not_found(string choice)
+    {
+        using var feeding = new Feeding();
+        var application = feeding.Application;
+        var ada = await feeding.SignedInAsync(Ada);
+        var agent = await application.GiveAgentAsync(ada.User.Id, Feeding.Morning);
+
+        // As an address with a page number that is none: it has no page.
+        foreach (var path in new[] { WebUiModule.DashboardPath, WebUiModule.AgentsPath, WebUiModule.AgentStatePath(agent), WebUiModule.NotificationsPath })
+        {
+            using var answer = await ada.Browser.GetAsync($"{path}?{choice}", TestContext.Current.CancellationToken);
+
+            Assert.Equal(HttpStatusCode.NotFound, answer.StatusCode);
+        }
+
+        // An address that makes no choice, or an empty one, is of the page that follows.
+        var page = await ada.Browser.PageAsync($"{WebUiModule.DashboardPath}?live=");
+
+        Assert.Equal(LivePages.Pause, Assert.Single(PauseOn(page)).Link);
+        Assert.Single(ConnectedPart().Matches(page));
+    }
+
+    /// <summary>What a page says of whether it follows: what it says, where its link leads as the page writes it, and what the link says.</summary>
+    private static IReadOnlyList<(string Says, string Address, string Link)> PauseOn(string page) =>
+    [
+        .. Pause().Matches(page).Select(pause => (
+            WebUtility.HtmlDecode(pause.Groups[1].Value), pause.Groups[2].Value, WebUtility.HtmlDecode(pause.Groups[3].Value))),
+    ];
 
     /// <summary>The pages that follow what changes, for one agent and one cycle of it.</summary>
     private static string[] Following(Guid agentId, Guid cycleId) =>
@@ -566,6 +778,9 @@ public partial class LivePageTests
     // the key that tells the part apart.
     [GeneratedRegex("""<!--Blazor:\{"type":"server"[^>]*-->""")]
     private static partial Regex ConnectedPart();
+
+    [GeneratedRegex("<p class=\"live-pause\">\\s*<span role=\"status\">([^<]*)</span>\\s*<a href=\"([^\"]*)\">([^<]*)</a>\\s*</p>")]
+    private static partial Regex Pause();
 
     [GeneratedRegex(""""formattedComponentKey":"([^"]*)"""")]
     private static partial Regex Key();

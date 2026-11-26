@@ -57,7 +57,7 @@
             }
         </ul>
 
-        <p>The <a href="@LegalPages.RiskDisclosurePath" target="_blank" rel="noopener">risk disclosure</a> says this in full.</p>
+        <p>The <a href="@LegalPages.RiskDisclosurePath" target="_blank" rel="noopener">risk disclosure (@LegalPages.OpensInNewTab)</a> says this in full.</p>
 
         @if (_agent.ReassignsRoles)
         {
@@ -71,12 +71,13 @@
             <div class="field">
                 @* Not ticked for its user: the confirmation is theirs to give, each time. *@
                 <input id="live-risk" name="Risk" type="checkbox" required value="@AgentPages.RiskConfirmed"
-                       aria-invalid="@(_riskNotConfirmed ? "true" : null)"
-                       aria-describedby="@(_riskNotConfirmed ? "live-risk-error" : null)" />
+                       aria-invalid="@PageFields.Invalid(_riskNotConfirmed)"
+                       aria-describedby="@PageFields.ErrorOf("live-risk", _riskNotConfirmed)"
+                       autofocus="@(_riskNotConfirmed && _notSwitched is null)" />
                 <label for="live-risk">I understand that in Live this agent trades with real money in my Binance account, and that I can lose all of the capital I allocated to it.</label>
                 @if (_riskNotConfirmed)
                 {
-                    <p id="live-risk-error" class="field-error" role="alert">@AgentPages.ConfirmRiskFirst</p>
+                    <p id="live-risk-error" class="field-error">@AgentPages.ConfirmRiskFirst</p>
                 }
             </div>
 

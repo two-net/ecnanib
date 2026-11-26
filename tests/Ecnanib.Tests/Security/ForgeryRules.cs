@@ -27,6 +27,10 @@ internal static class ForgeryRules
             "It checks the token itself, for a request that is signed in. A request that is not signed in has nothing " +
             "to protect, and its page may be older than its session. SignInPageTests shows both.",
 
+        [WebUiModule.StaySignedInPath] =
+            "It checks the token itself, for a request that is signed in, as signing out does. A request that is not " +
+            "signed in has no session to keep, and is told that nothing is left. SessionNoticeTests shows both.",
+
         ["/_blazor"] = Circuit,
         ["/_blazor/negotiate"] = Circuit,
         ["/_blazor/disconnect/"] = Circuit,

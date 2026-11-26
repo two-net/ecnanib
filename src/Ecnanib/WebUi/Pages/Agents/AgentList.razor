@@ -26,6 +26,9 @@
 
 <p>An agent trades one symbol on one Binance market, on one timeframe, with the capital and the risk settings you give it. A new agent is a draft in Demo: it trades nothing until it is started. You start, pause, resume, and stop an agent on the page of its state, and switch it between Demo and Live there.</p>
 
+@* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
+<LivePause />
+
 @if (_notCopied is not null)
 {
     <p class="form-error" role="alert">@_notCopied</p>
@@ -125,13 +128,24 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (HttpContext is { } request)
+        if (HttpContext is not { } request)
         {
-            // Before the page reads: what changes from here on is what the page may not show.
-            _since = Live.Mark();
-
-            _list = await Agents.ListAsync(request);
+            return;
         }
+
+        // An address that makes a choice of following which there is not has no page, as one
+        // with a page number that is none has not: see LivePause.
+        if (LivePages.PausedOf(request.Request.Query) is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
+        // Before the page reads: what changes from here on is what the page may not show.
+        _since = Live.Mark();
+
+        _list = await Agents.ListAsync(request);
     }
 
     private async Task CloneAsync(AgentView agent)

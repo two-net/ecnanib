@@ -8,13 +8,38 @@
     answered would be gone from it. The part is told apart by the path of the page, so that it
     stays when the page asks for itself again, and is another one on another page. Everything
     else of the page is rendered on the server for each request, as before.
+
+    A page that its user paused (NFR-USA-1) makes no connection: its parts are written once,
+    with what they show as the page is written, and nothing is followed for it, so it changes
+    no more by itself. That is how every page is written before its connection is made, so
+    nothing else is needed for it. A page that shows no part writes nothing then. What pauses
+    a page, and has it follow again, is LivePause, which the page writes under its heading.
+
+    The part stands in an element of its own, in both cases. The framework takes the element
+    that holds such a part for another kind of element than one that holds none, and puts a new
+    one in its place when a page goes from the one to the other: without an element of its own
+    that would be the content of the page, and whatever had the focus there, such as the link
+    that pauses, would lose it.
 *@
 
-<LiveIsland @key="_page" @rendermode="InteractiveServer" View="@_view" />
+@if (!_paused)
+{
+    <div class="live-parts">
+        <LiveIsland @key="_page" @rendermode="InteractiveServer" View="@_view" />
+    </div>
+}
+else if (Shows != LiveShows.None)
+{
+    @* Marked, so the stylesheet lets nothing in it move for as long as a state lasts: no state of it lasts. *@
+    <div class="live-parts" data-live="paused">
+        <LiveIsland View="@_view" />
+    </div>
+}
 
 @code {
     private string _page = string.Empty;
     private LiveView _view = default!;
+    private bool _paused;
 
     /// <summary>The agent that the page is of, or null for a page of every agent of its user.</summary>
     [Parameter]
@@ -74,5 +99,8 @@
 
         _page = request.Path.Value ?? string.Empty;
         _view = LiveView.Of(request, AgentId, Follows, Shows, Market, Mode, Symbol, QuoteAsset, Since, Values, Team);
+
+        // A choice that there is not is answered by LivePause, with the page that says so.
+        _paused = LivePages.PausedOf(request.Query) == true;
     }
 }

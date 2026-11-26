@@ -5,6 +5,7 @@
             gets here. This guards a page that becomes interactive, which is not asked for again.
         *@
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        @* What takes the focus when a page opens: its heading, or what its form answered with. *@
+        <FocusOnNavigate RouteData="routeData" Selector="@Layout.Screens.FocusOnLoad" />
     </Found>
 </Router>

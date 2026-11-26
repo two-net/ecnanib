@@ -25,7 +25,8 @@
 
     @if (_said is not null)
     {
-        <p class="form-error" role="alert">@_said</p>
+        @* What it says of the choice is named by the choice below, so it is read out with it. *@
+        <p class="form-error" role="alert" id="@(_said == ChooseFirst ? "stop-position-error" : null)">@_said</p>
     }
 
     @if (_notClosed)
@@ -46,7 +47,7 @@
 
             @if (_agent.HasOpenPosition)
             {
-                <fieldset>
+                <fieldset aria-describedby="@(_said == ChooseFirst ? "stop-position-error" : null)">
                     <legend>The agent has an open position. What happens to it?</legend>
 
                     <div class="choice">

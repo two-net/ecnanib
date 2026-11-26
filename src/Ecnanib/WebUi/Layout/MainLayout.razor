@@ -37,7 +37,7 @@
                     <span>@context.User.Identity?.Name</span>
 
                     @* Posted to an endpoint of its own, so the button works on every page. *@
-                    <form method="post" action="@WebUiModule.SignOutPath">
+                    <form id="@Screens.SignOutFormId" method="post" action="@WebUiModule.SignOutPath">
                         <AntiforgeryToken />
                         <button type="submit">@Screens.SignOut</button>
                     </form>
@@ -92,7 +92,7 @@
         <ul>
             @foreach (var document in Screens.Legal)
             {
-                <li><a href="@LegalPages.PathOf(document)">@LegalPages.TitleOf(document)</a></li>
+                <li><a href="@LegalPages.PathOf(document)" aria-current="@Current(LegalPages.PathOf(document))">@LegalPages.TitleOf(document)</a></li>
             }
         </ul>
     </nav>
@@ -112,10 +112,22 @@
     </AuthorizeView>
 </footer>
 
-<div id="blazor-error-ui" data-nosnippet>
+@*
+    What a screen reader is told while a page that was asked for is on its way for long
+    (NFR-USA-1). It is not shown, and is empty but for that time: the script of what moves writes
+    the sentence into it when it shows the placeholder, and takes it out when the page is there.
+    It stands outside the content, which is hidden for that time. See docs/motion.md.
+*@
+<p class="visually-hidden" role="status" data-loading="@Screens.Loading"></p>
+
+@*
+    What the page says when an error of it was handled by nothing. It is said to a screen reader
+    as it shows, and what puts it away is a button, which the keyboard reaches.
+*@
+<div id="blazor-error-ui" role="alert" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <button type="button" class="dismiss" aria-label="@Screens.Dismiss"><span aria-hidden="true">🗙</span></button>
 </div>
 
 @code {

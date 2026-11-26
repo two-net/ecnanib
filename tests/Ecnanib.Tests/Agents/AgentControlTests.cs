@@ -642,7 +642,7 @@ public class AgentControlTests
         return Regex
             .Matches(
                 table.Value,
-                @"<tr[^>]*>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*</tr>",
+                @"<tr[^>]*>\s*<th scope=""row"">(.*?)</th>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*</tr>",
                 RegexOptions.Singleline)
             .ToList();
     }

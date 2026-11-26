@@ -18,7 +18,7 @@ namespace Ecnanib.Tests.Animation;
 /// each a change, and stands still while nobody sees it. See docs/motion.md.
 /// </summary>
 /// <remarks>
-/// No test drives a browser: that what moves looks right is seen by hand, as docs/motion.md
+/// None of these tests drives a browser: that what moves looks right is seen by hand, as docs/motion.md
 /// says. What is held here are the rules of the stylesheets, as the application serves them.
 /// </remarks>
 public partial class MotionStyleTests

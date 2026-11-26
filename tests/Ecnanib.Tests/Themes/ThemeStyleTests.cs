@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace Ecnanib.Tests.Themes;
@@ -12,19 +11,13 @@ namespace Ecnanib.Tests.Themes;
 /// docs/themes.md.
 /// </summary>
 /// <remarks>
-/// No test drives a browser: that a page looks right in a theme is seen by hand, as
-/// docs/themes.md says. What is held here are the rules of the stylesheets, as the application
-/// serves them.
+/// None of these tests drives a browser: that a page looks right in a theme is seen by hand,
+/// as docs/themes.md says, and the contrast of what every screen shows is measured in one by
+/// <c>AccessibilityBrowserTests</c>, when a run is told to. What is held here are the rules of
+/// the stylesheets, as the application serves them.
 /// </remarks>
 public partial class ThemeStyleTests
 {
-    // The page of a light theme, and the page of a dark one. A browser paints the page itself:
-    // white when it is light, and, when it is dark, a grey of its own: Chrome and Edge #121212,
-    // Firefox #1c1b22, and Safari #1e1e1e. This is the lightest of them, so a colour that reads
-    // on it reads on the darker ones too.
-    private const string LightPage = "#ffffff";
-    private const string DarkPage = "#1e1e1e";
-
     // What WCAG 2.1 AA asks of text of the size of the text of a page (1.4.3).
     private const double ForText = 4.5;
 
@@ -70,11 +63,11 @@ public partial class ThemeStyleTests
             var dark = colour.Groups["dark"].Value;
 
             Assert.True(
-                Contrast(light, LightPage) >= ForText,
-                $"{name} is {light} on a light page, with a contrast of {Contrast(light, LightPage):0.##} to 1.");
+                Colours.Contrast(light, Colours.LightPage) >= ForText,
+                $"{name} is {light} on a light page, with a contrast of {Colours.Contrast(light, Colours.LightPage):0.##} to 1.");
             Assert.True(
-                Contrast(dark, DarkPage) >= ForText,
-                $"{name} is {dark} on a dark page, with a contrast of {Contrast(dark, DarkPage):0.##} to 1.");
+                Colours.Contrast(dark, Colours.DarkPage) >= ForText,
+                $"{name} is {dark} on a dark page, with a contrast of {Colours.Contrast(dark, Colours.DarkPage):0.##} to 1.");
         });
     }
 
@@ -100,7 +93,7 @@ public partial class ThemeStyleTests
         var fill = Regex.Match(badge, "background-color:\\s*(#[0-9a-fA-F]{6})").Groups[1].Value;
         var text = Regex.Match(badge, "(?<![-\\w])color:\\s*(#[0-9a-fA-F]{6})").Groups[1].Value;
 
-        Assert.True(Contrast(text, fill) >= ForText, $"The badge of Live is {text} on {fill}, with a contrast of {Contrast(text, fill):0.##} to 1.");
+        Assert.True(Colours.Contrast(text, fill) >= ForText, $"The badge of Live is {text} on {fill}, with a contrast of {Colours.Contrast(text, fill):0.##} to 1.");
     }
 
     [Fact]
@@ -123,8 +116,8 @@ public partial class ThemeStyleTests
 
         Assert.Equal(3, fills.Count);
         Assert.All(fills, fill => Assert.True(
-            Contrast("#ffffff", fill) >= ForText,
-            $"The button is white on {fill}, with a contrast of {Contrast("#ffffff", fill):0.##} to 1."));
+            Colours.Contrast("#ffffff", fill) >= ForText,
+            $"The button is white on {fill}, with a contrast of {Colours.Contrast("#ffffff", fill):0.##} to 1."));
     }
 
     [Theory]
@@ -134,8 +127,8 @@ public partial class ThemeStyleTests
     [InlineData("#b3261e", "#ffffff", 6.54)]
     public void The_contrast_of_two_colours_is_the_one_of_WCAG(string colour, string page, double contrast)
     {
-        Assert.Equal(contrast, Contrast(colour, page), 0.01);
-        Assert.Equal(contrast, Contrast(page, colour), 0.01);
+        Assert.Equal(contrast, Colours.Contrast(colour, page), 0.01);
+        Assert.Equal(contrast, Colours.Contrast(page, colour), 0.01);
     }
 
     /// <summary>The stylesheet of the pages, as the application serves it.</summary>
@@ -146,27 +139,6 @@ public partial class ThemeStyleTests
 
     /// <summary>The selector of the rule that a place in a stylesheet is in.</summary>
     private static string RuleOf(string styles, int index) => Stylesheets.RuleOf(styles, index);
-
-    /// <summary>The contrast of two colours as WCAG 2.1 defines it, from 1 to 21.</summary>
-    private static double Contrast(string one, string other)
-    {
-        var (lighter, darker) = (Math.Max(Luminance(one), Luminance(other)), Math.Min(Luminance(one), Luminance(other)));
-
-        return (lighter + 0.05) / (darker + 0.05);
-    }
-
-    /// <summary>The relative luminance of a colour that is written as <c>#rrggbb</c>.</summary>
-    private static double Luminance(string colour)
-    {
-        double Part(int at)
-        {
-            var value = int.Parse(colour.AsSpan(at, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture) / 255.0;
-
-            return value <= 0.04045 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
-        }
-
-        return (0.2126 * Part(1)) + (0.7152 * Part(3)) + (0.0722 * Part(5));
-    }
 
     // A colour of the themes: a name, a light value, and a dark one.
     [GeneratedRegex(@"(?<name>--[a-z-]+):\s*light-dark\((?<light>#[0-9a-fA-F]{6}),\s*(?<dark>#[0-9a-fA-F]{6})\);")]

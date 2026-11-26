@@ -69,6 +69,9 @@
 
     <p>Mode: <ModeBadge Mode="@_agent.Mode" /> The agent trades <code>@_agent.Symbol</code> on @_agent.Market in @KeyPages.Describe(_agent.Mode).</p>
 
+    @* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
+    <LivePause Prices="true" />
+
     @if (_refused is not null)
     {
         <p class="form-error" role="alert">@_refused</p>
@@ -247,7 +250,8 @@
                     @foreach (var change in _history.Changes)
                     {
                         <tr data-key="@change.ChangedAt.UtcTicks">
-                            <td>@PageTimes.At(change.ChangedAt)</td>
+                            @* The time names its row, as in the other tables. *@
+                            <th scope="row">@PageTimes.At(change.ChangedAt)</th>
                             <td><ModeBadge Mode="@change.Mode" /></td>
                             <td>@AgentPages.Describe(change.State)</td>
                             <td>@AgentPages.Says(change.Cause)</td>
@@ -310,6 +314,15 @@
             return;
         }
 
+        // An address that makes a choice of following which there is not has no page, as one
+        // with a page number that is none has not: see LivePause.
+        if (LivePages.PausedOf(request.Request.Query) is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
         // Before the page reads: what changes from here on is what the page may not show.
         _since = Live.Mark();
 
@@ -357,7 +370,7 @@
             case AgentControlOutcome.Done:
                 // The page as it is now, by a request that changes nothing: a reload of it
                 // sends no form again.
-                Navigation.NavigateTo(WebUiModule.AgentStatePath(Id));
+                Navigation.NavigateTo(LivePages.Kept(request.Request, WebUiModule.AgentStatePath(Id)));
 
                 return;
 
@@ -426,8 +439,8 @@
         await Notifications.MarkReadAsync(request, notificationId);
 
         // The page as it is now, by a request that changes nothing: a reload of it sends no
-        // form again.
-        Navigation.NavigateTo(WebUiModule.AgentStatePath(Id));
+        // form again. A page that was paused stays paused.
+        Navigation.NavigateTo(LivePages.Kept(request.Request, WebUiModule.AgentStatePath(Id)));
     }
 
     /// <summary>

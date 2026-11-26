@@ -65,22 +65,25 @@
                 <label for="api-key">API key</label>
                 @* A key is never written back into the page, and the browser is asked not to keep it. *@
                 <input id="api-key" name="ApiKey" type="password" autocomplete="off" spellcheck="false" required
-                       aria-invalid="@(_apiKeyProblem is not null ? "true" : null)" />
+                       aria-invalid="@PageFields.Invalid(_apiKeyProblem is not null)"
+                       aria-describedby="@PageFields.ErrorOf("api-key", _apiKeyProblem is not null)"
+                       autofocus="@(FirstRefused == "api-key")" />
                 @if (_apiKeyProblem is { } apiKeyProblem)
                 {
-                    <p class="field-error" role="alert">@KeyPages.Says(apiKeyProblem)</p>
+                    <p id="api-key-error" class="field-error">@KeyPages.Says(apiKeyProblem)</p>
                 }
             </div>
 
             <div class="field">
                 <label for="secret-key">Secret key</label>
                 <input id="secret-key" name="SecretKey" type="password" autocomplete="off" spellcheck="false" required
-                       aria-invalid="@(_secretKeyProblem is not null ? "true" : null)"
-                       aria-describedby="secret-key-hint" />
+                       aria-invalid="@PageFields.Invalid(_secretKeyProblem is not null)"
+                       aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("secret-key", _secretKeyProblem is not null), "secret-key-hint")"
+                       autofocus="@(FirstRefused == "secret-key")" />
                 <p id="secret-key-hint" class="field-hint">Binance shows the secret key once, when the API key is created.</p>
                 @if (_secretKeyProblem is { } secretKeyProblem)
                 {
-                    <p class="field-error" role="alert">@KeyPages.Says(secretKeyProblem)</p>
+                    <p id="secret-key-error" class="field-error">@KeyPages.Says(secretKeyProblem)</p>
                 }
             </div>
 
@@ -96,6 +99,14 @@
     private KeyProblem? _apiKeyProblem;
     private KeyProblem? _secretKeyProblem;
     private string? _notStored;
+
+    // The first field that was refused has the focus when the page opens, unless the page says
+    // something above the form, which has it then.
+    private string? FirstRefused =>
+        _notStored is not null ? null
+        : _apiKeyProblem is not null ? "api-key"
+        : _secretKeyProblem is not null ? "secret-key"
+        : null;
     private bool _showForm;
     private bool _addressNotVerified;
 

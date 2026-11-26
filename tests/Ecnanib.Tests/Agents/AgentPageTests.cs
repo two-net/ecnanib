@@ -81,7 +81,7 @@ public class AgentPageTests
         // is given is shown in AgentRoleTests.
         Assert.All(
             new[] { "Market Analyst", "Sentiment Analyst", "Strategist", "Risk Manager" },
-            role => Assert.Contains($"<h3>{role}</h3>", form));
+            role => Assert.Contains($"<h2>{role}</h2>", form));
         Assert.Contains("Combines both reports, recalled lessons, and the current position into a trade plan.", form);
 
         clock.Set(Morning.AddMinutes(5));
@@ -1331,7 +1331,7 @@ public class AgentPageTests
 
     /// <summary>What a page says is wrong, each at its field, in the order of the fields.</summary>
     private static IReadOnlyList<string> ErrorsOn(string page) =>
-        [.. Regex.Matches(page, "<p class=\"field-error\" role=\"alert\">([^<]*)</p>").Select(error => WebUtility.HtmlDecode(error.Groups[1].Value))];
+        [.. Regex.Matches(page, "<p id=\"[a-z-]+-error\" class=\"field-error\">([^<]*)</p>").Select(error => WebUtility.HtmlDecode(error.Groups[1].Value))];
 
     /// <summary>Something of the one agent that is stored.</summary>
     private static T Stored<T>(AccountsApplication application, Func<StoredAgent, T> of) =>

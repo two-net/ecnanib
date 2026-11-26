@@ -6,7 +6,7 @@ This is the frame that every page is written in, and the map of the screens. Wha
 
 The frame is `MainLayout.razor` in `src/Ecnanib/WebUi/Layout`, with `ScreenLink.razor`, `SettingsNav.razor`, and `NotificationsLink.razor`. What each screen is called and where it is, is `Screens.cs` there, and the paths are in `WebUiModule`. The start page is `Home.razor` in `src/Ecnanib/WebUi/Pages`, with its texts in `HomePages.cs`. The look is in `src/Ecnanib/wwwroot/app.css`. The rules below are enforced by `ScreenRuleTests` and `LayoutPageTests` in `tests/Ecnanib.Tests/Layout`, with the map in `ScreenRules.cs` there, and by `AuditRulesTests` in `tests/Ecnanib.Tests/Accounts`.
 
-How a page is kept from carrying a script or a style of its own is in [security.md](security.md), how a page follows what changes in [live-updates.md](live-updates.md), how a page gets its theme in [themes.md](themes.md), what moves on a page in [motion.md](motion.md), and who is an operator in [ownership.md](ownership.md).
+How a page is kept from carrying a script or a style of its own is in [security.md](security.md), how a page follows what changes in [live-updates.md](live-updates.md), how a page gets its theme in [themes.md](themes.md), what moves on a page in [motion.md](motion.md), and who is an operator in [ownership.md](ownership.md). What the frame and the pages do for a keyboard and for a screen reader, and how every screen is checked for it, is in [accessibility.md](accessibility.md).
 
 ## The screens
 
@@ -50,9 +50,11 @@ Every page is written in the same frame, for a visitor and for a user, also the 
 
 | Rule | Detail |
 |---|---|
-| **It is rendered on the server for each request, and no script of it keeps a connection.** | A page that follows what changes has its one part for that, and a page that follows nothing has none. See [live-updates.md](live-updates.md). The one script of the application is for what moves on a page, and the frame works without it: see [motion.md](motion.md). |
+| **It is rendered on the server for each request, and no script of it keeps a connection.** | A page that follows what changes has its one part for that, and a page that follows nothing has none. See [live-updates.md](live-updates.md). The application has two scripts of its own: one for what moves on a page, and one for the notice before a session ends. The frame works without either: see [motion.md](motion.md), and "The notice before a session ends" in [accounts.md](accounts.md). |
 | **The link past the bar names its page.** | The pages share one base address, so a link to a part of a page says the address of the page too, with what follows its question mark. The browser follows it by itself, and not the framework: what a keyboard reaches next is then in the content. The content takes the focus for that, and is no stop of the keyboard otherwise. |
-| **A page that opens takes the focus at its heading,** | as before: `FocusOnNavigate` in `Routes.razor`, for a page that is opened by a link and for one that is loaded anew. So the next stop of a keyboard is in the content, and every page has an `<h1>`, also the page that says there is none at an address. The link past the bar is for whoever goes back to the top of a page, or reads it from the top. |
+| **A page that opens takes the focus at its heading,** | by `FocusOnNavigate` in `Routes.razor`, for a page that is opened by a link and for one that is loaded anew. So the next stop of a keyboard is in the content, and every page has an `<h1>`, also the page that says there is none at an address. The link past the bar is for whoever goes back to the top of a page, or reads it from the top. |
+| **A page that answers a form takes the focus at what it answers with.** | What a form is told above it takes the focus in place of the heading, so a screen reader says first what became of what was sent: `Screens.FocusOnLoad` is the selector that says which. A form that names a field as wrong and says nothing above it gives the focus to that field. See "After a form" in [accessibility.md](accessibility.md). |
+| **What the frame says while nothing shows is said to a screen reader.** | A line that is not shown, after the content, says that a page is on its way while the placeholder shows: see [motion.md](motion.md). What the page says of an error that nothing handled is an alert, and what puts it away is a button. |
 | **Its texts are in one place.** | `Screens` (NFR-USA-4): the names of the links, of the menu, and of the navigations as a screen reader says them. |
 | **A page carries no style of its own.** | The look of the frame is in `app.css`, with the look of every page. |
 
@@ -63,19 +65,19 @@ Every page is written in the same frame, for a visitor and for a user, also the 
 | **A visitor is shown two ways in:** | "Sign in", and "Register" while registration is open. The bar of a visitor has no form and no menu. |
 | **A user is shown their screens,** in this order: | Dashboard, Agents, Experience, AI usage, Model catalog, and Settings. Ahead of them is the link to the notifications, and who is signed in, by their email address, with the button that signs out. |
 | **An operator is shown the operator status screen** as the last of them. | The bar asks the policy that the screen itself requires, with `AuthorizeView`: the link is shown to whom the screen opens for, and the Web UI does not ask who is an operator in a way of its own. See "Operators" in [ownership.md](ownership.md). |
-| **The link to the screen that is open says so.** | `aria-current="page"` on the link to the very page that is open, and `aria-current="true"` on the link to a screen that the page is a part of: "Agents" on every page of an agent, "Experience" on the lessons, "Settings" on every page of the settings. A screen reader says it, and the link is heavier and underlined: it is told by more than a colour. `Screens.CurrentOf` says which, from the address of the page. |
+| **The link to the screen that is open says so.** | `aria-current="page"` on the link to the very page that is open, and `aria-current="true"` on the link to a screen that the page is a part of: "Agents" on every page of an agent, "Experience" on the lessons, "Settings" on every page of the settings. A screen reader says it, and the link is heavier and underlined: it is told by more than a colour. `Screens.CurrentOf` says which, from the address of the page. The link of the foot to a legal document that is open says so in the same way. |
 | **The name of a link is its text, and nothing else.** | No icon, and no element inside it. The names are those of the pages: `DashboardPages.Title`, `ExperiencePages.Title`, `UsagePages.Title`, `NotificationPages.Link`. |
 | **The button that signs out is the one form of the bar.** | It is posted to an endpoint of its own, with the token of the page, so it works on every page: see [accounts.md](accounts.md). A page that offers no way to change anything has that form and no other. |
 
 ## The settings
 
-The pages under `/account` are the settings. Each has the navigation of the settings above its heading: Profile, Security, API keys, Appearance, and Notifications, in the order of the specification.
+The pages under `/account` are the settings. Each has the navigation of the settings above its heading: Profile, Security, API keys, Appearance, and Email notifications, in the order of the specification.
 
 | Rule | Detail |
 |---|---|
 | **The layout puts it there.** | `SettingsNav`, for a signed-in user on a page whose address is `/account` or under it: `Screens.IsOfSettings`. A page of the settings carries nothing for it, and a page that is added under `/account` has it. |
 | **It says which of the settings is open,** | as the bar does. On the page that stores a key, "API keys" is marked as the screen that the page is a part of. |
-| **"Notifications" there is the choice of email for critical events.** | What the service told a user is the link in the bar. The two are in navigations of two names, "Settings" and "Main", which a screen reader says. |
+| **"Email notifications" there is the choice of email for critical events.** | What the service told a user is "Notifications", in the bar. Each of the two links has a name of its own, so each says where it leads, also to whoever reads a list of the links of a page (NFR-USA-1). |
 | **A page under `/account` that is for visitors has none.** | The page that says an account was deleted: nobody is signed in on it. |
 
 ## Narrow and wide
@@ -146,7 +148,7 @@ One screen of the specification has a route and a place in the navigation, and s
 | `AuditRulesTests` | That a screen of an operator that only shows is listed, requires the policy, and has no form of its own, and that an operator function beside it is still seen. |
 | `BrowserDefenseTests`, `RequestForgeryTests`, `LivePageTests` | That the new pages carry no script and no style of their own, check the token of a form, and keep no connection: each finds the pages by their routes. |
 
-No test drives a browser. By hand:
+No test of these drives a browser. `AccessibilityBrowserTests` does, when a run is told to: it opens every screen in a browser, walks it with the keyboard, and looks for a page that scrolls sideways at the width of a phone. See [accessibility.md](accessibility.md). By hand:
 
 1. `docker compose up -d`, and run the application.
 2. Open `/` at the width of a phone and at the width of a desk, on a light and on a dark screen: the bar of a visitor, the start page with the illustration of the team, and the foot. The page does not scroll sideways at either width.
@@ -160,5 +162,4 @@ No test drives a browser. By hand:
 - The dashboard as the page that a user arrives at after signing in. A user arrives at the start page, which leads to the dashboard: `SessionAuthentication.LocalPathOrHome`.
 - What the operator status screen shows, and what an operator does (FR-OPS-2 to FR-OPS-5). The Operator role itself is still to confirm (SRS 2.2).
 - A page of the security that holds more than two-factor authentication: a change of the password by a user who is signed in, and the devices that they are signed in on. A password is changed by the link of "Forgot your password?".
-- An accessibility check and a keyboard walk-through of each screen (NFR-USA-1). The frame has its landmarks, its link past the bar, and its marks of the open screen.
 - The texts of the pages of the account and of two-factor authentication in one place, as the newer pages have them (NFR-USA-4).

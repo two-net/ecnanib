@@ -19,7 +19,7 @@ namespace Ecnanib.Tests.Layout;
 /// docs/layout.md.
 /// </summary>
 /// <remarks>
-/// No test drives a browser: what a page looks like at a width is seen by hand, as docs/layout.md
+/// None of these tests drives a browser: what a page looks like at a width is seen by hand, as docs/layout.md
 /// says. What is held here is what the look rests on: the elements of the frame, and the two
 /// rules of the stylesheet that make one frame of them at both widths.
 /// </remarks>
@@ -113,7 +113,7 @@ public partial class LayoutPageTests
             ("/account/keys", ["Settings=true"], ["API keys=page"]),
             ("/account/keys/ai/claude", ["Settings=true"], ["API keys=true"]),
             ("/account/appearance", ["Settings=true"], ["Appearance=page"]),
-            ("/account/notifications", ["Settings=true"], ["Notifications=page"]),
+            ("/account/notifications", ["Settings=true"], ["Email notifications=page"]),
         ];
 
         foreach (var (path, bar, settings) in pages)
@@ -208,7 +208,7 @@ public partial class LayoutPageTests
             ("/account/two-factor", "Security"),
             ("/account/keys", "API keys"),
             ("/account/appearance", "Appearance"),
-            ("/account/notifications", "Notifications"),
+            ("/account/notifications", "Email notifications"),
         ];
 
         foreach (var (path, _) in settings)

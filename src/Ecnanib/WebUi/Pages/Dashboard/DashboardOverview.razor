@@ -51,6 +51,9 @@
 
     <p>@DashboardPages.FiguresExplained</p>
 
+    @* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
+    <LivePause Prices="true" />
+
     @if (_setup is not null)
     {
         @* For a first-time user alone: whoever marked its last two steps is shown it no more. *@
@@ -120,8 +123,12 @@
                 }
                 else
                 {
-                    @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
-                    <div class="agents dashboard-positions" role="region" aria-labelledby="@DashboardPages.Id(mode, "positions")" tabindex="0">
+                    @*
+                        The table is wider than a narrow screen, so it scrolls by itself, also by
+                        keyboard. The part is named by the heading of its mode and its own, so
+                        the one of Demo and the one of Live are told apart (NFR-USA-1).
+                    *@
+                    <div class="agents dashboard-positions" role="region" aria-labelledby="@DashboardPages.Id(mode, "heading") @DashboardPages.Id(mode, "positions")" tabindex="0">
                         <table>
                             <caption>@DashboardPages.PositionsCaption(mode)</caption>
                             <thead>
@@ -224,7 +231,8 @@
             {
                 <p>@DashboardPages.DecisionsExplained(mode)</p>
 
-                <div class="agents dashboard-decisions" role="region" aria-labelledby="@DashboardPages.Id(mode, "decisions")" tabindex="0">
+                @* Named by the heading of its mode and its own, as the part of the positions is. *@
+                <div class="agents dashboard-decisions" role="region" aria-labelledby="@DashboardPages.Id(mode, "heading") @DashboardPages.Id(mode, "decisions")" tabindex="0">
                     <table>
                         <caption>@DashboardPages.DecisionsCaption(mode)</caption>
                         <thead>
@@ -312,6 +320,15 @@
             return;
         }
 
+        // An address that makes a choice of following which there is not has no page, as one
+        // with a page number that is none has not: see LivePause.
+        if (LivePages.PausedOf(request.Request.Query) is null)
+        {
+            Navigation.NotFound();
+
+            return;
+        }
+
         // Before the page reads: what changes from here on is what the page may not show.
         _since = Live.Mark();
 
@@ -361,11 +378,11 @@
 
         // The page as it is now, by a request that changes nothing: a reload of it sends no
         // form again.
-        Navigation.NavigateTo(WebUiModule.DashboardPath);
+        Navigation.NavigateTo(LivePages.Kept(request.Request, WebUiModule.DashboardPath));
     }
 
-    /// <summary>The name of an agent of the user, or nothing for one that was deleted since its cycle was read.</summary>
-    private string NameOf(Guid agentId) => _agents?.FirstOrDefault(agent => agent.Id == agentId)?.Name ?? string.Empty;
+    /// <summary>The name of an agent of the user, or that it was deleted, for one that was deleted since its cycle was read.</summary>
+    private string NameOf(Guid agentId) => _agents?.FirstOrDefault(agent => agent.Id == agentId)?.Name ?? DashboardPages.DeletedAgent;
 
     /// <summary>
     /// One alert: what a notification says, with a link to the agent that it is about, and the

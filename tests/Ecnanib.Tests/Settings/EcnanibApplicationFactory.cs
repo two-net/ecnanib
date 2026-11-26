@@ -1,3 +1,4 @@
+using System.Net;
 using Ecnanib.Platform.BackgroundWork;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -159,13 +160,19 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// ask. Without it the job is still there, under <see cref="ReconciliationKey"/>, for a test
     /// to run itself.
     /// </param>
+    /// <param name="listens">
+    /// Whether the application listens on a port of this machine, over TLS, as it does outside
+    /// the tests, in place of answering in memory. Only a test that drives a browser says so: a
+    /// browser reaches nothing that is in memory. See <see cref="ListeningAt"/>.
+    /// </param>
     internal EcnanibApplicationFactory(
         SettingsDirectory contentRoot,
         Action<IWebHostBuilder>? configure = null,
         bool watchesBinanceClock = false,
         bool runsCycles = false,
         bool settlesOrders = false,
-        bool reconciles = false)
+        bool reconciles = false,
+        bool listens = false)
     {
         _contentRoot = contentRoot.Path;
         _configure = configure;
@@ -174,6 +181,40 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
         _settlesOrders = settlesOrders;
         _reconciles = reconciles;
         ClientOptions.BaseAddress = Address;
+
+        if (listens)
+        {
+            // A port that is free, on this machine alone, and over TLS: the cookies of the
+            // application are sent only over TLS, and a browser keeps them only from a host
+            // that it reached so. The certificate is made for this run, and whoever asks is
+            // told to take it: see LoopbackCertificate.
+            Certificate = LoopbackCertificate.Create();
+            UseKestrel(server => server.Listen(IPAddress.Loopback, 0, listener => listener.UseHttps(Certificate)));
+        }
+    }
+
+    /// <summary>The certificate that an application which listens answers with, and null for one that answers in memory.</summary>
+    internal System.Security.Cryptography.X509Certificates.X509Certificate2? Certificate { get; }
+
+    /// <summary>
+    /// Where an application that listens is reached, once it has started: <c>https://127.0.0.1</c>
+    /// with the port that it was given. A client of the factory does not reach it, because it
+    /// does not take the certificate: a browser that is told to does, and so does a client that
+    /// a test makes for it.
+    /// </summary>
+    internal Uri ListeningAt
+    {
+        get
+        {
+            if (Certificate is null)
+            {
+                throw new InvalidOperationException("The application answers in memory, and listens nowhere. Say listens: true where it is made.");
+            }
+
+            StartServer();
+
+            return ClientOptions.BaseAddress;
+        }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -389,6 +430,7 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
         {
             // Once: disposing the factory without awaiting it comes through here twice.
             Interlocked.Exchange(ref _ownDirectory, null)?.Dispose();
+            Certificate?.Dispose();
         }
     }
 

@@ -18,12 +18,12 @@
 
 @if (_outcome is EmailVerificationOutcome.Verified)
 {
-    <p role="status">Your email address is confirmed.</p>
+    <p class="form-done" role="status">Your email address is confirmed.</p>
     <p><a href="@SessionAuthentication.SignInPath">Sign in</a></p>
 }
 else if (_outcome is EmailVerificationOutcome.LinkNotValid || string.IsNullOrEmpty(Token))
 {
-    <p role="alert">This link does not work any more. It may have been used, replaced by a later one, or be older than @((int)EmailVerification.LinkLifetime.TotalHours) hours.</p>
+    <p class="form-error" role="alert">This link does not work any more. It may have been used, replaced by a later one, or be older than @((int)EmailVerification.LinkLifetime.TotalHours) hours.</p>
     <p><a href="/register">Register again</a> to get a new link.</p>
 }
 else
@@ -45,16 +45,17 @@ else
                 @* The password is never written back into the page. *@
                 <input id="password" name="Password" type="password" autocomplete="new-password" required
                        minlength="@PasswordRules.MinimumLength"
-                       aria-invalid="@(_outcome is EmailVerificationOutcome.PasswordTooShort or EmailVerificationOutcome.PasswordTooLong ? "true" : null)"
-                       aria-describedby="password-hint" />
+                       aria-invalid="@PageFields.Invalid(PasswordRefused)"
+                       aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("password", PasswordRefused), "password-hint")"
+                       autofocus="@PasswordRefused" />
                 <p id="password-hint" class="field-hint">At least @PasswordRules.MinimumLength characters. A long phrase is a good password.</p>
                 @if (_outcome is EmailVerificationOutcome.PasswordTooShort)
                 {
-                    <p class="field-error" role="alert">Choose a password of at least @PasswordRules.MinimumLength characters.</p>
+                    <p id="password-error" class="field-error">Choose a password of at least @PasswordRules.MinimumLength characters.</p>
                 }
                 @if (_outcome is EmailVerificationOutcome.PasswordTooLong)
                 {
-                    <p class="field-error" role="alert">Choose a password of at most @PasswordRules.MaximumLength characters.</p>
+                    <p id="password-error" class="field-error">Choose a password of at most @PasswordRules.MaximumLength characters.</p>
                 }
             </div>
         }
@@ -76,6 +77,9 @@ else
     // Asked for only when the link is of an address that was registered again.
     [SupplyParameterFromForm]
     private string? Password { get; set; }
+
+    // The field is marked as wrong then, names what says why, and has the focus when the page opens.
+    private bool PasswordRefused => _outcome is EmailVerificationOutcome.PasswordTooShort or EmailVerificationOutcome.PasswordTooLong;
 
     private async Task ConfirmAsync() =>
         _outcome = await Registration.VerifyEmailAsync(

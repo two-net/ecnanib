@@ -112,7 +112,8 @@
 
         @if (_list.Pages > 1)
         {
-            <nav class="lesson-pages" aria-label="Pages of lessons">
+            @* Another page of the list is asked for as a page of its own, so it opens with the focus at its heading (NFR-USA-1). *@
+            <nav class="lesson-pages" aria-label="Pages of lessons" data-enhance-nav="false">
                 @if (_list.Page > 1)
                 {
                     <a href="@WebUiModule.LessonsOfAgentPath(_agent?.Id, _list.Page - 1)">Newer lessons</a>

@@ -19,7 +19,8 @@ public class AgentStopTests
     private const string Ada = "ada@example.com";
 
     private const string StopButton = "<button type=\"submit\">Stop the agent</button>";
-    private const string ChooseFirst = "<p class=\"form-error\" role=\"alert\">This agent has an open position. Choose what happens to it.</p>";
+    // It has an id, which the choice below it names: so it is read out with the choice.
+    private const string ChooseFirst = "<p class=\"form-error\" role=\"alert\" id=\"stop-position-error\">This agent has an open position. Choose what happens to it.</p>";
 
     private static readonly DateTimeOffset Morning = new(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
 

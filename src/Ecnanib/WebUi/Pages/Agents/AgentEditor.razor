@@ -100,11 +100,11 @@
                 <label for="agent-name">Name</label>
                 <input id="agent-name" name="Name" type="text" value="@NameEntry" autocomplete="off" required
                        maxlength="@AgentRules.MaximumNameLength"
-                       aria-invalid="@Invalid(AgentField.Name)" aria-describedby="agent-name-hint" />
+                       aria-invalid="@Invalid(AgentField.Name)" aria-describedby="@Described(AgentField.Name, "agent-name")" autofocus="@Focused("agent-name")" />
                 <p id="agent-name-hint" class="field-hint">What you call the agent. Each of your agents has a name of its own.</p>
                 @if (Problem(AgentField.Name) is { } nameProblem)
                 {
-                    <p class="field-error" role="alert">@nameProblem</p>
+                    <p id="agent-name-error" class="field-error">@nameProblem</p>
                 }
             </div>
 
@@ -113,7 +113,7 @@
                 <div class="field">
                     <label for="agent-market">Market</label>
                     <select id="agent-market" name="Market" required
-                            aria-invalid="@Invalid(AgentField.Market)" aria-describedby="agent-market-hint">
+                            aria-invalid="@Invalid(AgentField.Market)" aria-describedby="@Described(AgentField.Market, "agent-market")" autofocus="@Focused("agent-market")">
                         @foreach (var market in Enum.GetValues<Market>())
                         {
                             <option value="@market" selected="@(market == _market)">@market</option>
@@ -122,7 +122,7 @@
                     <p id="agent-market-hint" class="field-hint">On Spot the agent buys and sells the asset itself, and only goes long. On Futures it trades USDⓈ-margined perpetual contracts, long and short, with leverage. The market sets which actions the agent may take and which prompt its roles are given.</p>
                     @if (Problem(AgentField.Market) is { } marketProblem)
                     {
-                        <p class="field-error" role="alert">@marketProblem</p>
+                        <p id="agent-market-error" class="field-error">@marketProblem</p>
                     }
 
                     @* Stores nothing: the form comes back with the symbols of the market that is chosen now. *@
@@ -132,7 +132,9 @@
                 <div class="field">
                     <label for="agent-symbol">Symbol on @_market</label>
                     <select id="agent-symbol" name="Symbol" required
-                            aria-invalid="@Invalid(AgentField.Symbol)" aria-describedby="agent-symbol-hint">
+                            aria-invalid="@Invalid(AgentField.Symbol)"
+                            aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("agent-symbol", _problems.ContainsKey(AgentField.Symbol)), _symbolsKnown ? null : "agent-symbol-note", "agent-symbol-hint")"
+                            autofocus="@Focused("agent-symbol")">
                         @foreach (var symbol in _offered)
                         {
                             <option value="@symbol.Symbol" selected="@(symbol.Symbol == SymbolEntry)">@symbol.Symbol, priced in @symbol.QuoteAsset</option>
@@ -141,18 +143,18 @@
                     <p id="agent-symbol-hint" class="field-hint">The symbols that @_market has. An agent trades one symbol.</p>
                     @if (!_symbolsKnown)
                     {
-                        <p role="note">Binance gave no answer about which symbols @_market has, so none can be chosen now. Try again in a moment.</p>
+                        <p id="agent-symbol-note" role="note">Binance gave no answer about which symbols @_market has, so none can be chosen now. Try again in a moment.</p>
                     }
                     @if (Problem(AgentField.Symbol) is { } symbolProblem)
                     {
-                        <p class="field-error" role="alert">@symbolProblem</p>
+                        <p id="agent-symbol-error" class="field-error">@symbolProblem</p>
                     }
                 </div>
 
                 <div class="field">
                     <label for="agent-timeframe">Timeframe</label>
                     <select id="agent-timeframe" name="Timeframe" required
-                            aria-invalid="@Invalid(AgentField.Timeframe)" aria-describedby="agent-timeframe-hint">
+                            aria-invalid="@Invalid(AgentField.Timeframe)" aria-describedby="@Described(AgentField.Timeframe, "agent-timeframe")" autofocus="@Focused("agent-timeframe")">
                         <option value="" selected="@(Timeframes.WithCode(TimeframeEntry) is null)">Choose a timeframe</option>
                         @foreach (var timeframe in Timeframes.All)
                         {
@@ -162,7 +164,7 @@
                     <p id="agent-timeframe-hint" class="field-hint">The agent decides once for each candle that closes. The timeframe sets how often its cycle runs, which candles it reads, and which prompt its roles are given.</p>
                     @if (Problem(AgentField.Timeframe) is { } timeframeProblem)
                     {
-                        <p class="field-error" role="alert">@timeframeProblem</p>
+                        <p id="agent-timeframe-error" class="field-error">@timeframeProblem</p>
                     }
                 </div>
             }
@@ -181,11 +183,11 @@
             <div class="field">
                 <label for="agent-capital">Allocated capital</label>
                 <input id="agent-capital" name="AllocatedCapital" type="text" inputmode="decimal" value="@CapitalEntry" autocomplete="off" required
-                       aria-invalid="@Invalid(AgentField.AllocatedCapital)" aria-describedby="agent-capital-hint" />
+                       aria-invalid="@Invalid(AgentField.AllocatedCapital)" aria-describedby="@Described(AgentField.AllocatedCapital, "agent-capital")" autofocus="@Focused("agent-capital")" />
                 <p id="agent-capital-hint" class="field-hint">How much the agent may trade with, in the asset that its symbol is priced in: for BTCUSDT, an amount of USDT. The agent's equity is this capital plus its profit or loss so far.</p>
                 @if (Problem(AgentField.AllocatedCapital) is { } capitalProblem)
                 {
-                    <p class="field-error" role="alert">@capitalProblem</p>
+                    <p id="agent-capital-error" class="field-error">@capitalProblem</p>
                 }
             </div>
 
@@ -197,77 +199,77 @@
                 <div class="field">
                     <label for="agent-risk-per-trade">Risk per trade, in percent</label>
                     <input id="agent-risk-per-trade" name="RiskPerTradePercent" type="text" inputmode="decimal" value="@RiskPerTradeEntry" autocomplete="off" required
-                           aria-invalid="@Invalid(AgentField.RiskPerTradePercent)" aria-describedby="agent-risk-per-trade-hint" />
+                           aria-invalid="@Invalid(AgentField.RiskPerTradePercent)" aria-describedby="@Described(AgentField.RiskPerTradePercent, "agent-risk-per-trade")" autofocus="@Focused("agent-risk-per-trade")" />
                     <p id="agent-risk-per-trade-hint" class="field-hint">The share of the agent's equity that one trade loses when its stop-loss is hit. @AgentPages.Within(Trading.Aggressive.RiskPerTradePercent)</p>
                     @if (Problem(AgentField.RiskPerTradePercent) is { } riskPerTradeProblem)
                     {
-                        <p class="field-error" role="alert">@riskPerTradeProblem</p>
+                        <p id="agent-risk-per-trade-error" class="field-error">@riskPerTradeProblem</p>
                     }
                 </div>
 
                 <div class="field">
                     <label for="agent-reward-to-risk">Minimum reward-to-risk ratio</label>
                     <input id="agent-reward-to-risk" name="MinRewardToRisk" type="text" inputmode="decimal" value="@RewardToRiskEntry" autocomplete="off" required
-                           aria-invalid="@Invalid(AgentField.MinRewardToRisk)" aria-describedby="agent-reward-to-risk-hint" />
+                           aria-invalid="@Invalid(AgentField.MinRewardToRisk)" aria-describedby="@Described(AgentField.MinRewardToRisk, "agent-reward-to-risk")" autofocus="@Focused("agent-reward-to-risk")" />
                     <p id="agent-reward-to-risk-hint" class="field-hint">How much a trade must aim to gain for what it risks, before the agent enters it. At 1.5, a trade that loses 100 at its stop-loss must aim for a profit of 150 or more. @AgentPages.Within(Trading.Aggressive.MinRewardToRisk)</p>
                     @if (Problem(AgentField.MinRewardToRisk) is { } rewardToRiskProblem)
                     {
-                        <p class="field-error" role="alert">@rewardToRiskProblem</p>
+                        <p id="agent-reward-to-risk-error" class="field-error">@rewardToRiskProblem</p>
                     }
                 </div>
 
                 <div class="field">
                     <label for="agent-leverage-cap">Leverage cap</label>
                     <input id="agent-leverage-cap" name="LeverageCap" type="text" inputmode="numeric" value="@LeverageCapEntry" autocomplete="off" required
-                           aria-invalid="@Invalid(AgentField.LeverageCap)" aria-describedby="agent-leverage-cap-hint" />
+                           aria-invalid="@Invalid(AgentField.LeverageCap)" aria-describedby="@Described(AgentField.LeverageCap, "agent-leverage-cap")" autofocus="@Focused("agent-leverage-cap")" />
                     <p id="agent-leverage-cap-hint" class="field-hint">The highest leverage the agent uses. It counts on Futures only: on Spot there is no leverage. @AgentPages.Within(Trading.Aggressive.LeverageCap)</p>
                     @if (Problem(AgentField.LeverageCap) is { } leverageCapProblem)
                     {
-                        <p class="field-error" role="alert">@leverageCapProblem</p>
+                        <p id="agent-leverage-cap-error" class="field-error">@leverageCapProblem</p>
                     }
                 </div>
 
                 <div class="field">
                     <label for="agent-liquidation-buffer">Liquidation buffer</label>
                     <input id="agent-liquidation-buffer" name="LiquidationBuffer" type="text" inputmode="decimal" value="@LiquidationBufferEntry" autocomplete="off" required
-                           aria-invalid="@Invalid(AgentField.LiquidationBuffer)" aria-describedby="agent-liquidation-buffer-hint" />
+                           aria-invalid="@Invalid(AgentField.LiquidationBuffer)" aria-describedby="@Described(AgentField.LiquidationBuffer, "agent-liquidation-buffer")" autofocus="@Focused("agent-liquidation-buffer")" />
                     <p id="agent-liquidation-buffer-hint" class="field-hint">How many times further from the entry price than the stop-loss the estimated liquidation price must be. At 2, a trade whose stop-loss is 1 percent away is entered only when its liquidation price is 2 percent away or more. It counts on Futures only: on Spot nothing is liquidated. @AgentPages.Within(Trading.Aggressive.LiquidationBuffer)</p>
                     @if (Problem(AgentField.LiquidationBuffer) is { } liquidationBufferProblem)
                     {
-                        <p class="field-error" role="alert">@liquidationBufferProblem</p>
+                        <p id="agent-liquidation-buffer-error" class="field-error">@liquidationBufferProblem</p>
                     }
                 </div>
 
                 <div class="field">
                     <label for="agent-daily-loss">Daily loss limit, in percent</label>
                     <input id="agent-daily-loss" name="DailyLossPercent" type="text" inputmode="decimal" value="@DailyLossEntry" autocomplete="off" required
-                           aria-invalid="@Invalid(AgentField.DailyLossPercent)" aria-describedby="agent-daily-loss-hint" />
+                           aria-invalid="@Invalid(AgentField.DailyLossPercent)" aria-describedby="@Described(AgentField.DailyLossPercent, "agent-daily-loss")" autofocus="@Focused("agent-daily-loss")" />
                     <p id="agent-daily-loss-hint" class="field-hint">When the agent has lost this share of its equity within one day, it is halted. @AgentPages.Within(Trading.Aggressive.DailyLossPercent)</p>
                     @if (Problem(AgentField.DailyLossPercent) is { } dailyLossProblem)
                     {
-                        <p class="field-error" role="alert">@dailyLossProblem</p>
+                        <p id="agent-daily-loss-error" class="field-error">@dailyLossProblem</p>
                     }
                 </div>
 
                 <div class="field">
                     <label for="agent-drawdown">Drawdown limit, in percent</label>
                     <input id="agent-drawdown" name="DrawdownPercent" type="text" inputmode="decimal" value="@DrawdownEntry" autocomplete="off" required
-                           aria-invalid="@Invalid(AgentField.DrawdownPercent)" aria-describedby="agent-drawdown-hint" />
+                           aria-invalid="@Invalid(AgentField.DrawdownPercent)" aria-describedby="@Described(AgentField.DrawdownPercent, "agent-drawdown")" autofocus="@Focused("agent-drawdown")" />
                     <p id="agent-drawdown-hint" class="field-hint">When the agent's equity has fallen this far below its highest, it is halted. @AgentPages.Within(Trading.Aggressive.DrawdownPercent)</p>
                     @if (Problem(AgentField.DrawdownPercent) is { } drawdownProblem)
                     {
-                        <p class="field-error" role="alert">@drawdownProblem</p>
+                        <p id="agent-drawdown-error" class="field-error">@drawdownProblem</p>
                     }
                 </div>
 
                 <div class="field">
                     <label for="agent-entry-distance">Maximum entry distance, in percent</label>
                     <input id="agent-entry-distance" name="MaxEntryDistancePercent" type="text" inputmode="decimal" value="@EntryDistanceEntry" autocomplete="off" required
-                           aria-invalid="@Invalid(AgentField.MaxEntryDistancePercent)" aria-describedby="agent-entry-distance-hint" />
+                           aria-invalid="@Invalid(AgentField.MaxEntryDistancePercent)" aria-describedby="@Described(AgentField.MaxEntryDistancePercent, "agent-entry-distance")" autofocus="@Focused("agent-entry-distance")" />
                     <p id="agent-entry-distance-hint" class="field-hint">How far the price of an entry may be from the current price. @AgentPages.Within(Trading.Aggressive.MaxEntryDistancePercent)</p>
                     @if (Problem(AgentField.MaxEntryDistancePercent) is { } entryDistanceProblem)
                     {
-                        <p class="field-error" role="alert">@entryDistanceProblem</p>
+                        <p id="agent-entry-distance-error" class="field-error">@entryDistanceProblem</p>
                     }
                 </div>
 
@@ -319,13 +321,20 @@
                     var models = ModelsOf(role);
                     var chosen = ModelIdEntry(role) is { } chosenId ? models.FirstOrDefault(model => model.Id == chosenId) : null;
 
+                    // What the page says under the two choices of the role. Each choice names what is
+                    // said of it, so a screen reader reads that out with the choice (NFR-USA-1).
+                    var notSelectable = models.Any(model => !Selectable(role, model));
+                    var withoutLiveSearch = role == Role.SentimentAnalyst && chosen is { LiveSearch: false } && Selectable(role, chosen);
+                    var nothingOffered = provider is null ? null : AgentPages.Says(provider);
+
                     <div class="field">
-                        <h3>@name</h3>
+                        <h2>@name</h2>
 
                         <p id="agent-@(id)-hint" class="field-hint">@job</p>
 
                         <label for="agent-@(id)-provider">Provider of the @name</label>
-                        <select id="agent-@(id)-provider" name="@AgentPages.ProviderField(role)">
+                        <select id="agent-@(id)-provider" name="@AgentPages.ProviderField(role)"
+                                aria-describedby="@PageFields.DescribedBy(nothingOffered is null ? null : $"agent-{id}-offered", $"agent-{id}-hint")">
                             @foreach (var offered in _choices.Providers)
                             {
                                 <option value="@offered.Provider.Value" selected="@(offered.Provider == provider?.Provider)">@offered.Name</option>
@@ -334,7 +343,14 @@
 
                         <label for="agent-@(id)-model">Model of the @name</label>
                         <select id="agent-@(id)-model" name="@AgentPages.ModelField(role)"
-                                aria-invalid="@Invalid(role)" aria-describedby="agent-@(id)-hint">
+                                aria-invalid="@Invalid(role)"
+                                aria-describedby="@PageFields.DescribedBy(
+                                                      PageFields.ErrorOf($"agent-{id}-model", _roleProblems.ContainsKey(role)),
+                                                      notSelectable ? $"agent-{id}-unselectable" : null,
+                                                      withoutLiveSearch ? $"agent-{id}-search" : null,
+                                                      _recommendations is null ? null : $"agent-{id}-candidate",
+                                                      $"agent-{id}-hint")"
+                                autofocus="@Focused($"agent-{id}-model")">
                             <option value="" selected="@(chosen is null)">@AgentPages.ChooseModel</option>
                             @foreach (var model in models)
                             {
@@ -342,20 +358,20 @@
                             }
                         </select>
 
-                        @if (models.Any(model => !Selectable(role, model)))
+                        @if (notSelectable)
                         {
-                            <p role="note">@AgentPages.ModelNotSelectableNow</p>
+                            <p id="agent-@(id)-unselectable" role="note">@AgentPages.ModelNotSelectableNow</p>
                         }
 
                         @* A note, and no warning: the role runs with such a model. A model that cannot be selected now has its own. *@
-                        @if (role == Role.SentimentAnalyst && chosen is { LiveSearch: false } && Selectable(role, chosen))
+                        @if (withoutLiveSearch)
                         {
-                            <p role="note">@AgentPages.SentimentWithoutLiveSearch</p>
+                            <p id="agent-@(id)-search" role="note">@AgentPages.SentimentWithoutLiveSearch</p>
                         }
 
-                        @if (provider is not null && AgentPages.Says(provider) is { } nothingOffered)
+                        @if (nothingOffered is not null)
                         {
-                            <p role="note">@nothingOffered <a href="@WebUiModule.KeysPath">Your keys</a></p>
+                            <p id="agent-@(id)-offered" role="note">@nothingOffered <a href="@WebUiModule.KeysPath">Your keys</a></p>
                         }
 
                         @* Against the model that the role has as it is stored, whatever the form holds: the rule of the service is the same. *@
@@ -366,7 +382,7 @@
 
                         @if (Problem(role) is { } roleProblem)
                         {
-                            <p class="field-error" role="alert">@roleProblem</p>
+                            <p id="agent-@(id)-model-error" class="field-error">@roleProblem</p>
                         }
                     </div>
                 }
@@ -392,8 +408,12 @@
 
             @if (_confirmLive)
             {
-                @* Asked once more: nothing is stored until this button is pressed. *@
-                <p class="form-error" role="alert">@AgentPages.ConfirmSaveForLive</p>
+                @*
+                    Asked once more: nothing is stored until this button is pressed. It is a warning,
+                    and no error. It stands at the foot of a long form, so it asks for the focus
+                    itself when the page opens, and the browser brings it into view (NFR-USA-1).
+                *@
+                <p class="form-warning" role="alert" tabindex="-1" autofocus>@AgentPages.ConfirmSaveForLive</p>
 
                 <button type="submit" name="Confirm" value="@AgentPages.ConfirmLive">@AgentPages.SaveForLive</button>
             }
@@ -831,6 +851,69 @@
         _problems.TryGetValue(field, out var problem) ? AgentPages.Says(field, problem, Trading.Aggressive) : null;
 
     private string? Invalid(AgentField field) => _problems.ContainsKey(field) ? "true" : null;
+
+    /// <summary>What a field is described by: what says why it was refused, where it was, and then its hint.</summary>
+    private string? Described(AgentField field, string id) =>
+        PageFields.DescribedBy(PageFields.ErrorOf(id, _problems.ContainsKey(field)), id + "-hint");
+
+    // The fields of the form in its order, each with the id of its control.
+    private static readonly (AgentField Field, string Id, bool OfStructure)[] FieldIds =
+    [
+        (AgentField.Name, "agent-name", false),
+        (AgentField.Market, "agent-market", true),
+        (AgentField.Symbol, "agent-symbol", true),
+        (AgentField.Timeframe, "agent-timeframe", true),
+        (AgentField.AllocatedCapital, "agent-capital", false),
+        (AgentField.RiskPerTradePercent, "agent-risk-per-trade", false),
+        (AgentField.MinRewardToRisk, "agent-reward-to-risk", false),
+        (AgentField.LeverageCap, "agent-leverage-cap", false),
+        (AgentField.LiquidationBuffer, "agent-liquidation-buffer", false),
+        (AgentField.DailyLossPercent, "agent-daily-loss", false),
+        (AgentField.DrawdownPercent, "agent-drawdown", false),
+        (AgentField.MaxEntryDistancePercent, "agent-entry-distance", false),
+    ];
+
+    /// <summary>
+    /// The id of the control that has the focus when the page opens (NFR-USA-1), or nothing, and
+    /// the heading of the page or what it says above the form has it. After a button that shows
+    /// something and stores nothing, it is the choice that the button filled anew, so the
+    /// keyboard is where the form was left and not at its top. After a form that was refused,
+    /// it is the first field that was refused, in the order of the form. A form that is asked
+    /// about once more says so in a part that takes the focus itself.
+    /// </summary>
+    private string? FocusOnOpen
+    {
+        get
+        {
+            var firstModel = $"agent-{AgentPages.IdOf(AgentRoleRules.All.First())}-model";
+
+            switch (Show)
+            {
+                case AgentPages.ShowSymbols:
+                    return "agent-symbol";
+
+                case AgentPages.ShowModels or AgentPages.ShowCandidates:
+                    return firstModel;
+            }
+
+            if (_notSaved is not null || _confirmLive)
+            {
+                return null;
+            }
+
+            foreach (var (setting, id, ofStructure) in FieldIds)
+            {
+                if (_problems.ContainsKey(setting) && (_structureCanChange || !ofStructure))
+                {
+                    return id;
+                }
+            }
+
+            return AgentRoleRules.All.Where(_roleProblems.ContainsKey).Select(role => $"agent-{AgentPages.IdOf(role)}-model").FirstOrDefault();
+        }
+    }
+
+    private bool Focused(string id) => FocusOnOpen == id;
 
     private string? Problem(Role role)
     {

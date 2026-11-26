@@ -69,7 +69,7 @@ public class AgentModeSwitchTests
 
         Assert.Contains("<h1>Switch the agent Swing to Live</h1>", page);
         Assert.All(AgentPages.LiveRisks, risk => Assert.Contains($"<li>{risk}</li>", page));
-        Assert.Contains("<a href=\"/legal/risk-disclosure\" target=\"_blank\" rel=\"noopener\">risk disclosure</a>", page);
+        Assert.Contains("<a href=\"/legal/risk-disclosure\" target=\"_blank\" rel=\"noopener\">risk disclosure (opens in a new tab)</a>", page);
         Assert.Contains("<input id=\"live-risk\" name=\"Risk\" type=\"checkbox\" required value=\"confirmed\"", page);
         Assert.DoesNotContain(" checked", page);
         Assert.Contains("I understand that in Live this agent trades with real money in my Binance account", page);
@@ -198,7 +198,7 @@ public class AgentModeSwitchTests
         var (path, answer) = await client.PostAsync(livePage, AgentBrowser.SwitchToLiveForm, token);
 
         Assert.Equal(livePage, path);
-        Assert.Contains($"<p id=\"live-risk-error\" class=\"field-error\" role=\"alert\">{AgentPages.ConfirmRiskFirst}</p>", answer);
+        Assert.Contains($"<p id=\"live-risk-error\" class=\"field-error\">{AgentPages.ConfirmRiskFirst}</p>", answer);
         Assert.Contains("aria-invalid=\"true\"", answer);
         Assert.Contains(LiveButton, answer);
         Assert.Equal("Demo", StoredAgent.All(application.Database).Single().Mode);

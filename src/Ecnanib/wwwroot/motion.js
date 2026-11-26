@@ -320,6 +320,9 @@ function read(records, quiet) {
 const address = () => location.pathname + location.search;
 const content = () => document.querySelector("main");
 
+// Where a screen reader is told that a page is on its way. The page brings the sentence.
+const said = () => document.querySelector("[data-loading]");
+
 let here = address();
 let waiting = 0;
 
@@ -330,11 +333,13 @@ function arrived() {
     clearTimeout(waiting);
     waiting = 0;
     content()?.removeAttribute("aria-busy");
+    said()?.replaceChildren();
 }
 
 /** The page that was asked for is on its way for long: the placeholder shows, for so long at the most. */
 function late() {
     content()?.setAttribute("aria-busy", "true");
+    said()?.replaceChildren(said().getAttribute("data-loading") ?? "");
     waiting = setTimeout(arrived, timeOf("--loading-longest"));
 }
 
@@ -381,9 +386,33 @@ addEventListener("unhandledrejection", arrived);
 // What the framework says of going to a page without leaving the one that is shown.
 const framework = globalThis.Blazor;
 
+// What had the focus when the browser began to change the page.
+let held = null;
+
+/** Gives the focus back to what had it, on a page that asked for itself again. */
+function refocus() {
+    // The framework lets the heading of a page, and what a form was answered with, take the
+    // focus by a mark that it sets itself. The browser takes every attribute away that the
+    // server did not write, that one too, and what had the focus loses it, though it is still
+    // there. So the mark is put back, and the focus with it, without scrolling to it. Nothing
+    // is done when the focus is somewhere by then, or what had it is gone.
+    const lost = !document.activeElement || document.activeElement === document.body;
+
+    if (lost && held instanceof HTMLElement && held !== document.body && held.isConnected) {
+        if (held.tabIndex < 0) {
+            held.tabIndex = -1;
+        }
+
+        held.focus({ preventScroll: true });
+    }
+
+    held = null;
+}
+
 framework?.addEventListener("enhancednavigationstart", () => {
     clearTimeout(waiting);
     waiting = 0;
+    held = document.activeElement;
 
     // A page that asks for itself again is there already, and shows no placeholder.
     if (address() !== here) {
@@ -410,6 +439,11 @@ framework?.addEventListener("enhancedload", () => {
         if (page) {
             again(page);
         }
+
+        // Another page gives the focus where it says: the framework sees to that.
+        held = null;
+    } else {
+        refocus();
     }
 
     keep();

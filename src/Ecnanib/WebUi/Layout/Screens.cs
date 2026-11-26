@@ -55,6 +55,32 @@ public static class Screens
     /// <summary>The text of the button that signs a user out.</summary>
     public const string SignOut = "Sign out";
 
+    /// <summary>
+    /// The id of the form of the bar that signs a user out. The notice before a session ends
+    /// names it, so its buttons send that form and the page has no second one: see
+    /// <c>SessionNotice</c>.
+    /// </summary>
+    public const string SignOutFormId = "sign-out";
+
+    /// <summary>
+    /// What takes the focus when a page opens (NFR-USA-1), as a selector that the browser is
+    /// given: what a form answered with, above the form, where the page has that, and the
+    /// heading of the page otherwise. So a screen reader says first what the page is, or what
+    /// became of what was sent, and the first stop of the keyboard after it is in the content.
+    /// A page whose form names a field as wrong and says nothing above the form gives the
+    /// focus to that field itself. See docs/accessibility.md.
+    /// </summary>
+    public const string FocusOnLoad = "main:not(:has(.form-error, .form-done)) h1, main .form-error, main .form-done";
+
+    /// <summary>The name of the dialog that says the page is rejoining the server, as a screen reader says it.</summary>
+    public const string ServerConnection = "Connection to the server";
+
+    /// <summary>The name of the button that puts away what the page says of an error nothing handled, as a screen reader says it.</summary>
+    public const string Dismiss = "Dismiss";
+
+    /// <summary>What a screen reader is told while a page that was asked for is on its way for long.</summary>
+    public const string Loading = "Loading the page.";
+
     public static readonly Screen Dashboard = new(DashboardPages.Title, WebUiModule.DashboardPath, WebUiModule.DashboardPath);
 
     /// <summary>The list of the agents, with the editor and the screen of each agent under it.</summary>
@@ -95,9 +121,13 @@ public static class Screens
     public static readonly Screen DeviceAppearance =
         new("Appearance", WebUiModule.DeviceAppearancePath, WebUiModule.DeviceAppearancePath);
 
-    /// <summary>The choice of email for critical events. What the service told a user is <see cref="Notifications"/>.</summary>
+    /// <summary>
+    /// The choice of email for critical events. What the service told a user is
+    /// <see cref="Notifications"/>, and the two links have names of their own, so each says
+    /// where it leads (NFR-USA-1).
+    /// </summary>
     public static readonly Screen NotificationSettings =
-        new(NotificationPages.Title, WebUiModule.NotificationEmailPath, WebUiModule.NotificationEmailPath);
+        new("Email notifications", WebUiModule.NotificationEmailPath, WebUiModule.NotificationEmailPath);
 
     /// <summary>The screens that the bar leads every user to, in its order.</summary>
     public static readonly IReadOnlyList<Screen> Bar = [Dashboard, Agents, Experience, Usage, Catalog, Settings];

@@ -7,6 +7,7 @@ using Ecnanib.DecisionEngine;
 using Ecnanib.Notifications;
 using Ecnanib.Shared;
 using Ecnanib.WebUi.Exports;
+using Ecnanib.WebUi.Layout;
 using Ecnanib.WebUi.Live;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Server.Circuits;
@@ -27,6 +28,13 @@ public static class WebUiModule
 
     /// <summary>The path that the sign-out button posts to.</summary>
     public const string SignOutPath = "/sign-out";
+
+    /// <summary>
+    /// The path that the notice before a session ends sends "Stay signed in" to (NFR-USA-1).
+    /// A request there is activity of its user, as any request of theirs is, and so the period
+    /// of inactivity starts anew. It is no page. See <c>SessionNotice</c>.
+    /// </summary>
+    public const string StaySignedInPath = "/session/stay";
 
     /// <summary>
     /// The path of the page of the account of a user, which is the profile among the settings
@@ -310,6 +318,13 @@ public static class WebUiModule
         // Not a page: the button is on every page, and the answer is a redirect.
         endpoints.MapPost(SignOutPath, SignOutAsync);
 
+        // No pages either: what the notice before a session ends asks before it says anything,
+        // and what its button does (NFR-USA-1). Neither asks for a signed-in user by a policy:
+        // a request whose session has ended is answered that nothing is left, and not sent to
+        // the page to sign in on, which the script that asks could not read.
+        endpoints.MapGet(SessionAuthentication.SessionLeftPath, SessionLeft);
+        endpoints.MapPost(StaySignedInPath, StaySignedInAsync);
+
         // Not a page either: the answer is a file. A visitor is sent to sign in, as on a page.
         endpoints.MapGet(ExportPath, ExportAsync).RequireAuthorization();
 
@@ -340,6 +355,41 @@ public static class WebUiModule
         await signIn.SignOutAsync(request);
 
         return Results.LocalRedirect("/");
+    }
+
+    /// <summary>
+    /// How long the session of the request has left. Asking is no activity: the session is
+    /// told so when the request is signed in. See <see cref="SessionAuthentication.SessionLeftPath"/>.
+    /// </summary>
+    private static IResult SessionLeft(HttpContext request, ISessionEnd sessions) => LeftOf(request, sessions);
+
+    /// <summary>
+    /// What "Stay signed in" does: nothing but be a request of its user, which is activity, and
+    /// say how long the session has left now.
+    /// </summary>
+    private static async Task<IResult> StaySignedInAsync(HttpContext request, IAntiforgery antiforgery, ISessionEnd sessions)
+    {
+        // As signing out: a signed-in request must come from a page of this application. One
+        // that is not signed in has no session to keep, and is told that nothing is left.
+        if (request.User.Identity is { IsAuthenticated: true } && !await antiforgery.IsRequestValidAsync(request))
+        {
+            return Results.BadRequest();
+        }
+
+        return LeftOf(request, sessions);
+    }
+
+    private static IResult LeftOf(HttpContext request, ISessionEnd sessions)
+    {
+        // It is of this moment, and of this user: nothing keeps it.
+        request.Response.Headers.CacheControl = "no-store";
+
+        // Whole seconds, rounded down, so the page never takes the session to last longer than
+        // it does, and one second at the least: a session that stands is never said to have
+        // ended, because a page that is told so asks for itself anew, which would be activity.
+        return sessions.Of(request.User) is { } end
+            ? Results.Json(new SessionLeft(Math.Max(1, (int)end.Left.TotalSeconds), SessionPages.At(end.Left, end.At)))
+            : Results.Json(new SessionLeft(0, null));
     }
 
     private static async Task<IResult> ExportAsync(HttpContext request, IDataExport export)

@@ -300,7 +300,7 @@ public class KeyPageTests
         var (path, page) = await client.StoreAiKeyAsync("claude", typed);
 
         Assert.Equal(KeyBrowser.AiKeyPage("claude"), path);
-        Assert.Contains($"<p class=\"field-error\" role=\"alert\">{message}", page);
+        Assert.Contains($"<p id=\"api-key-error\" class=\"field-error\">{message}", page);
         Assert.Contains("aria-invalid=\"true\"", page);
         Assert.DoesNotContain("MARKER", page);
         Assert.Empty(StoredAiCredential.All(application.Database));
@@ -309,7 +309,7 @@ public class KeyPageTests
         var (exchangePath, exchangePage) = await client.StoreExchangeKeyAsync("demo", typed, typed);
 
         Assert.Equal(KeyBrowser.ExchangeKeyPage("demo"), exchangePath);
-        Assert.Equal(2, Regex.Count(exchangePage, Regex.Escape($"<p class=\"field-error\" role=\"alert\">{message}")));
+        Assert.Equal(2, Regex.Count(exchangePage, "<p id=\"(?:api|secret)-key-error\" class=\"field-error\">" + Regex.Escape(message)));
         Assert.DoesNotContain("MARKER", exchangePage);
 
         // One of the two is not enough either: nothing is stored of a credential that is half there.

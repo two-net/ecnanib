@@ -35,7 +35,7 @@ public class RegistrationPageTests
             // A box whose value is the version in force, next to a link to the document.
             Assert.Contains($"name=\"{document}\" type=\"checkbox\" required value=\"{LegalDocuments.CurrentVersionOf(document)}\"", page);
             Assert.Contains($"href=\"{LegalPages.PathOf(document)}\"", page);
-            Assert.Contains($">{LegalPages.NameOf(document)}</a>", page);
+            Assert.Contains($">{LegalPages.NameOf(document)} ({LegalPages.OpensInNewTab})</a>", page);
         }
     }
 

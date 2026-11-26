@@ -446,7 +446,8 @@ public partial class RiskCheckPageTests
     /// <summary>The rules of each check on a page, in the order of the page, each as it is shown.</summary>
     private static IReadOnlyList<IReadOnlyList<ShownRule>> RulesOn(string page) =>
     [
-        .. page.Split("<table>").Skip(1).Select(table => (IReadOnlyList<ShownRule>)
+        // Each table is named by the heading of its check, so its tag says more than its name.
+        .. Regex.Split(page, "<table[^>]*>").Skip(1).Select(table => (IReadOnlyList<ShownRule>)
         [
             .. Rule().Matches(table).Select(rule => new ShownRule(
                 AgentBrowser.Read(rule.Groups[1].Value), AgentBrowser.Read(rule.Groups[2].Value), AgentBrowser.Read(rule.Groups[3].Value))),

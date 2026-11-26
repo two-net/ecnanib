@@ -92,6 +92,9 @@ public static class DashboardPages
     /// <summary>What the section of a mode says when none of its agents holds a position.</summary>
     public static string NoPositions(TradingMode mode) => $"No agent in {mode} holds a position.";
 
+    /// <summary>What the cell of a decision says of an agent that was deleted since: a cell never says nothing (NFR-USA-1).</summary>
+    public const string DeletedAgent = "Deleted agent";
+
     /// <summary>What the section of a mode says when no cycle was recorded in it.</summary>
     public static string NoDecisions(TradingMode mode) => $"No team has decided anything in {mode} yet.";
 

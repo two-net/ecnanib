@@ -134,7 +134,7 @@ public class AgentModelDependentsTests
 
         Assert.Equal("Claude Haiku 4.5 (claude-haiku-4-5), cannot be selected now", AgentBrowser.ModelChosenOn(editor, "strategist"));
         Assert.Equal("Claude Opus 5.5 (claude-opus-5-5)", AgentBrowser.ModelChosenOn(editor, "risk-manager"));
-        Assert.Contains($"<p role=\"note\">{AgentPages.ModelNotSelectableNow}</p>", editor);
+        Assert.Contains($" role=\"note\">{AgentPages.ModelNotSelectableNow}</p>", editor);
 
         // The agent is not resumed with the model that is gone, and the page names the role.
         var (_, refused) = await client.ResumeAgentAsync(onHaiku);

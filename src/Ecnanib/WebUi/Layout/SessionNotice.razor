@@ -1,0 +1,62 @@
+@using System.Globalization
+@using Ecnanib.Accounts
+@inject ISessionEnd Sessions
+
+@*
+    The notice before a session ends (NFR-USA-1, NFR-SEC-1). A session ends after a period of
+    inactivity, and a page says so shortly before: a dialog that names when, with a button that
+    says its user is still there, and one that signs out at once. The script of the session
+    shows it, after it asked the server how long is left: session.js. A page works without the
+    script, and its session then ends as it always did, without a word.
+
+    The page is told here how many seconds its session has left, how many seconds before the end
+    the dialog shows, and where to ask. What is left is counted by the server, from the time
+    that is stored for the session, so the clock of the device has no part in it.
+
+    The part around the dialog is kept as it is by a page that asks for itself again, so a
+    dialog that is open stays open, with what it says: only the three figures on that part are
+    written anew. The two buttons send the form of the bar that signs out, with its token
+    against request forgery: the first to another address. So the page has no second form, and
+    the script needs no token of its own. Nothing is here for a visitor.
+
+    Its texts are in SessionPages, and its look in app.css. See "The notice before a session
+    ends" in docs/accounts.md.
+*@
+
+@if (_end is { } end)
+{
+    <div id="session-notice" data-permanent
+         data-left="@Seconds(end.Left)" data-warn="@Seconds(end.WarnsBefore)" data-ask="@SessionAuthentication.SessionLeftPath">
+        <dialog id="session-warning" role="alertdialog" data-nosnippet
+                aria-labelledby="session-warning-title" aria-describedby="session-warning-text">
+            <p id="session-warning-title" class="session-title">@SessionPages.Title</p>
+            <p id="session-warning-text">@SessionPages.Soon</p>
+            <p id="session-warning-failed" role="alert" hidden>@SessionPages.NotReached</p>
+
+            @* The first button of the dialog takes the focus when it opens: the browser does that. *@
+            <div class="session-actions">
+                <button type="submit" form="@Screens.SignOutFormId" formaction="@WebUiModule.StaySignedInPath">@SessionPages.Stay</button>
+                <button type="submit" form="@Screens.SignOutFormId">@SessionPages.SignOutNow</button>
+            </div>
+        </dialog>
+    </div>
+}
+
+@code {
+    private SessionEnd? _end;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override void OnInitialized()
+    {
+        // The session of the request that the page is written for. A visitor has none.
+        if (HttpContext is { } request)
+        {
+            _end = Sessions.Of(request.User);
+        }
+    }
+
+    // Whole seconds, rounded down: the page never takes the session to last longer than it does.
+    private static string Seconds(TimeSpan time) => ((long)time.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+}

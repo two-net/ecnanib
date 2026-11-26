@@ -18,7 +18,7 @@ namespace Ecnanib.Tests.Animation;
 /// only to say which it is, and the page carries no logo (NFR-LEG-4). See docs/motion.md.
 /// </summary>
 /// <remarks>
-/// No test drives a browser. What is held here is what a browser is sent: the picture as it
+/// None of these tests drives a browser. What is held here is what a browser is sent: the picture as it
 /// stands still, complete, which is what a device that asks for reduced motion and an account
 /// that reduced it are shown (FR-ANI-4). That it is played once, in steps, for any other, and
 /// stands still while nobody sees it, is the stylesheet's: see <see cref="MotionStyleTests"/>.

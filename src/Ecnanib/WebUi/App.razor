@@ -30,13 +30,22 @@
 <body>
     <Routes />
     <ReconnectModal />
+    @* What a page of a user says shortly before its session ends, and nothing for a visitor (NFR-USA-1). *@
+    <SessionNotice />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     @*
-        The one script of the application itself, for what moves and a stylesheet cannot do alone
-        (FR-ANI-2 to FR-ANI-6). It is a file of this site, which the policy of the answer lets a
-        browser run, and it starts once the page is read. A page works without it. See docs/motion.md.
+        The first of the two scripts of the application itself, for what moves and a stylesheet
+        cannot do alone (FR-ANI-2 to FR-ANI-6). It is a file of this site, which the policy of
+        the answer lets a browser run, and it starts once the page is read. A page works without
+        it. See docs/motion.md.
     *@
     <script type="module" src="@Assets["motion.js"]"></script>
+    @*
+        The second, for the notice before a session ends (NFR-USA-1): it waits, asks the server
+        how long is left, and shows the dialog that SessionNotice wrote. A page works without it
+        too, and its session then ends as it always did. See docs/accounts.md.
+    *@
+    <script type="module" src="@Assets["session.js"]"></script>
 </body>
 
 </html>

@@ -27,6 +27,10 @@ public static class AccountsModule
         // is not asked for again by itself, and what makes that such a page is no activity of
         // its user (FR-NTF-2, NFR-SEC-1).
         services.AddSingleton<IConnectedSession, ConnectedSession>();
+
+        // When the session of a request ends, and how long before that its user is told so
+        // and can say that they are still there (NFR-USA-1).
+        services.AddSingleton<ISessionEnd, SessionEnds>();
         services.AddSingleton<IPasswordReset, PasswordReset>();
 
         // Two-factor authentication. Its key is encrypted by the platform's StoredSecrets, and

@@ -575,7 +575,7 @@ public class KeyRevalidationTests
         var (path, after) = await client.CheckExchangeKeyAsync("live");
 
         Assert.Equal(KeysPage, path);
-        Assert.Contains("<p role=\"status\">The Binance key for Live was checked again, and is valid.</p>", after);
+        Assert.Contains("<p class=\"form-done\" role=\"status\">The Binance key for Live was checked again, and is valid.</p>", after);
         Assert.Contains("Spot trading: allowed. Futures trading: allowed.", after);
         Assert.Contains("Valid: Binance took it on 12 November 2026, 09:50 UTC.", after);
         Assert.Equal(new AskedKey("Live", Keys.BinanceApi, Keys.BinanceSecret), Assert.Single(application.Providers.Asked.Skip(asked)));
@@ -585,7 +585,7 @@ public class KeyRevalidationTests
         var (_, refused) = await client.CheckAiKeyAsync("claude");
 
         Assert.Contains(
-            "<p role=\"status\">The Claude key was checked again, and was refused. Nothing can use it until it is taken again.</p>", refused);
+            "<p class=\"form-done\" role=\"status\">The Claude key was checked again, and was refused. Nothing can use it until it is taken again.</p>", refused);
         Assert.Contains("Not valid: Claude refused it on 12 November 2026, 09:50 UTC.", KeyBrowser.Read(refused));
         Assert.Equal(("Invalid", Morning.AddMinutes(30)), StatusOfAiKey(application, ada.Id));
 
@@ -595,7 +595,7 @@ public class KeyRevalidationTests
 
         // Pressed again at once, it asks nobody.
         var (_, tooSoon) = await client.CheckAiKeyAsync("claude");
-        Assert.Contains("<p role=\"status\">The Claude key was checked less than a minute ago. Try again in a moment.</p>", tooSoon);
+        Assert.Contains("<p class=\"form-done\" role=\"status\">The Claude key was checked less than a minute ago. Try again in a moment.</p>", tooSoon);
         Assert.Equal(asked + 2, application.Providers.Asked.Count);
 
         // A provider that gives no answer leaves the key as it was, and the page says so.
@@ -603,7 +603,7 @@ public class KeyRevalidationTests
         clock.Set(Morning.AddMinutes(35));
         var (_, noAnswer) = await client.CheckExchangeKeyAsync("live");
         Assert.Contains(
-            "<p role=\"status\">The Binance key for Live could not be checked: no answer came. It is as it was. Try again in a moment.</p>",
+            "<p class=\"form-done\" role=\"status\">The Binance key for Live could not be checked: no answer came. It is as it was. Try again in a moment.</p>",
             noAnswer);
         Assert.Contains("Valid: Binance took it on 12 November 2026, 09:50 UTC.", noAnswer);
 
@@ -612,7 +612,7 @@ public class KeyRevalidationTests
         clock.Set(Morning.AddMinutes(40));
         var (_, deleted) = await client.CheckExchangeKeyAsync("live");
 
-        Assert.Contains("<p role=\"status\">Binance reports that the Binance key for Live can withdraw.", deleted);
+        Assert.Contains("<p class=\"form-done\" role=\"status\">Binance reports that the Binance key for Live can withdraw.", deleted);
         Assert.Contains("so the key was deleted.", deleted);
         Assert.Contains("<a href=\"/account/keys/binance/live\">Add a Live key</a>", deleted);
         Assert.Empty(StoredExchangeCredential.All(application.Database));

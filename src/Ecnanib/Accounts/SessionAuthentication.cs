@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -60,6 +61,37 @@ public static class SessionAuthentication
     /// request, as the theme is.
     /// </summary>
     public const string MotionClaimType = "ecnanib:motion";
+
+    /// <summary>
+    /// The path that a page asks at how long the session of its user has left, before it says
+    /// that the session is about to end (NFR-USA-1). A request there is made by the page
+    /// itself, and is no activity of its user. See <see cref="ISessionEnd"/>.
+    /// </summary>
+    public const string SessionLeftPath = "/session/left";
+
+    /// <summary>
+    /// The claim that says when the session of a request ends if nothing more is done with it,
+    /// as a time in UTC. It is read with the session on every request, so a page says how long
+    /// is left without asking again.
+    /// </summary>
+    public const string EndsClaimType = "ecnanib:session-ends";
+
+    /// <summary>
+    /// How long before a session ends its user is told so, and can say that they are still
+    /// there (NFR-USA-1): a quarter of the period of inactivity, and two minutes at the most.
+    /// It is never less than half a minute, so that there is time to read what is said and to
+    /// answer it, also with the shortest period that the configuration file allows.
+    /// </summary>
+    /// <param name="idle">The period of inactivity after which a session ends.</param>
+    public static TimeSpan WarnsBefore(TimeSpan idle)
+    {
+        var quarter = TimeSpan.FromTicks(idle.Ticks / 4);
+
+        return quarter < LeastWarning ? LeastWarning : quarter > MostWarning ? MostWarning : quarter;
+    }
+
+    private static readonly TimeSpan LeastWarning = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan MostWarning = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// What a request carries in its <c>Accept</c> header when a page asks for an address
@@ -168,6 +200,10 @@ internal sealed class SessionAuthenticationHandler(
 
                 // And how much of them moves. See SignedInUser.MotionOf.
                 new Claim(SessionAuthentication.MotionClaimType, user.Motion.ToString()),
+
+                // When the session ends if nothing more is done with it, for the page that
+                // says so shortly before. See SignedInUser.SessionEndsOf.
+                new Claim(SessionAuthentication.EndsClaimType, user.EndsAt.ToString("O", CultureInfo.InvariantCulture)),
             ],
             Scheme.Name);
 
@@ -182,14 +218,17 @@ internal sealed class SessionAuthenticationHandler(
 
     /// <summary>
     /// What a request is to its session: the connection of a page that follows, a page that
-    /// asks for itself again, or what its user did. Only the last is activity for certain.
+    /// asks for itself again, a page that asks how long is left, or what its user did. Only
+    /// the last is activity for certain.
     /// </summary>
     private static SessionUse UseOf(HttpRequest request) => new(
         IsConnection: request.Path.StartsWithSegments(SessionAuthentication.ConnectionPath),
         AsksAgain: HttpMethods.IsGet(request.Method)
             && request.Headers.Accept.Any(accept => accept?.Contains(SessionAuthentication.AsksWithoutLeaving, StringComparison.OrdinalIgnoreCase) == true)
             ? request.Path.ToUriComponent() + request.QueryString.ToUriComponent()
-            : null);
+            : null,
+        AsksWhatIsLeft: HttpMethods.IsGet(request.Method)
+            && request.Path.Equals(SessionAuthentication.SessionLeftPath, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Sends a visitor who asked for a page of signed-in users to the sign-in page, and from there back.</summary>
     protected override async Task HandleChallengeAsync(AuthenticationProperties properties)

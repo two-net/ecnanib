@@ -644,10 +644,12 @@ internal static class AgentsApplication
         TestClock? clock = null,
         StandInExposure? exposure = null,
         Func<SettingsJson, SettingsJson>? settings = null,
-        Action<IWebHostBuilder>? host = null) =>
+        Action<IWebHostBuilder>? host = null,
+        bool listens = false) =>
         new(
             clock: clock,
             settings: settings,
+            listens: listens,
             host: builder =>
             {
                 builder.ConfigureServices(services =>

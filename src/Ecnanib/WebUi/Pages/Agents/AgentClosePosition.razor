@@ -30,7 +30,7 @@
 
     @if (_closed)
     {
-        <p role="status">The position was closed at market. The agent is @AgentPages.Describe(_agent.State), as it was.</p>
+        <p class="form-done" role="status">The position was closed at market. The agent is @AgentPages.Describe(_agent.State), as it was.</p>
     }
     else if (_showForm)
     {

@@ -158,7 +158,7 @@ public class RoleRecommendationPageTests
         var (path, asks) = await client.SaveAgentAsync(agent, [.. entry, .. AgentBrowser.RecommendedOn(form)]);
 
         Assert.Equal(AgentBrowser.AgentPage(agent), path);
-        Assert.Contains($"<p class=\"form-error\" role=\"alert\">{AgentPages.ConfirmSaveForLive}</p>", AgentBrowser.Read(asks));
+        Assert.Contains($"<p class=\"form-warning\" role=\"alert\" tabindex=\"-1\" autofocus>{AgentPages.ConfirmSaveForLive}</p>", AgentBrowser.Read(asks));
         Assert.Equal(
             ("claude-b", "claude-test-model", "claude-b", "claude-test-model"),
             (AgentBrowser.ModelChosenOn(asks, "market-analyst"),

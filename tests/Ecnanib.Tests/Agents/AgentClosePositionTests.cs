@@ -63,7 +63,7 @@ public class AgentClosePositionTests
 
         Assert.Equal(closePage, path);
         Assert.Contains(
-            $"<p role=\"status\">The position was closed at market. The agent is {AgentPages.Describe(state)}, as it was.</p>", closed);
+            $"<p class=\"form-done\" role=\"status\">The position was closed at market. The agent is {AgentPages.Describe(state)}, as it was.</p>", closed);
         Assert.DoesNotContain(CloseButton, closed);
         Assert.Equal([agent], exposure.Closes);
 

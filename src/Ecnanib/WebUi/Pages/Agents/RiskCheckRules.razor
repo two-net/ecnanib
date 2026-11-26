@@ -14,9 +14,14 @@
     <p class="guard-size">@sized</p>
 }
 
-@* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
+@*
+    The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does.
+    It is named by the heading of its check, as the part around it is: a page shows one table
+    for each check, and the caption, which all of them share, would tell none apart (NFR-USA-1).
+    The caption is read out after the name, as what the table holds.
+*@
 <div class="agents risk-check-rules" role="region" aria-labelledby="@LabelledBy" tabindex="0">
-    <table>
+    <table aria-labelledby="@LabelledBy">
         <caption>The rules of the check</caption>
         <thead>
             <tr>
@@ -43,7 +48,11 @@
     [Parameter, EditorRequired]
     public RiskCheckView Check { get; set; } = null!;
 
-    /// <summary>The id of the heading that names the check, which the table is read out under.</summary>
+    /// <summary>
+    /// The id of the heading that names the check, which the table is read out under. Where a
+    /// page shows the checks of several decisions, the id of the heading of the decision stands
+    /// before it, so no two tables of a page have one name.
+    /// </summary>
     [Parameter, EditorRequired]
     public string LabelledBy { get; set; } = string.Empty;
 }

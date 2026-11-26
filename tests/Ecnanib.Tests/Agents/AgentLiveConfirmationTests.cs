@@ -223,7 +223,7 @@ public class AgentLiveConfirmationTests
         var (path, asks) = await client.SaveAgentAsync(agent, changed);
 
         Assert.Equal(settingsPage, path);
-        Assert.Contains($"<p class=\"form-error\" role=\"alert\">{AgentPages.ConfirmSaveForLive}</p>", AgentBrowser.Read(asks));
+        Assert.Contains($"<p class=\"form-warning\" role=\"alert\" tabindex=\"-1\" autofocus>{AgentPages.ConfirmSaveForLive}</p>", AgentBrowser.Read(asks));
         Assert.Contains(SaveForLiveButton, asks);
         Assert.DoesNotContain("<button type=\"submit\">Save the agent</button>", asks);
         Assert.Equal("3", ValueOf(asks, "RiskPerTradePercent"));

@@ -16,7 +16,8 @@
 }
 else
 {
-    <p class="live-stopped" role="status">@LivePages.Stopped(_reference ?? string.Empty)</p>
+    @* It comes into the page with what it says, which a screen reader reads out of an alert, and not reliably of anything else. *@
+    <p class="live-stopped" role="alert">@LivePages.Stopped(_reference ?? string.Empty)</p>
 }
 
 @code {

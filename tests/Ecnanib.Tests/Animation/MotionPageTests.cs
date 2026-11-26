@@ -17,7 +17,7 @@ namespace Ecnanib.Tests.Animation;
 /// beside the theme and ahead of the stylesheets. See docs/motion.md.
 /// </summary>
 /// <remarks>
-/// No test drives a browser. What is held here is what a browser is sent: the first element of
+/// None of these tests drives a browser. What is held here is what a browser is sent: the first element of
 /// a page, and the row of an account. That a page which says "reduced" is given nothing that
 /// moves, and that one which says nothing follows the device, is the stylesheet's: see
 /// <see cref="MotionStyleTests"/>.

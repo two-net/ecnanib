@@ -17,7 +17,12 @@ namespace Ecnanib.Accounts;
 /// How much of the pages moves for the user, as the account says it now (FR-ANI-4). It is read
 /// with the session, as the theme is.
 /// </param>
-internal sealed record SessionUser(Guid SessionId, Guid Id, string Email, bool IsVerified, Theme Theme, Motion Motion);
+/// <param name="EndsAt">
+/// When the session ends if nothing more is done with it: the period of inactivity after the
+/// time that is stored for it now. A page says so to its user shortly before (NFR-USA-1).
+/// </param>
+internal sealed record SessionUser(
+    Guid SessionId, Guid Id, string Email, bool IsVerified, Theme Theme, Motion Motion, DateTimeOffset EndsAt);
 
 /// <summary>
 /// What a request is to the session that it carries: whether finding the session for it is
@@ -33,7 +38,12 @@ internal sealed record SessionUser(Guid SessionId, Guid Id, string Email, bool I
 /// and null otherwise. Such a request is no activity when the page said that it would ask:
 /// see <see cref="Sessions.ExpectPageAgain"/>.
 /// </param>
-internal readonly record struct SessionUse(bool IsConnection, string? AsksAgain);
+/// <param name="AsksWhatIsLeft">
+/// Whether the request asks how long the session has left, which a page does by itself before
+/// it says that the session is about to end. It is no activity: an answer that kept the session
+/// would make the question pointless.
+/// </param>
+internal readonly record struct SessionUse(bool IsConnection, string? AsksAgain, bool AsksWhatIsLeft = false);
 
 /// <summary>
 /// What giving the right password led to: a session, or a sign-in that waits for a code. Neither
@@ -358,18 +368,27 @@ internal sealed class Sessions(
             inactiveFor = now - found.LastActiveAt;
         }
 
-        // What its user did, and not what a page of theirs does by itself: its connection, and
-        // asking for itself again when it said that it would.
-        var isActivity = !use.IsConnection && !(use.AsksAgain is { } address && IsExpected(found.Id, address, now));
+        // What its user did, and not what a page of theirs does by itself: its connection,
+        // asking for itself again when it said that it would, and asking how long is left.
+        var isActivity = !use.IsConnection
+            && !use.AsksWhatIsLeft
+            && !(use.AsksAgain is { } address && IsExpected(found.Id, address, now));
+
+        // The time that is stored for the session when this request is done: the session ends
+        // the period of inactivity after it.
+        var lastActiveAt = found.LastActiveAt;
 
         if (isActivity && inactiveFor >= _writeEvery)
         {
             await context.Set<Session>()
                 .Where(session => session.Id == found.Id && session.LastActiveAt < now)
                 .ExecuteUpdateAsync(row => row.SetProperty(session => session.LastActiveAt, now), cancellationToken);
+
+            lastActiveAt = now;
         }
 
-        return new SessionUser(found.Id, found.UserId, found.Email, found.IsVerified, found.Theme, found.Motion);
+        return new SessionUser(
+            found.Id, found.UserId, found.Email, found.IsVerified, found.Theme, found.Motion, lastActiveAt + _idle);
 
         Task<FoundSession?> ReadAsync() =>
             context.Set<Session>()

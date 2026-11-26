@@ -224,7 +224,8 @@ A signed-in user opens the screen of an agent at `/agents/<id>/state`. A visitor
 | **It asks for itself again when the price of its position is first read.** | The page was written without that price, or with an older one. The feed of the page follows the price of the position of the agent for the part that says it, and of no other agent: see "The feed of a page" in [live-updates.md](live-updates.md). |
 | **A figure stays as it was written between two changes.** | The position and its price are written over the connection as they change. The figures are of the moment that the page was written, and say the time of their price. |
 | **A figure that changes counts to its new value** (FR-ANI-2). | The price of the position and what it would make, as the connection of the page writes them, and the equity, the net result, and the return, as the page asks for itself again. The curve unfolds as it is shown, and again when a value is recorded. The state of the agent fades in when it is another, and so does a notification, a change of its state, a trade, or a decision that entered its list (FR-ANI-3). See [motion.md](motion.md). |
-| **It has no field to type in.** | A page that follows has none. It has buttons and links, and the pages of the trades are links. |
+| **It can be paused** (NFR-USA-1). | Under its heading the page says that it follows what changes, with "Pause live updates". Paused, it makes no connection, and its team, its position, and its figures are as they were when it was written, until "Resume live updates" is followed. What its user does on it, such as marking a notification as read or opening another page of the trades, keeps it paused. A paused page reads no price, and says so: see "Pausing" in [live-updates.md](live-updates.md). |
+| **It has no field to type in.** | A page that follows has none. It has buttons and links, and the pages of the trades are links. Another page of the trades opens with the focus at the heading of the page, as a page that is opened does. |
 | **Its texts are in one place.** | `AgentReportPages` for the parts of this screen, with `AgentPages`, `CyclePages`, `RiskCheckPages`, `LivePages`, which has the words of what a role does, and the amounts of `DashboardPages` and the measures of `ExperiencePages` (NFR-USA-4). The times are UTC, and say so. |
 | **The tables scroll by themselves on a narrow screen,** | also by keyboard, and the figures stand side by side as far as they fit (FR-UI-1). The look is in `app.css`: a page carries no style of its own. |
 
@@ -242,7 +243,7 @@ A signed-in user opens the screen of an agent at `/agents/<id>/state`. A visitor
 | `LiveListenerTests`, `LiveRuleTests` | That the database says an equity that is recorded, with its agent, and that the trigger is the one of `LiveRules.cs`. |
 | `AgentModeBadgeTests` | That the page has the badge of its agent, and no badge of the other mode. |
 
-No test drives a browser. By hand:
+No test of these drives a browser. `AccessibilityBrowserTests` does, when a run is told to, and opens the screen of an agent in each of its states, paused among them: see [accessibility.md](accessibility.md). By hand:
 
 1. `docker compose up -d`, and run the application.
 2. Sign in, create an agent in Demo, start it, and open the page of its state: its team, of which every role waits, its position, and the figures of an agent that has done nothing.

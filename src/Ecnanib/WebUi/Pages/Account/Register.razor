@@ -37,7 +37,8 @@ else
             <label for="email">Email address</label>
             <input id="email" name="Email" type="email" autocomplete="email" required value="@Email"
                    aria-invalid="@Invalid(RegistrationProblem.EmailInvalid)"
-                   aria-describedby="@Describes("email-error", RegistrationProblem.EmailInvalid)" />
+                   aria-describedby="@Describes("email-error", RegistrationProblem.EmailInvalid)"
+                   autofocus="@(FirstRefused == "email")" />
             @if (Has(RegistrationProblem.EmailInvalid))
             {
                 <p id="email-error" class="field-error">Enter an email address, such as name@example.com.</p>
@@ -50,15 +51,16 @@ else
             <input id="password" name="Password" type="password" autocomplete="new-password" required
                    minlength="@PasswordRules.MinimumLength"
                    aria-invalid="@Invalid(RegistrationProblem.PasswordTooShort, RegistrationProblem.PasswordTooLong)"
-                   aria-describedby="password-hint" />
+                   aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("password", PasswordRefused), "password-hint")"
+                   autofocus="@(FirstRefused == "password")" />
             <p id="password-hint" class="field-hint">At least @PasswordRules.MinimumLength characters. A long phrase is a good password.</p>
             @if (Has(RegistrationProblem.PasswordTooShort))
             {
-                <p class="field-error" role="alert">Choose a password of at least @PasswordRules.MinimumLength characters.</p>
+                <p id="password-error" class="field-error">Choose a password of at least @PasswordRules.MinimumLength characters.</p>
             }
-            @if (Has(RegistrationProblem.PasswordTooLong))
+            else if (Has(RegistrationProblem.PasswordTooLong))
             {
-                <p class="field-error" role="alert">Choose a password of at most @PasswordRules.MaximumLength characters.</p>
+                <p id="password-error" class="field-error">Choose a password of at most @PasswordRules.MaximumLength characters.</p>
             }
         </div>
 
@@ -72,10 +74,11 @@ else
                     <input id="@document.Id" name="@document.Field" type="checkbox" required value="@document.Version"
                            checked="@(document.Posted == document.Version)"
                            aria-invalid="@Invalid(document.Problem)"
-                           aria-describedby="@Describes(document.Id + "-error", document.Problem)" />
+                           aria-describedby="@Describes(document.Id + "-error", document.Problem)"
+                           autofocus="@(FirstRefused == document.Id)" />
                     <label for="@document.Id">
                         I have read and accept the
-                        <a href="@document.Path" target="_blank" rel="noopener">@document.Name</a>
+                        <a href="@document.Path" target="_blank" rel="noopener">@document.Name (@LegalPages.OpensInNewTab)</a>
                         (version @document.Version)
                     </label>
                     @if (Has(document.Problem))
@@ -165,6 +168,16 @@ else
     private string? Invalid(params RegistrationProblem[] problems) => problems.Any(Has) ? "true" : null;
 
     private string? Describes(string id, RegistrationProblem problem) => Has(problem) ? id : null;
+
+    private bool PasswordRefused => Has(RegistrationProblem.PasswordTooShort) || Has(RegistrationProblem.PasswordTooLong);
+
+    // The first field that was refused, in the order of the form, has the focus when the page
+    // opens, unless the page says something above the form, which has it then.
+    private string? FirstRefused =>
+        _emailNotSent || _tooManyAttempts ? null
+        : Has(RegistrationProblem.EmailInvalid) ? "email"
+        : PasswordRefused ? "password"
+        : Documents.FirstOrDefault(document => Has(document.Problem))?.Id;
 
     /// <summary>One document on the form: its checkbox, and what the visitor posted for it.</summary>
     private sealed record DocumentField(LegalDocument Document, string Field, string? Posted, RegistrationProblem Problem)

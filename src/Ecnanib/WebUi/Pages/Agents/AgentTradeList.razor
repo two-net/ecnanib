@@ -85,15 +85,16 @@
 
         @if (Trades.Pages > 1)
         {
-            <nav class="lesson-pages" aria-label="Pages of trades">
+            @* Another page of the list is asked for as a page of its own, so it opens with the focus at its heading (NFR-USA-1). *@
+            <nav class="lesson-pages" aria-label="Pages of trades" data-enhance-nav="false">
                 @if (Trades.Page > 1)
                 {
-                    <a href="@WebUiModule.AgentStatePath(AgentId, Trades.Page - 1)">Newer trades</a>
+                    <a href="@LivePages.Kept(HttpContext?.Request, WebUiModule.AgentStatePath(AgentId, Trades.Page - 1))">Newer trades</a>
                 }
 
                 @if (Trades.Page < Trades.Pages)
                 {
-                    <a href="@WebUiModule.AgentStatePath(AgentId, Trades.Page + 1)">Older trades</a>
+                    <a href="@LivePages.Kept(HttpContext?.Request, WebUiModule.AgentStatePath(AgentId, Trades.Page + 1))">Older trades</a>
                 }
             </nav>
         }
@@ -108,4 +109,8 @@
     /// <summary>One page of the closed trades of the agent.</summary>
     [Parameter, EditorRequired]
     public AgentTrades Trades { get; set; } = null!;
+
+    // The request that the page is written for: a page that its user paused stays paused on the other pages of the list.
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
 }

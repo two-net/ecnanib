@@ -9,7 +9,7 @@ using Ecnanib.WebUi;
 namespace Ecnanib.Tests.Animation;
 
 /// <summary>
-/// The application has one script of its own, <c>motion.js</c>, for what moves and a stylesheet
+/// The application has a script of its own, <c>motion.js</c>, for what moves and a stylesheet
 /// cannot do alone: a figure that counts from its old value to its new one, and saying when a
 /// state changed, an item entered a list, or a page is on its way (FR-ANI-2, FR-ANI-3). These
 /// tests hold the script to what the rest of the application rests on: that it is a file of
@@ -19,7 +19,7 @@ namespace Ecnanib.Tests.Animation;
 /// docs/motion.md.
 /// </summary>
 /// <remarks>
-/// No test drives a browser, and none runs the script: that a figure counts and a page fades is
+/// None of these tests drives a browser, and none runs the script: that a figure counts and a page fades is
 /// seen by hand, as docs/motion.md says. What is held here is the script as it is written, and
 /// as the application serves it.
 /// </remarks>
@@ -49,7 +49,7 @@ public partial class MotionScriptTests
 
         foreach (var page in pages)
         {
-            // One script of the application, as a file of this site: the page carries none of
+            // The script of what moves, named once, as a file of this site: the page carries none of
             // it. It starts once the page is read, as a module does, so it holds up nothing.
             var script = Assert.Single(Named().Matches(page));
 

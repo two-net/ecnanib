@@ -12,10 +12,6 @@
 
 <h1>Enter your code</h1>
 
-@if (_outcome is SignInCodeOutcome.WrongCode)
-{
-    <p class="form-error" role="alert">That code is not right. A code from the app works once, for about half a minute.</p>
-}
 @if (_outcome is SignInCodeOutcome.CodesRefused)
 {
     <p class="form-error" role="alert">Too many wrong codes were entered. No code is accepted for the next @((int)TwoFactorRules.RefusedFor.TotalMinutes) minutes. Then sign in again.</p>
@@ -28,8 +24,15 @@
         <label for="code">Code from your authenticator app</label>
         @* One field for both kinds of code, so it is not limited to digits. A code is never written back into the page. *@
         <input id="code" name="Code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required
-               aria-describedby="code-hint" />
+               aria-invalid="@PageFields.Invalid(CodeRefused)"
+               aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("code", CodeRefused), "code-hint")"
+               autofocus="@CodeRefused" />
         <p id="code-hint" class="field-hint">If you have lost the app, enter one of your recovery codes instead.</p>
+        @if (CodeRefused)
+        {
+            @* Under the field, as on the other pages that take a code, and read out with it: the field has the focus again. *@
+            <p id="code-error" class="field-error">That code is not right. A code from the app works once, for about half a minute.</p>
+        }
     </div>
 
     <button type="submit">Sign in</button>
@@ -54,6 +57,9 @@
     private string Destination => SessionAuthentication.LocalPathOrHome(ReturnUrl);
 
     private string SignInPage => SessionAuthentication.PageWith(SessionAuthentication.SignInPath, ReturnUrl);
+
+    // The field is marked as wrong then, names what says why, and has the focus when the page opens.
+    private bool CodeRefused => _outcome is SignInCodeOutcome.WrongCode;
 
     protected override async Task OnInitializedAsync()
     {

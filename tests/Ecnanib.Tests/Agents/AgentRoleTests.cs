@@ -86,7 +86,7 @@ public class AgentRoleTests
         // Where a provider offers her nothing, the form says why, and that another provider can
         // take the role (FR-TEAM-5).
         Assert.Contains(
-            $"<p role=\"note\">{AgentPages.Says(Provider("gpt", "GPT", ModelBlock.NoKey))} <a href=\"{WebUiModule.KeysPath}\">Your keys</a></p>", read);
+            $" role=\"note\">{AgentPages.Says(Provider("gpt", "GPT", ModelBlock.NoKey))} <a href=\"{WebUiModule.KeysPath}\">Your keys</a></p>", read);
         Assert.Contains("You have no key for GPT. Store one on the page of your keys, or choose another provider for this role.", read);
         Assert.Contains(AgentPages.Says(Provider("gemini", "Gemini", ModelBlock.NotKnown))!, read);
         Assert.DoesNotContain("You have no key for Claude", read);
@@ -142,7 +142,7 @@ public class AgentRoleTests
 
         var page = await client.PageAsync(AgentBrowser.AgentPage(StoredAgent.Named(application.Database, "Reads nothing").Id));
         var without = AgentBrowser.Read(page);
-        var note = $"<p role=\"note\">{AgentPages.SentimentWithoutLiveSearch}</p>";
+        var note = $" role=\"note\">{AgentPages.SentimentWithoutLiveSearch}</p>";
 
         Assert.Equal(without.IndexOf(note, StringComparison.Ordinal), without.LastIndexOf(note, StringComparison.Ordinal));
         Assert.InRange(
@@ -476,7 +476,7 @@ public class AgentRoleTests
 
         Assert.Equal("claude-test-model, cannot be selected now", AgentBrowser.ModelChosenOn(editor, "strategist"));
         Assert.Equal(["claude-test-model, cannot be selected now"], AgentBrowser.ModelsOfferedOn(editor, "strategist"));
-        Assert.Equal(4, Regex.Count(editor, Regex.Escape($"<p role=\"note\">{AgentPages.ModelNotSelectableNow}</p>")));
+        Assert.Equal(4, Regex.Count(editor, Regex.Escape($" role=\"note\">{AgentPages.ModelNotSelectableNow}</p>")));
         Assert.Contains("You have no key for Claude.", editor);
 
         // Her other settings are saved all the same, with the form as it is: a role that keeps
@@ -514,7 +514,7 @@ public class AgentRoleTests
         var (path, asks) = await client.SaveAgentAsync(agent, change);
 
         Assert.Equal(AgentBrowser.AgentPage(agent), path);
-        Assert.Contains($"<p class=\"form-error\" role=\"alert\">{AgentPages.ConfirmSaveForLive}</p>", AgentBrowser.Read(asks));
+        Assert.Contains($"<p class=\"form-warning\" role=\"alert\" tabindex=\"-1\" autofocus>{AgentPages.ConfirmSaveForLive}</p>", AgentBrowser.Read(asks));
         Assert.Contains("the models of the roles", AgentPages.ConfirmSaveForLive);
         Assert.Equal("claude-b", AgentBrowser.ModelChosenOn(asks, "risk-manager"));
         Assert.Equal(team, StoredAgentRole.Told(application.Database, agent));
@@ -727,5 +727,5 @@ public class AgentRoleTests
 
     /// <summary>What a page says is wrong, at the fields, in the order of the page.</summary>
     private static IReadOnlyList<string> ErrorsOn(string page) =>
-        [.. Regex.Matches(page, "<p class=\"field-error\" role=\"alert\">([^<]*)</p>").Select(error => WebUtility.HtmlDecode(error.Groups[1].Value))];
+        [.. Regex.Matches(page, "<p id=\"[a-z-]+-error\" class=\"field-error\">([^<]*)</p>").Select(error => WebUtility.HtmlDecode(error.Groups[1].Value))];
 }

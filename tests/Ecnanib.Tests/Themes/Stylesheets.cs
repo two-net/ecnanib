@@ -7,8 +7,8 @@ namespace Ecnanib.Tests.Themes;
 
 /// <summary>
 /// The stylesheets that a page names, as the application serves them, for the tests that hold
-/// them to their rules: <see cref="ThemeStyleTests"/> and <see cref="MotionStyleTests"/>. No
-/// test drives a browser, so what is held are the rules as they are written.
+/// them to their rules: <see cref="ThemeStyleTests"/> and <see cref="MotionStyleTests"/>. Neither
+/// drives a browser, so what is held are the rules as they are written.
 /// </summary>
 internal static partial class Stylesheets
 {

@@ -1,0 +1,49 @@
+@inject TimeProvider Clock
+
+@*
+    What a page that follows what changes writes under its heading (NFR-USA-1): that it updates
+    by itself, with a link that pauses it, and on a page that is paused since when it is as it
+    is, with a link that has it follow again. A page that changes by itself can be stopped by
+    whoever reads it slowly, reads it with a screen reader, or is put off by what moves.
+
+    The link leads to the same page, with the choice in its address and every other choice of
+    the address as it is. The choice is of this page as it is open now: nothing is stored for
+    it, another screen follows again, and so does this one when it is opened anew. What the
+    page says of itself is read out by a screen reader when it changes, which is when the link
+    was followed.
+
+    An address that makes a choice that there is not has no page, as an address with a page
+    number that is none has not: the page itself answers that, as it answers a page number, and
+    nothing is written here then. LiveUpdates writes the parts of the page for both cases. The
+    texts are in LivePages. See "Pausing" in docs/live-updates.md.
+*@
+
+@if (_paused is { } paused && HttpContext is { } request)
+{
+    <p class="live-pause">
+        <span role="status">@(paused ? LivePages.PausedAt(Clock.GetUtcNow()) : LivePages.Follows)@(paused && Prices ? $" {LivePages.PausedPrices}" : string.Empty)</span>
+        <a href="@LivePages.AddressOf(request.Request, !paused)">@(paused ? LivePages.Resume : LivePages.Pause)</a>
+    </p>
+}
+
+@code {
+    private bool? _paused;
+
+    /// <summary>
+    /// Whether the page shows prices that are read while a page follows them: a paused page
+    /// says then that it may have none.
+    /// </summary>
+    [Parameter]
+    public bool Prices { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (HttpContext is { } request)
+        {
+            _paused = LivePages.PausedOf(request.Request.Query);
+        }
+    }
+}

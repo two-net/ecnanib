@@ -42,6 +42,10 @@ internal sealed class LoggedApplication : IDisposable
     /// holds a cycle back for an agent that it has not reconciled since it started, which only
     /// a test of that wants: see <see cref="EcnanibApplicationFactory"/>.
     /// </param>
+    /// <param name="listens">
+    /// Whether the application listens on a port of this machine, over TLS, which only a test
+    /// that drives a browser wants: see <see cref="EcnanibApplicationFactory"/>.
+    /// </param>
     public LoggedApplication(
         SettingsJson settings,
         Action<IWebHostBuilder>? configure = null,
@@ -49,11 +53,18 @@ internal sealed class LoggedApplication : IDisposable
         bool watchesBinanceClock = false,
         bool runsCycles = false,
         bool settlesOrders = false,
-        bool reconciles = false)
+        bool reconciles = false,
+        bool listens = false)
     {
         ContentRoot = new SettingsDirectory(settings.OnDatabase(database ?? PostgresServer.SharedDatabase));
-        _application = new EcnanibApplicationFactory(ContentRoot, configure, watchesBinanceClock, runsCycles, settlesOrders, reconciles);
+        _application = new EcnanibApplicationFactory(ContentRoot, configure, watchesBinanceClock, runsCycles, settlesOrders, reconciles, listens);
     }
+
+    /// <summary>Where an application that listens is reached: see <see cref="EcnanibApplicationFactory.ListeningAt"/>.</summary>
+    public Uri ListeningAt => _application.ListeningAt;
+
+    /// <summary>The certificate that an application which listens answers with.</summary>
+    public System.Security.Cryptography.X509Certificates.X509Certificate2? Certificate => _application.Certificate;
 
     /// <summary>A valid file that logs from the information level up, to the console and to a file.</summary>
     public static SettingsJson Settings() => SettingsJson.Valid().With("Logging:MinimumLevel", "Information");
@@ -65,7 +76,25 @@ internal sealed class LoggedApplication : IDisposable
     /// <summary>The folder the configured path <c>logs/test.log</c> puts the log files in.</summary>
     public string LogFolder => Path.Combine(ContentRoot.Path, "logs");
 
-    public HttpClient CreateClient() => _application.CreateClient();
+    /// <summary>
+    /// A browser of its own, with no cookie yet. For an application that answers in memory it
+    /// is the client of the factory. For one that listens it is a client that reaches it over
+    /// TLS and takes the certificate that the application made for this run, and no other.
+    /// </summary>
+    public HttpClient CreateClient()
+    {
+        if (_application.Certificate is not { } certificate)
+        {
+            return _application.CreateClient();
+        }
+
+        var handler = new SocketsHttpHandler();
+
+        handler.SslOptions.RemoteCertificateValidationCallback = (_, offered, _, _) =>
+            offered is not null && offered.GetCertHashString() == certificate.GetCertHashString();
+
+        return new HttpClient(handler) { BaseAddress = _application.ListeningAt };
+    }
 
     /// <summary>A client that does not follow where an answer leads, so that a test sees the answer itself.</summary>
     /// <param name="address">Where it sends its requests, when that is not <see cref="EcnanibApplicationFactory.Address"/>.</param>

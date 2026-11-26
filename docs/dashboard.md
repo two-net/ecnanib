@@ -165,6 +165,7 @@ A signed-in user opens the dashboard at `/dashboard`, which the bar at the top o
 | **A figure stays as it was written between two changes.** | A price that is read again asks for nothing. The figures are of the moment that the page was written, say the time of their prices, and are worked out anew when something that the page shows changes. |
 | **A figure that changes counts to its new value** (FR-ANI-2). | The total equity and the day of each mode, the price and what each open position would make now, and the equity and the day of each agent: each number is set apart in its text, and the script of the pages counts it from its old value to its new one when the page is written again. The state of an agent fades in when it is another, and so does an agent, a position, a decision, or an alert that entered its list (FR-ANI-3). Nothing of it moves for a device that asks for reduced motion, nor for an account that reduced it. See [motion.md](motion.md). |
 | **It leads to the downloads of the trades and the decisions** (FR-RPT-4). | Two links at its foot, to the CSV files of every agent of the user, in which each row says its mode. They are no part of a section of a mode: see [export.md](export.md). |
+| **It can be paused** (NFR-USA-1). | Under its heading the page says that it follows what changes, with "Pause live updates". Paused, it makes no connection and is as it was written, until "Resume live updates" is followed. The forms of its alerts and of the setup checklist lead back to it paused. A paused page reads no price, and says so: see "Pausing" in [live-updates.md](live-updates.md). |
 | **It has no field to type in.** | A page that follows has none: see "The one push channel" in [live-updates.md](live-updates.md). It has buttons and links: the forms of the alerts and the two of the setup checklist each have a button alone. |
 | **Its texts are in one place.** | `DashboardPages` (NFR-USA-4), with how an amount is written, and `SetupPages` for the setup checklist. The times are UTC, and say so. |
 | **The tables scroll by themselves on a narrow screen,** | also by keyboard, and the cards stand side by side as far as they fit (FR-UI-1). The look is in `app.css`: a page carries no style of its own. |
@@ -183,7 +184,7 @@ A signed-in user opens the dashboard at `/dashboard`, which the bar at the top o
 | `SetupProgressTests` | Where a user stands, with no database: what does each step, which decisions there are to review, when each button is offered, when the checklist is finished, and what each step says. |
 | `SetupMarkTests` | The marks of Accounts: by owner, that the first time stands, a request that is not signed in, a mark in a transaction, and what the migration made of an account that switched an agent to Live before. |
 
-No test drives a browser. By hand:
+No test of these drives a browser. `AccessibilityBrowserTests` does, when a run is told to, and opens the dashboard of a first-time user and of a user with agents, paused and following: see [accessibility.md](accessibility.md). By hand:
 
 1. `docker compose up -d`, and run the application.
 2. Sign in, and open `/dashboard`: "Getting started", with none of the 4 steps done. Create two agents, and open it again: the second step is done, and under the checklist are Live and then Demo, each with its badge, and an equity that is the capital.

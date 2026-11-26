@@ -91,6 +91,6 @@
 
         // The page as it is now, by a request that changes nothing: a reload of it sends no
         // form again.
-        Navigation.NavigateTo(WebUiModule.DashboardPath);
+        Navigation.NavigateTo(LivePages.Kept(request.Request, WebUiModule.DashboardPath));
     }
 }

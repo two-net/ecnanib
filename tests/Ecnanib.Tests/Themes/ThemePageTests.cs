@@ -18,7 +18,7 @@ namespace Ecnanib.Tests.Themes;
 /// is in its theme before the first paint (FR-THM-4). See docs/themes.md.
 /// </summary>
 /// <remarks>
-/// No test drives a browser. What is held here is what a browser is sent: the first element of
+/// None of these tests drives a browser. What is held here is what a browser is sent: the first element of
 /// a page, the cookie of a device, and the row of an account. That a page which says nothing
 /// follows the device, and changes with it, is the stylesheet's: see <see cref="ThemeStyleTests"/>.
 /// </remarks>

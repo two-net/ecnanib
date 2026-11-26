@@ -12,6 +12,12 @@ public static class LegalPages
     public const string PrivacyPolicyPath = "/legal/privacy";
     public const string RiskDisclosurePath = "/legal/risk-disclosure";
 
+    /// <summary>
+    /// What a link to a document says, in its own text, where the document opens beside the
+    /// page: on a form, so what was typed into it stays (NFR-USA-1).
+    /// </summary>
+    public const string OpensInNewTab = "opens in a new tab";
+
     /// <summary>The path of the page that shows a document.</summary>
     public static string PathOf(LegalDocument document) => document switch
     {

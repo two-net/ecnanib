@@ -99,6 +99,10 @@ internal sealed class AccountsApplication : IDisposable
     /// Whether the application reconciles the agents with the exchange on its schedule, and holds
     /// a cycle back for an agent that it has not reconciled since it started, which only a test of that wants.
     /// </param>
+    /// <param name="listens">
+    /// Whether the application listens on a port of this machine, over TLS, which only a test
+    /// that drives a browser wants: see <see cref="ListeningAt"/>.
+    /// </param>
     public AccountsApplication(
         bool registrationOpen = true,
         TestClock? clock = null,
@@ -107,7 +111,8 @@ internal sealed class AccountsApplication : IDisposable
         Action<IWebHostBuilder>? host = null,
         bool runsCycles = false,
         bool settlesOrders = false,
-        bool reconciles = false)
+        bool reconciles = false,
+        bool listens = false)
     {
         Database = database ?? PostgresServer.CreateDatabase();
 
@@ -140,10 +145,20 @@ internal sealed class AccountsApplication : IDisposable
             Database,
             runsCycles: runsCycles,
             settlesOrders: settlesOrders,
-            reconciles: reconciles);
+            reconciles: reconciles,
+            listens: listens);
     }
 
     public TestDatabase Database { get; }
+
+    /// <summary>
+    /// Where an application that listens is reached by a browser: <c>https://127.0.0.1</c> with
+    /// its port. A client that <see cref="CreateClient"/> makes does not reach it.
+    /// </summary>
+    public Uri ListeningAt => _application.ListeningAt;
+
+    /// <summary>The certificate that an application which listens answers with, which it made for this run.</summary>
+    public System.Security.Cryptography.X509Certificates.X509Certificate2? Certificate => _application.Certificate;
 
     public RecordingEmail Email { get; } = new();
 

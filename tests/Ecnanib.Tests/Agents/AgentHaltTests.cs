@@ -159,7 +159,7 @@ public class AgentHaltTests
             page);
 
         // The change is in the history of the agent, with its time and its cause in words.
-        Assert.Contains($"<td>12 November 2026, 09:00 UTC</td>", page);
+        Assert.Contains($"<th scope=\"row\">12 November 2026, 09:00 UTC</th>", page);
         Assert.Contains($"<td>{AgentPages.Says(AgentStateCause.DailyLossLimitReached)}</td>", page);
 
         // An agent that its drawdown limit halted says that, and no time: its user resumes it.

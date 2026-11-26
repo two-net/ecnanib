@@ -48,6 +48,12 @@ body {
     margin: 0;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     line-height: 1.5;
+
+    /* The colours of the browser for a page and its text, said here: they are what a page has
+       when it says nothing, in the theme of the page. Said, they can be read off the page, by
+       a tool that measures the contrast of what the page shows (NFR-USA-1). */
+    background: Canvas;
+    color: CanvasText;
 }
 
 button, input, select, textarea {
@@ -58,8 +64,30 @@ h1, h2, h3, h4 {
     line-height: 1.25;
 }
 
+/* What has the focus of the keyboard (NFR-USA-1): a line around it, in the colour of the text
+   of its page, so it shows on a light page, on a dark one, and in a part that is light in both.
+   It is the same on every control, and two lines of the stylesheet take it away: from the
+   heading of a page and from its content, which take the focus when the page opens and when the
+   link past the bar is followed, and are no controls. AccessibilityStyleTests holds the
+   stylesheet to this. See docs/accessibility.md. */
+:focus-visible {
+    outline: 2px solid CanvasText;
+    outline-offset: 2px;
+}
+
 h1:focus {
     outline: none;
+}
+
+/* What is read out and not shown: the name of a table whose heading above says the same, and
+   what a screen reader is told while a page is on its way. */
+.visually-hidden, .catalog-models caption, .track-records caption, .agents caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
 /* Forms: one field under another, with its hint and its error below it. */
@@ -192,16 +220,6 @@ code {
         min-width: 60rem;
     }
 
-    /* Read out as the name of the table, and not shown: the heading above says the same. */
-    .catalog-models caption {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
-    }
-
     .catalog-models th, .catalog-models td {
         padding: 0.25rem 1rem 0.25rem 0;
         text-align: start;
@@ -232,16 +250,6 @@ code {
     .track-records table {
         border-collapse: collapse;
         min-width: 60rem;
-    }
-
-    /* Read out as the name of the table, and not shown: the heading above says the same. */
-    .track-records caption {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
     }
 
     .track-records th, .track-records td {
@@ -285,16 +293,6 @@ code {
     .agents table {
         border-collapse: collapse;
         min-width: 50rem;
-    }
-
-    /* Read out as the name of the table, and not shown: the heading above says the same. */
-    .agents caption {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
     }
 
     .agents th, .agents td {
@@ -485,7 +483,7 @@ fieldset {
 /* The roles of an agent's team: each role is one field, with the choice of its provider and the
    choice of its model one under the other, and one button under all four shows the models of
    the providers that are chosen. */
-.agent-roles h3 {
+.agent-roles h2 {
     font-size: 1rem;
     margin: 0;
 }
@@ -984,9 +982,12 @@ fieldset {
         animation: role-working 1.5s ease-in-out infinite;
     }
 
-    /* While nobody sees it, it stands still. The script of the pages says when that is. */
+    /* While nobody sees it, it stands still. The script of the pages says when that is. On a
+       page that its user paused it stands still too: the page shows what was so when it was
+       written, and no state of it lasts (NFR-USA-1). */
     :root:not([data-motion="reduced"])[data-hidden] .role-working .role-marker::before,
-    :root:not([data-motion="reduced"]) [data-offscreen] .role-working .role-marker::before {
+    :root:not([data-motion="reduced"]) [data-offscreen] .role-working .role-marker::before,
+    :root:not([data-motion="reduced"]) [data-live="paused"] .role-working .role-marker::before {
         animation-play-state: paused;
     }
 
@@ -1294,7 +1295,7 @@ fieldset {
             text-decoration: underline;
         }
 
-        .site-bar a[aria-current], .settings-nav a[aria-current] {
+        .site-bar a[aria-current], .settings-nav a[aria-current], .site-footer a[aria-current] {
             font-weight: 600;
             text-decoration: underline;
             text-decoration-thickness: 2px;
@@ -1318,7 +1319,9 @@ fieldset {
 
     .site-menu > summary {
         padding: 0.5rem 0.75rem;
-        border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+        /* The line around it is half the colour of the text, which reads on the page of each
+           theme with a contrast of 3 to 1 or more: AccessibilityStyleTests computes it. */
+        border: 1px solid color-mix(in srgb, currentColor 50%, transparent);
         border-radius: 0.25rem;
         cursor: pointer;
         user-select: none;
@@ -1390,6 +1393,51 @@ main {
         display: block;
         padding: 0.5rem 0;
     }
+
+/* What a page that follows what changes says of itself under its heading, with the link that
+   pauses it, and on a paused page with the link that has it follow again (NFR-USA-1): one line
+   where there is room, in smaller text, set apart from what the page is about. */
+.live-pause {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    font-size: 0.875rem;
+}
+
+/* The notice before a session ends (NFR-USA-1): a dialog of the page of a user, which the
+   script of the session shows shortly before, and which no page shows otherwise. It is in the
+   colours of the page, so it is dark on a dark page, with a line around it in the colour of its
+   text. It is as wide as it reads well, and never wider than a narrow screen, so the page does
+   not scroll sideways under it. Its two buttons stand side by side where there is room, and
+   one under the other where there is not. See docs/accounts.md. */
+#session-warning {
+    box-sizing: border-box;
+    width: min(32rem, 100% - 2rem);
+    padding: 1.5rem;
+    border: 2px solid currentColor;
+    border-radius: 0.5rem;
+    background: Canvas;
+    color: CanvasText;
+}
+
+    #session-warning::backdrop {
+        background: color-mix(in srgb, CanvasText 40%, transparent);
+    }
+
+    #session-warning p {
+        margin: 0 0 1rem;
+    }
+
+    #session-warning .session-title {
+        font-size: 1.125rem;
+        font-weight: 700;
+    }
+
+.session-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+}
 
 /* A browser that can lay out what the menu holds, which every browser of today can. The menu
    itself takes no room in the bar: what opens it stands in the bar, after the link to the

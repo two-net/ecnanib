@@ -4,6 +4,7 @@ using Ecnanib.Shared;
 using Ecnanib.WebUi.Animation;
 using Ecnanib.WebUi.Pages;
 using Ecnanib.WebUi.Pages.Agents;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Ecnanib.WebUi.Live;
 
@@ -196,6 +197,99 @@ public static class LivePages
             < 0m => PageFigure.Of(AgentPages.Number(-made), "At that price the position would lose ", after, isLoss: true),
             _ => null,
         };
+    }
+
+    /// <summary>
+    /// The choice of an address that says whether its page follows what changes: a page that
+    /// follows may be paused by its user, and then changes no more by itself (NFR-USA-1). An
+    /// address without the choice is of a page that follows.
+    /// </summary>
+    public const string PauseKey = "live";
+
+    /// <summary>What that choice says of a page that is paused: <c>?live=paused</c>.</summary>
+    public const string Paused = "paused";
+
+    /// <summary>What a page that follows says of itself, beside the link that pauses it.</summary>
+    public const string Follows = "This page follows what changes, and updates by itself.";
+
+    /// <summary>The link that pauses a page that follows.</summary>
+    public const string Pause = "Pause live updates";
+
+    /// <summary>The link that has a paused page follow again.</summary>
+    public const string Resume = "Resume live updates";
+
+    /// <summary>
+    /// What a paused page adds where it shows prices: a price is read for a page that follows
+    /// it, and for no other, so a paused page may have none.
+    /// </summary>
+    public const string PausedPrices = "No price is read for a paused page, so a price may be said to be not known.";
+
+    /// <summary>What a page that is paused says of itself, beside the link that has it follow again: since when it is as it is.</summary>
+    public static string PausedAt(DateTimeOffset at) =>
+        $"Live updates are paused. This page shows what was so at {PageTimes.AtSecond(at)}, and does not change by itself.";
+
+    /// <summary>
+    /// Whether an address asks for its page paused: true for <c>?live=paused</c>, and false for
+    /// an address that makes no such choice. Null for a choice that there is not, such as one
+    /// that is made twice or says anything else: such an address has no page, as an address
+    /// with a page number that is none has not.
+    /// </summary>
+    public static bool? PausedOf(IQueryCollection query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var said = query[PauseKey];
+
+        return said.Count switch
+        {
+            0 => false,
+            1 when string.IsNullOrEmpty(said[0]) => false,
+            1 when said[0] == Paused => true,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// The address of the page of a request, paused or following, with every other choice of
+    /// the address as it is: the page of a list, and what a filter chose.
+    /// </summary>
+    /// <param name="request">The request that the page is written for.</param>
+    /// <param name="paused">Whether the address is of the page paused.</param>
+    public static string AddressOf(HttpRequest request, bool paused)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // The other choices, each written anew, so nothing of the request is written into the
+        // page as it came.
+        var others = request.Query
+            .Where(choice => !string.Equals(choice.Key, PauseKey, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(choice => choice.Value.Select(value => KeyValuePair.Create(choice.Key, value)));
+
+        var query = QueryString.Create(others);
+
+        if (paused)
+        {
+            query = query.Add(PauseKey, Paused);
+        }
+
+        return request.PathBase.Add(request.Path).ToUriComponent() + query.ToUriComponent();
+    }
+
+    /// <summary>
+    /// An address of the page of a request, with the pause carried along when the request has
+    /// it: where a form of the page leads back to it, and the other pages of its list. So a
+    /// page that its user paused stays paused until they have it follow again, and what they do
+    /// on it does not have it follow behind their back. A link to another screen carries none.
+    /// </summary>
+    /// <param name="request">The request that the page is written for, or that its form was sent with.</param>
+    /// <param name="address">The address that is led to.</param>
+    public static string Kept(HttpRequest? request, string address)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+
+        return request is not null && PausedOf(request.Query) == true
+            ? QueryHelpers.AddQueryString(address, PauseKey, Paused)
+            : address;
     }
 
     /// <summary>What a part of a page says when it stopped following because of an error, with the reference of that error in the log (NFR-LOG-6).</summary>

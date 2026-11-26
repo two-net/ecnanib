@@ -88,7 +88,7 @@ internal static class ScreenRules
         new("settings: security", WebUiModule.TwoFactorPath, ScreenFor.User, WebUiModule.AccountPath, "Security"),
         new("settings: API keys", WebUiModule.KeysPath, ScreenFor.User, WebUiModule.AccountPath, "API keys"),
         new("settings: appearance", WebUiModule.AppearancePath, ScreenFor.User, WebUiModule.AccountPath, "Appearance"),
-        new("settings: notifications", WebUiModule.NotificationEmailPath, ScreenFor.User, WebUiModule.AccountPath, "Notifications"),
+        new("settings: notifications", WebUiModule.NotificationEmailPath, ScreenFor.User, WebUiModule.AccountPath, "Email notifications"),
 
         // The bar of an operator, and of nobody else.
         new("operator status", WebUiModule.OperatorStatusPath, ScreenFor.Operator, WebUiModule.HomePath, "Operator status"),

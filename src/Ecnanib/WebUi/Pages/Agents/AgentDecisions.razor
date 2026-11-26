@@ -59,7 +59,8 @@
                         @RiskCheckPages.Explain(check)
                     </p>
 
-                    <RiskCheckRules Check="@check" LabelledBy="@heading" />
+                    @* Named by the decision and by the check, so the checks of two decisions are told apart (NFR-USA-1). *@
+                    <RiskCheckRules Check="@check" LabelledBy="@($"{AgentReportPages.Id(cycle, "heading")} {heading}")" />
                 }
 
                 @if (cycle.Orders.Count == 0)

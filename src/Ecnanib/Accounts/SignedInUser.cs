@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 
 namespace Ecnanib.Accounts;
@@ -67,6 +68,28 @@ public static class SignedInUser
             && Enum.TryParse<Motion>(user.FindFirstValue(SessionAuthentication.MotionClaimType), out var motion)
             && Enum.IsDefined(motion)
             ? motion
+            : null;
+    }
+
+    /// <summary>
+    /// When the session that a user is signed in with ends if nothing more is done with it, or
+    /// null when they are not signed in. It is what the session said when the request was
+    /// signed in, which is on every request: what another window of the same browser did since
+    /// is not in it.
+    /// </summary>
+    /// <param name="user">The user of a request.</param>
+    public static DateTimeOffset? SessionEndsOf(ClaimsPrincipal user)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+
+        return user.Identity is { IsAuthenticated: true }
+            && DateTimeOffset.TryParseExact(
+                user.FindFirstValue(SessionAuthentication.EndsClaimType),
+                "O",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out var endsAt)
+            ? endsAt
             : null;
     }
 

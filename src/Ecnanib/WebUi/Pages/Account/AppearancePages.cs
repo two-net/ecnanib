@@ -22,8 +22,11 @@ public static class AppearancePages
     /// <summary>What the choices are a choice of.</summary>
     public const string Legend = "Theme";
 
-    /// <summary>The button that saves the choice.</summary>
-    public const string Save = "Save";
+    /// <summary>The button that saves the theme. Each of the two buttons of the page says what it saves (NFR-USA-1).</summary>
+    public const string Save = "Save the theme";
+
+    /// <summary>The button that saves how much of the pages moves.</summary>
+    public const string SaveMotion = "Save the animation";
 
     /// <summary>What a form is told that names no theme.</summary>
     public const string ChooseOne = "Choose System, Dark, or Light.";

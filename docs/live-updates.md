@@ -154,6 +154,29 @@ These are events of the instance. The listener begins with the request of whoeve
 
 **The dashboard** values every open position of its user by the same rule, and adds them into the equity of each mode: see [dashboard.md](dashboard.md). It has no part that ticks. A figure that a price is in is not known while the watch has no such price, and says so. The feed of the page follows the prices of what its user holds, and the page asks for itself again when each is first read, so a dashboard that was written with a figure that is not known shows it within a second or two. After that its figures are of the moment that the page was written, and say the time of their prices.
 
+## Pausing
+
+A page that changes by itself can be stopped by whoever reads it (NFR-USA-1; WCAG 2.1, 2.2.2): someone who reads slowly, who reads with a screen reader, or who is put off by what moves. Each of the seven pages says under its heading that it follows what changes, with a link that pauses it, and a paused page says since when it is as it is, with a link that has it follow again.
+
+| | A page that follows | A page that is paused |
+|---|---|---|
+| Address | As before. | The same, with `?live=paused`. |
+| Under its heading | "This page follows what changes, and updates by itself." and "Pause live updates". | "Live updates are paused. This page shows what was so at …, and does not change by itself." and "Resume live updates". |
+| Its part for a connection | One, as before. | None: the page makes no connection, and nothing is followed for it. |
+| Its parts that tick | Written with the page, and again over the connection, inside `<div class="live-parts">`. | Written with the page, once, inside `<div class="live-parts" data-live="paused">`. |
+
+| Rule | Detail |
+|---|---|
+| **It is a choice of the address, and nothing is stored for it.** | `LivePages.PauseKey` and `LivePages.Paused`. It holds for the page that is open, until its user has it follow again or opens the page anew: another screen follows, and so does this one from the bar. A choice that there is not, such as `?live=on` or the choice made twice, has no page, as an address with a page number that is none has not. Each of the seven pages answers that itself. |
+| **The link leads to the same page, with every other choice of the address as it is.** | `LivePages.AddressOf`: the page of a list, and what else the address says, each written anew, and the pause after them. Only what follows the question mark changes, so the browser keeps the place and the focus, and the link is then the other one. |
+| **What the page says of itself is said to a screen reader when it changes.** | `LivePause.razor` writes it into a part with `role="status"`, which is there in both cases: so following the link is answered in words. |
+| **A paused page is written as every page is before its connection is made.** | `LiveUpdates.razor` writes its parts without the connection, which is how the server writes them for each request in any case: the feed is opened, read once, and closed, and it follows no signal, no price, and no clock. So nothing new reads a cycle or a position for it. A page that shows no part writes nothing in their place. |
+| **The part stands in an element of its own.** | The framework takes an element that holds a part with a connection for another kind of element than one that holds none, and puts a new one in its place when a page goes from the one to the other. Without an element of its own that would be the content of the page, and the link that pauses, which has the focus at that moment, would lose it. |
+| **What its user does on a paused page keeps it paused.** | A form of the page that leads back to it, and the other pages of its list, carry the choice: `LivePages.Kept`, on the page of the state of an agent, the dashboard with its checklist, and the notifications. So marking a notification as read does not have the page follow behind the back of its user. A link to another screen carries none. |
+| **Nothing on it moves for as long as a state lasts.** | The dot of a role that works stands still inside `[data-live="paused"]`: the cycle ran when the page was written, and the page does not say when it ended. See [motion.md](motion.md). |
+| **A paused page reads no price.** | A price is read for a page that follows it, and the page never waits for Binance: so a paused page says the price that the watch had, when another page followed it, and says otherwise that the price is not known. The two pages that show prices, the dashboard and the screen of an agent, say so beside the link. |
+| **The count of the notifications in the bar is as it was when the page was written,** | as on every page that does not follow. |
+
 ## The session of a connection
 
 A page that is rendered for each request is checked with each request. A connection is signed in when it is made, and is not asked for again. And a page that follows makes requests that its user did not. Accounts answers for both, with `IConnectedSession`: see "The session of a connection" in [accounts.md](accounts.md).
@@ -194,17 +217,18 @@ Version 1 targets a single running instance: see [background-work.md](background
 | `LiveListenerTests` | The whole way, on PostgreSQL: a write, the trigger, the listener, and the follower, for two users. A change that is rolled back is said to nobody, and neither is a routine write. |
 | `LiveRuleTests` | The triggers of the database are those of `LiveRules.cs`. |
 | `LiveFeedTests` | What a feed asks of its page, with a stand-in for the page: when it asks again, what it writes, whom it tells nothing, when it stops. Which prices it follows for a page that values what its user holds, and that the first read of each has the page ask again. That the screen of one agent has the one price of its position followed, and that an equity which is recorded has the page of its agent ask again. That a cycle which has ended is shown on the screen of its agent for 5 seconds, from when it ended, and on no page that does not show the team. |
-| `LivePageTests` | The seven pages carry one part each, and no field. What a page says of a cycle that runs and of a position, as it is written. The team at work on the screen of an agent, as it is written: see "Testing" in [agent-screen.md](agent-screen.md). |
+| `LivePageTests` | The seven pages carry one part each, and no field. What a page says of a cycle that runs and of a position, as it is written. The team at work on the screen of an agent, as it is written: see "Testing" in [agent-screen.md](agent-screen.md). That each of the seven offers to pause under its heading and no other page does, that a paused page carries no part for a connection, says when it was written, and is written with what its parts showed, that the choice stays beside the other choices of an address, through the pages of a list, and through a form that leads back to the page, and that a choice which there is not is not found. |
 | `ConnectedSessionTests` | When the session of a connection stands, and which requests are no activity. |
 | `CycleProgressTests`, `OpenPositionTests` | The steps of a cycle as it runs, and the position of an agent, each for its user alone. |
 | `PriceWatchTests`, `RequestLimitTests` | One read a second for all who follow a price, none without a follower or without room. |
 
-No test drives a browser. What the browser does with a page that asks for itself again is the framework's, and is looked at by hand:
+No test of these drives a browser. `AccessibilityBrowserTests` does, when a run is told to, and opens the pages that follow among every other, paused and following: see [accessibility.md](accessibility.md). What the browser does with a page that asks for itself again is the framework's, and is looked at by hand:
 
 1. `docker compose up -d`, and run the application.
 2. Sign in, create an agent, and open the page of its state.
 3. Change its row at the database, such as `UPDATE agents SET state = 'Paused' WHERE id = '...'`: the page shows the state and the controls of it within two seconds, with no reload.
 4. The network panel of the browser shows one WebSocket, to `/_blazor`, and no request that repeats by itself.
+5. Follow "Pause live updates": the WebSocket closes within moments, the page says since when it is as it is, and a change at the database changes nothing on it. Mark a notification as read on it: the page comes back paused. Follow "Resume live updates": the page follows again.
 
 ## Not built yet
 
@@ -216,4 +240,6 @@ No test drives a browser. What the browser does with a page that asks for itself
 - A form that is answered over the connection. Every form is posted to the server and answered by a request.
 - Announcing a request to another instance: see "One instance".
 - A page that is loaded anew after its connection could not be made again counts as activity of its user: the browser asks for it as for any page.
+- A pause that holds on every page, or that an account keeps. It is of the page that is open.
+- A price on a paused page that no other page follows. It says that the price is not known.
 - A notice of the application's own for a connection that is lost. The dialog is the framework's, and it covers the page while the connection is tried again, though the links and the forms of the page need no connection.

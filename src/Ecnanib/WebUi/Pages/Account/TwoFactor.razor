@@ -19,7 +19,7 @@
 @switch (_view)
 {
     case View.TurnedOn:
-        <p role="status">Two-factor authentication is on. From now on, signing in takes a code from your authenticator app after your password. Your account was signed out on every other device.</p>
+        <p class="form-done" role="status">Two-factor authentication is on. From now on, signing in takes a code from your authenticator app after your password. Your account was signed out on every other device.</p>
 
         <RecoveryCodeList Codes="_recoveryCodes" />
 
@@ -30,7 +30,7 @@
         @if (_outcome is TwoFactorTurnOnOutcome.AlreadyOn)
         {
             @* The form was sent twice, and the answer to the first, which showed the recovery codes, may never have been seen. *@
-            <p role="status">Two-factor authentication was on already, so nothing was changed. If you did not write down your recovery codes, make new ones below.</p>
+            <p class="form-done" role="status">Two-factor authentication was on already, so nothing was changed. If you did not write down your recovery codes, make new ones below.</p>
         }
 
         <p>Two-factor authentication is on@(_state?.Since is { } since ? $", since {since.ToString("d MMMM yyyy", CultureInfo.InvariantCulture)}" : string.Empty). Signing in takes a code from your authenticator app after your password.</p>
@@ -88,10 +88,12 @@
                     <label for="code">Code from your authenticator app</label>
                     @* A code is never written back into the page. *@
                     <input id="code" name="Code" type="text" inputmode="numeric" autocomplete="one-time-code" required
-                           aria-invalid="@(_outcome is TwoFactorTurnOnOutcome.WrongCode ? "true" : null)" />
+                           aria-invalid="@PageFields.Invalid(_outcome is TwoFactorTurnOnOutcome.WrongCode)"
+                           aria-describedby="@PageFields.ErrorOf("code", _outcome is TwoFactorTurnOnOutcome.WrongCode)"
+                           autofocus="@(_outcome is TwoFactorTurnOnOutcome.WrongCode)" />
                     @if (_outcome is TwoFactorTurnOnOutcome.WrongCode)
                     {
-                        <p class="field-error" role="alert">That code is not right. Enter the six digits that the app shows now.</p>
+                        <p id="code-error" class="field-error">That code is not right. Enter the six digits that the app shows now.</p>
                     }
                 </div>
 
@@ -99,10 +101,12 @@
                     <label for="password">Your password</label>
                     @* The password is never written back into the page. *@
                     <input id="password" name="Password" type="password" autocomplete="current-password" required
-                           aria-invalid="@(_outcome is TwoFactorTurnOnOutcome.WrongPassword ? "true" : null)" />
+                           aria-invalid="@PageFields.Invalid(_outcome is TwoFactorTurnOnOutcome.WrongPassword)"
+                           aria-describedby="@PageFields.ErrorOf("password", _outcome is TwoFactorTurnOnOutcome.WrongPassword)"
+                           autofocus="@(_outcome is TwoFactorTurnOnOutcome.WrongPassword)" />
                     @if (_outcome is TwoFactorTurnOnOutcome.WrongPassword)
                     {
-                        <p class="field-error" role="alert">That is not your password.</p>
+                        <p id="password-error" class="field-error">That is not your password.</p>
                     }
                 </div>
 

@@ -32,6 +32,9 @@
 
     <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
+    @* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
+    <LivePause />
+
     <p>@CyclePages.Explained</p>
 
     <p>@CyclePages.TestsListed <a href="@WebUiModule.AgentTestCyclePath(_agent.Id)">@CyclePages.TestLink</a></p>
@@ -115,6 +118,15 @@
     {
         if (HttpContext is not { } request)
         {
+            return;
+        }
+
+        // An address that makes a choice of following which there is not has no page, as one
+        // with a page number that is none has not: see LivePause.
+        if (LivePages.PausedOf(request.Request.Query) is null)
+        {
+            Navigation.NotFound();
+
             return;
         }
 

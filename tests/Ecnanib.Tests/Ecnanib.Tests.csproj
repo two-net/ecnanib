@@ -9,7 +9,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Reads a page as a browser does, into its elements, for the accessibility rules that
+         every screen is held to. See docs/accessibility.md. -->
+    <PackageReference Include="AngleSharp" Version="1.11.0" />
+
+    <!-- A browser, and the rules of axe, for the check of every screen that a run starts when it
+         is told to drive one: AccessibilityBrowserTests. Without ECNANIB_BROWSER no browser is
+         started, and the tests reach no network. See docs/accessibility.md. -->
+    <PackageReference Include="Deque.AxeCore.Playwright" Version="4.14.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.15" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.65.1" />
 
     <!-- A clock that a test moves, with the timers that run on it. The tests of the limiter on
          Binance's requests wait for minutes that way, in no time. See docs/exchange.md. -->

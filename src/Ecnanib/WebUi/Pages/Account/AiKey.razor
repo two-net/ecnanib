@@ -51,12 +51,13 @@
                 <label for="api-key">API key</label>
                 @* The key is never written back into the page, and the browser is asked not to keep it. *@
                 <input id="api-key" name="ApiKey" type="password" autocomplete="off" spellcheck="false" required
-                       aria-invalid="@(_problem is not null ? "true" : null)"
-                       aria-describedby="api-key-hint" />
+                       aria-invalid="@PageFields.Invalid(_problem is not null)"
+                       aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("api-key", _problem is not null), "api-key-hint")"
+                       autofocus="@(_problem is not null && _notStored is null)" />
                 <p id="api-key-hint" class="field-hint">Paste the key as @_slot.ProviderName gave it to you.</p>
                 @if (_problem is { } problem)
                 {
-                    <p class="field-error" role="alert">@KeyPages.Says(problem)</p>
+                    <p id="api-key-error" class="field-error">@KeyPages.Says(problem)</p>
                 }
             </div>
 

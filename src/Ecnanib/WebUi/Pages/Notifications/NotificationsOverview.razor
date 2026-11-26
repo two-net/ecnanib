@@ -33,6 +33,9 @@
 
     <p>@NotificationPages.Explained</p>
 
+    @* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
+    <LivePause />
+
     @if (_list.Total == 0)
     {
         <p>@NotificationPages.None</p>
@@ -87,15 +90,16 @@
 
         @if (_list.Pages > 1)
         {
-            <nav class="lesson-pages" aria-label="Pages of notifications">
+            @* Another page of the list is asked for as a page of its own, so it opens with the focus at its heading (NFR-USA-1). *@
+            <nav class="lesson-pages" aria-label="Pages of notifications" data-enhance-nav="false">
                 @if (_list.Page > 1)
                 {
-                    <a href="@WebUiModule.NotificationsPagePath(_list.Page - 1)">Newer notifications</a>
+                    <a href="@LivePages.Kept(HttpContext?.Request, WebUiModule.NotificationsPagePath(_list.Page - 1))">Newer notifications</a>
                 }
 
                 @if (_list.Page < _list.Pages)
                 {
-                    <a href="@WebUiModule.NotificationsPagePath(_list.Page + 1)">Older notifications</a>
+                    <a href="@LivePages.Kept(HttpContext?.Request, WebUiModule.NotificationsPagePath(_list.Page + 1))">Older notifications</a>
                 }
             </nav>
         }
@@ -128,6 +132,15 @@
     {
         if (HttpContext is not { } request)
         {
+            return;
+        }
+
+        // An address that makes a choice of following which there is not has no page, as one
+        // with a page number that is none has not: see LivePause.
+        if (LivePages.PausedOf(request.Request.Query) is null)
+        {
+            Navigation.NotFound();
+
             return;
         }
 
@@ -177,7 +190,7 @@
 
         // The page as it is now, by the address that it was asked for by. A reload of it sends
         // no form again.
-        Navigation.NavigateTo(WebUiModule.NotificationsPagePath(_page));
+        Navigation.NavigateTo(LivePages.Kept(request.Request, WebUiModule.NotificationsPagePath(_page)));
     }
 
     private async Task MarkAllAsync()
@@ -194,6 +207,6 @@
             await Stored.MarkAllReadAsync(request, through);
         }
 
-        Navigation.NavigateTo(WebUiModule.NotificationsPagePath(_page));
+        Navigation.NavigateTo(LivePages.Kept(request.Request, WebUiModule.NotificationsPagePath(_page)));
     }
 }

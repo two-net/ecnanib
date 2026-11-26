@@ -68,12 +68,12 @@ A cookie that says anything but `dark` or `light` is no choice: the page is as t
 
 ## Colours
 
-**A page has the colours of the browser,** for the page itself, its text, its links, and its controls: the browser gives each the value of the theme, with a contrast that meets WCAG 2.1 AA. The stylesheet adds few colours of its own.
+**A page has the colours of the browser,** for the page itself, its text, its links, and its controls: the browser gives each the value of the theme, with a contrast that meets WCAG 2.1 AA. The stylesheet adds few colours of its own. It says the two of the page and its text on `body`, `Canvas` and `CanvasText`: they are what a page has when it says nothing, and said, a tool that measures contrast reads them off the page, also on a dark one.
 
 | A colour in `app.css` is | For instance |
 |---|---|
 | The colour of the text around it, whole or thinned | The lines of the frame and of the tables, the equity curve, the cards and the lines of the team at work, the outline of the Demo badge: `currentColor`, and `color-mix()` with it. |
-| A colour of the system | `Canvas` and `CanvasText`, for the link past the bar. |
+| A colour of the system | `Canvas` and `CanvasText`, for the link past the bar, for the notice before a session ends, and for the line around what has the focus of the keyboard: the colour of the text of the page, which a browser gives the value of the theme. |
 | A colour of the themes | `--danger`, for the error of a form, the line beside what a user is told, and the outline of a role of the team that has failed, and `--warning`, for the line beside what a form warns of. |
 | One that brings its own background | The Live badge: white on red, the same in both themes. |
 
@@ -83,6 +83,7 @@ A cookie that says anything but `dark` or `light` is no choice: the page is as t
 | **No rule asks the device what it is set to.** | `@media (prefers-color-scheme: dark)` would hold for a user who chose Light on a dark device. `ThemeStyleTests` fails for a stylesheet that has one. |
 | **Each value reads on the page of its theme.** | With a contrast of 4.5 to 1 or more, which `ThemeStyleTests` computes: the light value on white, and the dark value on `#1e1e1e`. A browser paints a dark page in a grey of its own: Chrome and Edge `#121212`, Firefox `#1c1b22`, and Safari `#1e1e1e`. The test takes the lightest of them, and there is room to spare: the two colours of today have 7.4 and 9.8 to 1 there. |
 | **A colour that is written out anywhere else is found.** | `ThemeStyleTests` lists the rules of `app.css` that write out a colour: `:root` and `.mode-live`. A rule that is added with a colour of one theme fails it. |
+| **A line that tells a control apart reads on the page of each theme.** | With a contrast of 3 to 1 or more (WCAG 2.1, 1.4.11): the line around what has the focus of the keyboard, which is the colour of the text whole, and the line around "Menu", which is half of it. `AccessibilityStyleTests` computes both, on white and on `#1e1e1e`, and lists the lines that it holds: see [accessibility.md](accessibility.md). A line that sets parts of a page apart, as between the rows of a table, tells nothing that words do not, and is thinner. |
 | **Nothing relies on a colour.** | A profit and a loss are told apart by their sign, and have no colour of their own (FR-THM-5): see [dashboard.md](dashboard.md) and [agent-screen.md](agent-screen.md). An outcome, a state, and a mode are said as words. |
 | **What must not change with the theme does not.** | The QR code of two-factor authentication is black on white whatever the theme is, so an authenticator app reads it. The dialog that rejoins the server and the bar of an unhandled error are light in both themes, with colours of their own: `color-scheme: light only`. |
 
@@ -106,7 +107,7 @@ A cookie that says anything but `dark` or `light` is no choice: the page is as t
 | `DataExportTests` | That the theme is in the export, under `account`. |
 | `BrowserDefenseTests`, `RequestForgeryTests`, `LivePageTests` | That the two pages carry no script and no style of their own, check the token of their form, and keep no connection: each finds the pages by their routes. |
 
-No test drives a browser. By hand:
+No test of these drives a browser. `AccessibilityBrowserTests` does, when a run is told to: it opens every screen in a browser and has axe measure the contrast of what the screen shows, on a light page and on a dark one, which holds the colours of the browser too. See [accessibility.md](accessibility.md). By hand:
 
 1. `docker compose up -d`, and run the application.
 2. As a visitor, open `/` with the device set to light, and set the device to dark while the page is open: the page follows at once. The same on a page of a user who has System.
@@ -119,4 +120,3 @@ No test drives a browser. By hand:
 
 - A colour for a profit and one for a loss. They are told apart by their sign, which the specification asks for, and by nothing else.
 - Taking the theme that a visitor chose on their device into the account that they then register. A new account has System.
-- A check of every screen by a tool that measures contrast in a browser (NFR-USA-1). The contrast of the colours that the stylesheet writes out is computed by a test, and the rest are the colours of the browser.
